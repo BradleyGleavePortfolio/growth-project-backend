@@ -1,0 +1,4 @@
+AUD-OPUS-DUN1-122 (agent 122) DONE 16:14 PDT. Verdicts posted 16:13 PDT at READY heads:
+#725 1dbc59b6 APPROVE 0/0/2; #687 c140575c, #688 610c5254, #704 524c4025, #705 346b7757 APPROVE 0/0/0; #724 410fb1b3 APPROVE 0/0/1;
+#689 0fbd18ca APPROVE 0/0/1 (B-689-5 closed); #690 c15f157c REQUEST CHANGES 0/1/0 (B-690-8: no coach route calls restartAfterDisputePause);
+#691 17cfa566 APPROVE 0/0/0. Report: ops/reports/AUD-OPUS-DUN1-122.md (operator decisions with defaults).

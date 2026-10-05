@@ -1,0 +1,13 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#730 @ e97c472f00cdecbce2e5f1a680e05b1744c14715 — VERDICT: APPROVE
+
+AUD-SOL-BC1-122, agent 122; independent T4 slice audit. A/B/C = 0/0/0.
+
+No new blocking finding in this slice: all A4 routes require JWT, coach access and the default-off feature guard, and every service call takes its actor from `req.user.id` rather than a caller-supplied tenant. Module wiring supplies the services and notification emitter, while earlier pieces remain inert before this module is registered. [Controller](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e97c472f00cdecbce2e5f1a680e05b1744c14715/src/broadcasts/broadcasts.controller.ts#L38-L81), [Module](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e97c472f00cdecbce2e5f1a680e05b1744c14715/src/broadcasts/broadcasts.module.ts), [Application registration](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e97c472f00cdecbce2e5f1a680e05b1744c14715/src/app.module.ts#L230-L240)
+
+The workflow adds the broadcast live spec to the existing required `community-live-tests` job with its disposable PostgreSQL database; no existing CI gate is removed or weakened. That live suite is registered, not claimed executed by this audit. [CI wiring](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e97c472f00cdecbce2e5f1a680e05b1744c14715/.github/workflows/ci.yml#L390-L470), [Live spec](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e97c472f00cdecbce2e5f1a680e05b1744c14715/test/broadcasts/broadcasts-dispatch.live.spec.ts)
+
+Full TypeScript checking and 195 selected tests across 10 suites passed on this source tree; live migration/RLS execution and green required PR checks remain operator gates. [Baseline CI lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386716686), [Current PR checks](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/730/checks)
+
+This approval covers only #730's slice, not the combined train's unresolved B-727-1 / B-728-1. Recommended default: fix those ordinary-user Bs, restack the affected heads for fresh exact-head audits, land the full train with required checks green, and keep `FEATURE_COACH_BROADCASTS` off until the mobile composer/device gate passes. [#727](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/727), [#728](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/728), [Release gate](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e97c472f00cdecbce2e5f1a680e05b1744c14715/.github/fly-env-desired-state.json)
+
+Cs: none. Independent of the Opus lens; no edge-case investigation or production action.

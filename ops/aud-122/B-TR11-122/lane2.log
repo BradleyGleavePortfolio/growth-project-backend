@@ -1,0 +1,1099 @@
+﻿2026-10-05T23:03:31.2654683Z Current runner version: '2.337.0'
+2026-10-05T23:03:31.2678748Z ##[group]Runner Image Provisioner
+2026-10-05T23:03:31.2679711Z Hosted Compute Agent
+2026-10-05T23:03:31.2680422Z Version: 20260901.588
+2026-10-05T23:03:31.2681074Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T23:03:31.2682256Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T23:03:31.2682975Z Worker ID: {8d5a62d7-ee74-4025-bbbd-587c6bff3077}
+2026-10-05T23:03:31.2683781Z Azure Region: chilecentral
+2026-10-05T23:03:31.2684411Z ##[endgroup]
+2026-10-05T23:03:31.2686046Z ##[group]Operating System
+2026-10-05T23:03:31.2686778Z Ubuntu
+2026-10-05T23:03:31.2687320Z 24.04.5
+2026-10-05T23:03:31.2687853Z LTS
+2026-10-05T23:03:31.2688662Z ##[endgroup]
+2026-10-05T23:03:31.2689265Z ##[group]Runner Image
+2026-10-05T23:03:31.2689975Z Image: ubuntu-24.04
+2026-10-05T23:03:31.2690567Z Version: 20260927.320.1
+2026-10-05T23:03:31.2691884Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T23:03:31.2693450Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T23:03:31.2694462Z ##[endgroup]
+2026-10-05T23:03:31.2695704Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T23:03:31.2697710Z Contents: read
+2026-10-05T23:03:31.2698713Z Metadata: read
+2026-10-05T23:03:31.2699321Z Packages: read
+2026-10-05T23:03:31.2699985Z ##[endgroup]
+2026-10-05T23:03:31.2702080Z Secret source: Actions
+2026-10-05T23:03:31.2703155Z Cache mode: write
+2026-10-05T23:03:31.2703982Z Prepare workflow directory
+2026-10-05T23:03:31.3131404Z Prepare all required actions
+2026-10-05T23:03:31.3178628Z Getting action download info
+2026-10-05T23:03:31.8183631Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T23:03:31.9271232Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T23:03:32.1626359Z Complete job name: targeted
+2026-10-05T23:03:32.2127463Z ##[group]Checking docker version
+2026-10-05T23:03:32.2140664Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-05T23:03:32.2980180Z '1.48'
+2026-10-05T23:03:32.2992257Z Docker daemon API version: '1.48'
+2026-10-05T23:03:32.2993055Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-05T23:03:32.3149007Z '1.48'
+2026-10-05T23:03:32.3162270Z Docker client API version: '1.48'
+2026-10-05T23:03:32.3167464Z ##[endgroup]
+2026-10-05T23:03:32.3170787Z ##[group]Clean up resources from previous jobs
+2026-10-05T23:03:32.3176086Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=535a5c"
+2026-10-05T23:03:32.3311557Z ##[command]/usr/bin/docker network prune --force --filter "label=535a5c"
+2026-10-05T23:03:32.3434188Z ##[endgroup]
+2026-10-05T23:03:32.3434730Z ##[group]Create local container network
+2026-10-05T23:03:32.3444925Z ##[command]/usr/bin/docker network create --label 535a5c github_network_2db261a554034cd9bd9da9258fca7841
+2026-10-05T23:03:32.3948122Z 84c0118e48dd52c2b25800f3976d9bf4e16893a42c73003633cff62d7fa4191e
+2026-10-05T23:03:32.3985064Z ##[endgroup]
+2026-10-05T23:03:32.4009802Z ##[group]Starting redis service container
+2026-10-05T23:03:32.4032748Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-05T23:03:33.8530354Z 7-alpine: Pulling from library/redis
+2026-10-05T23:03:34.2773524Z 16333ee0c00f: Pulling fs layer
+2026-10-05T23:03:34.2774020Z 83234986c742: Pulling fs layer
+2026-10-05T23:03:34.2774558Z 7eb50503c2b0: Pulling fs layer
+2026-10-05T23:03:34.2775050Z 1522f9c6f453: Pulling fs layer
+2026-10-05T23:03:34.2775402Z 9928009b15c8: Pulling fs layer
+2026-10-05T23:03:34.2775895Z 4f4fb700ef54: Pulling fs layer
+2026-10-05T23:03:34.2776247Z 4eb14bae0e1d: Pulling fs layer
+2026-10-05T23:03:34.2776568Z 1522f9c6f453: Waiting
+2026-10-05T23:03:34.2776977Z 4f4fb700ef54: Waiting
+2026-10-05T23:03:34.2777289Z 9928009b15c8: Waiting
+2026-10-05T23:03:34.2777569Z 4eb14bae0e1d: Waiting
+2026-10-05T23:03:34.6379521Z 83234986c742: Verifying Checksum
+2026-10-05T23:03:34.6380256Z 83234986c742: Download complete
+2026-10-05T23:03:34.6410052Z 7eb50503c2b0: Verifying Checksum
+2026-10-05T23:03:34.6421277Z 7eb50503c2b0: Download complete
+2026-10-05T23:03:34.6529668Z 16333ee0c00f: Verifying Checksum
+2026-10-05T23:03:34.6531787Z 16333ee0c00f: Download complete
+2026-10-05T23:03:34.7564596Z 16333ee0c00f: Pull complete
+2026-10-05T23:03:35.0052491Z 9928009b15c8: Verifying Checksum
+2026-10-05T23:03:35.0054723Z 9928009b15c8: Download complete
+2026-10-05T23:03:35.0144942Z 4f4fb700ef54: Verifying Checksum
+2026-10-05T23:03:35.0145713Z 4f4fb700ef54: Download complete
+2026-10-05T23:03:35.0404204Z 1522f9c6f453: Verifying Checksum
+2026-10-05T23:03:35.0404883Z 1522f9c6f453: Download complete
+2026-10-05T23:03:35.3637373Z 4eb14bae0e1d: Verifying Checksum
+2026-10-05T23:03:35.3637882Z 4eb14bae0e1d: Download complete
+2026-10-05T23:03:37.1819999Z 83234986c742: Pull complete
+2026-10-05T23:03:37.3184208Z 7eb50503c2b0: Pull complete
+2026-10-05T23:03:37.5056459Z 1522f9c6f453: Pull complete
+2026-10-05T23:03:37.5181150Z 9928009b15c8: Pull complete
+2026-10-05T23:03:37.5272362Z 4f4fb700ef54: Pull complete
+2026-10-05T23:03:37.5366110Z 4eb14bae0e1d: Pull complete
+2026-10-05T23:03:37.5427619Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-05T23:03:37.5440320Z Status: Downloaded newer image for redis:7-alpine
+2026-10-05T23:03:37.5448500Z docker.io/library/redis:7-alpine
+2026-10-05T23:03:37.5486275Z ##[command]/usr/bin/docker create --name 5aa402bd98be4343a7ba554518de539a_redis7alpine_9eba6c --label 535a5c --network github_network_2db261a554034cd9bd9da9258fca7841 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-05T23:03:37.5721892Z 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:03:37.5743094Z ##[command]/usr/bin/docker start 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:03:37.7788935Z 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:03:37.7807341Z ##[command]/usr/bin/docker ps --all --filter id=3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T23:03:37.7925432Z 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a Up Less than a second (health: starting)
+2026-10-05T23:03:37.7944070Z ##[command]/usr/bin/docker port 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:03:37.8056425Z 6379/tcp -> 0.0.0.0:6379
+2026-10-05T23:03:37.8057548Z 6379/tcp -> [::]:6379
+2026-10-05T23:03:37.8101959Z ##[endgroup]
+2026-10-05T23:03:37.8110383Z ##[group]Waiting for all services to be ready
+2026-10-05T23:03:37.8123492Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:03:37.8238012Z starting
+2026-10-05T23:03:37.8257542Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-05T23:03:39.8253104Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:03:39.8371823Z starting
+2026-10-05T23:03:39.8383732Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-05T23:03:43.6969402Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:03:43.7091552Z healthy
+2026-10-05T23:03:43.7106500Z redis service is healthy.
+2026-10-05T23:03:43.7107160Z ##[endgroup]
+2026-10-05T23:03:43.7397616Z ##[group]Run actions/checkout@v6
+2026-10-05T23:03:43.7398543Z with:
+2026-10-05T23:03:43.7398883Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T23:03:43.7401656Z   token: ***
+2026-10-05T23:03:43.7401869Z   ssh-strict: true
+2026-10-05T23:03:43.7402307Z   ssh-user: git
+2026-10-05T23:03:43.7402528Z   persist-credentials: true
+2026-10-05T23:03:43.7402768Z   clean: true
+2026-10-05T23:03:43.7402985Z   sparse-checkout-cone-mode: true
+2026-10-05T23:03:43.7403244Z   fetch-depth: 1
+2026-10-05T23:03:43.7403442Z   fetch-tags: false
+2026-10-05T23:03:43.7403656Z   show-progress: true
+2026-10-05T23:03:43.7403863Z   lfs: false
+2026-10-05T23:03:43.7404052Z   submodules: false
+2026-10-05T23:03:43.7404262Z   set-safe-directory: true
+2026-10-05T23:03:43.7404511Z   allow-unsafe-pr-checkout: false
+2026-10-05T23:03:43.7405059Z ##[endgroup]
+2026-10-05T23:03:43.8440010Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T23:03:43.8442004Z ##[group]Getting Git version info
+2026-10-05T23:03:43.8442822Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T23:03:43.8443751Z [command]/usr/bin/git version
+2026-10-05T23:03:43.8444085Z git version 2.55.0
+2026-10-05T23:03:43.8445088Z ##[endgroup]
+2026-10-05T23:03:43.8454860Z Temporarily overriding HOME='/home/runner/work/_temp/0e38f408-f767-43af-b495-16a2bec4466f' before making global git config changes
+2026-10-05T23:03:43.8455954Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T23:03:43.8460207Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T23:03:43.8506929Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T23:03:43.8511587Z ##[group]Determining repository object format
+2026-10-05T23:03:43.8514340Z ##[endgroup]
+2026-10-05T23:03:43.8515035Z ##[group]Initializing the repository
+2026-10-05T23:03:43.8519366Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T23:03:43.8615401Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T23:03:43.8616411Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T23:03:43.8617313Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T23:03:43.8618008Z hint: call:
+2026-10-05T23:03:43.8618556Z hint:
+2026-10-05T23:03:43.8619064Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T23:03:43.8619466Z hint:
+2026-10-05T23:03:43.8619847Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T23:03:43.8620402Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T23:03:43.8620823Z hint:
+2026-10-05T23:03:43.8621093Z hint: 	git branch -m <name>
+2026-10-05T23:03:43.8621362Z hint:
+2026-10-05T23:03:43.8621772Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T23:03:43.8626480Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-05T23:03:43.8634831Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T23:03:43.8681262Z ##[endgroup]
+2026-10-05T23:03:43.8681706Z ##[group]Disabling automatic garbage collection
+2026-10-05T23:03:43.8682082Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T23:03:43.8709424Z ##[endgroup]
+2026-10-05T23:03:43.8709976Z ##[group]Setting up auth
+2026-10-05T23:03:43.8711019Z Removing SSH command configuration
+2026-10-05T23:03:43.8717102Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T23:03:43.8747225Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T23:03:43.9070034Z Removing HTTP extra header
+2026-10-05T23:03:43.9074981Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T23:03:43.9103680Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T23:03:43.9316277Z Removing includeIf entries pointing to credentials config files
+2026-10-05T23:03:43.9322497Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T23:03:43.9351959Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T23:03:43.9571000Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T23:03:43.9606906Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:03:43.9636272Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:03:43.9668897Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:03:43.9698726Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:03:43.9759771Z ##[endgroup]
+2026-10-05T23:03:43.9760238Z ##[group]Fetching the repository
+2026-10-05T23:03:43.9767438Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +50f8401485765848e9f25a66742d198ba4d3293a:refs/remotes/origin/ci/B-TR11-122-1
+2026-10-05T23:03:46.0809736Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T23:03:46.0810738Z  * [new ref]         50f8401485765848e9f25a66742d198ba4d3293a -> origin/ci/B-TR11-122-1
+2026-10-05T23:03:46.0822509Z [command]/usr/bin/git branch --list --remote origin/ci/B-TR11-122-1
+2026-10-05T23:03:46.0846302Z   origin/ci/B-TR11-122-1
+2026-10-05T23:03:46.0856905Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-TR11-122-1
+2026-10-05T23:03:46.0878466Z 50f8401485765848e9f25a66742d198ba4d3293a
+2026-10-05T23:03:46.0883118Z ##[endgroup]
+2026-10-05T23:03:46.0883740Z ##[group]Determining the checkout info
+2026-10-05T23:03:46.0884607Z ##[endgroup]
+2026-10-05T23:03:46.0891502Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T23:03:46.0941381Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T23:03:46.0969069Z ##[group]Checking out the ref
+2026-10-05T23:03:46.0973388Z [command]/usr/bin/git checkout --progress --force -B ci/B-TR11-122-1 refs/remotes/origin/ci/B-TR11-122-1
+2026-10-05T23:03:46.3298487Z Switched to a new branch 'ci/B-TR11-122-1'
+2026-10-05T23:03:46.3299294Z branch 'ci/B-TR11-122-1' set up to track 'origin/ci/B-TR11-122-1'.
+2026-10-05T23:03:46.3306549Z ##[endgroup]
+2026-10-05T23:03:46.3350605Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T23:03:46.3373167Z 50f8401485765848e9f25a66742d198ba4d3293a
+2026-10-05T23:03:46.3631694Z ##[group]Run actions/setup-node@v6
+2026-10-05T23:03:46.3631978Z with:
+2026-10-05T23:03:46.3632175Z   node-version: 20
+2026-10-05T23:03:46.3632376Z   cache: npm
+2026-10-05T23:03:46.3632578Z   check-latest: false
+2026-10-05T23:03:46.3635137Z   token: ***
+2026-10-05T23:03:46.3635358Z   package-manager-cache: true
+2026-10-05T23:03:46.3635609Z ##[endgroup]
+2026-10-05T23:03:46.5242120Z Attempting to download 20...
+2026-10-05T23:03:48.2658563Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-05T23:03:49.8415804Z Extracting ...
+2026-10-05T23:03:49.8534834Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/75fc13ab-566c-4068-a447-b21c34137a98 -f /home/runner/work/_temp/94463a1f-b5d2-4d7d-aeb9-f55ac14975a6
+2026-10-05T23:03:50.8376308Z Adding to the cache ...
+2026-10-05T23:03:52.6509583Z ##[group]Environment details
+2026-10-05T23:03:52.8828064Z node: v20.20.2
+2026-10-05T23:03:52.8828647Z npm: 10.8.2
+2026-10-05T23:03:52.8828977Z yarn: 1.22.22
+2026-10-05T23:03:52.8829583Z ##[endgroup]
+2026-10-05T23:03:52.8846298Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-05T23:03:52.9849363Z /home/runner/.npm
+2026-10-05T23:03:53.4055862Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T23:03:54.8862979Z Received 0 of 86828135 (0.0%), 0.0 MBs/sec
+2026-10-05T23:03:55.8867052Z Received 20971520 of 86828135 (24.2%), 10.0 MBs/sec
+2026-10-05T23:03:56.8764842Z Received 86828135 of 86828135 (100.0%), 27.7 MBs/sec
+2026-10-05T23:03:56.8765483Z Cache Size: ~83 MB (86828135 B)
+2026-10-05T23:03:56.8877765Z [command]/usr/bin/tar -xf /home/runner/work/_temp/9bea7670-3e73-4114-a810-d0f139ced560/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-05T23:03:57.0611859Z Cache restored successfully
+2026-10-05T23:03:57.0659404Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T23:03:57.0841590Z ##[group]Run npm ci
+2026-10-05T23:03:57.0841879Z npm ci
+2026-10-05T23:03:57.1046669Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:03:57.1046976Z ##[endgroup]
+2026-10-05T23:04:02.8941128Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T23:04:03.3622367Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-05T23:04:05.7445569Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:04:06.9060522Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:04:06.9321030Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:04:06.9835923Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:04:20.2745120Z 
+2026-10-05T23:04:20.2745884Z > growth-project-backend@1.0.0 postinstall
+2026-10-05T23:04:20.2746535Z > prisma generate
+2026-10-05T23:04:20.2746762Z 
+2026-10-05T23:04:21.2025617Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T23:04:25.1670109Z ┌─────────────────────────────────────────────────────────┐
+2026-10-05T23:04:25.1671416Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+2026-10-05T23:04:25.1672430Z │                                                         │
+2026-10-05T23:04:25.1673357Z │  This is a major update - please follow the guide at    │
+2026-10-05T23:04:25.1675419Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-05T23:04:25.1676429Z │                                                         │
+2026-10-05T23:04:25.1677254Z │  Run the following to update                            │
+2026-10-05T23:04:25.1678823Z │    npm i --save-dev prisma@latest                       │
+2026-10-05T23:04:25.1679653Z │    npm i @prisma/client@latest                          │
+2026-10-05T23:04:25.1680195Z └─────────────────────────────────────────────────────────┘
+2026-10-05T23:04:25.1680466Z 
+2026-10-05T23:04:25.1680900Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.17s
+2026-10-05T23:04:25.1681231Z 
+2026-10-05T23:04:25.1681657Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T23:04:25.1682020Z 
+2026-10-05T23:04:25.1682534Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-05T23:04:25.1682980Z 
+2026-10-05T23:04:25.2239078Z 
+2026-10-05T23:04:25.2239577Z > growth-project-backend@1.0.0 prepare
+2026-10-05T23:04:25.2240192Z > lefthook install
+2026-10-05T23:04:25.2240465Z 
+2026-10-05T23:04:25.2732040Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-05T23:04:25.2898956Z 
+2026-10-05T23:04:25.2901819Z added 1115 packages, and audited 1116 packages in 28s
+2026-10-05T23:04:25.2902119Z 
+2026-10-05T23:04:25.2902292Z 202 packages are looking for funding
+2026-10-05T23:04:25.2902632Z   run `npm fund` for details
+2026-10-05T23:04:25.2933290Z 
+2026-10-05T23:04:25.2933593Z 3 high severity vulnerabilities
+2026-10-05T23:04:25.2934252Z 
+2026-10-05T23:04:25.2934595Z To address all issues (including breaking changes), run:
+2026-10-05T23:04:25.2935032Z   npm audit fix --force
+2026-10-05T23:04:25.2935182Z 
+2026-10-05T23:04:25.2935304Z Run `npm audit` for details.
+2026-10-05T23:04:25.3552158Z ##[group]Run npx prisma generate
+2026-10-05T23:04:25.3552505Z npx prisma generate
+2026-10-05T23:04:25.3616350Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:04:25.3616632Z ##[endgroup]
+2026-10-05T23:04:26.5845045Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T23:04:30.5820119Z 
+2026-10-05T23:04:30.5821372Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.19s
+2026-10-05T23:04:30.5821871Z 
+2026-10-05T23:04:30.5822340Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T23:04:30.5822805Z 
+2026-10-05T23:04:30.5823484Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-05T23:04:30.5824119Z 
+2026-10-05T23:04:30.7025722Z ##[group]Run npx tsc --noEmit
+2026-10-05T23:04:30.7026042Z npx tsc --noEmit
+2026-10-05T23:04:30.7087717Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:04:30.7087984Z env:
+2026-10-05T23:04:30.7088509Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T23:04:30.7088892Z ##[endgroup]
+2026-10-05T23:05:27.4897364Z ##[group]Run set -euo pipefail
+2026-10-05T23:05:27.4897884Z set -euo pipefail
+2026-10-05T23:05:27.4898765Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-05T23:05:27.4899612Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-05T23:05:27.4900257Z echo "specs: ${SPECS[*]}"
+2026-10-05T23:05:27.4900765Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-05T23:05:27.4970770Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T23:05:27.4971135Z env:
+2026-10-05T23:05:27.4971367Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T23:05:27.4971751Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-05T23:05:27.4972068Z ##[endgroup]
+2026-10-05T23:05:27.5087136Z specs: src/notifications/__tests__/first-payment-webhook.integration.spec.ts test/b-recur-116-fix-round-3.spec.ts test/b-recur-3-fix-round-2-checkout.spec.ts test/b-recur-3-fix-round-2.spec.ts test/b-recur-3-subscription-terms.spec.ts test/b-recur-fix-round-1-checkout.spec.ts test/b-recur-fix-round-1-http.spec.ts test/b-recur-fix-round-1-trial-card-checkout.spec.ts test/b-recur-fix-round-1-trial-card.spec.ts test/b-recur-fix-round-1.spec.ts test/b-recur-subscription-checkout.spec.ts test/b-recur-subscription-webhooks.spec.ts test/b-recur-subscription-wire.spec.ts test/b-recur3-117-webhook-order.spec.ts test/b-recur5a-117-fix-round-5.spec.ts test/b-recur5a-117-moved-fix-round-4.spec.ts test/b-recur5a-117-trial-end-form.spec.ts test/b-recur5b-117-authority.spec.ts test/b-recur6a-118-fix-round-6.spec.ts test/b-recur6a-118-r1.spec.ts test/b-recur6b-118-authority.spec.ts test/b-recur7a-119-r1.spec.ts test/b-recur7a-119-r2.spec.ts test/b-recur7b-119-authority.spec.ts test/b-trials-3-fix-round.spec.ts test/b-trials-4-fix-round.spec.ts test/b-trials-5-fix-round.spec.ts test/b-trials-6-payable-domain.spec.ts test/b-trials-7-draft-fence.spec.ts test/b-trials-8-shared-rule.spec.ts test/b-trials-idempotent-create-compose.spec.ts test/b-trials-notice-and-webhook.spec.ts test/b-trials-one-trial-rule.spec.ts test/b-trials-package-rules.spec.ts test/b-trials-t1-fix-round-6.spec.ts test/b-trials-t2-fix-round-6.spec.ts test/b-trials-t2-fix-round-8.spec.ts test/b-trials-t2-idempotent-create-http.spec.ts test/b-trials-trial-ending-push-prefs.spec.ts test/cancel-pending-on-refund.spec.ts test/checkout-grant-credentials.spec.ts test/checkout-hosted-activation-once.spec.ts test/checkout-settlement-round5.spec.ts test/checkout-webhook-fee-split.spec.ts test/checkout-webhook-handler.spec.ts test/coach-money-billed-mrr.spec.ts test/coach-new-purchase-prefs-routing.spec.ts test/drip-dispatcher.cron.spec.ts test/notification-prefs.spec.ts test/nudge-v1-prefs-and-copy.spec.ts test/purchase-fanout-hooks.spec.ts test/purchase-fanout-tx-plumbing.spec.ts test/push-delivery-round5.spec.ts test/push-delivery-send-time.spec.ts test/push-delivery.service.spec.ts test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts test/s-fee-r19-refund-cas-send-window.spec.ts
+2026-10-05T23:05:32.0420688Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [CheckoutWebhookHandlerService] PaymentIntent pi_r3 cannot be read (stripe_404_resource_missing): its payment_intent.payment_failed is not applied
+2026-10-05T23:05:32.0513233Z PASS test/checkout-webhook-handler.spec.ts (132 MB heap size)
+2026-10-05T23:05:32.0515978Z [Nest] 3353  - 10/05/2026, 11:05:32 PM    WARN [CheckoutWebhookHandlerService] PaymentIntent status lookup failed for pi_r3 (Error): Stripe redelivers
+2026-10-05T23:05:32.0519292Z [Nest] 3353  - 10/05/2026, 11:05:32 PM    WARN [CheckoutWebhookHandlerService] PaymentIntent status lookup failed for pi_r3 (stripe_429_rate_limit): Stripe redelivers
+2026-10-05T23:05:32.9017754Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9058601Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9077746Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:32.9109399Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9147883Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9163278Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9182655Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9212637Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9227982Z [Nest] 3353  - 10/05/2026, 11:05:52 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=timeout (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:32.9242588Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9249093Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:32.9253311Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:32.9257119Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:32.9264299Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=4 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:32.9267700Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=5 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:32.9281743Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9289360Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:32.9308681Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:32.9331708Z [Nest] 3353  - 10/05/2026, 11:05:32 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.0101154Z [Nest] 3353  - 10/05/2026, 11:05:32 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.0103921Z [Nest] 3353  - 10/05/2026, 11:05:32 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.0107017Z [Nest] 3353  - 10/05/2026, 11:05:32 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.0125492Z [Nest] 3353  - 10/05/2026, 11:05:32 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.0127998Z [Nest] 3353  - 10/05/2026, 11:05:32 PM    WARN [TrialNoticeService] trial notice push outcome dropped (lease lost) notice=row_1
+2026-10-05T23:05:33.0129719Z [Nest] 3353  - 10/05/2026, 11:05:32 PM    WARN [TrialNoticeService] trial notice email outcome dropped (lease lost) notice=row_1
+2026-10-05T23:05:33.0131114Z [Nest] 3353  - 10/05/2026, 11:06:07 PM    WARN [TrialNoticeService] trial notice push still running after abort notice=row_1; lease held
+2026-10-05T23:05:33.3774620Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.3777586Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:33.3781123Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:33.3784303Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:33.3790138Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:33.3800519Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.3805056Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:33.3808677Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:33.3811973Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:33.3814700Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:33.4141927Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.4146729Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:33.4156605Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.4159882Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:33.4162563Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=state_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:33.4171088Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.4180454Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.4201543Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.4276443Z PASS test/b-trials-3-fix-round.spec.ts (208 MB heap size)
+2026-10-05T23:05:33.8068643Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [DripDispatcherCron] drip-dispatcher PERMANENT FAILURE drop=drop-1 client=client-1 coach=coach-1 package=package-1 content=content-1 asset_type=meal_plan attempts=5/5 reason=still broken
+2026-10-05T23:05:33.9636311Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [DripDispatcherCron] drip-dispatcher: AssignableAssetResolverRegistry not wired — cannot dispatch
+2026-10-05T23:05:33.9758934Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   ERROR [DripDispatcherCron] drip-dispatcher: drop=drop-1 has no ClientPurchase row — canceled
+2026-10-05T23:05:33.9787190Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:33.9789393Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=row_1 code=card_state_unknown
+2026-10-05T23:05:33.9791404Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:33.9793130Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9795003Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9796768Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9798662Z [Nest] 3353  - 10/09/2026, 5:00:09 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-0 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9800239Z [Nest] 3353  - 10/09/2026, 5:00:18 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9801894Z [Nest] 3353  - 10/09/2026, 5:00:27 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-2 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9803359Z [Nest] 3353  - 10/09/2026, 5:00:36 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-3 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9805167Z [Nest] 3353  - 10/09/2026, 5:00:45 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-4 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9808135Z [Nest] 3353  - 10/09/2026, 5:00:54 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-5 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9810203Z [Nest] 3353  - 10/09/2026, 5:01:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-6 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9811698Z [Nest] 3353  - 10/09/2026, 5:01:08 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-7 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:33.9812608Z PASS test/drip-dispatcher.cron.spec.ts (235 MB heap size)
+2026-10-05T23:05:33.9813997Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher transient failure drop=drop-1 attempt=1/5 next_retry_at=2026-01-01T13:01:00.000Z reason=transient downstream blip
+2026-10-05T23:05:33.9815791Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher transient failure drop=drop-1 attempt=1/5 next_retry_at=2026-01-01T13:01:00.000Z reason=blip
+2026-10-05T23:05:33.9817379Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher in-app notification failed drop=drop-1 client=client-1: expo blew up
+2026-10-05T23:05:33.9819173Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher push notification failed drop=drop-1 client=client-1: expo blew up
+2026-10-05T23:05:33.9820756Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher push-channel notification row failed drop=drop-1 client=client-1: expo blew up
+2026-10-05T23:05:33.9822547Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher reclaiming stranded drop=drop-1 (worker crash recovery); prior locked_at was stale
+2026-10-05T23:05:33.9824012Z [Nest] 3353  - 10/05/2026, 11:05:33 PM     LOG [DripDispatcherCron] drip-dispatcher reclaimed 1 stranded dispatching drop(s)
+2026-10-05T23:05:33.9825715Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   DEBUG [DripDispatcherCron] drip-dispatcher alert skipped for drop=drop-1 client=client-1: alert claim count=0 (notify off pre-stamp or already alerted by another worker)
+2026-10-05T23:05:33.9827709Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   DEBUG [DripDispatcherCron] drip-dispatcher alert skipped for drop=drop-1 client=client-1: alert claim count=0 (notify off pre-stamp or already alerted by another worker)
+2026-10-05T23:05:33.9829998Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   DEBUG [DripDispatcherCron] drip-dispatcher alert skipped for drop=drop-1 client=client-1: alert claim count=0 (notify off pre-stamp or already alerted by another worker)
+2026-10-05T23:05:33.9831702Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher in-app notification failed drop=drop-1 client=client-1: expo blew up
+2026-10-05T23:05:33.9833355Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher push notification failed drop=drop-1 client=client-1: expo blew up
+2026-10-05T23:05:33.9834909Z [Nest] 3353  - 10/05/2026, 11:05:33 PM    WARN [DripDispatcherCron] drip-dispatcher push-channel notification row failed drop=drop-1 client=client-1: expo blew up
+2026-10-05T23:05:33.9836734Z [Nest] 3353  - 10/05/2026, 11:05:33 PM   DEBUG [DripDispatcherCron] drip-dispatcher alert skipped for drop=drop-1 client=client-1: alert claim count=0 (notify off pre-stamp or already alerted by another worker)
+2026-10-05T23:05:34.9476533Z [Nest] 3353  - 10/05/2026, 11:05:34 PM   ERROR [TrialNoticeService] trial notice reconcile errored: TypeError
+2026-10-05T23:05:34.9566912Z [Nest] 3353  - 10/05/2026, 11:05:34 PM   ERROR [TrialNoticeService] trial notice reconcile errored: TypeError
+2026-10-05T23:05:34.9617143Z [Nest] 3353  - 10/05/2026, 11:05:34 PM   ERROR [TrialNoticeService] trial notice reconcile errored: TypeError
+2026-10-05T23:05:34.9767100Z [Nest] 3353  - 10/05/2026, 11:05:34 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:34.9857714Z [Nest] 3353  - 10/05/2026, 11:05:34 PM   ERROR [BillingService] Stripe event handler failed event=evt_t2 type=customer.subscription.trial_will_end: db down
+2026-10-05T23:05:35.0201364Z PASS test/b-trials-notice-and-webhook.spec.ts (311 MB heap size)
+2026-10-05T23:05:35.6042358Z [Nest] 3353  - 10/05/2026, 11:05:34 PM    WARN [CheckoutWebhookHandlerService] trial conflict: cancelled subscription sub_1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:35.6044412Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund
+2026-10-05T23:05:35.6046735Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=dispute
+2026-10-05T23:05:35.6074328Z [Nest] 3353  - 10/05/2026, 11:05:35 PM   DEBUG [PurchaseFanoutService] cancelPendingForPurchase: no pending/due drops for purchase=pur-1 (replay or never-entitled) reason=dispute
+2026-10-05T23:05:35.6076310Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund
+2026-10-05T23:05:35.6078899Z [Nest] 3353  - 10/05/2026, 11:05:35 PM    WARN [PurchaseFanoutService] cancelPendingForPurchase: no scheduledDrop client available (purchase=pur-1, reason=refund) — skipping
+2026-10-05T23:05:35.6080762Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund
+2026-10-05T23:05:35.6082409Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=subscription_canceled
+2026-10-05T23:05:35.6084035Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=subscription_canceled
+2026-10-05T23:05:35.6085612Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=payment_failed
+2026-10-05T23:05:35.6087599Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=dispute
+2026-10-05T23:05:35.6089443Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund
+2026-10-05T23:05:35.6090976Z [Nest] 3353  - 10/05/2026, 11:05:35 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund
+2026-10-05T23:05:35.6091916Z PASS test/cancel-pending-on-refund.spec.ts (354 MB heap size)
+2026-10-05T23:05:36.1562842Z PASS test/push-delivery.service.spec.ts (388 MB heap size)
+2026-10-05T23:05:36.5592389Z PASS test/push-delivery-send-time.spec.ts (412 MB heap size)
+2026-10-05T23:05:37.2506838Z PASS test/checkout-settlement-round5.spec.ts (213 MB heap size)
+2026-10-05T23:05:37.7489902Z [Nest] 3353  - 10/04/2026, 5:00:00 AM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7491723Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7493398Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7495257Z [Nest] 3353  - 10/05/2026, 11:05:37 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed
+2026-10-05T23:05:37.7497119Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7499012Z [Nest] 3353  - 10/05/2026, 11:05:37 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed
+2026-10-05T23:05:37.7500572Z [Nest] 3353  - 10/05/2026, 11:05:37 PM     LOG [PurchaseFanoutService] restoreAfterPaymentRecovered: 2 drop(s) pending again for purchase=cp-r5
+2026-10-05T23:05:37.7502411Z [Nest] 3353  - 10/05/2026, 11:05:37 PM     LOG [CheckoutWebhookHandlerService] payment_intent.succeeded: purchase=cp-r5 recovered after a failed payment of pi_r5
+2026-10-05T23:05:37.7503881Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7505364Z [Nest] 3353  - 10/05/2026, 11:05:37 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed
+2026-10-05T23:05:37.7507114Z [Nest] 3353  - 10/05/2026, 11:05:37 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-r5 not activated again (activated before, status=payment_failed)
+2026-10-05T23:05:37.7508804Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7510131Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7511633Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] payment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers
+2026-10-05T23:05:37.7513404Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] payment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers
+2026-10-05T23:05:37.7515011Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] payment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers
+2026-10-05T23:05:37.7516620Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] payment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers
+2026-10-05T23:05:37.7518354Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] payment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers
+2026-10-05T23:05:37.7520007Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] payment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers
+2026-10-05T23:05:37.7521608Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] payment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers
+2026-10-05T23:05:37.7523046Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7524337Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7525860Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] PaymentIntent status lookup failed for pi_r5 (stripe_401_api_key_invalid): Stripe redelivers
+2026-10-05T23:05:37.7527307Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7528941Z [Nest] 3353  - 10/05/2026, 11:05:37 PM    WARN [CheckoutWebhookHandlerService] PaymentIntent status lookup failed for pi_r5 (stripe_403_api_key_invalid): Stripe redelivers
+2026-10-05T23:05:37.7530519Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7531814Z [Nest] 3353  - 10/05/2026, 11:05:37 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-r5 has no contents — purchase=cp-r5
+2026-10-05T23:05:37.7533284Z [Nest] 3353  - 10/05/2026, 11:05:37 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-r5 not activated again (status=refunded)
+2026-10-05T23:05:37.9173142Z PASS test/b-recur-subscription-checkout.spec.ts (250 MB heap size)
+2026-10-05T23:05:38.4404308Z [Nest] 3353  - 10/05/2026, 11:05:37 PM     LOG [SubscriptionCheckoutService] billing.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false
+2026-10-05T23:05:38.4537383Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.4638727Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.4681544Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.4719962Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.4902119Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:38.4924869Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.4963834Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5023986Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5056931Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5084204Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5107755Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5129619Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5150147Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5177320Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5200986Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5224246Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5247644Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5271132Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_too_many (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5346358Z [Nest] 3353  - 10/05/2026, 11:06:23 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=lease_exhausted (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5566799Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:38.5613931Z PASS test/b-trials-6-payable-domain.spec.ts (290 MB heap size)
+2026-10-05T23:05:38.8242629Z [Nest] 3353  - 10/05/2026, 11:05:38 PM   ERROR [SubscriptionCheckoutService] subscription send/bind failed purchase=00000000-0000-4000-8000-000000000001 error=Error
+2026-10-05T23:05:38.8247155Z [Nest] 3353  - 10/05/2026, 11:05:38 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:38.8249756Z [Nest] 3353  - 10/05/2026, 11:05:38 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:38.8251975Z [Nest] 3353  - 10/05/2026, 11:05:38 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:38.8254794Z [Nest] 3353  - 10/05/2026, 11:05:38 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:38.8257576Z [Nest] 3353  - 10/05/2026, 11:06:13 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:38.8260402Z [Nest] 3353  - 10/05/2026, 11:05:38 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:38.8263558Z [Nest] 3353  - 10/05/2026, 11:05:38 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:38.8266446Z [Nest] 3353  - 10/05/2026, 11:05:38 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:38.8269888Z [Nest] 3353  - 10/05/2026, 11:05:38 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:38.8273331Z [Nest] 3353  - 10/05/2026, 11:05:38 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:38.8276390Z [Nest] 3353  - 10/05/2026, 11:05:38 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:38.8279558Z [Nest] 3353  - 10/05/2026, 11:05:38 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:43.8463826Z [Nest] 3353  - 10/05/2026, 11:05:43 PM   ERROR [SubscriptionCheckoutService] subscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it
+2026-10-05T23:05:43.8684862Z PASS test/b-recur-3-fix-round-2-checkout.spec.ts (5.299 s, 319 MB heap size)
+2026-10-05T23:05:44.4552605Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=true
+2026-10-05T23:05:44.4555092Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=active
+2026-10-05T23:05:44.4557314Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=active
+2026-10-05T23:05:44.4559876Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete
+2026-10-05T23:05:44.4562176Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete
+2026-10-05T23:05:44.4564441Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete
+2026-10-05T23:05:44.4566365Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete
+2026-10-05T23:05:44.4568140Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:05:44.4570019Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:05:44.4572067Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:44.4573815Z [Nest] 3353  - 10/05/2026, 11:05:43 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:05:44.4575471Z [Nest] 3353  - 10/05/2026, 11:05:43 PM    WARN [SubscriptionCheckoutService] checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=Error
+2026-10-05T23:05:44.4603773Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.4666967Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.4814502Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.4826532Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:44.4851055Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.4860865Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:44.4924219Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.4958399Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.4995957Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5061165Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5091520Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5116872Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5136957Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5157989Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5177380Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5196724Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5213838Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5231922Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5289388Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5303565Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5318860Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5335775Z [Nest] 3353  - 10/05/2026, 11:05:44 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=4 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:44.5559503Z PASS test/b-trials-5-fix-round.spec.ts (252 MB heap size)
+2026-10-05T23:05:45.2149930Z [Nest] 3353  - 10/05/2026, 11:05:44 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:45.2151955Z [Nest] 3353  - 10/05/2026, 11:05:44 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:45.2153986Z [Nest] 3353  - 10/05/2026, 11:05:44 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:45.2156009Z [Nest] 3353  - 10/05/2026, 11:05:44 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:45.2158010Z [Nest] 3353  - 10/05/2026, 11:05:44 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:45.2160280Z [Nest] 3353  - 10/05/2026, 11:05:44 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:45.2162468Z [Nest] 3353  - 10/05/2026, 11:05:44 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:45.2164365Z [Nest] 3353  - 10/05/2026, 11:05:45 PM    WARN [CheckoutWebhookHandlerService] prefetchForOuterTx: subscription read failed sub=sub_n error=Error
+2026-10-05T23:05:45.2165943Z [Nest] 3353  - 10/05/2026, 11:05:45 PM    WARN [CheckoutWebhookHandlerService] prefetchForOuterTx: invoice read failed invoice=in_2 error=Error
+2026-10-05T23:05:45.2167065Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [FirstPaymentEmitter] Object(3) {
+2026-10-05T23:05:45.2167699Z   event: 'first_payment_notification_emitted',
+2026-10-05T23:05:45.2168084Z   coachId: 'coach',
+2026-10-05T23:05:45.2168568Z   category: 'COACH_DIRECT'
+2026-10-05T23:05:45.2168836Z }
+2026-10-05T23:05:45.2169457Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [CoachFirstPaymentService] Object(2) {
+2026-10-05T23:05:45.2170042Z   event: 'first_payment_emitted',
+2026-10-05T23:05:45.2170367Z   coachId: 'coach'
+2026-10-05T23:05:45.2170598Z }
+2026-10-05T23:05:45.2171182Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [FirstPaymentEmitter] Object(3) {
+2026-10-05T23:05:45.2171770Z   event: 'first_payment_notification_emitted',
+2026-10-05T23:05:45.2172751Z   coachId: 'coach',
+2026-10-05T23:05:45.2173281Z   category: 'COACH_DIRECT'
+2026-10-05T23:05:45.2174092Z PASS test/b-recur3-117-webhook-order.spec.ts (288 MB heap size)
+2026-10-05T23:05:45.2174692Z }
+2026-10-05T23:05:45.2175785Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [CoachFirstPaymentService] Object(2) {
+2026-10-05T23:05:45.2176801Z   event: 'first_payment_emitted',
+2026-10-05T23:05:45.2177348Z   coachId: 'coach'
+2026-10-05T23:05:45.2177736Z }
+2026-10-05T23:05:45.8815547Z [Nest] 3353  - 10/05/2026, 11:05:45 PM   ERROR [SubscriptionCheckoutService] subscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it
+2026-10-05T23:05:45.8821325Z [Nest] 3353  - 10/05/2026, 11:05:45 PM   ERROR [SubscriptionCheckoutService] subscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it
+2026-10-05T23:05:45.9491233Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9493886Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9496619Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9499756Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9502554Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9505667Z [Nest] 3353  - 10/05/2026, 11:05:45 PM    WARN [SubscriptionCheckoutService] attempt subscription lookup failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_error:503:other
+2026-10-05T23:05:45.9509547Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9512458Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9515143Z [Nest] 3353  - 10/05/2026, 11:05:45 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_error:503:other
+2026-10-05T23:05:45.9518055Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:05:45.9521046Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9522878Z [Nest] 3353  - 10/05/2026, 11:05:45 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_error:503:other
+2026-10-05T23:05:45.9525543Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:45.9529286Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:05:45.9532266Z [Nest] 3353  - 10/05/2026, 11:05:45 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_error:503:other
+2026-10-05T23:05:45.9534987Z [Nest] 3353  - 10/05/2026, 11:05:45 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_error:503:other
+2026-10-05T23:05:45.9537683Z [Nest] 3353  - 10/05/2026, 11:05:45 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_error:503:other
+2026-10-05T23:05:45.9541030Z [Nest] 3353  - 10/05/2026, 11:05:45 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:05:45.9542914Z PASS test/b-recur-116-fix-round-3.spec.ts (270 MB heap size)
+2026-10-05T23:05:46.6979932Z PASS test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts (328 MB heap size)
+2026-10-05T23:05:47.2704729Z [Nest] 3353  - 10/05/2026, 11:05:47 PM   ERROR [RefundDisputeHandlerService] SFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=ch_1 refund=re_1 status=failed: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically
+2026-10-05T23:05:47.3364767Z PASS test/s-fee-r19-refund-cas-send-window.spec.ts (381 MB heap size)
+2026-10-05T23:05:47.6594481Z [Nest] 3353  - 10/05/2026, 11:17:27 PM     LOG [EmailService] email sent template=coach-payout-adjustment row=em-74 provider_id=msg_1
+2026-10-05T23:05:47.8566370Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8569511Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0000 code=card_state_unknown
+2026-10-05T23:05:47.8572046Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8575064Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0001 code=card_state_unknown
+2026-10-05T23:05:47.8577525Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8580364Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0002 code=card_state_unknown
+2026-10-05T23:05:47.8582887Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8585496Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0003 code=card_state_unknown
+2026-10-05T23:05:47.8587902Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8590742Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0004 code=card_state_unknown
+2026-10-05T23:05:47.8593521Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8596109Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0005 code=card_state_unknown
+2026-10-05T23:05:47.8598761Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8601366Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0006 code=card_state_unknown
+2026-10-05T23:05:47.8603938Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8606580Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0007 code=card_state_unknown
+2026-10-05T23:05:47.8609284Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8611918Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0008 code=card_state_unknown
+2026-10-05T23:05:47.8614429Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8617058Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0009 code=card_state_unknown
+2026-10-05T23:05:47.8619751Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8622333Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0010 code=card_state_unknown
+2026-10-05T23:05:47.8624860Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8627687Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0011 code=card_state_unknown
+2026-10-05T23:05:47.8630372Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8632944Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0012 code=card_state_unknown
+2026-10-05T23:05:47.8635419Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8638008Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0013 code=card_state_unknown
+2026-10-05T23:05:47.8640675Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8643237Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0014 code=card_state_unknown
+2026-10-05T23:05:47.8645698Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8648865Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0015 code=card_state_unknown
+2026-10-05T23:05:47.8651282Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8653903Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0016 code=card_state_unknown
+2026-10-05T23:05:47.8656403Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8659220Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0017 code=card_state_unknown
+2026-10-05T23:05:47.8661653Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8664218Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0018 code=card_state_unknown
+2026-10-05T23:05:47.8666762Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8669619Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0019 code=card_state_unknown
+2026-10-05T23:05:47.8672053Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8674678Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0020 code=card_state_unknown
+2026-10-05T23:05:47.8677186Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8680011Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0021 code=card_state_unknown
+2026-10-05T23:05:47.8682723Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8685448Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0022 code=card_state_unknown
+2026-10-05T23:05:47.8687948Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8690817Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0023 code=card_state_unknown
+2026-10-05T23:05:47.8693244Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8695878Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0024 code=card_state_unknown
+2026-10-05T23:05:47.8698945Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8700870Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0025 code=card_state_unknown
+2026-10-05T23:05:47.8702769Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8704459Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0026 code=card_state_unknown
+2026-10-05T23:05:47.8706054Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8707721Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0027 code=card_state_unknown
+2026-10-05T23:05:47.8709606Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8711150Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0028 code=card_state_unknown
+2026-10-05T23:05:47.8712596Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8714121Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0029 code=card_state_unknown
+2026-10-05T23:05:47.8715567Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8717083Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0030 code=card_state_unknown
+2026-10-05T23:05:47.8718659Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8720848Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0031 code=card_state_unknown
+2026-10-05T23:05:47.8723573Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8726141Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0032 code=card_state_unknown
+2026-10-05T23:05:47.8728746Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8731226Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0033 code=card_state_unknown
+2026-10-05T23:05:47.8733602Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8736083Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0034 code=card_state_unknown
+2026-10-05T23:05:47.8738080Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8739766Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0035 code=card_state_unknown
+2026-10-05T23:05:47.8741219Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8742517Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0036 code=card_state_unknown
+2026-10-05T23:05:47.8743761Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8745046Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0037 code=card_state_unknown
+2026-10-05T23:05:47.8746267Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8747545Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0038 code=card_state_unknown
+2026-10-05T23:05:47.8749076Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8750368Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0039 code=card_state_unknown
+2026-10-05T23:05:47.8751596Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8752868Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0040 code=card_state_unknown
+2026-10-05T23:05:47.8754092Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8755375Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0041 code=card_state_unknown
+2026-10-05T23:05:47.8756595Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8758000Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0042 code=card_state_unknown
+2026-10-05T23:05:47.8759387Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8760673Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0043 code=card_state_unknown
+2026-10-05T23:05:47.8761914Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8763188Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0044 code=card_state_unknown
+2026-10-05T23:05:47.8764412Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8765687Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0045 code=card_state_unknown
+2026-10-05T23:05:47.8766894Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8768434Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0046 code=card_state_unknown
+2026-10-05T23:05:47.8769680Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8770957Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0047 code=card_state_unknown
+2026-10-05T23:05:47.8772170Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8773437Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0048 code=card_state_unknown
+2026-10-05T23:05:47.8774653Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8775922Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0049 code=card_state_unknown
+2026-10-05T23:05:47.8777134Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8778519Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0050 code=card_state_unknown
+2026-10-05T23:05:47.8779741Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8781023Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0051 code=card_state_unknown
+2026-10-05T23:05:47.8782231Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8783495Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0052 code=card_state_unknown
+2026-10-05T23:05:47.8784830Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8786158Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0053 code=card_state_unknown
+2026-10-05T23:05:47.8787400Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8788905Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0054 code=card_state_unknown
+2026-10-05T23:05:47.8790135Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8791416Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0055 code=card_state_unknown
+2026-10-05T23:05:47.8792633Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8794048Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0056 code=card_state_unknown
+2026-10-05T23:05:47.8795264Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8796530Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0057 code=card_state_unknown
+2026-10-05T23:05:47.8797748Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8799154Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0058 code=card_state_unknown
+2026-10-05T23:05:47.8800381Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8801648Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0059 code=card_state_unknown
+2026-10-05T23:05:47.8802856Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8804125Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0060 code=card_state_unknown
+2026-10-05T23:05:47.8805336Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8806608Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0061 code=card_state_unknown
+2026-10-05T23:05:47.8807820Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8809198Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0062 code=card_state_unknown
+2026-10-05T23:05:47.8810535Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8811818Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0063 code=card_state_unknown
+2026-10-05T23:05:47.8813037Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8814307Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0064 code=card_state_unknown
+2026-10-05T23:05:47.8815520Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8816796Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0065 code=card_state_unknown
+2026-10-05T23:05:47.8828045Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8829837Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0066 code=card_state_unknown
+2026-10-05T23:05:47.8831324Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8832642Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0067 code=card_state_unknown
+2026-10-05T23:05:47.8834129Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8835445Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0068 code=card_state_unknown
+2026-10-05T23:05:47.8836716Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8838009Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0069 code=card_state_unknown
+2026-10-05T23:05:47.8840387Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8842768Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0070 code=card_state_unknown
+2026-10-05T23:05:47.8845045Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8846517Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0071 code=card_state_unknown
+2026-10-05T23:05:47.8847753Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8849310Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0072 code=card_state_unknown
+2026-10-05T23:05:47.8850532Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8851968Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0073 code=card_state_unknown
+2026-10-05T23:05:47.8853238Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8854536Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0074 code=card_state_unknown
+2026-10-05T23:05:47.8855773Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8857054Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0075 code=card_state_unknown
+2026-10-05T23:05:47.8858522Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8859849Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0076 code=card_state_unknown
+2026-10-05T23:05:47.8861062Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8862488Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0077 code=card_state_unknown
+2026-10-05T23:05:47.8863704Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8864969Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0078 code=card_state_unknown
+2026-10-05T23:05:47.8866178Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8867442Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0079 code=card_state_unknown
+2026-10-05T23:05:47.8869000Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8870322Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0080 code=card_state_unknown
+2026-10-05T23:05:47.8871551Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8872832Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0081 code=card_state_unknown
+2026-10-05T23:05:47.8874043Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8875312Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0082 code=card_state_unknown
+2026-10-05T23:05:47.8876531Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8877930Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0083 code=card_state_unknown
+2026-10-05T23:05:47.8879410Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8880683Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0084 code=card_state_unknown
+2026-10-05T23:05:47.8881902Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8883173Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0085 code=card_state_unknown
+2026-10-05T23:05:47.8884381Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8885653Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0086 code=card_state_unknown
+2026-10-05T23:05:47.8886857Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8888509Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0087 code=card_state_unknown
+2026-10-05T23:05:47.8889758Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8891027Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0088 code=card_state_unknown
+2026-10-05T23:05:47.8892246Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8893515Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0089 code=card_state_unknown
+2026-10-05T23:05:47.8894727Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8895996Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0090 code=card_state_unknown
+2026-10-05T23:05:47.8897205Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8898803Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0091 code=card_state_unknown
+2026-10-05T23:05:47.8900071Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8901355Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0092 code=card_state_unknown
+2026-10-05T23:05:47.8902622Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8903908Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0093 code=card_state_unknown
+2026-10-05T23:05:47.8905267Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8906561Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0094 code=card_state_unknown
+2026-10-05T23:05:47.8907774Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8909372Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0095 code=card_state_unknown
+2026-10-05T23:05:47.8910602Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8911907Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0096 code=card_state_unknown
+2026-10-05T23:05:47.8913127Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8914393Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0097 code=card_state_unknown
+2026-10-05T23:05:47.8915746Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8917013Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0098 code=card_state_unknown
+2026-10-05T23:05:47.8918355Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8919644Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0099 code=card_state_unknown
+2026-10-05T23:05:47.8920853Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8922121Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0100 code=card_state_unknown
+2026-10-05T23:05:47.8923331Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8924636Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0101 code=card_state_unknown
+2026-10-05T23:05:47.8925860Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8927127Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0102 code=card_state_unknown
+2026-10-05T23:05:47.8928458Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8929738Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0103 code=card_state_unknown
+2026-10-05T23:05:47.8930948Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8932372Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0104 code=card_state_unknown
+2026-10-05T23:05:47.8933602Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8934869Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0105 code=card_state_unknown
+2026-10-05T23:05:47.8936092Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8937357Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0106 code=card_state_unknown
+2026-10-05T23:05:47.8938699Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8939973Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0107 code=card_state_unknown
+2026-10-05T23:05:47.8941336Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8942608Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0108 code=card_state_unknown
+2026-10-05T23:05:47.8943821Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8945420Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0109 code=card_state_unknown
+2026-10-05T23:05:47.8946673Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8947941Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0110 code=card_state_unknown
+2026-10-05T23:05:47.8949485Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8950757Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0111 code=card_state_unknown
+2026-10-05T23:05:47.8951976Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8953248Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0112 code=card_state_unknown
+2026-10-05T23:05:47.8954458Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8955731Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0113 code=card_state_unknown
+2026-10-05T23:05:47.8956936Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8958475Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0114 code=card_state_unknown
+2026-10-05T23:05:47.8959738Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8960999Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0115 code=card_state_unknown
+2026-10-05T23:05:47.8962221Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8963530Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0116 code=card_state_unknown
+2026-10-05T23:05:47.8964779Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8966059Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0117 code=card_state_unknown
+2026-10-05T23:05:47.8967281Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8968821Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0118 code=card_state_unknown
+2026-10-05T23:05:47.8970044Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T23:05:47.8971324Z [Nest] 3353  - 10/05/2026, 11:05:47 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=notice-p-0119 code=card_state_unknown
+2026-10-05T23:05:48.0298840Z PASS test/b-trials-t2-fix-round-6.spec.ts (421 MB heap size)
+2026-10-05T23:05:48.4780784Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:48.4876054Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:48.5138648Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5173612Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5209504Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5251911Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5293111Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5347262Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5390092Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5420114Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5447576Z [Nest] 3353  - 10/05/2026, 11:05:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=4 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:48.5762909Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:48.5766240Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:48.5770195Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:48.5773470Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:48.5776561Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:48.5779815Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:48.5782788Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:48.5785821Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:48.5873697Z PASS test/b-trials-4-fix-round.spec.ts (457 MB heap size)
+2026-10-05T23:05:48.8711479Z PASS test/b-recur-fix-round-1-checkout.spec.ts (475 MB heap size)
+2026-10-05T23:05:49.6856723Z [Nest] 3353  - 10/05/2026, 11:05:48 PM     LOG [SubscriptionCheckoutService] billing.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled
+2026-10-05T23:05:49.6860094Z [Nest] 3353  - 10/05/2026, 11:05:48 PM     LOG [SubscriptionCheckoutService] billing.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled
+2026-10-05T23:05:49.6862327Z [Nest] 3353  - 10/05/2026, 11:05:48 PM    WARN [SubscriptionCheckoutService] stale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error
+2026-10-05T23:05:49.8834632Z PASS test/b-trials-t2-idempotent-create-http.spec.ts (540 MB heap size)
+2026-10-05T23:05:50.2982247Z [Nest] 3353  - 10/09/2026, 5:00:30 PM   ERROR [EmailService] email send failed template=trial-ending row=log-1: error=Error
+2026-10-05T23:05:50.3582392Z PASS test/b-trials-t2-fix-round-8.spec.ts (572 MB heap size)
+2026-10-05T23:05:51.0465454Z [Nest] 3353  - 10/09/2026, 5:00:30 PM     LOG [EmailService] email sent template=trial-ending row=log-2 provider_id=msg-2
+2026-10-05T23:05:51.0467053Z [Nest] 3353  - 10/09/2026, 5:00:35 PM    WARN [TrialNoticeService] trial notice email still running after abort notice=notice-p; lease held
+2026-10-05T23:05:51.0468961Z [Nest] 3353  - 10/09/2026, 5:03:55 PM     LOG [EmailService] email sent template=trial-ending row=log-1 provider_id=msg-1
+2026-10-05T23:05:51.0470334Z [Nest] 3353  - 10/09/2026, 5:03:55 PM     LOG [EmailService] email sent template=trial-ending row=log-2 provider_id=msg-2
+2026-10-05T23:05:51.0471804Z [Nest] 3353  - 10/09/2026, 5:00:35 PM    WARN [TrialNoticeService] trial notice push still running after abort notice=notice-p; lease held
+2026-10-05T23:05:51.0473251Z [Nest] 3353  - 10/05/2026, 11:05:50 PM     LOG [EmailService] email sent template=trial-ending row=log-1 provider_id=msg-1
+2026-10-05T23:05:51.0474599Z [Nest] 3353  - 10/05/2026, 11:05:50 PM     LOG [EmailService] email sent template=trial-ending row=log-2 provider_id=msg-2
+2026-10-05T23:05:51.0476304Z [Nest] 3353  - 10/05/2026, 11:05:50 PM     LOG [EmailService] email sent template=trial-ending row=log-3 provider_id=msg-3
+2026-10-05T23:05:51.0477852Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=p1 not activated again (status=paid)
+2026-10-05T23:05:51.0479708Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=p1 not activated again (status=paid)
+2026-10-05T23:05:51.0481531Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-05T23:05:51.037Z","kind":"soft"}
+2026-10-05T23:05:51.0483511Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-08T23:05:51.037Z","kind":"urgent"}
+2026-10-05T23:05:51.0485450Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-12T23:05:51.037Z","kind":"final"}
+2026-10-05T23:05:51.0487449Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-19T23:05:51.037Z","kind":"cancelled"}
+2026-10-05T23:05:51.0489487Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [DunningService] {"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"in_1","amount_cents":9900,"attempt_number":1}
+2026-10-05T23:05:51.0491012Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [DunningService] {"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d1"}
+2026-10-05T23:05:51.0491871Z PASS test/checkout-webhook-fee-split.spec.ts (341 MB heap size)
+2026-10-05T23:05:51.3634152Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [SubscriptionCheckoutService] subscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it
+2026-10-05T23:05:51.3829182Z PASS test/b-recur5a-117-moved-fix-round-4.spec.ts (362 MB heap size)
+2026-10-05T23:05:51.7658561Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [SubscriptionCheckoutService] stale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error
+2026-10-05T23:05:51.7660642Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=Error
+2026-10-05T23:05:51.7662394Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=Error
+2026-10-05T23:05:51.7664063Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [SubscriptionCheckoutService] billing.trial_attempt_released purchase=00000000-0000-4000-8000-000000000001
+2026-10-05T23:05:51.7666743Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [SubscriptionCheckoutService] billing.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true
+2026-10-05T23:05:51.7670141Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:51.7673720Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [SubscriptionCheckoutService] cancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other
+2026-10-05T23:05:51.7676834Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [SubscriptionCheckoutService] cancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:setup_intent_unexpected_state
+2026-10-05T23:05:51.7680155Z [Nest] 3353  - 10/05/2026, 11:05:51 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:51.7808681Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:51.7888575Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T23:05:51.7963894Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=draft_not_fenced (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8032744Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=draft_not_fenced (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8265566Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8312195Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8346378Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8382674Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8415300Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8451076Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8496825Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8526571Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8569700Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=draft_not_fenced (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8611716Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=draft_not_fenced (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8665630Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=draft_not_fenced (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8705700Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=draft_not_fenced (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8746003Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=draft_not_fenced (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8785057Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:51.8787514Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:51.8790215Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:51.8793210Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:51.8795989Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:51.8798525Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:51.8818806Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8878445Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_too_many (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.8936766Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_changed (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.9016453Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_changed (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.9109424Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_changed (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.9176471Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.9234594Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.9295807Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.9373396Z [Nest] 3353  - 10/05/2026, 11:05:51 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T23:05:51.9844408Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T23:05:51.9847587Z [Nest] 3353  - 10/05/2026, 11:05:51 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:52.0220427Z PASS test/b-trials-7-draft-fence.spec.ts (406 MB heap size)
+2026-10-05T23:05:52.6319918Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:52.6322319Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:52.6324207Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T23:05:52.6325990Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [CheckoutWebhookHandlerService] billing.trial_card_attached purchase=cp_6b via=webhook
+2026-10-05T23:05:52.6327681Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [CheckoutWebhookHandlerService] billing.trial_card_attached purchase=cp_6b via=webhook
+2026-10-05T23:05:52.6330677Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [CheckoutWebhookHandlerService] setup_intent.succeeded customer mismatch purchase=cp_6b
+2026-10-05T23:05:52.6332464Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [CheckoutWebhookHandlerService] setup_intent.succeeded lookup failed si=seti_AttemptOwn error=Error
+2026-10-05T23:05:52.6334579Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":0,"scheduled_for":"2026-10-05T23:05:52.622Z","kind":"soft"}
+2026-10-05T23:05:52.6336932Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":1,"scheduled_for":"2026-10-08T23:05:52.622Z","kind":"urgent"}
+2026-10-05T23:05:52.6339450Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":2,"scheduled_for":"2026-10-12T23:05:52.622Z","kind":"final"}
+2026-10-05T23:05:52.6341468Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":3,"scheduled_for":"2026-10-19T23:05:52.622Z","kind":"cancelled"}
+2026-10-05T23:05:52.6343547Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [DunningService] {"event":"dunning.opened","purchase_id":"cp_6b","dunning_state_id":"ds_1","invoice_id":"in_6b","amount_cents":14800,"attempt_number":1}
+2026-10-05T23:05:52.6344567Z PASS test/b-recur6b-118-authority.spec.ts (448 MB heap size)
+2026-10-05T23:05:52.9124757Z [Nest] 3353  - 10/05/2026, 11:05:52 PM   ERROR [SubscriptionCheckoutService] billing.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=settled
+2026-10-05T23:05:52.9149833Z [Nest] 3353  - 10/05/2026, 11:05:52 PM   ERROR [SubscriptionCheckoutService] billing.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed
+2026-10-05T23:05:52.9208520Z PASS test/b-recur5a-117-fix-round-5.spec.ts (472 MB heap size)
+2026-10-05T23:05:53.5426001Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5427896Z PASS test/b-recur5b-117-authority.spec.ts (510 MB heap size)
+2026-10-05T23:05:53.5430534Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5433605Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5436611Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5439951Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5443020Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5446522Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5449989Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5453100Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5456149Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5459515Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [SubscriptionCheckoutService] billing.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled
+2026-10-05T23:05:53.5462993Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] resume read-back failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5466725Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [SubscriptionCheckoutService] billing.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false
+2026-10-05T23:05:53.5470165Z [Nest] 3353  - 10/05/2026, 11:05:52 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-05T23:05:53.5473363Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other
+2026-10-05T23:05:53.5476657Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5480476Z [Nest] 3353  - 10/05/2026, 11:05:52 PM    WARN [SubscriptionCheckoutService] cancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:05:53.5483360Z [Nest] 3353  - 10/05/2026, 11:05:53 PM    WARN [CheckoutWebhookHandlerService] invoice.paid resync failed for sub=sub_a error=Error
+2026-10-05T23:05:53.5486260Z [Nest] 3353  - 10/05/2026, 11:05:53 PM    WARN [CheckoutWebhookHandlerService] prefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error
+2026-10-05T23:05:53.5488806Z [Nest] 3353  - 10/05/2026, 11:05:53 PM     LOG [FirstPaymentEmitter] Object(3) {
+2026-10-05T23:05:53.5490056Z   event: 'first_payment_notification_emitted',
+2026-10-05T23:05:53.5490817Z   coachId: 'coach',
+2026-10-05T23:05:53.5491474Z   category: 'COACH_DIRECT'
+2026-10-05T23:05:53.5491982Z }
+2026-10-05T23:05:53.5493188Z [Nest] 3353  - 10/05/2026, 11:05:53 PM     LOG [CoachFirstPaymentService] Object(2) {
+2026-10-05T23:05:53.5494237Z   event: 'first_payment_emitted',
+2026-10-05T23:05:53.5494854Z   coachId: 'coach'
+2026-10-05T23:05:53.5495263Z }
+2026-10-05T23:05:53.5497127Z [Nest] 3353  - 10/05/2026, 11:05:53 PM    WARN [CheckoutWebhookHandlerService] prefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error
+2026-10-05T23:05:54.1085969Z PASS test/b-trials-package-rules.spec.ts (564 MB heap size)
+2026-10-05T23:05:54.4233598Z [Nest] 3353  - 10/05/2026, 11:05:54 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:54.4235384Z [Nest] 3353  - 10/05/2026, 11:05:54 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:54.4638830Z PASS test/push-delivery-round5.spec.ts (579 MB heap size)
+2026-10-05T23:05:55.1739154Z PASS test/purchase-fanout-tx-plumbing.spec.ts (379 MB heap size)
+2026-10-05T23:05:55.7961884Z [Nest] 3353  - 10/05/2026, 11:05:55 PM   DEBUG [PurchaseFanoutService] fanout: package=undefined has no contents — purchase=cp-3
+2026-10-05T23:05:55.7984814Z PASS test/b-recur-subscription-webhooks.spec.ts (425 MB heap size)
+2026-10-05T23:05:56.3672716Z [Nest] 3353  - 10/05/2026, 11:05:56 PM   ERROR [TrialUsageService] trial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:56.3719720Z [Nest] 3353  - 10/05/2026, 11:05:56 PM   ERROR [TrialUsageService] trial conflict: purchase 00000000-0000-4000-8000-000000000001 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:56.3787916Z [Nest] 3353  - 10/05/2026, 11:05:56 PM   ERROR [TrialUsageService] trial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:56.3853180Z [Nest] 3353  - 10/05/2026, 11:05:56 PM   ERROR [TrialUsageService] trial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:56.3914615Z [Nest] 3353  - 10/05/2026, 11:05:56 PM   ERROR [TrialUsageService] trial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:56.3925116Z [Nest] 3353  - 10/05/2026, 11:05:56 PM   ERROR [TrialUsageService] trial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:56.3991566Z PASS test/b-trials-8-shared-rule.spec.ts (464 MB heap size)
+2026-10-05T23:05:57.5489323Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5491089Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5492932Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [SubscriptionCheckoutService] billing.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled
+2026-10-05T23:05:57.5494593Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5496019Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5497466Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5500084Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5502848Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5505138Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5507350Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5509990Z [Nest] 3353  - 10/05/2026, 11:05:56 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5512210Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:57.5778842Z [Nest] 3353  - 10/05/2026, 11:05:57 PM   ERROR [TrialUsageService] trial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:57.5800157Z [Nest] 3353  - 10/05/2026, 11:05:57 PM   ERROR [TrialUsageService] trial conflict: purchase pur-old started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:57.5817543Z [Nest] 3353  - 10/05/2026, 11:05:57 PM   ERROR [TrialUsageService] trial conflict: purchase pur-b started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:05:57.6002299Z PASS test/b-trials-one-trial-rule.spec.ts (549 MB heap size)
+2026-10-05T23:05:58.2856009Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2857998Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2860092Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2861901Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2863899Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2866179Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2868560Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2870795Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2872998Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2875240Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2877520Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2894291Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2896293Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2897816Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2899341Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2900576Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.2901777Z [Nest] 3353  - 10/05/2026, 11:05:57 PM     LOG [TrialCheckoutCapability] free trials are sold by subscription-checkout
+2026-10-05T23:05:58.4626680Z PASS test/b-recur-fix-round-1-http.spec.ts (609 MB heap size)
+2026-10-05T23:05:59.1029463Z PASS test/b-recur7b-119-authority.spec.ts (659 MB heap size)
+2026-10-05T23:05:59.8260686Z PASS src/notifications/__tests__/first-payment-webhook.integration.spec.ts (394 MB heap size)
+2026-10-05T23:06:00.1107951Z PASS test/b-recur-fix-round-1-trial-card-checkout.spec.ts (419 MB heap size)
+2026-10-05T23:06:00.6747633Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [SubscriptionCheckoutService] billing.trial_card_attached purchase=00000000-0000-4000-8000-000000000001 via=retire
+2026-10-05T23:06:00.6750081Z PASS test/checkout-hosted-activation-once.spec.ts (461 MB heap size)
+2026-10-05T23:06:00.6751492Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [SubscriptionCheckoutService] billing.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled
+2026-10-05T23:06:00.6753218Z [Nest] 3353  - 10/05/2026, 11:06:00 PM    WARN [SubscriptionCheckoutService] stale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error
+2026-10-05T23:06:00.6754772Z [Nest] 3353  - 10/05/2026, 11:06:00 PM    WARN [SubscriptionCheckoutService] replay secret check skipped purchase=00000000-0000-4000-8000-000000000001 error=Error
+2026-10-05T23:06:00.6756192Z [Nest] 3353  - 10/05/2026, 11:06:00 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-h has no contents — purchase=cp-h
+2026-10-05T23:06:00.6757780Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-h not activated again (status=paid)
+2026-10-05T23:06:00.6759554Z [Nest] 3353  - 10/05/2026, 11:06:00 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-h has no contents — purchase=cp-A
+2026-10-05T23:06:00.6760886Z [Nest] 3353  - 10/05/2026, 11:06:00 PM   DEBUG [PurchaseFanoutService] fanout: package=pkg-h has no contents — purchase=cp-ps
+2026-10-05T23:06:00.6762421Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-late not activated again (status=paid)
+2026-10-05T23:06:00.6764094Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-late not activated again (status=refunded)
+2026-10-05T23:06:00.6765765Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-late not activated again (status=disputed)
+2026-10-05T23:06:00.6767568Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-late not activated again (status=chargeback_lost)
+2026-10-05T23:06:00.6769441Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-late not activated again (status=canceled)
+2026-10-05T23:06:00.6771100Z [Nest] 3353  - 10/05/2026, 11:06:00 PM     LOG [CheckoutWebhookHandlerService] checkout.session.completed: purchase=cp-late not activated again (status=expired)
+2026-10-05T23:06:05.9337643Z [Nest] 3353  - 10/05/2026, 11:06:05 PM   ERROR [SubscriptionCheckoutService] billing.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed
+2026-10-05T23:06:05.9370222Z [Nest] 3353  - 10/05/2026, 11:06:05 PM   ERROR [SubscriptionCheckoutService] billing.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=active end=settled
+2026-10-05T23:06:05.9400100Z [Nest] 3353  - 10/05/2026, 11:06:05 PM   ERROR [SubscriptionCheckoutService] billing.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed
+2026-10-05T23:06:05.9611745Z PASS test/b-recur6a-118-fix-round-6.spec.ts (5.282 s, 483 MB heap size)
+2026-10-05T23:06:06.2860532Z [Nest] 3353  - 10/05/2026, 11:06:05 PM    WARN [SubscriptionCheckoutService] cancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:06:06.2862444Z PASS test/notification-prefs.spec.ts (509 MB heap size)
+2026-10-05T23:06:06.2864906Z [Nest] 3353  - 10/05/2026, 11:06:05 PM    WARN [SubscriptionCheckoutService] cancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:06:06.2868143Z [Nest] 3353  - 10/05/2026, 11:06:05 PM    WARN [SubscriptionCheckoutService] cancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:06:06.2871626Z [Nest] 3353  - 10/05/2026, 11:06:05 PM    WARN [SubscriptionCheckoutService] cancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout
+2026-10-05T23:06:06.4694823Z [Nest] 3353  - 10/05/2026, 11:06:06 PM   ERROR [TrialUsageService] trial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:06:06.4716423Z [Nest] 3353  - 10/05/2026, 11:06:06 PM   ERROR [TrialUsageService] trial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T23:06:06.4913669Z PASS test/b-trials-t1-fix-round-6.spec.ts (523 MB heap size)
+2026-10-05T23:06:07.0313839Z PASS test/checkout-grant-credentials.spec.ts (564 MB heap size)
+2026-10-05T23:06:07.2746134Z PASS test/b-recur7a-119-r2.spec.ts (584 MB heap size)
+2026-10-05T23:06:07.4619421Z [Nest] 3353  - 10/05/2026, 11:06:07 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:06:07.4622951Z [Nest] 3353  - 10/05/2026, 11:06:07 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:06:07.4626252Z [Nest] 3353  - 10/05/2026, 11:06:07 PM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-05T23:06:07.4629550Z PASS test/b-recur6a-118-r1.spec.ts (590 MB heap size)
+2026-10-05T23:06:07.6398586Z PASS test/b-recur7a-119-r1.spec.ts (606 MB heap size)
+2026-10-05T23:06:08.2025379Z PASS test/b-recur-fix-round-1-trial-card.spec.ts (642 MB heap size)
+2026-10-05T23:06:08.4912896Z [Nest] 3353  - 10/05/2026, 11:06:08 PM     LOG [CheckoutWebhookHandlerService] billing.trial_card_attached purchase=cp_trial via=webhook
+2026-10-05T23:06:08.4915867Z [Nest] 3353  - 10/05/2026, 11:06:08 PM    WARN [CheckoutWebhookHandlerService] setup_intent.succeeded trial card attach failed purchase=cp_trial error=Error
+2026-10-05T23:06:08.4919067Z [Nest] 3353  - 10/05/2026, 11:06:08 PM    WARN [CheckoutWebhookHandlerService] setup_intent.succeeded customer mismatch purchase=cp_trial
+2026-10-05T23:06:08.4920172Z PASS test/nudge-v1-prefs-and-copy.spec.ts (672 MB heap size)
+2026-10-05T23:06:09.4800460Z PASS test/purchase-fanout-hooks.spec.ts (476 MB heap size)
+2026-10-05T23:06:10.1721876Z [Nest] 3353  - 10/05/2026, 11:06:09 PM   DEBUG [PurchaseFanoutService] fanout: skipping drop seed for purchase=cp-1 (no engine tables on tx)
+2026-10-05T23:06:10.1723588Z PASS test/coach-money-billed-mrr.spec.ts (532 MB heap size)
+2026-10-05T23:06:10.1725688Z [Nest] 3353  - 10/05/2026, 11:06:09 PM   DEBUG [PurchaseFanoutService] fanout: skipping drop seed for purchase=cp-2 (no engine tables on tx)
+2026-10-05T23:06:10.1729194Z [Nest] 3353  - 10/05/2026, 11:06:09 PM   DEBUG [PurchaseFanoutService] fanout: skipping drop seed for purchase=cp-3 (no engine tables on tx)
+2026-10-05T23:06:10.1731832Z [Nest] 3353  - 10/05/2026, 11:06:09 PM   DEBUG [PurchaseFanoutService] fanout: skipping drop seed for purchase=cp-3 (no engine tables on tx)
+2026-10-05T23:06:10.7001799Z PASS test/b-recur-fix-round-1.spec.ts (567 MB heap size)
+2026-10-05T23:06:11.2525945Z PASS test/b-recur-3-fix-round-2.spec.ts (609 MB heap size)
+2026-10-05T23:06:11.3977048Z [Nest] 3353  - 10/05/2026, 11:06:11 PM    WARN [CheckoutWebhookHandlerService] setup_intent.succeeded lookup failed si=seti_T1 error=Error
+2026-10-05T23:06:11.3980455Z [Nest] 3353  - 10/05/2026, 11:06:11 PM     LOG [CheckoutWebhookHandlerService] billing.trial_card_attached purchase=cp_trial via=webhook
+2026-10-05T23:06:11.4011312Z PASS test/b-recur-subscription-wire.spec.ts (626 MB heap size)
+2026-10-05T23:06:11.6652675Z PASS test/coach-new-purchase-prefs-routing.spec.ts (642 MB heap size)
+2026-10-05T23:06:11.8157891Z PASS test/b-recur-3-subscription-terms.spec.ts (646 MB heap size)
+2026-10-05T23:06:11.9929457Z PASS test/b-trials-idempotent-create-compose.spec.ts (657 MB heap size)
+2026-10-05T23:06:12.2582263Z PASS test/b-trials-trial-ending-push-prefs.spec.ts (682 MB heap size)
+2026-10-05T23:06:12.4019637Z PASS test/b-recur5a-117-trial-end-form.spec.ts (683 MB heap size)
+2026-10-05T23:06:12.4044828Z 
+2026-10-05T23:06:12.4067140Z Test Suites: 57 passed, 57 total
+2026-10-05T23:06:12.4067751Z Tests:       916 passed, 916 total
+2026-10-05T23:06:12.4068469Z Snapshots:   0 total
+2026-10-05T23:06:12.4068815Z Time:        43.965 s
+2026-10-05T23:06:12.4080356Z Ran all test suites matching src/notifications/__tests__/first-payment-webhook.integration.spec.ts|test/b-recur-116-fix-round-3.spec.ts|test/b-recur-3-fix-round-2-checkout.spec.ts|test/b-recur-3-fix-round-2.spec.ts|test/b-recur-3-subscription-terms.spec.ts|test/b-recur-fix-round-1-checkout.spec.ts|test/b-recur-fix-round-1-http.spec.ts|test/b-recur-fix-round-1-trial-card-checkout.spec.ts|test/b-recur-fix-round-1-trial-card.spec.ts|test/b-recur-fix-round-1.spec.ts|test/b-recur-subscription-checkout.spec.ts|test/b-recur-subscription-webhooks.spec.ts|test/b-recur-subscription-wire.spec.ts|test/b-recur3-117-webhook-order.spec.ts|test/b-recur5a-117-fix-round-5.spec.ts|test/b-recur5a-117-moved-fix-round-4.spec.ts|test/b-recur5a-117-trial-end-form.spec.ts|test/b-recur5b-117-authority.spec.ts|test/b-recur6a-118-fix-round-6.spec.ts|test/b-recur6a-118-r1.spec.ts|test/b-recur6b-118-authority.spec.ts|test/b-recur7a-119-r1.spec.ts|test/b-recur7a-119-r2.spec.ts|test/b-recur7b-119-authority.spec.ts|test/b-trials-3-fix-round.spec.ts|test/b-trials-4-fix-round.spec.ts|test/b-trials-5-fix-round.spec.ts|test/b-trials-6-payable-domain.spec.ts|test/b-trials-7-draft-fence.spec.ts|test/b-trials-8-shared-rule.spec.ts|test/b-trials-idempotent-create-compose.spec.ts|test/b-trials-notice-and-webhook.spec.ts|test/b-trials-one-trial-rule.spec.ts|test/b-trials-package-rules.spec.ts|test/b-trials-t1-fix-round-6.spec.ts|test/b-trials-t2-fix-round-6.spec.ts|test/b-trials-t2-fix-round-8.spec.ts|test/b-trials-t2-idempotent-create-http.spec.ts|test/b-trials-trial-ending-push-prefs.spec.ts|test/cancel-pending-on-refund.spec.ts|test/checkout-grant-credentials.spec.ts|test/checkout-hosted-activation-once.spec.ts|test/checkout-settlement-round5.spec.ts|test/checkout-webhook-fee-split.spec.ts|test/checkout-webhook-handler.spec.ts|test/coach-money-billed-mrr.spec.ts|test/coach-new-purchase-prefs-routing.spec.ts|test/drip-dispatcher.cron.spec.ts|test/notification-prefs.spec.ts|test/nudge-v1-prefs-and-copy.spec.ts|test/purchase-fanout-hooks.spec.ts|test/purchase-fanout-tx-plumbing.spec.ts|test/push-delivery-round5.spec.ts|test/push-delivery-send-time.spec.ts|test/push-delivery.service.spec.ts|test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts|test/s-fee-r19-refund-cas-send-window.spec.ts.
+2026-10-05T23:06:12.6324131Z Post job cleanup.
+2026-10-05T23:06:12.7508784Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+2026-10-05T23:06:12.7688687Z Post job cleanup.
+2026-10-05T23:06:12.8524388Z [command]/usr/bin/git version
+2026-10-05T23:06:12.8560934Z git version 2.55.0
+2026-10-05T23:06:12.8599860Z Temporarily overriding HOME='/home/runner/work/_temp/cacb6574-f0db-4fd2-bbd6-e3cdb769c1e7' before making global git config changes
+2026-10-05T23:06:12.8600931Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T23:06:12.8605499Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T23:06:12.8636256Z Removing SSH command configuration
+2026-10-05T23:06:12.8642963Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T23:06:12.8679074Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T23:06:12.8902783Z Removing HTTP extra header
+2026-10-05T23:06:12.8907449Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T23:06:12.8941140Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T23:06:12.9159219Z Removing includeIf entries pointing to credentials config files
+2026-10-05T23:06:12.9165534Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T23:06:12.9224447Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T23:06:12.9225464Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T23:06:12.9226153Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T23:06:12.9226617Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T23:06:12.9233863Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T23:06:12.9254962Z /home/runner/work/_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:06:12.9267990Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:06:12.9306356Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T23:06:12.9330015Z /home/runner/work/_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:06:12.9339796Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:06:12.9373230Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T23:06:12.9395714Z /github/runner_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:06:12.9404460Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:06:12.9439227Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T23:06:12.9462682Z /github/runner_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:06:12.9470088Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config
+2026-10-05T23:06:12.9506105Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T23:06:12.9756737Z Removing credentials config '/home/runner/work/_temp/git-credentials-67ad9a98-2380-41e0-8821-5a4072f1c50f.config'
+2026-10-05T23:06:12.9917476Z Print service container logs: 5aa402bd98be4343a7ba554518de539a_redis7alpine_9eba6c
+2026-10-05T23:06:12.9923127Z ##[command]/usr/bin/docker logs --details 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:06:13.0054330Z  1:C 05 Oct 2026 23:03:37.784 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-05T23:06:13.0056093Z  1:C 05 Oct 2026 23:03:37.784 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-05T23:06:13.0056652Z  1:C 05 Oct 2026 23:03:37.784 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-05T23:06:13.0057570Z  1:C 05 Oct 2026 23:03:37.784 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-05T23:06:13.0058604Z  1:M 05 Oct 2026 23:03:37.784 * monotonic clock: POSIX clock_gettime
+2026-10-05T23:06:13.0059327Z  1:M 05 Oct 2026 23:03:37.785 * Running mode=standalone, port=6379.
+2026-10-05T23:06:13.0060025Z  1:M 05 Oct 2026 23:03:37.785 * Server initialized
+2026-10-05T23:06:13.0060639Z  1:M 05 Oct 2026 23:03:37.785 * Ready to accept connections tcp
+2026-10-05T23:06:13.0070752Z Stop and remove container: 5aa402bd98be4343a7ba554518de539a_redis7alpine_9eba6c
+2026-10-05T23:06:13.0075421Z ##[command]/usr/bin/docker rm --force 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:06:13.1179174Z 3146a0cf03ef6a275d7a31d2b3fafe0d077b5bb07c0d7fa634ffd31fff9fc84a
+2026-10-05T23:06:13.1208735Z Remove container network: github_network_2db261a554034cd9bd9da9258fca7841
+2026-10-05T23:06:13.1213169Z ##[command]/usr/bin/docker network rm github_network_2db261a554034cd9bd9da9258fca7841
+2026-10-05T23:06:13.2492064Z github_network_2db261a554034cd9bd9da9258fca7841
+2026-10-05T23:06:13.2563759Z Cleaning up orphan processes

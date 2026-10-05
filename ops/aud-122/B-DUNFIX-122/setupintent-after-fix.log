@@ -1,0 +1,13 @@
+[heavy] waiting for a slot: npx jest test/b-recur-subscription-wire.spec.ts
+PASS test/b-recur-subscription-wire.spec.ts (52 MB heap size)
+  StripeConnectApiService.createSubscription wire format (Stripe-Version 2024-09-30.acacia)
+    ✓ default_incomplete, save card on_subscription, expand first invoice PI, on_behalf_of, no fee / transfer_data (8 ms)
+    ✓ trial: trial_period_days, cancel when the trial ends without a card, expand pending_setup_intent (1 ms)
+    ✓ resume and trial-card writes carry their own idempotency keys (1 ms)
+    ✓ SetupIntent omits on_behalf_of when no plan has a destination account (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        1.799 s
+Ran all test suites matching test/b-recur-subscription-wire.spec.ts.

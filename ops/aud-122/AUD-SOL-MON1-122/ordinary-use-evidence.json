@@ -1,0 +1,72 @@
+{
+  "job": "AUD-SOL-MON1-122",
+  "agent": 122,
+  "method": "Independent static cross-contract review; no local npm, Jest, TypeScript, lint, or build command executed.",
+  "backend_head": "cb986a4cba16036ccd4ed11158b849eb1df0292e",
+  "cases": [
+    {
+      "id": "B-348-1",
+      "scenario": "A client starts a normal card-upfront free trial on a $49 monthly package, and the coach opens Money during the trial.",
+      "backend_contract": {
+        "purchase_amount_cents": 4900,
+        "purchase_status": "trialing",
+        "billing_type": "recurring",
+        "counted_destination_slices": 0,
+        "money_charge_state": "pending"
+      },
+      "mobile_observation": "chargeStateLabel maps pending to Processing, although no $49 payment has been initiated during the free trial.",
+      "mobile_file_line": "src/lib/money/moneyCopy.ts:119-120",
+      "sources": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/90501f847e03cf4cc1071503436acdd459643103/src/lib/money/moneyCopy.ts",
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/cb986a4cba16036ccd4ed11158b849eb1df0292e/src/coach-money/coach-money.service.ts",
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/cb986a4cba16036ccd4ed11158b849eb1df0292e/src/checkout/subscription-checkout.service.ts"
+      ]
+    },
+    {
+      "id": "B-349-1",
+      "scenario": "The coach opens the same unpaid free-trial purchase's detail.",
+      "backend_detail": {
+        "charge_state": "pending",
+        "amount_cents": 4900,
+        "breakdown": {
+          "price_cents": 4900,
+          "processing_cents": 0,
+          "platform_fee_cents": 0,
+          "head_coach_split_cents": 0,
+          "refunded_cents": 0,
+          "net_cents": 0,
+          "processing_paid_by": "none",
+          "settled": false
+        }
+      },
+      "mobile_observation": "noMoneyMovedCopy handles failed and canceled only, so pending renders Clients paid $49.00, zero deductions, Net to you $0.00, and a claim that the payment needs to clear.",
+      "mobile_file_line": "src/screens/coach/money/MoneyChargeScreen.tsx:139-177",
+      "sources": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/35aa81634d377acebf55d1b497abadc4b7b8e7db/src/screens/coach/money/MoneyChargeScreen.tsx",
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/90501f847e03cf4cc1071503436acdd459643103/src/lib/money/moneyCopy.ts",
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/cb986a4cba16036ccd4ed11158b849eb1df0292e/src/coach-money/coach-money.service.ts"
+      ]
+    },
+    {
+      "id": "B-349-2",
+      "scenario": "A coach refunds an ordinary $100 sale after its payout has reached the bank; no connected-account balance remains to reverse that transfer.",
+      "money_case_cents": {
+        "sale_gross": 10000,
+        "processing_fee": 320,
+        "tgp_fee": 200,
+        "coach_transfer": 9480,
+        "full_refund": 10000,
+        "adjusted_coach_target": -520,
+        "open_recovery_if_original_transfer_cannot_be_reversed": 10000
+      },
+      "mobile_observation": "The $100 held balance is described only as TGP's 2% and Stripe fees, although $94.80 is unrecovered payout principal.",
+      "mobile_file_line": "src/screens/coach/money/MoneyScreen.tsx:891-901",
+      "sources": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/35aa81634d377acebf55d1b497abadc4b7b8e7db/src/screens/coach/money/MoneyScreen.tsx",
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/cb986a4cba16036ccd4ed11158b849eb1df0292e/src/coach-money/coach-money.service.ts",
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/cb986a4cba16036ccd4ed11158b849eb1df0292e/src/connect/fees/charge-settlement.service.ts",
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/cb986a4cba16036ccd4ed11158b849eb1df0292e/src/payouts-v2/platform-fee.service.ts"
+      ]
+    }
+  ]
+}

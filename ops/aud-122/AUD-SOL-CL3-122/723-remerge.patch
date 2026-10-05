@@ -1,0 +1,12 @@
+commit 8c9943673cd2129732fde9b59aef2c19389d4b6c
+Merge: e3368cc3 f02a3904
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Mon Oct 5 23:11:59 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Mon Oct 5 23:11:59 2026 +0000
+
+    Merge coachless split 2/3 (restacked) into split 3/3 (restack)
+    
+    Clean merge, no conflict hunks. src/app.module.ts auto-merged (this PR's
+    CoachlessModule import and registration; main's lines untouched). No other
+    content change.

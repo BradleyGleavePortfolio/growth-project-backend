@@ -1,0 +1,13 @@
+[heavy] waiting for a slot: npx jest test/dunning-v2-coach-restart-route.spec.ts
+PASS test/dunning-v2-coach-restart-route.spec.ts (116 MB heap size)
+  POST /v1/coach/purchases/:id/dispute-restart
+    ✓ the plan’s own coach restarts it (38 ms)
+    ✓ another coach is refused with a coded 404 and nothing restarts (6 ms)
+    ✓ a client cannot call it: 403 before the service runs (3 ms)
+    ✓ a refusal carries its code and next step (3 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        8.444 s
+Ran all test suites matching test/dunning-v2-coach-restart-route.spec.ts.

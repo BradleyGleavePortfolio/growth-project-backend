@@ -8,7 +8,7 @@ Common brief and only this job's JOBS122 entry were read; SoT A1, A2 overrides a
 
 ## Access and evidence
 
-Default gh/git proxy authentication failed. `gh api --hostname github.com` works for public reads with `api_credentials=["github"]`; use that explicit hostname for reading. Git's proxy URL rewrite still fails even with a per-command direct origin URL, so no further remote git retries are planned. The required SoT pull failed; the latest main SoT was subsequently retrieved via public REST and the required sections re-read, resolving source freshness. Exact GitHub source archives were fetched through the working REST route and expanded read-only under `wt/AUD-SOL-DUN1-122-{725,724,691}`; no registered git worktree or CI branch has been created.
+Initial default gh/git proxy authentication failed; public REST reads and exact source archives supplied read-only evidence while operator authorization was being restored. The required SoT pull initially failed; main SoT was then read through public REST, and after authentication recovered the required pull and section reads succeeded. Archive expansions are preserved under `wt/AUD-SOL-DUN1-122-*`; these are not registered git worktrees. No CI branch has been created.
 
 Evidence lives in `ops/aud-122/AUD-SOL-DUN1-122/`; API output and source archives are preserved. No code edits, local tests/builds, PR-branch pushes, merge, deployment or production interaction.
 
@@ -16,9 +16,11 @@ Auth probes under the operator's explicit five-minute retry instruction: 15:25:0
 
 Operator 15:41 mail said authorization is restored, but this worker's fresh injected-credential probe at 15:44:46 PDT still returned proxy 401; the alternate direct-host user probe at 15:45:03 PDT remained anonymous/rate-limited (403), and connector discovery still returns CONNECTED/CLI-only. Operator notified that parent authorization may be refreshed while this worker's context is stale. #725 payload remains ready for parent publication after head verification.
 
+Resolved at 15:46:04 PDT: a newly invoked normal-host call authenticated successfully and #725 was posted after immediate head verification. The earlier 15:44 probe belonged to a command invoked before reconnect and held old injected credentials across its sleep; there is no continuing worker auth block. Subsequent normal gh/git operations work, including the required SoT pull.
+
 ## Part 1 — #725
 
-Reviewed exact head `1dbc59b690119f03f010e406f9f1e0e43d1e6556`, 117 changed lines. Verdict APPROVE, A/B/C = 0/0/0, in `ops/aud-122/AUD-SOL-DUN1-122/verdict-725.md`; head rechecked immediately before POST at 15:16:17 PDT, but POST failed HTTP 401 Requires authentication. No verdict comment URL exists. Operator notified through `ops/lanes122/notify/AUD-SOL-DUN1-122-auth.txt`. [Reviewed PR](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/725).
+Reviewed exact head `1dbc59b690119f03f010e406f9f1e0e43d1e6556`, 117 changed lines. Verdict **APPROVE, A/B/C = 0/0/0**, posted at 15:46:04 PDT after head verification and duplicate-checking only own Sol comments; the earlier 15:16 POST failed 401 but did not create a duplicate. Payload and successful receipt preserved. [Published Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/725#issuecomment-6004727149).
 
 JWT/student-role guards and client/assigned-coach thread scoping survive the exact-method dunning allow-list; intentionally free basic handlers carry no extra entitlement guard. [Controller](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/1dbc59b690119f03f010e406f9f1e0e43d1e6556/src/messaging/client-messaging.controller.ts), [service](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/1dbc59b690119f03f010e406f9f1e0e43d1e6556/src/messaging/messaging.service.ts).
 
@@ -36,7 +38,7 @@ The #724 lockout waiver now shares `hasOtherLiveAccess` with the client status p
 
 Own prior B-705-2/3/4, B-689-1/4/5/6 and B-690-1/2/5/6/7: C (edge, deferred to 10k clients), per the operator's binding reclassification; no edge probes/analysis performed.
 
-Two additional normal-use candidates were identified after the initial snapshot review: B-689-S1 and B-690-S1 below. These are not fresh-head train verdicts: builder restack is still in progress.
+Two additional candidates were identified after the initial snapshot review; B-689-S1 was subsequently withdrawn to C after checking normal-tap reachability, while B-690-S1 is present in the final composed production source. These are not published train verdicts while builder READY is pending.
 
 ### B-689-S1 candidate — inquiry cancellation asserts a bank reversal
 
@@ -45,6 +47,8 @@ Two additional normal-use candidates were identified after the initial snapshot 
 `client-billing.service.ts:1643–1645` at the starting #689 head appends “Ending the plan does not settle the payment your bank reversed” whenever `disputeOpen` is true. Inquiry `charge.dispute.created` follows the ordinary initial dispute path, records `warning_*`, mirrors the purchase to `disputed`, and D2c/D2d sets the active dispute-pause marker; `cancelPlan` treats that active dunning cycle as delinquent and takes the dispute branch, so the statement appears on a normal sequential cancellation. [D3 cancellation path](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/bb992fedf0095446f916f3261742bd262c3d94da/src/checkout/client-billing.service.ts), [inquiry/dispute recorder](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e77a8d360f7a7ad02cf465b525eeed648a3a7825/src/checkout/refund-dispute-handler.service.ts).
 
 Minimal rule: neutral “payment dispute or inquiry” wording for this response, consistent with the newly corrected #687 copy, without claiming a reversal for an inquiry. No edge condition or probe is involved. Builder/operator notice saved as `ops/lanes122/notify/AUD-SOL-DUN1-122-inquiry-copy.txt`; count only after checking the upcoming actual READY head.
+
+**16:07 PDT disposition: withdrawn to C-689-S1, not a B.** The current dispute read model has `cancel_route=null` and the subscription plan projection has `can_cancel=false` for an unentitled disputed plan, so this lens has not established an ordinary-tap path to that latent cancellation response. A valid direct HTTP request alone is not sufficient to claim a normal customer tap under RUTHLESS SCOPE; do not spend a fix round on the candidate solely from this notice. [Current plan projection](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/0fbd18cae72f4fdea7c4876034a0d3d1d3dac1cd/src/checkout/subscription-plan.ts), [composed dispute status](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/b3ae2f295bba961d5c6532698281e91b5194559e/src/checkout/dunning-v2/dunning-v2.service.ts).
 
 ### B-690-S1 candidate — no coach restart HTTP operation
 
@@ -71,11 +75,51 @@ Minimal rule: authenticated, coach-role, own-purchase HTTP route invoking the ex
 
 These were retrieved from public REST PR metadata; #687 and #689 remained unchanged at 15:24:03 PDT, and no B-DUNR3-122 READY comment or notify file existed. [Foundation PR](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687), [D3 PR](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689).
 
-### Prepared files, pending builder READY
+### Verdict files and publication
 
-Every requested `verdict-<n>.md` now exists in `ops/aud-122/AUD-SOL-DUN1-122/`. #725 is final source approval waiting only on authenticated posting; the other eight explicitly say **BASELINE DRAFT ONLY — DO NOT POST**, carry starting heads, and must be replaced/updated after builder READY.
+Every requested `verdict-<n>.md` exists in `ops/aud-122/AUD-SOL-DUN1-122/` with a successful `receipt-<n>.json`; all nine verdicts are published. Builder READY was observed at 16:15:16 PDT, and each train head was re-read immediately before its one verdict was posted between 16:16:43 and 16:16:57 PDT. [Builder READY](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/691#issuecomment-6005133942), [final published Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/691#issuecomment-6005217647).
 
-Provisional baseline counts: #687 0/0/3; #688 0/0/1; #704 0/0/0; #705 0/0/4 (ordinary B-705-5 closes in mandatory #724 composition); #724 0/0/0; #689 0/1/4 (B-689-S1); #690 0/1/6 (B-690-S1); #691 0/0/0. These are not published attestations or a merge permission. Frozen Cs are one-line carryovers, not re-investigated findings.
+Published counts are in the table below; total A/B/C = 0/1/19. This is not permission to activate the composed train while D4 remains REQUEST CHANGES or required CI is unresolved. Frozen Cs are one-line carryovers, not re-investigated findings. [Published D4 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690#issuecomment-6005217116).
+
+### Fresh restack delta read (15:47–15:52 PDT)
+
+New #687–#689 sources were fetched/read after auth recovery; no other lens's current-round material was read. Local independent merge-tree evidence and reviewed conflict resolutions are preserved in `ops/aud-122/AUD-SOL-DUN1-122/restack-evidence.md`.
+
+#688, #705 and #689's D2d merge have exact independent tree equality. #704 has an imports-only dunning.service.ts conflict; #724 has a lost-closure conflict retaining both main's transfer reversal and D2d's restarted-plan access/status preservation. These two are not clean merge-only trees and have been inspected as real conflict resolutions.
+
+#687's coach emitter conflict preserves per-channel outcomes/selection and restricted diagnostics, adopts main's single quiet-copy push sender, and retains detailed text only in the coach's inbox. D3's current `ebb522fa` ledger-amount/native Stripe-signature delta has been read fully. #690/#691 still old at 15:51:05 PDT; builder READY pending.
+
+### Completed restack delta read — through 16:07 PDT
+
+Read the full #690 main/D2d merge-resolution diff (760 lines), subsequent integration delta, and final clean inheritance of D3's type-only SetupIntent fix. Independent final merge-tree equality holds at #690 tree `485c1100060d6d756b0e7bc117bae6be556d5948`; no production caller of `restartAfterDisputePause` exists, so B-690-S1 remains. [D4 final commit](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/b3ae2f295bba961d5c6532698281e91b5194559e).
+
+Read #691's owned test delta, including the ordinary $99 dispute-ledger/$150 renewal regression and D2c's immediate-pause/coach-restart lifecycle expectations. Both inherited merges have exact independent tree equality; the final tree is `3ced09f8e8cf64e25ba760e8d8fc298f8d5dc02d`. Existing edge tests are carried without new analysis or probes. [D5 test update](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/3641c00797491bf76c7b43453f17e3e9d799f841), [D5 final commit](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/d8c229a696436d2a2aec1b9e73f42ce01998fb93).
+
+The #691 d8c229a6 PR build and builder lane failed typecheck because D5's `voidInvoice` spy wrapper forwarded only one positional argument and never-entitled helper fixtures omitted `trial_started_at`. Those were mandatory integration gates, not evidence of a normal-user product B; builder notified in `AUD-SOL-DUN1-122-d5-typecheck.txt`. [PR failed build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386002581/job/112019315460), [builder failed lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386012832/job/112019345629).
+
+At 16:10:51 PDT, independently read the narrow source test repairs: D4 c15f157c tightens the legacy privacy-log inventory to actual coded paths (no production change), while D5 b0b47959 fixes both positional-argument and never-entitled fixture typing. Final #691 17cfa566 has exact independent merge-tree equality to tree `f573a0f5173dd6971ba9a15f5dd593b4bb032c7d`. Current new-head CI is queued/in progress, not yet passing evidence. [D4 final test fix](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/c15f157cabca707bd0dfa9c1e8eb20ff0f78f9ae), [D5 final fix](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/17cfa5662b7014a90d54a3d6747ae651c37e8793).
+
+| PR | Independently reviewed exact head | Published verdict | A/B/C | Comment |
+|---|---|---|---|---|
+| #725 | `1dbc59b690119f03f010e406f9f1e0e43d1e6556` | APPROVE | 0/0/0 | [Sol #725](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/725#issuecomment-6004727149) |
+| #687 | `c140575c8b857023ce69ae28a1dcf6e8ab925335` | APPROVE | 0/0/3 | [Sol #687](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-6005213598) |
+| #688 | `610c52542c0a1865bd9c448d78291d9d663f67fb` | APPROVE | 0/0/1 | [Sol #688](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/688#issuecomment-6005214159) |
+| #704 | `524c4025e36fe4b3c925f7cc0072fd6951f01605` | APPROVE | 0/0/0 | [Sol #704](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/704#issuecomment-6005214649) |
+| #705 | `346b77570eb4d40a344d4bd0007c70039c34981a` | APPROVE | 0/0/4 | [Sol #705](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/705#issuecomment-6005215131) |
+| #724 | `410fb1b3b82b0ab49c8387a8d01e6e3ca6060a6c` | APPROVE | 0/0/0 | [Sol #724](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/724#issuecomment-6005215838) |
+| #689 | `0fbd18cae72f4fdea7c4876034a0d3d1d3dac1cd` | APPROVE | 0/0/5 | [Sol #689](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-6005216584) |
+| #690 | `c15f157cabca707bd0dfa9c1e8eb20ff0f78f9ae` | REQUEST CHANGES | 0/1/6 | [Sol #690](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690#issuecomment-6005217116) |
+| #691 | `17cfa5662b7014a90d54a3d6747ae651c37e8793` | APPROVE (CI running) | 0/0/0 | [Sol #691](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/691#issuecomment-6005217647) |
+
+All pieces are within their applicable changed-line caps, and each publication followed an immediate exact-head check. [D1](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687), [D2a](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/688), [D2b](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/704), [D2c](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/705), [D2d](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/724), [D3](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689), [D4](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690), [D5](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/691).
+
+### Final CI snapshot — 16:17:21 PDT
+
+#725 and #687 have all 11 main-required checks green. #688/#704/#705/#724/#689 have all seven checks that execute on their stacked bases green; CodeQL JS/TS, banned casts, build-sbom and danger are absent on stacked bases and must execute on the final composed main-targeted tree. Auxiliary duplicate deploy-readiness-comment failures are not one of main's 11 required contexts; deploy-readiness-gate skips are not claimed as passes. Required policy is preserved in `required-checks.json`. [#725 checks](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/725/checks), [#687 checks](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687/checks), [stacked D3 checks](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689/checks).
+
+#690/#691 build-and-test still running; audit, schema parity, RLS floor/live, MWB and community checks are green at their current heads. [D4 current build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386865394/job/112022152189), [D5 current build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386863590/job/112022146648).
+
+Independently verified builder lane 37386724702: tsc --noEmit and 67 suites/1,118 tests passed, with 5 todo. Lane child `0100fa27191e86cc2ef74645e57fa746326386bf` has parent `b0b4795976497a69fb170da1856857c6f61a569d` and differs only by `.ci-lane-specs`, `.ci-lane-tsc` and `.github/workflows/ci-lane.yml`; final #691 adds only the reviewed privacy-test inventory adjustment. This is attributable selected-suite evidence, not all-required-CI success or independent execution. [Verified lane job](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386724702/job/112021677637).
 
 ## Launch obligation outside this round
 
@@ -85,12 +129,12 @@ Recommended default: confirm the later owning full-refund piece before enabling 
 
 ## HANDOFF
 
-CONTINUING on operator mail received 15:25 PDT: remain active despite session-wide 401, retry `gh api user` every five minutes, review local/raw/public REST sources, preserve `verdict-<n>.md` files and post when auth returns. Latest normal-host auth probe 15:44:46 PDT still failed 401 despite the operator's 15:41 recovery mail. Original 16:27:40 PDT total deadline remains.
+COMPLETE as of 16:17:21 PDT, within the original 16:27:40 PDT deadline. Authorization works; all eight train deltas/tree checks completed; READY observed and all nine verdicts published exactly once at the heads/comment URLs above. No additional current-round verdict is planned.
 
-#725 is independently APPROVE / 0/0/0 with all mandatory CI green, but authenticated POST failed; no verdict comment URL exists. No current-round train verdicts were posted because the builder has not produced READY/new heads.
+#725 is independently APPROVE / 0/0/0 with all mandatory CI green and published at [comment 6004727149](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/725#issuecomment-6004727149). Seven train pieces are APPROVE; #690 is REQUEST CHANGES / 0/1/6 with B-690-S1. [Published D4 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690#issuecomment-6005217116).
 
-B-689-S1 and B-690-S1 are normal-use candidates pending fresh-head inspection; the initial “no new B” conclusion is superseded by the documented ordinary paths. Normal-use prior B-705-1 and B-705-5 are repaired on the initial composed D1–D2d source; frozen findings remain one-line C dispositions. This lens will inspect builder READY's exact-head deltas and tree evidence and publish one verdict per train piece, without re-opening frozen edge work.
+**B-690-S1 normal-user story:** A client's bank dispute pauses the plan, the coach wants to restart it, but the backend offers no coach restart operation, so the client stays locked out and billing stays paused. The only production occurrence of `restartAfterDisputePause` is its service definition; D4's controllers have no caller. Minimal default: own-coach authenticated restart HTTP operation invoking that existing service, with ordinary authorized/foreign-coach controls, or explicitly name the exact mandatory later owning piece before activation. [Published finding and fix rule](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690#issuecomment-6005217116).
 
-Operator defaults: (1) restore GitHub authorization now, (2) publish #725's exact prepared approval before landing it, (3) keep the existing already-built D2d edge fixes rather than spend another round removing them, (4) track the separate full-refund-billing-pause launch obligation to its owning piece.
+Operator defaults: (1) fix B-690-S1 in the owning D4 wiring piece, (2) require green main-required CI on the composed tree before land-as-one, (3) retain already-built D2d edge fixes, (4) confirm the separate full-refund-billing-pause launch obligation, (5) do not open an edge fix round for latent C-689-S1 copy, which was withdrawn for lack of an established ordinary-tap path. [D3 disposition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-6005216584).
 
-All evidence and source archives are retained. No registered git worktree, local/remote audit branch, CI lane run, or lock was created; claims remain completion/reading evidence. No source modifications or external mutation succeeded.
+All evidence and source archives are retained in `ops/aud-122/AUD-SOL-DUN1-122/`. No registered git worktree, local/remote audit branch, CI lane run, or lock was created; no cleanup/release is required. No PR code modification, push, merge, deployment or production change. External writes were only the nine requested verdict comments.

@@ -1,0 +1,64 @@
+targeted	Targeted jest	﻿2026-10-05T23:15:54.9396901Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T23:15:54.9397398Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T23:15:54.9397999Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T23:15:54.9398833Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T23:15:54.9399435Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:15:54.9399920Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:15:54.9464377Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T23:15:54.9464734Z env:
+targeted	Targeted jest	2026-10-05T23:15:54.9464961Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-05T23:15:54.9465334Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-05T23:15:54.9465663Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T23:15:54.9561893Z specs: test/broadcasts/aud-sol-bc1-122-normal-program-boundary.probe.spec.ts
+targeted	Targeted jest	2026-10-05T23:15:56.8865482Z FAIL test/broadcasts/aud-sol-bc1-122-normal-program-boundary.probe.spec.ts (68 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:56.8868216Z   AUD-SOL-BC1-122 ordinary program boundaries
+targeted	Targeted jest	2026-10-05T23:15:56.8871174Z     ✕ B-727-1: a program assigned through a client copy is included when the coach selects its master (6 ms)
+targeted	Targeted jest	2026-10-05T23:15:56.8873531Z     ✕ B-728-1: the normal sub-coach audience picker returns only own or tenant-shared program names (4 ms)
+targeted	Targeted jest	2026-10-05T23:15:56.8874240Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8875366Z   ● AUD-SOL-BC1-122 ordinary program boundaries › B-727-1: a program assigned through a client copy is included when the coach selects its master
+targeted	Targeted jest	2026-10-05T23:15:56.8876278Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8876599Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-05T23:15:56.8877005Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8877107Z     Expected: 1
+targeted	Targeted jest	2026-10-05T23:15:56.8877334Z     Received: 0
+targeted	Targeted jest	2026-10-05T23:15:56.8877461Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8878103Z     ^[[0m ^[[90m 113 |^[[39m     expect(options^[[33m.^[[39mprograms^[[33m.^[[39mmap((p) ^[[33m=>^[[39m p^[[33m.^[[39mid))^[[33m.^[[39mtoContain(^[[33mMASTER^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8879177Z      ^[[90m 114 |^[[39m     ^[[36mconst^[[39m preview ^[[33m=^[[39m ^[[36mawait^[[39m svc^[[33m.^[[39mpreview(^[[33mHEAD^[[39m^[[33m,^[[39m segment)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8880141Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 115 |^[[39m     expect(preview^[[33m.^[[39mrecipient_count)^[[33m.^[[39mtoBe(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8880870Z      ^[[90m     |^[[39m                                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8881679Z      ^[[90m 116 |^[[39m     expect(preview^[[33m.^[[39msample^[[33m.^[[39mmap((p) ^[[33m=>^[[39m p^[[33m.^[[39mid))^[[33m.^[[39mtoEqual([^[[33mCLIENT^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8882668Z      ^[[90m 117 |^[[39m     ^[[36mawait^[[39m expect(
+targeted	Targeted jest	2026-10-05T23:15:56.8884211Z      ^[[90m 118 |^[[39m       svc^[[33m.^[[39mcreate(^[[33mHEAD^[[39m^[[33m,^[[39m { body^[[33m:^[[39m ^[[32m'New block starts Monday.'^[[39m^[[33m,^[[39m segment^[[33m,^[[39m timezone^[[33m:^[[39m ^[[32m'UTC'^[[39m }^[[33m,^[[39m undefined)^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:56.8885435Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8886117Z       at Object.<anonymous> (test/broadcasts/aud-sol-bc1-122-normal-program-boundary.probe.spec.ts:115:37)
+targeted	Targeted jest	2026-10-05T23:15:56.8886817Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8887969Z   ● AUD-SOL-BC1-122 ordinary program boundaries › B-728-1: the normal sub-coach audience picker returns only own or tenant-shared program names
+targeted	Targeted jest	2026-10-05T23:15:56.8888921Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8889270Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:15:56.8889760Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8889943Z     - Expected  - 0
+targeted	Targeted jest	2026-10-05T23:15:56.8890347Z     + Received  + 2
+targeted	Targeted jest	2026-10-05T23:15:56.8890583Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8890734Z       Array [
+targeted	Targeted jest	2026-10-05T23:15:56.8891165Z     +   "55555555-5555-4555-8555-555555555555",
+targeted	Targeted jest	2026-10-05T23:15:56.8891730Z         "77777777-7777-4777-8777-777777777777",
+targeted	Targeted jest	2026-10-05T23:15:56.8892559Z         "88888888-8888-4888-8888-888888888888",
+targeted	Targeted jest	2026-10-05T23:15:56.8893214Z     +   "99999999-9999-4999-8999-999999999999",
+targeted	Targeted jest	2026-10-05T23:15:56.8893690Z       ]
+targeted	Targeted jest	2026-10-05T23:15:56.8893880Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8894248Z     ^[[0m ^[[90m 132 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8895840Z      ^[[90m 133 |^[[39m     ^[[36mconst^[[39m options ^[[33m=^[[39m ^[[36mawait^[[39m svc^[[33m.^[[39msegmentOptions(^[[33mSUB^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8898287Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 134 |^[[39m     expect(options^[[33m.^[[39mprograms^[[33m.^[[39mmap((p) ^[[33m=>^[[39m p^[[33m.^[[39mid)^[[33m.^[[39msort())^[[33m.^[[39mtoEqual([^[[33mOWN_MASTER^[[39m^[[33m,^[[39m ^[[33mSHARED_MASTER^[[39m]^[[33m.^[[39msort())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8900139Z      ^[[90m     |^[[39m                                                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8901713Z      ^[[90m 135 |^[[39m     expect(^[[33mJSON^[[39m^[[33m.^[[39mstringify(options))^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'Private head-coach program'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8904007Z      ^[[90m 136 |^[[39m     expect(^[[33mJSON^[[39m^[[33m.^[[39mstringify(options))^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'Private sibling program'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:56.8905223Z      ^[[90m 137 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:56.8905558Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8906249Z       at Object.<anonymous> (test/broadcasts/aud-sol-bc1-122-normal-program-boundary.probe.spec.ts:134:54)
+targeted	Targeted jest	2026-10-05T23:15:56.8907009Z 
+targeted	Targeted jest	2026-10-05T23:15:56.8907539Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-05T23:15:56.8908054Z Tests:       2 failed, 2 total
+targeted	Targeted jest	2026-10-05T23:15:56.8908510Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T23:15:56.8908907Z Time:        1.112 s
+targeted	Targeted jest	2026-10-05T23:15:56.8909869Z Ran all test suites matching test/broadcasts/aud-sol-bc1-122-normal-program-boundary.probe.spec.ts.
+targeted	Targeted jest	2026-10-05T23:15:56.9203942Z ##[error]Process completed with exit code 1.

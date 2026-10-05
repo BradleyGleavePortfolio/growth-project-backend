@@ -1,0 +1,487 @@
+targeted	Targeted jest	﻿2026-10-05T23:15:29.6432095Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T23:15:29.6432692Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T23:15:29.6433350Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T23:15:29.6434458Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T23:15:29.6435102Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:15:29.6435663Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:15:29.6500017Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T23:15:29.6500392Z env:
+targeted	Targeted jest	2026-10-05T23:15:29.6500616Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-05T23:15:29.6500973Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-05T23:15:29.6501310Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T23:15:29.6600687Z specs: test/roman test/dunning-v2-lockout-allowlist-route-table.spec.ts test/dunning-v2-lockout-guard.spec.ts test/dunning-v2-lockout-guard.e2e.spec.ts
+targeted	Targeted jest	2026-10-05T23:15:32.2854008Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:32 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.erase_deleted_session_failed session=legacy_u_a_2026-09-27: Error: db hiccup^[[39m
+targeted	Targeted jest	2026-10-05T23:15:32.3016893Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:32 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_bound_hit erased=2 left=1^[[39m
+targeted	Targeted jest	2026-10-05T23:15:32.3308147Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:32 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:32.3459399Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:32 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:32.3612160Z PASS test/roman/roman.service.spec.ts (115 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:32.3615140Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:32 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:32.3617997Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:32 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:33.1924956Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:33 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.spend_ledger_failed: Error^[[39m
+targeted	Targeted jest	2026-10-05T23:15:33.1941799Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:33 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:33.1996639Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:33 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=emergency model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.7479353Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.7784560Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.7869349Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.8106589Z FAIL test/roman/roman-launch-hardening.spec.ts (165 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:35.8109303Z   ● FR1-651-3 the single per-session exclamation is spent once, then never allowed again › a stored reply that uses the exclamation marks the session; a spent session gets none
+targeted	Targeted jest	2026-10-05T23:15:35.8110641Z 
+targeted	Targeted jest	2026-10-05T23:15:35.8110902Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-05T23:15:35.8111239Z 
+targeted	Targeted jest	2026-10-05T23:15:35.8111416Z     Expected: "Nice work! Keep it up."
+targeted	Targeted jest	2026-10-05T23:15:35.8111807Z     Received: "Nice work. Keep it up."
+targeted	Targeted jest	2026-10-05T23:15:35.8112050Z 
+targeted	Targeted jest	2026-10-05T23:15:35.8113116Z     ^[[0m ^[[90m 762 |^[[39m     ^[[36mawait^[[39m drain(svc^[[33m.^[[39mstreamAssistantTurn(^[[33mCLIENT^[[39m^[[33m,^[[39m fakeOf(session())^[[33m,^[[39m { userMessage^[[33m:^[[39m ^[[32m'I hit my protein'^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.8115336Z      ^[[90m 763 |^[[39m     ^[[36mconst^[[39m roman1 ^[[33m=^[[39m first^[[33m.^[[39mstored^[[33m.^[[39mfilter((m) ^[[33m=>^[[39m m^[[33m.^[[39mrole ^[[33m===^[[39m ^[[32m'roman'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.8116447Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 764 |^[[39m     expect(roman1[^[[35m0^[[39m]^[[33m.^[[39mcontent)^[[33m.^[[39mtoBe(^[[32m'Nice work! Keep it up.'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.8117182Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.8118074Z      ^[[90m 765 |^[[39m     ^[[36mconst^[[39m marks ^[[33m=^[[39m first^[[33m.^[[39mprisma^[[33m.^[[39mromanSession^[[33m.^[[39mupdateMany^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mmap(
+targeted	Targeted jest	2026-10-05T23:15:35.8119510Z      ^[[90m 766 |^[[39m       (c^[[33m:^[[39m unknown[]) ^[[33m=>^[[39m (c[^[[35m0^[[39m] ^[[36mas^[[39m { data^[[33m:^[[39m ^[[33mRecord^[[39m^[[33m<^[[39m^[[33mstring^[[39m^[[33m,^[[39m unknown^[[33m>^[[39m })^[[33m.^[[39mdata^[[33m.^[[39mexclamation_used^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:35.8120423Z      ^[[90m 767 |^[[39m     )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:35.8120611Z 
+targeted	Targeted jest	2026-10-05T23:15:35.8120880Z       at Object.<anonymous> (test/roman/roman-launch-hardening.spec.ts:764:31)
+targeted	Targeted jest	2026-10-05T23:15:35.8121189Z 
+targeted	Targeted jest	2026-10-05T23:15:36.5654660Z PASS test/roman/roman-client-context.spec.ts (117 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:37.2672092Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.2850837Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.2914028Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.2935693Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.2954670Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.2971300Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.3021528Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.3332062Z PASS test/roman/roman-streaming.spec.ts (163 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:37.5046641Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5048695Z PASS test/roman/roman-guardrails.spec.ts (175 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:37.5051264Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5055155Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5058987Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5062551Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5066977Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5070587Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5073563Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5076505Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5079084Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5081528Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[33mai_egress.consent_read_failed (treated as no grant)^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5084302Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5087290Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=self_harm model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5090105Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=emergency model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5092981Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=self_harm model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5096188Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5098931Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=emergency model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5101733Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=emergency model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:37.5104898Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=emergency model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.3268364Z PASS test/dunning-v2-lockout-allowlist-route-table.spec.ts (208 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:38.9062077Z FAIL test/roman/roman.controller.spec.ts (254 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:38.9064158Z   ● RomanController — POST /roman/sessions/:id/messages (SSE) › rate-limits, persists the user turn, then streams the assistant reply
+targeted	Targeted jest	2026-10-05T23:15:38.9065130Z 
+targeted	Targeted jest	2026-10-05T23:15:38.9065548Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:38.9066034Z 
+targeted	Targeted jest	2026-10-05T23:15:38.9066858Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9068211Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9070055Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9071901Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9073361Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:38.9074985Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9075943Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:38.9076440Z 
+targeted	Targeted jest	2026-10-05T23:15:38.9076889Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:38.9077816Z       at Object.<anonymous> (test/roman/roman.controller.spec.ts:356:5)
+targeted	Targeted jest	2026-10-05T23:15:38.9078306Z 
+targeted	Targeted jest	2026-10-05T23:15:38.9079382Z   ● RomanController — POST /roman/sessions/:id/messages (SSE) › emits a structured SSE error frame (never a raw stack) when streaming throws
+targeted	Targeted jest	2026-10-05T23:15:38.9080367Z 
+targeted	Targeted jest	2026-10-05T23:15:38.9080777Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:38.9081256Z 
+targeted	Targeted jest	2026-10-05T23:15:38.9082078Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9083479Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9085905Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9087331Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9088758Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:38.9090043Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:38.9090985Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:38.9091481Z 
+targeted	Targeted jest	2026-10-05T23:15:38.9091917Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:38.9092841Z       at Object.<anonymous> (test/roman/roman.controller.spec.ts:402:5)
+targeted	Targeted jest	2026-10-05T23:15:38.9093338Z 
+targeted	Targeted jest	2026-10-05T23:15:39.5248968Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:39 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_failed session=s_today stage=read: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-05T23:15:39.5271663Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:39 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_failed session=s_today stage=erase: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-05T23:15:39.5435977Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:39 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_failed stage=read erased_before=0: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-05T23:15:39.5495621Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:39 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_failed stage=read erased_before=1: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-05T23:15:39.5535986Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:39 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_failed session=s_today erased_before=0: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-05T23:15:39.5585581Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:39 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_failed stage=count erased_before=50: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-05T23:15:39.5704954Z PASS test/roman/roman-chats.controller.spec.ts (290 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:40.2932112Z PASS test/roman/roman-context-core.spec.ts (223 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:40.6242007Z PASS test/roman/roman-context-a2-fixes.spec.ts (242 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:41.0922536Z PASS test/roman/roman-erasure.sweep.spec.ts (280 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:41.5092142Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.5201387Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.5284669Z ^[[31m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.5341791Z PASS test/roman/roman-guardrails-wiring.spec.ts (306 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:41.9611626Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=emergency model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.9613871Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=self_harm model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.9615744Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 router=self_harm model_call=false^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.9617925Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.9620642Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=injury_pain model_call=true rewritten=false guardrails_applied=["referral_added"] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.9622889Z ^[[32m[Nest] 3318  - ^[[39m10/05/2026, 11:15:41 PM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=true guardrails_applied=["calorie_floor"] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:41.9911950Z PASS test/dunning-v2-lockout-guard.e2e.spec.ts (342 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:42.0876067Z PASS test/roman-coach-reviewed-migration.spec.ts (350 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:42.2327478Z PASS test/roman/roman-guardrails-rb121.spec.ts (356 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:42.5104136Z PASS test/roman/roman-guardrails-round2.spec.ts (376 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:43.0999957Z FAIL test/roman/roman-sse-error-contract.spec.ts (410 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:43.1002024Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › client consent refusal: passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:43.1003030Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1003436Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1004332Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1005156Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1006498Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1008288Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1009730Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1011164Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1012440Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1013379Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1014562Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1015053Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1016021Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:43.1016870Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:43.1017319Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1018677Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › coach-audience consent refusal: passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:43.1019793Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1020210Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1020695Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1021490Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1022819Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1024915Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1026307Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1027751Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1029367Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1030301Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1030796Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1031270Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1032243Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:43.1033104Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:43.1033572Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1035126Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › egress policy refusal (503): passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:43.1036131Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1036529Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1037027Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1037834Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1039244Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1041071Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1042581Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1044332Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1045776Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1046783Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1047306Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1047771Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1048757Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:43.1049605Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:43.1050060Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1051402Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › ROMAN_UNAVAILABLE (flag or client missing): passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:43.1052529Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1052920Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1054157Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1055046Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1056467Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1058301Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1059831Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1061341Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1062721Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1063893Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1064436Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1064878Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1065803Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:43.1066587Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:43.1067025Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1068692Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › a structured body with extra keys (retryAfterSeconds, requestId, statusCode): passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:43.1070629Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1071035Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1071538Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1072333Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1073989Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1075864Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1077375Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1078921Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1080280Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1081270Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1081783Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1082264Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1083247Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:43.1084336Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:43.1084808Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1086217Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › a NestJS default body without a code: passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:43.1087372Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1087786Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1088274Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1089095Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1090530Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1092533Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1094343Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1095988Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1097644Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1098702Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1099236Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1099702Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1100702Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:43.1101589Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:43.1102053Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1103447Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › a raw Error (never leaks its text): passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:43.1104806Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1105196Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1105690Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1106538Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1107944Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1109829Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1111537Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1112977Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1114697Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1115745Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1116266Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1116767Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1117697Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:43.1118573Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:43.1119021Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1120286Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › a non-object throw: passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:43.1121329Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1121751Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1122278Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1123120Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1124778Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1126684Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1128197Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1129699Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1131123Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1132141Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1132659Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1133133Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1134380Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:43.1135186Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:43.1135636Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1136803Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › no request id on the request: no X-Request-ID override, frame unchanged
+targeted	Targeted jest	2026-10-05T23:15:43.1138019Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1138434Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:43.1138952Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1139803Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1141291Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1143156Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1144879Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1146400Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:43.1147808Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.1148812Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:43.1149428Z 
+targeted	Targeted jest	2026-10-05T23:15:43.1149897Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:43.1150942Z       at Object.<anonymous> (test/roman/roman-sse-error-contract.spec.ts:220:5)
+targeted	Targeted jest	2026-10-05T23:15:43.1151583Z 
+targeted	Targeted jest	2026-10-05T23:15:43.3309103Z PASS test/dunning-v2-lockout-guard.spec.ts (427 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:43.7415581Z ^[[31m[Nest] 3318  - ^[[39m10/01/2026, 12:30:00 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.7444759Z ^[[31m[Nest] 3318  - ^[[39m10/01/2026, 12:30:00 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_failed: Error^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.7498783Z ^[[33m[Nest] 3318  - ^[[39m10/05/2026, 11:15:43 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningLockoutGuard] ^[[39m^[[33mDunningLockoutGuard lookup failed for user=u1: db down^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.7500457Z PASS test/roman/roman-client-context-injection.spec.ts (460 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:43.7503151Z ^[[32m[Nest] 3318  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.7507391Z ^[[32m[Nest] 3318  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=none^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.7510907Z ^[[32m[Nest] 3318  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=none^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.7514680Z ^[[32m[Nest] 3318  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:43.7518344Z ^[[32m[Nest] 3318  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 router=normal model_call=true rewritten=false guardrails_applied=[] context=unavailable^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.2620086Z PASS test/roman/roman-context-round2.spec.ts (242 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:44.3646782Z PASS test/roman/roman.prompts.spec.ts (257 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:44.4553238Z PASS test/roman-coach-reviewed-feature.spec.ts (263 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:44.4576413Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4577835Z Summary of all failing tests
+targeted	Targeted jest	2026-10-05T23:15:44.4582996Z FAIL test/roman/roman-launch-hardening.spec.ts (165 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:44.4592784Z   ● FR1-651-3 the single per-session exclamation is spent once, then never allowed again › a stored reply that uses the exclamation marks the session; a spent session gets none
+targeted	Targeted jest	2026-10-05T23:15:44.4594566Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4595576Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-05T23:15:44.4596022Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4598301Z     Expected: "Nice work! Keep it up."
+targeted	Targeted jest	2026-10-05T23:15:44.4601737Z     Received: "Nice work. Keep it up."
+targeted	Targeted jest	2026-10-05T23:15:44.4602152Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4612316Z     ^[[0m ^[[90m 762 |^[[39m     ^[[36mawait^[[39m drain(svc^[[33m.^[[39mstreamAssistantTurn(^[[33mCLIENT^[[39m^[[33m,^[[39m fakeOf(session())^[[33m,^[[39m { userMessage^[[33m:^[[39m ^[[32m'I hit my protein'^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4617653Z      ^[[90m 763 |^[[39m     ^[[36mconst^[[39m roman1 ^[[33m=^[[39m first^[[33m.^[[39mstored^[[33m.^[[39mfilter((m) ^[[33m=>^[[39m m^[[33m.^[[39mrole ^[[33m===^[[39m ^[[32m'roman'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4622361Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 764 |^[[39m     expect(roman1[^[[35m0^[[39m]^[[33m.^[[39mcontent)^[[33m.^[[39mtoBe(^[[32m'Nice work! Keep it up.'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4624238Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4631215Z      ^[[90m 765 |^[[39m     ^[[36mconst^[[39m marks ^[[33m=^[[39m first^[[33m.^[[39mprisma^[[33m.^[[39mromanSession^[[33m.^[[39mupdateMany^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mmap(
+targeted	Targeted jest	2026-10-05T23:15:44.4649141Z      ^[[90m 766 |^[[39m       (c^[[33m:^[[39m unknown[]) ^[[33m=>^[[39m (c[^[[35m0^[[39m] ^[[36mas^[[39m { data^[[33m:^[[39m ^[[33mRecord^[[39m^[[33m<^[[39m^[[33mstring^[[39m^[[33m,^[[39m unknown^[[33m>^[[39m })^[[33m.^[[39mdata^[[33m.^[[39mexclamation_used^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4650836Z      ^[[90m 767 |^[[39m     )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4651298Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4651781Z       at Object.<anonymous> (test/roman/roman-launch-hardening.spec.ts:764:31)
+targeted	Targeted jest	2026-10-05T23:15:44.4652334Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4663303Z FAIL test/roman/roman.controller.spec.ts (254 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:44.4687207Z   ● RomanController — POST /roman/sessions/:id/messages (SSE) › rate-limits, persists the user turn, then streams the assistant reply
+targeted	Targeted jest	2026-10-05T23:15:44.4714065Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4744606Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4752184Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4765178Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4766567Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4768349Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4769683Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4771069Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4772001Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4772588Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4772891Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4773162Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4773872Z       at Object.<anonymous> (test/roman/roman.controller.spec.ts:356:5)
+targeted	Targeted jest	2026-10-05T23:15:44.4774389Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4775462Z   ● RomanController — POST /roman/sessions/:id/messages (SSE) › emits a structured SSE error frame (never a raw stack) when streaming throws
+targeted	Targeted jest	2026-10-05T23:15:44.4776374Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4776745Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4777206Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4777945Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4779236Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4781239Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4782565Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4784171Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4785448Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4786368Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4786847Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4787277Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4788168Z       at Object.<anonymous> (test/roman/roman.controller.spec.ts:402:5)
+targeted	Targeted jest	2026-10-05T23:15:44.4788651Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4789117Z FAIL test/roman/roman-sse-error-contract.spec.ts (410 MB heap size)
+targeted	Targeted jest	2026-10-05T23:15:44.4790757Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › client consent refusal: passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:44.4791721Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4792096Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4792554Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4793489Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4794972Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4796678Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4798002Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4799142Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4800316Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4801231Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4801711Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4802146Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4803041Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:44.4803993Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:44.4804408Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4805387Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › coach-audience consent refusal: passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:44.4806003Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4806231Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4806504Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4806937Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4807701Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4808706Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4809480Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4810262Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4810977Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4811503Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4811955Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4812211Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4812727Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:44.4813177Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:44.4813420Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4814748Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › egress policy refusal (503): passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:44.4815757Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4816132Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4816584Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4817330Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4818235Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4819526Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4820886Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4822259Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4823892Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4824868Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4825346Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4825769Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4826668Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:44.4827434Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:44.4827852Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4829157Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › ROMAN_UNAVAILABLE (flag or client missing): passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:44.4829936Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4830313Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4830775Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4831515Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4832814Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4834686Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4836058Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4837431Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4838677Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4839576Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4840041Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4840474Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4841368Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:44.4842136Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:44.4842543Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4844297Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › a structured body with extra keys (retryAfterSeconds, requestId, statusCode): passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:44.4845605Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4845974Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4846631Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4847371Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4848652Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4850354Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4851178Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4852206Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4853463Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4854528Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4855014Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4855444Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4856328Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:44.4857110Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:44.4857515Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4858769Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › a NestJS default body without a code: passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:44.4860013Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4860376Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4860825Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4861559Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4863792Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4867791Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4868969Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4872836Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4874276Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4876089Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4876587Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4877524Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4879024Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:44.4880305Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:44.4880734Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4885651Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › a raw Error (never leaks its text): passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:44.4886615Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4886865Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4887149Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4888542Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4890748Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4894800Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4896020Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4899353Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4900808Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4901997Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4902484Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4903745Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4905369Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:44.4906669Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:44.4907097Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4911210Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › a non-object throw: passes the mobile strict schema with exactly {code, message}
+targeted	Targeted jest	2026-10-05T23:15:44.4912194Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4912478Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4912766Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4914669Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4917116Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4921573Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4923414Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4927635Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4928986Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4930064Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4930584Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4931069Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4932130Z       at frameFor (test/roman/roman-sse-error-contract.spec.ts:122:3)
+targeted	Targeted jest	2026-10-05T23:15:44.4933034Z       at test/roman/roman-sse-error-contract.spec.ts:203:30
+targeted	Targeted jest	2026-10-05T23:15:44.4933457Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4936667Z   ● Roman SSE error frame: pinned to the mobile strict parser (B-626-2) › no request id on the request: no X-Request-ID override, frame unchanged
+targeted	Targeted jest	2026-10-05T23:15:44.4937617Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4938016Z     TypeError: this.roman.assertCoachPoolOpen is not a function
+targeted	Targeted jest	2026-10-05T23:15:44.4938486Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4939601Z     ^[[0m ^[[90m 140 |^[[39m     ^[[90m// B-668-1 — the coach's monthly AI credit pool, before the turn is stored^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4941367Z      ^[[90m 141 |^[[39m     ^[[90m// (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4945100Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 142 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39mcrisis) ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39massertCoachPoolOpen(caller)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4946489Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4948945Z      ^[[90m 143 |^[[39m     ^[[36mawait^[[39m ^[[36mthis^[[39m^[[33m.^[[39mroman^[[33m.^[[39mappendMessage(caller^[[33m,^[[39m session^[[33m.^[[39mid^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T23:15:44.4950224Z      ^[[90m 144 |^[[39m       role^[[33m:^[[39m ^[[32m'user'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:15:44.4951194Z      ^[[90m 145 |^[[39m       content^[[33m:^[[39m dto^[[33m.^[[39mcontent^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:15:44.4951684Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4952810Z       at RomanController.sendMessage (src/roman/roman.controller.ts:142:35)
+targeted	Targeted jest	2026-10-05T23:15:44.4954367Z       at Object.<anonymous> (test/roman/roman-sse-error-contract.spec.ts:220:5)
+targeted	Targeted jest	2026-10-05T23:15:44.4955040Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4955307Z 
+targeted	Targeted jest	2026-10-05T23:15:44.4964455Z Test Suites: 3 failed, 1 skipped, 19 passed, 22 of 23 total
+targeted	Targeted jest	2026-10-05T23:15:44.4965320Z Tests:       12 failed, 11 skipped, 561 passed, 584 total
+targeted	Targeted jest	2026-10-05T23:15:44.4966210Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T23:15:44.4966609Z Time:        13.999 s
+targeted	Targeted jest	2026-10-05T23:15:44.4968218Z Ran all test suites matching test/roman|test/dunning-v2-lockout-allowlist-route-table.spec.ts|test/dunning-v2-lockout-guard.spec.ts|test/dunning-v2-lockout-guard.e2e.spec.ts.
+targeted	Targeted jest	2026-10-05T23:15:44.5674868Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,6 @@
+    ✕ B-WIZ3-122: a tap during hydration is dropped; a fresh tap publishes the made one-time package as shown (175 ms)
+    ✕ B-WIZ3-122: a tap during hydration of an unsent free package is dropped; a fresh tap re-sends it with its own key (121 ms)
+    ✓ fields take no edits until hydration ends; a later edit is what gets published (32 ms)
+    ✓ control: a tap during hydration for an account that then signs out sends nothing (25 ms)
+    ✓ control: with nothing saved, a tap after hydration publishes the shown defaults (18 ms)
+Tests:       2 failed, 3 passed, 5 total

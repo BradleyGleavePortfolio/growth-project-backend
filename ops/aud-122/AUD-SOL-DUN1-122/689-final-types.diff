@@ -1,0 +1,33 @@
+diff --git a/src/checkout/client-billing.service.ts b/src/checkout/client-billing.service.ts
+index b3a65af3..7fd896a7 100644
+--- a/src/checkout/client-billing.service.ts
++++ b/src/checkout/client-billing.service.ts
+@@ -476,7 +476,9 @@ export class ClientBillingService {
+     let paymentMethodId: string;
+     try {
+       const si = await this.stripe.retrieveSetupIntent(setupIntentId);
+-      const owner = si.metadata?.tgp_client_user_id;
++      // Main's StripeSetupIntentObject leaves metadata and an expanded
++      // payment_method untyped (index signature).
++      const owner = (si.metadata as Record<string, string> | undefined)?.tgp_client_user_id;
+       // Never confirm a SetupIntent minted for another client (or outside
+       // this flow); answer as if it did not exist.
+       if (si.customer !== customer.stripe_customer_id || owner !== clientUserId) {
+@@ -486,7 +488,7 @@ export class ClientBillingService {
+           message: 'That card update was not found for your account. Start the card update again.',
+         });
+       }
+-      const pm = si.payment_method;
++      const pm = si.payment_method as string | { id?: string } | null | undefined;
+       paymentMethodId = typeof pm === 'string' ? pm : (pm?.id ?? '');
+       if (si.status !== 'succeeded' || !paymentMethodId) {
+         throw new ConflictException({
+@@ -1993,7 +1995,7 @@ export class ClientBillingService {
+       ) {
+         try {
+           const si = await this.stripe.retrieveSetupIntent(op.setup_intent_id);
+-          const pm = si.payment_method;
++          const pm = si.payment_method as string | { id?: string } | null | undefined;
+           paymentMethodId = typeof pm === 'string' ? pm : (pm?.id ?? null);
+         } catch (err) {
+           this.logger.warn(

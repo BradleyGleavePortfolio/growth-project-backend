@@ -1,0 +1,14 @@
+[heavy] waiting for a slot: npx jest --ci src/screens/roman/__tests__/useRomanChatErased.test.tsx
+PASS src/screens/roman/__tests__/useRomanChatErased.test.tsx
+  ✓ control: an ordinary send before any delete goes to the live chat (21 ms)
+  ✓ list-one: erasing the open chat clears it from the live screen and the next send goes to a fresh chat (308 ms)
+  ✓ list-all: erasing the open chat clears it from the live screen and the next send goes to a fresh chat (41 ms)
+  ✓ transcript-one: erasing the open chat clears it from the live screen and the next send goes to a fresh chat (24 ms)
+  ✓ a send right after the erase waits for the fresh chat instead of the erased one (37 ms)
+  ✓ control: deleting another chat leaves the live chat as it is (33 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        2.594 s, estimated 5 s
+Ran all test suites matching /src\/screens\/roman\/__tests__\/useRomanChatErased.test.tsx/i.

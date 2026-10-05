@@ -1,0 +1,9 @@
+money train FIX ROUND READY FOR AUDIT (B-MON2-122, agent 122) — 16:21 PDT 10-05
+Scope: Sol B-348-1, Opus B-349-1 (operator option 1, mobile copy only), Sol B-349-1, Sol B-349-2. No backend change.
+#348 5ef9430069990bd81187db22e3000ae606b46022 FIX ROUND https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/348#issuecomment-6005182154 (moneyCopy.ts: only "Processing" -> "Not paid yet")
+#349 06ffbc241073c0ddb49323661221640c10c37a37 FIX ROUND https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/349#issuecomment-6005219170
+#350 3732d09eeb607ab2b86e7f7c3602ba2cb1621c5d RESTACK merge-only https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/350#issuecomment-6005254555
+#351 405854636ed5caac4b8843a78a718ce9aef8d476 RESTACK merge-only https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/351#issuecomment-6005294021
+lane at #351 4058546 (tsc + 8 money/Earnings specs, 167 tests): GREEN https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37387296756
+PR CI: running at new heads; #349/#350 expected red by design (3 Earnings-route assertions retired in #351).
+Re-review: delta on #348 (one string + test) and #349 (MoneyChargeScreen, MoneyScreen held note, new test); #350/#351 merge-only.

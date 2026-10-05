@@ -1,0 +1,503 @@
+[heavy] waiting for a slot: env CI=true npx jest --runInBand --runTestsByPath src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+  console.warn
+    Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+    [0m [90m 296 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+     [90m 297 |[39m         navigation[33m.[39mdispatch(
+    [31m[1m>[22m[39m[90m 298 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 299 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+     [90m 300 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+     [90m 301 |[39m           })[33m,[39m[0m
+
+      at Object.warn [as navigate] (../../deps/mobile/node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:298:25)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+FAIL src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+  B-347-1 free first package
+    ✕ saves a new name at the unchanged $0 one-time price (1263 ms)
+  B-347-2 trial terms
+    ✕ offers no trial input and previews only the saved trial (22 ms)
+  B-347-3 draft made in the editor
+    ✕ creates a draft, then makes it live with the wizard's publish route (152 ms)
+    ✕ keeps the draft and the action when publishing fails (21 ms)
+
+  ● B-347-1 free first package › saves a new name at the unchanged $0 one-time price
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "Package updated"
+    Received array: []
+
+    [0m [90m 83 |[39m     [36mawait[39m fireEvent[33m.[39mchangeText(s[33m.[39mgetByPlaceholderText([32m"e.g. 12-week transformation"[39m)[33m,[39m [32m"Free intro"[39m)[33m;[39m
+     [90m 84 |[39m     [36mawait[39m fireEvent[33m.[39mpress(s[33m.[39mgetByLabelText([32m"Save changes"[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 85 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(alerts())[33m.[39mtoContain([32m"Package updated"[39m))[33m;[39m
+     [90m    |[39m                  [31m[1m^[22m[39m
+     [90m 86 |[39m     expect(mockPatch)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+     [90m 87 |[39m     expect(mockPatch[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m])[33m.[39mtoEqual(
+     [90m 88 |[39m       expect[33m.[39mobjectContaining({ name[33m:[39m [32m"Free intro"[39m[33m,[39m amount_cents[33m:[39m [35m0[39m[33m,[39m billing_type[33m:[39m [32m"one_time"[39m })[33m,[39m[0m
+
+      at Object.<anonymous> (src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx:85:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● B-347-2 trial terms › offers no trial input and previews only the saved trial
+
+    expect(received).toBeNull()
+
+    Received: <Text style={{"color": "#6B675F", "fontSize": 12, "fontWeight": "500", "letterSpacing": 0.5, "marginBottom": 6, "marginTop": 16, "textTransform": "uppercase"}}>Trial days (optional)</Text>
+
+    [0m [90m 94 |[39m   it([32m"offers no trial input and previews only the saved trial"[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 95 |[39m     [36mconst[39m s [33m=[39m [36mawait[39m render([33m<[39m[33mCoachPackageEditScreen[39m navigation[33m=[39m{nav() [36mas[39m never} route[33m=[39m{edit(row())} [33m/[39m[33m>[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 96 |[39m     expect(s[33m.[39mqueryByText([35m/Trial days/i[39m))[33m.[39mtoBeNull()[33m;[39m
+     [90m    |[39m                                          [31m[1m^[22m[39m
+     [90m 97 |[39m     expect(s[33m.[39mqueryByPlaceholderText([32m"0"[39m))[33m.[39mtoBeNull()[33m;[39m
+     [90m 98 |[39m     [36mawait[39m fireEvent[33m.[39mpress(s[33m.[39mgetByLabelText([32m"Preview as buyer"[39m))[33m;[39m
+     [90m 99 |[39m     expect(s[33m.[39mgetByTestId([32m"w4-preview-trial"[39m)[33m.[39mprops[33m.[39mchildren)[33m.[39mtoBe([32m"null"[39m)[33m;[39m[0m
+
+      at Object.toBeNull (src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx:96:42)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● B-347-3 draft made in the editor › creates a draft, then makes it live with the wizard's publish route
+
+    Unable to find an element with text: /Coaching is saved as a draft/
+
+    [36m<View>[39m
+      [36m<View>[39m
+        [36m<View[39m
+          [33maccessibilityLabel[39m=[32m"Go back"[39m
+          [33maccessibilityRole[39m=[32m"button"[39m
+          [33maccessible[39m=[32m{true}[39m
+        [36m>[39m
+          [36m<Text>[39m
+            [0m[0m
+          [36m</Text>[39m
+        [36m</View>[39m
+        [36m<Text>[39m
+          [0mEdit package[0m
+        [36m</Text>[39m
+        [36m<View />[39m
+      [36m</View>[39m
+      [36m<RCTScrollView>[39m
+        [36m<View>[39m
+          [36m<Text>[39m
+            [0mName[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"e.g. 12-week transformation"[39m
+            [33mvalue[39m=[32m"Coaching"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mDescription[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"What's included? Who is this for?"[39m
+            [33mvalue[39m=[32m"Weekly coaching"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mPrice (USD)[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"199.00"[39m
+            [33mvalue[39m=[32m"99.00"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mBilling[0m
+          [36m</Text>[39m
+          [36m<View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"One-time"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mOne-time[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Monthly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": true,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mMonthly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Quarterly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mQuarterly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Yearly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mYearly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+          [36m<Text>[39m
+            [0mTrial days (optional)[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"0"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mFeatures (one per line)[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"Weekly check-ins
+    Custom workout plan
+    Meal plan"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Save changes"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessibilityState[39m=[32m{
+              {
+                "disabled": false,
+              }
+            }[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mSave changes[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Preview as buyer"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mPreview as buyer[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Share links are coming soon"[39m
+            [33maccessibilityRole[39m=[32m"text"[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mShare links are coming soon[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Archive package"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessibilityState[39m=[32m{
+              {
+                "disabled": false,
+              }
+            }[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mArchive package[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Manage content"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mManage content[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"View subscribers"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mView subscribers ([0m
+              [0m0[0m
+              [0m)[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+      [36m</RCTScrollView>[39m
+    [36m</View>[39m
+
+    [0m [90m 122 |[39m     expect(created[33m.[39mpublishedAt)[33m.[39mtoBeNull()[33m;[39m
+     [90m 123 |[39m     [36mawait[39m s[33m.[39mrerender([33m<[39m[33mCoachPackageEditScreen[39m navigation[33m=[39m{n [36mas[39m never} route[33m=[39m{edit(created)} [33m/[39m[33m>[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 124 |[39m     expect(s[33m.[39mgetByText([35m/Coaching is saved as a draft/[39m))[33m.[39mtoBeTruthy()[33m;[39m
+     [90m     |[39m              [31m[1m^[22m[39m
+     [90m 125 |[39m     [36mawait[39m fireEvent[33m.[39mpress(s[33m.[39mgetByLabelText([32m"Make Coaching live"[39m))[33m;[39m
+     [90m 126 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(alerts())[33m.[39mtoContain([32m"Package is live"[39m))[33m;[39m
+     [90m 127 |[39m     expect(mockPost)[33m.[39mtoHaveBeenCalledWith([32m"/v1/coach/packages/pkg_w4/publish"[39m)[33m;[39m[0m
+
+      at Object.getByText (src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx:124:14)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● B-347-3 draft made in the editor › keeps the draft and the action when publishing fails
+
+    Unable to find an element with accessibility label: Make Coaching live
+
+    [36m<View>[39m
+      [36m<View>[39m
+        [36m<View[39m
+          [33maccessibilityLabel[39m=[32m"Go back"[39m
+          [33maccessibilityRole[39m=[32m"button"[39m
+          [33maccessible[39m=[32m{true}[39m
+        [36m>[39m
+          [36m<Text>[39m
+            [0m[0m
+          [36m</Text>[39m
+        [36m</View>[39m
+        [36m<Text>[39m
+          [0mEdit package[0m
+        [36m</Text>[39m
+        [36m<View />[39m
+      [36m</View>[39m
+      [36m<RCTScrollView>[39m
+        [36m<View>[39m
+          [36m<Text>[39m
+            [0mName[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"e.g. 12-week transformation"[39m
+            [33mvalue[39m=[32m"Coaching"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mDescription[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"What's included? Who is this for?"[39m
+            [33mvalue[39m=[32m"Weekly coaching"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mPrice (USD)[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"199.00"[39m
+            [33mvalue[39m=[32m"99.00"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mBilling[0m
+          [36m</Text>[39m
+          [36m<View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"One-time"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mOne-time[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Monthly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": true,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mMonthly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Quarterly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mQuarterly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Yearly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mYearly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+          [36m<Text>[39m
+            [0mTrial days (optional)[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"0"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mFeatures (one per line)[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"Weekly check-ins
+    Custom workout plan
+    Meal plan"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Save changes"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessibilityState[39m=[32m{
+              {
+                "disabled": false,
+              }
+            }[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mSave changes[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Preview as buyer"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mPreview as buyer[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Share links are coming soon"[39m
+            [33maccessibilityRole[39m=[32m"text"[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mShare links are coming soon[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Archive package"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessibilityState[39m=[32m{
+              {
+                "disabled": false,
+              }
+            }[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mArchive package[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Manage content"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mManage content[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"View subscribers"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mView subscribers ([0m
+              [0m0[0m
+              [0m)[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+      [36m</RCTScrollView>[39m
+    [36m</View>[39m
+
+    [0m [90m 136 |[39m       [33m<[39m[33mCoachPackageEditScreen[39m navigation[33m=[39m{nav() [36mas[39m never} route[33m=[39m{edit(row({ publishedAt[33m:[39m [36mnull[39m }))} [33m/[39m[33m>[39m[33m,[39m
+     [90m 137 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 138 |[39m     [36mawait[39m fireEvent[33m.[39mpress(s[33m.[39mgetByLabelText([32m"Make Coaching live"[39m))[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 139 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect([33mAlert[39m[33m.[39malert)[33m.[39mtoHaveBeenCalled())[33m;[39m
+     [90m 140 |[39m     expect(alerts())[33m.[39mnot[33m.[39mtoContain([32m"Package is live"[39m)[33m;[39m
+     [90m 141 |[39m     expect(s[33m.[39mgetByLabelText([32m"Make Coaching live"[39m))[33m.[39mtoBeTruthy()[33m;[39m[0m
+
+      at Object.getByLabelText (src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx:138:29)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 4 total
+Snapshots:   0 total
+Time:        3.756 s, estimated 21 s
+Ran all test suites within paths "src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx".
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.

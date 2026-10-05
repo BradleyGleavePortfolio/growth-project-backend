@@ -1,0 +1,28 @@
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/refund-dispute-handler.service.ts
+index 11b35744..6cb41842 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -1936,18 +1936,15 @@ export class RefundDisputeHandlerService {
+             ),
+           );
+         }
+-<<<<<<< e77a8d36 (fix(dunning): D2d restart, pause and lock-waiver fixes on #705)
+-        // D2d (Opus B-705-3, operator ruling): the plan's coach restarted it
+-        // with this dispute on record, so the loss moves money (above) and
+-        // leaves the plan's access and status as the coach set them.
+-        const restarted = await this.restartedByCoach(dispute.id);
+-=======
+         // B-674-5: once per dispute; a redelivery retries one still owed.
+         const at = firstPass ? disputeSource.at : null;
+         await this.applyDisputeTransferReversalOnce(updated.id, at);
+       }
+       if (purchase && firstPass) {
+->>>>>>> 346b7757 (Merge #704 head 524c4025 into D-piece #705 (merge-only restack, B-DUNR3-122))
++        // D2d (Opus B-705-3, operator ruling): the plan's coach restarted it
++        // with this dispute on record, so the loss moves money (above) and
++        // leaves the plan's access and status as the coach set them.
++        const restarted = await this.restartedByCoach(dispute.id);
+         // PR-16 — entitlement flip + drop-cancel commit atomically.
+         // The Stripe-HTTP-ridden ledger / transfer reversals above
+         // intentionally run outside this tx (P1-3 anti-pattern). The

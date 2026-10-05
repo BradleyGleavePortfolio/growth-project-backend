@@ -1,0 +1,3439 @@
+diff --git a/src/__tests__/CoachPackageContentsScreen.test.tsx b/src/__tests__/CoachPackageContentsScreen.test.tsx
+index 1b380b9..5c9f550 100644
+--- a/src/__tests__/CoachPackageContentsScreen.test.tsx
++++ b/src/__tests__/CoachPackageContentsScreen.test.tsx
+@@ -54,7 +54,8 @@ describe('CoachPackageContents — nav + wiring source guards', () => {
+ 
+   it('the edit screen has a Manage content button that navigates to CoachPackageContents', () => {
+     expect(EDIT_SRC).toMatch(/Manage content/);
+-    expect(EDIT_SRC).toMatch(/navigation\.navigate\('CoachPackageContents'/);
++    // Quote style follows the file's formatter (S-COACH-MOB-4); the wiring is what matters.
++    expect(EDIT_SRC).toMatch(/navigation\.navigate\(["']CoachPackageContents["']/);
+   });
+ 
+   it('the push affordance is wired through PushPromptSheet → PushConfirmModal (M5)', () => {
+diff --git a/src/__tests__/CoachPackageEditScreen.idempotency.test.tsx b/src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+new file mode 100644
+index 0000000..01c540a
+--- /dev/null
++++ b/src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+@@ -0,0 +1,231 @@
++// src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
++//
++// S-COACH-3 (agent 113) — OR-112-16 / B-641-5 follow-up (Opus): the package
++// editor's create sends ONE Idempotency-Key per create attempt and re-sends
++// it on every retry, so a lost response can never make a second package.
++// Before this change every tap generated a fresh key (no dedupe possible).
++
++import AsyncStorage from "@react-native-async-storage/async-storage";
++import React from "react";
++import { render, fireEvent, waitFor } from "@testing-library/react-native";
++import { Alert } from "react-native";
++
++// ── Theme mock ──────────────────────────────────────────────────────────────
++jest.mock("../theme/ThemeProvider", () => {
++  const tokensModule = jest.requireActual("../theme/tokens");
++  const realTokens = tokensModule.default;
++  const CanonicalColors = jest.requireActual("../constants/colors").default;
++  const colors = {
++    ...CanonicalColors,
++    dark: CanonicalColors.textPrimary,
++    white: CanonicalColors.textOnPrimary,
++    gold: CanonicalColors.warning,
++    orange: CanonicalColors.error,
++  };
++  return {
++    useTheme: () => ({
++      colors,
++      tokens: realTokens,
++      semanticColors: realTokens.lightTokens,
++      tierColors: {
++        accentBorder: realTokens.colors.forest,
++        accentBg: "rgba(44,74,54,0.06)",
++        accentFg: realTokens.colors.forest,
++        badgeShadow: realTokens.shadows.sm,
++      },
++      colorScheme: "light",
++    }),
++  };
++});
++
++jest.mock("expo-font", () => ({ isLoaded: () => true }));
++jest.mock("../lib/analytics", () => ({ track: jest.fn() }));
++jest.mock("../utils/haptics", () => ({
++  lightTap: jest.fn(),
++  mediumTap: jest.fn(),
++  warningTap: jest.fn(),
++  successTap: jest.fn(),
++}));
++jest.mock("../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "u1", email: "c@x.com", name: "Coach Lee" }),
++}));
++
++const mockCreate = jest.fn();
++const mockUpdate = jest.fn();
++jest.mock("../api/packagesApi", () => {
++  const actual = jest.requireActual("../api/packagesApi");
++  return {
++    ...actual,
++    coachPackagesApi: {
++      create: (...a: unknown[]) => mockCreate(...a),
++      update: (...a: unknown[]) => mockUpdate(...a),
++      archive: jest.fn(),
++    },
++  };
++});
++
++import CoachPackageEditScreen from "../screens/coach/payments/CoachPackageEditScreen";
++
++const offline = () =>
++  Object.assign(new Error("timeout of 30000ms exceeded"), {
++    code: "ECONNABORTED",
++    request: {},
++  });
++const httpError = (status: number, data: Record<string, unknown> = {}) =>
++  Object.assign(new Error(`HTTP ${status}`), {
++    response: { status, data, headers: {} },
++  });
++const created = (id = "pkg_1") => ({
++  data: {
++    id,
++    coachUserId: "u1",
++    title: "Strength Builder",
++    description: null,
++    priceCents: 9900,
++    currency: "usd",
++    billingInterval: "monthly",
++    intervalCount: 1,
++    trialDays: null,
++    features: [],
++    status: "active",
++    shareToken: null,
++    subscriberCount: 0,
++    monthlyRevenueCents: 0,
++    createdAt: "2026-01-01T00:00:00Z",
++    updatedAt: "2026-01-01T00:00:00Z",
++    archivedAt: null,
++  },
++});
++
++async function mountCreate() {
++  const navigation = {
++    navigate: jest.fn(),
++    goBack: jest.fn(),
++    dispatch: jest.fn(),
++  };
++  const screen = await render(
++    <CoachPackageEditScreen
++      navigation={navigation as never}
++      route={{ key: "k", name: "CoachPackageEdit", params: {} } as never}
++    />,
++  );
++  await fireEvent.changeText(
++    screen.getByPlaceholderText("e.g. 12-week transformation"),
++    "Strength Builder",
++  );
++  await fireEvent.changeText(screen.getByPlaceholderText("199.00"), "99");
++  return { ...screen, navigation };
++}
++
++beforeEach(async () => {
++  jest.clearAllMocks();
++  jest.spyOn(Alert, "alert").mockImplementation(() => {});
++  await AsyncStorage.clear();
++});
++
++describe("OR-112-16 package editor create is idempotent per attempt", () => {
++  it("a retry after a timeout re-sends the same key and body", async () => {
++    mockCreate
++      .mockRejectedValueOnce(offline())
++      .mockResolvedValueOnce(created());
++    const s = await mountCreate();
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() =>
++      expect(Alert.alert).toHaveBeenCalledWith(
++        "You appear to be offline",
++        expect.any(String),
++      ),
++    );
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(s.navigation.dispatch).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(2);
++    expect(typeof mockCreate.mock.calls[0][1]).toBe("string");
++    expect(mockCreate.mock.calls[1][1]).toBe(mockCreate.mock.calls[0][1]);
++    expect(mockCreate.mock.calls[1][0]).toEqual(mockCreate.mock.calls[0][0]);
++  });
++
++  it("after a success the next package gets a new key", async () => {
++    mockCreate
++      .mockResolvedValueOnce(created("pkg_1"))
++      .mockResolvedValueOnce(created("pkg_2"));
++    const s = await mountCreate();
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(2));
++    expect(mockCreate.mock.calls[1][1]).not.toBe(mockCreate.mock.calls[0][1]);
++  });
++
++  it("a definitive 400 drops the key, so the fixed retry is a new attempt", async () => {
++    mockCreate
++      .mockRejectedValueOnce(
++        httpError(400, {
++          code: "PACKAGE_INVALID",
++          message: "Name is too long.",
++        }),
++      )
++      .mockResolvedValueOnce(created());
++    const s = await mountCreate();
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(2));
++    expect(mockCreate.mock.calls[1][1]).not.toBe(mockCreate.mock.calls[0][1]);
++  });
++
++  it("422 IDEMPOTENCY_KEY_REUSED adopts the package the key made and saves the new details onto it", async () => {
++    mockCreate.mockRejectedValueOnce(
++      httpError(422, {
++        code: "IDEMPOTENCY_KEY_REUSED",
++        package_id: "pkg_first",
++        message: "reused",
++      }),
++    );
++    mockUpdate.mockResolvedValueOnce(created("pkg_first"));
++    const s = await mountCreate();
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
++    expect(mockUpdate.mock.calls[0][0]).toBe("pkg_first");
++    await waitFor(() => expect(s.navigation.dispatch).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++  });
++
++  it("an unknown failure shows specific copy, never the old generic line", async () => {
++    mockCreate.mockRejectedValueOnce(httpError(500, {}));
++    const s = await mountCreate();
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
++    const [title, body] = (Alert.alert as jest.Mock).mock.calls[0];
++    expect(title).not.toBe("Could not save");
++    expect(String(body)).not.toMatch(/Please check your inputs/);
++  });
++
++  it("B-329-1: the app is killed after a timeout; reopening the editor resumes the same create, once", async () => {
++    mockCreate.mockRejectedValueOnce(offline());
++    const first = await mountCreate();
++    await fireEvent.press(first.getByLabelText("Create package"));
++    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
++    const sentKey = mockCreate.mock.calls[0][1];
++    const sentBody = mockCreate.mock.calls[0][0];
++    await first.unmount();
++
++    mockCreate.mockResolvedValueOnce(created());
++    const navigation = {
++      navigate: jest.fn(),
++      goBack: jest.fn(),
++      dispatch: jest.fn(),
++    };
++    const second = await render(
++      <CoachPackageEditScreen
++        navigation={navigation as never}
++        route={{ key: "k2", name: "CoachPackageEdit", params: {} } as never}
++      />,
++    );
++    await second.findByTestId("package-edit-resumed");
++    await fireEvent.press(second.getByLabelText("Create package"));
++    await waitFor(() => expect(navigation.dispatch).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(2);
++    expect(mockCreate.mock.calls[1][1]).toBe(sentKey);
++    expect(mockCreate.mock.calls[1][0]).toEqual(sentBody);
++  });
++});
+diff --git a/src/components/coach/setup/__tests__/audit120HydrationConsent.test.tsx b/src/components/coach/setup/__tests__/audit120HydrationConsent.test.tsx
+new file mode 100644
+index 0000000..9e2b38d
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/audit120HydrationConsent.test.tsx
+@@ -0,0 +1,157 @@
++/** Test-only: B-346-3's fresh-action requirement at W2 head 26cf23b7. */
++import React from "react";
++import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
++
++jest.mock("../../../../services/sentry", () => ({ captureError: jest.fn() }));
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn(), put: jest.fn() },
++}));
++const mockCreate = jest.fn(async (..._a: unknown[]) => ({
++  data: { id: "pkg_new" },
++}));
++const mockUpdate = jest.fn(async (..._a: unknown[]) => ({}));
++jest.mock("../../../../api/packagesApi", () => ({
++  coachPackagesApi: {
++    create: (...a: unknown[]) => mockCreate(...a),
++    update: (...a: unknown[]) => mockUpdate(...a),
++  },
++}));
++const mockPublish = jest.fn(async (..._a: unknown[]) => ({}));
++const mockInvite = jest.fn(async () => ({ code: "SYNTHETIC", url: "x" }));
++const mockBind = jest.fn(async (..._a: unknown[]) => ({}));
++jest.mock("../../../../api/coachSetupApi", () => ({
++  coachSetupApi: {
++    publishPackage: (...a: unknown[]) => mockPublish(...a),
++    inviteLink: () => mockInvite(),
++    bindFreePackage: (...a: unknown[]) => mockBind(...a),
++  },
++}));
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "coach_1" }),
++}));
++const mockStore = new Map<string, string>();
++const mockRead: { hold: Promise<void> | null } = { hold: null };
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => {
++      if (mockRead.hold) await mockRead.hold;
++      return mockStore.get(k);
++    },
++    set: async (k: string, v: string) => {
++      mockStore.set(k, v);
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++import FirstPackageForm from "../FirstPackageForm";
++import {
++  intentStorageKey,
++  newIntent,
++} from "../../../../lib/coachSetup/packageCreateIntent";
++import type { PackageCreateInput } from "../../../../api/packagesApi";
++
++const savedInput: PackageCreateInput = {
++  title: "Saved high-price recurring plan",
++  priceCents: 99000,
++  currency: "usd",
++  billingInterval: "monthly",
++  intervalCount: 1,
++};
++const form = (done = jest.fn()) => (
++  <FirstPackageForm
++    defaultTitle="Synthetic coaching"
++    chargesEnabled
++    onCreated={done}
++  />
++);
++function holdRead(): () => Promise<void> {
++  let release: () => void = () => undefined;
++  mockRead.hold = new Promise<void>((r) => (release = r));
++  return async () => {
++    await act(async () => {
++      mockRead.hold = null;
++      release();
++      // Flush the hydration -> helper -> publish -> clear continuations.
++      for (let i = 0; i < 30; i += 1) await Promise.resolve();
++    });
++  };
++}
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockStore.clear();
++  mockRead.hold = null;
++});
++
++it("B-346-3: an early tap on $49 defaults cannot publish a saved $990 plan without a fresh post-hydration tap", async () => {
++  mockStore.set(
++    intentStorageKey("coach_1"),
++    JSON.stringify({ ...newIntent(savedInput), packageId: "pkg_saved" }),
++  );
++  const release = holdRead();
++  const done = jest.fn();
++  const screen = await render(form(done));
++  expect(screen.getByTestId("first-package-title").props.value).toBe(
++    "Synthetic coaching",
++  );
++  expect(screen.getByTestId("first-package-price").props.value).toBe("49.00");
++  await fireEvent.press(screen.getByTestId("first-package-create"));
++  expect(mockPublish).not.toHaveBeenCalled();
++  await release();
++  expect(screen.getByTestId("first-package-price").props.value).toBe("990.00");
++  expect(mockCreate).not.toHaveBeenCalled();
++  expect(mockUpdate).not.toHaveBeenCalled();
++  // Hydration is not a user action authorizing publication of this offer.
++  expect({
++    published: mockPublish.mock.calls,
++    completed: done.mock.calls.length,
++  }).toEqual({ published: [], completed: 0 });
++});
++
++it("B-346-3: an early tap on Paid defaults cannot automatically bind an unseen saved Free package to the invite", async () => {
++  const savedFree = { ...savedInput, title: "Saved free plan", priceCents: 0,
++    billingInterval: "one_time" as const };
++  mockStore.set(
++    intentStorageKey("coach_1"),
++    JSON.stringify({ ...newIntent(savedFree), packageId: "pkg_free" }),
++  );
++  const release = holdRead();
++  const done = jest.fn();
++  const screen = await render(form(done));
++  expect(screen.getByTestId("first-package-paid").props.accessibilityState.checked).toBe(true);
++  await fireEvent.press(screen.getByTestId("first-package-create"));
++  await release();
++  expect(screen.getByTestId("first-package-free").props.accessibilityState.checked).toBe(true);
++  expect(mockCreate).not.toHaveBeenCalled();
++  expect(mockUpdate).not.toHaveBeenCalled();
++  expect({
++    published: mockPublish.mock.calls,
++    bound: mockBind.mock.calls,
++    completed: done.mock.calls.length,
++  }).toEqual({ published: [], bound: [], completed: 0 });
++});
++
++it("control: a deliberate fresh tap after hydration publishes precisely the displayed saved plan", async () => {
++  mockStore.set(
++    intentStorageKey("coach_1"),
++    JSON.stringify({ ...newIntent(savedInput), packageId: "pkg_saved" }),
++  );
++  const release = holdRead();
++  const done = jest.fn();
++  const screen = await render(form(done));
++  await release();
++  expect(mockPublish).not.toHaveBeenCalled();
++  expect(screen.getByTestId("first-package-price").props.value).toBe("990.00");
++  await fireEvent.press(screen.getByTestId("first-package-create"));
++  await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++  expect(mockPublish.mock.calls).toEqual([["pkg_saved"]]);
++  expect(mockCreate).not.toHaveBeenCalled();
++  expect(mockUpdate).not.toHaveBeenCalled();
++  expect(done.mock.calls[0][0]).toMatchObject({
++    id: "pkg_saved", title: savedInput.title, priceCents: 99000,
++    billingInterval: "monthly",
++  });
++});
+diff --git a/src/components/coach/setup/__tests__/coachSetup.test.tsx b/src/components/coach/setup/__tests__/coachSetup.test.tsx
+new file mode 100644
+index 0000000..1e863d6
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/coachSetup.test.tsx
+@@ -0,0 +1,467 @@
++/**
++ * S-COACH — coach setup wizard building blocks: Connect status truth,
++ * wizard step walking, error copy, package floor, QR, Get paid return flow,
++ * Home checklist.
++ */
++import React from "react";
++import { render, fireEvent, waitFor } from "@testing-library/react-native";
++
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++const mockPut = jest.fn();
++// B-329-1: the first-package create is durable per signed-in coach, so the
++// form needs an account to write its intent before it sends.
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "coach_1", email: "coach@example.test" }),
++}));
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: (...a: unknown[]) => mockGet(...a),
++    post: (...a: unknown[]) => mockPost(...a),
++    put: (...a: unknown[]) => mockPut(...a),
++  },
++}));
++
++const mockCapture = jest.fn();
++jest.mock("../../../../services/sentry", () => ({
++  captureError: (...a: unknown[]) => mockCapture(...a),
++  setSentryUser: jest.fn(),
++}));
++
++const mockOpenAuth = jest.fn();
++jest.mock("expo-web-browser", () => ({
++  __esModule: true,
++  openAuthSessionAsync: (...a: unknown[]) => mockOpenAuth(...a),
++}));
++
++const mockCreatePackage = jest.fn();
++jest.mock("../../../../api/packagesApi", () => ({
++  coachPackagesApi: {
++    create: (...a: unknown[]) => mockCreatePackage(...a),
++    list: jest.fn(async () => ({ data: [] })),
++  },
++  isLivePackage: jest.requireActual("../../../../api/packagesApi")
++    .isLivePackage,
++}));
++
++import {
++  advanceWizardTo,
++  coachSetupApi,
++  toConnectView,
++} from "../../../../api/coachSetupApi";
++import {
++  describeError,
++  COACH_SUPPORT_EMAIL,
++} from "../../../../lib/coachSetup/errors";
++import {
++  connectCopy,
++  requirementLabels,
++} from "../../../../lib/coachSetup/connectCopy";
++import FirstPackageForm, {
++  parsePriceCents,
++  validatePackage,
++} from "../FirstPackageForm";
++import { qrPath } from "../QrCode";
++import GetPaidPanel from "../GetPaidPanel";
++import { buildChecklist } from "../CoachSetupChecklist";
++import { resumeRoute } from "../../../../navigation/CoachWizardNavigator";
++
++function httpError(
++  status: number,
++  data?: Record<string, unknown>,
++  headers?: Record<string, string>,
++) {
++  return Object.assign(new Error(`HTTP ${status}`), {
++    response: { status, data, headers: headers ?? {} },
++  });
++}
++
++beforeEach(() => {
++  mockGet.mockReset();
++  mockPost.mockReset();
++  mockPut.mockReset();
++  mockCapture.mockReset();
++  mockOpenAuth.mockReset();
++  mockCreatePackage.mockReset();
++});
++
++describe("toConnectView", () => {
++  it("uses the server state and requirement buckets when present", () => {
++    const v = toConnectView({
++      account_id: "acct_1",
++      charges_enabled: false,
++      payouts_enabled: false,
++      state: "restricted",
++      details_submitted: true,
++      action_required: true,
++      requirements: {
++        currently_due: ["external_account"],
++        past_due: ["individual.verification.document"],
++        current_deadline: "2026-10-20T00:00:00.000Z",
++      },
++    });
++    expect(v).toMatchObject({
++      state: "restricted",
++      actionRequired: true,
++      currentlyDue: ["external_account"],
++      pastDue: ["individual.verification.document"],
++      deadline: "2026-10-20T00:00:00.000Z",
++    });
++  });
++
++  it("derives a state from an older backend payload", () => {
++    expect(toConnectView({ account_id: null }).state).toBe("not_started");
++    expect(
++      toConnectView({
++        account_id: "a",
++        charges_enabled: true,
++        payouts_enabled: true,
++      }).state,
++    ).toBe("active");
++    expect(
++      toConnectView({ account_id: "a", requirements_due: ["external_account"] })
++        .state,
++    ).toBe("details_needed");
++    expect(toConnectView({ account_id: "a" }).state).toBe(
++      "pending_verification",
++    );
++    expect(toConnectView({ account_id: "a", state: "made_up" }).state).toBe(
++      "pending_verification",
++    );
++  });
++});
++
++describe("coachSetupApi", () => {
++  it("refresh falls back to GET status on an older backend", async () => {
++    mockPost.mockRejectedValueOnce(httpError(404));
++    mockGet.mockResolvedValueOnce({
++      data: { account_id: "a", charges_enabled: true, payouts_enabled: true },
++    });
++    const v = await coachSetupApi.refreshConnectStatus();
++    expect(mockPost).toHaveBeenCalledWith("/coach/connect/status/refresh");
++    expect(mockGet).toHaveBeenCalledWith("/coach/connect/status");
++    expect(v.state).toBe("active");
++    expect(v.refreshed).toBe(false);
++  });
++
++  it("advanceWizardTo walks forward one step at a time and sends data once", async () => {
++    let current = 2;
++    mockGet.mockResolvedValue({
++      data: { current_step: 2, is_complete: false },
++    });
++    mockPost.mockImplementation(async (url: string) => {
++      const n = Number(url.split("/").pop());
++      current = n;
++      return { data: { current_step: current, is_complete: false } };
++    });
++    await advanceWizardTo(4, { invite_shared: true });
++    expect(mockPost.mock.calls).toEqual([
++      ["/coach/onboarding/steps/3", {}],
++      ["/coach/onboarding/steps/4", { invite_shared: true }],
++    ]);
++  });
++
++  it("advanceWizardTo starts the wizard when the server has no row yet", async () => {
++    mockGet.mockRejectedValueOnce(httpError(404));
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === "/coach/onboarding/start")
++        return { data: { current_step: 1 } };
++      return { data: { current_step: Number(url.split("/").pop()) } };
++    });
++    await advanceWizardTo(1, { practice_name: "North" });
++    expect(mockPost.mock.calls).toEqual([
++      ["/coach/onboarding/start"],
++      ["/coach/onboarding/steps/1", { practice_name: "North" }],
++    ]);
++  });
++});
++
++describe("describeError", () => {
++  it("maps known codes to specific copy and never says something went wrong", () => {
++    const cases = [
++      describeError(
++        httpError(503, { error: "CONNECT_NOT_CONFIGURED" }),
++        "open Stripe",
++      ),
++      describeError(
++        httpError(502, {
++          error: "STRIPE_CONNECT_ERROR",
++          stripeCode: "configuration_missing",
++        }),
++        "open Stripe",
++      ),
++      describeError(
++        httpError(409, { error: "CONNECT_ONBOARDING_INCOMPLETE" }),
++        "open payout settings",
++      ),
++      describeError(httpError(429), "open Stripe"),
++      describeError(httpError(401), "open Stripe"),
++      describeError(
++        httpError(400, {
++          code: "PACKAGE_PRICE_BELOW_MINIMUM",
++          message: "Paid packages start at $19.99, or make it free.",
++        }),
++        "create your package",
++      ),
++      describeError(
++        Object.assign(new Error("Network Error"), { request: {} }),
++        "open Stripe",
++      ),
++    ];
++    expect(cases.map((c) => c.title)).toEqual([
++      "Payouts are not switched on for your account yet",
++      "Payouts are not switched on for your account yet",
++      "Finish Stripe setup first",
++      "Too many tries in a row",
++      "Your session ended",
++      "Check the package details",
++      "You appear to be offline",
++    ]);
++    expect(cases[5].body).toBe(
++      "Paid packages start at $19.99, or make it free.",
++    );
++    for (const c of cases) {
++      expect(`${c.title} ${c.body}`).not.toMatch(/something went wrong|!/i);
++    }
++    expect(mockCapture).not.toHaveBeenCalled();
++  });
++
++  it("unknown failures show the request reference and support path, and go to Sentry", () => {
++    const e = describeError(
++      httpError(500, { request_id: "req_123" }),
++      "load your payout setup",
++    );
++    expect(e.requestId).toBe("req_123");
++    expect(e.body).toContain("req_123");
++    expect(e.body).toContain(COACH_SUPPORT_EMAIL);
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++    const u = describeError(
++      httpError(418, {}, { "x-request-id": "req_9" }),
++      "save this step",
++    );
++    expect(u.title).toBe("TGP could not save this step");
++    expect(u.body).toContain("req_9");
++  });
++});
++
++describe("connectCopy", () => {
++  it("lists what Stripe needs in plain words with the deadline", () => {
++    expect(
++      requirementLabels([
++        "external_account",
++        "individual.verification.document",
++        "individual.dob.day",
++        "individual.dob.month",
++        "something.new",
++      ]),
++    ).toEqual([
++      "Bank account for payouts",
++      "Photo ID",
++      "Date of birth",
++      "Other details Stripe asks for",
++    ]);
++    const copy = connectCopy(
++      toConnectView({
++        account_id: "a",
++        state: "restricted",
++        requirements: {
++          currently_due: ["external_account"],
++          current_deadline: "2026-10-20T12:00:00.000Z",
++        },
++      }),
++    );
++    expect(copy.action).toBe("Update details with Stripe");
++    expect(copy.due).toEqual(["Bank account for payouts"]);
++    expect(copy.body).toMatch(/2026/);
++  });
++
++  it("has no exclamation marks in any state", () => {
++    for (const state of [
++      "not_started",
++      "details_needed",
++      "pending_verification",
++      "restricted",
++      "active",
++      "deauthorized",
++    ]) {
++      const c = connectCopy(toConnectView({ account_id: "a", state }));
++      expect(`${c.title} ${c.body} ${c.action ?? ""}`).not.toMatch(/!/);
++    }
++  });
++});
++
++describe("first package", () => {
++  it("parses prices and enforces the $19.99 floor or free", () => {
++    expect(parsePriceCents("$49")).toBe(4900);
++    expect(parsePriceCents("19.9")).toBe(1990);
++    expect(parsePriceCents("1,000.05")).toBe(100005);
++    expect(parsePriceCents("abc")).toBeNull();
++    expect(
++      validatePackage({ title: "A", free: false, priceText: "19.98" }),
++    ).toBe("Paid packages start at $19.99, or make it free.");
++    expect(
++      validatePackage({ title: "A", free: false, priceText: "19.99" }),
++    ).toBeNull();
++    expect(
++      validatePackage({ title: "A", free: true, priceText: "" }),
++    ).toBeNull();
++    expect(validatePackage({ title: " ", free: true, priceText: "" })).toMatch(
++      /name/,
++    );
++  });
++
++  it("a free package is created one-time at $0, published, and attached to the invite link", async () => {
++    mockCreatePackage.mockResolvedValue({
++      data: { id: "pkg_1", title: "North coaching" },
++    });
++    mockPost.mockResolvedValue({ data: {} });
++    mockGet.mockResolvedValue({
++      data: {
++        code: "GP-ABC",
++        url: "https://app.trygrowthproject.com/join/GP-ABC",
++      },
++    });
++    mockPut.mockResolvedValue({ data: {} });
++    const onCreated = jest.fn();
++    const { getByTestId } = await render(
++      <FirstPackageForm
++        defaultTitle="North coaching"
++        chargesEnabled={false}
++        onCreated={onCreated}
++      />,
++    );
++    await fireEvent.press(getByTestId("first-package-free"));
++    await fireEvent.press(getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalled());
++    expect(mockCreatePackage.mock.calls[0][0]).toMatchObject({
++      priceCents: 0,
++      billingInterval: "one_time",
++    });
++    expect(typeof mockCreatePackage.mock.calls[0][1]).toBe("string");
++    expect(mockPost).toHaveBeenCalledWith("/v1/coach/packages/pkg_1/publish");
++    expect(mockPut).toHaveBeenCalledWith(
++      "/v1/invite-codes/GP-ABC/package-binding",
++      {
++        package_id: "pkg_1",
++        grant_mode: "free",
++      },
++    );
++    expect(onCreated.mock.calls[0][0]).toMatchObject({
++      id: "pkg_1",
++      freeOnJoin: true,
++    });
++  });
++
++  it("a paid package below the floor is stopped before any request", async () => {
++    const { getByTestId, findByTestId } = await render(
++      <FirstPackageForm
++        defaultTitle="North coaching"
++        chargesEnabled
++        onCreated={jest.fn()}
++      />,
++    );
++    await fireEvent.changeText(getByTestId("first-package-price"), "10");
++    await fireEvent.press(getByTestId("first-package-create"));
++    expect((await findByTestId("first-package-invalid")).props.children).toBe(
++      "Paid packages start at $19.99, or make it free.",
++    );
++    expect(mockCreatePackage).not.toHaveBeenCalled();
++  });
++});
++
++describe("QR code", () => {
++  it("encodes the invite link into a square module grid", () => {
++    const { path, modules } = qrPath(
++      "https://app.trygrowthproject.com/join/GP-ABC123",
++    );
++    expect(modules).toBeGreaterThanOrEqual(21 + 8);
++    expect(path.length).toBeGreaterThan(100);
++    expect(path.startsWith("M")).toBe(true);
++  });
++});
++
++describe("GetPaidPanel", () => {
++  it("opens Stripe, re-mints an expired link once, then shows the fresh state", async () => {
++    mockGet.mockResolvedValueOnce({ data: { account_id: null } });
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === "/coach/connect/onboarding-link") {
++        return {
++          data: {
++            url: "https://connect.stripe.com/setup/e/acct_1/abc",
++            expires_at: null,
++          },
++        };
++      }
++      if (url === "/coach/connect/status/refresh") {
++        return {
++          data: {
++            account_id: "acct_1",
++            state: "pending_verification",
++            details_submitted: true,
++            refreshed: true,
++          },
++        };
++      }
++      throw httpError(404);
++    });
++    mockOpenAuth
++      .mockResolvedValueOnce({
++        type: "success",
++        url: "tgp://connect/onboarding/refresh",
++      })
++      .mockResolvedValueOnce({
++        type: "success",
++        url: "tgp://connect/onboarding/return",
++      });
++    const { findByText, getByTestId } = await render(<GetPaidPanel />);
++    await findByText("Get paid with Stripe");
++    await fireEvent.press(getByTestId("get-paid-open"));
++    await findByText("Stripe is checking your details");
++    expect(mockOpenAuth).toHaveBeenCalledTimes(2);
++    expect(mockOpenAuth.mock.calls[0][1]).toBe("tgp://connect/onboarding");
++    expect(
++      mockPost.mock.calls.filter(
++        (c) => c[0] === "/coach/connect/onboarding-link",
++      ),
++    ).toHaveLength(2);
++  });
++
++  it("shows specific copy when payouts are not configured on the server", async () => {
++    mockGet.mockResolvedValueOnce({ data: { account_id: null } });
++    mockPost.mockRejectedValueOnce(
++      httpError(503, { error: "CONNECT_NOT_CONFIGURED" }),
++    );
++    const { findByText, getByTestId } = await render(<GetPaidPanel />);
++    await findByText("Get paid with Stripe");
++    await fireEvent.press(getByTestId("get-paid-open"));
++    await findByText("Payouts are not switched on for your account yet");
++    expect(mockOpenAuth).not.toHaveBeenCalled();
++  });
++});
++
++describe("Home checklist and resume", () => {
++  it("builds four items in order with truthful done flags", () => {
++    const items = buildChecklist({
++      connectActive: false,
++      connectNeedsAttention: true,
++      hasPackage: true,
++      hasClient: false,
++      sharedLink: false,
++      paid: false,
++    });
++    expect(items.map((i) => [i.key, i.done])).toEqual([
++      ["get_paid", false],
++      ["package", true],
++      ["invite", false],
++      ["money", false],
++    ]);
++    expect(items[0].detail).toBe("Stripe needs a few more details from you.");
++  });
++
++  it("resumes the wizard on the step the server has", () => {
++    expect(resumeRoute(1)).toBe("CoachWizardStep1");
++    expect(resumeRoute(3)).toBe("CoachWizardStep3");
++    expect(resumeRoute(6)).toBe("CoachWizardStep5");
++  });
++});
+diff --git a/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx b/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
+new file mode 100644
+index 0000000..680ce38
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
+@@ -0,0 +1,560 @@
++/**
++ * S-COACH-MOB-2 — fix round for mobile #329 (AUD-OPUS-4). Each test failed
++ * on 4071d0ce:
++ *   A-329-1  the Home checklist never opens the retired Earnings screen
++ *   B-329-1  a retry after a partial failure never creates a second package
++ *   B-329-2  "payouts not configured" copy is truthful with a working action
++ *   C-329-1  a draft or archived package is not "live"
++ *   C-329-2  the invite tick comes from the server (a client joined)
++ *   C-329-3  the wizard's last step reads Stripe from the server on resume
++ *   C-329-4  checklist load failures show specific copy with a retry
++ */
++import React from "react";
++import { render, fireEvent, waitFor } from "@testing-library/react-native";
++import { NavigationContainer } from "@react-navigation/native";
++
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++const mockPut = jest.fn();
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: (...a: unknown[]) => mockGet(...a),
++    post: (...a: unknown[]) => mockPost(...a),
++    put: (...a: unknown[]) => mockPut(...a),
++  },
++}));
++
++jest.mock("../../../../services/sentry", () => ({
++  captureError: jest.fn(),
++}));
++
++jest.mock("expo-web-browser", () => ({
++  __esModule: true,
++  openAuthSessionAsync: jest.fn(),
++}));
++
++const mockCreate = jest.fn();
++const mockList = jest.fn();
++const mockUpdate = jest.fn();
++jest.mock("../../../../api/packagesApi", () => ({
++  coachPackagesApi: {
++    create: (...a: unknown[]) => mockCreate(...a),
++    list: (...a: unknown[]) => mockList(...a),
++    update: (...a: unknown[]) => mockUpdate(...a),
++  },
++  isLivePackage: jest.requireActual("../../../../api/packagesApi")
++    .isLivePackage,
++}));
++
++const mockShared = jest.fn();
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: (...a: unknown[]) => mockShared(...a),
++    set: jest.fn(async () => undefined),
++  },
++}));
++
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "coach_1", email: "c@example.com" }),
++}));
++
++jest.mock("../../../../screens/coach/ed/firstPaymentGate", () => ({
++  hasSeenFirstPayment: jest.fn(async () => false),
++}));
++
++const mockNavigate = jest.fn();
++jest.mock("@react-navigation/native", () => {
++  const actual = jest.requireActual("@react-navigation/native");
++  return {
++    ...actual,
++    useNavigation: () => ({ navigate: mockNavigate }),
++    useFocusEffect: (cb: () => void) => {
++      const R = jest.requireActual("react");
++      R.useEffect(cb, [cb]);
++    },
++  };
++});
++
++import { isLivePackage, type CoachPackage } from "../../../../api/packagesApi";
++import { describeError } from "../../../../lib/coachSetup/errors";
++import { loadSetupStatus } from "../../../../lib/coachSetup/setupStatus";
++import FirstPackageForm from "../FirstPackageForm";
++import CoachSetupChecklist, { buildChecklist } from "../CoachSetupChecklist";
++import CoachHomeCards from "../../../../screens/coach/command-center/CoachHomeCards";
++import CoachWizardNavigator from "../../../../navigation/CoachWizardNavigator";
++import {
++  advanceWizardTo,
++  coachSetupApi,
++  stepBlob,
++  toConnectView,
++} from "../../../../api/coachSetupApi";
++import { connectCopy } from "../../../../lib/coachSetup/connectCopy";
++
++function httpError(status: number, data?: Record<string, unknown>) {
++  return Object.assign(new Error(`HTTP ${status}`), {
++    response: { status, data: data ?? {}, headers: {} },
++  });
++}
++const offline = () =>
++  Object.assign(new Error("timeout of 15000ms exceeded"), {
++    code: "ECONNABORTED",
++    request: {},
++  });
++
++function pkg(over: Partial<CoachPackage> = {}): CoachPackage {
++  return {
++    id: "pkg_1",
++    coachUserId: "coach_1",
++    title: "North coaching",
++    description: null,
++    priceCents: 4900,
++    currency: "usd",
++    billingInterval: "monthly",
++    intervalCount: 1,
++    trialDays: 0,
++    features: [],
++    status: "active",
++    shareToken: null,
++    subscriberCount: 0,
++    monthlyRevenueCents: 0,
++    createdAt: new Date().toISOString(),
++    updatedAt: new Date().toISOString(),
++    archivedAt: null,
++    publishedAt: null,
++    ...over,
++  };
++}
++
++/** Route GETs by URL so every loader sees its own answer. */
++function routeGets(map: Record<string, () => unknown>) {
++  mockGet.mockImplementation(async (url: string) => {
++    const h = map[url];
++    if (!h) throw httpError(404);
++    return { data: h() };
++  });
++}
++
++beforeEach(() => {
++  mockGet.mockReset();
++  mockPost.mockReset();
++  mockPut.mockReset();
++  mockCreate.mockReset();
++  mockList.mockReset();
++  mockUpdate.mockReset();
++  mockShared.mockReset();
++  mockNavigate.mockReset();
++  mockShared.mockResolvedValue(null);
++});
++
++describe("B-329-1 first package retry never duplicates", () => {
++  const renderForm = async (onCreated = jest.fn()) => {
++    const r = await render(
++      <FirstPackageForm
++        defaultTitle="North coaching"
++        chargesEnabled
++        onCreated={onCreated}
++      />,
++    );
++    return { ...r, onCreated };
++  };
++
++  it("publish fails once: the retry resumes and calls create 0 more times", async () => {
++    mockList.mockResolvedValue({ data: [] });
++    mockCreate.mockResolvedValue({ data: pkg() });
++    mockPost
++      .mockRejectedValueOnce(httpError(503))
++      .mockResolvedValue({ data: {} });
++    const { getByTestId, findByTestId, onCreated } = await renderForm();
++    await fireEvent.press(getByTestId("first-package-create"));
++    await findByTestId("first-package-error");
++    await fireEvent.press(getByTestId("first-package-error-retry"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++    expect(
++      mockPost.mock.calls.filter(
++        (c) => c[0] === "/v1/coach/packages/pkg_1/publish",
++      ),
++    ).toHaveLength(2);
++  });
++
++  it("create times out: the retry re-sends the same key and body and never reads the list (OR-112-16)", async () => {
++    // The server replays the package it made for this key, so the retry
++    // gets pkg_new back. No list lookup, no heuristic adoption.
++    mockCreate
++      .mockRejectedValueOnce(offline())
++      .mockResolvedValueOnce({ data: pkg({ id: "pkg_new" }) });
++    mockPost.mockResolvedValue({ data: {} });
++    const { getByTestId, findByTestId, onCreated } = await renderForm();
++    await fireEvent.press(getByTestId("first-package-create"));
++    await findByTestId("first-package-error");
++    await fireEvent.press(getByTestId("first-package-error-retry"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockList).not.toHaveBeenCalled();
++    expect(mockCreate).toHaveBeenCalledTimes(2);
++    expect(mockCreate.mock.calls[1][1]).toBe(mockCreate.mock.calls[0][1]);
++    expect(mockCreate.mock.calls[1][0]).toEqual(mockCreate.mock.calls[0][0]);
++    expect(mockPost).toHaveBeenCalledWith("/v1/coach/packages/pkg_new/publish");
++    expect(onCreated.mock.calls[0][0].id).toBe("pkg_new");
++  });
++
++  it("the coach edits the details after a timeout: the stored create is re-sent first, then that package is updated", async () => {
++    mockCreate
++      .mockRejectedValueOnce(offline())
++      .mockResolvedValueOnce({ data: pkg({ id: "pkg_1" }) });
++    mockUpdate.mockResolvedValue({ data: pkg({ id: "pkg_1" }) });
++    mockPost.mockResolvedValue({ data: {} });
++    const { getByTestId, findByTestId, onCreated } = await renderForm();
++    await fireEvent.press(getByTestId("first-package-create"));
++    await findByTestId("first-package-error");
++    await fireEvent.changeText(getByTestId("first-package-title"), "Renamed");
++    await fireEvent.press(getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(2);
++    expect(mockCreate.mock.calls[1][1]).toBe(mockCreate.mock.calls[0][1]);
++    expect(mockCreate.mock.calls[1][0].title).toBe("North coaching");
++    expect(mockUpdate).toHaveBeenCalledWith(
++      "pkg_1",
++      expect.objectContaining({ title: "Renamed" }),
++    );
++  });
++
++  it("the first try is still running on the server (409): copy says so and the retry keeps the key", async () => {
++    mockCreate
++      .mockRejectedValueOnce(
++        httpError(409, {
++          code: "IDEMPOTENCY_IN_PROGRESS",
++          message: "Still saving.",
++        }),
++      )
++      .mockResolvedValueOnce({ data: pkg() });
++    mockPost.mockResolvedValue({ data: {} });
++    const { getByTestId, findByText, onCreated } = await renderForm();
++    await fireEvent.press(getByTestId("first-package-create"));
++    await findByText("Your package is still being saved");
++    await fireEvent.press(getByTestId("first-package-error-retry"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate.mock.calls[1][1]).toBe(mockCreate.mock.calls[0][1]);
++  });
++
++  it("a key the server already used names its package: the app adopts it instead of creating", async () => {
++    mockCreate.mockRejectedValueOnce(
++      httpError(422, { code: "IDEMPOTENCY_KEY_REUSED", package_id: "pkg_9" }),
++    );
++    mockPost.mockResolvedValue({ data: {} });
++    const { getByTestId, onCreated } = await renderForm();
++    await fireEvent.press(getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++    expect(mockPost).toHaveBeenCalledWith("/v1/coach/packages/pkg_9/publish");
++  });
++
++  it("a fast double tap sends one create", async () => {
++    let release: (v: unknown) => void = () => undefined;
++    mockCreate.mockImplementationOnce(() => new Promise((r) => (release = r)));
++    mockPost.mockResolvedValue({ data: {} });
++    const { getByTestId, onCreated } = await renderForm();
++    // The second tap lands while the first create is still in flight.
++    await fireEvent.press(getByTestId("first-package-create"));
++    await fireEvent.press(getByTestId("first-package-create"));
++    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
++    release({ data: pkg() });
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++  });
++
++  it("a definitive 400 from create rotates the key for the next send", async () => {
++    mockList.mockResolvedValue({ data: [] });
++    mockCreate
++      .mockRejectedValueOnce(
++        httpError(400, { code: "PACKAGE_INVALID", message: "Name too long." }),
++      )
++      .mockResolvedValueOnce({ data: pkg() });
++    mockPost.mockResolvedValue({ data: {} });
++    const { getByTestId, findByTestId, onCreated } = await renderForm();
++    await fireEvent.press(getByTestId("first-package-create"));
++    await findByTestId("first-package-error");
++    await fireEvent.press(getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(2);
++    expect(mockCreate.mock.calls[1][1]).not.toBe(mockCreate.mock.calls[0][1]);
++  });
++});
++
++describe("B-329-2 payouts not configured", () => {
++  it("names the real state and a working next step, never the app version or a missing page", () => {
++    for (const e of [
++      describeError(
++        httpError(503, { error: "CONNECT_NOT_CONFIGURED" }),
++        "open Stripe",
++      ),
++      describeError(
++        httpError(502, {
++          error: "STRIPE_CONNECT_ERROR",
++          stripeCode: "configuration_missing",
++        }),
++        "open Stripe",
++      ),
++    ]) {
++      expect(e.title).toBe("Payouts are not switched on for your account yet");
++      expect(e.body).toMatch(/Home checklist/);
++      expect(e.body).toMatch(/Bradleyapple1031@gmail\.com/);
++      expect(e.body).not.toMatch(/version|Money|!/);
++    }
++    const withRef = describeError(
++      httpError(503, { error: "CONNECT_NOT_CONFIGURED", request_id: "req_7" }),
++      "open Stripe",
++    );
++    expect(withRef.body).toContain("req_7");
++  });
++});
++
++describe("C-329-1 live packages only", () => {
++  it("a draft or archived package is not live", () => {
++    expect(isLivePackage(pkg({ publishedAt: null }))).toBe(false);
++    expect(
++      isLivePackage(
++        pkg({
++          publishedAt: "2026-10-01T00:00:00Z",
++          status: "archived",
++        }),
++      ),
++    ).toBe(false);
++    expect(isLivePackage(pkg({ publishedAt: "2026-10-01T00:00:00Z" }))).toBe(
++      true,
++    );
++  });
++});
++
++describe("C-329-2 / C-329-4 checklist from server data", () => {
++  it("the invite tick needs a client on the server; a shared link is only a hint", async () => {
++    mockShared.mockResolvedValue("true");
++    mockList.mockResolvedValue({ data: [pkg({ publishedAt: null })] });
++    routeGets({
++      "/coach/connect/status": () => ({ account_id: null }),
++      "/coach/clients": () => [],
++      "/v1/coach/money/charges": () => ({ charges: [], next_cursor: null }),
++    });
++    const s = await loadSetupStatus("coach_1");
++    expect(s.hasClient).toBe(false);
++    expect(s.livePackageTitle).toBe("");
++    expect(s.errors).toEqual([]);
++    const items = buildChecklist({
++      connectActive: false,
++      connectNeedsAttention: false,
++      hasPackage: false,
++      hasClient: s.hasClient,
++      sharedLink: s.sharedLink,
++      paid: false,
++    });
++    expect(items[2]).toMatchObject({
++      done: false,
++      detail: "You shared your link. This ticks when your first client joins.",
++    });
++    expect(mockGet).toHaveBeenCalledWith("/coach/clients", {
++      params: { status: "all", take: 1 },
++    });
++  });
++
++  it("a failed read shows specific copy with a retry that reloads", async () => {
++    mockList.mockResolvedValue({ data: [] });
++    let fail = true;
++    mockGet.mockImplementation(async (url: string) => {
++      if (url === "/coach/connect/status") {
++        if (fail) throw offline();
++        return {
++          data: {
++            account_id: "a",
++            state: "active",
++            charges_enabled: true,
++            payouts_enabled: true,
++          },
++        };
++      }
++      if (url === "/coach/clients") return { data: [{ id: "c1" }] };
++      return { data: { charges: [] } };
++    });
++    const { findByTestId, findByText, getByTestId, queryByTestId } =
++      await render(<CoachSetupChecklist onOpen={jest.fn()} />);
++    await findByTestId("coach-setup-checklist-error");
++    await findByText("You appear to be offline");
++    await findByText("This could not be checked just now.");
++    fail = false;
++    await fireEvent.press(getByTestId("coach-setup-checklist-error-retry"));
++    await findByText("Stripe is ready to pay you.");
++    expect(queryByTestId("coach-setup-checklist-error")).toBeNull();
++  });
++});
++
++describe("A-329-1 checklist never opens the retired Earnings screen", () => {
++  it("the first-payment item opens a live screen before and after the payment", async () => {
++    mockList.mockResolvedValue({ data: [] });
++    routeGets({
++      "/coach/connect/status": () => ({ account_id: null }),
++      "/coach/clients": () => [],
++      "/v1/coach/money/charges": () => ({ charges: [] }),
++    });
++    const { findByTestId } = await render(<CoachHomeCards />);
++    await fireEvent.press(await findByTestId("coach-setup-checklist-money"));
++    for (const call of mockNavigate.mock.calls) {
++      expect(JSON.stringify(call)).not.toMatch(/CoachEarnings/);
++    }
++    expect(mockNavigate).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe("C-329-3 wizard resumes on the last step with server truth", () => {
++  it("shows Stripe ready and the live package when resuming on step 5", async () => {
++    mockList.mockResolvedValue({
++      data: [pkg({ publishedAt: "2026-10-01T00:00:00Z" })],
++    });
++    routeGets({
++      "/coach/onboarding": () => ({
++        current_step: 5,
++        is_complete: false,
++        step_data: { "1": { practice_name: "North" } },
++      }),
++      "/coach/connect/status": () => ({
++        account_id: "acct_1",
++        state: "active",
++        charges_enabled: true,
++        payouts_enabled: true,
++      }),
++      "/coach/clients": () => [],
++      "/v1/coach/money/charges": () => ({ charges: [] }),
++    });
++    const { findByLabelText } = await render(
++      <NavigationContainer>
++        <CoachWizardNavigator />
++      </NavigationContainer>,
++    );
++    await findByLabelText("Stripe ready to pay you. Done");
++    await findByLabelText("First package live. Done");
++    await findByLabelText("First client invited. Still to do");
++  });
++});
++
++describe("B-329-3 wizard save and resume use the backend's step blob shape", () => {
++  /** Faithful to coach-onboarding.controller/service: the whole body is stored as step_data[step]. */
++  function backend(start: {
++    current_step: number;
++    step_data: Record<string, unknown>;
++  }) {
++    const row = { ...start, is_complete: false };
++    mockGet.mockImplementation(async (url: string) => {
++      if (url === "/coach/onboarding") return { data: row };
++      throw httpError(404);
++    });
++    mockPost.mockImplementation(
++      async (url: string, body?: Record<string, unknown>) => {
++        const n = Number(url.split("/").pop());
++        if (body && typeof body === "object")
++          row.step_data = { ...row.step_data, [String(n)]: body };
++        row.current_step = Math.min(n + 1, 6);
++        return { data: row };
++      },
++    );
++    return row;
++  }
++
++  it("round trip: what step 1 saves is what resume reads", async () => {
++    const row = backend({ current_step: 1, step_data: {} });
++    await advanceWizardTo(1, { practice_name: "North", focus: ["Strength"] });
++    expect(row.step_data["1"]).toEqual({
++      practice_name: "North",
++      focus: ["Strength"],
++    });
++    const progress = await coachSetupApi.progress();
++    expect(stepBlob(progress.stepData, 1)).toEqual({
++      practice_name: "North",
++      focus: ["Strength"],
++    });
++  });
++
++  it("a blob saved by an earlier build in the {data} wrapper still resumes", async () => {
++    backend({
++      current_step: 1,
++      step_data: {
++        "1": { data: { practice_name: "North", focus: ["Strength"] } },
++      },
++    });
++    const { findByLabelText } = await render(
++      <NavigationContainer>
++        <CoachWizardNavigator />
++      </NavigationContainer>,
++    );
++    const input = await findByLabelText("Practice name");
++    await waitFor(() => expect(input.props.value).toBe("North"));
++  });
++
++  it("a flat blob resumes the practice name", async () => {
++    backend({
++      current_step: 1,
++      step_data: { "1": { practice_name: "Harbour" } },
++    });
++    const { findByLabelText } = await render(
++      <NavigationContainer>
++        <CoachWizardNavigator />
++      </NavigationContainer>,
++    );
++    const input = await findByLabelText("Practice name");
++    await waitFor(() => expect(input.props.value).toBe("Harbour"));
++  });
++});
++
++describe("B-329-4 active account with Stripe requirements due", () => {
++  const base = {
++    account_id: "acct_1",
++    state: "active",
++    charges_enabled: true,
++    payouts_enabled: true,
++    details_submitted: true,
++  };
++
++  it("currently due: keeps 'clients can pay you' and offers Update details with Stripe", () => {
++    const c = connectCopy(
++      toConnectView({
++        ...base,
++        action_required: true,
++        requirements: {
++          currently_due: ["external_account"],
++          past_due: [],
++          current_deadline: "2026-10-20T00:00:00Z",
++        },
++      }),
++    );
++    expect(c.action).toBe("Update details with Stripe");
++    expect(c.due).toEqual(["Bank account for payouts"]);
++    expect(c.tone).toBe("attention");
++    expect(c.body).toMatch(
++      /^Clients can pay you now\. Send these to Stripe by /,
++    );
++    expect(c.body).not.toMatch(/!/);
++  });
++
++  it("past due without an action_required flag still offers the action", () => {
++    const c = connectCopy(
++      toConnectView({
++        ...base,
++        requirements: {
++          currently_due: [],
++          past_due: ["individual.verification.document"],
++        },
++      }),
++    );
++    expect(c.action).toBe("Update details with Stripe");
++    expect(c.due).toEqual(["Photo ID"]);
++  });
++
++  it("nothing due: done copy, no action", () => {
++    const c = connectCopy(
++      toConnectView({
++        ...base,
++        action_required: false,
++        requirements: { currently_due: [], past_due: [] },
++      }),
++    );
++    expect(c.action).toBeNull();
++    expect(c.title).toBe("You are ready to get paid");
++  });
++});
+diff --git a/src/navigation/CoachWizardNavigator.tsx b/src/navigation/CoachWizardNavigator.tsx
+index 9a4dc5e..329f7dc 100644
+--- a/src/navigation/CoachWizardNavigator.tsx
++++ b/src/navigation/CoachWizardNavigator.tsx
+@@ -1,17 +1,26 @@
+ /**
+- * CoachWizardNavigator — 6-step coach onboarding wizard.
++ * CoachWizardNavigator — coach setup wizard (S-COACH).
+  *
+  * Shown when GET /coach/onboarding returns { is_complete: false }.
+- * Step 6 calls POST /coach/onboarding/complete, writes the MMKV completion
+- * flag, and fires authEvents.emit() so RootNavigator re-bootstraps into
+- * the full CoachNavigator.
+- *
+- * Steps 1–5 are intentional stubs — product copy and data capture to be
+- * filled in per the coach-onboarding spec. The navigation skeleton is in
+- * place and fully wired.
++ *   1. Practice basics      (saved to backend step 1)
++ *   2. Get paid             Stripe-hosted Express onboarding collects bank
++ *                           account and ID; truthful status on return
++ *   3. First package        prefilled; free or $19.99 and up (backend #629)
++ *   4. Invite first client  link, share sheet, copy, QR code
++ *   5. Ready                checklist, then POST /coach/onboarding/complete
++ * The backend keeps 6 sequential steps; advanceWizardTo walks it forward one
++ * step at a time. Stripe, package and invite can each be done later from the
++ * Home checklist, so the wizard never traps a coach.
+  */
+ 
+-import React, { useMemo, useState } from 'react';
++import React, {
++  createContext,
++  useCallback,
++  useContext,
++  useEffect,
++  useMemo,
++  useState,
++} from "react";
+ import {
+   View,
+   Text,
+@@ -19,14 +28,38 @@ import {
+   TouchableOpacity,
+   SafeAreaView,
+   ScrollView,
+-} from 'react-native';
+-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+-import { authEvents } from '../utils/authEvents';
+-import { prefsStorage } from '../storage/mmkv';
+-import api from '../services/api';
+-import AsyncStorage from '@react-native-async-storage/async-storage';
+-import { useTheme, ThemeColors } from '../theme/ThemeProvider';
++  TextInput,
++  ActivityIndicator,
++} from "react-native";
++import { createNativeStackNavigator } from "@react-navigation/native-stack";
++import { NativeStackNavigationProp } from "@react-navigation/native-stack";
++import { authEvents } from "../utils/authEvents";
++import { prefsStorage } from "../storage/mmkv";
++import AsyncStorage from "@react-native-async-storage/async-storage";
++import { useTheme, ThemeColors } from "../theme/ThemeProvider";
++import {
++  advanceWizardTo,
++  stepBlob,
++  coachSetupApi,
++  type ConnectView,
++} from "../api/coachSetupApi";
++import {
++  coachPackagesApi,
++  isLivePackage,
++  type CoachPackage,
++} from "../api/packagesApi";
++import { describeError, type FriendlyError } from "../lib/coachSetup/errors";
++import GetPaidPanel from "../components/coach/setup/GetPaidPanel";
++import FirstPackageForm, {
++  type CreatedPackage,
++} from "../components/coach/setup/FirstPackageForm";
++import InviteShareCard from "../components/coach/setup/InviteShareCard";
++import SetupNotice from "../components/coach/setup/SetupNotice";
++import { useCurrentUser } from "../hooks/useCurrentUser";
++import {
++  loadSetupStatus,
++  type SetupSnapshot,
++} from "../lib/coachSetup/setupStatus";
+ 
+ // ─── Types ────────────────────────────────────────────────────────────────────
+ 
+@@ -36,25 +69,82 @@ export type CoachWizardParamList = {
+   CoachWizardStep3: undefined;
+   CoachWizardStep4: undefined;
+   CoachWizardStep5: undefined;
+-  CoachWizardStep6: undefined;
+ };
+ 
+-// R15: scope to user id. Stored opaquely for parity with the rest of the
+-// wizard state — RootNavigator reads the canonical state from
+-// GET /coach/onboarding, so this MMKV write is informational only.
+-const MMKV_COMPLETE_KEY_BASE = 'coach.onboarding.is_complete';
++const UI_STEPS = 5;
++const BACKEND_FINAL_STEP = 6;
++
++export const PRACTICE_FOCUS_OPTIONS = [
++  "Strength",
++  "Nutrition",
++  "Weight loss",
++  "Mobility",
++  "Lifestyle",
++  "Sports performance",
++] as const;
++
++// R15: scope to user id. Informational only; RootNavigator reads the
++// canonical state from GET /coach/onboarding.
++const MMKV_COMPLETE_KEY_BASE = "coach.onboarding.is_complete";
+ 
+ async function persistWizardCompleteFlag(): Promise<void> {
+   try {
+-    const raw = await AsyncStorage.getItem('user_data');
++    const raw = await AsyncStorage.getItem("user_data");
+     const id = raw ? (JSON.parse(raw) as { id?: string })?.id : null;
+     if (!id) return;
+-    await prefsStorage.set(`${MMKV_COMPLETE_KEY_BASE}:${id}`, 'true');
++    await prefsStorage.set(`${MMKV_COMPLETE_KEY_BASE}:${id}`, "true");
+   } catch {
+-    // Best-effort — RootNavigator's API check is the source of truth.
++    // Best effort: RootNavigator's API check is the source of truth.
+   }
+ }
+ 
++// ─── Wizard state shared across steps ───────────────────────────────────────
++
++interface WizardState {
++  practiceName: string;
++  focus: string[];
++  connect: ConnectView | null;
++  pkg: CreatedPackage | null;
++  existingPackageTitle: string | null;
++  invited: boolean;
++}
++
++interface WizardCtx {
++  state: WizardState;
++  patch: (p: Partial<WizardState>) => void;
++}
++
++const WizardContext = createContext<WizardCtx | null>(null);
++
++function useWizard(): WizardCtx {
++  const ctx = useContext(WizardContext);
++  if (!ctx)
++    throw new Error("useWizard must be used inside CoachWizardNavigator");
++  return ctx;
++}
++
++/** Save a step and move on; shows specific copy when the save fails. */
++function useStepSaver(step: number) {
++  const [saving, setSaving] = useState(false);
++  const [error, setError] = useState<FriendlyError | null>(null);
++  const save = useCallback(
++    async (data: Record<string, unknown>, next: () => void) => {
++      setSaving(true);
++      setError(null);
++      try {
++        await advanceWizardTo(step, data);
++        next();
++      } catch (err) {
++        setError(describeError(err, "save this step"));
++      } finally {
++        setSaving(false);
++      }
++    },
++    [step],
++  );
++  return { saving, error, save };
++}
++
+ // ─── Shared step layout ───────────────────────────────────────────────────────
+ 
+ interface StepLayoutProps {
+@@ -67,7 +157,6 @@ interface StepLayoutProps {
+   ctaDisabled?: boolean;
+   onBack?: () => void;
+   children?: React.ReactNode;
+-  errorMessage?: string;
+ }
+ 
+ function StepLayout({
+@@ -80,14 +169,16 @@ function StepLayout({
+   ctaDisabled,
+   onBack,
+   children,
+-  errorMessage,
+ }: StepLayoutProps) {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+ 
+   return (
+     <SafeAreaView style={styles.container}>
+-      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
++      <ScrollView
++        contentContainerStyle={styles.inner}
++        keyboardShouldPersistTaps="handled"
++      >
+         {/* Step indicator */}
+         <View style={styles.stepIndicator}>
+           {Array.from({ length: totalSteps }).map((_, i) => (
+@@ -102,11 +193,14 @@ function StepLayout({
+           ))}
+         </View>
+ 
+-        <Text style={styles.headline}>{heading}</Text>
++        <Text style={styles.headline} accessibilityRole="header">
++          {heading}
++        </Text>
+         <Text style={styles.subtext}>{body}</Text>
+-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+ 
+-        {children ? <View style={styles.childrenContainer}>{children}</View> : null}
++        {children ? (
++          <View style={styles.childrenContainer}>{children}</View>
++        ) : null}
+ 
+         <View style={{ flex: 1 }} />
+ 
+@@ -118,7 +212,7 @@ function StepLayout({
+           accessibilityLabel={ctaLabel}
+           testID={`wizard-step-${stepNumber}-cta`}
+         >
+-          <Text style={styles.primaryBtnText}>{ctaLabel.toUpperCase()}</Text>
++          <Text style={styles.primaryBtnText}>{ctaLabel}</Text>
+         </TouchableOpacity>
+ 
+         {onBack ? (
+@@ -129,7 +223,7 @@ function StepLayout({
+             accessibilityLabel="Go back"
+             testID={`wizard-step-${stepNumber}-back`}
+           >
+-            <Text style={styles.backText}>← Back</Text>
++            <Text style={styles.backText}>Back</Text>
+           </TouchableOpacity>
+         ) : null}
+       </ScrollView>
+@@ -137,139 +231,466 @@ function StepLayout({
+   );
+ }
+ 
+-// ─── Steps 1–5 (stubs with navigation wiring) ─────────────────────────────────
++// ─── Step 1: practice basics ─────────────────────────────────────────────────
++
++type Step1Props = {
++  navigation: NativeStackNavigationProp<
++    CoachWizardParamList,
++    "CoachWizardStep1"
++  >;
++};
+ 
+-type Step1Props = { navigation: NativeStackNavigationProp<CoachWizardParamList, 'CoachWizardStep1'> };
+ function CoachWizardStep1({ navigation }: Step1Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const { state, patch } = useWizard();
++  const { saving, error, save } = useStepSaver(1);
++  const [name, setName] = useState(state.practiceName);
++  const toggle = (f: string) =>
++    patch({
++      focus: state.focus.includes(f)
++        ? state.focus.filter((x) => x !== f)
++        : [...state.focus, f],
++    });
++  const valid = name.trim().length > 0;
+   return (
+     <StepLayout
+       stepNumber={1}
+-      totalSteps={6}
+-      heading="Welcome, Coach."
+-      body="Let's set up your coaching practice. This takes about two minutes."
+-      ctaLabel="Get started"
+-      onCta={() => navigation.navigate('CoachWizardStep2')}
+-    />
++      totalSteps={UI_STEPS}
++      heading="Your practice"
++      body="Name your coaching and pick what you focus on. This sets up your first package."
++      ctaLabel="Continue"
++      ctaDisabled={!valid || saving}
++      onCta={() => {
++        patch({ practiceName: name.trim() });
++        void save(
++          {
++            practice_name: name.trim(),
++            focus: state.focus,
++            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
++          },
++          () => navigation.navigate("CoachWizardStep2"),
++        );
++      }}
++    >
++      <Text style={styles.fieldLabel} nativeID="practice-name-label">
++        Practice name
++      </Text>
++      <TextInput
++        value={name}
++        onChangeText={setName}
++        style={styles.input}
++        accessibilityLabel="Practice name"
++        accessibilityLabelledBy="practice-name-label"
++        placeholder="For example, Northside Strength"
++        placeholderTextColor={colors.textMuted}
++        maxLength={80}
++        testID="wizard-practice-name"
++      />
++      <Text style={styles.fieldLabel}>What you focus on</Text>
++      <View
++        style={styles.chips}
++        accessibilityLabel="What you focus on. Choose any that fit."
++      >
++        {PRACTICE_FOCUS_OPTIONS.map((f) => {
++          const on = state.focus.includes(f);
++          return (
++            <TouchableOpacity
++              key={f}
++              onPress={() => toggle(f)}
++              style={[styles.chip, on && styles.chipOn]}
++              accessibilityRole="checkbox"
++              accessibilityState={{ checked: on }}
++              accessibilityLabel={f}
++              testID={`wizard-focus-${f}`}
++            >
++              <Text style={[styles.chipText, on && styles.chipTextOn]}>
++                {f}
++              </Text>
++            </TouchableOpacity>
++          );
++        })}
++      </View>
++      {error ? (
++        <SetupNotice error={error} testID="wizard-step-1-error" />
++      ) : null}
++    </StepLayout>
+   );
+ }
+ 
+-type Step2Props = { navigation: NativeStackNavigationProp<CoachWizardParamList, 'CoachWizardStep2'> };
++// ─── Step 2: get paid ────────────────────────────────────────────────────────
++
++type Step2Props = {
++  navigation: NativeStackNavigationProp<
++    CoachWizardParamList,
++    "CoachWizardStep2"
++  >;
++};
++
+ function CoachWizardStep2({ navigation }: Step2Props) {
++  const { state, patch } = useWizard();
++  const { saving, error, save } = useStepSaver(2);
++  const ready = state.connect?.state === "active";
++  const next = () =>
++    void save({ connect_state: state.connect?.state ?? "unknown" }, () =>
++      navigation.navigate("CoachWizardStep3"),
++    );
+   return (
+     <StepLayout
+       stepNumber={2}
+-      totalSteps={6}
+-      heading="Your practice name."
+-      body="This is how clients will see you in the app."
+-      ctaLabel="Continue"
+-      onCta={() => navigation.navigate('CoachWizardStep3')}
++      totalSteps={UI_STEPS}
++      heading="Get paid"
++      body="Clients pay you by card. Stripe, the payments provider TGP uses, holds your bank and ID details so TGP never sees them."
++      ctaLabel={ready ? "Continue" : "Continue without payouts for now"}
++      ctaDisabled={saving}
++      onCta={next}
+       onBack={() => navigation.goBack()}
+-    />
++    >
++      <GetPaidPanel
++        onChange={(v) => patch({ connect: v })}
++        testID="wizard-get-paid"
++      />
++      {!ready ? (
++        <SmallNote text="You can finish this later from the checklist on your Home screen. Free packages work without Stripe." />
++      ) : null}
++      {error ? (
++        <SetupNotice error={error} testID="wizard-step-2-error" />
++      ) : null}
++    </StepLayout>
+   );
+ }
+ 
+-type Step3Props = { navigation: NativeStackNavigationProp<CoachWizardParamList, 'CoachWizardStep3'> };
++// ─── Step 3: first package ───────────────────────────────────────────────────
++
++type Step3Props = {
++  navigation: NativeStackNavigationProp<
++    CoachWizardParamList,
++    "CoachWizardStep3"
++  >;
++};
++
+ function CoachWizardStep3({ navigation }: Step3Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const { state, patch } = useWizard();
++  const { saving, error, save } = useStepSaver(3);
++  const [checking, setChecking] = useState(true);
++  const [listError, setListError] = useState<FriendlyError | null>(null);
++  const [draft, setDraft] = useState<CoachPackage | null>(null);
++  const [publishing, setPublishing] = useState(false);
++  const [publishError, setPublishError] = useState<FriendlyError | null>(null);
++
++  // C-329-1: only a live package (active, not archived, published) counts.
++  // A draft is offered to publish; it is never shown as live.
++  const check = useCallback(async () => {
++    setChecking(true);
++    setListError(null);
++    try {
++      const res = await coachPackagesApi.list();
++      const live = res.data.find(isLivePackage);
++      if (live) {
++        patch({ existingPackageTitle: live.title });
++        setDraft(null);
++      } else {
++        setDraft(
++          res.data.find((p) => p.status !== "archived" && !p.archivedAt) ??
++            null,
++        );
++      }
++    } catch (err) {
++      setListError(describeError(err, "check your packages"));
++    } finally {
++      setChecking(false);
++    }
++  }, [patch]);
++
++  useEffect(() => {
++    void check();
++  }, [check]);
++
++  const publishDraft = async () => {
++    if (!draft) return;
++    setPublishing(true);
++    setPublishError(null);
++    try {
++      await coachSetupApi.publishPackage(draft.id);
++      patch({ existingPackageTitle: draft.title });
++      setDraft(null);
++    } catch (err) {
++      setPublishError(describeError(err, "make your package live"));
++    } finally {
++      setPublishing(false);
++    }
++  };
++
++  const done = state.pkg !== null || state.existingPackageTitle !== null;
++  const goNext = () =>
++    void save(
++      state.pkg
++        ? {
++            package_id: state.pkg.id,
++            price_cents: state.pkg.priceCents,
++            billing: state.pkg.billingInterval,
++          }
++        : { package_skipped: !done },
++      () => navigation.navigate("CoachWizardStep4"),
++    );
++  const title = state.practiceName
++    ? `${state.practiceName} coaching`
++    : "1:1 coaching";
+   return (
+     <StepLayout
+       stepNumber={3}
+-      totalSteps={6}
+-      heading="Your speciality."
+-      body="Tell clients what you focus on — strength, nutrition, lifestyle, or something else."
+-      ctaLabel="Continue"
+-      onCta={() => navigation.navigate('CoachWizardStep4')}
++      totalSteps={UI_STEPS}
++      heading="Your first package"
++      body="This is what a client signs up for. The starting point below can be changed any time."
++      ctaLabel={done ? "Continue" : "Skip for now"}
++      ctaDisabled={saving}
++      onCta={goNext}
+       onBack={() => navigation.goBack()}
+-    />
++    >
++      {checking ? (
++        <ActivityIndicator accessibilityLabel="Checking your packages" />
++      ) : listError ? (
++        <SetupNotice
++          error={listError}
++          onRetry={() => void check()}
++          testID="wizard-package-list-error"
++        />
++      ) : state.pkg ? (
++        <SmallNote
++          testID="wizard-package-created"
++          text={
++            state.pkg.priceCents === 0
++              ? `${state.pkg.title} is live and free. Clients who join with your invite link get it straight away.`
++              : `${state.pkg.title} is live at $${(state.pkg.priceCents / 100).toFixed(2)}${
++                  state.pkg.billingInterval === "monthly" ? " a month" : ""
++                }.`
++          }
++        />
++      ) : state.existingPackageTitle ? (
++        <SmallNote
++          testID="wizard-package-existing"
++          text={`You already have a package, ${state.existingPackageTitle}. You can add more from Packages later.`}
++        />
++      ) : (
++        <>
++          {draft ? (
++            <View testID="wizard-package-draft">
++              <SmallNote
++                text={`${draft.title} is saved as a draft. Clients cannot see it until it is live.`}
++              />
++              <TouchableOpacity
++                onPress={() => void publishDraft()}
++                disabled={publishing}
++                accessibilityRole="button"
++                accessibilityLabel={`Make ${draft.title} live`}
++                accessibilityState={{ busy: publishing, disabled: publishing }}
++                testID="wizard-package-draft-publish"
++                style={styles.linkBtn}
++              >
++                <Text style={styles.linkBtnText}>
++                  {publishing ? "Making it live" : `Make ${draft.title} live`}
++                </Text>
++              </TouchableOpacity>
++              {publishError ? (
++                <SetupNotice
++                  error={publishError}
++                  onRetry={() => void publishDraft()}
++                  testID="wizard-package-draft-error"
++                />
++              ) : null}
++              <SmallNote text="Or create a new package below." />
++            </View>
++          ) : null}
++          <FirstPackageForm
++            defaultTitle={title}
++            defaultDescription={
++              state.focus.length
++                ? `Coaching for ${state.focus.join(", ").toLowerCase()}.`
++                : null
++            }
++            chargesEnabled={state.connect?.chargesEnabled === true}
++            onCreated={(pkg) => patch({ pkg })}
++            testID="wizard-first-package"
++          />
++        </>
++      )}
++      {error ? (
++        <SetupNotice error={error} testID="wizard-step-3-error" />
++      ) : null}
++    </StepLayout>
+   );
+ }
+ 
+-type Step4Props = { navigation: NativeStackNavigationProp<CoachWizardParamList, 'CoachWizardStep4'> };
++// ─── Step 4: invite first client ─────────────────────────────────────────────
++
++type Step4Props = {
++  navigation: NativeStackNavigationProp<
++    CoachWizardParamList,
++    "CoachWizardStep4"
++  >;
++};
++
+ function CoachWizardStep4({ navigation }: Step4Props) {
++  const { state, patch } = useWizard();
++  const { saving, error, save } = useStepSaver(4);
+   return (
+     <StepLayout
+       stepNumber={4}
+-      totalSteps={6}
+-      heading="Your capacity."
+-      body="How many clients are you ready to take on right now?"
+-      ctaLabel="Continue"
+-      onCta={() => navigation.navigate('CoachWizardStep5')}
++      totalSteps={UI_STEPS}
++      heading="Invite your first client"
++      body="Send your link, or let them scan the QR code. When they join, they appear in your client list."
++      ctaLabel={state.invited ? "Continue" : "Continue without inviting"}
++      ctaDisabled={saving}
++      onCta={() =>
++        void save({ invite_shared: state.invited }, () =>
++          navigation.navigate("CoachWizardStep5"),
++        )
++      }
+       onBack={() => navigation.goBack()}
+-    />
++    >
++      <InviteShareCard
++        onShared={() => patch({ invited: true })}
++        packageName={state.pkg?.title ?? state.existingPackageTitle}
++        testID="wizard-invite"
++      />
++      {error ? (
++        <SetupNotice error={error} testID="wizard-step-4-error" />
++      ) : null}
++    </StepLayout>
+   );
+ }
+ 
+-type Step5Props = { navigation: NativeStackNavigationProp<CoachWizardParamList, 'CoachWizardStep5'> };
+-function CoachWizardStep5({ navigation }: Step5Props) {
+-  return (
+-    <StepLayout
+-      stepNumber={5}
+-      totalSteps={6}
+-      heading="Connect payments."
+-      body="Link Stripe to accept client payments. You can do this now or from Settings later."
+-      ctaLabel="Continue"
+-      onCta={() => navigation.navigate('CoachWizardStep6')}
+-      onBack={() => navigation.goBack()}
+-    />
+-  );
+-}
++// ─── Step 5: ready ───────────────────────────────────────────────────────────
+ 
+-// ─── Step 6 — final step, calls complete endpoint ─────────────────────────────
++type Step5Props = {
++  navigation: NativeStackNavigationProp<
++    CoachWizardParamList,
++    "CoachWizardStep5"
++  >;
++};
+ 
+-// Advance the backend wizard row to the final step if the coach navigated
+-// here by tapping through the UI rather than via step-advance API calls.
+-// This ensures POST /coach/onboarding/complete passes the backend's
+-// current_step >= total_steps guard regardless of how the wizard was traversed.
+-async function ensureWizardAtFinalStep(totalSteps: number): Promise<void> {
+-  let currentStep = 0;
+-  try {
+-    const res = await api.get<{ current_step: number; is_complete: boolean }>('/coach/onboarding');
+-    if (res.data.is_complete) return;
+-    currentStep = res.data.current_step ?? 0;
+-  } catch {
+-    // If the GET fails, attempt to advance from step 0 anyway — worst case
+-    // the backend rejects individual step advances, which is non-fatal.
+-  }
+-  for (let step = currentStep + 1; step <= totalSteps; step += 1) {
++function CoachWizardStep5({ navigation }: Step5Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const { state } = useWizard();
++  const user = useCurrentUser();
++  const coachId = user?.id ?? null;
++  const [submitting, setSubmitting] = useState(false);
++  const [error, setError] = useState<FriendlyError | null>(null);
++  // C-329-3: read the server on mount. When the wizard resumes on this
++  // step, the in-memory state from earlier steps is empty, so the ticks
++  // must come from the same routes the Home checklist uses.
++  const [snap, setSnap] = useState<SetupSnapshot | null>(null);
++  const [checking, setChecking] = useState(true);
++  const check = useCallback(async () => {
++    if (!coachId) {
++      setChecking(false);
++      return;
++    }
++    setChecking(true);
+     try {
+-      await api.post(`/coach/onboarding/steps/${step}`, {});
+-    } catch {
+-      // Individual step advance failures are non-fatal — continue to complete.
++      setSnap(await loadSetupStatus(coachId));
++    } finally {
++      setChecking(false);
+     }
+-  }
+-}
+-
+-type Step6Props = { navigation: NativeStackNavigationProp<CoachWizardParamList, 'CoachWizardStep6'> };
+-function CoachWizardStep6({ navigation }: Step6Props) {
+-  const [submitting, setSubmitting] = useState(false);
+-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+-
+-  const handleBeginCoaching = async () => {
+-    if (submitting) return;
++  }, [coachId]);
++  useEffect(() => {
++    void check();
++  }, [check]);
++  const connectState = snap?.connect?.state ?? state.connect?.state ?? null;
++  const hasPackage =
++    state.pkg !== null ||
++    state.existingPackageTitle !== null ||
++    (snap?.livePackageTitle ?? "") !== "";
++  const hasClient = snap?.hasClient === true;
++  const shared = state.invited || snap?.sharedLink === true;
++  const items = [
++    { label: "Practice set up", done: state.practiceName.length > 0 },
++    { label: "Stripe ready to pay you", done: connectState === "active" },
++    { label: "First package live", done: hasPackage },
++    {
++      label: hasClient
++        ? "First client joined"
++        : shared
++          ? "Invite link shared, waiting for your first client to join"
++          : "First client invited",
++      done: hasClient,
++    },
++  ];
++  const finish = async () => {
+     setSubmitting(true);
+-    setErrorMessage(null);
++    setError(null);
+     try {
+-      await ensureWizardAtFinalStep(6);
+-      await api.post('/coach/onboarding/complete');
++      await advanceWizardTo(BACKEND_FINAL_STEP);
++      await coachSetupApi.complete();
+       await persistWizardCompleteFlag();
+       authEvents.emit();
+-    } catch {
+-      setErrorMessage('Setup could not complete. Check your connection and try again.');
++    } catch (err) {
++      setError(describeError(err, "finish setup"));
+       setSubmitting(false);
+     }
+   };
+-
+   return (
+     <StepLayout
+-      stepNumber={6}
+-      totalSteps={6}
+-      heading="You're ready."
+-      body="Everything is set. Your coaching dashboard is waiting."
+-      ctaLabel="Begin Coaching"
+-      onCta={handleBeginCoaching}
++      stepNumber={5}
++      totalSteps={UI_STEPS}
++      heading="You are ready to coach"
++      body="Anything still open stays on your Home checklist, which also shows your first client payment once it arrives."
++      ctaLabel="Go to your dashboard"
+       ctaDisabled={submitting}
++      onCta={finish}
+       onBack={() => navigation.goBack()}
+-      errorMessage={errorMessage ?? undefined}
+-    />
++    >
++      {checking ? (
++        <ActivityIndicator
++          color={colors.primary}
++          accessibilityLabel="Checking your setup"
++          testID="wizard-step-5-checking"
++        />
++      ) : null}
++      {snap && snap.errors.length > 0 ? (
++        <SetupNotice
++          error={snap.errors[0]}
++          onRetry={checking ? undefined : () => void check()}
++          testID="wizard-step-5-status-error"
++        />
++      ) : null}
++      <View accessibilityRole="list">
++        {items.map((it) => (
++          <View
++            key={it.label}
++            style={styles.checkRow}
++            accessible
++            accessibilityLabel={`${it.label}. ${it.done ? "Done" : "Still to do"}`}
++          >
++            <View style={[styles.checkDot, it.done && styles.checkDotDone]} />
++            <Text style={styles.checkText}>
++              {it.label}
++              {it.done ? "" : " (still to do)"}
++            </Text>
++          </View>
++        ))}
++      </View>
++      {error ? (
++        <SetupNotice
++          error={error}
++          onRetry={finish}
++          testID="wizard-step-5-error"
++        />
++      ) : null}
++    </StepLayout>
++  );
++}
++
++function SmallNote({ text, testID }: { text: string; testID?: string }) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  return (
++    <Text style={styles.note} testID={testID}>
++      {text}
++    </Text>
+   );
+ }
+ 
+@@ -277,21 +698,97 @@ function CoachWizardStep6({ navigation }: Step6Props) {
+ 
+ const Stack = createNativeStackNavigator<CoachWizardParamList>();
+ 
++/** Map the backend step (1..6) to the screen to resume on. Exported for tests. */
++export function resumeRoute(currentStep: number): keyof CoachWizardParamList {
++  if (currentStep >= 5) return "CoachWizardStep5";
++  if (currentStep === 4) return "CoachWizardStep4";
++  if (currentStep === 3) return "CoachWizardStep3";
++  if (currentStep === 2) return "CoachWizardStep2";
++  return "CoachWizardStep1";
++}
++
+ export default function CoachWizardNavigator() {
++  const { colors } = useTheme();
++  const [initial, setInitial] = useState<keyof CoachWizardParamList | null>(
++    null,
++  );
++  const [state, setState] = useState<WizardState>({
++    practiceName: "",
++    focus: [],
++    connect: null,
++    pkg: null,
++    existingPackageTitle: null,
++    invited: false,
++  });
++  const patch = useCallback(
++    (p: Partial<WizardState>) => setState((s) => ({ ...s, ...p })),
++    [],
++  );
++
++  useEffect(() => {
++    let alive = true;
++    (async () => {
++      let practiceName = "";
++      let focus: string[] = [];
++      let step = 1;
++      try {
++        const raw = await AsyncStorage.getItem("user_data");
++        const u = raw ? (JSON.parse(raw) as { name?: string }) : null;
++        if (u?.name) practiceName = u.name;
++      } catch {
++        // No cached profile: the coach types the name.
++      }
++      try {
++        const progress = await coachSetupApi.progress();
++        step = progress.currentStep;
++        const s1 = stepBlob(progress.stepData, 1);
++        if (s1 && typeof s1.practice_name === "string")
++          practiceName = s1.practice_name;
++        if (s1 && Array.isArray(s1.focus))
++          focus = s1.focus.filter((x): x is string => typeof x === "string");
++      } catch {
++        // Not started yet (404) or offline: begin at step 1; saving retries.
++      }
++      if (!alive) return;
++      setState((s) => ({ ...s, practiceName, focus }));
++      setInitial(resumeRoute(step));
++    })();
++    return () => {
++      alive = false;
++    };
++  }, []);
++
++  const ctx = useMemo(() => ({ state, patch }), [state, patch]);
++  if (!initial) {
++    return (
++      <View
++        style={{
++          flex: 1,
++          alignItems: "center",
++          justifyContent: "center",
++          backgroundColor: colors.background,
++        }}
++      >
++        <ActivityIndicator
++          color={colors.primary}
++          accessibilityLabel="Loading your setup"
++        />
++      </View>
++    );
++  }
+   return (
+-    <Stack.Navigator
+-      screenOptions={{
+-        headerShown: false,
+-        animation: 'slide_from_right',
+-      }}
+-    >
+-      <Stack.Screen name="CoachWizardStep1" component={CoachWizardStep1} />
+-      <Stack.Screen name="CoachWizardStep2" component={CoachWizardStep2} />
+-      <Stack.Screen name="CoachWizardStep3" component={CoachWizardStep3} />
+-      <Stack.Screen name="CoachWizardStep4" component={CoachWizardStep4} />
+-      <Stack.Screen name="CoachWizardStep5" component={CoachWizardStep5} />
+-      <Stack.Screen name="CoachWizardStep6" component={CoachWizardStep6} />
+-    </Stack.Navigator>
++    <WizardContext.Provider value={ctx}>
++      <Stack.Navigator
++        initialRouteName={initial}
++        screenOptions={{ headerShown: false, animation: "slide_from_right" }}
++      >
++        <Stack.Screen name="CoachWizardStep1" component={CoachWizardStep1} />
++        <Stack.Screen name="CoachWizardStep2" component={CoachWizardStep2} />
++        <Stack.Screen name="CoachWizardStep3" component={CoachWizardStep3} />
++        <Stack.Screen name="CoachWizardStep4" component={CoachWizardStep4} />
++        <Stack.Screen name="CoachWizardStep5" component={CoachWizardStep5} />
++      </Stack.Navigator>
++    </WizardContext.Provider>
+   );
+ }
+ 
+@@ -306,19 +803,24 @@ const makeStyles = (colors: ThemeColors) =>
+       paddingTop: 32,
+       paddingBottom: 24,
+     },
+-    stepIndicator: { flexDirection: 'row', gap: 8, marginBottom: 28 },
+-    dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
++    stepIndicator: { flexDirection: "row", gap: 8, marginBottom: 28 },
++    dot: {
++      width: 8,
++      height: 8,
++      borderRadius: 4,
++      backgroundColor: colors.border,
++    },
+     dotActive: { backgroundColor: colors.primary, width: 24 },
+     dotComplete: { backgroundColor: colors.primary },
+     headline: {
+-      fontFamily: 'CormorantGaramond_400Regular',
++      fontFamily: "CormorantGaramond_400Regular",
+       fontSize: 32,
+       lineHeight: 36,
+       color: colors.textPrimary,
+       marginBottom: 12,
+     },
+     subtext: {
+-      fontFamily: 'Inter_400Regular',
++      fontFamily: "Inter_400Regular",
+       fontSize: 15,
+       color: colors.textSecondary,
+       lineHeight: 22,
+@@ -328,28 +830,88 @@ const makeStyles = (colors: ThemeColors) =>
+     primaryBtn: {
+       backgroundColor: colors.primary,
+       paddingVertical: 16,
+-      alignItems: 'center',
++      alignItems: "center",
+       marginTop: 16,
+     },
+     primaryBtnDisabled: { opacity: 0.5 },
++    linkBtn: { minHeight: 44, justifyContent: "center" },
++    linkBtnText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.primary,
++    },
+     primaryBtnText: {
+-      fontFamily: 'Inter_600SemiBold',
++      fontFamily: "Inter_600SemiBold",
+       fontSize: 14,
+       color: colors.textOnPrimary,
+       letterSpacing: 1.2,
+     },
+     backBtn: {
+       paddingVertical: 12,
+-      alignSelf: 'flex-start',
++      alignSelf: "flex-start",
+       marginTop: 4,
+     },
+     backText: {
+-      fontFamily: 'Inter_500Medium',
++      fontFamily: "Inter_500Medium",
++      fontSize: 13,
++      color: colors.textSecondary,
++    },
++    fieldLabel: {
++      fontFamily: "Inter_600SemiBold",
+       fontSize: 13,
+       color: colors.textSecondary,
++      marginTop: 12,
++      marginBottom: 6,
++    },
++    input: {
++      borderWidth: 1,
++      borderColor: colors.border,
++      minHeight: 48,
++      paddingHorizontal: 12,
++      fontFamily: "Inter_400Regular",
++      fontSize: 16,
++      color: colors.textPrimary,
++      backgroundColor: colors.surface,
++    },
++    chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
++    chip: {
++      borderWidth: 1,
++      borderColor: colors.border,
++      minHeight: 44,
++      paddingHorizontal: 14,
++      justifyContent: "center",
++    },
++    chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
++    chipText: {
++      fontFamily: "Inter_500Medium",
++      fontSize: 14,
++      color: colors.textPrimary,
++    },
++    chipTextOn: { color: colors.textOnPrimary },
++    note: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 14,
++      lineHeight: 20,
++      color: colors.textSecondary,
++      marginTop: 8,
++    },
++    checkRow: { flexDirection: "row", alignItems: "center", minHeight: 36 },
++    checkDot: {
++      width: 12,
++      height: 12,
++      borderRadius: 6,
++      borderWidth: 2,
++      borderColor: colors.primary,
++      marginRight: 12,
++    },
++    checkDotDone: { backgroundColor: colors.primary },
++    checkText: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 15,
++      color: colors.textPrimary,
+     },
+     errorText: {
+-      fontFamily: 'Inter_400Regular',
++      fontFamily: "Inter_400Regular",
+       fontSize: 13,
+       color: colors.error,
+       lineHeight: 19,
+diff --git a/src/screens/coach/payments/CoachPackageEditScreen.tsx b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+index f041eb4..6203a06 100644
+--- a/src/screens/coach/payments/CoachPackageEditScreen.tsx
++++ b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+@@ -7,7 +7,13 @@
+  * inputs. Mode is derived from the `packageId` param: null → create.
+  */
+ 
+-import React, { useCallback, useEffect, useMemo, useState } from 'react';
++import React, {
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
+ import {
+   ActivityIndicator,
+   Alert,
+@@ -21,14 +27,14 @@ import {
+   TextInput,
+   TouchableOpacity,
+   View,
+-} from 'react-native';
+-import { Ionicons } from '@expo/vector-icons';
++} from "react-native";
++import { Ionicons } from "@expo/vector-icons";
+ import {
+   CommonActions,
+   type NavigationProp,
+   type ParamListBase,
+   type RouteProp,
+-} from '@react-navigation/native';
++} from "@react-navigation/native";
+ 
+ import {
+   coachPackagesApi,
+@@ -36,18 +42,27 @@ import {
+   PackageBillingInterval,
+   PackageCreateInput,
+   PackageUpdateInput,
+-} from '../../../api/packagesApi';
+-import { errorCode, errorMessage } from '../../../types/common';
+-import { mediumTap, successTap, warningTap } from '../../../utils/haptics';
+-import { track } from '../../../lib/analytics';
+-import { useTheme } from '../../../theme/ThemeProvider';
+-import type { SemanticTokens, Tokens } from '../../../theme/tokens';
+-import { parseDollarsToCents } from '../../../utils/currency';
+-import { buildPackageShareUrl } from '../../../utils/packageShare';
+-import { useCurrentUser } from '../../../hooks/useCurrentUser';
++} from "../../../api/packagesApi";
++import { errorCode, errorMessage } from "../../../types/common";
++import {
++  createPackageOnce,
++  intentStorageCopy,
++  IntentStorageError,
++  loadIntent,
++  clearIntent,
++  type PackageCreateIntent,
++} from "../../../lib/coachSetup/packageCreateIntent";
++import { describeError } from "../../../lib/coachSetup/errors";
++import { mediumTap, successTap, warningTap } from "../../../utils/haptics";
++import { track } from "../../../lib/analytics";
++import { useTheme } from "../../../theme/ThemeProvider";
++import type { SemanticTokens, Tokens } from "../../../theme/tokens";
++import { parseDollarsToCents } from "../../../utils/currency";
++import { buildPackageShareUrl } from "../../../utils/packageShare";
++import { useCurrentUser } from "../../../hooks/useCurrentUser";
+ import PackageDetailSurface, {
+   type PackageDetailViewModel,
+-} from '../../client/packageDetail/PackageDetailSurface';
++} from "../../client/packageDetail/PackageDetailSurface";
+ 
+ type ParamList = {
+   CoachPackageEdit: {
+@@ -62,62 +77,97 @@ type ParamList = {
+ };
+ interface Props {
+   navigation: NavigationProp<ParamListBase>;
+-  route: RouteProp<ParamList, 'CoachPackageEdit'>;
++  route: RouteProp<ParamList, "CoachPackageEdit">;
+ }
+ 
+-const INTERVAL_OPTIONS: Array<{ label: string; value: PackageBillingInterval }> = [
+-  { label: 'One-time', value: 'one_time' },
+-  { label: 'Monthly', value: 'monthly' },
+-  { label: 'Quarterly', value: 'quarterly' },
+-  { label: 'Yearly', value: 'yearly' },
++const INTERVAL_OPTIONS: Array<{
++  label: string;
++  value: PackageBillingInterval;
++}> = [
++  { label: "One-time", value: "one_time" },
++  { label: "Monthly", value: "monthly" },
++  { label: "Quarterly", value: "quarterly" },
++  { label: "Yearly", value: "yearly" },
+ ];
+ 
+ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   const { semanticColors, tokens } = useTheme();
+-  const styles = useMemo(() => makeStyles(semanticColors, tokens), [semanticColors, tokens]);
++  const styles = useMemo(
++    () => makeStyles(semanticColors, tokens),
++    [semanticColors, tokens],
++  );
+   const currentUser = useCurrentUser();
+   const { packageId, initialPackage } = route.params;
+   const isEdit = Boolean(packageId);
+ 
+   const [loaded, setLoaded] = useState(!isEdit || Boolean(initialPackage));
+-  const [original, setOriginal] = useState<CoachPackage | null>(initialPackage ?? null);
+-  const [title, setTitle] = useState('');
+-  const [description, setDescription] = useState('');
+-  const [priceText, setPriceText] = useState('');
++  const [original, setOriginal] = useState<CoachPackage | null>(
++    initialPackage ?? null,
++  );
++  const [title, setTitle] = useState("");
++  const [description, setDescription] = useState("");
++  const [priceText, setPriceText] = useState("");
+   const [billingInterval, setBillingInterval] =
+-    useState<PackageBillingInterval>('monthly');
+-  const [trialText, setTrialText] = useState('');
+-  const [featuresText, setFeaturesText] = useState('');
++    useState<PackageBillingInterval>("monthly");
++  const [trialText, setTrialText] = useState("");
++  const [featuresText, setFeaturesText] = useState("");
+   const [saving, setSaving] = useState(false);
+   const [archiving, setArchiving] = useState(false);
+-  const [error, setError] = useState('');
++  const [error, setError] = useState("");
+   const [previewOpen, setPreviewOpen] = useState(false);
++  // B-329-1 (B-COACH-5): a create from this editor is durable like the
++  // wizard's. Its Idempotency-Key and body are on disk before the request
++  // leaves; reopening the editor after a kill resumes that same create.
++  const coachId = currentUser?.id ?? null;
++  const createIntent = useRef<PackageCreateIntent | null>(null);
++  const [resumedCreate, setResumedCreate] = useState(false);
++  useEffect(() => {
++    if (isEdit) return;
++    let live = true;
++    void loadIntent(coachId, "editor").then((read) => {
++      if (!live || read.kind !== "found" || createIntent.current) return;
++      const it = read.intent;
++      createIntent.current = it;
++      setTitle(it.input.title);
++      setDescription(it.input.description ?? "");
++      setPriceText((it.input.priceCents / 100).toFixed(2));
++      setBillingInterval(it.input.billingInterval);
++      setTrialText(it.input.trialDays ? String(it.input.trialDays) : "");
++      setFeaturesText((it.input.features ?? []).join("\n"));
++      setResumedCreate(true);
++    });
++    return () => {
++      live = false;
++    };
++  }, [isEdit, coachId]);
+ 
+   useEffect(() => {
+     if (!packageId) {
+-      track('coach_package_create_opened');
++      track("coach_package_create_opened");
+       return;
+     }
+-    track('coach_package_edit_opened', { package_id: packageId });
++    track("coach_package_edit_opened", { package_id: packageId });
+     // Future-route: switch to coachPackagesApi.get(packageId) once
+     // `GET /v1/coach/packages/:id` is deployed. Today the row is passed
+     // through nav params from CoachPackagesListScreen so the edit screen
+     // can render without hitting an undeployed route.
+     if (initialPackage) {
+       setOriginal(initialPackage);
+-      setTitle(initialPackage.title ?? '');
+-      setDescription(initialPackage.description ?? '');
++      setTitle(initialPackage.title ?? "");
++      setDescription(initialPackage.description ?? "");
+       setPriceText(((initialPackage.priceCents ?? 0) / 100).toFixed(2));
+       setBillingInterval(initialPackage.billingInterval);
+-      setTrialText(initialPackage.trialDays ? String(initialPackage.trialDays) : '');
+-      setFeaturesText((initialPackage.features ?? []).join('\n'));
++      setTrialText(
++        initialPackage.trialDays ? String(initialPackage.trialDays) : "",
++      );
++      setFeaturesText((initialPackage.features ?? []).join("\n"));
+       setLoaded(true);
+       return;
+     }
+     Alert.alert(
+-      'Could not load package',
+-      'Open the package from the list to edit it.',
+-      [{ text: 'OK', onPress: () => navigation.goBack() }],
++      "Could not load package",
++      "Open the package from the list to edit it.",
++      [{ text: "OK", onPress: () => navigation.goBack() }],
+     );
+     setLoaded(true);
+   }, [packageId, initialPackage, navigation]);
+@@ -128,20 +178,21 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   } => {
+     const trimmedTitle = title.trim();
+     if (!trimmedTitle) {
+-      return { payload: null, message: 'Please give the package a name.' };
++      return { payload: null, message: "Please give the package a name." };
+     }
+     const cents = parseDollarsToCents(priceText);
+     if (cents == null) {
+-      return { payload: null, message: 'Enter a valid price.' };
++      return { payload: null, message: "Enter a valid price." };
+     }
+     if (cents === 0) {
+       return {
+         payload: null,
+-        message: 'Price must be greater than zero. Use a free invite code for comps.',
++        message:
++          "Price must be greater than zero. Use a free invite code for comps.",
+       };
+     }
+     const features = featuresText
+-      .split('\n')
++      .split("\n")
+       .map((f) => f.trim())
+       .filter(Boolean);
+     let trialDays: number | null = null;
+@@ -150,7 +201,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       if (!Number.isInteger(n) || n < 0 || n > 365) {
+         return {
+           payload: null,
+-          message: 'Trial days must be a whole number between 0 and 365.',
++          message: "Trial days must be a whole number between 0 and 365.",
+         };
+       }
+       trialDays = n;
+@@ -169,26 +220,75 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     };
+   }, [title, description, priceText, billingInterval, trialText, featuresText]);
+ 
++  // OR-112-16 + B-329-1: one create attempt = one Idempotency-Key and one
++  // body, stored on the device before the request leaves (see
++  // lib/coachSetup/packageCreateIntent.ts). Every retry, including after the
++  // app restarts, re-sends that pair, so the backend returns the package it
++  // already made instead of a second one.
++  const saveInFlight = useRef(false);
++
+   const handleSave = useCallback(async () => {
++    if (saveInFlight.current) return;
+     const v = validate();
+     if (!v.payload) {
+-      setError(v.message ?? 'Invalid input.');
++      setError(v.message ?? "Invalid input.");
+       warningTap();
+       return;
+     }
+-    setError('');
++    setError("");
+     setSaving(true);
++    saveInFlight.current = true;
+     try {
+       if (isEdit && original) {
+         const updated: PackageUpdateInput = v.payload;
+         const res = await coachPackagesApi.update(original.id, updated);
+         setOriginal(res.data);
+         successTap();
+-        Alert.alert('Package updated', 'Changes saved.');
++        Alert.alert("Package updated", "Changes saved.");
+       } else {
+-        const res = await coachPackagesApi.create(v.payload);
++        const owner = coachId;
++        let earlier = createIntent.current;
++        if (!earlier) {
++          // A failed storage read is not "nothing was sent": stop instead.
++          const read = await loadIntent(owner, "editor");
++          if (read.kind === "unreadable")
++            throw new IntentStorageError("unreadable");
++          if (read.kind === "no_account")
++            throw new IntentStorageError("no_account");
++          if (read.kind === "found") earlier = read.intent;
++        }
++        let latest: CoachPackage | null = null;
++        const created = await createPackageOnce({
++          coachId: owner,
++          scope: "editor",
++          input: v.payload,
++          earlier,
++          deps: {
++            create: async (body, key) => {
++              const r = await coachPackagesApi.create(body, key);
++              latest = r.data;
++              return r;
++            },
++            update: async (id, body) => {
++              const r = await coachPackagesApi.update(id, body);
++              latest = r.data;
++              return r;
++            },
++          },
++          onIntent: (next) => {
++            createIntent.current = next;
++          },
++        });
++        // A create finished in an earlier session (killed before it opened
++        // the package): read the row back by saving the same details.
++        const res: { data: CoachPackage } = latest
++          ? { data: latest }
++          : await coachPackagesApi.update(created.packageId, v.payload);
++        createIntent.current = null;
++        await clearIntent(owner, "editor");
++        setResumedCreate(false);
+         successTap();
+-        track('coach_package_created', { package_id: res.data.id });
++        track("coach_package_created", { package_id: res.data.id });
+         // After create, replace the route so back arrow returns to the
+         // list rather than the empty create form. Native stack `replace`
+         // lives on `@react-navigation/native-stack`, but the screen
+@@ -196,7 +296,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+         // CommonActions.reset equivalent via dispatch with a single route.
+         navigation.dispatch(
+           CommonActions.navigate({
+-            name: 'CoachPackageEdit',
++            name: "CoachPackageEdit",
+             params: { packageId: res.data.id, initialPackage: res.data },
+           }),
+         );
+@@ -204,53 +304,58 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       }
+     } catch (err) {
+       const code = errorCode(err);
+-      if (code === 'PACKAGES_NOT_CONFIGURED') {
++      if (err instanceof IntentStorageError) {
++        const copy = intentStorageCopy(err);
++        Alert.alert(copy.title, copy.body);
++      } else if (code === "PACKAGES_NOT_CONFIGURED") {
+         Alert.alert(
+-          'Packages not enabled yet',
++          "Packages not enabled yet",
+           errorMessage(
+             err,
+-            'The packages backend module is not deployed in this environment.',
++            "The packages backend module is not deployed in this environment.",
+           ),
+         );
+-      } else if (code === 'PACKAGE_PRICING_LOCKED') {
++      } else if (code === "PACKAGE_PRICING_LOCKED") {
+         warningTap();
+         Alert.alert(
+-          'Pricing is locked',
+-          'Pricing is locked because this package already has active subscribers. Create a new package for new pricing; you can still edit name, description, deliverables, and availability.',
++          "Pricing is locked",
++          "Pricing is locked because this package already has active subscribers. Create a new package for new pricing; you can still edit name, description, deliverables, and availability.",
+         );
+       } else {
+-        Alert.alert(
+-          'Could not save',
+-          errorMessage(err, 'Please check your inputs and try again.'),
++        const f = describeError(
++          err,
++          isEdit ? "save this package" : "create this package",
+         );
++        Alert.alert(f.title, f.body);
+       }
+     } finally {
++      saveInFlight.current = false;
+       setSaving(false);
+     }
+-  }, [validate, isEdit, original, navigation]);
++  }, [validate, isEdit, original, navigation, coachId]);
+ 
+   const handleArchive = useCallback(() => {
+     if (!original) return;
+     warningTap();
+     Alert.alert(
+-      'Archive this package?',
+-      'New clients will no longer be able to subscribe. Existing subscribers are unaffected — they keep access and continue to be billed until they cancel.',
++      "Archive this package?",
++      "New clients will no longer be able to subscribe. Existing subscribers are unaffected — they keep access and continue to be billed until they cancel.",
+       [
+-        { text: 'Cancel', style: 'cancel' },
++        { text: "Cancel", style: "cancel" },
+         {
+-          text: 'Archive',
+-          style: 'destructive',
++          text: "Archive",
++          style: "destructive",
+           onPress: async () => {
+             setArchiving(true);
+             try {
+               const res = await coachPackagesApi.archive(original.id);
+               setOriginal(res.data);
+               successTap();
+-              track('coach_package_archived', { package_id: original.id });
++              track("coach_package_archived", { package_id: original.id });
+             } catch (err) {
+               Alert.alert(
+-                'Could not archive',
+-                errorMessage(err, 'Please try again.'),
++                "Could not archive",
++                errorMessage(err, "Please try again."),
+               );
+             } finally {
+               setArchiving(false);
+@@ -264,8 +369,8 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   const handleShare = useCallback(async () => {
+     if (!original?.shareToken) {
+       Alert.alert(
+-        'Share link not ready yet',
+-        'The share link will appear here once the package is saved and the backend has minted it.',
++        "Share link not ready yet",
++        "The share link will appear here once the package is saved and the backend has minted it.",
+       );
+       return;
+     }
+@@ -276,7 +381,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+         message: `Join my coaching package: ${original.title}\n${url}`,
+         url,
+       });
+-      track('coach_package_shared', { package_id: original.id });
++      track("coach_package_shared", { package_id: original.id });
+     } catch {
+       // User dismissed; non-actionable.
+     }
+@@ -288,8 +393,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   const coachDisplayName = useMemo(() => {
+     const n =
+       currentUser?.name?.trim() ||
+-      [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ').trim();
+-    return n || 'You';
++      [currentUser?.firstName, currentUser?.lastName]
++        .filter(Boolean)
++        .join(" ")
++        .trim();
++    return n || "You";
+   }, [currentUser]);
+ 
+   // Build the preview view model from the LIVE draft fields so the coach sees
+@@ -298,20 +406,22 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   const previewViewModel = useMemo<PackageDetailViewModel>(() => {
+     const cents = parseDollarsToCents(priceText) ?? original?.priceCents ?? 0;
+     const features = featuresText
+-      .split('\n')
++      .split("\n")
+       .map((f) => f.trim())
+       .filter(Boolean);
+     const trimmedTrial = trialText.trim();
+     const trialDays =
+-      billingInterval !== 'one_time' && trimmedTrial && Number.isInteger(Number(trimmedTrial))
++      billingInterval !== "one_time" &&
++      trimmedTrial &&
++      Number.isInteger(Number(trimmedTrial))
+         ? Number(trimmedTrial)
+         : null;
+     return {
+-      id: original?.id ?? 'preview',
+-      title: title.trim() || 'Untitled package',
++      id: original?.id ?? "preview",
++      title: title.trim() || "Untitled package",
+       description: description.trim() || null,
+       priceCents: cents,
+-      currency: original?.currency ?? 'usd',
++      currency: original?.currency ?? "usd",
+       billingInterval,
+       intervalCount: original?.intervalCount ?? 1,
+       trialDays,
+@@ -337,7 +447,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     );
+   }
+ 
+-  const archived = original?.status === 'archived';
++  const archived = original?.status === "archived";
+   // Pricing is immutable once a package has active subscribers — surface that
+   // up-front (helper copy) and again if the backend rejects a price change.
+   const pricingLocked = isEdit && (original?.subscriberCount ?? 0) > 0;
+@@ -345,7 +455,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   return (
+     <KeyboardAvoidingView
+       style={styles.container}
+-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
++      behavior={Platform.OS === "ios" ? "padding" : undefined}
+     >
+       <View style={styles.topBar}>
+         <TouchableOpacity
+@@ -354,9 +464,15 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           accessibilityRole="button"
+           accessibilityLabel="Go back"
+         >
+-          <Ionicons name="arrow-back" size={24} color={semanticColors.textPrimary} />
++          <Ionicons
++            name="arrow-back"
++            size={24}
++            color={semanticColors.textPrimary}
++          />
+         </TouchableOpacity>
+-        <Text style={styles.topTitle}>{isEdit ? 'Edit package' : 'New package'}</Text>
++        <Text style={styles.topTitle}>
++          {isEdit ? "Edit package" : "New package"}
++        </Text>
+         <View style={styles.backBtn} />
+       </View>
+       <ScrollView
+@@ -365,7 +481,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       >
+         {archived ? (
+           <View style={styles.archivedBanner}>
+-            <Ionicons name="archive-outline" size={16} color={tokens.semantic.warning.icon} />
++            <Ionicons
++              name="archive-outline"
++              size={16}
++              color={tokens.semantic.warning.icon}
++            />
+             <Text style={styles.archivedText}>
+               This package is archived. Restore it by setting status back to
+               Active in the form below — current subscribers are unaffected.
+@@ -373,7 +493,9 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           </View>
+         ) : null}
+ 
+-        <Label semanticColors={semanticColors} tokens={tokens}>Name</Label>
++        <Label semanticColors={semanticColors} tokens={tokens}>
++          Name
++        </Label>
+         <TextInput
+           value={title}
+           onChangeText={setTitle}
+@@ -383,7 +505,9 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           maxLength={120}
+         />
+ 
+-        <Label semanticColors={semanticColors} tokens={tokens}>Description</Label>
++        <Label semanticColors={semanticColors} tokens={tokens}>
++          Description
++        </Label>
+         <TextInput
+           value={description}
+           onChangeText={setDescription}
+@@ -394,7 +518,9 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           maxLength={1000}
+         />
+ 
+-        <Label semanticColors={semanticColors} tokens={tokens}>Price (USD)</Label>
++        <Label semanticColors={semanticColors} tokens={tokens}>
++          Price (USD)
++        </Label>
+         <TextInput
+           value={priceText}
+           onChangeText={setPriceText}
+@@ -405,7 +531,9 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           maxLength={12}
+         />
+ 
+-        <Label semanticColors={semanticColors} tokens={tokens}>Billing</Label>
++        <Label semanticColors={semanticColors} tokens={tokens}>
++          Billing
++        </Label>
+         <View style={styles.segment}>
+           {INTERVAL_OPTIONS.map((opt) => {
+             const active = billingInterval === opt.value;
+@@ -433,7 +561,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+ 
+         {pricingLocked ? (
+           <View style={styles.lockNotice} accessibilityRole="text">
+-            <Ionicons name="lock-closed" size={14} color={tokens.semantic.warning.icon} />
++            <Ionicons
++              name="lock-closed"
++              size={14}
++              color={tokens.semantic.warning.icon}
++            />
+             <Text style={styles.lockNoticeText}>
+               Pricing is locked after subscribers join. Create a new package for
+               new pricing.
+@@ -441,9 +573,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           </View>
+         ) : null}
+ 
+-        {billingInterval !== 'one_time' ? (
++        {billingInterval !== "one_time" ? (
+           <>
+-            <Label semanticColors={semanticColors} tokens={tokens}>Trial days (optional)</Label>
++            <Label semanticColors={semanticColors} tokens={tokens}>
++              Trial days (optional)
++            </Label>
+             <TextInput
+               value={trialText}
+               onChangeText={setTrialText}
+@@ -456,16 +590,24 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           </>
+         ) : null}
+ 
+-        <Label semanticColors={semanticColors} tokens={tokens}>Features (one per line)</Label>
++        <Label semanticColors={semanticColors} tokens={tokens}>
++          Features (one per line)
++        </Label>
+         <TextInput
+           value={featuresText}
+           onChangeText={setFeaturesText}
+-          placeholder={'Weekly check-ins\nCustom workout plan\nMeal plan'}
++          placeholder={"Weekly check-ins\nCustom workout plan\nMeal plan"}
+           style={[styles.input, styles.inputMultiline, { minHeight: 120 }]}
+           placeholderTextColor={semanticColors.textMuted}
+           multiline
+         />
+ 
++        {resumedCreate ? (
++          <Text style={styles.resumedText} testID="package-edit-resumed">
++            Your package from earlier is saved here. Tap Create package to
++            finish that same package.
++          </Text>
++        ) : null}
+         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+ 
+         <TouchableOpacity
+@@ -473,13 +615,13 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           onPress={handleSave}
+           disabled={saving}
+           accessibilityRole="button"
+-          accessibilityLabel={isEdit ? 'Save changes' : 'Create package'}
++          accessibilityLabel={isEdit ? "Save changes" : "Create package"}
+         >
+           {saving ? (
+             <ActivityIndicator color={semanticColors.textOnAccent} />
+           ) : (
+             <Text style={styles.primaryBtnText}>
+-              {isEdit ? 'Save changes' : 'Create package'}
++              {isEdit ? "Save changes" : "Create package"}
+             </Text>
+           )}
+         </TouchableOpacity>
+@@ -495,7 +637,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+               accessibilityRole="button"
+               accessibilityLabel="Preview as buyer"
+             >
+-              <Ionicons name="eye-outline" size={18} color={semanticColors.accent} />
++              <Ionicons
++                name="eye-outline"
++                size={18}
++                color={semanticColors.accent}
++              />
+               <Text style={styles.secondaryBtnText}>Preview as buyer</Text>
+             </TouchableOpacity>
+ 
+@@ -506,7 +652,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+                 accessibilityRole="button"
+                 accessibilityLabel="Share package link"
+               >
+-                <Ionicons name="share-outline" size={18} color={semanticColors.accent} />
++                <Ionicons
++                  name="share-outline"
++                  size={18}
++                  color={semanticColors.accent}
++                />
+                 <Text style={styles.secondaryBtnText}>Share link</Text>
+               </TouchableOpacity>
+             ) : (
+@@ -515,7 +665,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+                 accessibilityRole="text"
+                 accessibilityLabel="Share links are coming soon"
+               >
+-                <Ionicons name="share-outline" size={18} color={semanticColors.textMuted} />
++                <Ionicons
++                  name="share-outline"
++                  size={18}
++                  color={semanticColors.textMuted}
++                />
+                 <Text style={styles.secondaryBtnTextDisabled}>
+                   Share links are coming soon
+                 </Text>
+@@ -523,7 +677,10 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+             )}
+ 
+             <TouchableOpacity
+-              style={[styles.tertiaryBtn, archiving && styles.primaryBtnDisabled]}
++              style={[
++                styles.tertiaryBtn,
++                archiving && styles.primaryBtnDisabled,
++              ]}
+               onPress={handleArchive}
+               disabled={archiving || archived}
+               accessibilityRole="button"
+@@ -536,7 +693,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+                   <Ionicons
+                     name="archive-outline"
+                     size={18}
+-                    color={archived ? semanticColors.textMuted : tokens.semantic.warning.icon}
++                    color={
++                      archived
++                        ? semanticColors.textMuted
++                        : tokens.semantic.warning.icon
++                    }
+                   />
+                   <Text
+                     style={[
+@@ -544,7 +705,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+                       archived && { color: semanticColors.textMuted },
+                     ]}
+                   >
+-                    {archived ? 'Archived' : 'Archive package'}
++                    {archived ? "Archived" : "Archive package"}
+                   </Text>
+                 </>
+               )}
+@@ -555,7 +716,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+             <TouchableOpacity
+               style={styles.linkBtn}
+               onPress={() =>
+-                navigation.navigate('CoachPackageContents', {
++                navigation.navigate("CoachPackageContents", {
+                   packageId: original.id,
+                   title: original.title,
+                 })
+@@ -564,13 +725,17 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+               accessibilityLabel="Manage content"
+             >
+               <Text style={styles.linkBtnText}>Manage content</Text>
+-              <Ionicons name="chevron-forward" size={16} color={semanticColors.accent} />
++              <Ionicons
++                name="chevron-forward"
++                size={16}
++                color={semanticColors.accent}
++              />
+             </TouchableOpacity>
+ 
+             <TouchableOpacity
+               style={styles.linkBtn}
+               onPress={() =>
+-                navigation.navigate('CoachPackageSubscribers', {
++                navigation.navigate("CoachPackageSubscribers", {
+                   packageId: original.id,
+                   title: original.title,
+                 })
+@@ -578,8 +743,14 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+               accessibilityRole="button"
+               accessibilityLabel="View subscribers"
+             >
+-              <Text style={styles.linkBtnText}>View subscribers ({original.subscriberCount})</Text>
+-              <Ionicons name="chevron-forward" size={16} color={semanticColors.accent} />
++              <Text style={styles.linkBtnText}>
++                View subscribers ({original.subscriberCount})
++              </Text>
++              <Ionicons
++                name="chevron-forward"
++                size={16}
++                color={semanticColors.accent}
++              />
+             </TouchableOpacity>
+           </>
+         ) : null}
+@@ -599,7 +770,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+               accessibilityRole="button"
+               accessibilityLabel="Close preview"
+             >
+-              <Ionicons name="close" size={24} color={semanticColors.textPrimary} />
++              <Ionicons
++                name="close"
++                size={24}
++                color={semanticColors.textPrimary}
++              />
+             </TouchableOpacity>
+             <Text style={styles.topTitle}>Buyer preview</Text>
+             <View style={styles.backBtn} />
+@@ -607,7 +782,10 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           {/* coachPreview mode: checkout CTA is disabled and never calls a
+               checkout session. No network fetch — the view model is built from
+               the live draft + saved `original`. */}
+-          <PackageDetailSurface package={previewViewModel} mode="coachPreview" />
++          <PackageDetailSurface
++            package={previewViewModel}
++            mode="coachPreview"
++          />
+         </View>
+       </Modal>
+     </KeyboardAvoidingView>
+@@ -630,9 +808,9 @@ function Label({
+         marginBottom: 6,
+         fontSize: 12,
+         color: semanticColors.textMuted,
+-        textTransform: 'uppercase',
++        textTransform: "uppercase",
+         letterSpacing: 0.5,
+-        fontWeight: '500',
++        fontWeight: "500",
+       }}
+     >
+       {children}
+@@ -643,11 +821,11 @@ function Label({
+ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+   StyleSheet.create({
+     container: { flex: 1, backgroundColor: semanticColors.bgPrimary },
+-    center: { justifyContent: 'center', alignItems: 'center' },
++    center: { justifyContent: "center", alignItems: "center" },
+     topBar: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'space-between',
++      flexDirection: "row",
++      alignItems: "center",
++      justifyContent: "space-between",
+       paddingHorizontal: 16,
+       paddingTop: 56,
+       paddingBottom: 12,
+@@ -655,13 +833,17 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+     backBtn: {
+       width: 40,
+       height: 40,
+-      justifyContent: 'center',
+-      alignItems: 'center',
++      justifyContent: "center",
++      alignItems: "center",
++    },
++    topTitle: {
++      fontSize: 18,
++      fontWeight: "500",
++      color: semanticColors.textPrimary,
+     },
+-    topTitle: { fontSize: 18, fontWeight: '500', color: semanticColors.textPrimary },
+     content: { paddingHorizontal: 24, paddingBottom: 60 },
+     archivedBanner: {
+-      flexDirection: 'row',
++      flexDirection: "row",
+       gap: 8,
+       padding: 10,
+       borderRadius: 4,
+@@ -670,8 +852,8 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+     },
+     archivedText: { flex: 1, fontSize: 12, color: semanticColors.textPrimary },
+     lockNotice: {
+-      flexDirection: 'row',
+-      alignItems: 'flex-start',
++      flexDirection: "row",
++      alignItems: "flex-start",
+       gap: 8,
+       marginTop: 10,
+       paddingVertical: 10,
+@@ -697,10 +879,10 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+     },
+     inputMultiline: {
+       minHeight: 80,
+-      textAlignVertical: 'top',
++      textAlignVertical: "top",
+     },
+     segment: {
+-      flexDirection: 'row',
++      flexDirection: "row",
+       backgroundColor: semanticColors.bgSurface,
+       borderRadius: 4,
+       padding: 4,
+@@ -710,16 +892,20 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+       flex: 1,
+       paddingVertical: 10,
+       borderRadius: 2,
+-      alignItems: 'center',
++      alignItems: "center",
+     },
+     segmentItemActive: { backgroundColor: semanticColors.accent },
+-    segmentText: { fontSize: 12, color: semanticColors.textMuted, fontWeight: '500' },
++    segmentText: {
++      fontSize: 12,
++      color: semanticColors.textMuted,
++      fontWeight: "500",
++    },
+     segmentTextActive: { color: semanticColors.textOnAccent },
+     primaryBtn: {
+       marginTop: 28,
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'center',
++      flexDirection: "row",
++      alignItems: "center",
++      justifyContent: "center",
+       gap: 8,
+       backgroundColor: semanticColors.accent,
+       paddingVertical: 14,
+@@ -729,25 +915,29 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+     primaryBtnText: {
+       color: semanticColors.textOnAccent,
+       fontSize: 15,
+-      fontWeight: '500',
++      fontWeight: "500",
+     },
+     secondaryBtn: {
+       marginTop: 12,
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'center',
++      flexDirection: "row",
++      alignItems: "center",
++      justifyContent: "center",
+       gap: 8,
+       paddingVertical: 14,
+       borderRadius: 2,
+       borderWidth: 1,
+       borderColor: semanticColors.accent,
+     },
+-    secondaryBtnText: { color: semanticColors.accent, fontSize: 15, fontWeight: '500' },
++    secondaryBtnText: {
++      color: semanticColors.accent,
++      fontSize: 15,
++      fontWeight: "500",
++    },
+     secondaryBtnDisabled: {
+       marginTop: 12,
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'center',
++      flexDirection: "row",
++      alignItems: "center",
++      justifyContent: "center",
+       gap: 8,
+       paddingVertical: 14,
+       borderRadius: 2,
+@@ -758,29 +948,42 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+     secondaryBtnTextDisabled: {
+       color: semanticColors.textMuted,
+       fontSize: 14,
+-      fontWeight: '400',
++      fontWeight: "400",
+     },
+     tertiaryBtn: {
+       marginTop: 8,
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'center',
++      flexDirection: "row",
++      alignItems: "center",
++      justifyContent: "center",
+       gap: 8,
+       paddingVertical: 14,
+       borderRadius: 2,
+     },
+-    tertiaryBtnText: { color: tokens.semantic.warning.icon, fontSize: 14, fontWeight: '500' },
++    tertiaryBtnText: {
++      color: tokens.semantic.warning.icon,
++      fontSize: 14,
++      fontWeight: "500",
++    },
+     linkBtn: {
+       marginTop: 16,
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'space-between',
++      flexDirection: "row",
++      alignItems: "center",
++      justifyContent: "space-between",
+       paddingVertical: 12,
+     },
+-    linkBtnText: { fontSize: 14, color: semanticColors.accent, fontWeight: '500' },
++    linkBtnText: {
++      fontSize: 14,
++      color: semanticColors.accent,
++      fontWeight: "500",
++    },
+     errorText: {
+       marginTop: 12,
+       color: tokens.colors.error,
+       fontSize: 13,
+     },
++    resumedText: {
++      marginTop: 12,
++      color: semanticColors.textMuted,
++      fontSize: 13,
++    },
+   });

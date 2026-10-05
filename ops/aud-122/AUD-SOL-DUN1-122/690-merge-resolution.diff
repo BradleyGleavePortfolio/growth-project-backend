@@ -1,0 +1,760 @@
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/checkout-webhook-handler.service.ts
+index 9c51071a..3be9e6c9 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -156,33 +156,6 @@ function errorTag(err: unknown): string {
+ // @unique is unchanged.
+ type WebhookTx = Prisma.TransactionClient;
+ 
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-/** Purchase states of a subscription attempt that has not started yet. */
+-const NOT_STARTED_STATUSES: ReadonlySet<string> = new Set([
+-  'pending',
+-  'incomplete',
+-  'payment_failed',
+-  'trialing',
+-]);
+-
+-/**
+- * S-DUNNING-R6 (B-RECUR #654 seam): is this `invoice.payment_failed` on an
+- * attempt that never granted access? The first invoice of a subscription
+- * (`subscription_create`, e.g. a native default_incomplete subscription paid
+- * in the PaymentSheet) never is a renewal. Any other invoice is a first
+- * attempt only while the purchase has never been entitled and is still in a
+- * not-started state: an unpaid attempt, or a native trial whose card was
+- * never saved (it never granted access, so its trial-end charge is not a
+- * missed renewal either). A purchase that is (or was, and is now past_due /
+- * locked) running always enters dunning.
+- */
+-export function isNeverEntitledPaymentAttempt(
+-  purchase: { status: string; entitlement_active: boolean },
+-  billingReason: string | null,
+-): boolean {
+-  if (billingReason === 'subscription_create') return true;
+-  return !purchase.entitlement_active && NOT_STARTED_STATUSES.has(purchase.status);
+-=======
+ /**
+  * B-680-5 — the trial carries the attempt's own card: the trial-card attach
+  * set the default and, in the same write, lifted the create-time end. A
+@@ -413,7 +386,6 @@ export function isUnpaidNativeAttempt(
+     (isNeverEntitledAttempt(purchase) ||
+       (purchase.status === 'expired' && !purchase.entitlement_active && !purchase.trial_started_at))
+   );
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+ }
+ 
+ // Lifecycle:
+@@ -502,11 +474,9 @@ export interface CheckoutWebhookPrefetch {
+   // (rare settling race); the split handler no-ops the transfer and the
+   // sweeper picks it up. undefined entry = no pre-resolution attempted.
+   chargeIdByPurchaseId?: Record<string, string | null>;
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+   // B-690-3: the v2 dispute effect of a charge.dispute.created / .closed
+   // event already ran (awaited) before the outer tx opened.
+   disputeEffectDone?: boolean;
+-=======
+   // B-661-3 — Stripe's current status of the PaymentIntent a
+   // payment_intent.payment_failed names, keyed by PaymentIntent id. Resolved
+   // out-of-tx only when the matched purchase already settled (a decline of a
+@@ -541,7 +511,6 @@ export interface CheckoutWebhookPrefetch {
+     subscriptionStatus: string | null;
+     latestInvoiceId: string | null;
+   };
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+ }
+ 
+ @Injectable()
+@@ -736,11 +705,14 @@ export class CheckoutWebhookHandlerService {
+             typeof obj.created === 'number' ? new Date(obj.created * 1000) : new Date(),
+         });
+       } else {
++        // The closure's own time is the event's (B-DUNB-120 ruling).
++        const created = (event as { created?: unknown }).created;
+         await this.dunningV2.onDisputeClosed({
+           disputeId: obj.id ?? null,
+           chargeId: obj.charge ?? null,
+           paymentIntentId: obj.payment_intent ?? null,
+           status: obj.status ?? null,
++          closedAt: typeof created === 'number' ? new Date(created * 1000) : undefined,
+         });
+       }
+     } catch (err) {
+@@ -825,7 +797,6 @@ export class CheckoutWebhookHandlerService {
+     if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
+       return this.prefetchChargeIdForActivation(event);
+     }
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+     // B-690-3: dispute effects run here, before the outer tx (their own
+     // short transactions and notice delivery never wait on its locks); a
+     // failure rejects the delivery before the processed-event row exists.
+@@ -833,8 +804,6 @@ export class CheckoutWebhookHandlerService {
+       await this.runDisputeEffect(event);
+       return { disputeEffectDone: true };
+     }
+-    if (event.type !== 'invoice.paid' && event.type !== 'invoice.payment_succeeded') {
+-=======
+     if (event.type === 'payment_intent.payment_failed') {
+       return this.prefetchFailedPaymentIntentStatus(event);
+     }
+@@ -854,7 +823,6 @@ export class CheckoutWebhookHandlerService {
+       event.type !== 'invoice.paid' &&
+       event.type !== 'invoice.payment_succeeded'
+     ) {
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+       return {};
+     }
+     const inv = event.data.object as { subscription?: string | null };
+@@ -868,15 +836,10 @@ export class CheckoutWebhookHandlerService {
+     if (!purchase) return {};
+     const invoiceRevision = lifecycleRevision(purchase);
+     try {
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-      const invoiceSubscription = await this.stripeConnect.retrieveSubscription(inv.subscription);
+-      return { invoiceSubscription };
+-=======
+       const invoiceSubscription = await this.stripeConnect.retrieveSubscription(
+         inv.subscription,
+       );
+       return { invoiceSubscription, invoiceRevision };
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     } catch (err) {
+       this.logger.warn(
+         `prefetchForOuterTx: retrieveSubscription failed for sub=${inv.subscription} error=${errorLabel(err)}`,
+@@ -1339,21 +1302,6 @@ export class CheckoutWebhookHandlerService {
+     // edit, or the price edit's count sees the now-active buyer and locks).
+     // No deadlock: every path acquires the SAME single row lock and never a
+     // second one, so there is no lock-ordering cycle.
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-    const updated = await this.activateUnderPackageLock(tx, purchase.package_id, (client) =>
+-      client.clientPurchase.update({
+-        where: { id: purchase.id },
+-        data: {
+-          status: newStatus,
+-          entitlement_active: true,
+-          stripe_payment_intent_id: session.payment_intent ?? null,
+-          stripe_subscription_id: session.subscription ?? null,
+-          stripe_customer_id: session.customer ?? purchase.stripe_customer_id,
+-          access_expires_at: accessExpiresAt,
+-          last_error: null,
+-        },
+-      }),
+-=======
+     const updated = await this.activateUnderPackageLock(
+       tx,
+       purchase.package_id,
+@@ -1373,7 +1321,6 @@ export class CheckoutWebhookHandlerService {
+             last_error: null,
+           },
+         }),
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     );
+ 
+     // Roman P4 (Option C) — first-payment notification. Runs AFTER the status
+@@ -1516,8 +1463,6 @@ export class CheckoutWebhookHandlerService {
+     }
+   }
+ 
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-=======
+   /**
+    * S-FEE round 6 (C-627-7) — deliver a charge's payout notices after
+    * BillingService committed its webhook transaction. Never throws; the
+@@ -1537,7 +1482,6 @@ export class CheckoutWebhookHandlerService {
+     await this.splits.settleGuestPurchaseByPaymentIntent(paymentIntentId);
+   }
+ 
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+   private async applyCheckoutExpired(event: StripeEvent): Promise<CheckoutWebhookResult> {
+     const session = event.data.object as { id?: string };
+     if (!session?.id) return { claimed: false, reason: 'no_session_id' };
+@@ -1696,13 +1640,8 @@ export class CheckoutWebhookHandlerService {
+       where: { id: purchase.package_id },
+     });
+ 
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-    const entitlementActive =
+-      ['active', 'trialing', 'past_due'].includes(status) ||
+-      (await this.inUnpaidGrace(db, purchase, status));
+-=======
+-    const status = this.normalizeSubscriptionStatus(sub.status);
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
++    // B-690-5 (Sol): an unpaid plan inside the v2 Days 0-9 grace keeps access.
++    const inGrace = await this.inUnpaidGrace(db, purchase, status);
+     const currentPeriodEnd = this.toDate(sub.current_period_end);
+     const canceledAt = this.toDate(sub.canceled_at);
+ 
+@@ -1716,51 +1655,6 @@ export class CheckoutWebhookHandlerService {
+     // When BillingService threads its outer tx through handle(event, tx) the
+     // lock + activation run on that tx (no nested $transaction); otherwise
+     // the helper opens its own short $transaction.
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-    const data = {
+-      status,
+-      entitlement_active: entitlementActive,
+-      cancel_at_period_end: !!sub.cancel_at_period_end,
+-      current_period_end: currentPeriodEnd,
+-      canceled_at: canceledAt,
+-      access_expires_at: accessExpiresAt,
+-    };
+-    // B-690-1 (Sol): the cancel checks above ran before awaits, so a 2A
+-    // cancel may have recorded its intent or ended the plan meanwhile. A
+-    // live status is written only if the plan is still not canceled and no
+-    // client cancel is pending, decided under the cycle's row lock (the 2A
+-    // intent writes that row) and as a predicate of the write itself.
+-    const applied = await this.activateUnderPackageLock(tx, purchase.package_id, async (client) => {
+-      if (status === 'canceled') {
+-        await client.clientPurchase.update({ where: { id: purchase.id }, data });
+-        return true;
+-      }
+-      if (typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function') {
+-        await client.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchase.id} FOR UPDATE`;
+-      }
+-      if (await this.clientCancelPending(client, purchase.id)) return false;
+-      if (typeof client.clientPurchase.updateMany !== 'function') {
+-        // Legacy minimal test stubs only; production Prisma always has it.
+-        await client.clientPurchase.update({ where: { id: purchase.id }, data });
+-        return true;
+-      }
+-      const res = await client.clientPurchase.updateMany({
+-        where: { id: purchase.id, status: { not: 'canceled' } },
+-        data,
+-      });
+-      return res.count > 0;
+-    });
+-    if (!applied) {
+-      this.logger.log(
+-        JSON.stringify({
+-          event: 'checkout_webhook.stale_subscription_update_ignored',
+-          purchase_id: purchase.id,
+-          stripe_event_id: event.id,
+-          incoming_status: status,
+-        }),
+-      );
+-      return { claimed: true, purchase_id: purchase.id, reason: 'stale_after_cancel' };
+-=======
+     // B-680-1 — the deletion takes the same lock, and the decision is made
+     // on the purchase as it is under the lock, never on the earlier read.
+     const outcome = await this.activateUnderPackageLock(tx, purchase.package_id, async (client) => {
+@@ -1775,11 +1669,19 @@ export class CheckoutWebhookHandlerService {
+         return { skipped: 'subscription_ended' };
+       }
+       if (purchaseHasEnded(fresh)) return { skipped: 'subscription_already_ended' };
++      // B-690-1 (Sol): a live status is never written while a client's 2A
++      // cancel is pending, decided under the cycle's row lock (the 2A intent
++      // writes that row) after the purchase lock (same order as invoice.paid).
++      if (typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function') {
++        await client.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${fresh.id} FOR UPDATE`;
++      }
++      if (await this.clientCancelPending(client, fresh.id)) return { skipped: 'stale_after_cancel' };
+       // R-DISPUTE-PAUSE: a plan a dispute paused stays without access whatever
+       // Stripe's status (pause_collection keeps it `active`); read under the
+       // purchase lock, which the pause and the coach restart also take.
+       const entitled =
+-        subscriptionGrantsAccess(fresh, sub) && !(await this.disputePaused(client, fresh.id));
++        (subscriptionGrantsAccess(fresh, sub) || inGrace) &&
++        !(await this.disputePaused(client, fresh.id));
+       if (live && live.revision !== null && lifecycleRevision(fresh) !== live.revision) {
+         // Another delivery wrote the purchase after the Stripe read: a
+         // matching state needs no write, anything else is read again.
+@@ -1822,7 +1724,6 @@ export class CheckoutWebhookHandlerService {
+     // with invoice.paid): seed content. Idempotent.
+     if (outcome.firstGrant && outcome.updated) {
+       await this.onSubscriptionFirstEntitled(outcome.updated, tx);
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     }
+     return { claimed: true, purchase_id: purchase.id };
+   }
+@@ -1972,15 +1873,7 @@ export class CheckoutWebhookHandlerService {
+     // the SAME outer $transaction as the entitlement flip (when caller
+     // provides a tx) so revoke + cancel commit-or-rollback together.
+     if (this.fanout && wasEntitled) {
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-      await this.fanout.cancelPendingForPurchase(
+-        purchase.id,
+-        'subscription_canceled',
+-        tx ?? (this.prisma as unknown as WebhookTx),
+-      );
+-=======
+       await this.fanout.cancelPendingForPurchase(purchase.id, 'subscription_canceled', client);
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     }
+     // DUNNING-V1 — explicitly terminate the dunning window so no further
+     // cadence reminders fire after Stripe (or the customer) cancels.
+@@ -2230,30 +2123,6 @@ export class CheckoutWebhookHandlerService {
+       if (adopted.count === 0) throw declineRetryLater('purchase_changed', pi.id);
+       return { claimed: true, purchase_id: pending.id };
+     }
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-    // Capture pre-flip entitlement: only entitled purchases have drops
+-    // worth canceling. A first-attempt PaymentSheet failure on a still-
+-    // pending purchase never minted drops; a later recurring-charge
+-    // failure on an already-entitled purchase did. Either way the cancel
+-    // call is idempotent — but skipping when wasEntitled=false matches
+-    // the brief's "PI-failed-never-entitled does not cancel" semantic
+-    // and keeps the log clean.
+-    const wasEntitled = !!purchase.entitlement_active;
+-    await db.clientPurchase.update({
+-      where: { id: purchase.id },
+-      data: {
+-        status: 'payment_failed',
+-        entitlement_active: false,
+-        last_error: pi.last_payment_error?.message ?? 'payment_failed',
+-      },
+-    });
+-    if (this.fanout && wasEntitled) {
+-      await this.fanout.cancelPendingForPurchase(
+-        purchase.id,
+-        'payment_failed',
+-        tx ?? (this.prisma as unknown as WebhookTx),
+-      );
+-=======
+     // B-RECUR-BE R1-7 — the PaymentIntent of a native subscription's first
+     // invoice. invoice.payment_failed owns subscription rows (first-attempt
+     // decline = last_error only; renewal = past_due + dunning). Flipping the
+@@ -2275,7 +2144,6 @@ export class CheckoutWebhookHandlerService {
+         purchase_id: purchase.id,
+         reason: 'subscription_invoice_owned_by_invoice_events',
+       };
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     }
+ 
+     if (PI_FAILED_CLAIMABLE.includes(purchase.status)) {
+@@ -2438,14 +2306,6 @@ export class CheckoutWebhookHandlerService {
+           throw new WebhookRedeliverError(
+             `invoice.paid for purchase ${purchase.id}: subscription prefetch unavailable; retry`,
+           );
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-          // S-DUNNING F5: the payment still cleared, so the dunning window
+-          // must still close (a locked client who paid stays locked
+-          // otherwise; the event is marked processed and never redelivered).
+-          await this.resolveDunningOnPaid(purchase.id, tx);
+-          return { claimed: true, purchase_id: purchase.id };
+-=======
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+         }
+         // B-680-1 — the purchase was read before this Stripe read.
+         revision = lifecycleRevision(purchase);
+@@ -2456,20 +2316,6 @@ export class CheckoutWebhookHandlerService {
+       });
+       const status = this.normalizeSubscriptionStatus(sub.status);
+       const currentPeriodEnd = this.toDate(sub.current_period_end);
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-      updated = await this.activateUnderPackageLock(tx, purchase.package_id, (client) =>
+-        client.clientPurchase.update({
+-          where: { id: purchase.id },
+-          data: {
+-            status,
+-            entitlement_active: ['active', 'trialing', 'past_due'].includes(status),
+-            current_period_end: currentPeriodEnd,
+-            access_expires_at: this.computeAccessExpiry(pkg, purchase, true, currentPeriodEnd),
+-            last_error: null,
+-          },
+-        }),
+-      );
+-=======
+       const live: SubscriptionSnapshot = sub;
+       updated = await this.activateUnderPackageLock(tx, purchase.package_id, async (client) => {
+         // B-680-1 — decide on the purchase as it is under the lock: a
+@@ -2513,7 +2359,6 @@ export class CheckoutWebhookHandlerService {
+           },
+         });
+       });
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     } catch (err) {
+       // Under the outer tx every failure (an authority conflict included)
+       // rolls back for a redelivery; only the no-tx resync of a plan that
+@@ -2543,7 +2388,6 @@ export class CheckoutWebhookHandlerService {
+       invoice_amount_cents: inv.amount_paid ?? undefined,
+       invoice_charge_id: inv.charge ?? null,
+     });
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+     // Phase 5 — clear any active dunning window (v1 + v2).
+     await this.resolveDunningOnPaid(updated.id, tx);
+     return { claimed: true, purchase_id: purchase.id, deferredSplit };
+@@ -2621,6 +2465,11 @@ export class CheckoutWebhookHandlerService {
+         );
+       }
+     }
++    // B3 v2 (§5) — immediate-clear additions (restore entitlement, lift Day-10
++    // lockout, dismiss blockers, revoke recovery tokens). No-op when the flag
++    // is off; runs AFTER the v1 recordResolution so v1 behaviour is unchanged.
++    // On the outer tx (B-DUNMR-120): it already holds this purchase's row
++    // lock, which a second connection would wait on until the tx times out.
+     if (this.dunningV2) {
+       try {
+         await this.dunningV2.applyImmediateClear(purchaseId, 'retry', tx);
+@@ -2652,52 +2501,18 @@ export class CheckoutWebhookHandlerService {
+     return state?.status === 'active' && state.locked_out_at == null;
+   }
+ 
+-  private async applyInvoicePaymentFailed(event: StripeEvent): Promise<CheckoutWebhookResult> {
+-=======
+-    // Phase 5 — clear any active dunning window.
+-    if (this.dunning) {
+-      try {
+-        await this.dunning.recordResolution(updated.id);
+-      } catch (err) {
+-        this.logger.warn(
+-          `dunning.recordResolution failed purchase=${updated.id}: ${(err as Error).message}`,
+-        );
+-      }
+-    }
+-    // B3 v2 (§5) — immediate-clear additions (restore entitlement, lift Day-10
+-    // lockout, dismiss blockers, revoke recovery tokens). No-op when the flag
+-    // is off; runs AFTER the v1 recordResolution so v1 behaviour is unchanged.
+-    // On the outer tx (B-DUNMR-120): it already holds this purchase's row
+-    // lock, which a second connection would wait on until the tx times out.
+-    if (this.dunningV2) {
+-      try {
+-        await this.dunningV2.applyImmediateClear(updated.id, 'retry', tx);
+-      } catch (err) {
+-        this.logger.warn(
+-          `dunningV2.applyImmediateClear failed purchase=${updated.id}: ${(err as Error).message}`,
+-        );
+-      }
+-    }
+-    return { claimed: true, purchase_id: purchase.id, deferredSplit };
+-  }
+-
+   private async applyInvoicePaymentFailed(
+     event: StripeEvent,
+     tx?: WebhookTx,
+     prefetched?: CheckoutWebhookPrefetch,
+   ): Promise<CheckoutWebhookResult> {
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     const inv = event.data.object as {
+       id?: string;
+       subscription?: string | null;
+       amount_due?: number | null;
+       attempt_count?: number | null;
+       billing_reason?: string | null;
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+       last_payment_error?: { message?: string; code?: string | null };
+-=======
+-      last_payment_error?: { message?: string };
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     };
+     if (!inv?.subscription) return { claimed: false };
+     const db: WebhookTx | PrismaService = tx ?? this.prisma;
+@@ -2705,51 +2520,19 @@ export class CheckoutWebhookHandlerService {
+       where: { stripe_subscription_id: inv.subscription },
+     });
+     if (!purchase) return { claimed: false };
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
++    // B-680-2 — a purchase that ended (deleted, expired by Stripe, retired by
++    // checkout) is never reopened as past_due by a late decline.
++    if (purchaseHasEnded(purchase)) {
++      return { claimed: true, purchase_id: purchase.id, reason: 'subscription_already_ended' };
++    }
+     // C-690-1 (Opus): a late failure (e.g. the Day-3 retry) for a plan the
+     // client already ended, or is ending, changes nothing on the plan.
+     if (
+       purchase.status === 'canceled' ||
+-      (await this.clientCancelPending(this.prisma, purchase.id))
++      (await this.clientCancelPending(tx ?? this.prisma, purchase.id))
+     ) {
+       return { claimed: true, purchase_id: purchase.id, reason: 'stale_after_cancel' };
+     }
+-    const lastError = safeDeclineCode(inv.last_payment_error?.code);
+-    // S-DUNNING-R5/R6 (B-RECUR seam, #654): a payment that fails before the
+-    // plan ever granted access is a checkout failure the PaymentSheet
+-    // explains on the spot, not a missed renewal: no past_due flip, no
+-    // dunning cycle, no Day 0-9 banner or lockout. Dunning starts only for a
+-    // plan that was running (renewals, including the first charge after a
+-    // trial that granted access), however its subscription was created.
+-    if (isNeverEntitledPaymentAttempt(purchase, inv.billing_reason ?? null)) {
+-      await this.prisma.clientPurchase.update({
+-        where: { id: purchase.id },
+-        data: { last_error: lastError },
+-      });
+-      this.logger.log(
+-        JSON.stringify({
+-          event: 'checkout.first_invoice_payment_failed',
+-          purchase_id: purchase.id,
+-          billing_reason: inv.billing_reason ?? null,
+-        }),
+-      );
+-      return { claimed: true, purchase_id: purchase.id };
+-    }
+-    const updated = await this.prisma.clientPurchase.update({
+-      where: { id: purchase.id },
+-      data: {
+-        status: 'past_due',
+-        // Entitlement is retained during past_due — same as SaaS billing —
+-        // until Stripe ultimately cancels the subscription, which fires
+-        // customer.subscription.deleted.
+-        last_error: lastError,
+-      },
+-=======
+-    // B-680-2 — a purchase that ended (deleted, expired by Stripe, retired by
+-    // checkout) is never reopened as past_due by a late decline.
+-    if (purchaseHasEnded(purchase)) {
+-      return { claimed: true, purchase_id: purchase.id, reason: 'subscription_already_ended' };
+-    }
+     // B-680-2 — Stripe retries deliveries for days: a decline delivered after
+     // its invoice was paid (a later retry or a second card) or voided is
+     // settled. Unreadable = throw so the outer tx rolls back and Stripe
+@@ -2807,11 +2590,10 @@ export class CheckoutWebhookHandlerService {
+           // Entitlement is retained during past_due — same as SaaS billing —
+           // until Stripe ultimately cancels the subscription, which fires
+           // customer.subscription.deleted.
+-          last_error: message,
++          last_error: safeDeclineCode(inv.last_payment_error?.code),
+           updated_at: nextVersion(fresh),
+         },
+       });
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+     });
+     if (!updated) {
+       return { claimed: true, purchase_id: purchase.id, reason: 'subscription_already_ended' };
+diff --git a/src/checkout/checkout.module.ts b/src/checkout/checkout.module.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/checkout.module.ts
+index 159281bd..49d5a23f 100644
+--- a/src/checkout/checkout.module.ts
++++ b/src/checkout/checkout.module.ts
+@@ -99,16 +99,13 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+     RefundDisputeHandlerService,
+     RefundTransferReversalScheduler,
+     AdminAnalyticsService,
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+     ClientBillingService,
+     ClientBillingReconciler,
+-=======
+     // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
+     CronLeaseService,
+     SettlementSweepCron,
+     // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
+     PayoutNoticeService,
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+   ],
+   exports: [
+     CheckoutService,
+diff --git a/src/checkout/dunning-v2/dunning-lockout.guard.ts b/src/checkout/dunning-v2/dunning-lockout.guard.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/dunning-v2/dunning-lockout.guard.ts
+index ac98e096..6e86113d 100644
+--- a/src/checkout/dunning-v2/dunning-lockout.guard.ts
++++ b/src/checkout/dunning-v2/dunning-lockout.guard.ts
+@@ -10,11 +10,7 @@ import { PrismaService } from '../../prisma.service';
+ import type { AuthedRequest } from '../../auth/auth-request';
+ import { isDunningV2Enabled } from './dunning-v2.feature';
+ import { LOCKED_DUNNING_CODE } from './dunning-v2.cadence';
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+ import { effectiveLock } from './dunning-effective-access';
+-=======
+-import { hasOtherLiveAccess } from './dunning-effective-access';
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+ 
+ /**
+@@ -203,7 +199,6 @@ export class DunningLockoutGuard implements CanActivate {
+   }
+ 
+   /**
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+    * A client is locked out when ANY of their purchases has an ACTIVE
+    * DunningState with `locked_out_at != null`, unless the client also holds a
+    * different live entitlement (comp / invite-code grant, another paid
+@@ -214,30 +209,6 @@ export class DunningLockoutGuard implements CanActivate {
+     // S-DUNNING-R3 (B-628-7): the same rule the status read model uses.
+     const lock = await effectiveLock(this.prisma, userId);
+     return lock.locked;
+-=======
+-   * A client is locked out when ANY of their purchases has a DunningState with
+-   * `locked_out_at != null` and the purchase entitlement is off. We resolve via
+-   * ClientPurchase.client_user_id → DunningState.purchase_id. Other live
+-   * access (another paid plan, a grant, a re-buy after a dispute pause)
+-   * waives the lock: the same rule GET /v1/me/dunning-status reads
+-   * (`hasOtherLiveAccess`, S-DUNNING-R3 B-628-7), so a client the status calls
+-   * `lock_waived` is never refused here.
+-   */
+-  private async isClientLockedOut(userId: string): Promise<boolean> {
+-    const lockedRow = await this.prisma.dunningState.findFirst({
+-      where: {
+-        locked_out_at: { not: null },
+-        status: 'active',
+-        purchase: {
+-          client_user_id: userId,
+-          entitlement_active: false,
+-        },
+-      },
+-      select: { id: true, purchase_id: true },
+-    });
+-    if (lockedRow == null) return false;
+-    return !(await hasOtherLiveAccess(this.prisma, userId, lockedRow.purchase_id));
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+   }
+ }
+ 
+diff --git a/src/public-pages/public-pages.html.ts b/src/public-pages/public-pages.html.ts
+remerge CONFLICT (content): Merge conflict in src/public-pages/public-pages.html.ts
+index 6f966715..79b5d51f 100644
+--- a/src/public-pages/public-pages.html.ts
++++ b/src/public-pages/public-pages.html.ts
+@@ -190,13 +190,8 @@ function baseDocument(p: PageContent): string {
+ <main>
+   <h1>${headline}</h1>
+   <p>${body}</p>${codeBlock}
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+   <a class="cta" href="${ctaHref}">${ctaLabel}</a>${linksBlock}
+-  <footer>The Growth Project</footer>
+-=======
+-  <a class="cta" href="${ctaHref}">${ctaLabel}</a>
+   <footer>The Growth Project · ${policyFooterLinks()}</footer>
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+ </main>
+ </body>
+ </html>`;
+diff --git a/test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts b/test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts
+remerge CONFLICT (content): Merge conflict in test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts
+index 9b2d60b6..ac427e8d 100644
+--- a/test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts
++++ b/test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts
+@@ -105,16 +105,11 @@ class LockableLedgerPrisma extends FakeLedgerPrisma {
+         : null;
+     },
+   };
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+   // S-DUNNING F6: the guard also checks for another live grant (comp /
+   // invite-code / kept access) before locking. This caller has none.
+   readonly clientPurchase = {
+     findMany: async (): Promise<never[]> => [],
+   };
+-=======
+-  // D2d: the guard's lock-waiver read (no other live access here).
+-  readonly clientPurchase = { findMany: async (): Promise<never[]> => [] };
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+ }
+ 
+ interface HttpResult {
+diff --git a/test/dunning-r2-surfaces.spec.ts b/test/dunning-r2-surfaces.spec.ts
+index 73336cab..a2c46974 100644
+--- a/test/dunning-r2-surfaces.spec.ts
++++ b/test/dunning-r2-surfaces.spec.ts
+@@ -72,10 +72,12 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
+     else process.env.STRIPE_SECRET_KEY = prev;
+   });
+ 
+-  it('createSetupIntent: off_session card SetupIntent on the customer, no Stripe-Account, no on_behalf_of', async () => {
++  // Main's signature (B-DUNB-120 ruling): on_behalf_of is the coach's account.
++  it('createSetupIntent: off_session SetupIntent on the customer, on_behalf_of the coach, no Stripe-Account', async () => {
+     const s = new RecordingStripe();
+     await s.createSetupIntent({
+       customer: 'cus_1',
++      onBehalfOf: 'acct_coach',
+       metadata: { tgp_client_user_id: 'u1' },
+       idempotencyKey: 'k1',
+     });
+@@ -87,7 +89,7 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
+     expect(Object.fromEntries(r.body)).toEqual({
+       customer: 'cus_1',
+       usage: 'off_session',
+-      'payment_method_types[0]': 'card',
++      on_behalf_of: 'acct_coach',
+       'metadata[tgp_client_user_id]': 'u1',
+     });
+   });
+@@ -116,7 +118,7 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
+   it('payInvoice is on-session with the explicit card; voidInvoice and cancel-at-period-end are keyed', async () => {
+     const s = new RecordingStripe();
+     await s.payInvoice({ invoiceId: 'in_1', paymentMethodId: 'pm_1', idempotencyKey: 'p' });
+-    await s.voidInvoice({ invoiceId: 'in_1', idempotencyKey: 'v' });
++    await s.voidInvoice('in_1', 'v');
+     await s.setCancelAtPeriodEnd({ subscriptionId: 'sub_1', idempotencyKey: 'c' });
+     expect(s.requests[0].url).toBe('https://api.stripe.com/v1/invoices/in_1/pay');
+     expect(Object.fromEntries(s.requests[0].body)).toEqual({
+diff --git a/test/dunning-v2-lockout-allowlist-route-table.spec.ts b/test/dunning-v2-lockout-allowlist-route-table.spec.ts
+remerge CONFLICT (content): Merge conflict in test/dunning-v2-lockout-allowlist-route-table.spec.ts
+index 528acef7..03bcddab 100644
+--- a/test/dunning-v2-lockout-allowlist-route-table.spec.ts
++++ b/test/dunning-v2-lockout-allowlist-route-table.spec.ts
+@@ -172,14 +172,11 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
+   'checkout/purchases/:purchaseid/drops',
+   'checkout/sessions',
+   'checkout/sessions/:sessionid/confirm',
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+-  'checkout/subscriptions/:purchaseid/cancel', // ClientBillingController — 2A / option A cancel (S-DUNNING-R2)
+-=======
+   'checkout/subscription-intent', // B-RECUR SubscriptionCheckoutController (native subscriptions)
+   'checkout/subscriptions',
+   'checkout/subscriptions/:purchaseid',
++  'checkout/subscriptions/:purchaseid/cancel', // ClientBillingController — 2A / option A cancel (S-DUNNING-R2)
+   'checkout/subscriptions/:purchaseid/resume',
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+   'coach/billing/portal-session', // mobile coach billing (MobileCoachBillingController)
+   'coach/billing/status',
+   'coach/me/billing', // v1 coach billing (CoachBillingController) — Lens A P2-1
+diff --git a/test/dunning-v2-lockout-guard.e2e.spec.ts b/test/dunning-v2-lockout-guard.e2e.spec.ts
+remerge CONFLICT (content): Merge conflict in test/dunning-v2-lockout-guard.e2e.spec.ts
+index edd4a032..ab37f4f1 100644
+--- a/test/dunning-v2-lockout-guard.e2e.spec.ts
++++ b/test/dunning-v2-lockout-guard.e2e.spec.ts
+@@ -123,11 +123,7 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
+   // comp grant or kept access means no lock); none here.
+   const prismaStub: {
+     dunningState: { findFirst: (args: unknown) => Promise<unknown> };
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+     clientPurchase: { findMany: (args: unknown) => Promise<unknown[]> };
+-=======
+-    clientPurchase: { findMany: () => Promise<unknown[]> };
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+   } = {
+     dunningState: {
+       findFirst: (args: unknown) => {
+@@ -135,14 +131,9 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
+         return Promise.resolve(lockedRow);
+       },
+     },
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+     clientPurchase: {
+       findMany: () => Promise.resolve([]),
+     },
+-=======
+-    // D2d: the guard's lock-waiver read finds no other live access.
+-    clientPurchase: { findMany: () => Promise.resolve([]) },
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+   };
+ 
+   const prevFlag = process.env['FEATURE_DUNNING_V2'];
+diff --git a/test/dunning-v2-lockout-guard.spec.ts b/test/dunning-v2-lockout-guard.spec.ts
+remerge CONFLICT (content): Merge conflict in test/dunning-v2-lockout-guard.spec.ts
+index cc106acd..6780fd66 100644
+--- a/test/dunning-v2-lockout-guard.spec.ts
++++ b/test/dunning-v2-lockout-guard.spec.ts
+@@ -141,14 +141,9 @@ function makePrismaStub(lockedRow: any, otherPurchases: any[] = []) {
+     dunningState: {
+       findFirst: jest.fn(async () => lockedRow),
+     },
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+     clientPurchase: {
+       findMany: jest.fn(async () => otherPurchases),
+     },
+-=======
+-    // D2d: the guard's lock-waiver read finds no other live access.
+-    clientPurchase: { findMany: jest.fn(async () => []) },
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+   } as any;
+ }
+ 
+diff --git a/test/dunning-v2-lockout-privacy-exact.spec.ts b/test/dunning-v2-lockout-privacy-exact.spec.ts
+remerge CONFLICT (content): Merge conflict in test/dunning-v2-lockout-privacy-exact.spec.ts
+index 554ee2b5..a633857c 100644
+--- a/test/dunning-v2-lockout-privacy-exact.spec.ts
++++ b/test/dunning-v2-lockout-privacy-exact.spec.ts
+@@ -36,16 +36,9 @@ describe('DunningLockoutGuard — AI consent carve-out is exact METHOD + PATH (B
+         DunningLockoutGuard,
+         {
+           provide: PrismaService,
+-<<<<<<< 06307883 (Merge D3 #689 @ bb992fed into D4 (B-DUN-117 restack, merge-only))
+           useValue: {
+             dunningState: { findFirst: lookup },
+             clientPurchase: { findMany: otherGrants },
+-=======
+-          // D2d: the guard's lock-waiver read finds no other live access.
+-          useValue: {
+-            dunningState: { findFirst: lookup },
+-            clientPurchase: { findMany: async () => [] },
+->>>>>>> ebb522fa (fix(dunning-d3): reversed amount from the dispute ledger only; main's Stripe signatures on D2d (B-689-5, B-DUNR3-122))
+           },
+         },
+       ],

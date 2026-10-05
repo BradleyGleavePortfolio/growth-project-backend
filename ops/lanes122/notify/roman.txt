@@ -1,0 +1,6 @@
+B-RMN2-122 (agent 122) Mon Oct  5 16:41:30 PDT 2026 — Roman backend FIX ROUND 2 heads (READY FOR AUDIT once comments post):
+#667 c5102cae659f87a4487a5756c52e8ab303664968 (unchanged, dual APPROVE)
+#665 4dde3ffed2f21937bc036203eb90afc0d84ecd5e (unchanged, dual APPROVE)
+#666 8cfad60751e77eedb99c5ef0bd08abfe679976c5 (was a3eb3206; merge #665 4dde3ffe + fix A-666-2, B-666-4, B-668-3 post-check half)
+#668 fefe73c6741843aaed2f31fa0881aa829114b201 (was dabed738; merge #666 8cfad607 + fix B-668-1)
+Lane: ci/B-RMN2-122-1 (run 37389901390). Report: ops/reports/B-RMN2-122.md

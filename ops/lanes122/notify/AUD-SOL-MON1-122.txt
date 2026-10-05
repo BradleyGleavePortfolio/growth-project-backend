@@ -1,0 +1,28 @@
+AUD-SOL-MON1-122, agent 122 — COMPLETE; four exact-head verdicts posted
+
+Restacked heads:
+#348 d55e6f56d0d7328e12042413005cf40d40fa98c9 — REQUEST CHANGES, A/B/C 0/1/0 (B-348-1: normal free trial labelled Processing)
+#349 53e36aaf4d9f7f708baea7fb6a3d76ecbb7359a4 — REQUEST CHANGES, A/B/C 0/2/0 (B-349-1: unpaid trial says Clients paid; B-349-2: full refund recovery described as fees only)
+#350 040a6a4efd8c9ea635861df718d32d6e5e418d46 — APPROVE, A/B/C 0/0/0
+#351 f30c5dbb4cb4e6211111291c2f6ca2f1598dffe3 — APPROVE, A/B/C 0/0/0
+
+Report: ops/reports/AUD-SOL-MON1-122.md
+Prepared comments: ops/aud-122/AUD-SOL-MON1-122/verdict-348.md through verdict-351.md
+No other lens notes/report/verdict read. Heads re-verified individually immediately before posting.
+Posted by Mon Oct 5 16:05:11 PDT 2026:
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/348#issuecomment-6005027474
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/349#issuecomment-6005027837
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/350#issuecomment-6005028186
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/351#issuecomment-6005028501
+
+Last observed Mon Oct 5 16:01:48 PDT 2026: #348/#351 required CI success; #349/#350 required CI failure; builder lane 37385399180 failure.
+URLs:
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37385316983/job/112017037209
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37385318013/job/112017040267
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37385323085/job/112017057227
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37385323691/job/112017058719
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37385399180
+
+The intermediate gh run view job lookups returned a rate-limit error. Recovered with built-in gh pr view for heads and direct job-log endpoints for failures. Current #349/#350 independently confirmed red by design: the same 3 stale Earnings/Business assertions; other suites/tests pass (N2: 463 suites / 6416 tests, N3: 464 suites / 6489 tests). #351 required CI is green. Builder READY comments account for the lane's 4 obsolete probe failures; no new product finding there.
+
+Recommended default: one item-list copy/display fix round for the 3 Bs, no backend behavior changes for these minimal fixes; land the four pieces as one only after both exact-head approvals and green integrated CI. No C follow-ups. Evidence retained in ops/aud-122/AUD-SOL-MON1-122; clean read-only worktree removed by Mon Oct 5 16:06:41 PDT 2026. All four posted comments read back and confirmed. No own locks or CI branches remain.

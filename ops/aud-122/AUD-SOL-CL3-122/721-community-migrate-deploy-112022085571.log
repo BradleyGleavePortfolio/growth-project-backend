@@ -1,0 +1,1378 @@
+﻿2026-10-05T23:10:13.6577498Z Current runner version: '2.337.0'
+2026-10-05T23:10:13.6601044Z ##[group]Runner Image Provisioner
+2026-10-05T23:10:13.6601984Z Hosted Compute Agent
+2026-10-05T23:10:13.6602614Z Version: 20260901.588
+2026-10-05T23:10:13.6603293Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T23:10:13.6604128Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T23:10:13.6604822Z Worker ID: {9c86c8c8-9a53-4710-9d24-0e39c87724f3}
+2026-10-05T23:10:13.6605586Z Azure Region: westcentralus
+2026-10-05T23:10:13.6606257Z ##[endgroup]
+2026-10-05T23:10:13.6608234Z ##[group]Operating System
+2026-10-05T23:10:13.6609069Z Ubuntu
+2026-10-05T23:10:13.6609606Z 24.04.5
+2026-10-05T23:10:13.6610108Z LTS
+2026-10-05T23:10:13.6610697Z ##[endgroup]
+2026-10-05T23:10:13.6611292Z ##[group]Runner Image
+2026-10-05T23:10:13.6611985Z Image: ubuntu-24.04
+2026-10-05T23:10:13.6612563Z Version: 20260927.320.1
+2026-10-05T23:10:13.6613859Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T23:10:13.6615436Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T23:10:13.6616776Z ##[endgroup]
+2026-10-05T23:10:13.6618064Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T23:10:13.6620071Z Contents: read
+2026-10-05T23:10:13.6620724Z Metadata: read
+2026-10-05T23:10:13.6621275Z Packages: read
+2026-10-05T23:10:13.6621898Z ##[endgroup]
+2026-10-05T23:10:13.6623937Z Secret source: Actions
+2026-10-05T23:10:13.6625029Z Cache mode: write
+2026-10-05T23:10:13.6625770Z Prepare workflow directory
+2026-10-05T23:10:13.7121498Z Prepare all required actions
+2026-10-05T23:10:13.7169434Z Getting action download info
+2026-10-05T23:10:14.0356986Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T23:10:14.1353319Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T23:10:14.3524511Z Complete job name: community-live-tests
+2026-10-05T23:10:14.4045124Z ##[group]Checking docker version
+2026-10-05T23:10:14.4058644Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-05T23:10:14.5044063Z '1.48'
+2026-10-05T23:10:14.5055424Z Docker daemon API version: '1.48'
+2026-10-05T23:10:14.5056224Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-05T23:10:14.5218051Z '1.48'
+2026-10-05T23:10:14.5230346Z Docker client API version: '1.48'
+2026-10-05T23:10:14.5234991Z ##[endgroup]
+2026-10-05T23:10:14.5238969Z ##[group]Clean up resources from previous jobs
+2026-10-05T23:10:14.5244685Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=c3f8b4"
+2026-10-05T23:10:14.5387104Z ##[command]/usr/bin/docker network prune --force --filter "label=c3f8b4"
+2026-10-05T23:10:14.5515364Z ##[endgroup]
+2026-10-05T23:10:14.5515897Z ##[group]Create local container network
+2026-10-05T23:10:14.5525710Z ##[command]/usr/bin/docker network create --label c3f8b4 github_network_39eef9274e4d4bbdbd304e4eaffbdb0e
+2026-10-05T23:10:14.6019930Z 0eea4349795003c7d070b393c764899ced661c60bc1f8f0fa81fc2d350f46fa1
+2026-10-05T23:10:14.6040325Z ##[endgroup]
+2026-10-05T23:10:14.6064671Z ##[group]Starting postgres service container
+2026-10-05T23:10:14.6086434Z ##[command]/usr/bin/docker pull postgres:15
+2026-10-05T23:10:15.3032175Z 15: Pulling from library/postgres
+2026-10-05T23:10:15.5151455Z 6b37362b3da7: Pulling fs layer
+2026-10-05T23:10:15.5153817Z 0d791b2b75ae: Pulling fs layer
+2026-10-05T23:10:15.5155869Z 0d39881c83f7: Pulling fs layer
+2026-10-05T23:10:15.5157640Z c95afe7c234f: Pulling fs layer
+2026-10-05T23:10:15.5158739Z bc176b99a33a: Pulling fs layer
+2026-10-05T23:10:15.5159696Z 08a5cd487deb: Pulling fs layer
+2026-10-05T23:10:15.5160672Z eb4d92aaee0a: Pulling fs layer
+2026-10-05T23:10:15.5161614Z 75a4dff090e8: Pulling fs layer
+2026-10-05T23:10:15.5162559Z afe9a40fb214: Pulling fs layer
+2026-10-05T23:10:15.5163483Z ca5e97c0cd7d: Pulling fs layer
+2026-10-05T23:10:15.5164388Z 53fa82bdba52: Pulling fs layer
+2026-10-05T23:10:15.5165369Z 7b9c6b8e5e6e: Pulling fs layer
+2026-10-05T23:10:15.5167091Z b65147f15943: Pulling fs layer
+2026-10-05T23:10:15.5168240Z 170d9ea1cd85: Pulling fs layer
+2026-10-05T23:10:15.5169253Z bc176b99a33a: Waiting
+2026-10-05T23:10:15.5170162Z c95afe7c234f: Waiting
+2026-10-05T23:10:15.5171046Z 75a4dff090e8: Waiting
+2026-10-05T23:10:15.5171973Z afe9a40fb214: Waiting
+2026-10-05T23:10:15.5172879Z 08a5cd487deb: Waiting
+2026-10-05T23:10:15.5173791Z ca5e97c0cd7d: Waiting
+2026-10-05T23:10:15.5174705Z eb4d92aaee0a: Waiting
+2026-10-05T23:10:15.5175773Z 7b9c6b8e5e6e: Waiting
+2026-10-05T23:10:15.5177328Z 53fa82bdba52: Waiting
+2026-10-05T23:10:15.5179103Z 170d9ea1cd85: Waiting
+2026-10-05T23:10:15.7022246Z 0d791b2b75ae: Download complete
+2026-10-05T23:10:15.8953170Z 0d39881c83f7: Verifying Checksum
+2026-10-05T23:10:15.8960811Z 0d39881c83f7: Download complete
+2026-10-05T23:10:15.9742815Z 6b37362b3da7: Verifying Checksum
+2026-10-05T23:10:15.9745560Z 6b37362b3da7: Download complete
+2026-10-05T23:10:16.0114373Z c95afe7c234f: Verifying Checksum
+2026-10-05T23:10:16.0115034Z c95afe7c234f: Download complete
+2026-10-05T23:10:16.1992819Z eb4d92aaee0a: Verifying Checksum
+2026-10-05T23:10:16.1994368Z eb4d92aaee0a: Download complete
+2026-10-05T23:10:16.3042640Z bc176b99a33a: Download complete
+2026-10-05T23:10:16.3965171Z 08a5cd487deb: Verifying Checksum
+2026-10-05T23:10:16.3966089Z 08a5cd487deb: Download complete
+2026-10-05T23:10:16.4063347Z 75a4dff090e8: Verifying Checksum
+2026-10-05T23:10:16.4064821Z 75a4dff090e8: Download complete
+2026-10-05T23:10:16.5958154Z ca5e97c0cd7d: Verifying Checksum
+2026-10-05T23:10:16.5958865Z ca5e97c0cd7d: Download complete
+2026-10-05T23:10:16.6067492Z 53fa82bdba52: Verifying Checksum
+2026-10-05T23:10:16.6068053Z 53fa82bdba52: Download complete
+2026-10-05T23:10:16.7961231Z 7b9c6b8e5e6e: Download complete
+2026-10-05T23:10:16.8116462Z b65147f15943: Verifying Checksum
+2026-10-05T23:10:16.8119097Z b65147f15943: Download complete
+2026-10-05T23:10:16.9860501Z 170d9ea1cd85: Verifying Checksum
+2026-10-05T23:10:16.9861574Z 170d9ea1cd85: Download complete
+2026-10-05T23:10:17.0589917Z afe9a40fb214: Verifying Checksum
+2026-10-05T23:10:17.0590534Z afe9a40fb214: Download complete
+2026-10-05T23:10:17.0705519Z 6b37362b3da7: Pull complete
+2026-10-05T23:10:17.3744168Z 0d791b2b75ae: Pull complete
+2026-10-05T23:10:17.5499902Z 0d39881c83f7: Pull complete
+2026-10-05T23:10:17.5867383Z c95afe7c234f: Pull complete
+2026-10-05T23:10:17.8849470Z bc176b99a33a: Pull complete
+2026-10-05T23:10:17.9609818Z 08a5cd487deb: Pull complete
+2026-10-05T23:10:17.9683563Z eb4d92aaee0a: Pull complete
+2026-10-05T23:10:17.9797948Z 75a4dff090e8: Pull complete
+2026-10-05T23:10:20.8863785Z afe9a40fb214: Pull complete
+2026-10-05T23:10:20.9023692Z ca5e97c0cd7d: Pull complete
+2026-10-05T23:10:20.9100958Z 53fa82bdba52: Pull complete
+2026-10-05T23:10:20.9181386Z 7b9c6b8e5e6e: Pull complete
+2026-10-05T23:10:20.9307071Z b65147f15943: Pull complete
+2026-10-05T23:10:20.9392770Z 170d9ea1cd85: Pull complete
+2026-10-05T23:10:20.9434845Z Digest: sha256:724292da1f2e50bdccfc3302ce75bbba7f4a6076701b588cc795fcac65683550
+2026-10-05T23:10:20.9447841Z Status: Downloaded newer image for postgres:15
+2026-10-05T23:10:20.9456309Z docker.io/library/postgres:15
+2026-10-05T23:10:20.9541990Z ##[command]/usr/bin/docker create --name 90f185620af0464c83946953251be0b8_postgres15_a63180 --label c3f8b4 --network github_network_39eef9274e4d4bbdbd304e4eaffbdb0e --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=postgres" -e GITHUB_ACTIONS=true -e CI=true postgres:15
+2026-10-05T23:10:20.9793266Z 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:10:20.9815204Z ##[command]/usr/bin/docker start 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:10:21.1915652Z 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:10:21.1958923Z ##[command]/usr/bin/docker ps --all --filter id=1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T23:10:21.2091129Z 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039 Up Less than a second (health: starting)
+2026-10-05T23:10:21.2111383Z ##[command]/usr/bin/docker port 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:10:21.2257183Z 5432/tcp -> 0.0.0.0:5432
+2026-10-05T23:10:21.2257590Z 5432/tcp -> [::]:5432
+2026-10-05T23:10:21.2294032Z ##[endgroup]
+2026-10-05T23:10:21.2303637Z ##[group]Waiting for all services to be ready
+2026-10-05T23:10:21.2323228Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:10:21.2457338Z starting
+2026-10-05T23:10:21.2481854Z postgres service is starting, waiting 2 seconds before checking again.
+2026-10-05T23:10:23.2478137Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:10:23.2595724Z starting
+2026-10-05T23:10:23.2608309Z postgres service is starting, waiting 4 seconds before checking again.
+2026-10-05T23:10:27.3235221Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:10:27.3368685Z starting
+2026-10-05T23:10:27.3381146Z postgres service is starting, waiting 8 seconds before checking again.
+2026-10-05T23:10:35.4128255Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:10:35.4251337Z healthy
+2026-10-05T23:10:35.4267560Z postgres service is healthy.
+2026-10-05T23:10:35.4268226Z ##[endgroup]
+2026-10-05T23:10:35.4627040Z ##[group]Run actions/checkout@v6
+2026-10-05T23:10:35.4627655Z with:
+2026-10-05T23:10:35.4627949Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T23:10:35.4630600Z   token: ***
+2026-10-05T23:10:35.4630802Z   ssh-strict: true
+2026-10-05T23:10:35.4631008Z   ssh-user: git
+2026-10-05T23:10:35.4631211Z   persist-credentials: true
+2026-10-05T23:10:35.4631440Z   clean: true
+2026-10-05T23:10:35.4631643Z   sparse-checkout-cone-mode: true
+2026-10-05T23:10:35.4631892Z   fetch-depth: 1
+2026-10-05T23:10:35.4632084Z   fetch-tags: false
+2026-10-05T23:10:35.4632288Z   show-progress: true
+2026-10-05T23:10:35.4632485Z   lfs: false
+2026-10-05T23:10:35.4632666Z   submodules: false
+2026-10-05T23:10:35.4632868Z   set-safe-directory: true
+2026-10-05T23:10:35.4633103Z   allow-unsafe-pr-checkout: false
+2026-10-05T23:10:35.4633531Z env:
+2026-10-05T23:10:35.4633944Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:10:35.4634377Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T23:10:35.4634862Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:10:35.4635213Z   SUPABASE_URL: http://127.0.0.1:54321
+2026-10-05T23:10:35.4635563Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+2026-10-05T23:10:35.4635907Z ##[endgroup]
+2026-10-05T23:10:35.5605945Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T23:10:35.5607788Z ##[group]Getting Git version info
+2026-10-05T23:10:35.5608313Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T23:10:35.5609008Z [command]/usr/bin/git version
+2026-10-05T23:10:35.5686927Z git version 2.55.0
+2026-10-05T23:10:35.5710774Z ##[endgroup]
+2026-10-05T23:10:35.5726179Z Temporarily overriding HOME='/home/runner/work/_temp/1b30dec2-815d-4cb2-b9bb-619a4fe2971e' before making global git config changes
+2026-10-05T23:10:35.5727874Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T23:10:35.5733145Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T23:10:35.5799661Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T23:10:35.5803832Z ##[group]Determining repository object format
+2026-10-05T23:10:35.5806830Z ##[endgroup]
+2026-10-05T23:10:35.5807410Z ##[group]Initializing the repository
+2026-10-05T23:10:35.5811135Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T23:10:35.5916180Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T23:10:35.5917354Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T23:10:35.5918137Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T23:10:35.5918647Z hint: call:
+2026-10-05T23:10:35.5918970Z hint:
+2026-10-05T23:10:35.5919440Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T23:10:35.5920045Z hint:
+2026-10-05T23:10:35.5920354Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T23:10:35.5921145Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T23:10:35.5921864Z hint:
+2026-10-05T23:10:35.5922255Z hint: 	git branch -m <name>
+2026-10-05T23:10:35.5922674Z hint:
+2026-10-05T23:10:35.5923262Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T23:10:35.5924506Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-05T23:10:35.5931502Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T23:10:35.5978043Z ##[endgroup]
+2026-10-05T23:10:35.5978689Z ##[group]Disabling automatic garbage collection
+2026-10-05T23:10:35.5983077Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T23:10:35.6011790Z ##[endgroup]
+2026-10-05T23:10:35.6013001Z ##[group]Setting up auth
+2026-10-05T23:10:35.6013604Z Removing SSH command configuration
+2026-10-05T23:10:35.6020455Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T23:10:35.6052200Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T23:10:35.6377692Z Removing HTTP extra header
+2026-10-05T23:10:35.6383003Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T23:10:35.6412505Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T23:10:35.6654331Z Removing includeIf entries pointing to credentials config files
+2026-10-05T23:10:35.6660769Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T23:10:35.6691314Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T23:10:35.6911462Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T23:10:35.6947825Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:10:35.6978463Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:10:35.7013398Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:10:35.7044413Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:10:35.7071265Z ##[endgroup]
+2026-10-05T23:10:35.7071922Z ##[group]Fetching the repository
+2026-10-05T23:10:35.7080397Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +51f5b00d456e805ba2e1e4f90f40074b7421033f:refs/remotes/pull/721/merge
+2026-10-05T23:10:37.5201802Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T23:10:37.5202766Z  * [new ref]         51f5b00d456e805ba2e1e4f90f40074b7421033f -> pull/721/merge
+2026-10-05T23:10:37.5209454Z ##[endgroup]
+2026-10-05T23:10:37.5210455Z ##[group]Determining the checkout info
+2026-10-05T23:10:37.5211289Z ##[endgroup]
+2026-10-05T23:10:37.5216973Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T23:10:37.5272692Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T23:10:37.5302922Z ##[group]Checking out the ref
+2026-10-05T23:10:37.5307286Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/721/merge
+2026-10-05T23:10:37.7618139Z Note: switching to 'refs/remotes/pull/721/merge'.
+2026-10-05T23:10:37.7618590Z 
+2026-10-05T23:10:37.7618950Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-05T23:10:37.7619806Z changes and commit them, and you can discard any commits you make in this
+2026-10-05T23:10:37.7620639Z state without impacting any branches by switching back to a branch.
+2026-10-05T23:10:37.7621149Z 
+2026-10-05T23:10:37.7621484Z If you want to create a new branch to retain commits you create, you may
+2026-10-05T23:10:37.7622212Z do so (now or later) by using -c with the switch command. Example:
+2026-10-05T23:10:37.7622654Z 
+2026-10-05T23:10:37.7622824Z   git switch -c <new-branch-name>
+2026-10-05T23:10:37.7623096Z 
+2026-10-05T23:10:37.7623633Z Or undo this operation with:
+2026-10-05T23:10:37.7623902Z 
+2026-10-05T23:10:37.7624057Z   git switch -
+2026-10-05T23:10:37.7624265Z 
+2026-10-05T23:10:37.7624631Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-05T23:10:37.7625150Z 
+2026-10-05T23:10:37.7625751Z HEAD is now at 51f5b00 Merge 538a0ba4baacefcea5208c0a8a11e87a1a09fb86 into 5cde6253f941112f2d9afbcf572a4da838dbb16a
+2026-10-05T23:10:37.7633720Z ##[endgroup]
+2026-10-05T23:10:37.7677977Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T23:10:37.7702115Z 51f5b00d456e805ba2e1e4f90f40074b7421033f
+2026-10-05T23:10:37.7962871Z ##[group]Run actions/setup-node@v6
+2026-10-05T23:10:37.7963158Z with:
+2026-10-05T23:10:37.7963350Z   node-version: 20
+2026-10-05T23:10:37.7963558Z   cache: npm
+2026-10-05T23:10:37.7963745Z   check-latest: false
+2026-10-05T23:10:37.7966208Z   token: ***
+2026-10-05T23:10:37.7966428Z   package-manager-cache: true
+2026-10-05T23:10:37.7967051Z env:
+2026-10-05T23:10:37.7967452Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:10:37.7967888Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T23:10:37.7968357Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:10:37.7968691Z   SUPABASE_URL: http://127.0.0.1:54321
+2026-10-05T23:10:37.7969056Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+2026-10-05T23:10:37.7969399Z ##[endgroup]
+2026-10-05T23:10:37.9354805Z Attempting to download 20...
+2026-10-05T23:10:38.8546983Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-05T23:10:39.5307912Z Extracting ...
+2026-10-05T23:10:39.5439470Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/2cc65eec-e700-486a-bcaf-6a07a84e9829 -f /home/runner/work/_temp/c36f8120-0fe5-4e43-8018-056f7a3c57af
+2026-10-05T23:10:40.5551507Z Adding to the cache ...
+2026-10-05T23:10:42.3630970Z ##[group]Environment details
+2026-10-05T23:10:42.5796754Z node: v20.20.2
+2026-10-05T23:10:42.5797166Z npm: 10.8.2
+2026-10-05T23:10:42.5797779Z yarn: 1.22.22
+2026-10-05T23:10:42.5798455Z ##[endgroup]
+2026-10-05T23:10:42.5819495Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-05T23:10:42.6858916Z /home/runner/.npm
+2026-10-05T23:10:42.8710697Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T23:10:44.0928766Z Received 33554432 of 86828135 (38.6%), 32.0 MBs/sec
+2026-10-05T23:10:44.3930526Z Received 86828135 of 86828135 (100.0%), 63.7 MBs/sec
+2026-10-05T23:10:44.3932509Z Cache Size: ~83 MB (86828135 B)
+2026-10-05T23:10:44.3989829Z [command]/usr/bin/tar -xf /home/runner/work/_temp/eecfc44d-8708-4254-a0b5-28bcd9524a81/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-05T23:10:44.5693848Z Cache restored successfully
+2026-10-05T23:10:44.5740003Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T23:10:44.5926082Z ##[group]Run npm ci
+2026-10-05T23:10:44.5926382Z [36;1mnpm ci[0m
+2026-10-05T23:10:44.6141545Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:10:44.6141821Z env:
+2026-10-05T23:10:44.6142272Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:10:44.6142697Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T23:10:44.6143173Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:10:44.6143542Z   SUPABASE_URL: http://127.0.0.1:54321
+2026-10-05T23:10:44.6143918Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+2026-10-05T23:10:44.6144287Z ##[endgroup]
+2026-10-05T23:10:50.5695413Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T23:10:51.2807297Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-05T23:10:52.7818904Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:10:54.0733446Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:10:54.1001007Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:10:54.1662384Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:11:06.9923802Z 
+2026-10-05T23:11:06.9924549Z > growth-project-backend@1.0.0 postinstall
+2026-10-05T23:11:06.9925180Z > prisma generate
+2026-10-05T23:11:06.9927340Z 
+2026-10-05T23:11:07.9123083Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T23:11:11.8652250Z ┌─────────────────────────────────────────────────────────┐
+2026-10-05T23:11:11.8654511Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+2026-10-05T23:11:11.8655344Z │                                                         │
+2026-10-05T23:11:11.8656206Z │  This is a major update - please follow the guide at    │
+2026-10-05T23:11:11.8657780Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-05T23:11:11.8658661Z │                                                         │
+2026-10-05T23:11:11.8659480Z │  Run the following to update                            │
+2026-10-05T23:11:11.8660695Z │    npm i --save-dev prisma@latest                       │
+2026-10-05T23:11:11.8661558Z │    npm i @prisma/client@latest                          │
+2026-10-05T23:11:11.8662454Z └─────────────────────────────────────────────────────────┘
+2026-10-05T23:11:11.8662860Z 
+2026-10-05T23:11:11.8663558Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.14s
+2026-10-05T23:11:11.8664110Z 
+2026-10-05T23:11:11.8665455Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T23:11:11.8666095Z 
+2026-10-05T23:11:11.8666990Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-05T23:11:11.8667580Z 
+2026-10-05T23:11:11.9209230Z 
+2026-10-05T23:11:11.9209845Z > growth-project-backend@1.0.0 prepare
+2026-10-05T23:11:11.9210435Z > lefthook install
+2026-10-05T23:11:11.9210673Z 
+2026-10-05T23:11:11.9699458Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-05T23:11:11.9862939Z 
+2026-10-05T23:11:11.9863576Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-05T23:11:11.9864035Z 
+2026-10-05T23:11:11.9864309Z 202 packages are looking for funding
+2026-10-05T23:11:11.9864689Z   run `npm fund` for details
+2026-10-05T23:11:11.9903500Z 
+2026-10-05T23:11:11.9903817Z 3 high severity vulnerabilities
+2026-10-05T23:11:11.9904125Z 
+2026-10-05T23:11:11.9904524Z To address all issues (including breaking changes), run:
+2026-10-05T23:11:11.9905311Z   npm audit fix --force
+2026-10-05T23:11:11.9905560Z 
+2026-10-05T23:11:11.9905766Z Run `npm audit` for details.
+2026-10-05T23:11:12.0530816Z ##[group]Run npx prisma generate
+2026-10-05T23:11:12.0531148Z [36;1mnpx prisma generate[0m
+2026-10-05T23:11:12.0593605Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:11:12.0593943Z env:
+2026-10-05T23:11:12.0594391Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:12.0594820Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T23:11:12.0595283Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:12.0595674Z   SUPABASE_URL: http://127.0.0.1:54321
+2026-10-05T23:11:12.0596044Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+2026-10-05T23:11:12.0596420Z ##[endgroup]
+2026-10-05T23:11:13.2714162Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T23:11:17.1903618Z 
+2026-10-05T23:11:17.1904857Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.11s
+2026-10-05T23:11:17.1905319Z 
+2026-10-05T23:11:17.1905777Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T23:11:17.1906289Z 
+2026-10-05T23:11:17.1907472Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-05T23:11:17.1908071Z 
+2026-10-05T23:11:17.2535596Z ##[group]Run sudo apt-get update && sudo apt-get install -y postgresql-client
+2026-10-05T23:11:17.2536197Z [36;1msudo apt-get update && sudo apt-get install -y postgresql-client[0m
+2026-10-05T23:11:17.2597998Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:11:17.2598262Z env:
+2026-10-05T23:11:17.2598709Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:17.2599143Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T23:11:17.2599604Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:17.2599947Z   SUPABASE_URL: http://127.0.0.1:54321
+2026-10-05T23:11:17.2600302Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+2026-10-05T23:11:17.2600653Z ##[endgroup]
+2026-10-05T23:11:17.3338912Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-10-05T23:11:17.3659050Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+2026-10-05T23:11:17.3660465Z Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+2026-10-05T23:11:17.3672253Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+2026-10-05T23:11:17.3718366Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+2026-10-05T23:11:17.3736154Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+2026-10-05T23:11:17.4929962Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.6 kB]
+2026-10-05T23:11:17.5018991Z Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [515 kB]
+2026-10-05T23:11:17.5067552Z Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [458 kB]
+2026-10-05T23:11:17.5414276Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1370 kB]
+2026-10-05T23:11:17.5495232Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [305 kB]
+2026-10-05T23:11:17.5507455Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
+2026-10-05T23:11:17.5518686Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1701 kB]
+2026-10-05T23:11:17.5615232Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [341 kB]
+2026-10-05T23:11:17.5657812Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+2026-10-05T23:11:17.5660967Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1728 kB]
+2026-10-05T23:11:17.5757885Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [395 kB]
+2026-10-05T23:11:17.5772380Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [13.3 kB]
+2026-10-05T23:11:17.5782083Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+2026-10-05T23:11:17.6423125Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5764 B]
+2026-10-05T23:11:17.6469653Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+2026-10-05T23:11:17.6479088Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1071 kB]
+2026-10-05T23:11:17.6531618Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [222 kB]
+2026-10-05T23:11:17.6545183Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+2026-10-05T23:11:17.6554913Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1216 kB]
+2026-10-05T23:11:17.6612202Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [244 kB]
+2026-10-05T23:11:17.6626974Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+2026-10-05T23:11:17.6638275Z Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1566 kB]
+2026-10-05T23:11:17.6707972Z Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [361 kB]
+2026-10-05T23:11:21.8039715Z Fetched 12.6 MB in 1s (9449 kB/s)
+2026-10-05T23:11:22.6322784Z Reading package lists...
+2026-10-05T23:11:22.6624650Z Reading package lists...
+2026-10-05T23:11:22.8182003Z Building dependency tree...
+2026-10-05T23:11:22.8189144Z Reading state information...
+2026-10-05T23:11:22.9637187Z The following NEW packages will be installed:
+2026-10-05T23:11:22.9637851Z   postgresql-client
+2026-10-05T23:11:22.9796670Z 0 upgraded, 1 newly installed, 0 to remove and 25 not upgraded.
+2026-10-05T23:11:22.9797676Z Need to get 11.6 kB of archives.
+2026-10-05T23:11:22.9798477Z After this operation, 17.4 kB of additional disk space will be used.
+2026-10-05T23:11:22.9799348Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-10-05T23:11:23.2108624Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 postgresql-client all 16+257build1.1 [11.6 kB]
+2026-10-05T23:11:23.5055863Z Fetched 11.6 kB in 0s (38.4 kB/s)
+2026-10-05T23:11:23.5265500Z Selecting previously unselected package postgresql-client.
+2026-10-05T23:11:23.5567788Z (Reading database ... 
+2026-10-05T23:11:23.5568228Z (Reading database ... 5%
+2026-10-05T23:11:23.5568898Z (Reading database ... 10%
+2026-10-05T23:11:23.5569695Z (Reading database ... 15%
+2026-10-05T23:11:23.5570039Z (Reading database ... 20%
+2026-10-05T23:11:23.5570359Z (Reading database ... 25%
+2026-10-05T23:11:23.5570678Z (Reading database ... 30%
+2026-10-05T23:11:23.5570988Z (Reading database ... 35%
+2026-10-05T23:11:23.5571303Z (Reading database ... 40%
+2026-10-05T23:11:23.5571613Z (Reading database ... 45%
+2026-10-05T23:11:23.5572010Z (Reading database ... 50%
+2026-10-05T23:11:23.5621721Z (Reading database ... 55%
+2026-10-05T23:11:23.6790801Z (Reading database ... 60%
+2026-10-05T23:11:23.8723545Z (Reading database ... 65%
+2026-10-05T23:11:24.0789611Z (Reading database ... 70%
+2026-10-05T23:11:24.2815040Z (Reading database ... 75%
+2026-10-05T23:11:24.4296219Z (Reading database ... 80%
+2026-10-05T23:11:24.6314493Z (Reading database ... 85%
+2026-10-05T23:11:24.8266425Z (Reading database ... 90%
+2026-10-05T23:11:25.0303531Z (Reading database ... 95%
+2026-10-05T23:11:25.0304167Z (Reading database ... 100%
+2026-10-05T23:11:25.0305094Z (Reading database ... 202296 files and directories currently installed.)
+2026-10-05T23:11:25.0342662Z Preparing to unpack .../postgresql-client_16+257build1.1_all.deb ...
+2026-10-05T23:11:25.0366543Z Unpacking postgresql-client (16+257build1.1) ...
+2026-10-05T23:11:25.0709738Z Setting up postgresql-client (16+257build1.1) ...
+2026-10-05T23:11:25.7018093Z 
+2026-10-05T23:11:25.7018944Z Running kernel seems to be up-to-date.
+2026-10-05T23:11:25.7019372Z 
+2026-10-05T23:11:25.7019641Z No services need to be restarted.
+2026-10-05T23:11:25.7019953Z 
+2026-10-05T23:11:25.7020218Z No containers need to be restarted.
+2026-10-05T23:11:25.7020536Z 
+2026-10-05T23:11:25.7020842Z No user sessions are running outdated binaries.
+2026-10-05T23:11:25.7021224Z 
+2026-10-05T23:11:25.7021761Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-10-05T23:11:26.5034708Z ##[group]Run psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+2026-10-05T23:11:26.5035425Z [36;1mpsql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql[0m
+2026-10-05T23:11:26.5097877Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:11:26.5098139Z env:
+2026-10-05T23:11:26.5098732Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:26.5099188Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T23:11:26.5099639Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:26.5099986Z   SUPABASE_URL: http://127.0.0.1:54321
+2026-10-05T23:11:26.5100342Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+2026-10-05T23:11:26.5100695Z ##[endgroup]
+2026-10-05T23:11:26.6118520Z CREATE SCHEMA
+2026-10-05T23:11:26.6128257Z CREATE FUNCTION
+2026-10-05T23:11:26.6156338Z DO
+2026-10-05T23:11:26.6216895Z ##[group]Run npx prisma migrate deploy
+2026-10-05T23:11:26.6217327Z [36;1mnpx prisma migrate deploy[0m
+2026-10-05T23:11:26.6277152Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:11:26.6277411Z env:
+2026-10-05T23:11:26.6277854Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:26.6278301Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T23:11:26.6278798Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:26.6279152Z   SUPABASE_URL: http://127.0.0.1:54321
+2026-10-05T23:11:26.6279525Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+2026-10-05T23:11:26.6279880Z ##[endgroup]
+2026-10-05T23:11:27.8495883Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T23:11:27.8749783Z Datasource "db": PostgreSQL database "postgres", schema "public" at "localhost:5432"
+2026-10-05T23:11:27.9806469Z 
+2026-10-05T23:11:27.9807268Z 197 migrations found in prisma/migrations
+2026-10-05T23:11:27.9807712Z 
+2026-10-05T23:11:28.1344696Z Applying migration `00000000000000_baseline`
+2026-10-05T23:11:28.1885178Z Applying migration `20260423190000_add_indexes_and_orphan_fks`
+2026-10-05T23:11:28.1926550Z Applying migration `20260424000000_add_invite_codes`
+2026-10-05T23:11:28.1985591Z Applying migration `20260424120000_add_coach_messages`
+2026-10-05T23:11:28.2060976Z Applying migration `20260424180000_add_coach_nudges`
+2026-10-05T23:11:28.2136144Z Applying migration `20260424200000_add_meal_plans_and_extend_checkins`
+2026-10-05T23:11:28.2221854Z Applying migration `20260425030000_add_community_win_and_coach_guideline`
+2026-10-05T23:11:28.2318563Z Applying migration `20260425030001_add_community_win_visibility`
+2026-10-05T23:11:28.2344237Z Applying migration `20260427000000_add_owner_role_and_coach_profile`
+2026-10-05T23:11:28.2432598Z Applying migration `20260427000100_add_saas_billing_and_drafts`
+2026-10-05T23:11:28.2666442Z Applying migration `20260427120000_add_audit_log_and_gdpr_lifecycle`
+2026-10-05T23:11:28.2775075Z Applying migration `20260428000000_add_client_coach_consent`
+2026-10-05T23:11:28.2840764Z Applying migration `20260429210000_add_diet_and_workout_cadence_to_user_profile`
+2026-10-05T23:11:28.2866474Z Applying migration `20260430000000_drop_doctrine_drift_remnants`
+2026-10-05T23:11:28.2888208Z Applying migration `20260430120000_add_equipment_access_to_user_profile`
+2026-10-05T23:11:28.2912286Z Applying migration `20260506000000_add_ptm_phase_1`
+2026-10-05T23:11:28.3067573Z Applying migration `20260506010000_add_diagnostic_engine`
+2026-10-05T23:11:28.3157550Z Applying migration `20260506020000_add_build_week`
+2026-10-05T23:11:28.3274583Z Applying migration `20260506030000_add_coach_signals`
+2026-10-05T23:11:28.3375933Z Applying migration `20260506040000_add_voice_notes_and_coach_onboarding`
+2026-10-05T23:11:28.3431782Z Applying migration `20260506050000_add_first_win`
+2026-10-05T23:11:28.3462632Z Applying migration `20260506060000_add_leaderboard`
+2026-10-05T23:11:28.3488547Z Applying migration `20260507000000_add_notification_center`
+2026-10-05T23:11:28.3618914Z Applying migration `20260507100000_add_gdpr_deletion_flow`
+2026-10-05T23:11:28.3678410Z Applying migration `20260508000000_add_data_export`
+2026-10-05T23:11:28.3737640Z Applying migration `20260508000000_add_workout_builder`
+2026-10-05T23:11:28.3872036Z Applying migration `20260508000001_rls_workout_builder`
+2026-10-05T23:11:28.3909204Z Applying migration `20260508000002_workout_exercise_soft_delete`
+2026-10-05T23:11:28.3958070Z Applying migration `20260508000003_workout_builder_idempotency_and_completion`
+2026-10-05T23:11:28.4045982Z Applying migration `20260509000000_add_sprint_b_macros_meals_insights`
+2026-10-05T23:11:28.4275974Z Applying migration `20260509120000_coach_practice_type_stage3`
+2026-10-05T23:11:28.4300948Z Applying migration `20260510000000_add_ai_gateway_audit_and_drafts`
+2026-10-05T23:11:28.4452568Z Applying migration `20260510000000_add_team_mode`
+2026-10-05T23:11:28.4578171Z Applying migration `20260510000001_team_audit_revenue_sharing_changed`
+2026-10-05T23:11:28.4601551Z Applying migration `20260511000000_add_bloodwork`
+2026-10-05T23:11:28.4751996Z Applying migration `20260512000000_concierge_scheduling`
+2026-10-05T23:11:28.4997779Z Applying migration `20260513000000_food_logger_trainerize_floor`
+2026-10-05T23:11:28.5023828Z Applying migration `20260515100000_add_secret_rotation_log`
+2026-10-05T23:11:28.5079719Z Applying migration `20260516000000_kms_wrap_bloodwork_and_calendar`
+2026-10-05T23:11:28.5105383Z Applying migration `20260517000000_booking_notifications`
+2026-10-05T23:11:28.5178318Z Applying migration `20260520000000_setnull_owner_rels`
+2026-10-05T23:11:28.5276578Z Applying migration `20260520000001_add_gcal_channel_tracking_to_calendar_connection`
+2026-10-05T23:11:28.5313643Z Applying migration `20260521000000_add_connect_account`
+2026-10-05T23:11:28.5380390Z Applying migration `20260524000000_add_sub_coach_assignment_and_idempotency`
+2026-10-05T23:11:28.5472813Z Applying migration `20260525000000_sub_coach_rls_and_fks`
+2026-10-05T23:11:28.5530951Z Applying migration `20260525120000_add_coach_brief_tables`
+2026-10-05T23:11:28.5676736Z Applying migration `20260525130000_add_coach_brief_last_push_date`
+2026-10-05T23:11:28.5700605Z Applying migration `20260525170000_data_export_one_active_per_user`
+2026-10-05T23:11:28.5730008Z Applying migration `20260525180000_recent_auth_nonce`
+2026-10-05T23:11:28.5780614Z Applying migration `20260528000000_stream1_coach_ai_credits`
+2026-10-05T23:11:28.5905810Z Applying migration `20260528120000_stream1_round1_fixes`
+2026-10-05T23:11:28.5948098Z Applying migration `20260530000000_coach_ai_engine_v1`
+2026-10-05T23:11:28.6045999Z Applying migration `20260531000000_wearables_foundation`
+2026-10-05T23:11:28.6343742Z Applying migration `20260601000000_add_connect_packages_purchases_customers`
+2026-10-05T23:11:28.6520849Z Applying migration `20260601000000_add_email_send_log`
+2026-10-05T23:11:28.6579779Z Applying migration `20260601000000_add_exercise_catalog_video`
+2026-10-05T23:11:28.6652611Z Applying migration `20260602000000_add_connect_fee_split_and_dunning`
+2026-10-05T23:11:28.6900960Z Applying migration `20260602000000_add_exercise_video_provider_fields`
+2026-10-05T23:11:28.6931612Z Applying migration `20260603000000_add_connect_payout_reconciliation_refund_dispute`
+2026-10-05T23:11:28.7107870Z Applying migration `20260604000000_add_team_profile_and_sub_coach_invite`
+2026-10-05T23:11:28.7205997Z Applying migration `20260604000001_subcoach_invite_token_hash`
+2026-10-05T23:11:28.7235393Z Applying migration `20260605000000_add_meal_plan_days_json`
+2026-10-05T23:11:28.7258416Z Applying migration `20260606000000_add_expo_push_token`
+2026-10-05T23:11:28.7283529Z Applying migration `20260606000001_payment_failure_event_unique`
+2026-10-05T23:11:28.7312509Z Applying migration `20260606000002_food_entry_client_uuid`
+2026-10-05T23:11:28.7341894Z Applying migration `20260606000003_rls_financial_tables`
+2026-10-05T23:11:28.7378307Z Applying migration `20260607000000_rls_remaining_gaps`
+2026-10-05T23:11:28.7479555Z Applying migration `20260607000001_workout_assignment_completion_payload`
+2026-10-05T23:11:28.7511849Z Applying migration `20260608000000_rls_team_tables`
+2026-10-05T23:11:28.7551840Z Applying migration `20260609000000_add_coach_direct_enabled`
+2026-10-05T23:11:28.7577056Z Applying migration `20260610000000_fasting_unique_active`
+2026-10-05T23:11:28.7607332Z Applying migration `20260611000000_invite_intended_email`
+2026-10-05T23:11:28.7648661Z Applying migration `20260611000001_messagedraft_rls`
+2026-10-05T23:11:28.7684341Z Applying migration `20260612000000_add_message_model_and_checkin_reviewed`
+2026-10-05T23:11:28.7751765Z Applying migration `20260612000001_message_rls`
+2026-10-05T23:11:28.7781373Z Applying migration `20260613000000_message_rls_split_update`
+2026-10-05T23:11:28.7807722Z Applying migration `20260613000001_message_fk_cascade`
+2026-10-05T23:11:28.7848116Z Applying migration `20260613000002_message_thread_reverse_index`
+2026-10-05T23:11:28.7877793Z Applying migration `20260614000000_coach_subscription_tier`
+2026-10-05T23:11:28.7913617Z Applying migration `20260614065425_add_coach_first_payment_notification`
+2026-10-05T23:11:28.7969422Z Applying migration `20260615000000_drop_coach_direct_enabled`
+2026-10-05T23:11:28.7994370Z Applying migration `20260616000000_add_message_reports_and_user_blocks`
+2026-10-05T23:11:28.8121426Z Applying migration `20260617000000_fix_message_report_rls_participation_check`
+2026-10-05T23:11:28.8146840Z Applying migration `20260618000000_add_rls_payment_revenue_tables`
+2026-10-05T23:11:28.8195955Z Applying migration `20260619000000_add_churn_intervention`
+2026-10-05T23:11:28.8276418Z Applying migration `20260620000000_workout_builder_p1_fixes`
+2026-10-05T23:11:28.8323345Z Applying migration `20260621000000_fix_workout_rls_policies`
+2026-10-05T23:11:28.8349104Z Applying migration `20260701235900_add_sub_coach_role_value`
+2026-10-05T23:11:28.8370831Z Applying migration `20260702000000_fix_workout_rls_coach_role`
+2026-10-05T23:11:28.8397912Z Applying migration `20260703000000_add_coach_brief_generation_lease`
+2026-10-05T23:11:28.8426930Z Applying migration `20260703000001_add_coach_brief_push_ledger`
+2026-10-05T23:11:28.8480183Z Applying migration `20260703000002_add_coach_brief_check_constraints`
+2026-10-05T23:11:28.8526952Z Applying migration `20260704000000_coach_brief_push_ledger_bounded_retry`
+2026-10-05T23:11:28.8561692Z Applying migration `20260704000000_rls01_helper_searchpath_hibp`
+2026-10-05T23:11:28.8595071Z Applying migration `20260704000001_coach_brief_cwa_index_concurrent`
+2026-10-05T23:11:28.8633730Z Applying migration `20260801000000_r43_storefront_phase1`
+2026-10-05T23:11:28.8720228Z Applying migration `20260803000000_share_token_21char_invalidate_legacy`
+2026-10-05T23:11:28.8744003Z Applying migration `20260804000000_guest_checkout_retryable_conversion`
+2026-10-05T23:11:28.8785251Z Applying migration `20260805000000_guest_checkout_pii_retention`
+2026-10-05T23:11:28.8818543Z Applying migration `20260806000000_share_link_expiry_revoke`
+2026-10-05T23:11:28.8845571Z Applying migration `20260901000000_r46_landing_page_builder_phase1`
+2026-10-05T23:11:28.9060729Z Applying migration `20260902000000_r47_landing_pages_phase3_crm_sync`
+2026-10-05T23:11:28.9093750Z Applying migration `20260903000000_r47_lead_sync_persistent_state`
+2026-10-05T23:11:28.9135604Z Applying migration `20260903000000_r52_landing_pages_renderer_v2`
+2026-10-05T23:11:28.9160001Z Applying migration `20260920000000_r48_checkout_hardening`
+2026-10-05T23:11:28.9197447Z Applying migration `20260921000000_add_refunded_disputed_to_guest_checkout_status`
+2026-10-05T23:11:28.9223031Z Applying migration `20261001000000_dunning_v1`
+2026-10-05T23:11:28.9297005Z Applying migration `20261002000000_dunning_v1_send_retry_cas`
+2026-10-05T23:11:28.9327673Z Applying migration `20261002000000_nudge_v1`
+2026-10-05T23:11:28.9428562Z Applying migration `20261110000000_ai_action_draft_materialised`
+2026-10-05T23:11:28.9452538Z Applying migration `20261201000000_stream2_ai_execution_draft_links`
+2026-10-05T23:11:28.9504079Z Applying migration `20261202000000_pr3_drip_schema_foundation`
+2026-10-05T23:11:28.9681830Z Applying migration `20261203000000_pr7_meal_plan_drip_drop_unique`
+2026-10-05T23:11:28.9710778Z Applying migration `20261203100000_pr6_packages_publish_pricing`
+2026-10-05T23:11:28.9743361Z Applying migration `20261204000000_pr9_drip_resolver_marker`
+2026-10-05T23:11:28.9797237Z Applying migration `20261205000000_pr10_scheduled_drop_retry_lock`
+2026-10-05T23:11:28.9835709Z Applying migration `20261206000000_pr12_coach_media_upload_status`
+2026-10-05T23:11:28.9904488Z Applying migration `20261207000000_pr14_client_purchase_landing_page_id_and_guest_subscription`
+2026-10-05T23:11:28.9944927Z Applying migration `20261207000001_pr14_client_purchase_landing_page_idx_concurrent`
+2026-10-05T23:11:28.9997029Z Applying migration `20261208000000_pr15_coach_new_purchase_prefs`
+2026-10-05T23:11:29.0044100Z Applying migration `20261209000000_pr17_scheduled_drop_push_seq`
+2026-10-05T23:11:29.0087300Z Applying migration `20261210000000_pr_wave0_ai_quota_ltv_peak`
+2026-10-05T23:11:29.0217088Z Applying migration `20261211000000_add_sleep_consistency_metrics`
+2026-10-05T23:11:29.0241702Z Applying migration `20261211000001_seed_sleep_consistency_metric_defs`
+2026-10-05T23:11:29.0278346Z Applying migration `20261212000000_community_v1_1_schema`
+2026-10-05T23:11:29.1679961Z Applying migration `20261212000000_rls_helper_search_path`
+2026-10-05T23:11:29.1717723Z Applying migration `20261212010000_rls_tier2_coach_team`
+2026-10-05T23:11:29.1839828Z Applying migration `20261213000000_rls_tier1_phi_financial_privacy`
+2026-10-05T23:11:29.1988198Z Applying migration `20261213000000_rls_tier2_sessions`
+2026-10-05T23:11:29.2061568Z Applying migration `20261213000000_rls_tier3_nutrition`
+2026-10-05T23:11:29.2176248Z Applying migration `20261213000000_rls_tier3_workouts`
+2026-10-05T23:11:29.2281716Z Applying migration `20261213000000_rls_tier4_learning_analytics`
+2026-10-05T23:11:29.2408384Z Applying migration `20261213000000_rls_tier5_notifications_community`
+2026-10-05T23:11:29.2496279Z Applying migration `20261214000000_dunning_v2_lockout_recovery`
+2026-10-05T23:11:29.2580791Z Applying migration `20261215000000_b5_digital_contracts`
+2026-10-05T23:11:29.2768468Z Applying migration `20261215000000_mwb_1_data_model`
+2026-10-05T23:11:29.3015888Z Applying migration `20261215000000_payouts_v2_bank_payout_methods`
+2026-10-05T23:11:29.3088716Z Applying migration `20261215000100_seed_b5_contract_templates`
+2026-10-05T23:11:29.3132494Z Applying migration `20261215000200_contracts_rls`
+2026-10-05T23:11:29.3178998Z Applying migration `20261215000300_named_regimes_and_partial_refund_decision`
+2026-10-05T23:11:29.3253913Z Applying migration `20261216000000_add_roman_chat`
+2026-10-05T23:11:29.3381103Z Applying migration `20261216000100_add_plan_context_payload`
+2026-10-05T23:11:29.3408708Z Applying migration `20261216000200_community_classroom_posts`
+2026-10-05T23:11:29.3522624Z Applying migration `20261217000000_community_voice_notes`
+2026-10-05T23:11:29.3605283Z Applying migration `20261217000100_community_search_index`
+2026-10-05T23:11:29.3719771Z Applying migration `20261217000200_community_wearable_prompts`
+2026-10-05T23:11:29.3843531Z Applying migration `20261218000000_add_coach_reviewed_at`
+2026-10-05T23:11:29.3919993Z Applying migration `20261218000100_rls_partial_refund_decision`
+2026-10-05T23:11:29.3953757Z Applying migration `20261218000200_rename_decided_by_coach_user_id`
+2026-10-05T23:11:29.3978770Z Applying migration `20261219000000_community_wearable_prompts_uuid_id`
+2026-10-05T23:11:29.4155679Z Applying migration `20261219000000_conv_review_coach_reviewed_at_idx`
+2026-10-05T23:11:29.4187966Z Applying migration `20261220000000_talent_marketplace_rls`
+2026-10-05T23:11:29.4491508Z Applying migration `20261220000010_marketplace_idempotency_claim_nonce`
+2026-10-05T23:11:29.4520213Z Applying migration `20261220000020_marketplace_abuse_signal_rls`
+2026-10-05T23:11:29.4584627Z Applying migration `20261220000030_marketplace_connect_event`
+2026-10-05T23:11:29.4643631Z Applying migration `20261220000031_application_applicant_listing_unique`
+2026-10-05T23:11:29.4675288Z Applying migration `20261221000000_enable_pg_stat_statements`
+2026-10-05T23:11:29.4766868Z Applying migration `20261221010000_add_signup_ref_to_user`
+2026-10-05T23:11:29.4792322Z Applying migration `20261222000000_add_extension_pair_codes`
+2026-10-05T23:11:29.4866217Z Applying migration `20261222000000_scout_ingest_entity`
+2026-10-05T23:11:29.4946857Z Applying migration `20261222000000_scout_progress_and_completion`
+2026-10-05T23:11:29.5037311Z Applying migration `20261223000100_scout_import_state`
+2026-10-05T23:11:29.5091777Z Applying migration `20261223000200_scout_reconstruction`
+2026-10-05T23:11:29.5194648Z Applying migration `20261223000300_scout_reconstructed_entity`
+2026-10-05T23:11:29.5253913Z Applying migration `20261224000000_rls_close_public_exposure`
+2026-10-05T23:11:29.5416778Z Applying migration `20270117000000_durable_import_setup`
+2026-10-05T23:11:29.5511547Z Applying migration `20270118000000_scout_ledger_platform_expand`
+2026-10-05T23:11:29.5545568Z Applying migration `20270119000000_scout_ledger_obsolete_writer_fence`
+2026-10-05T23:11:29.5583834Z Applying migration `20270120000000_scout_identity_ready`
+2026-10-05T23:11:29.5648045Z Applying migration `20270121000000_scout_identity_contract`
+2026-10-05T23:11:29.5698110Z Applying migration `20270122000000_scout_native_provenance_expand`
+2026-10-05T23:11:29.5784617Z Applying migration `20270123000000_scout_run_lifecycle_expand`
+2026-10-05T23:11:29.5847050Z Applying migration `20270124000000_scout_run_observation_expand`
+2026-10-05T23:11:29.5970357Z Applying migration `20270125000000_restore_schema_declared_objects`
+2026-10-05T23:11:29.6226423Z Applying migration `20270203000000_ai_processing_consent_ledger`
+2026-10-05T23:11:29.6301629Z Applying migration `20270204000000_recipe_private_by_default`
+2026-10-05T23:11:29.6333039Z Applying migration `20270205000000_invite_grant_bindings`
+2026-10-05T23:11:29.6396193Z Applying migration `20270210000000_s_fee_charge_settlement`
+2026-10-05T23:11:29.6703080Z Applying migration `20270211000000_community_reports_voice_notes_and_wins`
+2026-10-05T23:11:29.6856050Z Applying migration `20270212000000_clinic_onboarding_intake`
+2026-10-05T23:11:29.7024297Z Applying migration `20270213000000_clinic_engagement`
+2026-10-05T23:11:29.7188030Z Applying migration `20270216000000_package_first_published_at`
+2026-10-05T23:11:29.7219352Z Applying migration `20270220000000_data_export_archive_cleanup`
+2026-10-05T23:11:29.7275992Z Applying migration `20270221000000_data_export_storage_bucket`
+2026-10-05T23:11:29.7298813Z Applying migration `20270222000000_scheduling_lifecycle_integrity`
+2026-10-05T23:11:29.7635148Z Applying migration `20270223000000_mwb_program_delivery`
+2026-10-05T23:11:29.7689565Z Applying migration `20270224000000_build_week_day1_consultation_copy`
+2026-10-05T23:11:29.7721881Z Applying migration `20270225000000_native_subscription_trials`
+2026-10-05T23:11:29.7843578Z Applying migration `20270226000000_scheduling_request_expiry`
+2026-10-05T23:11:29.7898640Z Applying migration `20270301000000_coachless_featured_coach`
+2026-10-05T23:11:29.8040939Z Applying migration `20270301000000_community_win_coach_matcher`
+2026-10-05T23:11:29.8072964Z Applying migration `20270301000000_notification_zone_provenance_reminder_generation`
+2026-10-05T23:11:29.8120536Z Applying migration `20270303000000_messaging_core_actions`
+2026-10-05T23:11:29.8214238Z Applying migration `20270307000000_push_outbox_quiet_hours`
+2026-10-05T23:11:29.8317645Z Applying migration `20270311000000_subscription_checkout_terms`
+2026-10-05T23:11:29.8344051Z Applying migration `20270314000000_charge_refund_transfer_reversal_review`
+2026-10-05T23:11:29.8395083Z Applying migration `20270317116000_split_ledger_reversal_posting`
+2026-10-05T23:11:29.8490682Z 
+2026-10-05T23:11:29.8507883Z The following migration(s) have been applied:
+2026-10-05T23:11:29.8508470Z 
+2026-10-05T23:11:29.8508772Z migrations/
+2026-10-05T23:11:29.8509563Z   └─ 00000000000000_baseline/
+2026-10-05T23:11:29.8510237Z     └─ migration.sql
+2026-10-05T23:11:29.8511004Z   └─ 20260423190000_add_indexes_and_orphan_fks/
+2026-10-05T23:11:29.8511764Z     └─ migration.sql
+2026-10-05T23:11:29.8512444Z   └─ 20260424000000_add_invite_codes/
+2026-10-05T23:11:29.8513133Z     └─ migration.sql
+2026-10-05T23:11:29.8513907Z   └─ 20260424120000_add_coach_messages/
+2026-10-05T23:11:29.8514483Z     └─ migration.sql
+2026-10-05T23:11:29.8514957Z   └─ 20260424180000_add_coach_nudges/
+2026-10-05T23:11:29.8515432Z     └─ migration.sql
+2026-10-05T23:11:29.8515892Z   └─ 20260424200000_add_meal_plans_and_extend_checkins/
+2026-10-05T23:11:29.8516366Z     └─ migration.sql
+2026-10-05T23:11:29.8517692Z   └─ 20260425030000_add_community_win_and_coach_guideline/
+2026-10-05T23:11:29.8518392Z     └─ migration.sql
+2026-10-05T23:11:29.8518970Z   └─ 20260425030001_add_community_win_visibility/
+2026-10-05T23:11:29.8519607Z     └─ migration.sql
+2026-10-05T23:11:29.8520260Z   └─ 20260427000000_add_owner_role_and_coach_profile/
+2026-10-05T23:11:29.8520877Z     └─ migration.sql
+2026-10-05T23:11:29.8521710Z   └─ 20260427000100_add_saas_billing_and_drafts/
+2026-10-05T23:11:29.8522073Z     └─ migration.sql
+2026-10-05T23:11:29.8522407Z   └─ 20260427120000_add_audit_log_and_gdpr_lifecycle/
+2026-10-05T23:11:29.8522737Z     └─ migration.sql
+2026-10-05T23:11:29.8523029Z   └─ 20260428000000_add_client_coach_consent/
+2026-10-05T23:11:29.8523336Z     └─ migration.sql
+2026-10-05T23:11:29.8523725Z   └─ 20260429210000_add_diet_and_workout_cadence_to_user_profile/
+2026-10-05T23:11:29.8524110Z     └─ migration.sql
+2026-10-05T23:11:29.8524440Z   └─ 20260430000000_drop_doctrine_drift_remnants/
+2026-10-05T23:11:29.8524766Z     └─ migration.sql
+2026-10-05T23:11:29.8525105Z   └─ 20260430120000_add_equipment_access_to_user_profile/
+2026-10-05T23:11:29.8525445Z     └─ migration.sql
+2026-10-05T23:11:29.8525722Z   └─ 20260506000000_add_ptm_phase_1/
+2026-10-05T23:11:29.8525999Z     └─ migration.sql
+2026-10-05T23:11:29.8526436Z   └─ 20260506010000_add_diagnostic_engine/
+2026-10-05T23:11:29.8527240Z     └─ migration.sql
+2026-10-05T23:11:29.8527723Z   └─ 20260506020000_add_build_week/
+2026-10-05T23:11:29.8528014Z     └─ migration.sql
+2026-10-05T23:11:29.8528304Z   └─ 20260506030000_add_coach_signals/
+2026-10-05T23:11:29.8528584Z     └─ migration.sql
+2026-10-05T23:11:29.8528923Z   └─ 20260506040000_add_voice_notes_and_coach_onboarding/
+2026-10-05T23:11:29.8529492Z     └─ migration.sql
+2026-10-05T23:11:29.8529778Z   └─ 20260506050000_add_first_win/
+2026-10-05T23:11:29.8530049Z     └─ migration.sql
+2026-10-05T23:11:29.8530322Z   └─ 20260506060000_add_leaderboard/
+2026-10-05T23:11:29.8530605Z     └─ migration.sql
+2026-10-05T23:11:29.8530905Z   └─ 20260507000000_add_notification_center/
+2026-10-05T23:11:29.8531204Z     └─ migration.sql
+2026-10-05T23:11:29.8531494Z   └─ 20260507100000_add_gdpr_deletion_flow/
+2026-10-05T23:11:29.8531784Z     └─ migration.sql
+2026-10-05T23:11:29.8532051Z   └─ 20260508000000_add_data_export/
+2026-10-05T23:11:29.8532401Z     └─ migration.sql
+2026-10-05T23:11:29.8532695Z   └─ 20260508000000_add_workout_builder/
+2026-10-05T23:11:29.8532999Z     └─ migration.sql
+2026-10-05T23:11:29.8533292Z   └─ 20260508000001_rls_workout_builder/
+2026-10-05T23:11:29.8533584Z     └─ migration.sql
+2026-10-05T23:11:29.8533895Z   └─ 20260508000002_workout_exercise_soft_delete/
+2026-10-05T23:11:29.8534211Z     └─ migration.sql
+2026-10-05T23:11:29.8534598Z   └─ 20260508000003_workout_builder_idempotency_and_completion/
+2026-10-05T23:11:29.8535011Z     └─ migration.sql
+2026-10-05T23:11:29.8535346Z   └─ 20260509000000_add_sprint_b_macros_meals_insights/
+2026-10-05T23:11:29.8535678Z     └─ migration.sql
+2026-10-05T23:11:29.8535982Z   └─ 20260509120000_coach_practice_type_stage3/
+2026-10-05T23:11:29.8536290Z     └─ migration.sql
+2026-10-05T23:11:29.8536879Z   └─ 20260510000000_add_ai_gateway_audit_and_drafts/
+2026-10-05T23:11:29.8537224Z     └─ migration.sql
+2026-10-05T23:11:29.8537494Z   └─ 20260510000000_add_team_mode/
+2026-10-05T23:11:29.8537760Z     └─ migration.sql
+2026-10-05T23:11:29.8538133Z   └─ 20260510000001_team_audit_revenue_sharing_changed/
+2026-10-05T23:11:29.8538494Z     └─ migration.sql
+2026-10-05T23:11:29.8538788Z   └─ 20260511000000_add_bloodwork/
+2026-10-05T23:11:29.8539088Z     └─ migration.sql
+2026-10-05T23:11:29.8539394Z   └─ 20260512000000_concierge_scheduling/
+2026-10-05T23:11:29.8539713Z     └─ migration.sql
+2026-10-05T23:11:29.8540061Z   └─ 20260513000000_food_logger_trainerize_floor/
+2026-10-05T23:11:29.8540444Z     └─ migration.sql
+2026-10-05T23:11:29.8540762Z   └─ 20260515100000_add_secret_rotation_log/
+2026-10-05T23:11:29.8541089Z     └─ migration.sql
+2026-10-05T23:11:29.8541434Z   └─ 20260516000000_kms_wrap_bloodwork_and_calendar/
+2026-10-05T23:11:29.8541779Z     └─ migration.sql
+2026-10-05T23:11:29.8542086Z   └─ 20260517000000_booking_notifications/
+2026-10-05T23:11:29.8542425Z     └─ migration.sql
+2026-10-05T23:11:29.8542727Z   └─ 20260520000000_setnull_owner_rels/
+2026-10-05T23:11:29.8543042Z     └─ migration.sql
+2026-10-05T23:11:29.8543633Z   └─ 20260520000001_add_gcal_channel_tracking_to_calendar_connection/
+2026-10-05T23:11:29.8544087Z     └─ migration.sql
+2026-10-05T23:11:29.8544395Z   └─ 20260521000000_add_connect_account/
+2026-10-05T23:11:29.8544708Z     └─ migration.sql
+2026-10-05T23:11:29.8545116Z   └─ 20260524000000_add_sub_coach_assignment_and_idempotency/
+2026-10-05T23:11:29.8545508Z     └─ migration.sql
+2026-10-05T23:11:29.8545812Z   └─ 20260525000000_sub_coach_rls_and_fks/
+2026-10-05T23:11:29.8546127Z     └─ migration.sql
+2026-10-05T23:11:29.8546434Z   └─ 20260525120000_add_coach_brief_tables/
+2026-10-05T23:11:29.8547016Z     └─ migration.sql
+2026-10-05T23:11:29.8547399Z   └─ 20260525130000_add_coach_brief_last_push_date/
+2026-10-05T23:11:29.8547753Z     └─ migration.sql
+2026-10-05T23:11:29.8548095Z   └─ 20260525170000_data_export_one_active_per_user/
+2026-10-05T23:11:29.8548467Z     └─ migration.sql
+2026-10-05T23:11:29.8548772Z   └─ 20260525180000_recent_auth_nonce/
+2026-10-05T23:11:29.8549087Z     └─ migration.sql
+2026-10-05T23:11:29.8549407Z   └─ 20260528000000_stream1_coach_ai_credits/
+2026-10-05T23:11:29.8549740Z     └─ migration.sql
+2026-10-05T23:11:29.8550044Z   └─ 20260528120000_stream1_round1_fixes/
+2026-10-05T23:11:29.8550353Z     └─ migration.sql
+2026-10-05T23:11:29.8550656Z   └─ 20260530000000_coach_ai_engine_v1/
+2026-10-05T23:11:29.8550983Z     └─ migration.sql
+2026-10-05T23:11:29.8551474Z   └─ 20260531000000_wearables_foundation/
+2026-10-05T23:11:29.8551803Z     └─ migration.sql
+2026-10-05T23:11:29.8552216Z   └─ 20260601000000_add_connect_packages_purchases_customers/
+2026-10-05T23:11:29.8552599Z     └─ migration.sql
+2026-10-05T23:11:29.8552906Z   └─ 20260601000000_add_email_send_log/
+2026-10-05T23:11:29.8553217Z     └─ migration.sql
+2026-10-05T23:11:29.8553564Z   └─ 20260601000000_add_exercise_catalog_video/
+2026-10-05T23:11:29.8553909Z     └─ migration.sql
+2026-10-05T23:11:29.8554260Z   └─ 20260602000000_add_connect_fee_split_and_dunning/
+2026-10-05T23:11:29.8554611Z     └─ migration.sql
+2026-10-05T23:11:29.8554989Z   └─ 20260602000000_add_exercise_video_provider_fields/
+2026-10-05T23:11:29.8555351Z     └─ migration.sql
+2026-10-05T23:11:29.8555793Z   └─ 20260603000000_add_connect_payout_reconciliation_refund_dispute/
+2026-10-05T23:11:29.8556223Z     └─ migration.sql
+2026-10-05T23:11:29.8556841Z   └─ 20260604000000_add_team_profile_and_sub_coach_invite/
+2026-10-05T23:11:29.8557266Z     └─ migration.sql
+2026-10-05T23:11:29.8557596Z   └─ 20260604000001_subcoach_invite_token_hash/
+2026-10-05T23:11:29.8557941Z     └─ migration.sql
+2026-10-05T23:11:29.8558277Z   └─ 20260605000000_add_meal_plan_days_json/
+2026-10-05T23:11:29.8558608Z     └─ migration.sql
+2026-10-05T23:11:29.8558937Z   └─ 20260606000000_add_expo_push_token/
+2026-10-05T23:11:29.8559263Z     └─ migration.sql
+2026-10-05T23:11:29.8559598Z   └─ 20260606000001_payment_failure_event_unique/
+2026-10-05T23:11:29.8559957Z     └─ migration.sql
+2026-10-05T23:11:29.8560265Z   └─ 20260606000002_food_entry_client_uuid/
+2026-10-05T23:11:29.8560590Z     └─ migration.sql
+2026-10-05T23:11:29.8560891Z   └─ 20260606000003_rls_financial_tables/
+2026-10-05T23:11:29.8561213Z     └─ migration.sql
+2026-10-05T23:11:29.8561519Z   └─ 20260607000000_rls_remaining_gaps/
+2026-10-05T23:11:29.8561854Z     └─ migration.sql
+2026-10-05T23:11:29.8562227Z   └─ 20260607000001_workout_assignment_completion_payload/
+2026-10-05T23:11:29.8562614Z     └─ migration.sql
+2026-10-05T23:11:29.8562918Z   └─ 20260608000000_rls_team_tables/
+2026-10-05T23:11:29.8563217Z     └─ migration.sql
+2026-10-05T23:11:29.8563536Z   └─ 20260609000000_add_coach_direct_enabled/
+2026-10-05T23:11:29.8563861Z     └─ migration.sql
+2026-10-05T23:11:29.8564167Z   └─ 20260610000000_fasting_unique_active/
+2026-10-05T23:11:29.8564480Z     └─ migration.sql
+2026-10-05T23:11:29.8564808Z   └─ 20260611000000_invite_intended_email/
+2026-10-05T23:11:29.8565119Z     └─ migration.sql
+2026-10-05T23:11:29.8565418Z   └─ 20260611000001_messagedraft_rls/
+2026-10-05T23:11:29.8565726Z     └─ migration.sql
+2026-10-05T23:11:29.8566105Z   └─ 20260612000000_add_message_model_and_checkin_reviewed/
+2026-10-05T23:11:29.8566847Z     └─ migration.sql
+2026-10-05T23:11:29.8567230Z   └─ 20260612000001_message_rls/
+2026-10-05T23:11:29.8567532Z     └─ migration.sql
+2026-10-05T23:11:29.8567858Z   └─ 20260613000000_message_rls_split_update/
+2026-10-05T23:11:29.8568196Z     └─ migration.sql
+2026-10-05T23:11:29.8568500Z   └─ 20260613000001_message_fk_cascade/
+2026-10-05T23:11:29.8568838Z     └─ migration.sql
+2026-10-05T23:11:29.8569173Z   └─ 20260613000002_message_thread_reverse_index/
+2026-10-05T23:11:29.8569524Z     └─ migration.sql
+2026-10-05T23:11:29.8569857Z   └─ 20260614000000_coach_subscription_tier/
+2026-10-05T23:11:29.8570183Z     └─ migration.sql
+2026-10-05T23:11:29.8570566Z   └─ 20260614065425_add_coach_first_payment_notification/
+2026-10-05T23:11:29.8570931Z     └─ migration.sql
+2026-10-05T23:11:29.8571273Z   └─ 20260615000000_drop_coach_direct_enabled/
+2026-10-05T23:11:29.8571610Z     └─ migration.sql
+2026-10-05T23:11:29.8571982Z   └─ 20260616000000_add_message_reports_and_user_blocks/
+2026-10-05T23:11:29.8572357Z     └─ migration.sql
+2026-10-05T23:11:29.8572809Z   └─ 20260617000000_fix_message_report_rls_participation_check/
+2026-10-05T23:11:29.8573203Z     └─ migration.sql
+2026-10-05T23:11:29.8573547Z   └─ 20260618000000_add_rls_payment_revenue_tables/
+2026-10-05T23:11:29.8573918Z     └─ migration.sql
+2026-10-05T23:11:29.8574375Z   └─ 20260619000000_add_churn_intervention/
+2026-10-05T23:11:29.8574715Z     └─ migration.sql
+2026-10-05T23:11:29.8575043Z   └─ 20260620000000_workout_builder_p1_fixes/
+2026-10-05T23:11:29.8575366Z     └─ migration.sql
+2026-10-05T23:11:29.8575697Z   └─ 20260621000000_fix_workout_rls_policies/
+2026-10-05T23:11:29.8576020Z     └─ migration.sql
+2026-10-05T23:11:29.8576335Z   └─ 20260701235900_add_sub_coach_role_value/
+2026-10-05T23:11:29.8577573Z     └─ migration.sql
+2026-10-05T23:11:29.8578004Z   └─ 20260702000000_fix_workout_rls_coach_role/
+2026-10-05T23:11:29.8578359Z     └─ migration.sql
+2026-10-05T23:11:29.8578716Z   └─ 20260703000000_add_coach_brief_generation_lease/
+2026-10-05T23:11:29.8579103Z     └─ migration.sql
+2026-10-05T23:11:29.8579403Z   └─ 20260703000001_add_coach_brief_push_ledger/
+2026-10-05T23:11:29.8579713Z     └─ migration.sql
+2026-10-05T23:11:29.8580034Z   └─ 20260703000002_add_coach_brief_check_constraints/
+2026-10-05T23:11:29.8580397Z     └─ migration.sql
+2026-10-05T23:11:29.8580750Z   └─ 20260704000000_coach_brief_push_ledger_bounded_retry/
+2026-10-05T23:11:29.8581089Z     └─ migration.sql
+2026-10-05T23:11:29.8581433Z   └─ 20260704000000_rls01_helper_searchpath_hibp/
+2026-10-05T23:11:29.8581778Z     └─ migration.sql
+2026-10-05T23:11:29.8582120Z   └─ 20260704000001_coach_brief_cwa_index_concurrent/
+2026-10-05T23:11:29.8582474Z     └─ migration.sql
+2026-10-05T23:11:29.8582776Z   └─ 20260801000000_r43_storefront_phase1/
+2026-10-05T23:11:29.8583091Z     └─ migration.sql
+2026-10-05T23:11:29.8583453Z   └─ 20260803000000_share_token_21char_invalidate_legacy/
+2026-10-05T23:11:29.8583818Z     └─ migration.sql
+2026-10-05T23:11:29.8584212Z   └─ 20260804000000_guest_checkout_retryable_conversion/
+2026-10-05T23:11:29.8584686Z     └─ migration.sql
+2026-10-05T23:11:29.8585051Z   └─ 20260805000000_guest_checkout_pii_retention/
+2026-10-05T23:11:29.8585421Z     └─ migration.sql
+2026-10-05T23:11:29.8585783Z   └─ 20260806000000_share_link_expiry_revoke/
+2026-10-05T23:11:29.8586127Z     └─ migration.sql
+2026-10-05T23:11:29.8586727Z   └─ 20260901000000_r46_landing_page_builder_phase1/
+2026-10-05T23:11:29.8587180Z     └─ migration.sql
+2026-10-05T23:11:29.8587580Z   └─ 20260902000000_r47_landing_pages_phase3_crm_sync/
+2026-10-05T23:11:29.8587965Z     └─ migration.sql
+2026-10-05T23:11:29.8588343Z   └─ 20260903000000_r47_lead_sync_persistent_state/
+2026-10-05T23:11:29.8588727Z     └─ migration.sql
+2026-10-05T23:11:29.8589078Z   └─ 20260903000000_r52_landing_pages_renderer_v2/
+2026-10-05T23:11:29.8589475Z     └─ migration.sql
+2026-10-05T23:11:29.8589807Z   └─ 20260920000000_r48_checkout_hardening/
+2026-10-05T23:11:29.8590161Z     └─ migration.sql
+2026-10-05T23:11:29.8590811Z   └─ 20260921000000_add_refunded_disputed_to_guest_checkout_status/
+2026-10-05T23:11:29.8591275Z     └─ migration.sql
+2026-10-05T23:11:29.8591606Z   └─ 20261001000000_dunning_v1/
+2026-10-05T23:11:29.8591910Z     └─ migration.sql
+2026-10-05T23:11:29.8592267Z   └─ 20261002000000_dunning_v1_send_retry_cas/
+2026-10-05T23:11:29.8592661Z     └─ migration.sql
+2026-10-05T23:11:29.8593115Z   └─ 20261002000000_nudge_v1/
+2026-10-05T23:11:29.8593440Z     └─ migration.sql
+2026-10-05T23:11:29.8593824Z   └─ 20261110000000_ai_action_draft_materialised/
+2026-10-05T23:11:29.8594205Z     └─ migration.sql
+2026-10-05T23:11:29.8594595Z   └─ 20261201000000_stream2_ai_execution_draft_links/
+2026-10-05T23:11:29.8594986Z     └─ migration.sql
+2026-10-05T23:11:29.8595352Z   └─ 20261202000000_pr3_drip_schema_foundation/
+2026-10-05T23:11:29.8595722Z     └─ migration.sql
+2026-10-05T23:11:29.8596098Z   └─ 20261203000000_pr7_meal_plan_drip_drop_unique/
+2026-10-05T23:11:29.8596479Z     └─ migration.sql
+2026-10-05T23:11:29.8597135Z   └─ 20261203100000_pr6_packages_publish_pricing/
+2026-10-05T23:11:29.8597552Z     └─ migration.sql
+2026-10-05T23:11:29.8597927Z   └─ 20261204000000_pr9_drip_resolver_marker/
+2026-10-05T23:11:29.8598297Z     └─ migration.sql
+2026-10-05T23:11:29.8598683Z   └─ 20261205000000_pr10_scheduled_drop_retry_lock/
+2026-10-05T23:11:29.8599073Z     └─ migration.sql
+2026-10-05T23:11:29.8599459Z   └─ 20261206000000_pr12_coach_media_upload_status/
+2026-10-05T23:11:29.8599819Z     └─ migration.sql
+2026-10-05T23:11:29.8600342Z   └─ 20261207000000_pr14_client_purchase_landing_page_id_and_guest_subscription/
+2026-10-05T23:11:29.8600851Z     └─ migration.sql
+2026-10-05T23:11:29.8601319Z   └─ 20261207000001_pr14_client_purchase_landing_page_idx_concurrent/
+2026-10-05T23:11:29.8601792Z     └─ migration.sql
+2026-10-05T23:11:29.8602168Z   └─ 20261208000000_pr15_coach_new_purchase_prefs/
+2026-10-05T23:11:29.8602540Z     └─ migration.sql
+2026-10-05T23:11:29.8602923Z   └─ 20261209000000_pr17_scheduled_drop_push_seq/
+2026-10-05T23:11:29.8603280Z     └─ migration.sql
+2026-10-05T23:11:29.8603659Z   └─ 20261210000000_pr_wave0_ai_quota_ltv_peak/
+2026-10-05T23:11:29.8604035Z     └─ migration.sql
+2026-10-05T23:11:29.8604396Z   └─ 20261211000000_add_sleep_consistency_metrics/
+2026-10-05T23:11:29.8604771Z     └─ migration.sql
+2026-10-05T23:11:29.8605172Z   └─ 20261211000001_seed_sleep_consistency_metric_defs/
+2026-10-05T23:11:29.8605563Z     └─ migration.sql
+2026-10-05T23:11:29.8605902Z   └─ 20261212000000_community_v1_1_schema/
+2026-10-05T23:11:29.8606242Z     └─ migration.sql
+2026-10-05T23:11:29.8606831Z   └─ 20261212000000_rls_helper_search_path/
+2026-10-05T23:11:29.8607193Z     └─ migration.sql
+2026-10-05T23:11:29.8607542Z   └─ 20261212010000_rls_tier2_coach_team/
+2026-10-05T23:11:29.8607885Z     └─ migration.sql
+2026-10-05T23:11:29.8608243Z   └─ 20261213000000_rls_tier1_phi_financial_privacy/
+2026-10-05T23:11:29.8608607Z     └─ migration.sql
+2026-10-05T23:11:29.8608950Z   └─ 20261213000000_rls_tier2_sessions/
+2026-10-05T23:11:29.8609280Z     └─ migration.sql
+2026-10-05T23:11:29.8609776Z   └─ 20261213000000_rls_tier3_nutrition/
+2026-10-05T23:11:29.8610134Z     └─ migration.sql
+2026-10-05T23:11:29.8610471Z   └─ 20261213000000_rls_tier3_workouts/
+2026-10-05T23:11:29.8610801Z     └─ migration.sql
+2026-10-05T23:11:29.8611173Z   └─ 20261213000000_rls_tier4_learning_analytics/
+2026-10-05T23:11:29.8611540Z     └─ migration.sql
+2026-10-05T23:11:29.8611927Z   └─ 20261213000000_rls_tier5_notifications_community/
+2026-10-05T23:11:29.8612295Z     └─ migration.sql
+2026-10-05T23:11:29.8612665Z   └─ 20261214000000_dunning_v2_lockout_recovery/
+2026-10-05T23:11:29.8613014Z     └─ migration.sql
+2026-10-05T23:11:29.8613338Z   └─ 20261215000000_b5_digital_contracts/
+2026-10-05T23:11:29.8613677Z     └─ migration.sql
+2026-10-05T23:11:29.8614001Z   └─ 20261215000000_mwb_1_data_model/
+2026-10-05T23:11:29.8614341Z     └─ migration.sql
+2026-10-05T23:11:29.8614703Z   └─ 20261215000000_payouts_v2_bank_payout_methods/
+2026-10-05T23:11:29.8615090Z     └─ migration.sql
+2026-10-05T23:11:29.8615444Z   └─ 20261215000100_seed_b5_contract_templates/
+2026-10-05T23:11:29.8615817Z     └─ migration.sql
+2026-10-05T23:11:29.8616135Z   └─ 20261215000200_contracts_rls/
+2026-10-05T23:11:29.8616453Z     └─ migration.sql
+2026-10-05T23:11:29.8617122Z   └─ 20261215000300_named_regimes_and_partial_refund_decision/
+2026-10-05T23:11:29.8617736Z     └─ migration.sql
+2026-10-05T23:11:29.8618061Z   └─ 20261216000000_add_roman_chat/
+2026-10-05T23:11:29.8618378Z     └─ migration.sql
+2026-10-05T23:11:29.8618743Z   └─ 20261216000100_add_plan_context_payload/
+2026-10-05T23:11:29.8619087Z     └─ migration.sql
+2026-10-05T23:11:29.8619448Z   └─ 20261216000200_community_classroom_posts/
+2026-10-05T23:11:29.8619803Z     └─ migration.sql
+2026-10-05T23:11:29.8620175Z   └─ 20261217000000_community_voice_notes/
+2026-10-05T23:11:29.8620567Z     └─ migration.sql
+2026-10-05T23:11:29.8620962Z   └─ 20261217000100_community_search_index/
+2026-10-05T23:11:29.8621365Z     └─ migration.sql
+2026-10-05T23:11:29.8621790Z   └─ 20261217000200_community_wearable_prompts/
+2026-10-05T23:11:29.8622221Z     └─ migration.sql
+2026-10-05T23:11:29.8622602Z   └─ 20261218000000_add_coach_reviewed_at/
+2026-10-05T23:11:29.8623004Z     └─ migration.sql
+2026-10-05T23:11:29.8623421Z   └─ 20261218000100_rls_partial_refund_decision/
+2026-10-05T23:11:29.8623849Z     └─ migration.sql
+2026-10-05T23:11:29.8624300Z   └─ 20261218000200_rename_decided_by_coach_user_id/
+2026-10-05T23:11:29.8624741Z     └─ migration.sql
+2026-10-05T23:11:29.8625186Z   └─ 20261219000000_community_wearable_prompts_uuid_id/
+2026-10-05T23:11:29.8625637Z     └─ migration.sql
+2026-10-05T23:11:29.8626086Z   └─ 20261219000000_conv_review_coach_reviewed_at_idx/
+2026-10-05T23:11:29.8626772Z     └─ migration.sql
+2026-10-05T23:11:29.8627178Z   └─ 20261220000000_talent_marketplace_rls/
+2026-10-05T23:11:29.8627608Z     └─ migration.sql
+2026-10-05T23:11:29.8628087Z   └─ 20261220000010_marketplace_idempotency_claim_nonce/
+2026-10-05T23:11:29.8628544Z     └─ migration.sql
+2026-10-05T23:11:29.8628929Z   └─ 20261220000020_marketplace_abuse_signal_rls/
+2026-10-05T23:11:29.8629258Z     └─ migration.sql
+2026-10-05T23:11:29.8629552Z   └─ 20261220000030_marketplace_connect_event/
+2026-10-05T23:11:29.8629848Z     └─ migration.sql
+2026-10-05T23:11:29.8630206Z   └─ 20261220000031_application_applicant_listing_unique/
+2026-10-05T23:11:29.8630574Z     └─ migration.sql
+2026-10-05T23:11:29.8630889Z   └─ 20261221000000_enable_pg_stat_statements/
+2026-10-05T23:11:29.8631258Z     └─ migration.sql
+2026-10-05T23:11:29.8631759Z   └─ 20261221010000_add_signup_ref_to_user/
+2026-10-05T23:11:29.8632301Z     └─ migration.sql
+2026-10-05T23:11:29.8632903Z   └─ 20261222000000_add_extension_pair_codes/
+2026-10-05T23:11:29.8633583Z     └─ migration.sql
+2026-10-05T23:11:29.8633925Z   └─ 20261222000000_scout_ingest_entity/
+2026-10-05T23:11:29.8634221Z     └─ migration.sql
+2026-10-05T23:11:29.8634543Z   └─ 20261222000000_scout_progress_and_completion/
+2026-10-05T23:11:29.8634870Z     └─ migration.sql
+2026-10-05T23:11:29.8635146Z   └─ 20261223000100_scout_import_state/
+2026-10-05T23:11:29.8635638Z     └─ migration.sql
+2026-10-05T23:11:29.8635947Z   └─ 20261223000200_scout_reconstruction/
+2026-10-05T23:11:29.8636235Z     └─ migration.sql
+2026-10-05T23:11:29.8636795Z   └─ 20261223000300_scout_reconstructed_entity/
+2026-10-05T23:11:29.8637131Z     └─ migration.sql
+2026-10-05T23:11:29.8637443Z   └─ 20261224000000_rls_close_public_exposure/
+2026-10-05T23:11:29.8637752Z     └─ migration.sql
+2026-10-05T23:11:29.8638034Z   └─ 20270117000000_durable_import_setup/
+2026-10-05T23:11:29.8638317Z     └─ migration.sql
+2026-10-05T23:11:29.8638623Z   └─ 20270118000000_scout_ledger_platform_expand/
+2026-10-05T23:11:29.8638938Z     └─ migration.sql
+2026-10-05T23:11:29.8639261Z   └─ 20270119000000_scout_ledger_obsolete_writer_fence/
+2026-10-05T23:11:29.8639822Z     └─ migration.sql
+2026-10-05T23:11:29.8640438Z   └─ 20270120000000_scout_identity_ready/
+2026-10-05T23:11:29.8640783Z     └─ migration.sql
+2026-10-05T23:11:29.8641150Z   └─ 20270121000000_scout_identity_contract/
+2026-10-05T23:11:29.8641701Z     └─ migration.sql
+2026-10-05T23:11:29.8642270Z   └─ 20270122000000_scout_native_provenance_expand/
+2026-10-05T23:11:29.8642840Z     └─ migration.sql
+2026-10-05T23:11:29.8643371Z   └─ 20270123000000_scout_run_lifecycle_expand/
+2026-10-05T23:11:29.8643885Z     └─ migration.sql
+2026-10-05T23:11:29.8644608Z   └─ 20270124000000_scout_run_observation_expand/
+2026-10-05T23:11:29.8645118Z     └─ migration.sql
+2026-10-05T23:11:29.8645635Z   └─ 20270125000000_restore_schema_declared_objects/
+2026-10-05T23:11:29.8646152Z     └─ migration.sql
+2026-10-05T23:11:29.8646947Z   └─ 20270203000000_ai_processing_consent_ledger/
+2026-10-05T23:11:29.8647483Z     └─ migration.sql
+2026-10-05T23:11:29.8647980Z   └─ 20270204000000_recipe_private_by_default/
+2026-10-05T23:11:29.8648478Z     └─ migration.sql
+2026-10-05T23:11:29.8648948Z   └─ 20270205000000_invite_grant_bindings/
+2026-10-05T23:11:29.8649420Z     └─ migration.sql
+2026-10-05T23:11:29.8649895Z   └─ 20270210000000_s_fee_charge_settlement/
+2026-10-05T23:11:29.8650392Z     └─ migration.sql
+2026-10-05T23:11:29.8650966Z   └─ 20270211000000_community_reports_voice_notes_and_wins/
+2026-10-05T23:11:29.8651542Z     └─ migration.sql
+2026-10-05T23:11:29.8652025Z   └─ 20270212000000_clinic_onboarding_intake/
+2026-10-05T23:11:29.8652518Z     └─ migration.sql
+2026-10-05T23:11:29.8652990Z   └─ 20270213000000_clinic_engagement/
+2026-10-05T23:11:29.8653458Z     └─ migration.sql
+2026-10-05T23:11:29.8653956Z   └─ 20270216000000_package_first_published_at/
+2026-10-05T23:11:29.8654457Z     └─ migration.sql
+2026-10-05T23:11:29.8654976Z   └─ 20270220000000_data_export_archive_cleanup/
+2026-10-05T23:11:29.8655507Z     └─ migration.sql
+2026-10-05T23:11:29.8656021Z   └─ 20270221000000_data_export_storage_bucket/
+2026-10-05T23:11:29.8656724Z     └─ migration.sql
+2026-10-05T23:11:29.8657300Z   └─ 20270222000000_scheduling_lifecycle_integrity/
+2026-10-05T23:11:29.8657850Z     └─ migration.sql
+2026-10-05T23:11:29.8658363Z   └─ 20270223000000_mwb_program_delivery/
+2026-10-05T23:11:29.8658882Z     └─ migration.sql
+2026-10-05T23:11:29.8659473Z   └─ 20270224000000_build_week_day1_consultation_copy/
+2026-10-05T23:11:29.8660036Z     └─ migration.sql
+2026-10-05T23:11:29.8660557Z   └─ 20270225000000_native_subscription_trials/
+2026-10-05T23:11:29.8661102Z     └─ migration.sql
+2026-10-05T23:11:29.8661616Z   └─ 20270226000000_scheduling_request_expiry/
+2026-10-05T23:11:29.8662151Z     └─ migration.sql
+2026-10-05T23:11:29.8662663Z   └─ 20270301000000_coachless_featured_coach/
+2026-10-05T23:11:29.8663184Z     └─ migration.sql
+2026-10-05T23:11:29.8663760Z   └─ 20270301000000_community_win_coach_matcher/
+2026-10-05T23:11:29.8664302Z     └─ migration.sql
+2026-10-05T23:11:29.8665000Z   └─ 20270301000000_notification_zone_provenance_reminder_generation/
+2026-10-05T23:11:29.8665680Z     └─ migration.sql
+2026-10-05T23:11:29.8666182Z   └─ 20270303000000_messaging_core_actions/
+2026-10-05T23:11:29.8666860Z     └─ migration.sql
+2026-10-05T23:11:29.8667372Z   └─ 20270307000000_push_outbox_quiet_hours/
+2026-10-05T23:11:29.8668079Z     └─ migration.sql
+2026-10-05T23:11:29.8668629Z   └─ 20270311000000_subscription_checkout_terms/
+2026-10-05T23:11:29.8669172Z     └─ migration.sql
+2026-10-05T23:11:29.8669779Z   └─ 20270314000000_charge_refund_transfer_reversal_review/
+2026-10-05T23:11:29.8670384Z     └─ migration.sql
+2026-10-05T23:11:29.8670944Z   └─ 20270317116000_split_ledger_reversal_posting/
+2026-10-05T23:11:29.8671507Z     └─ migration.sql
+2026-10-05T23:11:29.8671854Z       
+2026-10-05T23:11:29.8672328Z All migrations have been successfully applied.
+2026-10-05T23:11:29.8802375Z ##[group]Run npx jest test/community/rls/community-wins-rls.live.spec.ts test/community/rls/community-message-shape.live.spec.ts test/messaging/rls/coach-thread-state-rls.live.spec.ts test/community/community-moderation.e2e.spec.ts test/community/community-reactions.e2e.spec.ts test/community/community-dms.e2e.spec.ts test/community/community-foundation.e2e.spec.ts test/community/community-plan-context.e2e.spec.ts test/community/community-posts.e2e.spec.ts test/community/community-messages.e2e.spec.ts test/community/events/community-events.e2e.spec.ts --runInBand --testTimeout=60000
+2026-10-05T23:11:29.8807121Z [36;1mnpx jest test/community/rls/community-wins-rls.live.spec.ts test/community/rls/community-message-shape.live.spec.ts test/messaging/rls/coach-thread-state-rls.live.spec.ts test/community/community-moderation.e2e.spec.ts test/community/community-reactions.e2e.spec.ts test/community/community-dms.e2e.spec.ts test/community/community-foundation.e2e.spec.ts test/community/community-plan-context.e2e.spec.ts test/community/community-posts.e2e.spec.ts test/community/community-messages.e2e.spec.ts test/community/events/community-events.e2e.spec.ts --runInBand --testTimeout=60000[0m
+2026-10-05T23:11:29.8869659Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:11:29.8869921Z env:
+2026-10-05T23:11:29.8870393Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:29.8870827Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T23:11:29.8871296Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T23:11:29.8871637Z   SUPABASE_URL: http://127.0.0.1:54321
+2026-10-05T23:11:29.8872021Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+2026-10-05T23:11:29.8872412Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T23:11:29.8872686Z ##[endgroup]
+2026-10-05T23:11:33.8312863Z [31m[Nest] 3749  - [39m10/05/2026, 11:11:33 PM [31m  ERROR[39m [38;5;3m[NotificationsService] [39m[31mNotificationsService started without PushDeliveryService: no inbox notification would reach a device.[39m
+2026-10-05T23:11:34.4804199Z PASS test/community/events/community-events.e2e.spec.ts (127 MB heap size)
+2026-10-05T23:11:35.5411469Z PASS test/community/community-foundation.e2e.spec.ts (169 MB heap size)
+2026-10-05T23:11:36.5783595Z PASS test/community/community-plan-context.e2e.spec.ts (233 MB heap size)
+2026-10-05T23:11:37.4215361Z [31m[Nest] 3749  - [39m10/05/2026, 11:11:37 PM [31m  ERROR[39m [38;5;3m[NotificationsService] [39m[31mNotificationsService started without PushDeliveryService: no inbox notification would reach a device.[39m
+2026-10-05T23:11:37.6694930Z [31m[Nest] 3749  - [39m10/05/2026, 11:11:37 PM [31m  ERROR[39m [38;5;3m[ExceptionsHandler] [39mPrismaClientUnknownRequestError: 
+2026-10-05T23:11:37.6695813Z Invalid `tx.notification.create()` invocation in
+2026-10-05T23:11:37.6697212Z /home/runner/work/growth-project-backend/growth-project-backend/src/community/safety/community-moderation-notices.ts:81:25
+2026-10-05T23:11:37.6697750Z 
+2026-10-05T23:11:37.6698306Z   78 if (existing.some((n) => isJsonObject(n.payload) && n.payload.idempotency_key === key)) {
+2026-10-05T23:11:37.6698773Z   79   return 'exists';
+2026-10-05T23:11:37.6698999Z   80 }
+2026-10-05T23:11:37.6699329Z → 81 await tx.notification.create(
+2026-10-05T23:11:37.6699667Z Error occurred during query execution:
+2026-10-05T23:11:37.6701249Z ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "P0001", message: "B-610-13 probe: notice insert refused", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })
+2026-10-05T23:11:37.6703481Z     at ei.handleRequestError [90m(/home/runner/work/growth-project-backend/growth-project-backend/[39mnode_modules/[4m@prisma/client[24m/src/runtime/RequestHandler.ts:237:13[90m)[39m
+2026-10-05T23:11:37.6706884Z     at ei.handleAndLogRequestError [90m(/home/runner/work/growth-project-backend/growth-project-backend/[39mnode_modules/[4m@prisma/client[24m/src/runtime/RequestHandler.ts:174:12[90m)[39m
+2026-10-05T23:11:37.6708572Z     at ei.request [90m(/home/runner/work/growth-project-backend/growth-project-backend/[39mnode_modules/[4m@prisma/client[24m/src/runtime/RequestHandler.ts:143:12[90m)[39m
+2026-10-05T23:11:37.6710223Z     at a [90m(/home/runner/work/growth-project-backend/growth-project-backend/[39mnode_modules/[4m@prisma/client[24m/src/runtime/getPrismaClient.ts:833:24[90m)[39m
+2026-10-05T23:11:37.6711867Z     at storeModerationNotice [90m(/home/runner/work/growth-project-backend/growth-project-backend/[39msrc/community/safety/community-moderation-notices.ts:81:3[90m)[39m
+2026-10-05T23:11:37.6713243Z     at [90m/home/runner/work/growth-project-backend/growth-project-backend/[39msrc/community/moderation/community-moderation.service.ts:471:18
+2026-10-05T23:11:37.6715502Z     at Proxy._transactionWithCallback [90m(/home/runner/work/growth-project-backend/growth-project-backend/[39mnode_modules/[4m@prisma/client[24m/src/runtime/getPrismaClient.ts:722:18[90m)[39m
+2026-10-05T23:11:37.6717251Z     at CommunityModerationService.act [90m(/home/runner/work/growth-project-backend/growth-project-backend/[39msrc/community/moderation/community-moderation.service.ts:449:44[90m)[39m
+2026-10-05T23:11:37.6718739Z     at [90m/home/runner/work/growth-project-backend/growth-project-backend/[39mnode_modules/[4m@nestjs/core[24m/router/router-execution-context.js:47:62
+2026-10-05T23:11:37.6720126Z     at [90m/home/runner/work/growth-project-backend/growth-project-backend/[39mnode_modules/[4m@nestjs/core[24m/router/router-proxy.js:9:17 {
+2026-10-05T23:11:37.6720840Z   clientVersion: [32m'6.19.3'[39m
+2026-10-05T23:11:37.6721103Z }
+2026-10-05T23:11:37.7667453Z PASS test/community/community-moderation.e2e.spec.ts (295 MB heap size)
+2026-10-05T23:11:38.8429562Z PASS test/community/community-messages.e2e.spec.ts (347 MB heap size)
+2026-10-05T23:11:39.6228734Z [31m[Nest] 3749  - [39m10/05/2026, 11:11:39 PM [31m  ERROR[39m [38;5;3m[NotificationsService] [39m[31mNotificationsService started without PushDeliveryService: no inbox notification would reach a device.[39m
+2026-10-05T23:11:39.8233676Z PASS test/community/community-dms.e2e.spec.ts (201 MB heap size)
+2026-10-05T23:11:40.4488175Z PASS test/community/rls/community-wins-rls.live.spec.ts (223 MB heap size)
+2026-10-05T23:11:41.1806125Z [31m[Nest] 3749  - [39m10/05/2026, 11:11:41 PM [31m  ERROR[39m [38;5;3m[NotificationsService] [39m[31mNotificationsService started without PushDeliveryService: no inbox notification would reach a device.[39m
+2026-10-05T23:11:41.4343341Z PASS test/community/community-posts.e2e.spec.ts (272 MB heap size)
+2026-10-05T23:11:41.9339610Z PASS test/messaging/rls/coach-thread-state-rls.live.spec.ts (301 MB heap size)
+2026-10-05T23:11:42.8274893Z PASS test/community/community-reactions.e2e.spec.ts (357 MB heap size)
+2026-10-05T23:11:43.1675852Z PASS test/community/rls/community-message-shape.live.spec.ts (371 MB heap size)
+2026-10-05T23:11:43.1697009Z 
+2026-10-05T23:11:43.1708561Z Test Suites: 11 passed, 11 total
+2026-10-05T23:11:43.1709178Z Tests:       113 passed, 113 total
+2026-10-05T23:11:43.1709673Z Snapshots:   0 total
+2026-10-05T23:11:43.1710080Z Time:        12.407 s
+2026-10-05T23:11:43.1712872Z Ran all test suites matching test/community/rls/community-wins-rls.live.spec.ts|test/community/rls/community-message-shape.live.spec.ts|test/messaging/rls/coach-thread-state-rls.live.spec.ts|test/community/community-moderation.e2e.spec.ts|test/community/community-reactions.e2e.spec.ts|test/community/community-dms.e2e.spec.ts|test/community/community-foundation.e2e.spec.ts|test/community/community-plan-context.e2e.spec.ts|test/community/community-posts.e2e.spec.ts|test/community/community-messages.e2e.spec.ts|test/community/events/community-events.e2e.spec.ts.
+2026-10-05T23:11:44.1757399Z Jest did not exit one second after the test run has completed.
+2026-10-05T23:11:44.1757844Z 
+2026-10-05T23:11:44.1759163Z 'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+2026-10-05T23:12:40.0877584Z Post job cleanup.
+2026-10-05T23:12:40.2031249Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+2026-10-05T23:12:40.2157755Z Post job cleanup.
+2026-10-05T23:12:40.3002503Z [command]/usr/bin/git version
+2026-10-05T23:12:40.3069983Z git version 2.55.0
+2026-10-05T23:12:40.3111368Z Temporarily overriding HOME='/home/runner/work/_temp/639ed783-bedb-484d-a342-cfaa6ea82403' before making global git config changes
+2026-10-05T23:12:40.3113343Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T23:12:40.3118043Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T23:12:40.3148443Z Removing SSH command configuration
+2026-10-05T23:12:40.3155125Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T23:12:40.3190109Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T23:12:40.3411928Z Removing HTTP extra header
+2026-10-05T23:12:40.3416837Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T23:12:40.3448953Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T23:12:40.3665711Z Removing includeIf entries pointing to credentials config files
+2026-10-05T23:12:40.3672501Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T23:12:40.3701107Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T23:12:40.3702099Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T23:12:40.3702902Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T23:12:40.3703503Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T23:12:40.3711569Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T23:12:40.3733801Z /home/runner/work/_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:12:40.3745918Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:12:40.3780420Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T23:12:40.3801765Z /home/runner/work/_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:12:40.3814366Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:12:40.3845950Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T23:12:40.3866466Z /github/runner_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:12:40.3874810Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:12:40.3907225Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T23:12:40.3927994Z /github/runner_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:12:40.3937714Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config
+2026-10-05T23:12:40.3971305Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T23:12:40.4184881Z Removing credentials config '/home/runner/work/_temp/git-credentials-669cc66a-075c-4d7b-8af7-c51902ce2ae7.config'
+2026-10-05T23:12:40.4306000Z Print service container logs: 90f185620af0464c83946953251be0b8_postgres15_a63180
+2026-10-05T23:12:40.4311082Z ##[command]/usr/bin/docker logs --details 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:12:40.4433152Z  The files belonging to this database system will be owned by user "postgres".
+2026-10-05T23:12:40.4436674Z  initdb: warning: enabling "trust" authentication for local connections
+2026-10-05T23:12:40.4441989Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-10-05T23:12:40.4443218Z  This user must also own the server process.
+2026-10-05T23:12:40.4444769Z  2026-10-05 23:10:22.055 UTC [1] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-05T23:12:40.4445531Z  
+2026-10-05T23:12:40.4446347Z  2026-10-05 23:10:22.055 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-10-05T23:12:40.4447206Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-10-05T23:12:40.4448181Z  2026-10-05 23:10:22.055 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-10-05T23:12:40.4448742Z  The default database encoding has accordingly been set to "UTF8".
+2026-10-05T23:12:40.4449598Z  2026-10-05 23:10:22.056 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-05T23:12:40.4450329Z  The default text search configuration will be set to "english".
+2026-10-05T23:12:40.4451115Z  2026-10-05 23:10:22.058 UTC [64] LOG:  database system was shut down at 2026-10-05 23:10:21 UTC
+2026-10-05T23:12:40.4452043Z  
+2026-10-05T23:12:40.4452901Z  2026-10-05 23:10:22.062 UTC [1] LOG:  database system is ready to accept connections
+2026-10-05T23:12:40.4453485Z  Data page checksums are disabled.
+2026-10-05T23:12:40.4454485Z  2026-10-05 23:11:37.565 UTC [139] ERROR:  B-610-13 probe: notice insert refused
+2026-10-05T23:12:40.4454926Z  
+2026-10-05T23:12:40.4455740Z  2026-10-05 23:11:37.565 UTC [139] CONTEXT:  PL/pgSQL function b610_13_notice_probe_f31adeefdbb1() line 1 at RAISE
+2026-10-05T23:12:40.4456764Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-10-05T23:12:40.4459268Z  2026-10-05 23:11:37.565 UTC [139] STATEMENT:  INSERT INTO "public"."Notification" ("id","user_id","kind","payload","body","deep_link","channel","created_at","inbox_hidden") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "public"."Notification"."id", "public"."Notification"."user_id", "public"."Notification"."kind", "public"."Notification"."payload", "public"."Notification"."body", "public"."Notification"."deep_link", "public"."Notification"."channel", "public"."Notification"."read_at", "public"."Notification"."created_at", "public"."Notification"."ai_draft_id", "public"."Notification"."inbox_hidden"
+2026-10-05T23:12:40.4461375Z  creating subdirectories ... ok
+2026-10-05T23:12:40.4462224Z  2026-10-05 23:11:40.150 UTC [142] ERROR:  community.win.moderation_column: only a moderator can hide or unhide a win
+2026-10-05T23:12:40.4462989Z  selecting dynamic shared memory implementation ... posix
+2026-10-05T23:12:40.4463818Z  2026-10-05 23:11:40.150 UTC [142] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 40 at RAISE
+2026-10-05T23:12:40.4464515Z  selecting default max_connections ... 100
+2026-10-05T23:12:40.4465264Z  2026-10-05 23:11:40.150 UTC [142] STATEMENT:  UPDATE "CommunityWin" SET hidden_at = now() WHERE id = $1
+2026-10-05T23:12:40.4465909Z  selecting default shared_buffers ... 128MB
+2026-10-05T23:12:40.4467230Z  2026-10-05 23:11:40.265 UTC [142] ERROR:  community.win.moderation_column: author, coach and visibility cannot be changed
+2026-10-05T23:12:40.4468185Z  selecting default time zone ... Etc/UTC
+2026-10-05T23:12:40.4469075Z  2026-10-05 23:11:40.265 UTC [142] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 32 at RAISE
+2026-10-05T23:12:40.4470488Z  2026-10-05 23:11:40.265 UTC [142] STATEMENT:  UPDATE "CommunityWin" SET visibility = 'public' WHERE id = $1
+2026-10-05T23:12:40.4471724Z  2026-10-05 23:11:40.270 UTC [142] ERROR:  community.win.moderation_column: author, coach and visibility cannot be changed
+2026-10-05T23:12:40.4472945Z  2026-10-05 23:11:40.270 UTC [142] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 32 at RAISE
+2026-10-05T23:12:40.4474039Z  2026-10-05 23:11:40.270 UTC [142] STATEMENT:  UPDATE "CommunityWin" SET coach_id = $1 WHERE id = $2
+2026-10-05T23:12:40.4474663Z  2026-10-05 23:11:40.275 UTC [142] ERROR:  community.win.moderation_column: only a moderator can hide a win
+2026-10-05T23:12:40.4475322Z  2026-10-05 23:11:40.275 UTC [142] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 20 at RAISE
+2026-10-05T23:12:40.4475817Z  2026-10-05 23:11:40.275 UTC [142] STATEMENT:  
+2026-10-05T23:12:40.4476300Z  	          INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility, hidden_at)
+2026-10-05T23:12:40.4477037Z  	          VALUES ($1, $2, $3, 'x', 'y', 'circle', now())
+2026-10-05T23:12:40.4477539Z  2026-10-05 23:11:40.279 UTC [142] ERROR:  new row violates row-level security policy for table "CommunityWin"
+2026-10-05T23:12:40.4478032Z  2026-10-05 23:11:40.279 UTC [142] STATEMENT:  
+2026-10-05T23:12:40.4478453Z  	          INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+2026-10-05T23:12:40.4478884Z  	          VALUES ($1, $2, $3, 'x', 'y', 'public')
+2026-10-05T23:12:40.4479374Z  2026-10-05 23:11:40.294 UTC [142] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+2026-10-05T23:12:40.4480047Z  2026-10-05 23:11:40.294 UTC [142] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+2026-10-05T23:12:40.4480539Z  2026-10-05 23:11:40.294 UTC [142] STATEMENT:  
+2026-10-05T23:12:40.4480960Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+2026-10-05T23:12:40.4481386Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+2026-10-05T23:12:40.4481871Z  2026-10-05 23:11:40.298 UTC [142] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+2026-10-05T23:12:40.4482537Z  2026-10-05 23:11:40.298 UTC [142] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+2026-10-05T23:12:40.4483016Z  2026-10-05 23:11:40.298 UTC [142] STATEMENT:  
+2026-10-05T23:12:40.4483428Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+2026-10-05T23:12:40.4483858Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+2026-10-05T23:12:40.4484325Z  2026-10-05 23:11:40.302 UTC [142] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+2026-10-05T23:12:40.4484996Z  2026-10-05 23:11:40.302 UTC [142] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+2026-10-05T23:12:40.4485484Z  2026-10-05 23:11:40.302 UTC [142] STATEMENT:  
+2026-10-05T23:12:40.4485918Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+2026-10-05T23:12:40.4486336Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+2026-10-05T23:12:40.4487039Z  2026-10-05 23:11:40.306 UTC [142] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+2026-10-05T23:12:40.4487707Z  2026-10-05 23:11:40.306 UTC [142] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+2026-10-05T23:12:40.4488190Z  2026-10-05 23:11:40.306 UTC [142] STATEMENT:  
+2026-10-05T23:12:40.4488607Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+2026-10-05T23:12:40.4489026Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+2026-10-05T23:12:40.4489459Z  2026-10-05 23:11:40.344 UTC [142] ERROR:  permission denied for function community_win_author_coach
+2026-10-05T23:12:40.4490032Z  2026-10-05 23:11:40.344 UTC [142] STATEMENT:  SELECT app.community_win_author_coach($1) AS c
+2026-10-05T23:12:40.4490750Z  2026-10-05 23:11:40.348 UTC [142] ERROR:  permission denied for function community_win_author_coach
+2026-10-05T23:12:40.4491317Z  2026-10-05 23:11:40.348 UTC [142] STATEMENT:  SELECT app.community_win_author_coach($1) AS c
+2026-10-05T23:12:40.4491935Z  2026-10-05 23:11:41.691 UTC [144] ERROR:  new row violates row-level security policy for table "CoachThreadState"
+2026-10-05T23:12:40.4492429Z  2026-10-05 23:11:41.691 UTC [144] STATEMENT:  
+2026-10-05T23:12:40.4492973Z  	        INSERT INTO "CoachThreadState" (id, user_id, coach_id, client_id, muted_until, updated_at)
+2026-10-05T23:12:40.4493415Z  	        VALUES ($1, $2, $3, $4, now(), now())
+2026-10-05T23:12:40.4493882Z  2026-10-05 23:11:41.823 UTC [144] ERROR:  new row violates row-level security policy for table "CoachThreadState"
+2026-10-05T23:12:40.4494369Z  2026-10-05 23:11:41.823 UTC [144] STATEMENT:  
+2026-10-05T23:12:40.4494801Z  	        INSERT INTO "CoachThreadState" (id, user_id, coach_id, client_id, muted_until, updated_at)
+2026-10-05T23:12:40.4495236Z  	        VALUES ($1, $2, $3, $4, now(), now())
+2026-10-05T23:12:40.4495698Z  2026-10-05 23:11:41.827 UTC [144] ERROR:  new row violates row-level security policy for table "CoachThreadState"
+2026-10-05T23:12:40.4496187Z  2026-10-05 23:11:41.827 UTC [144] STATEMENT:  
+2026-10-05T23:12:40.4496880Z  	        INSERT INTO "CoachThreadState" (id, user_id, coach_id, client_id, muted_until, updated_at)
+2026-10-05T23:12:40.4497328Z  	        VALUES ($1, $2, $3, $4, now(), now())
+2026-10-05T23:12:40.4497881Z  2026-10-05 23:11:41.856 UTC [144] ERROR:  duplicate key value violates unique constraint "CoachMessage_sender_id_client_message_id_key"
+2026-10-05T23:12:40.4498757Z  2026-10-05 23:11:41.856 UTC [144] DETAIL:  Key (sender_id, client_message_id)=(e31eb74e-8c57-423a-a797-b8911803a9c6, 4f5c28d3-key) already exists.
+2026-10-05T23:12:40.4502196Z  2026-10-05 23:11:41.856 UTC [144] STATEMENT:  INSERT INTO "public"."CoachMessage" ("id","coach_id","client_id","sender_id","body","created_at","client_message_id") VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING "public"."CoachMessage"."id", "public"."CoachMessage"."coach_id", "public"."CoachMessage"."client_id", "public"."CoachMessage"."sender_id", "public"."CoachMessage"."body", "public"."CoachMessage"."voice_url", "public"."CoachMessage"."voice_duration_sec", "public"."CoachMessage"."voice_size_bytes", "public"."CoachMessage"."voice_content_type", "public"."CoachMessage"."created_at", "public"."CoachMessage"."read_at", "public"."CoachMessage"."ai_draft_id", "public"."CoachMessage"."welcome_job_id", "public"."CoachMessage"."client_message_id", "public"."CoachMessage"."reply_to_id", "public"."CoachMessage"."edited_at", "public"."CoachMessage"."deleted_at", "public"."CoachMessage"."deleted_by_id", "public"."CoachMessage"."pinned_at", "public"."CoachMessage"."pinned_by_id"
+2026-10-05T23:12:40.4505688Z  2026-10-05 23:11:43.013 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4507699Z  2026-10-05 23:11:43.013 UTC [154] DETAIL:  Failing row contains (662a33d3-0167-450e-83c5-a406ec39e415, 2026-10-05 23:11:43.013227+00, f92c34ae-cc22-4df6-be9b-478a7c566015, null, cohort, null, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, null, b2286b42-2c26-43c2-9f0d-bcceef703a04, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.013227+00, null).
+2026-10-05T23:12:40.4509123Z  2026-10-05 23:11:43.013 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4509420Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4509759Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4510149Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4510450Z  	      VALUES
+2026-10-05T23:12:40.4510643Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4510865Z  	         $3::uuid,
+2026-10-05T23:12:40.4511116Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4511431Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4512151Z  2026-10-05 23:11:43.110 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4513810Z  2026-10-05 23:11:43.110 UTC [154] DETAIL:  Failing row contains (f3c8148f-7877-4fbc-9af0-474e061c7e41, 2026-10-05 23:11:43.109961+00, f92c34ae-cc22-4df6-be9b-478a7c566015, null, cohort, null, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.109961+00, null).
+2026-10-05T23:12:40.4515221Z  2026-10-05 23:11:43.110 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4515506Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4515837Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4516221Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4516719Z  	      VALUES
+2026-10-05T23:12:40.4516935Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4517163Z  	         $3::uuid,
+2026-10-05T23:12:40.4517415Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4517722Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4518319Z  2026-10-05 23:11:43.111 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4520030Z  2026-10-05 23:11:43.111 UTC [154] DETAIL:  Failing row contains (18412461-289f-469b-bb09-42099fc7a47f, 2026-10-05 23:11:43.111841+00, f92c34ae-cc22-4df6-be9b-478a7c566015, null, cohort, null, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, community_post_comment, null, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.111841+00, null).
+2026-10-05T23:12:40.4521397Z  2026-10-05 23:11:43.111 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4521681Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4522003Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4522388Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4522678Z  	      VALUES
+2026-10-05T23:12:40.4522863Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4523075Z  	         $3::uuid,
+2026-10-05T23:12:40.4523327Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4523632Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4524218Z  2026-10-05 23:11:43.113 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4525993Z  2026-10-05 23:11:43.113 UTC [154] DETAIL:  Failing row contains (622d3092-540a-4315-857f-569af39a3dfa, 2026-10-05 23:11:43.113257+00, f92c34ae-cc22-4df6-be9b-478a7c566015, null, cohort, null, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, plan_week, dfc0725c-c2f3-4abc-9953-32ac27151d0d, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.113257+00, null).
+2026-10-05T23:12:40.4527668Z  2026-10-05 23:11:43.113 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4527960Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4528283Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4528658Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4528957Z  	      VALUES
+2026-10-05T23:12:40.4529143Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4529356Z  	         $3::uuid,
+2026-10-05T23:12:40.4529599Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4529906Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4530494Z  2026-10-05 23:11:43.114 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4532461Z  2026-10-05 23:11:43.114 UTC [154] DETAIL:  Failing row contains (4f0fcc21-9f17-4410-8843-f57b0f700bd6, 2026-10-05 23:11:43.114823+00, f92c34ae-cc22-4df6-be9b-478a7c566015, null, cohort, dm:e491f47a, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, community_post_comment, 7711f447-e5fa-4a62-bd65-b86b6dab04f1, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.114823+00, null).
+2026-10-05T23:12:40.4533988Z  2026-10-05 23:11:43.114 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4534372Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4534699Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4535076Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4535366Z  	      VALUES
+2026-10-05T23:12:40.4535562Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4535779Z  	         $3::uuid,
+2026-10-05T23:12:40.4536034Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4536345Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4537194Z  2026-10-05 23:11:43.116 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4538972Z  2026-10-05 23:11:43.116 UTC [154] DETAIL:  Failing row contains (96616dfa-4d1a-4fd8-ada0-27c4f065208f, 2026-10-05 23:11:43.116466+00, f92c34ae-cc22-4df6-be9b-478a7c566015, 01cd0961-96af-47e9-8981-1e5da4f3ee41, cohort, dm:e491f47a, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.116466+00, null).
+2026-10-05T23:12:40.4540432Z  2026-10-05 23:11:43.116 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4540725Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4541056Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4541449Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4541743Z  	      VALUES
+2026-10-05T23:12:40.4541937Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4542151Z  	         $3::uuid,
+2026-10-05T23:12:40.4542405Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4542713Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4543298Z  2026-10-05 23:11:43.117 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4545064Z  2026-10-05 23:11:43.117 UTC [154] DETAIL:  Failing row contains (838be3e7-1c00-4323-b5ad-4f9e77ffca2c, 2026-10-05 23:11:43.117703+00, f92c34ae-cc22-4df6-be9b-478a7c566015, 01cd0961-96af-47e9-8981-1e5da4f3ee41, dm, dm:e491f47a, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.117703+00, null).
+2026-10-05T23:12:40.4546472Z  2026-10-05 23:11:43.117 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4546983Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4547314Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4547700Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4547994Z  	      VALUES
+2026-10-05T23:12:40.4548181Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4548398Z  	         $3::uuid,
+2026-10-05T23:12:40.4548644Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4548955Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4549537Z  2026-10-05 23:11:43.119 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4551162Z  2026-10-05 23:11:43.119 UTC [154] DETAIL:  Failing row contains (d222f25a-ac0e-41e8-92f4-0239ba1b758a, 2026-10-05 23:11:43.119074+00, f92c34ae-cc22-4df6-be9b-478a7c566015, null, dm, null, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.119074+00, null).
+2026-10-05T23:12:40.4552614Z  2026-10-05 23:11:43.119 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4552908Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4553242Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4553633Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4553937Z  	      VALUES
+2026-10-05T23:12:40.4554233Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4554449Z  	         $3::uuid,
+2026-10-05T23:12:40.4554698Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4554999Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4555587Z  2026-10-05 23:11:43.120 UTC [154] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+2026-10-05T23:12:40.4557650Z  2026-10-05 23:11:43.120 UTC [154] DETAIL:  Failing row contains (59b3ead0-9027-4462-8f85-5dcad7cc27b0, 2026-10-05 23:11:43.120404+00, f92c34ae-cc22-4df6-be9b-478a7c566015, null, dm, null, null, 651a6ebf-3852-45a8-9eec-91d9aa699729, text, shape probe, null, null, null, null, community_post_comment, 7da9e854-5ee0-48d0-9908-bde2692d4184, null, null, null, null, null, null, active, null, 2026-10-05 23:11:43.120404+00, null).
+2026-10-05T23:12:40.4559140Z  2026-10-05 23:11:43.120 UTC [154] STATEMENT:  
+2026-10-05T23:12:40.4559428Z  	      INSERT INTO community_messages
+2026-10-05T23:12:40.4559756Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+2026-10-05T23:12:40.4560152Z  	         plan_context_type, plan_context_id, updated_at)
+2026-10-05T23:12:40.4560448Z  	      VALUES
+2026-10-05T23:12:40.4560636Z  	        ($1::uuid, $2::uuid,
+2026-10-05T23:12:40.4560866Z  	         $3::uuid,
+2026-10-05T23:12:40.4561118Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+2026-10-05T23:12:40.4561428Z  	         $7, $8::uuid, now())
+2026-10-05T23:12:40.4561669Z  creating configuration files ... ok
+2026-10-05T23:12:40.4561946Z  running bootstrap script ... ok
+2026-10-05T23:12:40.4562237Z  performing post-bootstrap initialization ... ok
+2026-10-05T23:12:40.4562575Z  syncing data to disk ... ok
+2026-10-05T23:12:40.4562800Z  
+2026-10-05T23:12:40.4562964Z  
+2026-10-05T23:12:40.4563185Z  Success. You can now start the database server using:
+2026-10-05T23:12:40.4563479Z  
+2026-10-05T23:12:40.4563711Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-10-05T23:12:40.4564017Z  
+2026-10-05T23:12:40.4564657Z  waiting for server to start....2026-10-05 23:10:21.819 UTC [50] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-05T23:12:40.4565548Z  2026-10-05 23:10:21.820 UTC [50] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-05T23:12:40.4566115Z  2026-10-05 23:10:21.822 UTC [53] LOG:  database system was shut down at 2026-10-05 23:10:21 UTC
+2026-10-05T23:12:40.4566776Z  2026-10-05 23:10:21.826 UTC [50] LOG:  database system is ready to accept connections
+2026-10-05T23:12:40.4567151Z   done
+2026-10-05T23:12:40.4567332Z  server started
+2026-10-05T23:12:40.4567523Z  
+2026-10-05T23:12:40.4567840Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-10-05T23:12:40.4568230Z  
+2026-10-05T23:12:40.4568480Z  2026-10-05 23:10:21.936 UTC [50] LOG:  received fast shutdown request
+2026-10-05T23:12:40.4579988Z  waiting for server to shut down....2026-10-05 23:10:21.937 UTC [50] LOG:  aborting any active transactions
+2026-10-05T23:12:40.4580737Z  2026-10-05 23:10:21.939 UTC [50] LOG:  background worker "logical replication launcher" (PID 56) exited with exit code 1
+2026-10-05T23:12:40.4581290Z  2026-10-05 23:10:21.939 UTC [51] LOG:  shutting down
+2026-10-05T23:12:40.4581690Z  2026-10-05 23:10:21.939 UTC [51] LOG:  checkpoint starting: shutdown immediate
+2026-10-05T23:12:40.4582868Z  2026-10-05 23:10:21.941 UTC [51] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+2026-10-05T23:12:40.4583823Z  2026-10-05 23:10:21.945 UTC [50] LOG:  database system is shut down
+2026-10-05T23:12:40.4584167Z   done
+2026-10-05T23:12:40.4584347Z  server stopped
+2026-10-05T23:12:40.4584534Z  
+2026-10-05T23:12:40.4584773Z  PostgreSQL init process complete; ready for start up.
+2026-10-05T23:12:40.4585180Z  
+2026-10-05T23:12:40.4590546Z Stop and remove container: 90f185620af0464c83946953251be0b8_postgres15_a63180
+2026-10-05T23:12:40.4595341Z ##[command]/usr/bin/docker rm --force 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:12:40.5740957Z 1635d72f71fdc2c06ebb2994fb8ab87baf119b9e435d7522eac0531c1d642039
+2026-10-05T23:12:40.5768464Z Remove container network: github_network_39eef9274e4d4bbdbd304e4eaffbdb0e
+2026-10-05T23:12:40.5772799Z ##[command]/usr/bin/docker network rm github_network_39eef9274e4d4bbdbd304e4eaffbdb0e
+2026-10-05T23:12:40.6903970Z github_network_39eef9274e4d4bbdbd304e4eaffbdb0e
+2026-10-05T23:12:40.6982547Z Cleaning up orphan processes

@@ -1,0 +1,248 @@
+diff --git a/eas.json b/eas.json
+index ce1b8af..a87a56f 100644
+--- a/eas.json
++++ b/eas.json
+@@ -46,6 +46,7 @@
+       "channel": "clinic",
+       "environment": "production",
+       "env": {
++        "TGP_ANDROID_HEALTH_CONNECT": "1",
+         "EXPO_PUBLIC_USE_MOCK_COMMAND_CENTER": "false",
+         "EXPO_PUBLIC_NOTIFICATIONS_MOCK": "false",
+         "EXPO_PUBLIC_FF_CLIENT_TUTORIAL": "true",
+@@ -54,9 +55,7 @@
+         "EXPO_PUBLIC_FF_COMMUNITY_COHORTS": "true",
+         "EXPO_PUBLIC_FF_COACH_BRIEF": "true",
+         "EXPO_PUBLIC_FF_CONSULTATION_ONBOARDING": "true",
+-        "EXPO_PUBLIC_FF_COMMUNITY_DM": "false",
+-        "EXPO_PUBLIC_FF_MWB_PROGRAMS": "true",
+-        "EXPO_PUBLIC_FF_MWB_AUTOSAVE": "true"
++        "EXPO_PUBLIC_FF_COMMUNITY_DM": "false"
+       }
+     }
+   }
+diff --git a/src/api/programsApi.ts b/src/api/programsApi.ts
+index 316c167..b4f438a 100644
+--- a/src/api/programsApi.ts
++++ b/src/api/programsApi.ts
+@@ -316,33 +316,70 @@ export const programsApi = {
+       )
+     ).data,
+ 
+-  /** Active clients the coach can assign to (the coach roster route). */
++  /**
++   * Every active client the coach can assign to (the coach roster route).
++   *
++   * B-355-3 / B-358-1: GET /coach/clients answers one page (`take` rows, 20
++   * by default, at most 50) ordered newest first, and pages by the last row's
++   * id. Read every page, so a coach with more than one page sees
++   * the whole roster. Any page that fails, or a reply that is not a list,
++   * fails the whole load: the picker never shows a partial list as if it
++   * were complete.
++   */
+   assignableClients: async (): Promise<AssignableClient[]> => {
+-    const res = await coachApi.getClients("active");
+-    const rows: unknown = res.data;
+-    if (!Array.isArray(rows)) return [];
+-    const out: AssignableClient[] = [];
+-    for (const row of rows) {
+-      if (!row || typeof row !== "object") continue;
+-      const r = row as {
+-        id?: unknown;
+-        name?: unknown;
+-        email?: unknown;
+-        archived_at?: unknown;
+-      };
+-      if (typeof r.id !== "string" || r.archived_at) continue;
+-      const email = typeof r.email === "string" ? r.email : "";
+-      const name =
+-        typeof r.name === "string" && r.name.trim() !== ""
+-          ? r.name.trim()
+-          : email || "Unnamed client";
+-      out.push({ id: r.id, name, email });
++    const byId = new Map<string, AssignableClient>();
++    let cursor: string | undefined;
++    for (let page = 0; ; page += 1) {
++      if (page >= ROSTER_MAX_PAGES) throw new RosterIncompleteError();
++      const res = await coachApi.getClients("active", cursor, ROSTER_PAGE_SIZE);
++      const rows: unknown = res.data;
++      if (!Array.isArray(rows)) throw new RosterIncompleteError();
++      for (const row of rows) {
++        if (!row || typeof row !== "object") continue;
++        const r = row as {
++          id?: unknown;
++          name?: unknown;
++          email?: unknown;
++          archived_at?: unknown;
++        };
++        if (typeof r.id !== "string" || r.archived_at) continue;
++        const email = typeof r.email === "string" ? r.email : "";
++        const name =
++          typeof r.name === "string" && r.name.trim() !== ""
++            ? r.name.trim()
++            : email || "Unnamed client";
++        byId.set(r.id, { id: r.id, name, email });
++      }
++      if (rows.length < ROSTER_PAGE_SIZE) break;
++      const last = rows[rows.length - 1] as { id?: unknown } | null;
++      if (!last || typeof last.id !== "string" || last.id === cursor)
++        throw new RosterIncompleteError();
++      cursor = last.id;
+     }
++    const out = Array.from(byId.values());
+     out.sort((a, b) => a.name.localeCompare(b.name));
+     return out;
+   },
+ };
+ 
++/** Rows asked for per roster page (sent as `take`; the backend default). */
++export const ROSTER_PAGE_SIZE = 20;
++/** Pages read before the load stops (2,000 clients). */
++export const ROSTER_MAX_PAGES = 100;
++
++/**
++ * The full client roster could not be read (a reply that is not a list, or a
++ * roster past the page bound), so no partial list is shown. Carries the
++ * `client_roster_incomplete` code programErrors maps to specific copy.
++ */
++export class RosterIncompleteError extends Error {
++  readonly code = "client_roster_incomplete";
++  constructor() {
++    super("the client roster could not be read in full");
++    this.name = "RosterIncompleteError";
++  }
++}
++
+ // ─── pure helpers (unit-tested) ────────────────────────────────────────────
+ 
+ /** Split client ids into request-sized chunks (server cap 50). */
+diff --git a/src/api/workoutAutosaveApi.ts b/src/api/workoutAutosaveApi.ts
+index 9f9e9e8..94fee6a 100644
+--- a/src/api/workoutAutosaveApi.ts
++++ b/src/api/workoutAutosaveApi.ts
+@@ -217,16 +217,45 @@ export type UndoResponse = z.infer<typeof UndoResponseSchema>;
+  * 409 conflict body (mirror AutosaveConflictDto). Both discriminated causes
+  * share this shape; both carry the current head index + a freshly-derived
+  * lock_token so the client can rebase and retry without a separate refetch.
++ *
++ * Not strict (B-355-1): the reply arrives through the backend error filter,
++ * which adds its envelope (statusCode, code, message, timestamp, path,
++ * request_id) next to the allow-listed `head_revision_index` and
++ * `lock_token`. Unknown keys are dropped from the parsed value. Parse it with
++ * {@link parseNamedConflict}, which reads the cause from `code` or `error`.
+  */
+-export const AutosaveConflictSchema = z
+-  .object({
+-    error: z.enum(['autosave_conflict_retry', 'autosave_lock_stale']),
+-    head_revision_index: z.number().int().min(0),
+-    lock_token: z.string().regex(LOCK_TOKEN_RE),
+-  })
+-  .strict();
++export const AutosaveConflictSchema = z.object({
++  error: z.enum(['autosave_conflict_retry', 'autosave_lock_stale']),
++  head_revision_index: z.number().int().min(0),
++  lock_token: z.string().regex(LOCK_TOKEN_RE),
++});
+ export type AutosaveConflict = z.infer<typeof AutosaveConflictSchema>;
+ 
++/**
++ * The machine name a 409 reply carries: the error filter's `code` when set,
++ * else the service's `error`. Null when the body names neither.
++ */
++export function conflictNameOf(data: unknown): string | null {
++  if (!data || typeof data !== 'object') return null;
++  const d = data as { code?: unknown; error?: unknown };
++  if (typeof d.code === 'string' && d.code !== '') return d.code;
++  if (typeof d.error === 'string' && d.error !== '') return d.error;
++  return null;
++}
++
++/** Parse a 409 body with `schema`, reading its cause through {@link conflictNameOf}. */
++function parseNamedConflict<T>(
++  schema: z.ZodType<T>,
++  data: unknown,
++): T | undefined {
++  if (!data || typeof data !== 'object') return undefined;
++  const parsed = schema.safeParse({
++    ...(data as Record<string, unknown>),
++    error: conflictNameOf(data),
++  });
++  return parsed.success ? parsed.data : undefined;
++}
++
+ /**
+  * 409 body of a fenced undo whose `expected_head_index` no longer matches the
+  * plan head (S-MWB-3, backend #640). Carries the current head and a fresh lock
+@@ -342,12 +371,11 @@ function fromAxios(err: unknown): WorkoutAutosaveApiError {
+     const status = err.response?.status ?? 0;
+     const kind = classify(status);
+     if (kind === 'conflict') {
+-      const parsed = AutosaveConflictSchema.safeParse(err.response?.data);
+       return new WorkoutAutosaveApiError(
+         'conflict',
+         status,
+         'autosave conflict — the plan moved ahead; rebase and retry',
+-        parsed.success ? parsed.data : undefined,
++        parseNamedConflict(AutosaveConflictSchema, err.response?.data),
+         err,
+       );
+     }
+@@ -502,15 +530,29 @@ export const workoutAutosaveApi = {
+     } catch (err) {
+       const mapped = fromAxios(err);
+       if (mapped.kind === 'conflict' && axios.isAxiosError(err)) {
+-        const moved = UndoHeadMovedSchema.safeParse(err.response?.data);
+-        if (moved.success) {
++        const data: unknown = err.response?.data;
++        const moved = parseNamedConflict(UndoHeadMovedSchema, data);
++        if (moved) {
+           throw new WorkoutAutosaveApiError(
+             'conflict',
+             409,
+             'undo refused: the plan head moved since the undo was requested',
+             undefined,
+             err,
+-            moved.data,
++            moved,
++          );
++        }
++        if (conflictNameOf(data) === 'undo_head_moved') {
++          // B-356-1: the head moved (possibly because THIS undo landed on an
++          // earlier attempt) but the reply lacks the current head or lock
++          // token. That is not a definite refusal: report an unreadable
++          // answer so the screen keeps editing paused and re-checks.
++          throw new WorkoutAutosaveApiError(
++            'contract',
++            409,
++            'undo answered undo_head_moved without the current head and lock token',
++            undefined,
++            err,
+           );
+         }
+       }
+diff --git a/src/services/api.ts b/src/services/api.ts
+index 7959306..30161a7 100644
+--- a/src/services/api.ts
++++ b/src/services/api.ts
+@@ -581,8 +581,19 @@ export const habitsApi = {
+ };
+ 
+ export const coachApi = {
+-  getClients: (status?: 'active' | 'archived' | 'all') =>
+-    api.get('/coach/clients' + (status ? `?status=${status}` : '')),
++  /** One roster page; `cursor` is the last row id of the previous page. */
++  getClients: (
++    status?: 'active' | 'archived' | 'all',
++    cursor?: string,
++    take?: number,
++  ) => {
++    const query = new URLSearchParams();
++    if (status) query.set('status', status);
++    if (cursor) query.set('cursor', cursor);
++    if (take) query.set('take', String(take));
++    const qs = query.toString();
++    return api.get('/coach/clients' + (qs ? `?${qs}` : ''));
++  },
+   archiveClient: (clientId: string) => api.post(`/coach/clients/${clientId}/archive`),
+   unarchiveClient: (clientId: string) => api.post(`/coach/clients/${clientId}/unarchive`),
+   getClientTimeline: (clientId: string, days?: number) =>

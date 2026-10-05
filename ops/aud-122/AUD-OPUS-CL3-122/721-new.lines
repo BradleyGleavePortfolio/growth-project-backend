@@ -1,0 +1,808 @@
++      - name: Run coachless featured-coach live RLS suite (A1-COACHLESS)
++        # Applies prisma/migrations/20270301000000_coachless_featured_coach
++        # verbatim on top of the shim + RLS-01 bootstrap + hardened helpers,
++        # then proves self-only reads of CoachCodeRedemption and
++        # CoachlessPromptState (no coach/owner branch), owner-only reads of
++        # FeaturedCoachConfig, no non-service writes, anon deny, CHECK/unique/
++        # FK cascade behaviour and down/up. Refuses to skip under CI=true.
++        run: npx jest --config jest.rls.config.js test/rls/coachless-rls.spec.ts --runInBand --testTimeout=60000
++        env:
++          NODE_OPTIONS: --max-old-space-size=4096
++
++-- Down for 20270301000000_coachless_featured_coach. Drops the owner's
++-- featured-coach offer copy, the redemption ledger and the Roman card state;
++-- use only for a confirmed pre-launch defect.
++DROP TABLE IF EXISTS "CoachlessPromptState";
++DROP TABLE IF EXISTS "CoachCodeRedemption";
++DROP TABLE IF EXISTS "FeaturedCoachConfig";
++-- A1-COACHLESS — coachless Home featured-coach config, coach-code redemption
++-- ledger and the scripted Roman card state.
++--
++-- Additive-only. Creates three tables, their indexes, FKs, CHECK constraints
++-- and RLS. No existing table, column, index or constraint is altered or
++-- dropped. The User / CoachPackage back-relations in schema.prisma are
++-- Prisma-virtual and emit no DDL.
++--
++-- RLS POLICY CITATION (ENGINEERING_RULES §2), helpers from
++-- 20261212000000_rls_helper_search_path / 20260704000000_rls01_helper_searchpath_hibp:
++--   app.current_user_id()  session GUC set by RlsContextInterceptor
++--   app.is_owner()         platform owner context
++--
++-- FeaturedCoachConfig (platform singleton; owner-edited offer copy):
++--   p_featuredcoachconfig_service_role_all  service_role ALL (server reads, owner PUT)
++--   p_featuredcoachconfig_select_owner      SELECT platform owner only
++--   no public INSERT/UPDATE/DELETE (written by the owner route through the server)
++--   RESTRICTIVE anon deny-all
++--   Clients never read this table directly: GET /coachless/home serves a
++--   projection of it (no updated_by, no caps they do not need).
++--
++-- CoachCodeRedemption (idempotency ledger + attempt record; tenancy: self):
++--   p_coachcoderedemption_service_role_all  service_role ALL
++--   p_coachcoderedemption_select_self       SELECT the redeeming user only
++--   no public INSERT/UPDATE/DELETE; no owner or coach branch (a coach never
++--   reads another user's redemption attempts through RLS)
++--   RESTRICTIVE anon deny-all
++--
++-- CoachlessPromptState (Roman card frequency cap + persisted "Not now"):
++--   p_coachlesspromptstate_service_role_all  service_role ALL
++--   p_coachlesspromptstate_select_self       SELECT the user only
++--   no public INSERT/UPDATE/DELETE
++--   RESTRICTIVE anon deny-all
++--
++-- Account erasure: CoachCodeRedemption and CoachlessPromptState cascade with
++-- the User row; FeaturedCoachConfig.coach_user_id is SET NULL (the offer
++-- turns itself off because no coach resolves).
++--
++-- Rollback: down.sql drops the three tables (loses the owner's offer copy and
++-- the redemption ledger; only for a confirmed pre-launch defect). Otherwise
++-- fix forward.
++
++SET lock_timeout = '5s';
++
++-- CreateTable
++CREATE TABLE "FeaturedCoachConfig" (
++    "id" TEXT NOT NULL DEFAULT 'default',
++    "coach_user_id" TEXT,
++    "code" TEXT,
++    "package_id" TEXT,
++    "banner_title" TEXT NOT NULL,
++    "offer_text" TEXT,
++    "roman_pitch_text" TEXT,
++    "accepting_clients" BOOLEAN NOT NULL DEFAULT false,
++    "roman_enabled" BOOLEAN NOT NULL DEFAULT false,
++    "roman_min_hours_between" INTEGER NOT NULL DEFAULT 24,
++    "roman_max_per_week" INTEGER NOT NULL DEFAULT 3,
++    "roman_snooze_days" INTEGER NOT NULL DEFAULT 14,
++    "roman_max_not_now" INTEGER NOT NULL DEFAULT 2,
++    "updated_by_user_id" TEXT,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "FeaturedCoachConfig_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "CoachCodeRedemption" (
++    "id" TEXT NOT NULL,
++    "user_id" TEXT NOT NULL,
++    "idempotency_key" TEXT NOT NULL,
++    "request_hash" TEXT NOT NULL,
++    "status" TEXT NOT NULL DEFAULT 'in_progress',
++    "outcome" TEXT,
++    "coach_id" TEXT,
++    "http_status" INTEGER,
++    "response" JSONB,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "CoachCodeRedemption_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "CoachlessPromptState" (
++    "user_id" TEXT NOT NULL,
++    "roman_seen_count" INTEGER NOT NULL DEFAULT 0,
++    "roman_window_started_at" TIMESTAMP(3),
++    "roman_last_seen_at" TIMESTAMP(3),
++    "roman_not_now_count" INTEGER NOT NULL DEFAULT 0,
++    "roman_not_now_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "CoachlessPromptState_pkey" PRIMARY KEY ("user_id")
++);
++
++-- CreateIndex
++CREATE INDEX "CoachCodeRedemption_user_id_created_at_idx" ON "CoachCodeRedemption"("user_id", "created_at");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "CoachCodeRedemption_user_id_idempotency_key_key" ON "CoachCodeRedemption"("user_id", "idempotency_key");
++
++-- AddForeignKey
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_coach_user_id_fkey" FOREIGN KEY ("coach_user_id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_package_id_fkey" FOREIGN KEY ("package_id") REFERENCES "CoachPackage"("id") ON DELETE SET NULL ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "CoachCodeRedemption" ADD CONSTRAINT "CoachCodeRedemption_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "CoachlessPromptState" ADD CONSTRAINT "CoachlessPromptState_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- CHECK constraints (not modelled by Prisma; schema parity ignores them).
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_singleton_check" CHECK ("id" = 'default');
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_text_check" CHECK (
++    length("banner_title") BETWEEN 1 AND 120
++    AND ("offer_text" IS NULL OR length("offer_text") BETWEEN 1 AND 200)
++    AND ("roman_pitch_text" IS NULL OR length("roman_pitch_text") BETWEEN 1 AND 400)
++    AND ("code" IS NULL OR "code" ~ '^[A-Za-z0-9-]{3,32}$')
++);
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_caps_check" CHECK (
++    "roman_min_hours_between" BETWEEN 1 AND 720
++    AND "roman_max_per_week" BETWEEN 1 AND 14
++    AND "roman_snooze_days" BETWEEN 1 AND 365
++    AND "roman_max_not_now" BETWEEN 1 AND 10
++);
++ALTER TABLE "CoachCodeRedemption" ADD CONSTRAINT "CoachCodeRedemption_status_check" CHECK ("status" IN ('in_progress', 'completed', 'failed'));
++ALTER TABLE "CoachCodeRedemption" ADD CONSTRAINT "CoachCodeRedemption_key_check" CHECK (
++    "idempotency_key" ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
++    AND "request_hash" ~ '^[0-9a-f]{64}$'
++);
++ALTER TABLE "CoachlessPromptState" ADD CONSTRAINT "CoachlessPromptState_counts_check" CHECK ("roman_seen_count" >= 0 AND "roman_not_now_count" >= 0);
++
++-- ─── FeaturedCoachConfig ──────────────────────────────────────────────
++ALTER TABLE "FeaturedCoachConfig" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "FeaturedCoachConfig" FORCE ROW LEVEL SECURITY;
++REVOKE ALL ON TABLE "FeaturedCoachConfig" FROM anon;
++
++DROP POLICY IF EXISTS "p_featuredcoachconfig_service_role_all" ON "FeaturedCoachConfig";
++CREATE POLICY "p_featuredcoachconfig_service_role_all" ON "FeaturedCoachConfig" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_featuredcoachconfig_service_role_all" ON "FeaturedCoachConfig" IS 'Primitive A: service_role access for the server read path and the audited owner PUT.';
++
++DROP POLICY IF EXISTS "p_featuredcoachconfig_select_owner" ON "FeaturedCoachConfig";
++CREATE POLICY "p_featuredcoachconfig_select_owner" ON "FeaturedCoachConfig" AS PERMISSIVE FOR SELECT TO public USING (app.is_owner());
++COMMENT ON POLICY "p_featuredcoachconfig_select_owner" ON "FeaturedCoachConfig" IS 'Platform owner reads the featured-coach config; clients read a server projection only. No public writes.';
++
++DROP POLICY IF EXISTS "p_featuredcoachconfig_anon_deny" ON "FeaturedCoachConfig";
++CREATE POLICY "p_featuredcoachconfig_anon_deny" ON "FeaturedCoachConfig" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++COMMENT ON POLICY "p_featuredcoachconfig_anon_deny" ON "FeaturedCoachConfig" IS 'RESTRICTIVE deny-all: anon never reads or writes this table.';
++
++-- ─── CoachCodeRedemption ──────────────────────────────────────────────
++ALTER TABLE "CoachCodeRedemption" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "CoachCodeRedemption" FORCE ROW LEVEL SECURITY;
++REVOKE ALL ON TABLE "CoachCodeRedemption" FROM anon;
++
++DROP POLICY IF EXISTS "p_coachcoderedemption_service_role_all" ON "CoachCodeRedemption";
++CREATE POLICY "p_coachcoderedemption_service_role_all" ON "CoachCodeRedemption" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_coachcoderedemption_service_role_all" ON "CoachCodeRedemption" IS 'Primitive A: service_role access for the redemption writer and account erasure.';
++
++DROP POLICY IF EXISTS "p_coachcoderedemption_select_self" ON "CoachCodeRedemption";
++CREATE POLICY "p_coachcoderedemption_select_self" ON "CoachCodeRedemption" AS PERMISSIVE FOR SELECT TO public USING (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id());
++COMMENT ON POLICY "p_coachcoderedemption_select_self" ON "CoachCodeRedemption" IS 'Self-only read: a user reads only their own redemption attempts. No owner, coach or sub-coach branch. No public writes.';
++
++DROP POLICY IF EXISTS "p_coachcoderedemption_anon_deny" ON "CoachCodeRedemption";
++CREATE POLICY "p_coachcoderedemption_anon_deny" ON "CoachCodeRedemption" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++COMMENT ON POLICY "p_coachcoderedemption_anon_deny" ON "CoachCodeRedemption" IS 'RESTRICTIVE deny-all: anon never reads or writes this table.';
++
++-- ─── CoachlessPromptState ──────────────────────────────────────────────
++ALTER TABLE "CoachlessPromptState" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "CoachlessPromptState" FORCE ROW LEVEL SECURITY;
++REVOKE ALL ON TABLE "CoachlessPromptState" FROM anon;
++
++DROP POLICY IF EXISTS "p_coachlesspromptstate_service_role_all" ON "CoachlessPromptState";
++CREATE POLICY "p_coachlesspromptstate_service_role_all" ON "CoachlessPromptState" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_coachlesspromptstate_service_role_all" ON "CoachlessPromptState" IS 'Primitive A: service_role access for the prompt-state writer and account erasure.';
++
++DROP POLICY IF EXISTS "p_coachlesspromptstate_select_self" ON "CoachlessPromptState";
++CREATE POLICY "p_coachlesspromptstate_select_self" ON "CoachlessPromptState" AS PERMISSIVE FOR SELECT TO public USING (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id());
++COMMENT ON POLICY "p_coachlesspromptstate_select_self" ON "CoachlessPromptState" IS 'Self-only read: a user reads only their own Roman card state. No public writes.';
++
++DROP POLICY IF EXISTS "p_coachlesspromptstate_anon_deny" ON "CoachlessPromptState";
++CREATE POLICY "p_coachlesspromptstate_anon_deny" ON "CoachlessPromptState" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++COMMENT ON POLICY "p_coachlesspromptstate_anon_deny" ON "CoachlessPromptState" IS 'RESTRICTIVE deny-all: anon never reads or writes this table.';
++  // A1-COACHLESS — featured-coach config rows naming this coach, the user's
++  // coach-code redemption ledger and the coachless Roman card state.
++  featured_coach_configs         FeaturedCoachConfig[]    @relation("FeaturedCoachConfigCoach")
++  coach_code_redemptions         CoachCodeRedemption[]    @relation("CoachCodeRedemptionUser")
++  coachless_prompt_state         CoachlessPromptState?    @relation("CoachlessPromptStateUser")
++  // A1-COACHLESS — featured-coach configs that sell this package.
++  featured_coach_configs FeaturedCoachConfig[] @relation("FeaturedCoachConfigPackage")
++// ─── A1-COACHLESS: coachless Home, scripted Roman pitch, coach code ─────────
++//
++// FeaturedCoachConfig is a singleton (id = 'default', CHECK-enforced) holding
++// the platform's featured-coach offer shown to coachless clients: the code,
++// the banner/offer/Roman copy and the Roman card frequency caps. Edited only
++// by the platform owner through PUT /admin/featured-coach (audited). The
++// "accepting clients" state served to clients is this row's switch AND the
++// featured coach being able to accept clients (code resolves, coach role,
++// CoachSubscription active/trialing/grandfathered).
++model FeaturedCoachConfig {
++  id                      String        @id @default("default")
++  coach_user_id           String?
++  coach                   User?         @relation("FeaturedCoachConfigCoach", fields: [coach_user_id], references: [id], onDelete: SetNull)
++  code                    String?
++  package_id              String?
++  package                 CoachPackage? @relation("FeaturedCoachConfigPackage", fields: [package_id], references: [id], onDelete: SetNull)
++  banner_title            String
++  offer_text              String?
++  roman_pitch_text        String?
++  accepting_clients       Boolean       @default(false)
++  roman_enabled           Boolean       @default(false)
++  roman_min_hours_between Int           @default(24)
++  roman_max_per_week      Int           @default(3)
++  roman_snooze_days       Int           @default(14)
++  roman_max_not_now       Int           @default(2)
++  updated_by_user_id      String?
++  created_at              DateTime      @default(now())
++  updated_at              DateTime      @updatedAt
++}
++
++// Idempotency ledger + attempt record for POST /coachless/coach-code/redeem.
++// One row per (user, Idempotency-Key). 'completed' rows replay their stored
++// response; 'failed' rows may be reclaimed by a retry of the same key;
++// 'in_progress' rows older than the stale window may be reclaimed after a
++// crash. Rows cascade with the user (account erasure).
++model CoachCodeRedemption {
++  id              String   @id @default(uuid())
++  user_id         String
++  user            User     @relation("CoachCodeRedemptionUser", fields: [user_id], references: [id], onDelete: Cascade)
++  idempotency_key String
++  request_hash    String
++  status          String   @default("in_progress")
++  outcome         String?
++  coach_id        String?
++  http_status     Int?
++  response        Json?
++  created_at      DateTime @default(now())
++  updated_at      DateTime @updatedAt
++
++  @@unique([user_id, idempotency_key])
++  @@index([user_id, created_at])
++}
++
++// Per-user state of the scripted coachless Roman card: impression counts for
++// the frequency cap and the persisted "Not now". Cascades with the user.
++model CoachlessPromptState {
++  user_id                 String    @id
++  user                    User      @relation("CoachlessPromptStateUser", fields: [user_id], references: [id], onDelete: Cascade)
++  roman_seen_count        Int       @default(0)
++  roman_window_started_at DateTime?
++  roman_last_seen_at      DateTime?
++  roman_not_now_count     Int       @default(0)
++  roman_not_now_at        DateTime?
++  created_at              DateTime  @default(now())
++  updated_at              DateTime  @updatedAt
++}
++
++  // A1-COACHLESS (#657): the redemption ledger and the Roman card state are the
++  // user's own rows (FK cascade); a ledger row naming an erased coach replays
++  // that coach's card, so it goes too. The featured-coach singleton stays and
++  // only loses the erased person (FK SET NULL for the coach).
++  { model: 'CoachCodeRedemption', field: 'user_id', action: del },
++  { model: 'CoachCodeRedemption', field: 'coach_id', action: del },
++  { model: 'CoachlessPromptState', field: 'user_id', action: del },
++  { model: 'FeaturedCoachConfig', field: 'coach_user_id', action: detach('coach_user_id') },
++  {
++    model: 'FeaturedCoachConfig',
++    field: 'updated_by_user_id',
++    action: detach('updated_by_user_id'),
++  },
++/**
++ * A1-COACHLESS — live RLS for FeaturedCoachConfig, CoachCodeRedemption and
++ * CoachlessPromptState.
++ *
++ * Runs against a REAL PostgreSQL (no mocks) and applies
++ * prisma/migrations/20270301000000_coachless_featured_coach/migration.sql
++ * verbatim, then proves for each table:
++ *   - RLS ENABLED + FORCED; the policy set is exactly service_role_all, the
++ *     one SELECT policy and the anon RESTRICTIVE deny;
++ *   - CoachCodeRedemption / CoachlessPromptState: a user reads only their own
++ *     rows; another client, the client's own coach, the platform owner role
++ *     and an identity-less request read zero (no coach or owner branch);
++ *   - FeaturedCoachConfig: only the platform owner reads it through RLS;
++ *     clients and coaches read zero (they get a server projection);
++ *   - no non-service principal can INSERT (own or forged user_id), UPDATE or
++ *     DELETE any of the three tables;
++ *   - anon has no table privilege, and even with one the RESTRICTIVE deny
++ *     returns zero rows;
++ *   - CHECK constraints (singleton id, UUID key, status set) and the unique
++ *     (user_id, idempotency_key) index hold;
++ *   - deleting a User cascades its redemption and prompt rows and nulls the
++ *     featured coach (account erasure);
++ *   - down.sql removes the tables and the migration re-applies cleanly.
++ *
++ * Principals: `SET LOCAL ROLE <role>` + the app.current_user_id /
++ * app.current_user_role GUCs (same model as
++ * test/rls/ai-processing-consent-ledger-rls.spec.ts).
++ *
++ * CI: the rls-live-tests job runs this file after the Supabase shim, the
++ * RLS-01 bootstrap and the hardened helper migration. The prerequisites below
++ * only fill in what is missing, so the file also runs on an empty throwaway DB.
++ *
++ * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true where a
++ * missing URL is a hard failure (no green-by-skip). URL set but unreachable ->
++ * hard failure.
++ */
++import * as fs from 'fs';
++import * as path from 'path';
++import { PrismaClient } from '@prisma/client';
++
++const MIGRATION_DIR = path.join(
++  __dirname,
++  '..',
++  '..',
++  'prisma',
++  'migrations',
++  '20270301000000_coachless_featured_coach',
++);
++
++const RAW_URL = process.env.TEST_DATABASE_URL || '';
++if (!RAW_URL && process.env.CI === 'true') {
++  throw new Error('[A1] coachless-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
++}
++const URL_WITH_LIMIT = !RAW_URL
++  ? ''
++  : RAW_URL.includes('connection_limit=')
++    ? RAW_URL
++    : RAW_URL + (RAW_URL.includes('?') ? '&' : '?') + 'connection_limit=1';
++
++const AUTHED = 'authenticated';
++const SERVICE = 'service_role';
++const ANON = 'anon';
++const TABLES = ['FeaturedCoachConfig', 'CoachCodeRedemption', 'CoachlessPromptState'] as const;
++
++const PREREQ_SQL = `
++DO $do$ BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN NOINHERIT; END IF;
++  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN NOINHERIT; END IF;
++  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS; END IF;
++END $do$;
++CREATE SCHEMA IF NOT EXISTS app;
++DO $do$ BEGIN
++  IF to_regprocedure('app.current_user_id()') IS NULL THEN
++    EXECUTE $f$CREATE FUNCTION app.current_user_id() RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS 'SELECT NULLIF(current_setting(''app.current_user_id'', true), '''')'$f$;
++  END IF;
++  IF to_regprocedure('app.current_user_role()') IS NULL THEN
++    EXECUTE $f$CREATE FUNCTION app.current_user_role() RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS 'SELECT NULLIF(current_setting(''app.current_user_role'', true), '''')'$f$;
++  END IF;
++  IF to_regprocedure('app.is_owner()') IS NULL THEN
++    EXECUTE $f$CREATE FUNCTION app.is_owner() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, app, pg_temp AS 'SELECT app.current_user_id() IS NOT NULL AND app.current_user_role() = ''owner'''$f$;
++  END IF;
++END $do$;
++CREATE TABLE IF NOT EXISTS public."User" (
++  "id" text PRIMARY KEY,
++  "role" text NOT NULL DEFAULT 'coach',
++  "coach_id" text
++);
++CREATE TABLE IF NOT EXISTS public."CoachPackage" (
++  "id" text PRIMARY KEY,
++  "coach_id" text
++);
++GRANT USAGE ON SCHEMA app TO anon, authenticated, service_role;
++GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
++`;
++
++/** Top-level statement splitter honouring dollar quotes and single quotes. */
++function splitSqlStatements(sql: string): string[] {
++  const out: string[] = [];
++  let buf = '';
++  let i = 0;
++  let dollarTag: string | null = null;
++  let inSingle = false;
++  while (i < sql.length) {
++    const ch = sql[i];
++    if (dollarTag) {
++      if (sql.startsWith(dollarTag, i)) {
++        buf += dollarTag;
++        i += dollarTag.length;
++        dollarTag = null;
++        continue;
++      }
++      buf += ch;
++      i += 1;
++      continue;
++    }
++    if (inSingle) {
++      buf += ch;
++      i += 1;
++      if (ch === "'") {
++        if (sql[i] === "'") {
++          buf += sql[i];
++          i += 1;
++        } else inSingle = false;
++      }
++      continue;
++    }
++    if (ch === "'") {
++      inSingle = true;
++      buf += ch;
++      i += 1;
++      continue;
++    }
++    if (ch === '-' && sql[i + 1] === '-') {
++      const eol = sql.indexOf('\n', i);
++      i = eol === -1 ? sql.length : eol + 1;
++      buf += '\n';
++      continue;
++    }
++    if (ch === '$') {
++      const m = /^\$[A-Za-z0-9_]*\$/.exec(sql.slice(i));
++      if (m) {
++        dollarTag = m[0];
++        buf += dollarTag;
++        i += dollarTag.length;
++        continue;
++      }
++    }
++    if (ch === ';') {
++      if (buf.trim()) out.push(buf.trim());
++      buf = '';
++      i += 1;
++      continue;
++    }
++    buf += ch;
++    i += 1;
++  }
++  if (buf.trim()) out.push(buf.trim());
++  return out;
++}
++
++const describeLive = URL_WITH_LIMIT ? describe : describe.skip;
++
++describeLive('A1-COACHLESS tables RLS (live Postgres)', () => {
++  const prisma = new PrismaClient({ datasources: { db: { url: URL_WITH_LIMIT } } });
++
++  type Tx = {
++    $executeRawUnsafe: (sql: string, ...values: unknown[]) => Promise<number>;
++    $queryRawUnsafe: (sql: string, ...values: unknown[]) => Promise<unknown[]>;
++  };
++  type Identity = { id?: string; userRole?: string };
++
++  const lit = (v: string): string => `'${v.replace(/'/g, "''")}'`;
++
++  async function applyScript(sql: string): Promise<void> {
++    for (const stmt of splitSqlStatements(sql)) {
++      if (/^(BEGIN|COMMIT|ROLLBACK)$/i.test(stmt)) continue;
++      await prisma.$executeRawUnsafe(stmt);
++    }
++  }
++
++  async function asPrincipal<T>(
++    role: string | null,
++    identity: Identity,
++    fn: (tx: Tx) => Promise<T>,
++  ): Promise<T> {
++    return prisma.$transaction(async (tx) => {
++      if (role) await tx.$executeRawUnsafe(`SET LOCAL ROLE ${role}`);
++      await tx.$executeRawUnsafe(
++        `SELECT set_config('app.current_user_id', ${lit(identity.id ?? '')}, true)`,
++      );
++      await tx.$executeRawUnsafe(
++        `SELECT set_config('app.current_user_role', ${lit(identity.userRole ?? '')}, true)`,
++      );
++      return fn(tx);
++    });
++  }
++
++  function sqlState(err: unknown): string {
++    const msg = err instanceof Error ? err.message : String(err);
++    const m = /Code: `([0-9A-Z]{5})`/.exec(msg) ?? /\b(42501|55000|23505|23514|23503)\b/.exec(msg);
++    return m ? m[1] : `unparsed: ${msg.slice(0, 200)}`;
++  }
++
++  async function failsWith(
++    role: string | null,
++    identity: Identity,
++    stmt: string,
++  ): Promise<string | null> {
++    try {
++      await asPrincipal(role, identity, (tx) => tx.$executeRawUnsafe(stmt));
++      return null;
++    } catch (err) {
++      return sqlState(err);
++    }
++  }
++
++  async function count(
++    role: string | null,
++    identity: Identity,
++    table: string,
++    where = '',
++  ): Promise<number> {
++    const rows = (await asPrincipal(role, identity, (tx) =>
++      tx.$queryRawUnsafe(`SELECT count(*)::int AS n FROM public."${table}" ${where}`),
++    )) as { n: number }[];
++    return Number(rows[0].n);
++  }
++
++  async function affected(role: string | null, identity: Identity, stmt: string): Promise<number> {
++    return asPrincipal(role, identity, (tx) => tx.$executeRawUnsafe(stmt));
++  }
++
++  const CLIENT_A: Identity = { id: 'a1c_client_a', userRole: 'student' };
++  const CLIENT_B: Identity = { id: 'a1c_client_b', userRole: 'student' };
++  const COACH: Identity = { id: 'a1c_coach', userRole: 'coach' };
++  const OWNER: Identity = { id: 'a1c_owner', userRole: 'owner' };
++  const NO_IDENTITY: Identity = {};
++  const K = (n: number) => `0000000${n}-0000-4000-8000-000000000000`;
++  const HASH = 'a'.repeat(64);
++
++  const insertRedemption = (id: string, user: string, key: string): string =>
++    `INSERT INTO public."CoachCodeRedemption"("id","user_id","idempotency_key","request_hash","status","updated_at")
++       VALUES (${lit(id)}, ${lit(user)}, ${lit(key)}, ${lit(HASH)}, 'completed', now())`;
++  const insertPrompt = (user: string): string =>
++    `INSERT INTO public."CoachlessPromptState"("user_id","updated_at") VALUES (${lit(user)}, now())`;
++  const insertConfig = (): string =>
++    `INSERT INTO public."FeaturedCoachConfig"("id","coach_user_id","code","banner_title","updated_at")
++       VALUES ('default', 'a1c_coach', 'GP-A1TEST', 'Enter coach code for coaching and programs', now())`;
++
++  async function installMigration(): Promise<void> {
++    await applyScript(fs.readFileSync(path.join(MIGRATION_DIR, 'migration.sql'), 'utf8'));
++    // Supabase grants table privileges to API roles by default; a bare CI
++    // Postgres does not. Grant them so the assertions test POLICIES, not the
++    // absence of a GRANT. anon stays revoked (the migration revokes it).
++    for (const t of TABLES) {
++      await prisma.$executeRawUnsafe(
++        `GRANT SELECT, INSERT, UPDATE, DELETE ON public."${t}" TO ${AUTHED}, ${SERVICE}`,
++      );
++    }
++  }
++
++  beforeAll(async () => {
++    try {
++      await prisma.$connect();
++      await prisma.$queryRawUnsafe('SELECT 1');
++    } catch (err) {
++      throw new Error(`[A1] TEST_DATABASE_URL is set but unreachable: ${sqlState(err)}`);
++    }
++    await applyScript(PREREQ_SQL);
++    await applyScript(fs.readFileSync(path.join(MIGRATION_DIR, 'down.sql'), 'utf8'));
++    await installMigration();
++  }, 120_000);
++
++  afterAll(async () => {
++    await prisma.$executeRawUnsafe(`DELETE FROM public."FeaturedCoachConfig"`);
++    await prisma.$executeRawUnsafe(`DELETE FROM public."User" WHERE "id" LIKE 'a1c\\_%'`);
++    await prisma.$disconnect();
++  });
++
++  beforeEach(async () => {
++    await prisma.$executeRawUnsafe(`DELETE FROM public."FeaturedCoachConfig"`);
++    await prisma.$executeRawUnsafe(`DELETE FROM public."User" WHERE "id" LIKE 'a1c\\_%'`);
++    await prisma.$executeRawUnsafe(
++      `INSERT INTO public."User"("id","role","coach_id") VALUES
++         ('a1c_coach','coach',NULL),
++         ('a1c_owner','owner',NULL),
++         ('a1c_client_a','student','a1c_coach'),
++         ('a1c_client_b','student',NULL)`,
++    );
++    await asPrincipal(SERVICE, {}, async (tx) => {
++      await tx.$executeRawUnsafe(insertConfig());
++      await tx.$executeRawUnsafe(insertRedemption('a1c_r_a1', 'a1c_client_a', K(1)));
++      await tx.$executeRawUnsafe(insertRedemption('a1c_r_a2', 'a1c_client_a', K(2)));
++      await tx.$executeRawUnsafe(insertRedemption('a1c_r_b1', 'a1c_client_b', K(1)));
++      await tx.$executeRawUnsafe(insertPrompt('a1c_client_a'));
++      await tx.$executeRawUnsafe(insertPrompt('a1c_client_b'));
++      return null;
++    });
++  });
++
++  describe('catalog', () => {
++    it.each(TABLES)('%s: RLS is enabled and forced', async (t) => {
++      const rows = (await prisma.$queryRawUnsafe(
++        `SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'public."${t}"'::regclass`,
++      )) as { relrowsecurity: boolean; relforcerowsecurity: boolean }[];
++      expect(rows[0]).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
++    });
++
++    it.each([
++      ['FeaturedCoachConfig', 'featuredcoachconfig', 'select_owner'],
++      ['CoachCodeRedemption', 'coachcoderedemption', 'select_self'],
++      ['CoachlessPromptState', 'coachlesspromptstate', 'select_self'],
++    ])(
++      '%s: exactly three policies (service_role_all, %s select, anon deny)',
++      async (t, low, sel) => {
++        const rows = (await prisma.$queryRawUnsafe(
++          `SELECT policyname, permissive, roles::text[] AS roles, cmd, coalesce(qual,'') AS qual
++           FROM pg_policies WHERE schemaname = 'public' AND tablename = $1 ORDER BY policyname`,
++          t,
++        )) as {
++          policyname: string;
++          permissive: string;
++          roles: string[];
++          cmd: string;
++          qual: string;
++        }[];
++        expect(rows.map((r) => [r.policyname, r.permissive, r.cmd, r.roles])).toEqual([
++          [`p_${low}_anon_deny`, 'RESTRICTIVE', 'ALL', ['anon']],
++          [`p_${low}_${sel}`, 'PERMISSIVE', 'SELECT', ['public']],
++          [`p_${low}_service_role_all`, 'PERMISSIVE', 'ALL', ['service_role']],
++        ]);
++        const select = rows.find((r) => r.policyname.endsWith(sel));
++        if (sel === 'select_self')
++          expect(select?.qual).not.toMatch(/is_owner|coach|team|sub_coach/i);
++      },
++    );
++  });
++
++  describe('reads', () => {
++    it('a client reads exactly their own redemption and prompt rows', async () => {
++      expect(await count(AUTHED, CLIENT_A, 'CoachCodeRedemption')).toBe(2);
++      expect(await count(AUTHED, CLIENT_B, 'CoachCodeRedemption')).toBe(1);
++      expect(await count(AUTHED, CLIENT_A, 'CoachlessPromptState')).toBe(1);
++      expect(
++        await count(AUTHED, CLIENT_A, 'CoachCodeRedemption', `WHERE "user_id" = 'a1c_client_b'`),
++      ).toBe(0);
++    });
++
++    it('the client’s coach, the platform owner and an identity-less request read no redemption or prompt rows', async () => {
++      for (const who of [COACH, OWNER, NO_IDENTITY]) {
++        expect(await count(AUTHED, who, 'CoachCodeRedemption')).toBe(0);
++        expect(await count(AUTHED, who, 'CoachlessPromptState')).toBe(0);
++      }
++    });
++
++    it('only the platform owner reads the featured-coach config through RLS', async () => {
++      expect(await count(AUTHED, OWNER, 'FeaturedCoachConfig')).toBe(1);
++      for (const who of [CLIENT_A, CLIENT_B, COACH, NO_IDENTITY]) {
++        expect(await count(AUTHED, who, 'FeaturedCoachConfig')).toBe(0);
++      }
++      // A forged role GUC without an identity is not the owner.
++      expect(await count(AUTHED, { userRole: 'owner' }, 'FeaturedCoachConfig')).toBe(0);
++    });
++
++    it('service_role reads everything', async () => {
++      expect(await count(SERVICE, {}, 'CoachCodeRedemption')).toBe(3);
++      expect(await count(SERVICE, {}, 'CoachlessPromptState')).toBe(2);
++      expect(await count(SERVICE, {}, 'FeaturedCoachConfig')).toBe(1);
++    });
++
++    it('anon has no privilege; with one granted the RESTRICTIVE deny still returns zero', async () => {
++      for (const t of TABLES) {
++        expect(await failsWith(ANON, {}, `SELECT 1 FROM public."${t}"`)).toBe('42501');
++      }
++      for (const t of TABLES)
++        await prisma.$executeRawUnsafe(`GRANT SELECT ON public."${t}" TO anon`);
++      try {
++        // Denied means zero visible rows OR 42501: anon cannot EXECUTE the
++        // app.* helpers the permissive policies call (the same rule as
++        // clinic-engagement-rls.spec.ts). Either way nothing is readable.
++        for (const t of TABLES) {
++          let seen: number | string;
++          try {
++            seen = await count(ANON, CLIENT_A, t);
++          } catch (err) {
++            seen = sqlState(err);
++          }
++          expect([t, seen === 0 || seen === '42501' ? 'denied' : seen]).toEqual([t, 'denied']);
++        }
++      } finally {
++        for (const t of TABLES)
++          await prisma.$executeRawUnsafe(`REVOKE ALL ON public."${t}" FROM anon`);
++      }
++    });
++  });
++
++  describe('writes', () => {
++    it('no client, coach or owner can INSERT a redemption or prompt row (own or forged user)', async () => {
++      for (const who of [CLIENT_A, COACH, OWNER]) {
++        expect(
++          await failsWith(AUTHED, who, insertRedemption(`a1c_x_${who.id}`, 'a1c_client_a', K(9))),
++        ).toBe('42501');
++        expect(
++          await failsWith(AUTHED, who, insertRedemption(`a1c_y_${who.id}`, who.id ?? '', K(8))),
++        ).toBe('42501');
++      }
++      expect(
++        await failsWith(
++          AUTHED,
++          CLIENT_B,
++          `DELETE FROM public."CoachlessPromptState" WHERE "user_id" = 'a1c_client_b'`,
++        ),
++      ).toBeNull();
++      expect(await count(SERVICE, {}, 'CoachlessPromptState')).toBe(2); // the DELETE matched no visible-for-delete row
++      expect(
++        await failsWith(
++          AUTHED,
++          CLIENT_B,
++          `INSERT INTO public."CoachlessPromptState"("user_id","updated_at") VALUES ('a1c_owner', now())`,
++        ),
++      ).toBe('42501');
++    });
++
++    it('UPDATE and DELETE by any non-service principal affect zero rows', async () => {
++      for (const who of [CLIENT_A, COACH, OWNER]) {
++        expect(
++          await affected(
++            AUTHED,
++            who,
++            `UPDATE public."CoachCodeRedemption" SET "status" = 'failed'`,
++          ),
++        ).toBe(0);
++        expect(await affected(AUTHED, who, `DELETE FROM public."CoachCodeRedemption"`)).toBe(0);
++        expect(
++          await affected(
++            AUTHED,
++            who,
++            `UPDATE public."CoachlessPromptState" SET "roman_not_now_count" = 0`,
++          ),
++        ).toBe(0);
++        expect(
++          await affected(
++            AUTHED,
++            who,
++            `UPDATE public."FeaturedCoachConfig" SET "accepting_clients" = true`,
++          ),
++        ).toBe(0);
++        expect(await affected(AUTHED, who, `DELETE FROM public."FeaturedCoachConfig"`)).toBe(0);
++      }
++      expect(await count(SERVICE, {}, 'CoachCodeRedemption', `WHERE "status" = 'completed'`)).toBe(
++        3,
++      );
++      expect(await count(SERVICE, {}, 'FeaturedCoachConfig')).toBe(1);
++    });
++
++    it('nobody but service_role inserts the featured-coach config', async () => {
++      await prisma.$executeRawUnsafe(`DELETE FROM public."FeaturedCoachConfig"`);
++      for (const who of [CLIENT_A, COACH, OWNER])
++        expect(await failsWith(AUTHED, who, insertConfig())).toBe('42501');
++      expect(await failsWith(SERVICE, {}, insertConfig())).toBeNull();
++    });
++  });
++
++  describe('constraints and erasure', () => {
++    it('the config is a singleton', async () => {
++      expect(
++        await failsWith(
++          SERVICE,
++          {},
++          `INSERT INTO public."FeaturedCoachConfig"("id","banner_title","updated_at") VALUES ('second','x',now())`,
++        ),
++      ).toBe('23514');
++    });
++
++    it('the idempotency key must be a UUID, the status must be known, and (user, key) is unique', async () => {
++      expect(
++        await failsWith(SERVICE, {}, insertRedemption('a1c_bad_key', 'a1c_client_b', 'not-a-uuid')),
++      ).toBe('23514');
++      expect(
++        await failsWith(
++          SERVICE,
++          {},
++          `UPDATE public."CoachCodeRedemption" SET "status" = 'weird' WHERE "id" = 'a1c_r_b1'`,
++        ),
++      ).toBe('23514');
++      expect(await failsWith(SERVICE, {}, insertRedemption('a1c_dup', 'a1c_client_a', K(1)))).toBe(
++        '23505',
++      );
++    });
++
++    it('deleting a user cascades their redemption and prompt rows and clears the featured coach', async () => {
++      await prisma.$executeRawUnsafe(`DELETE FROM public."User" WHERE "id" = 'a1c_client_a'`);
++      expect(
++        await count(SERVICE, {}, 'CoachCodeRedemption', `WHERE "user_id" = 'a1c_client_a'`),
++      ).toBe(0);
++      expect(
++        await count(SERVICE, {}, 'CoachlessPromptState', `WHERE "user_id" = 'a1c_client_a'`),
++      ).toBe(0);
++      await prisma.$executeRawUnsafe(`DELETE FROM public."User" WHERE "id" = 'a1c_coach'`);
++      expect(await count(SERVICE, {}, 'FeaturedCoachConfig', `WHERE "coach_user_id" IS NULL`)).toBe(
++        1,
++      );
++    });
++
++    it('down.sql removes the tables and the migration re-applies cleanly', async () => {
++      await applyScript(fs.readFileSync(path.join(MIGRATION_DIR, 'down.sql'), 'utf8'));
++      const gone = (await prisma.$queryRawUnsafe(
++        `SELECT count(*)::int AS n FROM pg_class WHERE relname IN ('FeaturedCoachConfig','CoachCodeRedemption','CoachlessPromptState')`,
++      )) as { n: number }[];
++      expect(Number(gone[0].n)).toBe(0);
++      await installMigration();
++      const back = (await prisma.$queryRawUnsafe(
++        `SELECT count(*)::int AS n FROM pg_class WHERE relname IN ('FeaturedCoachConfig','CoachCodeRedemption','CoachlessPromptState')`,
++      )) as { n: number }[];
++      expect(Number(back[0].n)).toBe(3);
++    });
++  });
++});

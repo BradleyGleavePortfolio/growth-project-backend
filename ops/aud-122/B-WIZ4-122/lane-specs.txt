@@ -1,0 +1,11 @@
+src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+src/screens/coach/money/__tests__/money.test.tsx
+src/screens/coach/money/__tests__/moneyChargeTruth.test.tsx
+src/screens/coach/money/__tests__/moneyNavigation.test.tsx
+src/lib/money/__tests__/moneyCopyMon2.test.ts
+src/__tests__/paymentsConnectPackages.test.ts
+src/__tests__/coachSaasBlockers.test.ts
+src/navigation/__tests__/coachSettingsMoneyRow.test.tsx
+src/components/coach/setup/__tests__/coachSetupRound2.test.tsx

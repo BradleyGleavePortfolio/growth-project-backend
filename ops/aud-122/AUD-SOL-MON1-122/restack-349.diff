@@ -1,0 +1,4496 @@
+diff --git a/src/api/coachSetupApi.ts b/src/api/coachSetupApi.ts
+index 5d5a256..e064e18 100644
+--- a/src/api/coachSetupApi.ts
++++ b/src/api/coachSetupApi.ts
+@@ -40,6 +40,17 @@ export interface ConnectView {
+   disabledReason: string | null;
+   /** True when the server re-read Stripe for this answer. */
+   refreshed: boolean;
++  /**
++   * True when this server has no live re-read (no POST status/refresh), so the
++   * answer is the last update Stripe sent to TGP, not a failed Stripe call.
++   */
++  refreshUnavailable?: boolean;
++  /**
++   * True for the older status payload (no `state`, no `requirements`): its
++   * `requirements_due` mixes what Stripe needs now with what it may ask for
++   * later, so an account Stripe has fully switched on is not told to act.
++   */
++  legacy?: boolean;
+ }
+ 
+ interface RawRequirements {
+@@ -85,8 +96,9 @@ export function toConnectView(
+ ): ConnectView {
+   const r = raw ?? {};
+   const req = r.requirements ?? {};
++  const legacy = r.requirements === undefined && r.state === undefined;
+   const legacyDue = strings(r.requirements_due);
+-  const currentlyDue = r.requirements ? strings(req.currently_due) : legacyDue;
++  let currentlyDue = r.requirements ? strings(req.currently_due) : legacyDue;
+   const pastDue = strings(req.past_due);
+   const charges = r.charges_enabled === true;
+   const payouts = r.payouts_enabled === true;
+@@ -109,6 +121,11 @@ export function toConnectView(
+   }
+   const deadline =
+     typeof req.current_deadline === "string" ? req.current_deadline : null;
++  // Production today (agent 118 capability check): the legacy payload cannot
++  // say which items are due now. Stripe has charges and payouts on, so keep
++  // the list as "may ask later" and claim nothing is due.
++  const legacyActive = legacy && state === "active";
++  if (legacyActive) currentlyDue = [];
+   return {
+     state,
+     accountId,
+@@ -123,12 +140,14 @@ export function toConnectView(
+           state === "not_started",
+     currentlyDue,
+     pastDue,
+-    eventuallyDue: strings(req.eventually_due),
++    eventuallyDue: legacyActive ? legacyDue : strings(req.eventually_due),
+     pendingVerification: strings(req.pending_verification),
+     deadline,
+     disabledReason:
+       typeof r.disabled_reason === "string" ? r.disabled_reason : null,
+     refreshed: r.refreshed === true,
++    refreshUnavailable: false,
++    legacy,
+   };
+ }
+ 
+@@ -176,8 +195,10 @@ export const coachSetupApi = {
+       return toConnectView(res.data);
+     } catch (err) {
+       const status = errorStatus(err);
+-      if (status === 404 || status === 405)
+-        return coachSetupApi.connectStatus();
++      if (status === 404 || status === 405) {
++        const saved = await coachSetupApi.connectStatus();
++        return { ...saved, refreshed: false, refreshUnavailable: true };
++      }
+       throw err;
+     }
+   },
+diff --git a/src/api/packagesApi.ts b/src/api/packagesApi.ts
+index 5009b16..f16c9ac 100644
+--- a/src/api/packagesApi.ts
++++ b/src/api/packagesApi.ts
+@@ -9,8 +9,9 @@
+ //     currency, billing_type ('one_time'|'recurring'), billing_interval
+ //     ('week'|'month'|'year'), billing_interval_count, is_active. We map
+ //     mobile UI values ('monthly','quarterly','yearly') to backend enums.
+-//   • Backend `UpdatePackageDto` accepts only: name, description,
+-//     amount_cents, currency, is_active. trial_days/features are TODO.
++//   • Backend `UpdatePackageDto` accepts name, description, amount_cents,
++//     currency, billing_type, billing_interval, billing_interval_count (null
++//     clears the cadence) and is_active. trial_days/features are TODO.
+ //   • Backend checkout is `POST /v1/checkout/sessions` with `{ package_id,
+ //     success_url, cancel_url }`. URLs must use growthproject://,
+ //     com.growthproject.app://, or https:// prefixes.
+@@ -336,6 +337,8 @@ interface BackendPackageRow {
+   billing_type?: 'one_time' | 'recurring';
+   billing_interval?: 'week' | 'month' | 'year' | PackageBillingInterval | 'quarter';
+   billing_interval_count?: number;
++  /** Raw CoachPackage rows (create / PATCH answers) name the cadence `interval`. */
++  interval?: 'week' | 'month' | 'year' | null;
+   interval_count?: number;
+   trial_days?: number | null;
+   features?: string[];
+@@ -370,7 +373,11 @@ function fromBackendInterval(
+ 
+ function fromBackend(row: BackendPackageRow): CoachPackage {
+   const count = row.billing_interval_count ?? row.interval_count ?? 1;
+-  const interval = fromBackendInterval(row.billing_interval, count, row.billing_type);
++  const interval = fromBackendInterval(
++    row.billing_interval ?? row.interval ?? undefined,
++    count,
++    row.billing_type,
++  );
+   const status: PackageStatus =
+     row.status ?? (row.is_active === false ? 'archived' : 'active');
+   return {
+@@ -431,21 +438,83 @@ interface BackendUpdateBody {
+   description?: string | null;
+   amount_cents?: number;
+   currency?: string;
++  billing_type?: 'one_time' | 'recurring';
++  /** null clears the cadence (a one-time package has none). */
++  billing_interval?: 'week' | 'month' | 'year' | null;
++  /** null resets the count to 1. */
++  billing_interval_count?: number | null;
+   is_active?: boolean;
+-  // TODO(backend): UpdatePackageDto does not accept billing_type,
+-  // billing_interval, billing_interval_count, trial_days, or features.
++  // TODO(backend): UpdatePackageDto does not accept trial_days or features.
+ }
+ 
+-function toBackendUpdate(input: PackageUpdateInput): BackendUpdateBody {
++/**
++ * B-345-1 / B-345-2 (agent 118): a cadence picked after the package was made
++ * reaches the server. The PATCH carries the same billing fields the create
++ * body does, and a one-time price sends explicit nulls so the stored cadence
++ * is cleared (backend B-629-4), which also lets a recurring package become
++ * free in one PATCH.
++ */
++export function toBackendUpdate(input: PackageUpdateInput): BackendUpdateBody {
+   const out: BackendUpdateBody = {};
+   if (input.title !== undefined) out.name = input.title;
+   if (input.description !== undefined) out.description = input.description;
+   if (input.priceCents !== undefined) out.amount_cents = input.priceCents;
+   if (input.currency !== undefined) out.currency = input.currency;
++  if (input.billingInterval !== undefined) {
++    out.billing_type = BILLING_TYPE_FOR_INTERVAL[input.billingInterval];
++    if (input.billingInterval === 'one_time') {
++      out.billing_interval = null;
++      out.billing_interval_count = null;
++    } else {
++      const f = toBackendIntervalFields(input.billingInterval, input.intervalCount);
++      out.billing_interval = f.billing_interval ?? null;
++      out.billing_interval_count = f.billing_interval_count ?? null;
++    }
++  }
+   if (input.status !== undefined) out.is_active = input.status === 'active';
+   return out;
+ }
+ 
++/** The server row did not take the price or billing the app sent. */
++export const PACKAGE_UPDATE_NOT_APPLIED = 'PACKAGE_UPDATE_NOT_APPLIED';
++
++/**
++ * B-345-2: the PATCH answer is the package as the server now stores it. When
++ * the app sent a billing choice, the row must carry exactly that price and
++ * billing type (and, for a recurring price, that cadence) before anything
++ * reports it as saved. A row that disagrees,
++ * or that does not say, fails closed with PACKAGE_UPDATE_NOT_APPLIED (an older
++ * server that ignores a field must never look like a saved change).
++ */
++export function pricingAppliedMismatch(
++  sent: BackendUpdateBody,
++  row: BackendPackageRow | null | undefined,
++): string | null {
++  if (sent.billing_type === undefined) return null;
++  if (!row || typeof row !== 'object') return 'row';
++  if (sent.amount_cents !== undefined && row.amount_cents !== sent.amount_cents) {
++    return 'amount_cents';
++  }
++  if (row.billing_type !== sent.billing_type) return 'billing_type';
++  // One-time: billing_type alone decides how a client pays; a leftover cadence
++  // on the row is never charged (the server also clears it, B-629-4).
++  if (sent.billing_type === 'one_time') return null;
++  if ((row.billing_interval ?? row.interval) !== sent.billing_interval) {
++    return 'billing_interval';
++  }
++  const count = row.billing_interval_count ?? row.interval_count;
++  return count === sent.billing_interval_count ? null : 'billing_interval_count';
++}
++
++function notAppliedError(field: string): Error {
++  return Object.assign(new Error('package update not applied'), {
++    response: {
++      status: 409,
++      data: { code: PACKAGE_UPDATE_NOT_APPLIED, field },
++    },
++  });
++}
++
+ /**
+  * True only for a package a client can actually buy or join: active, not
+  * archived and published. A draft (published_at null) or archived package is
+@@ -495,11 +564,14 @@ export const coachPackagesApi = {
+     input: PackageUpdateInput,
+     idempotencyKey?: string,
+   ) => {
++    const body = toBackendUpdate(input);
+     const res = await api.patch<BackendPackageRow>(
+       `/v1/coach/packages/${encodeURIComponent(id)}`,
+-      toBackendUpdate(input),
++      body,
+       idemHeaders(idempotencyKey),
+     );
++    const mismatch = pricingAppliedMismatch(body, res?.data);
++    if (mismatch) throw notAppliedError(mismatch);
+     return { ...res, data: fromBackend(res.data) };
+   },
+ 
+diff --git a/src/components/coach/setup/CoachSetupChecklist.tsx b/src/components/coach/setup/CoachSetupChecklist.tsx
+index 1e5501a..362c2a2 100644
+--- a/src/components/coach/setup/CoachSetupChecklist.tsx
++++ b/src/components/coach/setup/CoachSetupChecklist.tsx
+@@ -118,7 +118,7 @@ export function buildChecklist(s: ChecklistStatus): ChecklistItem[] {
+           ? UNKNOWN
+           : s.paid
+             ? "You have been paid. See it in Money."
+-            : "We will mark the moment with you when it lands.",
++            : "This ticks when your first client payment arrives.",
+       done: s.paid,
+     },
+   ];
+diff --git a/src/components/coach/setup/FirstPackageForm.tsx b/src/components/coach/setup/FirstPackageForm.tsx
+index f8900c1..5e96c64 100644
+--- a/src/components/coach/setup/FirstPackageForm.tsx
++++ b/src/components/coach/setup/FirstPackageForm.tsx
+@@ -4,7 +4,13 @@
+  * it live, and for a free package attaches it to the coach's invite link so
+  * a client who joins with the link gets it straight away.
+  */
+-import React, { useEffect, useMemo, useRef, useState } from "react";
++import React, {
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
+ import {
+   ActivityIndicator,
+   StyleSheet,
+@@ -26,11 +32,13 @@ import {
+ } from "../../../lib/coachSetup/errors";
+ import {
+   clearIntent,
++  createErrorCode,
+   createPackageOnce,
+   intentStorageCopy,
+   IntentStorageError,
+   isDefinitiveRejection,
+   loadIntent,
++  PackageCreateStoppedError,
+   type PackageCreateIntent,
+ } from "../../../lib/coachSetup/packageCreateIntent";
+ import { useCurrentUser } from "../../../hooks/useCurrentUser";
+@@ -84,6 +92,15 @@ export function storageFailure(err: IntentStorageError): FriendlyError {
+   };
+ }
+ 
++/**
++ * C-346-2 (agent 118): the server says the remembered package was archived or
++ * removed since it was made. It can never go live, so the form forgets it and
++ * makes a fresh package in the same tap (machine codes only, never a bare 404).
++ */
++const GONE_PACKAGE_CODES = new Set(["PACKAGE_ARCHIVED", "PACKAGE_NOT_FOUND"]);
++
++const DEFAULT_PRICE_TEXT = "49.00";
++
+ interface Props {
+   defaultTitle: string;
+   defaultDescription?: string | null;
+@@ -101,10 +118,32 @@ export default function FirstPackageForm({
+ }: Props) {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+-  const [title, setTitle] = useState(defaultTitle);
+-  const [free, setFree] = useState(false);
+-  const [priceText, setPriceText] = useState("49.00");
+-  const [monthly, setMonthly] = useState(true);
++  const [title, setTitleState] = useState(defaultTitle);
++  const [free, setFreeState] = useState(false);
++  const [priceText, setPriceTextState] = useState(DEFAULT_PRICE_TEXT);
++  const [monthly, setMonthlyState] = useState(true);
++  // B-346-3 (agent 119): what the form shows right now. Every field write
++  // goes through show(), so a submit that waited for hydration reads the
++  // package the coach sees, not the values of the render it started in.
++  const shown = useRef({
++    title: defaultTitle,
++    free: false,
++    priceText: DEFAULT_PRICE_TEXT,
++    monthly: true,
++  });
++  const show = useCallback((next: Partial<typeof shown.current>) => {
++    Object.assign(shown.current, next);
++    if (next.title !== undefined) setTitleState(next.title);
++    if (next.free !== undefined) setFreeState(next.free);
++    if (next.priceText !== undefined) setPriceTextState(next.priceText);
++    if (next.monthly !== undefined) setMonthlyState(next.monthly);
++  }, []);
++  // B-346-3: false until this account's saved intent has been read and, if
++  // there is one, shown. Until then fields take no edits and Create is off;
++  // a tap that still arrives is dropped (B-WIZ3-122), so every publish is a
++  // fresh tap on the price and offer type the coach can see.
++  const [ready, setReady] = useState(false);
++  const readyNow = useRef(false);
+   const [busy, setBusy] = useState(false);
+   const [invalid, setInvalid] = useState<string | null>(null);
+   const [error, setError] = useState<FriendlyError | null>(null);
+@@ -117,7 +156,6 @@ export default function FirstPackageForm({
+   const user = useCurrentUser();
+   const coachId = user?.id ?? null;
+   const intent = useRef<PackageCreateIntent | null>(null);
+-  const hydrated = useRef<Promise<void> | null>(null);
+   const [resumed, setResumed] = useState(false);
+   // A second tap before React re-renders the disabled button must not
+   // start a second submit.
+@@ -129,6 +167,12 @@ export default function FirstPackageForm({
+   const coachRef = useRef(coachId);
+   coachRef.current = coachId;
+   const mounted = useRef(true);
++  // B-329-5 (agent 118): bumped on every account change, so a create started
++  // for an earlier account (even one that signs back in) is retired.
++  const generation = useRef(0);
++  const shownFor = useRef(coachId);
++  const resetTitle = useRef(defaultTitle);
++  resetTitle.current = defaultTitle;
+   useEffect(() => {
+     mounted.current = true;
+     return () => {
+@@ -138,47 +182,86 @@ export default function FirstPackageForm({
+ 
+   useEffect(() => {
+     let live = true;
+-    hydrated.current = loadIntent(coachId).then((read) => {
+-      if (!live || read.kind !== "found" || intent.current) return;
++    readyNow.current = false;
++    setReady(false);
++    if (shownFor.current !== coachId) {
++      // A different account: nothing from the earlier one stays on screen
++      // or in memory, and its running create can no longer write here.
++      shownFor.current = coachId;
++      generation.current += 1;
++      intent.current = null;
++      inFlight.current = false;
++      setBusy(false);
++      setError(null);
++      setInvalid(null);
++      setResumed(false);
++      show({
++        title: resetTitle.current,
++        free: false,
++        priceText: DEFAULT_PRICE_TEXT,
++        monthly: true,
++      });
++    }
++    void loadIntent(coachId).then((read) => {
++      if (!live) return;
++      // An unreadable read still ends hydration: submit reads storage again
++      // and stops with specific copy if it is still unreadable.
++      const done = () => {
++        readyNow.current = true;
++        setReady(true);
++      };
++      if (read.kind !== "found" || intent.current) return done();
+       const stored = read.intent;
+       intent.current = stored;
+       // Show the coach the package that was on its way, as it was sent.
+-      setTitle(stored.input.title);
+-      setFree(stored.input.priceCents === 0);
+-      if (stored.input.priceCents > 0)
+-        setPriceText((stored.input.priceCents / 100).toFixed(2));
+-      setMonthly(stored.input.billingInterval !== "one_time");
++      show({
++        title: stored.input.title,
++        free: stored.input.priceCents === 0,
++        monthly: stored.input.billingInterval !== "one_time",
++        ...(stored.input.priceCents > 0
++          ? { priceText: (stored.input.priceCents / 100).toFixed(2) }
++          : {}),
++      });
+       setResumed(true);
++      done();
+     });
+     return () => {
+       live = false;
+     };
+-  }, [coachId]);
++  }, [coachId, show]);
+ 
+   const submit = async () => {
+-    const problem = validatePackage({ title, free, priceText });
+-    setInvalid(problem);
++    // B-WIZ3-122: a tap before the saved package is shown is dropped, never
++    // queued; the coach taps again on what hydration put on screen.
++    if (inFlight.current || !readyNow.current) return;
+     setError(null);
+-    if (problem || inFlight.current) return;
+     inFlight.current = true;
+     setBusy(true);
+-    const owner = coachId;
+-    const stillOwner = () => mounted.current && coachRef.current === owner;
+-    const priceCents = free ? 0 : (parsePriceCents(priceText) ?? 0);
+-    const billingInterval: PackageBillingInterval =
+-      free || !monthly ? "one_time" : "monthly";
+-    const input: PackageCreateInput = {
+-      title: title.trim(),
+-      description: defaultDescription ?? null,
+-      priceCents,
+-      currency: "usd",
+-      billingInterval,
+-      intervalCount: 1,
+-      trialDays: 0,
+-      features: [],
+-    };
++    const owner = coachRef.current;
++    const myGeneration = generation.current;
++    const stillOwner = () =>
++      mounted.current &&
++      coachRef.current === owner &&
++      generation.current === myGeneration;
+     try {
+-      if (hydrated.current) await hydrated.current;
++      // B-346-3: the package exactly as the form shows it at this tap.
++      const snap = { ...shown.current };
++      const problem = validatePackage(snap);
++      setInvalid(problem);
++      if (problem) return;
++      const priceCents = snap.free ? 0 : (parsePriceCents(snap.priceText) ?? 0);
++      const billingInterval: PackageBillingInterval =
++        snap.free || !snap.monthly ? "one_time" : "monthly";
++      const input: PackageCreateInput = {
++        title: snap.title.trim(),
++        description: defaultDescription ?? null,
++        priceCents,
++        currency: "usd",
++        billingInterval,
++        intervalCount: 1,
++        trialDays: 0,
++        features: [],
++      };
+       let earlier = intent.current;
+       if (!earlier) {
+         // B-329-1: read storage again before any fresh create. A failed read
+@@ -191,30 +274,51 @@ export default function FirstPackageForm({
+         if (read.kind === "found") earlier = read.intent;
+       }
+       if (!stillOwner()) return;
+-      const { packageId } = await createPackageOnce({
+-        coachId: owner,
+-        scope: "wizard",
+-        input,
+-        earlier,
+-        deps: {
+-          create: (body, key) => coachPackagesApi.create(body, key),
+-          update: (id, body) => coachPackagesApi.update(id, body),
+-        },
+-        onIntent: (next) => {
+-          if (coachRef.current === owner) intent.current = next;
+-        },
+-      });
+-      if (!stillOwner()) return;
+-      await coachSetupApi.publishPackage(packageId);
++      const makeLive = async (
++        from: PackageCreateIntent | null,
++      ): Promise<string> => {
++        const made = await createPackageOnce({
++          coachId: owner,
++          scope: "wizard",
++          input,
++          earlier: from,
++          deps: {
++            create: (body, key) => coachPackagesApi.create(body, key),
++            update: (id, body) => coachPackagesApi.update(id, body),
++          },
++          onIntent: (next) => {
++            if (stillOwner()) intent.current = next;
++          },
++          isLive: stillOwner,
++        });
++        if (!stillOwner()) throw new PackageCreateStoppedError();
++        await coachSetupApi.publishPackage(made.packageId);
++        if (!stillOwner()) throw new PackageCreateStoppedError();
++        return made.packageId;
++      };
++      let packageId: string;
++      try {
++        packageId = await makeLive(earlier);
++      } catch (err) {
++        const code = createErrorCode(err);
++        if (!earlier || !code || !GONE_PACKAGE_CODES.has(code)) throw err;
++        if (!stillOwner()) return;
++        intent.current = null;
++        await clearIntent(owner);
++        if (!stillOwner()) return;
++        packageId = await makeLive(null);
++      }
+       let freeOnJoin = false;
+       if (priceCents === 0) {
+         const invite = await coachSetupApi.inviteLink();
++        if (!stillOwner()) return;
+         await coachSetupApi.bindFreePackage(invite.code, packageId);
++        if (!stillOwner()) return;
+         freeOnJoin = true;
+       }
+-      if (!stillOwner()) return;
+       intent.current = null;
+       await clearIntent(owner);
++      if (!stillOwner()) return;
+       setResumed(false);
+       onCreated({
+         id: packageId,
+@@ -224,15 +328,18 @@ export default function FirstPackageForm({
+         freeOnJoin,
+       });
+     } catch (err) {
+-      if (!stillOwner()) return;
++      if (err instanceof PackageCreateStoppedError || !stillOwner()) return;
+       setError(
+         err instanceof IntentStorageError
+           ? storageFailure(err)
+           : describeError(err, "create your package"),
+       );
+     } finally {
+-      inFlight.current = false;
+-      setBusy(false);
++      // An account change already reset the form for the new account.
++      if (generation.current === myGeneration) {
++        inFlight.current = false;
++        if (mounted.current) setBusy(false);
++      }
+     }
+   };
+ 
+@@ -240,16 +347,22 @@ export default function FirstPackageForm({
+     <View testID={testID}>
+       {resumed ? (
+         <Text style={styles.help} testID={`${testID}-resumed`}>
+-          Your package from earlier is saved here. Tap Create package to finish
+-          it. It will not be made twice.
++          Your package from earlier is saved on this device. Tap Create package
++          to finish that same package.
+         </Text>
+       ) : null}
++      {ready ? null : (
++        <Text style={styles.help} testID={`${testID}-hydrating`}>
++          Checking this device for a package saved earlier.
++        </Text>
++      )}
+       <Text style={styles.label} nativeID={`${testID}-name-label`}>
+         Package name
+       </Text>
+       <TextInput
+         value={title}
+-        onChangeText={setTitle}
++        onChangeText={(v) => show({ title: v })}
++        editable={ready}
+         style={styles.input}
+         accessibilityLabel="Package name"
+         accessibilityLabelledBy={`${testID}-name-label`}
+@@ -267,10 +380,11 @@ export default function FirstPackageForm({
+         ].map((o) => (
+           <TouchableOpacity
+             key={o.key}
+-            onPress={() => setFree(o.key === "free")}
++            onPress={() => show({ free: o.key === "free" })}
++            disabled={!ready}
+             style={[styles.segmentItem, o.on && styles.segmentOn]}
+             accessibilityRole="radio"
+-            accessibilityState={{ checked: o.on }}
++            accessibilityState={{ checked: o.on, disabled: !ready }}
+             accessibilityLabel={o.label}
+             testID={`${testID}-${o.key}`}
+           >
+@@ -292,7 +406,8 @@ export default function FirstPackageForm({
+           </Text>
+           <TextInput
+             value={priceText}
+-            onChangeText={setPriceText}
++            onChangeText={(v) => show({ priceText: v })}
++            editable={ready}
+             style={styles.input}
+             keyboardType="decimal-pad"
+             accessibilityLabel="Price in US dollars"
+@@ -310,10 +425,11 @@ export default function FirstPackageForm({
+             ].map((o) => (
+               <TouchableOpacity
+                 key={o.key}
+-                onPress={() => setMonthly(o.key === "monthly")}
++                onPress={() => show({ monthly: o.key === "monthly" })}
++                disabled={!ready}
+                 style={[styles.segmentItem, o.on && styles.segmentOn]}
+                 accessibilityRole="radio"
+-                accessibilityState={{ checked: o.on }}
++                accessibilityState={{ checked: o.on, disabled: !ready }}
+                 accessibilityLabel={o.label}
+                 testID={`${testID}-${o.key}`}
+               >
+@@ -351,14 +467,14 @@ export default function FirstPackageForm({
+         />
+       ) : null}
+       <TouchableOpacity
+-        style={[styles.primary, busy && styles.disabled]}
++        style={[styles.primary, (busy || !ready) && styles.disabled]}
+         onPress={() => {
+           void submit();
+         }}
+-        disabled={busy}
++        disabled={busy || !ready}
+         accessibilityRole="button"
+         accessibilityLabel="Create package"
+-        accessibilityState={{ busy, disabled: busy }}
++        accessibilityState={{ busy, disabled: busy || !ready }}
+         testID={`${testID}-create`}
+       >
+         {busy ? (
+diff --git a/src/components/coach/setup/GetPaidPanel.tsx b/src/components/coach/setup/GetPaidPanel.tsx
+index e87d0c8..c2a4689 100644
+--- a/src/components/coach/setup/GetPaidPanel.tsx
++++ b/src/components/coach/setup/GetPaidPanel.tsx
+@@ -4,6 +4,14 @@
+  * Stripe sends the coach back (tgp://connect/onboarding/return|refresh via the
+  * backend HTTPS landing), then re-reads the account from Stripe and shows the
+  * truthful state, including anything Stripe still needs and its deadline.
++ * A server whose return page does not use that scheme leaves the sheet open
++ * until the coach closes it; the status is re-read the same way either way.
++ *
++ * B-346-2 (agent 118): every load, Stripe visit and re-check belongs to this
++ * mount and session. Unmount or any auth change (sign-out, account switch)
++ * retires it: an open Stripe sheet is dismissed, and no later answer opens a
++ * sheet, re-reads status, sets state or calls onChange. Retry repeats the
++ * action that failed.
+  *
+  * Used by the setup wizard and the Home checklist.
+  */
+@@ -30,6 +38,7 @@ import {
+   type FriendlyError,
+ } from "../../../lib/coachSetup/errors";
+ import { assertStripeUrl } from "../../../utils/stripeUrlValidator";
++import { authEvents } from "../../../utils/authEvents";
+ import SetupNotice from "./SetupNotice";
+ 
+ export const CONNECT_RETURN_PREFIX = "tgp://connect/onboarding";
+@@ -45,45 +54,115 @@ export default function GetPaidPanel({ onChange, testID = "get-paid" }: Props) {
+   const [view, setView] = useState<ConnectView | null>(null);
+   const [loading, setLoading] = useState(true);
+   const [opening, setOpening] = useState(false);
++  const [checking, setChecking] = useState(false);
+   const [error, setError] = useState<FriendlyError | null>(null);
+-  const [stale, setStale] = useState(false);
++  const [failed, setFailed] = useState<"load" | "open" | "check" | null>(null);
++  // "unanswered": the server asked Stripe and got no answer. "saved": this
++  // server cannot ask Stripe live, so the status is Stripe's last update.
++  const [stale, setStale] = useState<"unanswered" | "saved" | null>(null);
+   const onChangeRef = useRef(onChange);
+   onChangeRef.current = onChange;
+ 
++  const mounted = useRef(true);
++  const epoch = useRef(0);
++  const sheetOpen = useRef(false);
++  const retire = useCallback(() => {
++    epoch.current += 1;
++    if (sheetOpen.current) {
++      sheetOpen.current = false;
++      try {
++        WebBrowser.dismissAuthSession();
++      } catch {
++        // No sheet to close on this platform.
++      }
++    }
++  }, []);
++  /** A check bound to this mount and session, read after every await. */
++  const begin = useCallback(() => {
++    const mine = epoch.current;
++    return () => mounted.current && epoch.current === mine;
++  }, []);
++  useEffect(() => {
++    mounted.current = true;
++    const off = authEvents.onAuthChange(() => {
++      retire();
++      if (!mounted.current) return;
++      // Nothing from the earlier account stays on screen.
++      setView(null);
++      setStale(null);
++      setError(null);
++      setFailed(null);
++      setOpening(false);
++      setChecking(false);
++      setLoading(false);
++    });
++    return () => {
++      mounted.current = false;
++      off();
++      retire();
++    };
++  }, [retire]);
++
+   const apply = useCallback((v: ConnectView) => {
+     setView(v);
+     onChangeRef.current?.(v);
+   }, []);
+ 
++  const showFresh = useCallback(
++    (fresh: ConnectView) => {
++      setStale(
++        fresh.refreshed
++          ? null
++          : fresh.refreshUnavailable
++            ? "saved"
++            : "unanswered",
++      );
++      apply(fresh);
++    },
++    [apply],
++  );
++
+   const load = useCallback(async () => {
++    const live = begin();
+     setLoading(true);
+     setError(null);
++    setFailed(null);
+     try {
+-      apply(await coachSetupApi.connectStatus());
++      const v = await coachSetupApi.connectStatus();
++      if (!live()) return;
++      apply(v);
+     } catch (err) {
++      if (!live()) return;
+       setError(describeError(err, "load your payout setup"));
++      setFailed("load");
+     } finally {
+-      setLoading(false);
++      if (live()) setLoading(false);
+     }
+-  }, [apply]);
++  }, [apply, begin]);
+ 
+   useEffect(() => {
+     void load();
+   }, [load]);
+ 
+   const openStripe = useCallback(async () => {
++    const live = begin();
+     setOpening(true);
+     setError(null);
++    setFailed(null);
+     try {
+       // Stripe links are single use and expire. When Stripe sends the coach to
+       // the refresh URL, mint a new link and reopen once.
+       for (let attempt = 0; attempt < 2; attempt++) {
+         const link = await coachSetupApi.createOnboardingLink();
++        if (!live()) return;
+         assertStripeUrl(link.url, "GetPaidPanel.onboarding");
+-        const result = await WebBrowser.openAuthSessionAsync(
+-          link.url,
+-          CONNECT_RETURN_PREFIX,
+-        );
++        sheetOpen.current = true;
++        const result = await Promise.resolve(
++          WebBrowser.openAuthSessionAsync(link.url, CONNECT_RETURN_PREFIX),
++        ).finally(() => {
++          sheetOpen.current = false;
++        });
++        if (!live()) return;
+         const expired =
+           result.type === "success" &&
+           typeof result.url === "string" &&
+@@ -91,14 +170,37 @@ export default function GetPaidPanel({ onChange, testID = "get-paid" }: Props) {
+         if (!expired) break;
+       }
+       const fresh = await coachSetupApi.refreshConnectStatus();
+-      setStale(!fresh.refreshed);
+-      apply(fresh);
++      if (!live()) return;
++      showFresh(fresh);
+     } catch (err) {
++      if (!live()) return;
+       setError(describeError(err, "open Stripe"));
++      setFailed("open");
+     } finally {
+-      setOpening(false);
++      if (live()) setOpening(false);
++    }
++  }, [begin, showFresh]);
++
++  const checkAgain = useCallback(async () => {
++    const live = begin();
++    setChecking(true);
++    setError(null);
++    setFailed(null);
++    try {
++      const fresh = await coachSetupApi.refreshConnectStatus();
++      if (!live()) return;
++      showFresh(fresh);
++    } catch (err) {
++      if (!live()) return;
++      setError(describeError(err, "check with Stripe"));
++      setFailed("check");
++    } finally {
++      if (live()) setChecking(false);
+     }
+-  }, [apply]);
++  }, [begin, showFresh]);
++
++  const retry =
++    failed === "open" ? openStripe : failed === "check" ? checkAgain : load;
+ 
+   if (loading && !view) {
+     return (
+@@ -138,18 +240,15 @@ export default function GetPaidPanel({ onChange, testID = "get-paid" }: Props) {
+           ) : null}
+           {stale ? (
+             <Text style={styles.note} testID={`${testID}-stale`}>
+-              Stripe did not answer just now, so this may be a few seconds
+-              behind. Check again in a moment.
++              {stale === "saved"
++                ? "This shows the last update Stripe sent to TGP. A change made just now can take a few minutes to show here."
++                : "Stripe did not answer just now, so this may be a few seconds behind. Check again in a moment."}
+             </Text>
+           ) : null}
+         </>
+       ) : null}
+       {error ? (
+-        <SetupNotice
+-          error={error}
+-          onRetry={view ? openStripe : load}
+-          testID={`${testID}-error`}
+-        />
++        <SetupNotice error={error} onRetry={retry} testID={`${testID}-error`} />
+       ) : null}
+       {copy?.action ? (
+         <TouchableOpacity
+@@ -172,17 +271,11 @@ export default function GetPaidPanel({ onChange, testID = "get-paid" }: Props) {
+       {view && view.state === "pending_verification" ? (
+         <TouchableOpacity
+           style={styles.secondary}
+-          onPress={async () => {
+-            try {
+-              const fresh = await coachSetupApi.refreshConnectStatus();
+-              setStale(!fresh.refreshed);
+-              apply(fresh);
+-            } catch (err) {
+-              setError(describeError(err, "check with Stripe"));
+-            }
+-          }}
++          onPress={checkAgain}
++          disabled={checking}
+           accessibilityRole="button"
+           accessibilityLabel="Check status again"
++          accessibilityState={{ busy: checking, disabled: checking }}
+           testID={`${testID}-check`}
+         >
+           <Text style={styles.secondaryText}>Check status again</Text>
+diff --git a/src/components/coach/setup/__tests__/audit120HydrationConsent.test.tsx b/src/components/coach/setup/__tests__/audit120HydrationConsent.test.tsx
+new file mode 100644
+index 0000000..9e2b38d
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/audit120HydrationConsent.test.tsx
+@@ -0,0 +1,157 @@
++/** Test-only: B-346-3's fresh-action requirement at W2 head 26cf23b7. */
++import React from "react";
++import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
++
++jest.mock("../../../../services/sentry", () => ({ captureError: jest.fn() }));
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn(), put: jest.fn() },
++}));
++const mockCreate = jest.fn(async (..._a: unknown[]) => ({
++  data: { id: "pkg_new" },
++}));
++const mockUpdate = jest.fn(async (..._a: unknown[]) => ({}));
++jest.mock("../../../../api/packagesApi", () => ({
++  coachPackagesApi: {
++    create: (...a: unknown[]) => mockCreate(...a),
++    update: (...a: unknown[]) => mockUpdate(...a),
++  },
++}));
++const mockPublish = jest.fn(async (..._a: unknown[]) => ({}));
++const mockInvite = jest.fn(async () => ({ code: "SYNTHETIC", url: "x" }));
++const mockBind = jest.fn(async (..._a: unknown[]) => ({}));
++jest.mock("../../../../api/coachSetupApi", () => ({
++  coachSetupApi: {
++    publishPackage: (...a: unknown[]) => mockPublish(...a),
++    inviteLink: () => mockInvite(),
++    bindFreePackage: (...a: unknown[]) => mockBind(...a),
++  },
++}));
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "coach_1" }),
++}));
++const mockStore = new Map<string, string>();
++const mockRead: { hold: Promise<void> | null } = { hold: null };
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => {
++      if (mockRead.hold) await mockRead.hold;
++      return mockStore.get(k);
++    },
++    set: async (k: string, v: string) => {
++      mockStore.set(k, v);
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++import FirstPackageForm from "../FirstPackageForm";
++import {
++  intentStorageKey,
++  newIntent,
++} from "../../../../lib/coachSetup/packageCreateIntent";
++import type { PackageCreateInput } from "../../../../api/packagesApi";
++
++const savedInput: PackageCreateInput = {
++  title: "Saved high-price recurring plan",
++  priceCents: 99000,
++  currency: "usd",
++  billingInterval: "monthly",
++  intervalCount: 1,
++};
++const form = (done = jest.fn()) => (
++  <FirstPackageForm
++    defaultTitle="Synthetic coaching"
++    chargesEnabled
++    onCreated={done}
++  />
++);
++function holdRead(): () => Promise<void> {
++  let release: () => void = () => undefined;
++  mockRead.hold = new Promise<void>((r) => (release = r));
++  return async () => {
++    await act(async () => {
++      mockRead.hold = null;
++      release();
++      // Flush the hydration -> helper -> publish -> clear continuations.
++      for (let i = 0; i < 30; i += 1) await Promise.resolve();
++    });
++  };
++}
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockStore.clear();
++  mockRead.hold = null;
++});
++
++it("B-346-3: an early tap on $49 defaults cannot publish a saved $990 plan without a fresh post-hydration tap", async () => {
++  mockStore.set(
++    intentStorageKey("coach_1"),
++    JSON.stringify({ ...newIntent(savedInput), packageId: "pkg_saved" }),
++  );
++  const release = holdRead();
++  const done = jest.fn();
++  const screen = await render(form(done));
++  expect(screen.getByTestId("first-package-title").props.value).toBe(
++    "Synthetic coaching",
++  );
++  expect(screen.getByTestId("first-package-price").props.value).toBe("49.00");
++  await fireEvent.press(screen.getByTestId("first-package-create"));
++  expect(mockPublish).not.toHaveBeenCalled();
++  await release();
++  expect(screen.getByTestId("first-package-price").props.value).toBe("990.00");
++  expect(mockCreate).not.toHaveBeenCalled();
++  expect(mockUpdate).not.toHaveBeenCalled();
++  // Hydration is not a user action authorizing publication of this offer.
++  expect({
++    published: mockPublish.mock.calls,
++    completed: done.mock.calls.length,
++  }).toEqual({ published: [], completed: 0 });
++});
++
++it("B-346-3: an early tap on Paid defaults cannot automatically bind an unseen saved Free package to the invite", async () => {
++  const savedFree = { ...savedInput, title: "Saved free plan", priceCents: 0,
++    billingInterval: "one_time" as const };
++  mockStore.set(
++    intentStorageKey("coach_1"),
++    JSON.stringify({ ...newIntent(savedFree), packageId: "pkg_free" }),
++  );
++  const release = holdRead();
++  const done = jest.fn();
++  const screen = await render(form(done));
++  expect(screen.getByTestId("first-package-paid").props.accessibilityState.checked).toBe(true);
++  await fireEvent.press(screen.getByTestId("first-package-create"));
++  await release();
++  expect(screen.getByTestId("first-package-free").props.accessibilityState.checked).toBe(true);
++  expect(mockCreate).not.toHaveBeenCalled();
++  expect(mockUpdate).not.toHaveBeenCalled();
++  expect({
++    published: mockPublish.mock.calls,
++    bound: mockBind.mock.calls,
++    completed: done.mock.calls.length,
++  }).toEqual({ published: [], bound: [], completed: 0 });
++});
++
++it("control: a deliberate fresh tap after hydration publishes precisely the displayed saved plan", async () => {
++  mockStore.set(
++    intentStorageKey("coach_1"),
++    JSON.stringify({ ...newIntent(savedInput), packageId: "pkg_saved" }),
++  );
++  const release = holdRead();
++  const done = jest.fn();
++  const screen = await render(form(done));
++  await release();
++  expect(mockPublish).not.toHaveBeenCalled();
++  expect(screen.getByTestId("first-package-price").props.value).toBe("990.00");
++  await fireEvent.press(screen.getByTestId("first-package-create"));
++  await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++  expect(mockPublish.mock.calls).toEqual([["pkg_saved"]]);
++  expect(mockCreate).not.toHaveBeenCalled();
++  expect(mockUpdate).not.toHaveBeenCalled();
++  expect(done.mock.calls[0][0]).toMatchObject({
++    id: "pkg_saved", title: savedInput.title, priceCents: 99000,
++    billingInterval: "monthly",
++  });
++});
+diff --git a/src/components/coach/setup/__tests__/packageCreateDurability.test.tsx b/src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
+index 442f499..e4dd5a5 100644
+--- a/src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
++++ b/src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
+@@ -234,8 +234,18 @@ describe("B-329-1 — a fresh create is sent only after its identity is on disk"
+     await new Promise((r) => setTimeout(r, 20));
+     expect(onCreated).not.toHaveBeenCalled();
+     expect(mockPublish).not.toHaveBeenCalled();
+-    // The package id is kept, so reopening finishes it without a new create.
+-    expect(JSON.parse(mockStore.get(KEY) as string).packageId).toBe("pkg_1");
++    // B-329-5 (agent 118): nothing is written after the form closed. The
++    // intent that was sent stays, so reopening re-sends the same key and the
++    // server answers with the same package: no second package.
++    const kept = JSON.parse(mockStore.get(KEY) as string);
++    expect(kept.packageId).toBeNull();
++    const again = await mount(onCreated);
++    await again.findByTestId("first-package-resumed");
++    await fireEvent.press(again.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(onCreated.mock.calls[0][0].id).toBe("pkg_1");
++    expect(mockRows.size).toBe(1);
++    expect(mockCreate.mock.calls[1][1]).toBe(kept.key);
+   });
+ });
+ 
+diff --git a/src/components/coach/setup/__tests__/w2FixRound118.test.tsx b/src/components/coach/setup/__tests__/w2FixRound118.test.tsx
+new file mode 100644
+index 0000000..cbc847c
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/w2FixRound118.test.tsx
+@@ -0,0 +1,524 @@
++/**
++ * B-WIZ-118 (agent 118) — fix round for mobile #346 (coach setup W2). Each
++ * case below failed at 4522eb8e (+ #345 merge):
++ *   B-345-1 (form level)  the coach's late cadence choice is what goes live
++ *   B-329-5 (Opus) / B-346-1 (Sol)  the form sent, published, bound or called
++ *            back after the form closed or the account changed
++ *   C-346-2  a remembered package archived since trapped the form
++ *   B-346-2 (Sol)  Get paid opened Stripe, re-read status or called back after
++ *            unmount or sign-out; Retry repeated the wrong action
++ *   B-346-1 (Opus)  first-person app copy on the checklist and setup screen
++ *   production capability (job B-WIZ-118): a server with no live Stripe
++ *            re-read is not described as "Stripe did not answer"
++ */
++import React from "react";
++import { render, fireEvent, waitFor } from "@testing-library/react-native";
++
++jest.mock("../../../../services/sentry", () => ({
++  captureError: jest.fn(),
++  setSentryUser: jest.fn(),
++}));
++
++type Row = Record<string, unknown>;
++const mockServer = {
++  rows: new Map<string, Row>(),
++  keys: new Map<string, string>(),
++  creates: 0,
++  patches: [] as Row[],
++  publishFailOnce: false,
++  publishHold: null as null | Promise<void>,
++  binds: 0,
++  inviteReads: 0,
++};
++function mockHttp(status: number, data: Row) {
++  return Object.assign(new Error(`HTTP ${status}`), {
++    response: { status, data, headers: {} },
++  });
++}
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: jest.fn(async (url: string) => {
++      if (url === "/coaches/me/invite-link") {
++        mockServer.inviteReads++;
++        return { data: { code: "INV1", url: "https://example.test/j/INV1" } };
++      }
++      throw mockHttp(404, { code: "UNEXPECTED_ROUTE" });
++    }),
++    post: jest.fn(
++      async (
++        url: string,
++        body: Row,
++        cfg?: { headers?: Record<string, string> },
++      ) => {
++        if (url === "/v1/coach/packages") {
++          const key = String(cfg?.headers?.["Idempotency-Key"] ?? "");
++          let id = mockServer.keys.get(key);
++          if (!id) {
++            mockServer.creates++;
++            id = `pkg_${mockServer.creates}`;
++            mockServer.keys.set(key, id);
++            mockServer.rows.set(id, {
++              id,
++              name: body.name,
++              amount_cents: body.amount_cents,
++              currency: "usd",
++              billing_type: body.billing_type,
++              interval: body.billing_interval ?? null,
++              interval_count: body.billing_interval_count ?? 1,
++              published_at: null,
++              archived_at: null,
++            });
++          }
++          return { data: { ...(mockServer.rows.get(id) as Row) } };
++        }
++        const m = /^\/v1\/coach\/packages\/([^/]+)\/publish$/.exec(url);
++        if (m) {
++          if (mockServer.publishHold) await mockServer.publishHold;
++          if (mockServer.publishFailOnce) {
++            mockServer.publishFailOnce = false;
++            throw Object.assign(new Error("Network Error"), {
++              code: "ERR_NETWORK",
++              request: {},
++            });
++          }
++          const row = mockServer.rows.get(decodeURIComponent(m[1]));
++          if (!row) throw mockHttp(404, { code: "PACKAGE_NOT_FOUND" });
++          if (row.archived_at)
++            throw mockHttp(400, { code: "PACKAGE_ARCHIVED" });
++          row.published_at = "2026-10-04T00:00:00.000Z";
++          return { data: { ...row } };
++        }
++        throw mockHttp(404, { code: "UNEXPECTED_ROUTE" });
++      },
++    ),
++    put: jest.fn(async () => {
++      mockServer.binds++;
++      return { data: {} };
++    }),
++    patch: jest.fn(async (url: string, body: Row) => {
++      mockServer.patches.push({ ...body });
++      const id = decodeURIComponent(url.split("/").pop() as string);
++      const row = mockServer.rows.get(id);
++      if (!row) throw mockHttp(404, { code: "PACKAGE_NOT_FOUND" });
++      if (body.name !== undefined) row.name = body.name;
++      if (body.amount_cents !== undefined) row.amount_cents = body.amount_cents;
++      if (body.billing_type !== undefined) row.billing_type = body.billing_type;
++      if ("billing_interval" in body) row.interval = body.billing_interval;
++      if ("billing_interval_count" in body)
++        row.interval_count = body.billing_interval_count ?? 1;
++      return { data: { ...row } };
++    }),
++  },
++}));
++
++const mockStore = new Map<string, string>();
++const mockHold = {
++  writes: false,
++  deletes: false,
++  pending: [] as Array<() => void>,
++};
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => mockStore.get(k),
++    set: (k: string, v: string) => {
++      if (!mockHold.writes) {
++        mockStore.set(k, v);
++        return Promise.resolve();
++      }
++      return new Promise<void>((resolve) =>
++        mockHold.pending.push(() => {
++          mockStore.set(k, v);
++          resolve();
++        }),
++      );
++    },
++    delete: (k: string) => {
++      if (!mockHold.deletes) {
++        mockStore.delete(k);
++        return Promise.resolve();
++      }
++      return new Promise<void>((resolve) =>
++        mockHold.pending.push(() => {
++          mockStore.delete(k);
++          resolve();
++        }),
++      );
++    },
++  },
++}));
++
++let mockUser: { id: string } | null = { id: "coach_1" };
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => mockUser,
++}));
++
++const mockOpenAuth = jest.fn();
++const mockDismiss = jest.fn();
++jest.mock("expo-web-browser", () => ({
++  __esModule: true,
++  openAuthSessionAsync: (...a: unknown[]) => mockOpenAuth(...a),
++  dismissAuthSession: () => mockDismiss(),
++}));
++
++import FirstPackageForm from "../FirstPackageForm";
++import GetPaidPanel from "../GetPaidPanel";
++import { buildChecklist } from "../CoachSetupChecklist";
++import CoachSetupScreen from "../../../../screens/coach/setup/CoachSetupScreen";
++import { coachSetupApi } from "../../../../api/coachSetupApi";
++import api from "../../../../services/api";
++import { authEvents } from "../../../../utils/authEvents";
++import {
++  intentStorageKey,
++  newIntent,
++} from "../../../../lib/coachSetup/packageCreateIntent";
++
++jest.mock("../InviteShareCard", () => () => null);
++
++const KEY = intentStorageKey("coach_1");
++const flush = () => new Promise((r) => setTimeout(r, 30));
++const deferred = <T,>() => {
++  let resolve: (v: T) => void = () => undefined;
++  const promise = new Promise<T>((r) => (resolve = r));
++  return { promise, resolve };
++};
++
++const spies: Array<{ mockRestore: () => void }> = [];
++function spyApi<K extends keyof typeof coachSetupApi>(name: K) {
++  const sp = jest.spyOn(coachSetupApi, name);
++  spies.push(sp);
++  return sp;
++}
++const realGet = jest.mocked(api.get).getMockImplementation();
++const realPost = jest.mocked(api.post).getMockImplementation();
++afterEach(() => {
++  spies.splice(0).forEach((sp) => sp.mockRestore());
++  if (realGet) jest.mocked(api.get).mockImplementation(realGet);
++  if (realPost) jest.mocked(api.post).mockImplementation(realPost);
++});
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockServer.rows.clear();
++  mockServer.keys.clear();
++  mockServer.creates = 0;
++  mockServer.patches = [];
++  mockServer.publishFailOnce = false;
++  mockServer.publishHold = null;
++  mockServer.binds = 0;
++  mockServer.inviteReads = 0;
++  mockStore.clear();
++  mockHold.writes = false;
++  mockHold.deletes = false;
++  mockHold.pending = [];
++  mockUser = { id: "coach_1" };
++});
++
++const form = (onCreated: jest.Mock = jest.fn()) => (
++  <FirstPackageForm
++    defaultTitle="North coaching"
++    chargesEnabled
++    onCreated={onCreated}
++  />
++);
++
++describe("B-345-1 at the form: the cadence the coach picks is the cadence that goes live", () => {
++  it("monthly made, publish lost, One time picked: the live row is one-time", async () => {
++    mockServer.publishFailOnce = true;
++    const onCreated = jest.fn();
++    const s = await render(form(onCreated));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await s.findByTestId("first-package-error");
++    await fireEvent.press(s.getByTestId("first-package-once"));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(onCreated.mock.calls[0][0].billingInterval).toBe("one_time");
++    expect(mockServer.patches[0]).toMatchObject({
++      billing_type: "one_time",
++      billing_interval: null,
++    });
++    expect(mockServer.rows.get("pkg_1")).toMatchObject({
++      billing_type: "one_time",
++      interval: null,
++    });
++    expect(mockServer.creates).toBe(1);
++  });
++});
++
++describe("B-329-5: nothing is sent or written after the form closed or the account changed", () => {
++  it("closed while the write-ahead saves: no create, and the written intent stays (B-345-1)", async () => {
++    mockHold.writes = true;
++    const s = await render(form());
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockHold.pending.length).toBe(1));
++    await s.unmount();
++    mockHold.writes = false;
++    mockHold.pending.splice(0).forEach((go) => go());
++    await flush();
++    expect(mockServer.creates).toBe(0);
++    // B-345-1 (agent 119): another form may have read and sent it.
++    expect(mockStore.has(KEY)).toBe(true);
++  });
++
++  it("account changed while the write-ahead saves: no create, and the form starts clean", async () => {
++    mockHold.writes = true;
++    const s = await render(form());
++    await fireEvent.changeText(
++      s.getByTestId("first-package-title"),
++      "Coach one plan",
++    );
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockHold.pending.length).toBe(1));
++    mockUser = { id: "coach_2" };
++    await s.rerender(form());
++    mockHold.writes = false;
++    mockHold.pending.splice(0).forEach((go) => go());
++    await flush();
++    expect(mockServer.creates).toBe(0);
++    expect(s.getByTestId("first-package-title").props.value).toBe(
++      "North coaching",
++    );
++    expect(s.queryByTestId("first-package-error")).toBeNull();
++  });
++
++  it("account changed while publish runs: no invite read, no binding, no callback", async () => {
++    const gate = deferred<void>();
++    mockServer.publishHold = gate.promise;
++    const onCreated = jest.fn();
++    const s = await render(form(onCreated));
++    await fireEvent.press(s.getByTestId("first-package-free"));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockServer.creates).toBe(1));
++    mockUser = { id: "coach_2" };
++    await s.rerender(form(onCreated));
++    gate.resolve();
++    await flush();
++    expect(mockServer.inviteReads).toBe(0);
++    expect(mockServer.binds).toBe(0);
++    expect(onCreated).not.toHaveBeenCalled();
++    // Coach one's made package stays remembered for coach one.
++    expect(JSON.parse(mockStore.get(KEY) as string).packageId).toBe("pkg_1");
++  });
++
++  it("closed while the finished intent is being removed: no callback", async () => {
++    const onCreated = jest.fn();
++    const s = await render(form(onCreated));
++    mockHold.deletes = true;
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockHold.pending.length).toBe(1));
++    await s.unmount();
++    mockHold.deletes = false;
++    mockHold.pending.splice(0).forEach((go) => go());
++    await flush();
++    expect(onCreated).not.toHaveBeenCalled();
++  });
++});
++
++describe("C-346-2: a remembered package archived since does not trap the form", () => {
++  it("publish says PACKAGE_ARCHIVED: one fresh package is made and goes live in the same tap", async () => {
++    const made = {
++      ...newIntent({
++        title: "North coaching",
++        description: null,
++        priceCents: 4900,
++        currency: "usd",
++        billingInterval: "monthly",
++        intervalCount: 1,
++        trialDays: 0,
++        features: [],
++      }),
++      packageId: "pkg_old",
++    };
++    mockStore.set(KEY, JSON.stringify(made));
++    mockServer.rows.set("pkg_old", {
++      id: "pkg_old",
++      billing_type: "recurring",
++      interval: "month",
++      amount_cents: 4900,
++      archived_at: "2026-10-03T00:00:00.000Z",
++    });
++    const onCreated = jest.fn();
++    const s = await render(form(onCreated));
++    await s.findByTestId("first-package-resumed");
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockServer.creates).toBe(1);
++    expect(onCreated.mock.calls[0][0].id).toBe("pkg_1");
++    expect(mockServer.rows.get("pkg_1")?.published_at).toBeTruthy();
++  });
++});
++
++// Today's production status payload (legacy shape, no state/requirements).
++const ACCOUNT = {
++  configured: true,
++  account_id: "acct_1",
++  charges_enabled: false,
++  payouts_enabled: false,
++  requirements_due: ["external_account"],
++};
++const LINK = { url: "https://connect.stripe.com/setup/e/acct_1/abc" };
++const view = (over: Row = {}) => ({
++  state: "not_started",
++  accountId: null,
++  chargesEnabled: false,
++  payoutsEnabled: false,
++  detailsSubmitted: false,
++  actionRequired: true,
++  currentlyDue: [],
++  pastDue: [],
++  eventuallyDue: [],
++  pendingVerification: [],
++  deadline: null,
++  disabledReason: null,
++  refreshed: false,
++  ...over,
++});
++
++describe("B-346-2: Get paid belongs to its mount and session", () => {
++  it("closed while the Stripe link is minted: Stripe never opens", async () => {
++    spyApi("connectStatus").mockResolvedValue(view() as never);
++    const mint = deferred<typeof LINK>();
++    spyApi("createOnboardingLink").mockReturnValue(mint.promise as never);
++    const s = await render(<GetPaidPanel />);
++    await s.findByTestId("get-paid-open");
++    const pressed = fireEvent.press(s.getByTestId("get-paid-open"));
++    await waitFor(() =>
++      expect(coachSetupApi.createOnboardingLink).toHaveBeenCalled(),
++    );
++    await s.unmount();
++    mint.resolve(LINK);
++    await pressed;
++    await flush();
++    expect(mockOpenAuth).not.toHaveBeenCalled();
++  });
++
++  it("closed while Stripe is open: the sheet is dismissed, no re-read, no onChange", async () => {
++    spyApi("connectStatus").mockResolvedValue(view() as never);
++    spyApi("createOnboardingLink").mockResolvedValue(LINK as never);
++    const refresh = spyApi("refreshConnectStatus");
++    const sheet = deferred<{ type: string }>();
++    mockOpenAuth.mockReturnValue(sheet.promise);
++    const onChange = jest.fn();
++    const s = await render(<GetPaidPanel onChange={onChange} />);
++    await s.findByTestId("get-paid-open");
++    onChange.mockClear();
++    const pressed = fireEvent.press(s.getByTestId("get-paid-open"));
++    await waitFor(() => expect(mockOpenAuth).toHaveBeenCalledTimes(1));
++    await s.unmount();
++    expect(mockDismiss).toHaveBeenCalledTimes(1);
++    sheet.resolve({ type: "dismiss" });
++    await pressed;
++    await flush();
++    expect(refresh).not.toHaveBeenCalled();
++    expect(onChange).not.toHaveBeenCalled();
++  });
++
++  it("sign-out while the status re-read runs: the answer is dropped", async () => {
++    spyApi("connectStatus").mockResolvedValue(view() as never);
++    spyApi("createOnboardingLink").mockResolvedValue(LINK as never);
++    mockOpenAuth.mockResolvedValue({ type: "cancel" });
++    const reread = deferred<unknown>();
++    spyApi("refreshConnectStatus").mockReturnValue(reread.promise as never);
++    const onChange = jest.fn();
++    const s = await render(<GetPaidPanel onChange={onChange} />);
++    await s.findByTestId("get-paid-open");
++    onChange.mockClear();
++    const pressed = fireEvent.press(s.getByTestId("get-paid-open"));
++    await waitFor(() =>
++      expect(coachSetupApi.refreshConnectStatus).toHaveBeenCalled(),
++    );
++    authEvents.emit("logout");
++    reread.resolve(
++      view({ state: "active", chargesEnabled: true, payoutsEnabled: true }),
++    );
++    await pressed;
++    await flush();
++    expect(onChange).not.toHaveBeenCalled();
++    expect(s.queryByText("You are ready to get paid")).toBeNull();
++  });
++
++  it("Retry repeats the action that failed (a failed re-check is re-checked, Stripe is not reopened)", async () => {
++    spyApi("connectStatus").mockResolvedValue(
++      view({
++        state: "pending_verification",
++        accountId: "acct_1",
++        actionRequired: false,
++      }) as never,
++    );
++    const mint = spyApi("createOnboardingLink");
++    const refresh = spyApi("refreshConnectStatus")
++      .mockRejectedValueOnce(mockHttp(503, {}) as never)
++      .mockResolvedValueOnce(
++        view({
++          state: "pending_verification",
++          accountId: "acct_1",
++          refreshed: true,
++        }) as never,
++      );
++    const s = await render(<GetPaidPanel />);
++    await fireEvent.press(await s.findByTestId("get-paid-check"));
++    await fireEvent.press(await s.findByTestId("get-paid-error-retry"));
++    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2));
++    expect(mint).not.toHaveBeenCalled();
++  });
++
++  it("today's server has no live re-read: the note says it is Stripe's last update, not a failed call", async () => {
++    jest.mocked(api.get).mockImplementation((async (url: string) => {
++      if (url === "/coach/connect/status") return { data: ACCOUNT };
++      throw mockHttp(404, {});
++    }) as never);
++    jest.mocked(api.post).mockImplementation((async (url: string) => {
++      if (url === "/coach/connect/onboarding-link") return { data: LINK };
++      throw mockHttp(404, { code: "NOT_FOUND" });
++    }) as never);
++    mockOpenAuth.mockResolvedValue({ type: "cancel" });
++    const s = await render(<GetPaidPanel />);
++    await fireEvent.press(await s.findByTestId("get-paid-open"));
++    const note = await s.findByTestId("get-paid-stale");
++    expect(note.props.children).toMatch(
++      /^This shows the last update Stripe sent to TGP\./,
++    );
++    expect(note.props.children).not.toMatch(/did not answer/);
++  });
++});
++
++describe("B-346-1: app copy has no first person and no exclamation marks", () => {
++  const FIRST_PERSON = /\b(we|We|us|our|Our)\b|!/;
++
++  it("every checklist line in every state", () => {
++    const states = [null, true, false] as const;
++    for (const connectActive of states)
++      for (const hasPackage of states)
++        for (const hasClient of states)
++          for (const paid of states)
++            for (const flag of [true, false])
++              for (const item of buildChecklist({
++                connectActive,
++                connectNeedsAttention: flag,
++                hasPackage,
++                hasClient,
++                sharedLink: flag,
++                paid,
++              }))
++                expect(`${item.label} ${item.detail}`).not.toMatch(
++                  FIRST_PERSON,
++                );
++  });
++
++  it("the setup screen", async () => {
++    spyApi("connectStatus").mockResolvedValue(view() as never);
++    const nav = { goBack: jest.fn() };
++    for (const section of ["get_paid", "invite"] as const) {
++      const s = await render(
++        <CoachSetupScreen
++          route={{ key: "k", name: "CoachSetup", params: { section } } as never}
++          navigation={nav as never}
++        />,
++      );
++      await flush();
++      const text = JSON.stringify(s.toJSON());
++      expect(text).not.toMatch(FIRST_PERSON);
++      await s.unmount();
++    }
++  });
++});
+diff --git a/src/components/coach/setup/__tests__/w2FixRound119.test.tsx b/src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+new file mode 100644
+index 0000000..ed5a274
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+@@ -0,0 +1,218 @@
++/**
++ * B-WIZ2-119 (agent 119) — fix round for mobile #346 (coach setup W2).
++ * B-346-3 (Sol): the form took its package from the defaults on screen
++ * before the saved intent was read; hydration then showed the saved package
++ * while the tap updated, published and reported the defaults. Each case
++ * below failed at 2baea5b8.
++ */
++import React from "react";
++import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
++
++jest.mock("../../../../services/sentry", () => ({ captureError: jest.fn() }));
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn(), put: jest.fn() },
++}));
++const mockCreate = jest.fn(async (..._a: unknown[]) => ({
++  data: { id: "pkg_new" },
++}));
++const mockUpdate = jest.fn(async (..._a: unknown[]) => ({}));
++jest.mock("../../../../api/packagesApi", () => ({
++  coachPackagesApi: {
++    create: (...a: unknown[]) => mockCreate(...a),
++    update: (...a: unknown[]) => mockUpdate(...a),
++  },
++}));
++const mockPublish = jest.fn(async (..._a: unknown[]) => ({}));
++const mockInvite = jest.fn(async () => ({ code: "SYNTH", url: "x" }));
++const mockBind = jest.fn(async (..._a: unknown[]) => ({}));
++jest.mock("../../../../api/coachSetupApi", () => ({
++  coachSetupApi: {
++    publishPackage: (...a: unknown[]) => mockPublish(...a),
++    inviteLink: () => mockInvite(),
++    bindFreePackage: (...a: unknown[]) => mockBind(...a),
++  },
++}));
++let mockUser: { id: string } | null = { id: "coach_1" };
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => mockUser,
++}));
++const mockStore = new Map<string, string>();
++const mockRead: { hold: Promise<void> | null } = { hold: null };
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => {
++      if (mockRead.hold) await mockRead.hold;
++      return mockStore.get(k);
++    },
++    set: async (k: string, v: string) => {
++      mockStore.set(k, v);
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++import FirstPackageForm from "../FirstPackageForm";
++import {
++  intentStorageKey,
++  newIntent,
++} from "../../../../lib/coachSetup/packageCreateIntent";
++import type { PackageCreateInput } from "../../../../api/packagesApi";
++
++const KEY = intentStorageKey("coach_1");
++const savedOneTime: PackageCreateInput = {
++  title: "Saved one-time plan",
++  priceCents: 9900,
++  currency: "usd",
++  billingInterval: "one_time",
++  intervalCount: 1,
++};
++const form = (done = jest.fn()) => (
++  <FirstPackageForm
++    defaultTitle="Synthetic coaching"
++    chargesEnabled
++    onCreated={done}
++  />
++);
++/** Holds the mount read; returns the release. */
++function holdRead(): () => Promise<void> {
++  let release: () => void = () => undefined;
++  mockRead.hold = new Promise<void>((r) => (release = r));
++  return async () => {
++    await act(async () => {
++      mockRead.hold = null;
++      release();
++      // B-WIZ3-122: let any queued submit run, so a dropped tap is proven.
++      for (let i = 0; i < 30; i += 1) await Promise.resolve();
++    });
++  };
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockStore.clear();
++  mockRead.hold = null;
++  mockUser = { id: "coach_1" };
++});
++
++describe("B-346-3: nothing is sent from fields shown before hydration", () => {
++  it("B-WIZ3-122: a tap during hydration is dropped; a fresh tap publishes the made one-time package as shown", async () => {
++    mockStore.set(
++      KEY,
++      JSON.stringify({ ...newIntent(savedOneTime), packageId: "pkg_saved" }),
++    );
++    const release = holdRead();
++    const done = jest.fn();
++    const s = await render(form(done));
++    const create = () => s.getByTestId("first-package-create");
++    expect(create().props.accessibilityState.disabled).toBe(true);
++    await fireEvent.press(create());
++    await release();
++    expect(mockPublish).not.toHaveBeenCalled();
++    expect(done).not.toHaveBeenCalled();
++    expect(create().props.accessibilityState.disabled).toBe(false);
++    await fireEvent.press(create());
++    await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(mockUpdate).not.toHaveBeenCalled();
++    expect(mockPublish.mock.calls).toEqual([["pkg_saved"]]);
++    expect(done.mock.calls[0][0]).toMatchObject({
++      id: "pkg_saved",
++      title: "Saved one-time plan",
++      priceCents: 9900,
++      billingInterval: "one_time",
++    });
++  });
++
++  it("B-WIZ3-122: a tap during hydration of an unsent free package is dropped; a fresh tap re-sends it with its own key", async () => {
++    const free = newIntent({
++      ...savedOneTime,
++      title: "Saved free",
++      priceCents: 0,
++    });
++    mockStore.set(KEY, JSON.stringify(free));
++    const release = holdRead();
++    const done = jest.fn();
++    const s = await render(form(done));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await release();
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(mockBind).not.toHaveBeenCalled();
++    expect(done).not.toHaveBeenCalled();
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++    expect(mockCreate.mock.calls[0][1]).toBe(free.key);
++    expect(mockCreate.mock.calls[0][0]).toMatchObject({
++      title: "Saved free",
++      priceCents: 0,
++      billingInterval: "one_time",
++    });
++    expect(mockUpdate).not.toHaveBeenCalled();
++    expect(mockBind).toHaveBeenCalledWith("SYNTH", "pkg_new");
++    expect(done.mock.calls[0][0]).toMatchObject({
++      title: "Saved free",
++      priceCents: 0,
++      freeOnJoin: true,
++    });
++  });
++
++  it("fields take no edits until hydration ends; a later edit is what gets published", async () => {
++    mockStore.set(
++      KEY,
++      JSON.stringify({ ...newIntent(savedOneTime), packageId: "pkg_saved" }),
++    );
++    const release = holdRead();
++    const done = jest.fn();
++    const s = await render(form(done));
++    expect(s.getByTestId("first-package-title").props.editable).toBe(false);
++    expect(s.getByTestId("first-package-hydrating")).toBeTruthy();
++    await release();
++    expect(s.queryByTestId("first-package-hydrating")).toBeNull();
++    expect(s.getByTestId("first-package-title").props.value).toBe(
++      "Saved one-time plan",
++    );
++    await fireEvent.changeText(s.getByTestId("first-package-title"), "Renamed");
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++    expect(mockUpdate).toHaveBeenCalledWith(
++      "pkg_saved",
++      expect.objectContaining({ title: "Renamed", priceCents: 9900 }),
++    );
++    expect(done.mock.calls[0][0]).toMatchObject({
++      title: "Renamed",
++      billingInterval: "one_time",
++    });
++  });
++
++  it("control: a tap during hydration for an account that then signs out sends nothing", async () => {
++    mockStore.set(KEY, JSON.stringify(newIntent(savedOneTime)));
++    const release = holdRead();
++    const done = jest.fn();
++    const s = await render(form(done));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    mockUser = null;
++    await s.rerender(form(done));
++    await release();
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(mockPublish).not.toHaveBeenCalled();
++    expect(done).not.toHaveBeenCalled();
++  });
++
++  it("control: with nothing saved, a tap after hydration publishes the shown defaults", async () => {
++    const done = jest.fn();
++    const s = await render(form(done));
++    await waitFor(() =>
++      expect(s.queryByTestId("first-package-hydrating")).toBeNull(),
++    );
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++    expect(done.mock.calls[0][0]).toMatchObject({
++      title: "Synthetic coaching",
++      priceCents: 4900,
++      billingInterval: "monthly",
++    });
++  });
++});
+diff --git a/src/components/support/SupportEmailFallback.tsx b/src/components/support/SupportEmailFallback.tsx
+index f71961d..bdda0ba 100644
+--- a/src/components/support/SupportEmailFallback.tsx
++++ b/src/components/support/SupportEmailFallback.tsx
+@@ -20,8 +20,8 @@ export type SupportEmailState = 'idle' | 'failed' | 'copied' | 'copy_failed';
+ 
+ export const SUPPORT_EMAIL_COPY = {
+   failed:
+-    'This phone could not open an email app. Copy the address below and write to us from any email app or device.',
+-  copied: 'Address copied. Paste it into any email app to write to us.',
++    'This phone could not open an email app. Copy the address below and email support from any email app or device.',
++  copied: 'Address copied. Paste it into any email app to email support.',
+   copyFailed: 'The address could not be copied. Press and hold the address to select it.',
+   copy: 'Copy address',
+   retry: 'Try again',
+diff --git a/src/components/support/__tests__/SupportEmailFallback.test.tsx b/src/components/support/__tests__/SupportEmailFallback.test.tsx
+index 69c0334..ffdd374 100644
+--- a/src/components/support/__tests__/SupportEmailFallback.test.tsx
++++ b/src/components/support/__tests__/SupportEmailFallback.test.tsx
+@@ -119,6 +119,8 @@ describe('SupportEmailFallback', () => {
+       expect(text.length).toBeGreaterThan(20);
+       expect(text).not.toMatch(/!/);
+       expect(text).not.toMatch(/something went wrong/i);
++      // Quiet Luxury: no first person in client-facing error copy.
++      expect(text).not.toMatch(/\b(we|us|our|ours)\b/i);
+     }
+     expect(supportEmailStatusText('idle')).toBeNull();
+   });
+diff --git a/src/lib/coachSetup/__tests__/w1FixRound118.test.ts b/src/lib/coachSetup/__tests__/w1FixRound118.test.ts
+new file mode 100644
+index 0000000..993721b
+--- /dev/null
++++ b/src/lib/coachSetup/__tests__/w1FixRound118.test.ts
+@@ -0,0 +1,490 @@
++/**
++ * B-WIZ-118 (agent 118) — fix round for mobile #345 (coach setup W1). Each
++ * case below failed at a4e49588 (+ main merge 48c34822):
++ *   B-345-1 (Opus) / B-345-2 (Sol)  a cadence picked after the package was
++ *            made never reached the server, and the helper remembered it
++ *   B-329-5 (Sol B-345-1)  the helper sent a create, called back or wrote
++ *            storage after the account, session or form that started it ended
++ *   B-345-3 (Sol)  unknown failures reported the raw exception and had no
++ *            reference when the server gave none
++ *   production capability (job B-WIZ-118): today's server has no live Stripe
++ *            re-read and an older status payload; the app says so truthfully
++ */
++jest.mock("../../../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: jest.fn(),
++    post: jest.fn(),
++    put: jest.fn(),
++    patch: jest.fn(),
++  },
++}));
++jest.mock("../../../services/sentry", () => ({ captureError: jest.fn() }));
++
++const mockStore = new Map<string, string>();
++const mockHold: { set: null | Promise<void> } = { set: null };
++jest.mock("../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => mockStore.get(k),
++    set: async (k: string, v: string) => {
++      if (mockHold.set) await mockHold.set;
++      mockStore.set(k, v);
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++import api from "../../../services/api";
++import { captureError } from "../../../services/sentry";
++import {
++  coachPackagesApi,
++  PACKAGE_UPDATE_NOT_APPLIED,
++  type PackageCreateInput,
++} from "../../../api/packagesApi";
++import { coachSetupApi, toConnectView } from "../../../api/coachSetupApi";
++import { connectCopy } from "../connectCopy";
++import { describeError, CoachSetupFailure } from "../errors";
++import {
++  createPackageOnce,
++  intentStorageKey,
++  newIntent,
++  PackageCreateStoppedError,
++  type PackageCreateIntent,
++} from "../packageCreateIntent";
++
++const KEY = intentStorageKey("coach_1");
++const monthly: PackageCreateInput = {
++  title: "North coaching",
++  description: null,
++  priceCents: 4900,
++  currency: "usd",
++  billingInterval: "monthly",
++  intervalCount: 1,
++  trialDays: 0,
++  features: [],
++};
++const oneTime: PackageCreateInput = { ...monthly, billingInterval: "one_time" };
++const free: PackageCreateInput = { ...oneTime, priceCents: 0 };
++
++type Row = Record<string, unknown>;
++const stored: Row = {};
++/** Backend PackagesService.update over a raw CoachPackage row (`interval`). */
++function applyPatch(body: Row): Row {
++  const next: Row = { ...stored };
++  if (body.name !== undefined) next.name = body.name;
++  if (body.amount_cents !== undefined) next.amount_cents = body.amount_cents;
++  if (body.billing_type !== undefined) next.billing_type = body.billing_type;
++  if ("billing_interval" in body) next.interval = body.billing_interval;
++  if ("billing_interval_count" in body)
++    next.interval_count = body.billing_interval_count ?? 1;
++  if (next.billing_type === "one_time" && !("billing_interval" in body))
++    next.interval = null;
++  if (next.amount_cents === 0 && next.billing_type !== "one_time") {
++    throw Object.assign(new Error("HTTP 400"), {
++      response: {
++        status: 400,
++        data: { code: "PACKAGE_FREE_MUST_BE_ONE_TIME" },
++      },
++    });
++  }
++  Object.assign(stored, next);
++  return { ...next };
++}
++
++const patch = () => jest.mocked(api.patch);
++const post = () => jest.mocked(api.post);
++const deps = {
++  create: (b: PackageCreateInput, k: string) => coachPackagesApi.create(b, k),
++  update: (id: string, b: PackageCreateInput) => coachPackagesApi.update(id, b),
++};
++const made = (input: PackageCreateInput): PackageCreateIntent => ({
++  ...newIntent(input),
++  packageId: "pkg_1",
++});
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockStore.clear();
++  mockHold.set = null;
++  for (const k of Object.keys(stored)) delete stored[k];
++  Object.assign(stored, {
++    id: "pkg_1",
++    name: "North coaching",
++    amount_cents: 4900,
++    currency: "usd",
++    billing_type: "recurring",
++    interval: "month",
++    interval_count: 1,
++    is_active: true,
++    published_at: null,
++  });
++  patch().mockImplementation((async (_url: string, body: Row) => ({
++    data: applyPatch(body),
++  })) as never);
++  post().mockImplementation((async () => ({ data: { ...stored } })) as never);
++});
++
++describe("B-345-1 / B-345-2: the PATCH carries the billing the coach picked", () => {
++  it("monthly made, one-time picked: billing_type one_time and the cadence cleared", async () => {
++    const onIntent = jest.fn();
++    const out = await createPackageOnce({
++      coachId: "coach_1",
++      scope: "wizard",
++      input: oneTime,
++      earlier: made(monthly),
++      deps,
++      onIntent,
++    });
++    expect(patch().mock.calls[0][1]).toEqual(
++      expect.objectContaining({
++        billing_type: "one_time",
++        billing_interval: null,
++        billing_interval_count: null,
++      }),
++    );
++    expect(stored).toMatchObject({ billing_type: "one_time", interval: null });
++    expect(out.intent.input.billingInterval).toBe("one_time");
++  });
++
++  it("one-time made, monthly picked: recurring, month, count 1", async () => {
++    stored.billing_type = "one_time";
++    stored.interval = null;
++    await createPackageOnce({
++      coachId: "coach_1",
++      scope: "wizard",
++      input: monthly,
++      earlier: made(oneTime),
++      deps,
++      onIntent: jest.fn(),
++    });
++    expect(patch().mock.calls[0][1]).toMatchObject({
++      billing_type: "recurring",
++      billing_interval: "month",
++      billing_interval_count: 1,
++    });
++    expect(stored).toMatchObject({
++      billing_type: "recurring",
++      interval: "month",
++    });
++  });
++
++  it("monthly made, free picked: one PATCH makes it one-time $0 (no PACKAGE_FREE_MUST_BE_ONE_TIME)", async () => {
++    await expect(
++      createPackageOnce({
++        coachId: "coach_1",
++        scope: "wizard",
++        input: free,
++        earlier: made(monthly),
++        deps,
++        onIntent: jest.fn(),
++      }),
++    ).resolves.toMatchObject({ packageId: "pkg_1" });
++    expect(patch().mock.calls[0][1]).toMatchObject({
++      amount_cents: 0,
++      billing_type: "one_time",
++      billing_interval: null,
++    });
++  });
++
++  it("the server row keeps the old billing: the update fails closed and the new cadence is not remembered", async () => {
++    patch().mockImplementation((async () => ({
++      data: { ...stored },
++    })) as never);
++    const earlier = made(monthly);
++    mockStore.set(KEY, JSON.stringify(earlier));
++    const onIntent = jest.fn();
++    const err = await createPackageOnce({
++      coachId: "coach_1",
++      scope: "wizard",
++      input: oneTime,
++      earlier,
++      deps,
++      onIntent,
++    }).catch((e: unknown) => e);
++    expect(
++      (err as { response?: { data?: { code?: string } } }).response?.data?.code,
++    ).toBe(PACKAGE_UPDATE_NOT_APPLIED);
++    expect(onIntent).not.toHaveBeenCalled();
++    expect(JSON.parse(mockStore.get(KEY) as string).input.billingInterval).toBe(
++      "monthly",
++    );
++    expect(describeError(err, "create your package").title).toBe(
++      "The new price or billing did not save",
++    );
++  });
++
++  it("recurring cadence must match too: yearly sent, monthly kept, fails closed", async () => {
++    patch().mockImplementation((async () => ({
++      data: { ...stored },
++    })) as never);
++    const err = await coachPackagesApi
++      .update("pkg_1", { ...monthly, billingInterval: "yearly" })
++      .catch((e: unknown) => e);
++    expect(
++      (err as { response?: { data?: { field?: string } } }).response?.data
++        ?.field,
++    ).toBe("billing_interval");
++  });
++
++  it("one-time: a leftover cadence on the row is not a mismatch (billing_type decides)", async () => {
++    patch().mockImplementation((async (_u: string, body: Row) => ({
++      data: { ...stored, ...body, billing_type: "one_time", interval: "month" },
++    })) as never);
++    await expect(
++      coachPackagesApi.update("pkg_1", { ...free }),
++    ).resolves.toMatchObject({ data: { billingInterval: "one_time" } });
++  });
++
++  it("control: a name-only edit sends no billing fields and is not checked", async () => {
++    patch().mockResolvedValueOnce({ data: {} } as never);
++    await coachPackagesApi.update("pkg_1", { title: "Renamed" });
++    const body = patch().mock.calls[0][1] as Row;
++    expect(body).toEqual({ name: "Renamed" });
++  });
++
++  it("a raw row's `interval` is read back (year is yearly, not monthly)", async () => {
++    post().mockResolvedValueOnce({
++      data: { ...stored, interval: "year", interval_count: 1 },
++    } as never);
++    const res = await coachPackagesApi.create(
++      { ...monthly, billingInterval: "yearly" },
++      "key_12345678",
++    );
++    expect(res.data.billingInterval).toBe("yearly");
++  });
++});
++
++describe("B-329-5: nothing runs after the owner, session or form ended", () => {
++  it("retired while the write-ahead is saving: no create, no callback, the written intent stays (B-345-1)", async () => {
++    let release: () => void = () => undefined;
++    mockHold.set = new Promise<void>((r) => (release = r));
++    let live = true;
++    const onIntent = jest.fn();
++    const run = createPackageOnce({
++      coachId: "coach_1",
++      scope: "wizard",
++      input: monthly,
++      earlier: null,
++      deps,
++      onIntent,
++      isLive: () => live,
++    });
++    await Promise.resolve();
++    live = false;
++    mockHold.set = null;
++    release();
++    await expect(run).rejects.toBeInstanceOf(PackageCreateStoppedError);
++    expect(post()).not.toHaveBeenCalled();
++    expect(onIntent).not.toHaveBeenCalled();
++    // B-345-1 (agent 119): another form may have read and sent it.
++    expect(mockStore.has(KEY)).toBe(true);
++  });
++
++  it("a re-sent create answers after sign-out: no callback, the sent intent stays for the same account", async () => {
++    const earlier = newIntent(monthly);
++    mockStore.set(KEY, JSON.stringify(earlier));
++    let live = true;
++    let answer: (v: unknown) => void = () => undefined;
++    post().mockImplementationOnce(
++      (() => new Promise((r) => (answer = r))) as never,
++    );
++    const onIntent = jest.fn();
++    const run = createPackageOnce({
++      coachId: "coach_1",
++      scope: "wizard",
++      input: monthly,
++      earlier,
++      deps,
++      onIntent,
++      isLive: () => live,
++    });
++    await Promise.resolve();
++    live = false;
++    answer({ data: { ...stored } });
++    await expect(run).rejects.toBeInstanceOf(PackageCreateStoppedError);
++    expect(onIntent).not.toHaveBeenCalled();
++    expect(JSON.parse(mockStore.get(KEY) as string)).toEqual(earlier);
++  });
++
++  it("an update answers after the form closed: nothing is remembered or called back", async () => {
++    let live = true;
++    let answer: (v: unknown) => void = () => undefined;
++    patch().mockImplementationOnce(
++      (() => new Promise((r) => (answer = r))) as never,
++    );
++    const earlier = made(monthly);
++    mockStore.set(KEY, JSON.stringify(earlier));
++    const onIntent = jest.fn();
++    const run = createPackageOnce({
++      coachId: "coach_1",
++      scope: "wizard",
++      input: { ...monthly, title: "Renamed" },
++      earlier,
++      deps,
++      onIntent,
++      isLive: () => live,
++    });
++    await Promise.resolve();
++    live = false;
++    answer({ data: { ...stored, name: "Renamed" } });
++    await expect(run).rejects.toBeInstanceOf(PackageCreateStoppedError);
++    expect(onIntent).not.toHaveBeenCalled();
++    expect(JSON.parse(mockStore.get(KEY) as string).input.title).toBe(
++      "North coaching",
++    );
++  });
++
++  it("already retired before the first step: nothing is read, written or sent", async () => {
++    await expect(
++      createPackageOnce({
++        coachId: "coach_1",
++        scope: "wizard",
++        input: monthly,
++        earlier: null,
++        deps,
++        onIntent: jest.fn(),
++        isLive: () => false,
++      }),
++    ).rejects.toBeInstanceOf(PackageCreateStoppedError);
++    expect(post()).not.toHaveBeenCalled();
++    expect(mockStore.size).toBe(0);
++  });
++
++  it("control: a live create sends once and remembers the package", async () => {
++    const onIntent = jest.fn();
++    const out = await createPackageOnce({
++      coachId: "coach_1",
++      scope: "wizard",
++      input: monthly,
++      earlier: null,
++      deps,
++      onIntent,
++      isLive: () => true,
++    });
++    expect(out.packageId).toBe("pkg_1");
++    expect(post()).toHaveBeenCalledTimes(1);
++    expect(JSON.parse(mockStore.get(KEY) as string).packageId).toBe("pkg_1");
++  });
++});
++
++describe("B-345-3: unknown failures report no content and always carry a reference", () => {
++  const marker = "synthetic-person@example.invalid";
++
++  it("a local failure: fixed error to Sentry, the same reference tagged and shown", () => {
++    const e = describeError(
++      new Error(`clipboard refused ${marker}`),
++      "copy the link",
++    );
++    expect(captureError).toHaveBeenCalledTimes(1);
++    const [sent, ctx] = jest.mocked(captureError).mock.calls[0] as [
++      Error,
++      Record<string, unknown>,
++    ];
++    expect(sent).toBeInstanceOf(CoachSetupFailure);
++    expect(JSON.stringify([sent.message, sent.name, ctx])).not.toContain(
++      marker,
++    );
++    expect(typeof ctx.reference).toBe("string");
++    expect(e.requestId).toBe(String(ctx.reference).slice(0, 8));
++    expect(e.body).toContain(`mention reference ${e.requestId}`);
++  });
++
++  it("a server failure: the server id is the reference; body text and odd codes never reach Sentry", () => {
++    const err = Object.assign(new Error(`HTTP 500 ${marker}`), {
++      response: {
++        status: 500,
++        data: {
++          error: `Internal ${marker}`,
++          message: marker,
++          request_id: "req_123",
++        },
++        headers: {},
++      },
++      config: { data: JSON.stringify({ email: marker }) },
++    });
++    const e = describeError(err, "load your payout setup");
++    const [sent, ctx] = jest.mocked(captureError).mock.calls[0] as [
++      Error,
++      Record<string, unknown>,
++    ];
++    expect(JSON.stringify([sent.message, ctx])).not.toContain(marker);
++    expect(ctx).toMatchObject({
++      status: 500,
++      code: null,
++      reference: "req_123",
++    });
++    expect(e.requestId).toBe("req_123");
++    expect(e.body).toContain("req_123");
++  });
++
++  it("no server id: the X-Request-Id this app sent is the reference", () => {
++    const sentId = "3f2a9c1e-0000-4000-8000-000000000001";
++    const e = describeError(
++      Object.assign(new Error("HTTP 418"), {
++        response: { status: 418, data: { code: "TEAPOT_STATE" }, headers: {} },
++        config: { headers: { "X-Request-Id": sentId } },
++      }),
++      "save this step",
++    );
++    const ctx = jest.mocked(captureError).mock.calls[0][1] as Record<
++      string,
++      unknown
++    >;
++    expect(ctx).toMatchObject({
++      reference: sentId,
++      code: "TEAPOT_STATE",
++      status: 418,
++    });
++    expect(e.requestId).toBe("3f2a9c1e");
++  });
++});
++
++describe("production today (backend 643817b3): truthful fallbacks", () => {
++  it("older status payload, Stripe fully on: ready, no false 'update needed'", () => {
++    const v = toConnectView({
++      configured: true,
++      account_id: "acct_1",
++      charges_enabled: true,
++      payouts_enabled: true,
++      requirements_due: ["individual.verification.document"],
++    });
++    expect(v).toMatchObject({
++      state: "active",
++      legacy: true,
++      currentlyDue: [],
++    });
++    const c = connectCopy(v);
++    expect(c.title).toBe("You are ready to get paid");
++    expect(c.action).toBeNull();
++  });
++
++  it("older status payload, not switched on yet: still asks for the details", () => {
++    const c = connectCopy(
++      toConnectView({
++        account_id: "acct_1",
++        requirements_due: ["external_account"],
++      }),
++    );
++    expect(c.action).toBe("Continue with Stripe");
++    expect(c.due).toEqual(["Bank account for payouts"]);
++  });
++
++  it("no live re-read route (404): the saved status comes back marked as such", async () => {
++    post().mockRejectedValueOnce(
++      Object.assign(new Error("HTTP 404"), {
++        response: { status: 404, data: {} },
++      }) as never,
++    );
++    jest.mocked(api.get).mockResolvedValueOnce({
++      data: {
++        account_id: "acct_1",
++        charges_enabled: false,
++        payouts_enabled: false,
++      },
++    } as never);
++    const v = await coachSetupApi.refreshConnectStatus();
++    expect(v).toMatchObject({ refreshed: false, refreshUnavailable: true });
++  });
++});
+diff --git a/src/lib/coachSetup/__tests__/w1FixRound119.test.ts b/src/lib/coachSetup/__tests__/w1FixRound119.test.ts
+new file mode 100644
+index 0000000..1c4ef19
+--- /dev/null
++++ b/src/lib/coachSetup/__tests__/w1FixRound119.test.ts
+@@ -0,0 +1,140 @@
++/**
++ * B-WIZ2-119 (agent 119) — fix round for mobile #345 (coach setup W1).
++ * B-345-1 (Sol, retained): a create retired while its write-ahead was saving
++ * removed that intent, even though a replacement form of the same account
++ * could already have read it and sent its key. A later retry then made a
++ * second package under a new key. Each case below failed at 97c9005e.
++ */
++const mockStore = new Map<string, string>();
++const mockHold: { first: Promise<void> | null; writes: number } = {
++  first: null,
++  writes: 0,
++};
++jest.mock("../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => mockStore.get(k),
++    set: async (k: string, v: string) => {
++      mockStore.set(k, v);
++      mockHold.writes += 1;
++      // Storage has the value; only its completion is late.
++      if (mockHold.writes === 1 && mockHold.first) await mockHold.first;
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++import type { PackageCreateInput } from "../../../api/packagesApi";
++import {
++  createPackageOnce,
++  intentStorageKey,
++  loadIntent,
++  PackageCreateStoppedError,
++} from "../packageCreateIntent";
++
++const KEY = intentStorageKey("coach_1");
++const input: PackageCreateInput = {
++  title: "North coaching",
++  priceCents: 4900,
++  currency: "usd",
++  billingInterval: "monthly",
++  intervalCount: 1,
++};
++/** Backend double: one package per key; `lose` drops the answer. */
++const rows = new Map<string, string>();
++let lose = true;
++const create = jest.fn(async (_b: PackageCreateInput, key: string) => {
++  if (!rows.has(key)) rows.set(key, `pkg_${rows.size + 1}`);
++  if (lose)
++    throw Object.assign(new Error("Network Error"), {
++      code: "ERR_NETWORK",
++      request: {},
++    });
++  return { data: { id: rows.get(key) as string } };
++});
++const deps = { create, update: jest.fn(async () => ({})) };
++const run = (
++  earlier: Parameters<typeof createPackageOnce>[0]["earlier"],
++  isLive: () => boolean = () => true,
++) =>
++  createPackageOnce({
++    coachId: "coach_1",
++    scope: "wizard",
++    input,
++    earlier,
++    deps,
++    onIntent: jest.fn(),
++    isLive,
++  });
++const hydrate = async () => {
++  const read = await loadIntent("coach_1");
++  return read.kind === "found" ? read.intent : null;
++};
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockStore.clear();
++  rows.clear();
++  lose = true;
++  mockHold.first = null;
++  mockHold.writes = 0;
++});
++
++/** The first form writes its intent, is retired, and a second form sends it. */
++async function retiredWhileReplacementSends() {
++  let release: () => void = () => undefined;
++  mockHold.first = new Promise<void>((r) => (release = r));
++  let oldLive = true;
++  const old = run(null, () => oldLive).catch((e: unknown) => e);
++  expect(mockStore.has(KEY)).toBe(true);
++  oldLive = false;
++  const seen = await hydrate();
++  expect(seen).not.toBeNull();
++  await expect(run(seen)).rejects.toMatchObject({ code: "ERR_NETWORK" });
++  release();
++  expect(await old).toBeInstanceOf(PackageCreateStoppedError);
++  return seen?.key as string;
++}
++
++describe("B-345-1: a retired create never removes an intent it cannot prove unsent", () => {
++  it("the key a replacement form sent stays on disk", async () => {
++    const sentKey = await retiredWhileReplacementSends();
++    expect(rows.size).toBe(1);
++    expect(JSON.parse(mockStore.get(KEY) as string).key).toBe(sentKey);
++  });
++
++  it("the next retry re-sends that key: one package, never two", async () => {
++    const sentKey = await retiredWhileReplacementSends();
++    lose = false;
++    const out = await run(await hydrate());
++    expect(rows.size).toBe(1);
++    expect(out.packageId).toBe("pkg_1");
++    expect(create.mock.calls.map((c) => c[1])).toEqual([sentKey, sentKey]);
++  });
++
++  it("retired with no replacement: the same account later finishes the same create with the same key", async () => {
++    let release: () => void = () => undefined;
++    mockHold.first = new Promise<void>((r) => (release = r));
++    let live = true;
++    const old = run(null, () => live).catch((e: unknown) => e);
++    live = false;
++    release();
++    expect(await old).toBeInstanceOf(PackageCreateStoppedError);
++    expect(create).not.toHaveBeenCalled();
++    const kept = await hydrate();
++    expect(kept?.packageId).toBeNull();
++    lose = false;
++    const out = await run(kept);
++    expect(create.mock.calls.map((c) => c[1])).toEqual([kept?.key]);
++    expect(rows.size).toBe(1);
++    expect(out.intent.key).toBe(kept?.key);
++  });
++
++  it("control: a lost answer with no retirement keeps its key for the retry", async () => {
++    await run(null).catch(() => undefined);
++    await run(await hydrate()).catch(() => undefined);
++    expect(rows.size).toBe(1);
++    expect(create.mock.calls[0][1]).toBe(create.mock.calls[1][1]);
++  });
++});
+diff --git a/src/lib/coachSetup/errors.ts b/src/lib/coachSetup/errors.ts
+index 338ef39..c648d03 100644
+--- a/src/lib/coachSetup/errors.ts
++++ b/src/lib/coachSetup/errors.ts
+@@ -1,11 +1,24 @@
+ /**
+  * S-COACH — plain-words copy for every failure the coach setup and Money
+  * screens can hit. Known status and machine codes map to specific copy; an
+- * unknown failure shows the server's request reference and the support
+- * address, and is reported to Sentry. No generic "something went wrong".
++ * unknown failure shows a reference and the support address, and is reported
++ * to Sentry. No generic "something went wrong".
++ *
++ * B-345-3 (agent 118): the report is content free. Sentry gets a fixed
++ * CoachSetupFailure error plus closed fields (area, action, status, a code
++ * only when it has the machine-code shape, kind, reference), never the thrown
++ * value, its message, request config or response body. Every reported
++ * failure has a reference: the server's request id, else the X-Request-Id
++ * this app sent, else a fresh client id. The same reference is the Sentry
++ * `reference` tag and the one the coach reads (short form for client ids).
+  */
+ import { captureError } from "../../services/sentry";
+-import { extractRequestId } from "../../utils/correlation";
++import {
++  diagnosticReference,
++  extractRequestId,
++  shortReference,
++  supportReferenceOf,
++} from "../../utils/correlation";
+ import { errorStatus } from "../../types/common";
+ import { SUPPORT_EMAIL } from "../../constants/support";
+ 
+@@ -17,7 +30,11 @@ export interface FriendlyError {
+   title: string;
+   /** One or two sentences: what happened and what to do next. */
+   body: string;
+-  /** Server request reference when it supplied one. */
++  /**
++   * Reference to quote to support: the server's request id when it supplied
++   * one; for a reported failure without one, the short form of the reference
++   * on the Sentry report.
++   */
+   requestId: string | null;
+   /** Machine code from the server, when present. */
+   code: string | null;
+@@ -64,6 +81,41 @@ function isNetworkError(err: unknown): boolean {
+   );
+ }
+ 
++/** Machine codes only (e.g. PACKAGE_NOT_FOUND); anything else is dropped. */
++const MACHINE_CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
++
++/** Fixed, content-free error sent to Sentry in place of the thrown value. */
++export class CoachSetupFailure extends Error {
++  constructor(kind: "server" | "unknown") {
++    super(`coach setup ${kind} failure`);
++    this.name = "CoachSetupFailure";
++  }
++}
++
++function report(
++  err: unknown,
++  kind: "server" | "unknown",
++  action: string,
++  status: number | undefined,
++  code: string | null,
++): string {
++  const reference = diagnosticReference(supportReferenceOf(err));
++  captureError(new CoachSetupFailure(kind), {
++    area: "coach_setup",
++    action,
++    kind,
++    status: typeof status === "number" ? status : null,
++    code: code && MACHINE_CODE.test(code) ? code : null,
++    transport: isNetworkError(err)
++      ? "network"
++      : err && typeof err === "object" && "response" in err
++        ? "http"
++        : "local",
++    reference,
++  });
++  return extractRequestId(err) ?? shortReference(reference) ?? reference;
++}
++
+ // Server messages for these codes are written for people (backend #629
+ // package floor copy), so they are shown as they are.
+ const HUMAN_MESSAGE_CODES = new Set([
+@@ -250,22 +302,30 @@ export function describeError(err: unknown, action: string): FriendlyError {
+       retryable: false,
+     };
+   }
++  if (code === "PACKAGE_UPDATE_NOT_APPLIED") {
++    return {
++      ...base,
++      title: "The new price or billing did not save",
++      body: "TGP did not confirm the change, so clients still see the price and billing shown in Packages. Try again.",
++      retryable: true,
++    };
++  }
+   if (status !== undefined && status >= 500) {
+-    captureError(err, { area: "coach_setup", action, status, code, requestId });
++    const reference = report(err, "server", action, status, code);
+     return {
+       ...base,
++      requestId: reference,
+       title: "TGP had a problem on its side",
+-      body: `TGP could not ${action} just now. Try again in a few minutes.${referenceSentence(requestId)}`,
++      body: `TGP could not ${action} just now. Try again in a few minutes.${referenceSentence(reference)}`,
+       retryable: true,
+     };
+   }
+-  captureError(err, { area: "coach_setup", action, status, code, requestId });
++  const reference = report(err, "unknown", action, status, code);
+   return {
+     ...base,
++    requestId: reference,
+     title: `TGP could not ${action}`,
+-    body: `Try again. If it keeps happening, write to ${COACH_SUPPORT_EMAIL}${
+-      requestId ? ` and mention reference ${requestId}` : ""
+-    }.`,
++    body: `Try again. If it keeps happening, write to ${COACH_SUPPORT_EMAIL} and mention reference ${reference}.`,
+     retryable: true,
+   };
+ }
+diff --git a/src/lib/coachSetup/packageCreateIntent.ts b/src/lib/coachSetup/packageCreateIntent.ts
+index b51af61..7f0d241 100644
+--- a/src/lib/coachSetup/packageCreateIntent.ts
++++ b/src/lib/coachSetup/packageCreateIntent.ts
+@@ -16,6 +16,11 @@
+  * B-329-1 (B-COACH-5): the guarantee holds across restarts because a fresh
+  * create is sent only after its intent is on disk, and a storage read that
+  * fails is never taken to mean "nothing was sent".
++ *
++ * C-345-1: the intent lives in this device's storage for this account, and
++ * sign-out wipes device storage (R15 shared-device rule). So the guarantee is
++ * "for the same account on this device"; after a sign-out the server keeps
++ * the package, and Packages shows it.
+  */
+ import { prefsStorage } from "../../storage/mmkv";
+ import type { PackageCreateInput } from "../../api/packagesApi";
+@@ -171,6 +176,19 @@ export async function clearIntent(
+   }
+ }
+ 
++/**
++ * B-329-5 (agent 118): the account, session or screen that started this
++ * create is gone (sign-out, account switch, the form closed). Nothing more is
++ * sent, no callback runs and storage is left as it was, so the same account
++ * can finish the same create later with the same key.
++ */
++export class PackageCreateStoppedError extends Error {
++  constructor() {
++    super("package create stopped");
++    this.name = "PackageCreateStoppedError";
++  }
++}
++
+ /** Storage could not hold the create's identity, so nothing was sent. */
+ export class IntentStorageError extends Error {
+   constructor(readonly reason: "unreadable" | "unsaved" | "no_account") {
+@@ -263,6 +281,15 @@ export interface CreateOnceDeps {
+  *     made from other details (422 IDEMPOTENCY_KEY_REUSED): that package is
+  *     updated with the coach's current details.
+  * `onIntent` mirrors every intent change into the caller's memory.
++ *
++ * B-329-5 (agent 118): `isLive` says whether the account, session and screen
++ * that started this create are still the current ones. It is checked before
++ * the first step and again after every await, before any request, callback or
++ * storage write. Once it answers false the create stops with
++ * PackageCreateStoppedError: no request is sent, `onIntent` is not called and
++ * nothing is removed from disk. B-345-1 (agent 119): that includes a fresh
++ * intent this create wrote but never sent, because another form of the same
++ * account may already have read and sent it.
+  */
+ export async function createPackageOnce(args: {
+   coachId: string | null;
+@@ -271,13 +298,21 @@ export async function createPackageOnce(args: {
+   earlier: PackageCreateIntent | null;
+   deps: CreateOnceDeps;
+   onIntent: (next: PackageCreateIntent | null) => void;
++  isLive?: () => boolean;
+ }): Promise<{ packageId: string; intent: PackageCreateIntent }> {
+   const { coachId, scope, input, deps, onIntent } = args;
++  const isLive = args.isLive ?? (() => true);
++  const stopIfRetired = () => {
++    if (!isLive()) throw new PackageCreateStoppedError();
++  };
+   if (!coachId) throw new IntentStorageError("no_account");
++  stopIfRetired();
+   const remember = async (next: PackageCreateIntent | null) => {
++    stopIfRetired();
+     onIntent(next);
+     if (next) await saveIntent(coachId, next, scope);
+     else await clearIntent(coachId, scope);
++    stopIfRetired();
+   };
+   // The server named a package this key made from OTHER details: adopt it
+   // and save the coach's current details onto it.
+@@ -285,14 +320,18 @@ export async function createPackageOnce(args: {
+   const send = async (
+     it: PackageCreateIntent,
+   ): Promise<PackageCreateIntent> => {
++    stopIfRetired();
+     try {
+       const res = await deps.create(it.input, it.key);
++      stopIfRetired();
+       const done = { ...it, packageId: res.data.id };
+       // Not strict: the key already made this package, so a lost write
+       // only means a later re-send replays the same package.
+       await remember(done);
+       return done;
+     } catch (err) {
++      if (err instanceof PackageCreateStoppedError) throw err;
++      stopIfRetired();
+       const adopt = reusedPackageId(err);
+       if (adopt) {
+         adopted = true;
+@@ -310,6 +349,7 @@ export async function createPackageOnce(args: {
+     try {
+       current = await send(current);
+     } catch (err) {
++      if (err instanceof PackageCreateStoppedError) throw err;
+       const removed = createErrorCode(err) === "IDEMPOTENT_PACKAGE_REMOVED";
+       if (
+         !isDefinitiveRejection(err) ||
+@@ -321,15 +361,26 @@ export async function createPackageOnce(args: {
+   }
+   if (!current) {
+     const fresh = newIntent(input);
+-    if (!(await saveIntent(coachId, fresh, scope))) {
+-      throw new IntentStorageError("unsaved");
++    const saved = await saveIntent(coachId, fresh, scope);
++    if (!isLive()) {
++      // B-345-1 (agent 119): what was written stays. This create never sent
++      // it, but once it is on disk another form of the same account may have
++      // read it and sent its key, so this one cannot prove it unsent and must
++      // not remove it (removing a sent key lets a later retry make a second
++      // package). Kept, it only lets the same account finish this same create
++      // with the same key. Sign-out still wipes it: storage applies writes in
++      // the order they were issued, and this write was issued first.
++      throw new PackageCreateStoppedError();
+     }
++    if (!saved) throw new IntentStorageError("unsaved");
+     onIntent(fresh);
+     current = await send(fresh);
+   }
+   const packageId = current.packageId as string;
+   if (adopted || !sameCreateInput(current.input, input)) {
++    stopIfRetired();
+     await deps.update(packageId, input);
++    stopIfRetired();
+     current = { ...current, input };
+     await remember(current);
+   }
+diff --git a/src/navigation/CoachWizardNavigator.tsx b/src/navigation/CoachWizardNavigator.tsx
+index 947cb5e..1db0ab9 100644
+--- a/src/navigation/CoachWizardNavigator.tsx
++++ b/src/navigation/CoachWizardNavigator.tsx
+@@ -258,7 +258,7 @@ function CoachWizardStep1({ navigation }: Step1Props) {
+       stepNumber={1}
+       totalSteps={UI_STEPS}
+       heading="Your practice"
+-      body="Tell us what to call your coaching and what you focus on. We use this to set up your first package."
++      body="Name your coaching and pick what you focus on. This sets up your first package."
+       ctaLabel="Continue"
+       ctaDisabled={!valid || saving}
+       onCta={() => {
+@@ -340,7 +340,7 @@ function CoachWizardStep2({ navigation }: Step2Props) {
+       stepNumber={2}
+       totalSteps={UI_STEPS}
+       heading="Get paid"
+-      body="Clients pay you by card. Stripe, our payments partner, holds your bank and ID details so TGP never sees them."
++      body="Clients pay you by card. Stripe, the payments provider TGP uses, holds your bank and ID details so TGP never sees them."
+       ctaLabel={ready ? "Continue" : "Continue without payouts for now"}
+       ctaDisabled={saving}
+       onCta={next}
+@@ -443,7 +443,7 @@ function CoachWizardStep3({ navigation }: Step3Props) {
+       stepNumber={3}
+       totalSteps={UI_STEPS}
+       heading="Your first package"
+-      body="This is what a client signs up for. We filled in a starting point you can change any time."
++      body="This is what a client signs up for. The starting point below can be changed any time."
+       ctaLabel={done ? "Continue" : "Skip for now"}
+       ctaDisabled={saving}
+       onCta={goNext}
+@@ -638,7 +638,7 @@ function CoachWizardStep5({ navigation }: Step5Props) {
+       totalSteps={UI_STEPS}
+       heading="You are ready to coach"
+       body="Anything still open stays on your Home checklist. Your first client payment shows up in Money on your Home screen."
+-      ctaLabel="Go to my dashboard"
++      ctaLabel="Go to your dashboard"
+       ctaDisabled={submitting}
+       onCta={finish}
+       onBack={() => navigation.goBack()}
+diff --git a/src/screens/TrustCenterScreen.tsx b/src/screens/TrustCenterScreen.tsx
+index 0927bfa..fe89729 100644
+--- a/src/screens/TrustCenterScreen.tsx
++++ b/src/screens/TrustCenterScreen.tsx
+@@ -5,7 +5,11 @@
+  *
+  * Section 1: security metadata fetched from GET /api/system/trust-meta
+  * Section 2: User actions — data export + account deletion
+- * Section 3: Bullet list — who has access, what's encrypted, where data lives
++ * Section 3: Bullet list — who has access, what's encrypted
++ * Footer: Privacy Policy, Consumer Health Data Privacy Policy, help centre.
++ *   A link that does not open shows, under it, what happened and what to do
++ *   next for that cause (offline / cannot open links / anything else), see
++ *   trustCenterLinkFailure.ts (OR-112-15).
+  *
+  * Analytics events (PII-safe):
+  *   trust_center_opened
+@@ -13,7 +17,7 @@
+  *   account_deletion_requested
+  */
+ 
+-import React, { useEffect, useState, useCallback, useMemo } from 'react';
++import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+ import {
+   View,
+   Text,
+@@ -21,8 +25,11 @@ import {
+   ScrollView,
+   Alert,
+   ActivityIndicator,
+-  Linking,
++  AccessibilityInfo,
++  Platform,
++  Pressable,
+ } from 'react-native';
++import * as Clipboard from 'expo-clipboard';
+ import HapticPressable from '../components/HapticPressable';
+ import { Ionicons } from '@expo/vector-icons';
+ 
+@@ -31,11 +38,20 @@ import { typography, shadows } from '../theme/tokens';
+ import { track } from '../lib/analytics';
+ import api from '../services/api';
+ import { dataExportApi } from '../services/dataExportApi';
+-import { helpUrl } from '../config/env';
++import { trustCenterLinks } from './trustCenterLinks';
++import type { TrustCenterLink } from './trustCenterLinks';
++import {
++  LINK_FAILURE_ACTIONS,
++  linkFailureEmailSubject,
++  linkFailureMessage,
++  openTrustCenterLink,
++} from './trustCenterLinkFailure';
++import type { LinkFailure } from './trustCenterLinkFailure';
++import { SupportEmailFallback, useSupportEmail } from '../components/support/SupportEmailFallback';
+ import { useTheme, ThemeColors } from '../theme/ThemeProvider';
+ import { Colors } from '../constants/colors';
+ import type { NavigationProp, ParamListBase } from '@react-navigation/native';
+-import { HELP_UNAVAILABLE_COPY, deletionErrorCopy } from './settings/deletionErrors';
++import { deletionErrorCopy } from './settings/deletionErrors';
+ 
+ // ─── Types ────────────────────────────────────────────────────────────────────
+ 
+@@ -155,6 +171,139 @@ const makeBulletStyles = (colors: ThemeColors) =>
+ 
+   });
+ 
++// ─── Link failure notice ─────────────────────────────────────────────────────
++
++type CopyState = 'idle' | 'copied' | 'copy_failed';
++
++/**
++ * Shown under a footer link that did not open (OR-112-15). Offline: what
++ * happened and to tap again once connected. Cannot open links: the exact web
++ * address, selectable, with Copy web address. Anything else: the address, the
++ * support email with a reference, Email support, and the shared support email
++ * fallback if no email app opens.
++ */
++function LinkFailureNotice({ link, failure }: { link: TrustCenterLink; failure: LinkFailure }) {
++  const { colors } = useTheme();
++  const noticeStyles = useMemo(() => makeNoticeStyles(colors), [colors]);
++  const [copyState, setCopyState] = useState<CopyState>('idle');
++  // Checklist (b): a copy result that lands after the notice is gone writes nothing.
++  const alive = useRef(true);
++  useEffect(() => {
++    alive.current = true;
++    return () => {
++      alive.current = false;
++    };
++  }, []);
++  const unexpected = failure.cause === 'unexpected';
++  const supportEmail = useSupportEmail(unexpected ? linkFailureEmailSubject(link, failure) : undefined);
++  const showAddress = failure.cause !== 'offline';
++
++  const copyAddress = useCallback(async () => {
++    try {
++      const ok = await Clipboard.setStringAsync(link.url);
++      if (alive.current) setCopyState(ok === false ? 'copy_failed' : 'copied');
++    } catch {
++      if (alive.current) setCopyState('copy_failed');
++    }
++  }, [link.url]);
++
++  return (
++    <View style={noticeStyles.wrap} testID="trust-link-failure" accessibilityLiveRegion="polite">
++      <Text style={noticeStyles.text} accessibilityRole="alert" testID="trust-link-failure-message">
++        {linkFailureMessage(link, failure)}
++      </Text>
++      {showAddress ? (
++        <>
++          <Text selectable style={[noticeStyles.text, noticeStyles.address]} testID="trust-link-failure-address">
++            {link.url}
++          </Text>
++          <View style={noticeStyles.actions}>
++            <Pressable
++              onPress={() => void copyAddress()}
++              accessibilityRole="button"
++              accessibilityLabel={`Copy the web address of the ${link.pageName}`}
++              hitSlop={8}
++              style={noticeStyles.action}
++              testID="trust-link-failure-copy"
++            >
++              <Text style={noticeStyles.actionText}>{LINK_FAILURE_ACTIONS.copy}</Text>
++            </Pressable>
++            {unexpected ? (
++              <Pressable
++                onPress={() => void supportEmail.open()}
++                accessibilityRole="button"
++                accessibilityLabel="Email support"
++                hitSlop={8}
++                style={noticeStyles.action}
++                testID="trust-link-failure-email"
++              >
++                <Text style={noticeStyles.actionText}>{LINK_FAILURE_ACTIONS.email}</Text>
++              </Pressable>
++            ) : null}
++          </View>
++          {copyState !== 'idle' ? (
++            <Text
++              style={noticeStyles.text}
++              accessibilityLiveRegion="polite"
++              testID="trust-link-failure-copy-status"
++            >
++              {copyState === 'copied' ? LINK_FAILURE_ACTIONS.copied : LINK_FAILURE_ACTIONS.copyFailed}
++            </Text>
++          ) : null}
++        </>
++      ) : null}
++      {unexpected ? (
++        <SupportEmailFallback
++          handle={supportEmail}
++          textStyle={noticeStyles.text}
++          linkColor={colors.primary}
++          testID="trust-link-failure-support"
++          centered
++        />
++      ) : null}
++    </View>
++  );
++}
++
++const makeNoticeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++  wrap: {
++    alignSelf: 'stretch',
++    marginTop: 8,
++    marginBottom: 4,
++    padding: Spacing.md,
++    borderRadius: Radius.lg,
++    backgroundColor: colors.surface,
++    gap: 8,
++  },
++  text: {
++    fontSize: typography.bodySmall.fontSize,
++    lineHeight: typography.body.lineHeight,
++    color: colors.textSecondary,
++    textAlign: 'center',
++  },
++  address: {
++    color: colors.textPrimary,
++    fontWeight: '600',
++  },
++  actions: {
++    flexDirection: 'row',
++    justifyContent: 'center',
++    gap: 24,
++  },
++  action: {
++    minHeight: 44,
++    justifyContent: 'center',
++  },
++  actionText: {
++    color: colors.primary,
++    fontWeight: '600',
++    fontSize: typography.bodySmall.fontSize,
++    textDecorationLine: 'underline',
++  },
++
++  });
++
+ // ─── Main screen ─────────────────────────────────────────────────────────────
+ 
+ export default function TrustCenterScreen({ navigation }: { navigation: NavigationProp<ParamListBase> }) {
+@@ -163,6 +312,22 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+   const [meta, setMeta] = useState<TrustMeta | null>(null);
+   const [loading, setLoading] = useState(true);
+   const [exportBusy, setExportBusy] = useState(false);
++  // The footer link that last failed to open, and why. `attempt` remounts the
++  // notice on every new failure so its copy/email state starts fresh.
++  const [linkFailure, setLinkFailure] = useState<
++    { link: TrustCenterLink; failure: LinkFailure; attempt: number } | null
++  >(null);
++  const scrollRef = useRef<ScrollView>(null);
++  const mounted = useRef(true);
++  const opening = useRef(false);
++  const attempts = useRef(0);
++
++  useEffect(() => {
++    mounted.current = true;
++    return () => {
++      mounted.current = false;
++    };
++  }, []);
+ 
+   // Fire trust_center_opened once on mount
+   useEffect(() => {
+@@ -205,6 +370,36 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+     }
+   }, []);
+ 
++  // openTrustCenterLink never rejects; one open at a time (a second tap while
++  // the first is still checking is ignored).
++  const handleOpenLink = useCallback(async (link: TrustCenterLink) => {
++    if (opening.current) return;
++    opening.current = true;
++    setLinkFailure(null);
++    try {
++      const failure = await openTrustCenterLink(link);
++      if (mounted.current && failure) {
++        attempts.current += 1;
++        setLinkFailure({ link, failure, attempt: attempts.current });
++      }
++    } finally {
++      opening.current = false;
++    }
++  }, []);
++
++  // The notice sits at the foot of a scrolling screen: bring it into view, and
++  // read it out on iOS (Android reads the polite live region).
++  useEffect(() => {
++    if (!linkFailure) return;
++    if (Platform.OS === 'ios') {
++      AccessibilityInfo.announceForAccessibility(
++        linkFailureMessage(linkFailure.link, linkFailure.failure),
++      );
++    }
++    const id = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 0);
++    return () => clearTimeout(id);
++  }, [linkFailure]);
++
+   // Deletion needs re-authentication and shows the scheduled date + cancel,
+   // so it lives on the shared Delete account screen (registered in both the
+   // client and coach navigators), not in an inline alert.
+@@ -215,6 +410,7 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+ 
+   return (
+     <ScrollView
++      ref={scrollRef}
+       style={styles.container}
+       contentContainerStyle={styles.content}
+       showsVerticalScrollIndicator={false}
+@@ -262,11 +458,6 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+                 label="Encryption"
+                 value="TLS 1.3 + AES-256 at rest"
+               />
+-              <MetaRow
+-                icon="location-outline"
+-                label="Data residency"
+-                value="US East"
+-              />
+               <MetaRow
+                 icon="document-text-outline"
+                 label="Audit policy"
+@@ -287,7 +478,7 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+               <Ionicons name="people-outline" size={18} color={colors.primary} />
+             </View>
+             <Text style={styles.actionInfoText}>
+-              Workouts and meals stay private to you and your assigned coach
++              Your answers and logs are shared with your coach. Your Roman conversations stay private from your coach.
+             </Text>
+           </View>
+ 
+@@ -324,13 +515,13 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+             style={styles.actionBtn}
+             onPress={handleDeleteAccount}
+             accessibilityRole="button"
+-            accessibilityLabel="Delete my account"
++            accessibilityLabel="Delete account"
+           >
+             <View style={[styles.actionIconWrap, styles.actionIconDanger]}>
+               <Ionicons name="trash-outline" size={18} color={colors.error} />
+             </View>
+             <View style={styles.actionBtnText}>
+-              <Text style={[styles.actionBtnLabel, styles.dangerText]}>Delete my account</Text>
++              <Text style={[styles.actionBtnLabel, styles.dangerText]}>Delete account</Text>
+               <Text style={styles.actionBtnSub}>A grace period to change your mind before permanent deletion</Text>
+             </View>
+             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+@@ -344,35 +535,40 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+         <View style={styles.card}>
+           <Text style={styles.bulletGroupLabel}>Who can see your data</Text>
+           <BulletItem text="You — always" />
+-          <BulletItem text="Your assigned coach — only what you log (meals + workouts)" />
+-          <BulletItem text="No one else — we do not sell, share, or license your data" />
++          <BulletItem text="Your coach — your consultation answers, logs, check-ins and connected health data" />
++          <BulletItem text="Not your coach — your Roman conversations, which are kept until you delete them or your account" />
++          <BulletItem text="Service providers that run the app for The Growth Project, such as Anthropic for Roman, only as described in the Privacy Policy" />
++          <BulletItem text="Your data is never sold, and your health data is never used for advertising" />
+ 
+           <Text style={[styles.bulletGroupLabel, { marginTop: 16 }]}>What is encrypted</Text>
+           <BulletItem text="All data in transit uses TLS 1.3 (the strongest available)" />
+           <BulletItem text="All stored data is encrypted with AES-256 at rest" />
+           <BulletItem text="Authentication tokens are stored in your device's secure enclave (Keychain / Keystore)" />
+-
+-          <Text style={[styles.bulletGroupLabel, { marginTop: 16 }]}>Where your data lives</Text>
+-          <BulletItem text="Servers located in US East data centres" />
+-          <BulletItem text="We do not transfer data outside the US without your consent" />
+-          <BulletItem text="Backups are encrypted and stored in the same region" />
+         </View>
+       </View>
+ 
+       <View style={styles.footer}>
+         <Text style={styles.footerText}>Questions or concerns?</Text>
+-        <Text
+-          style={styles.footerLink}
+-          accessibilityRole="link"
+-          accessibilityLabel="Open the help centre"
+-          onPress={() => {
+-            Linking.openURL(helpUrl('/privacy')).catch(() => {
+-              Alert.alert('Help unavailable', HELP_UNAVAILABLE_COPY);
+-            });
+-          }}
+-        >
+-          Visit the help centre
+-        </Text>
++        {trustCenterLinks().map((link) => (
++          <React.Fragment key={link.testID}>
++            <Text
++              testID={link.testID}
++              style={styles.footerLink}
++              accessibilityRole="link"
++              accessibilityLabel={link.accessibilityLabel}
++              onPress={() => void handleOpenLink(link)}
++            >
++              {link.label}
++            </Text>
++            {linkFailure?.link.id === link.id ? (
++              <LinkFailureNotice
++                key={linkFailure.attempt}
++                link={linkFailure.link}
++                failure={linkFailure.failure}
++              />
++            ) : null}
++          </React.Fragment>
++        ))}
+       </View>
+     </ScrollView>
+   );
+diff --git a/src/screens/__tests__/trustCenterLinkFailure.canary.test.ts b/src/screens/__tests__/trustCenterLinkFailure.canary.test.ts
+new file mode 100644
+index 0000000..824ceb9
+--- /dev/null
++++ b/src/screens/__tests__/trustCenterLinkFailure.canary.test.ts
+@@ -0,0 +1,187 @@
++/**
++ * Sol B-315-1 canary: a Trust & Privacy link failure report must carry no
++ * free-form text from the native exception.
++ *
++ * This runs the ACTUAL `openTrustCenterLink` operation against the real
++ * @sentry/react-native SDK and the app's real `initSentry` /
++ * `captureErrorWithoutPii` (only the RNSentry native module is a double, as in
++ * src/services/__tests__/sentry.payload.test.ts). `Linking.canOpenURL` and
++ * `Linking.openURL` reject with values stuffed with a SYNTHETIC personal-data
++ * canary: a person's name, a phone number, an email address, health text, an
++ * identifying URL path and query, and an account identifier, in the error's
++ * name, message, stack and extra native fields. Every envelope handed to the
++ * native transport is decoded and searched for every canary fragment. The
++ * positive controls prove the reports were actually sent.
++ */
++import { Linking, NativeModules } from 'react-native';
++
++const NAME = 'Janet Canaryfield';
++const PHONE = '+1 415 555 0142';
++const EMAIL = 'janet.canaryfield@example.com';
++const HEALTH = 'insulin dependent diabetic, HIV positive';
++const PATH_ID = 'patient-janet-canaryfield-0042';
++const ACCOUNT = 'acct-canary-7731';
++const QUERY = 'session=canarytoken991';
++const CANARY_TEXT = `${NAME} ${PHONE} ${EMAIL} ${HEALTH} https://app.trygrowthproject.com/u/${PATH_ID}/privacy?${QUERY}#frag-canary`;
++const FRAGMENTS = [
++  'Janet',
++  'Canaryfield',
++  'canaryfield',
++  '415 555 0142',
++  '4155550142',
++  EMAIL,
++  'example.com',
++  'insulin',
++  'diabetic',
++  'HIV',
++  PATH_ID,
++  'canarytoken991',
++  'frag-canary',
++  ACCOUNT,
++];
++const DSN = 'https://abc@o1.ingest.sentry.io/1';
++
++type Call = unknown[];
++const calls: Record<string, Call[]> = {};
++const nativeResult: Record<string, unknown> = {
++  initNativeSdk: true,
++  captureEnvelope: true,
++  crashedLastRun: false,
++  fetchNativeRelease: { id: 'com.tgp', version: '1.0.0', build: '6' },
++  fetchNativeSdkInfo: { name: 'sentry.cocoa', version: '8.58.0' },
++  fetchModules: null,
++  fetchNativeAppStart: null,
++  fetchNativeFrames: null,
++  fetchNativeLogAttributes: null,
++  fetchNativeStackFramesBy: null,
++  fetchViewHierarchy: null,
++  captureScreenshot: null,
++  getCurrentReplayId: null,
++  getNewScreenTimeToDisplay: null,
++  getDataFromUri: null,
++  encodeToBase64: null,
++  // The native SDK still holds the signed-in user; the link report must drop it.
++  fetchNativeDeviceContexts: { user: { id: ACCOUNT, email: EMAIL } },
++};
++const rnSentry = new Proxy(
++  {},
++  {
++    get(_t, prop: string) {
++      if (prop === 'then' || prop === '$$typeof') return undefined;
++      return (...args: unknown[]) => {
++        (calls[prop] = calls[prop] || []).push(args);
++        return prop in nativeResult ? Promise.resolve(nativeResult[prop]) : undefined;
++      };
++    },
++  },
++);
++Object.defineProperty(NativeModules, 'RNSentry', { value: rnSentry, configurable: true });
++
++jest.mock('expo-constants', () => ({
++  __esModule: true,
++  default: { expoConfig: { version: '1.0.0', ios: { buildNumber: '6' }, android: { versionCode: 4 }, extra: {} } },
++}));
++
++function sentEnvelopes(): string[] {
++  return (calls.captureEnvelope || []).map((args) => Buffer.from(String(args[0]), 'base64').toString('utf8'));
++}
++
++/** A native-looking rejection with the canary in every text field it has. */
++function canaryError(): Error {
++  const err = new Error(`Could not open the page for ${CANARY_TEXT}`);
++  err.name = `LinkingError ${NAME}`;
++  err.stack = `LinkingError ${NAME}: ${CANARY_TEXT}\n    at native (${PATH_ID}.js:1:1)`;
++  Object.assign(err, { code: `E_${PHONE}`, userInfo: { note: HEALTH, account: ACCOUNT }, domain: EMAIL, cause: new Error(CANARY_TEXT) });
++  return err;
++}
++
++describe('Sol B-315-1 canary: no personal data from a native rejection reaches the Sentry report', () => {
++  const OLD = process.env.EXPO_PUBLIC_SENTRY_DSN;
++  let Sentry: typeof import('@sentry/react-native');
++  let openTrustCenterLink: (link: unknown) => Promise<{ cause: string; reference: string | null } | null>;
++  let links: Array<{ id: string; url: string }>;
++  const references: string[] = [];
++
++  beforeAll(async () => {
++    process.env.EXPO_PUBLIC_SENTRY_DSN = DSN;
++    Sentry = jest.requireActual('@sentry/react-native');
++    const { initSentry, setSentryUser } = jest.requireActual('../../services/sentry');
++    initSentry();
++    await Sentry.getClient()?.flush(2000);
++    setSentryUser({ id: ACCOUNT });
++    ({ openTrustCenterLink } = require('../trustCenterLinkFailure'));
++    links = require('../trustCenterLinks').trustCenterLinks();
++
++    const canOpen = jest.spyOn(Linking, 'canOpenURL');
++    const openUrl = jest.spyOn(Linking, 'openURL');
++    try {
++      // 1. canOpenURL rejects with an Error (cause "unexpected"), for every link.
++      for (const link of links) {
++        canOpen.mockRejectedValueOnce(canaryError());
++        const failure = await openTrustCenterLink(link);
++        expect(failure).toMatchObject({ cause: 'unexpected' });
++        references.push(failure!.reference!);
++      }
++      // 2. canOpenURL rejects with a bare string and with a plain object.
++      canOpen.mockRejectedValueOnce(CANARY_TEXT);
++      references.push((await openTrustCenterLink(links[0]))!.reference!);
++      canOpen.mockRejectedValueOnce({ message: CANARY_TEXT, name: NAME, toString: () => CANARY_TEXT });
++      references.push((await openTrustCenterLink(links[1]))!.reference!);
++      // 3. openURL rejects (cause "cannot_open").
++      canOpen.mockResolvedValue(true);
++      openUrl.mockRejectedValueOnce(canaryError());
++      const cannot = await openTrustCenterLink(links[0]);
++      expect(cannot).toMatchObject({ cause: 'cannot_open' });
++      references.push(cannot!.reference!);
++    } finally {
++      canOpen.mockRestore();
++      openUrl.mockRestore();
++    }
++    await Sentry.getClient()?.flush(2000);
++  });
++  afterAll(() => {
++    process.env.EXPO_PUBLIC_SENTRY_DSN = OLD;
++  });
++
++  it('every failure was actually reported (positive control)', () => {
++    const reports = sentEnvelopes().filter((e) => e.includes('TrustCenterLinkError'));
++    expect(reports).toHaveLength(links.length + 3);
++    for (const ref of references) {
++      expect(ref).toMatch(/^[0-9a-f]{8}$/);
++      expect(reports.some((e) => e.includes(ref))).toBe(true);
++    }
++    for (const e of reports) {
++      expect(e).toContain('trust_center.link_open_failed');
++      expect(e).toContain('"platform":"ios"');
++    }
++  });
++
++  it('no canary fragment appears anywhere in any envelope sent to the native transport', () => {
++    const all = sentEnvelopes().join('\n');
++    expect(all.length).toBeGreaterThan(0);
++    for (const fragment of FRAGMENTS) {
++      expect(all).not.toContain(fragment);
++    }
++  });
++
++  it('each report carries only the closed allowlist of extras', () => {
++    const reports = sentEnvelopes().filter((e) => e.includes('TrustCenterLinkError'));
++    for (const env of reports) {
++      const event = env
++        .split('\n')
++        .map((line) => {
++          try {
++            return JSON.parse(line) as Record<string, unknown>;
++          } catch {
++            return null;
++          }
++        })
++        .find((o) => o && typeof o === 'object' && 'exception' in o) as { extra?: Record<string, unknown>; user?: unknown } | undefined;
++      expect(event).toBeDefined();
++      expect(Object.keys(event!.extra ?? {}).sort()).toEqual(
++        ['cause', 'error_class', 'event', 'link', 'operation', 'platform', 'reference'],
++      );
++      expect(event!.user).toBeUndefined();
++    }
++  });
++});
+diff --git a/src/screens/__tests__/trustCenterPolicyLinks.test.tsx b/src/screens/__tests__/trustCenterPolicyLinks.test.tsx
+new file mode 100644
+index 0000000..376e62d
+--- /dev/null
++++ b/src/screens/__tests__/trustCenterPolicyLinks.test.tsx
+@@ -0,0 +1,555 @@
++/**
++ * Trust & Privacy policy links.
++ *
++ * What we assert:
++ *   1. The Privacy Policy link opens the real policy at the site root
++ *      (https://app.trygrowthproject.com/privacy), not helpUrl('/privacy'),
++ *      which resolved to /help/privacy (store-package review, gap HP15).
++ *   2. The Consumer Health Data Privacy Policy is linked from the screen
++ *      (RCW 19.373.010/.020: in-app settings link counts as the homepage).
++ *   3. The help-centre link still goes to the help centre.
++ *   4. Rendering the screen shows all three links and tapping each one calls
++ *      Linking.openURL with its URL.
++ *   5. The unsupported data-residency and "only meals and workouts" claims
++ *      are gone.
++ *   6. OR-112-15 (owner rule: no generic error messages, ever): a link that
++ *      does not open names the page and says what to do for its cause:
++ *      offline -> connect and tap again; the phone cannot open web links
++ *      (canOpenURL false / openURL rejects) -> the exact web address, with
++ *      Copy web address; anything else -> the address, the support email and
++ *      a reference, Email support. Every failure except offline goes to
++ *      Sentry with no email address and no query string. No first-person
++ *      copy, no "Please try again later".
++ */
++import * as fs from 'fs';
++import * as path from 'path';
++import React from 'react';
++import { Alert, Linking } from 'react-native';
++import { render, fireEvent, waitFor } from '@testing-library/react-native';
++
++import {
++  CONSUMER_HEALTH_POLICY_URL,
++  PRIVACY_POLICY_URL,
++  PUBLIC_SITE_BASE_URL,
++  TERMS_URL,
++  helpUrl,
++} from '../../config/env';
++import { trustCenterLinks } from '../trustCenterLinks';
++
++// Link failures must use the no-PII reporter; the plain one (app-wide user
++// tag with email) must not be used for them.
++const mockCaptureError = jest.fn();
++const mockCapturePlain = jest.fn();
++jest.mock('../../services/sentry', () => ({
++  captureErrorWithoutPii: (...a: unknown[]) => mockCaptureError(...a),
++  captureError: (...a: unknown[]) => mockCapturePlain(...a),
++}));
++
++const mockSetString = jest.fn();
++jest.mock('expo-clipboard', () => ({ setStringAsync: (...a: unknown[]) => mockSetString(...a) }));
++
++// The shared NetInfo mock from jest.setup.js (__setState / __reset).
++const netinfo = jest.requireMock('@react-native-community/netinfo');
++
++// Required lazily so that, on a head without these modules, the render tests
++// below still run and fail on their assertions rather than on an import.
++const failureLib = () => require('../trustCenterLinkFailure');
++const supportEmail = (): string => require('../../constants/support').SUPPORT_EMAIL;
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  const CanonicalColors = jest.requireActual('../../constants/colors').default;
++  const colors = {
++    ...CanonicalColors,
++    dark: CanonicalColors.textPrimary,
++    white: CanonicalColors.textOnPrimary,
++    gold: CanonicalColors.warning,
++    orange: CanonicalColors.error,
++  };
++  return {
++    useTheme: () => ({
++      colors,
++      tokens: realTokens,
++      semanticColors: realTokens.lightTokens,
++      colorScheme: 'light',
++    }),
++  };
++});
++
++jest.mock('../../lib/analytics', () => ({ track: jest.fn() }));
++
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(() => Promise.reject(new Error('offline'))) },
++  deletionApi: { requestDeletion: jest.fn() },
++}));
++
++jest.mock('../../services/dataExportApi', () => ({
++  dataExportApi: { requestExport: jest.fn() },
++}));
++
++const SCREEN_SRC = fs.readFileSync(
++  path.resolve(__dirname, '..', 'TrustCenterScreen.tsx'),
++  'utf8',
++);
++
++describe('policy URLs', () => {
++  it('points the Privacy Policy at the site root, not the help centre', () => {
++    expect(PUBLIC_SITE_BASE_URL).toBe('https://app.trygrowthproject.com');
++    expect(PRIVACY_POLICY_URL).toBe('https://app.trygrowthproject.com/privacy');
++    expect(PRIVACY_POLICY_URL).not.toContain('/help/');
++    expect(helpUrl('/privacy')).not.toBe(PRIVACY_POLICY_URL);
++  });
++
++  it('points at the consumer health policy and terms on the same host', () => {
++    expect(CONSUMER_HEALTH_POLICY_URL).toBe(
++      'https://app.trygrowthproject.com/consumer-health-privacy',
++    );
++    expect(TERMS_URL).toBe('https://app.trygrowthproject.com/terms');
++  });
++});
++
++describe('trustCenterLinks', () => {
++  it('lists Privacy Policy, Consumer Health Data Privacy Policy and the help centre, in that order', () => {
++    const links = trustCenterLinks();
++    expect(links.map((l) => l.url)).toEqual([
++      PRIVACY_POLICY_URL,
++      CONSUMER_HEALTH_POLICY_URL,
++      helpUrl(),
++    ]);
++    expect(links.map((l) => l.label)).toEqual([
++      'Privacy Policy',
++      'Consumer Health Data Privacy Policy',
++      'Visit the help centre',
++    ]);
++    for (const l of links) {
++      expect(l.url).toMatch(/^https:\/\//);
++      expect(l.label).not.toContain('!');
++    }
++  });
++});
++
++describe('TrustCenterScreen source', () => {
++  it('no longer builds the policy link from helpUrl("/privacy")', () => {
++    expect(SCREEN_SRC).not.toMatch(/helpUrl\(\s*['"]\/privacy['"]\s*\)/);
++    expect(SCREEN_SRC).toContain('trustCenterLinks()');
++  });
++
++  it('drops the unsupported data-residency and coach-scope claims', () => {
++    expect(SCREEN_SRC).not.toContain('label="Data residency"');
++    expect(SCREEN_SRC).not.toContain('Servers located in US East');
++    expect(SCREEN_SRC).not.toContain('outside the US without your consent');
++    expect(SCREEN_SRC).not.toContain('only what you log (meals + workouts)');
++    expect(SCREEN_SRC).not.toContain('we do not sell, share, or license your data');
++  });
++
++  it('checklist (d): the transparency bullets never speak as we/us/our', () => {
++    const bullets = [...SCREEN_SRC.matchAll(/<BulletItem text="([^"]+)"/g)].map((m) => m[1]);
++    expect(bullets.length).toBeGreaterThan(3);
++    for (const line of bullets) {
++      expect(line).not.toMatch(/\b(we|us|our|ours)\b/i);
++      expect(line).not.toContain('!');
++    }
++    expect(bullets).toContain('Service providers that run the app for The Growth Project, such as Anthropic for Roman, only as described in the Privacy Policy');
++    expect(bullets).toContain('Your data is never sold, and your health data is never used for advertising');
++  });
++});
++
++describe('TrustCenterScreen labels (operator ruling 10-01: "Privacy", "Delete account")', () => {
++  it('uses the approved Settings labels', () => {
++    expect(SCREEN_SRC).toContain('>Delete account</Text>');
++    expect(SCREEN_SRC).toContain('accessibilityLabel="Delete account"');
++    // Main #313: the row opens the shared Delete account screen (re-auth,
++    // exact date, cancel); there is no inline confirmation alert any more.
++    expect(SCREEN_SRC).toContain("navigation?.navigate?.('DeleteAccount')");
++    expect(SCREEN_SRC).not.toContain('deletionApi.requestDeletion');
++    expect(SCREEN_SRC).not.toMatch(/Delete my account|Delete My Account/);
++    expect(SCREEN_SRC).toContain('Open Privacy in Settings to track progress');
++    expect(SCREEN_SRC).not.toContain('Data & Privacy');
++  });
++
++  it('keeps the policy paths the backend serves (#611 PRIVACY_POLICY_PATH / CONSUMER_HEALTH_POLICY_PATH)', () => {
++    expect(new URL(PRIVACY_POLICY_URL).pathname).toBe('/privacy');
++    expect(new URL(CONSUMER_HEALTH_POLICY_URL).pathname).toBe('/consumer-health-privacy');
++  });
++});
++
++describe('TrustCenterScreen render', () => {
++  // Imported after the mocks above are registered.
++  const TrustCenterScreen = require('../TrustCenterScreen').default;
++  let openUrl: jest.SpyInstance;
++  let canOpen: jest.SpyInstance;
++  let alertSpy: jest.SpyInstance;
++  const unhandled: unknown[] = [];
++  const onUnhandled = (reason: unknown) => unhandled.push(reason);
++
++  beforeAll(() => process.on('unhandledRejection', onUnhandled));
++  afterAll(() => process.off('unhandledRejection', onUnhandled));
++
++  beforeEach(() => {
++    unhandled.length = 0;
++    netinfo.__reset();
++    mockCaptureError.mockReset();
++    mockCapturePlain.mockReset();
++    mockSetString.mockReset();
++    openUrl = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
++    canOpen = jest.spyOn(Linking, 'canOpenURL').mockResolvedValue(true);
++    alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  });
++
++  afterEach(() => {
++    openUrl.mockRestore();
++    canOpen.mockRestore();
++    alertSpy.mockRestore();
++    expect(unhandled).toEqual([]);
++    expect(mockCapturePlain).not.toHaveBeenCalled();
++  });
++
++  async function renderScreen() {
++    const screen = await render(<TrustCenterScreen navigation={{ goBack: jest.fn() }} />);
++    await waitFor(() => expect(screen.getByTestId('trust-link-privacy')).toBeTruthy());
++    return screen;
++  }
++
++  async function tap(screen: Awaited<ReturnType<typeof renderScreen>>, testID: string) {
++    await fireEvent.press(screen.getByTestId(testID));
++  }
++
++  function shownMessage(screen: Awaited<ReturnType<typeof renderScreen>>): string {
++    return screen.getByTestId('trust-link-failure-message').props.children;
++  }
++
++  it('shows the three links and opens each URL, with no failure notice and nothing reported', async () => {
++    const screen = await renderScreen();
++
++    expect(screen.getByText('Privacy Policy')).toBeTruthy();
++    expect(screen.getByText('Consumer Health Data Privacy Policy')).toBeTruthy();
++    expect(screen.getByText('Visit the help centre')).toBeTruthy();
++
++    await tap(screen, 'trust-link-privacy');
++    await waitFor(() => expect(openUrl).toHaveBeenCalledTimes(1));
++    await tap(screen, 'trust-link-consumer-health');
++    await waitFor(() => expect(openUrl).toHaveBeenCalledTimes(2));
++    await tap(screen, 'trust-link-help');
++    await waitFor(() => expect(openUrl).toHaveBeenCalledTimes(3));
++    expect(openUrl.mock.calls.map((c) => c[0])).toEqual([
++      'https://app.trygrowthproject.com/privacy',
++      'https://app.trygrowthproject.com/consumer-health-privacy',
++      helpUrl(),
++    ]);
++    expect(screen.queryByTestId('trust-link-failure')).toBeNull();
++    expect(mockCaptureError).not.toHaveBeenCalled();
++    expect(alertSpy).not.toHaveBeenCalled();
++  });
++
++  it('shows the Roman privacy line and no data-residency row', async () => {
++    const screen = await renderScreen();
++    expect(
++      screen.getByText(
++        'Not your coach — your Roman conversations, which are kept until you delete them or your account',
++      ),
++    ).toBeTruthy();
++    expect(screen.queryByText('Data residency')).toBeNull();
++    expect(screen.queryByText('US East')).toBeNull();
++  });
++
++  it('never promises a fixed-period Roman deletion (owner 10-01 20:32 / OR-110-1: chats are kept until the client deletes them or the account)', async () => {
++    const screen = await renderScreen();
++    // Built from numbers so the retired period never appears as text in the repo (114-S).
++    const retired = new RegExp(`${18 * 10}[- ]days?`, 'i');
++    expect(screen.queryByText(retired)).toBeNull();
++    expect(screen.getByText(/kept until you delete them or your account/)).toBeTruthy();
++    expect(SCREEN_SRC).not.toMatch(retired);
++    expect(SCREEN_SRC).not.toMatch(/deleted after/);
++  });
++
++  it('offline: names the Privacy Policy, says to connect and tap again, does not try to open, reports nothing', async () => {
++    netinfo.__setState({ isConnected: false, isInternetReachable: false });
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-privacy');
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure')).toBeTruthy());
++
++    expect(shownMessage(screen)).toBe(
++      'This phone is offline, so the Privacy Policy did not open. Connect to Wi-Fi or mobile data, then tap the link again.',
++    );
++    expect(screen.getByTestId('trust-link-failure-message').props.accessibilityRole).toBe('alert');
++    expect(screen.queryByTestId('trust-link-failure-address')).toBeNull();
++    expect(canOpen).not.toHaveBeenCalled();
++    expect(openUrl).not.toHaveBeenCalled();
++    expect(mockCaptureError).not.toHaveBeenCalled();
++    expect(alertSpy).not.toHaveBeenCalled();
++
++    // Back online: tapping again opens the page and the notice goes away.
++    netinfo.__setState({ isConnected: true, isInternetReachable: true });
++    await tap(screen, 'trust-link-privacy');
++    await waitFor(() =>
++      expect(openUrl).toHaveBeenCalledWith('https://app.trygrowthproject.com/privacy'),
++    );
++    await waitFor(() => expect(screen.queryByTestId('trust-link-failure')).toBeNull());
++  });
++
++  it('offline: the help centre notice names the help centre', async () => {
++    netinfo.__setState({ isConnected: false });
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-help');
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure')).toBeTruthy());
++    expect(shownMessage(screen)).toBe(
++      'This phone is offline, so the help centre did not open. Connect to Wi-Fi or mobile data, then tap the link again.',
++    );
++  });
++
++  it('a failed reachability probe alone does not block the tap (the browser opens)', async () => {
++    netinfo.__setState({ isConnected: true, isInternetReachable: false });
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-privacy');
++    await waitFor(() =>
++      expect(openUrl).toHaveBeenCalledWith('https://app.trygrowthproject.com/privacy'),
++    );
++    expect(screen.queryByTestId('trust-link-failure')).toBeNull();
++  });
++
++  it('open rejected while the internet is unreachable: offline copy, not reported', async () => {
++    netinfo.__setState({ isConnected: true, isInternetReachable: false });
++    openUrl.mockRejectedValueOnce(new Error('The Internet connection appears to be offline.'));
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-consumer-health');
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure')).toBeTruthy());
++    expect(shownMessage(screen)).toBe(
++      'This phone is offline, so the Consumer Health Data Privacy Policy did not open. Connect to Wi-Fi or mobile data, then tap the link again.',
++    );
++    expect(mockCaptureError).not.toHaveBeenCalled();
++  });
++
++  it('the phone cannot open links (canOpenURL false): exact web address, selectable, Copy web address; reported without PII', async () => {
++    canOpen.mockResolvedValue(false);
++    mockSetString.mockResolvedValue(true);
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-consumer-health');
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure')).toBeTruthy());
++
++    expect(shownMessage(screen)).toBe(
++      'This phone could not open the Consumer Health Data Privacy Policy in a web browser. Open any browser, on this phone or another device, and go to the address below.',
++    );
++    const address = screen.getByTestId('trust-link-failure-address');
++    expect(address.props.children).toBe('https://app.trygrowthproject.com/consumer-health-privacy');
++    expect(address.props.selectable).toBe(true);
++    expect(openUrl).not.toHaveBeenCalled();
++    expect(screen.queryByTestId('trust-link-failure-email')).toBeNull();
++    expect(alertSpy).not.toHaveBeenCalled();
++
++    await fireEvent.press(screen.getByTestId('trust-link-failure-copy'));
++    await waitFor(() =>
++      expect(screen.getByTestId('trust-link-failure-copy-status').props.children).toBe(
++        'Web address copied. Paste it into any browser.',
++      ),
++    );
++    expect(mockSetString).toHaveBeenCalledWith(
++      'https://app.trygrowthproject.com/consumer-health-privacy',
++    );
++
++    expect(mockCaptureError).toHaveBeenCalledTimes(1);
++    const [, extras] = mockCaptureError.mock.calls[0];
++    // Sol B-315-1: exactly the closed allowlist, nothing else.
++    expect(extras).toEqual({
++      event: 'trust_center.link_open_failed',
++      link: 'consumer_health_policy',
++      operation: 'can_open_url_false',
++      cause: 'cannot_open',
++      error_class: 'none',
++      platform: 'ios',
++      reference: expect.stringMatching(/^[0-9a-f]{8}$/),
++    });
++  });
++
++  it('the phone cannot open links (openURL rejects): the Privacy Policy address, and the report carries no query string or email', async () => {
++    openUrl.mockRejectedValueOnce(
++      new Error(
++        "Could not open URL 'https://app.trygrowthproject.com/privacy?token=abc123#frag' for jane.doe@realmail.com: No Activity found",
++      ),
++    );
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-privacy');
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure')).toBeTruthy());
++
++    expect(shownMessage(screen)).toBe(
++      'This phone could not open the Privacy Policy in a web browser. Open any browser, on this phone or another device, and go to the address below.',
++    );
++    expect(screen.getByTestId('trust-link-failure-address').props.children).toBe(
++      'https://app.trygrowthproject.com/privacy',
++    );
++
++    expect(mockCaptureError).toHaveBeenCalledTimes(1);
++    const [err, extras] = mockCaptureError.mock.calls[0];
++    expect(extras).toEqual({
++      event: 'trust_center.link_open_failed',
++      link: 'privacy_policy',
++      operation: 'open_url_rejected',
++      cause: 'cannot_open',
++      error_class: 'error',
++      platform: 'ios',
++      reference: expect.stringMatching(/^[0-9a-f]{8}$/),
++    });
++    const sent = `${String(err.name)} ${String(err.message)} ${JSON.stringify(extras)}`;
++    for (const leaked of ['token', 'abc123', 'frag', 'jane.doe', 'realmail', '@', '?', 'No Activity found']) {
++      expect(sent).not.toContain(leaked);
++    }
++    // The stack holds only code frames (file paths may contain '@'), never the native text.
++    for (const leaked of ['token', 'abc123', 'jane.doe', 'realmail', 'No Activity found']) {
++      expect(String(err.stack)).not.toContain(leaked);
++    }
++  });
++
++  it('copy failure says how to select the address instead', async () => {
++    canOpen.mockResolvedValue(false);
++    mockSetString.mockRejectedValue(new Error('clipboard unavailable'));
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-privacy');
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure-copy')).toBeTruthy());
++    await fireEvent.press(screen.getByTestId('trust-link-failure-copy'));
++    await waitFor(() =>
++      expect(screen.getByTestId('trust-link-failure-copy-status').props.children).toBe(
++        'The web address could not be copied. Press and hold the address to select it.',
++      ),
++    );
++  });
++
++  it('anything else (canOpenURL rejects): the address, the support email and a reference that matches the Sentry report; Email support opens a draft', async () => {
++    canOpen.mockRejectedValue(new Error('Unable to open URL: https://app.trygrowthproject.com/privacy?x=1'));
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-privacy');
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure')).toBeTruthy());
++
++    const message = shownMessage(screen);
++    const match = /mention reference ([0-9a-f]{8})\.$/.exec(message);
++    expect(match).not.toBeNull();
++    const reference = match![1];
++    expect(message).toBe(
++      `The Privacy Policy did not open on this phone. Open any browser and go to the address below. If it still does not open, email ${supportEmail()} and mention reference ${reference}.`,
++    );
++    expect(screen.getByTestId('trust-link-failure-address').props.children).toBe(
++      'https://app.trygrowthproject.com/privacy',
++    );
++    expect(openUrl).not.toHaveBeenCalled();
++
++    expect(mockCaptureError).toHaveBeenCalledTimes(1);
++    const [err, extras] = mockCaptureError.mock.calls[0];
++    expect(err.name).toBe('TrustCenterLinkError');
++    expect(err.message).toBe('Trust & Privacy link did not open (privacy_policy, can_open_url_rejected)');
++    expect(extras).toEqual({
++      event: 'trust_center.link_open_failed',
++      link: 'privacy_policy',
++      operation: 'can_open_url_rejected',
++      cause: 'unexpected',
++      error_class: 'error',
++      platform: 'ios',
++      reference,
++    });
++    expect(JSON.stringify(extras)).not.toContain(supportEmail());
++    expect(JSON.stringify(extras)).not.toContain('Unable to open URL');
++
++    await fireEvent.press(screen.getByTestId('trust-link-failure-email'));
++    await waitFor(() => expect(openUrl).toHaveBeenCalledTimes(1));
++    expect(openUrl).toHaveBeenCalledWith(
++      `mailto:${supportEmail()}?subject=${encodeURIComponent(
++        `Trust & Privacy: the Privacy Policy did not open (reference ${reference})`,
++      )}`,
++    );
++    expect(screen.queryByTestId('trust-link-failure-support')).toBeNull();
++  });
++
++  it('anything else, and no email app opens: the shared support email fallback shows the address with Copy and Try again', async () => {
++    canOpen.mockRejectedValue(new Error('boom'));
++    openUrl.mockRejectedValueOnce(new Error('no mail app'));
++    const screen = await renderScreen();
++    await tap(screen, 'trust-link-help');
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure-email')).toBeTruthy());
++    expect(shownMessage(screen)).toMatch(/^The help centre did not open on this phone\./);
++    await fireEvent.press(screen.getByTestId('trust-link-failure-email'));
++    await waitFor(() => expect(screen.getByTestId('trust-link-failure-support')).toBeTruthy());
++    expect(screen.getByTestId('trust-link-failure-support-address').props.children).toBe(
++      supportEmail(),
++    );
++    expect(screen.getByTestId('trust-link-failure-support-retry')).toBeTruthy();
++    // Quiet Luxury: the shared fallback shown in this flow has no first person either.
++    const status: string = screen.getByTestId('trust-link-failure-support-status').props.children;
++    expect(status).toBe(
++      'This phone could not open an email app. Copy the address below and email support from any email app or device.',
++    );
++    expect(status).not.toMatch(/\b(we|us|our|ours|i|me|my)\b/i);
++  });
++
++  it('the old generic alert copy is gone from the screen', () => {
++    expect(SCREEN_SRC).not.toContain('Could not open this page right now');
++    expect(SCREEN_SRC).not.toMatch(/try again later/i);
++    expect(SCREEN_SRC).toContain('openTrustCenterLink(link)');
++  });
++});
++
++describe('link failure copy rules (OR-112-15)', () => {
++  const causes = ['offline', 'cannot_open', 'unexpected'] as const;
++
++  it('every link and cause names the page, has a next step, and no generic, first-person or exclaiming copy', () => {
++    const { linkFailureMessage, LINK_FAILURE_ACTIONS } = failureLib();
++    const all: string[] = [...(Object.values(LINK_FAILURE_ACTIONS) as string[])];
++    for (const link of trustCenterLinks()) {
++      for (const cause of causes) {
++        const message: string = linkFailureMessage(link, {
++          cause,
++          step: 'unexpected',
++          reference: cause === 'unexpected' ? 'ab12cd34' : null,
++        });
++        all.push(message);
++        expect(message).toMatch(new RegExp(`\\b[Tt]he ${link.pageName}\\b`));
++        if (cause === 'offline') expect(message).toContain('tap the link again');
++        if (cause === 'cannot_open') expect(message).toContain('go to the address below');
++        if (cause === 'unexpected') {
++          expect(message).toContain(supportEmail());
++          expect(message).toContain('reference ab12cd34');
++        }
++      }
++    }
++    for (const text of all) {
++      expect(text).not.toMatch(/please try again later|try again later|could not open this page|something went wrong/i);
++      expect(text).not.toMatch(/\b(we|us|our|ours|i|me|my)\b/i);
++      expect(text).not.toContain('!');
++    }
++  });
++
++  it('names each page as it is labelled', () => {
++    expect(trustCenterLinks().map((l) => l.pageName)).toEqual([
++      'Privacy Policy',
++      'Consumer Health Data Privacy Policy',
++      'help centre',
++    ]);
++  });
++
++  it('Sol B-315-1: no free-form text scrubber remains; the error class is an enum decided without reading text', () => {
++    const lib = failureLib();
++    expect(lib.sentrySafeText).toBeUndefined();
++    expect(lib.newLinkFailureReference()).toMatch(/^[0-9a-f]{8}$/);
++    expect(lib.LINK_FAILURE_REPORT_KEYS).toEqual(['event', 'link', 'operation', 'cause', 'error_class', 'platform', 'reference']);
++    expect(lib.linkErrorClassOf(undefined)).toBe('none');
++    expect(lib.linkErrorClassOf(new TypeError('Jane'))).toBe('type_error');
++    expect(lib.linkErrorClassOf(new RangeError('Jane'))).toBe('range_error');
++    expect(lib.linkErrorClassOf(new Error('Jane'))).toBe('error');
++    expect(lib.linkErrorClassOf('Jane')).toBe('string');
++    expect(lib.linkErrorClassOf({ message: 'Jane' })).toBe('other');
++  });
++
++  it('openTrustCenterLink never rejects, even when the error reporter throws', async () => {
++    const { openTrustCenterLink } = failureLib();
++    netinfo.__reset();
++    const canOpen = jest.spyOn(Linking, 'canOpenURL').mockRejectedValue(new Error('boom'));
++    mockCaptureError.mockImplementation(() => {
++      throw new Error('sentry down');
++    });
++    try {
++      const failure = await openTrustCenterLink(trustCenterLinks()[0]);
++      expect(failure).toMatchObject({ cause: 'unexpected', step: 'can_open_url_rejected' });
++      expect(failure.reference).toMatch(/^[0-9a-f]{8}$/);
++    } finally {
++      canOpen.mockRestore();
++      mockCaptureError.mockReset();
++    }
++  });
++});
+diff --git a/src/screens/client/README.md b/src/screens/client/README.md
+index fc2b4f6..b3862a2 100644
+--- a/src/screens/client/README.md
++++ b/src/screens/client/README.md
+@@ -55,6 +55,8 @@ Everything a signed-in `student` user sees. Mounted under `ClientNavigator`, whi
+ 
+ The **Trust Center** itself lives at `src/screens/TrustCenterScreen.tsx` (not in this directory because it is shared with the coach navigator).
+ 
++Trust Center policy links (2026-09-30): the footer links to the **Privacy Policy** (`PRIVACY_POLICY_URL`, `https://app.trygrowthproject.com/privacy`), the **Consumer Health Data Privacy Policy** (`CONSUMER_HEALTH_POLICY_URL`, `/consumer-health-privacy`, required to be reachable from in-app settings by Washington RCW 19.373) and the help centre (`helpUrl()`). The list lives in `src/screens/trustCenterLinks.ts`; the URLs live in `src/config/env.ts`. Policy pages sit at the site root, so never build them with `helpUrl()` (the old `helpUrl('/privacy')` opened `/help/privacy`, which is not the policy). The transparency bullets say what the coach sees (consultation answers, logs, check-ins, connected health data), that Roman conversations are private from the coach and kept until the client deletes them or the account (owner 10-01 20:32, OR-110-1), and that service providers such as Anthropic process data only as the policy describes. The unsupported "US East" data-residency row and bullets were removed. A link that does not open shows, under the link, copy that names the page and fits the cause (OR-112-15, `src/screens/trustCenterLinkFailure.ts`): offline says so and to tap again once connected; a phone that cannot open web links (`Linking.canOpenURL` false or `Linking.openURL` rejects) gets the exact web address, selectable, with Copy web address; anything else gets the address, the support email (`SUPPORT_EMAIL`) with a short reference, Email support and the shared `SupportEmailFallback`. Every failure except offline goes to Sentry through `captureErrorWithoutPii` (no signed-in user id, no request data, no breadcrumbs) with a closed allowlist only (`LinkFailureReport`: event name, link id, operation, cause, an error-class enum, platform, reference); no text from the native exception is ever sent (Sol B-315-1). Tests: `src/screens/__tests__/trustCenterPolicyLinks.test.tsx` and the real-SDK canary `src/screens/__tests__/trustCenterLinkFailure.canary.test.ts`. Any reusable consumer-health link (for example the consultation agreement screen) should import `CONSUMER_HEALTH_POLICY_URL` from `src/config/env.ts`.
++
+ ### Clinic tutorial additions (featureFlags.clientTutorial, default OFF)
+ 
+ | Screen | Addition |
+diff --git a/src/screens/coach/payments/CoachPackageEditScreen.tsx b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+index 13f7ba8..6203a06 100644
+--- a/src/screens/coach/payments/CoachPackageEditScreen.tsx
++++ b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+@@ -605,7 +605,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+         {resumedCreate ? (
+           <Text style={styles.resumedText} testID="package-edit-resumed">
+             Your package from earlier is saved here. Tap Create package to
+-            finish it. It will not be made twice.
++            finish that same package.
+           </Text>
+         ) : null}
+         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+diff --git a/src/screens/coach/setup/CoachSetupScreen.tsx b/src/screens/coach/setup/CoachSetupScreen.tsx
+index bc2c9ca..af2e864 100644
+--- a/src/screens/coach/setup/CoachSetupScreen.tsx
++++ b/src/screens/coach/setup/CoachSetupScreen.tsx
+@@ -41,9 +41,9 @@ export default function CoachSetupScreen({ route, navigation }: Props) {
+               Get paid
+             </Text>
+             <Text style={styles.body}>
+-              Stripe, our payments partner, collects your bank account and ID on
+-              a secure page and sends your earnings to your bank. TGP never sees
+-              those details.
++              Stripe, the payments provider TGP uses, collects your bank account
++              and ID on a secure page and sends your earnings to your bank. TGP
++              never sees those details.
+             </Text>
+             <GetPaidPanel testID="setup-get-paid" />
+           </>
+diff --git a/src/screens/support/__tests__/SupportInboxUnavailable.test.tsx b/src/screens/support/__tests__/SupportInboxUnavailable.test.tsx
+index 16d8255..af85e57 100644
+--- a/src/screens/support/__tests__/SupportInboxUnavailable.test.tsx
++++ b/src/screens/support/__tests__/SupportInboxUnavailable.test.tsx
+@@ -45,7 +45,7 @@ describe('SupportInboxScreen when live chat is unavailable', () => {
+     await fireEvent.press(utils.getByTestId('support-email'));
+     await waitFor(() => utils.getByTestId('support-email-fallback'));
+     expect(utils.getByTestId('support-email-fallback-status').props.children).toBe(
+-      'This phone could not open an email app. Copy the address below and write to us from any email app or device.',
++      'This phone could not open an email app. Copy the address below and email support from any email app or device.',
+     );
+     const address = utils.getByTestId('support-email-fallback-address');
+     expect(address.props.selectable).toBe(true);
+diff --git a/src/screens/trustCenterLinkFailure.ts b/src/screens/trustCenterLinkFailure.ts
+new file mode 100644
+index 0000000..cc13ffd
+--- /dev/null
++++ b/src/screens/trustCenterLinkFailure.ts
+@@ -0,0 +1,228 @@
++/**
++ * Opening a Trust & Privacy footer link, and what the screen says when it
++ * does not open (operator ruling OR-112-15; owner rule 2026-10-01 13:34: no
++ * generic or vague errors, ever).
++ *
++ * Every failure names the page and gives a next step that works:
++ *   - offline      the phone has no connection: say so, connect, tap again.
++ *   - cannot_open  the phone cannot open web links (Linking.canOpenURL is
++ *                  false, or Linking.openURL rejects): show the exact web
++ *                  address to open in any browser.
++ *   - unexpected   anything else: the web address, the support email and a
++ *                  short reference that is also on the Sentry report.
++ *
++ * Every non-offline failure is reported to Sentry without personal data
++ * (captureErrorWithoutPii: no signed-in user id, no request data, no
++ * breadcrumbs). Sol B-315-1: the report is a CLOSED allowlist built here from
++ * constants and enums only (LinkFailureReport): the event name, the link id,
++ * the operation (step) and cause, an error-class enum, the platform and a
++ * generated reference. No free-form text from the native exception (its
++ * name, message, stack or any other field) is ever sent: the error class is
++ * decided by `instanceof` checks, never by reading the exception's text, and
++ * the exception handed to Sentry is a fixed synthetic one.
++ *
++ * openTrustCenterLink never rejects, so a tap can never leave an unhandled
++ * promise behind.
++ */
++import { Linking, Platform } from 'react-native';
++import NetInfo from '@react-native-community/netinfo';
++
++import { SUPPORT_EMAIL } from '../constants/support';
++import { captureErrorWithoutPii } from '../services/sentry';
++import type { TrustCenterLink } from './trustCenterLinks';
++
++export type LinkFailureCause = 'offline' | 'cannot_open' | 'unexpected';
++
++/** Which step failed; diagnostics only, never shown. */
++export type LinkFailureStep =
++  | 'offline_before_open'
++  | 'offline_after_open_rejected'
++  | 'can_open_url_false'
++  | 'can_open_url_rejected'
++  | 'open_url_rejected'
++  | 'unexpected';
++
++export interface LinkFailure {
++  cause: LinkFailureCause;
++  step: LinkFailureStep;
++  /**
++   * Short reference sent with the Sentry report (every cause but offline);
++   * shown to the user with the support path (unexpected).
++   */
++  reference: string | null;
++}
++
++export const LINK_FAILURE_ACTIONS = {
++  copy: 'Copy web address',
++  copied: 'Web address copied. Paste it into any browser.',
++  copyFailed: 'The web address could not be copied. Press and hold the address to select it.',
++  email: 'Email support',
++} as const;
++
++/** The message shown under the link that did not open. */
++export function linkFailureMessage(link: TrustCenterLink, failure: LinkFailure): string {
++  const page = link.pageName;
++  switch (failure.cause) {
++    case 'offline':
++      return `This phone is offline, so the ${page} did not open. Connect to Wi-Fi or mobile data, then tap the link again.`;
++    case 'cannot_open':
++      return `This phone could not open the ${page} in a web browser. Open any browser, on this phone or another device, and go to the address below.`;
++    default: {
++      const ref = failure.reference ? ` and mention reference ${failure.reference}` : '';
++      return `The ${page} did not open on this phone. Open any browser and go to the address below. If it still does not open, email ${SUPPORT_EMAIL}${ref}.`;
++    }
++  }
++}
++
++/** Subject line for the support email offered after an unexpected failure. */
++export function linkFailureEmailSubject(link: TrustCenterLink, failure: LinkFailure): string {
++  const ref = failure.reference ? ` (reference ${failure.reference})` : '';
++  return `Trust & Privacy: the ${link.pageName} did not open${ref}`;
++}
++
++/** 8 hex characters; enough to find one report, not an identifier of the user. */
++export function newLinkFailureReference(): string {
++  return Math.floor(Math.random() * 0x100000000)
++    .toString(16)
++    .padStart(8, '0');
++}
++
++/** The kind of value the failing call rejected with; decided without reading any of its text. */
++export type LinkErrorClass = 'none' | 'type_error' | 'range_error' | 'error' | 'string' | 'other';
++
++export function linkErrorClassOf(err: unknown): LinkErrorClass {
++  if (err === undefined) return 'none';
++  if (err instanceof TypeError) return 'type_error';
++  if (err instanceof RangeError) return 'range_error';
++  if (err instanceof Error) return 'error';
++  if (typeof err === 'string') return 'string';
++  return 'other';
++}
++
++export type LinkReportPlatform = 'ios' | 'android' | 'web' | 'other';
++
++function platformOf(): LinkReportPlatform {
++  const os: string = Platform.OS;
++  return os === 'ios' || os === 'android' || os === 'web' ? os : 'other';
++}
++
++/** Event name of every link-failure report. */
++export const LINK_FAILURE_EVENT = 'trust_center.link_open_failed' as const;
++
++/**
++ * Everything a link-failure report may carry (Sol B-315-1). Every field is
++ * a constant, an enum or the generated reference: nothing comes from the
++ * native exception or from the person.
++ */
++export interface LinkFailureReport {
++  event: typeof LINK_FAILURE_EVENT;
++  link: TrustCenterLink['id'];
++  operation: LinkFailureStep;
++  cause: Exclude<LinkFailureCause, 'offline'>;
++  error_class: LinkErrorClass;
++  platform: LinkReportPlatform;
++  reference: string;
++}
++
++/** The exact keys a report may carry, in order; tests pin this list. */
++export const LINK_FAILURE_REPORT_KEYS = ['event', 'link', 'operation', 'cause', 'error_class', 'platform', 'reference'] as const;
++
++export function linkFailureReport(
++  link: TrustCenterLink,
++  failure: LinkFailure & { cause: Exclude<LinkFailureCause, 'offline'>; reference: string },
++  err?: unknown,
++): LinkFailureReport {
++  return {
++    event: LINK_FAILURE_EVENT,
++    link: link.id,
++    operation: failure.step,
++    cause: failure.cause,
++    error_class: linkErrorClassOf(err),
++    platform: platformOf(),
++    reference: failure.reference,
++  };
++}
++
++function report(link: TrustCenterLink, failure: LinkFailure, err?: unknown): void {
++  if (failure.cause === 'offline' || !failure.reference) return;
++  const extras = linkFailureReport(link, { ...failure, cause: failure.cause, reference: failure.reference }, err);
++  // A fixed synthetic exception: its message holds only the two enums.
++  const error = new Error(`Trust & Privacy link did not open (${extras.link}, ${extras.operation})`);
++  error.name = 'TrustCenterLinkError';
++  captureErrorWithoutPii(error, { ...extras });
++}
++
++interface Connectivity {
++  /** The phone reports no network connection at all. */
++  definitelyOffline: boolean;
++  /** No connection, or NetInfo's reachability probe says the internet is unreachable. */
++  probablyOffline: boolean;
++}
++
++async function connectivity(): Promise<Connectivity> {
++  try {
++    const state = await NetInfo.fetch();
++    const definitelyOffline = state.isConnected === false;
++    return { definitelyOffline, probablyOffline: definitelyOffline || state.isInternetReachable === false };
++  } catch {
++    // Unknown connectivity is not offline: try to open the page.
++    return { definitelyOffline: false, probablyOffline: false };
++  }
++}
++
++function fail(
++  link: TrustCenterLink,
++  cause: LinkFailureCause,
++  step: LinkFailureStep,
++  err?: unknown,
++): LinkFailure {
++  const failure: LinkFailure = {
++    cause,
++    step,
++    reference: cause === 'offline' ? null : newLinkFailureReference(),
++  };
++  // Being offline is the phone's state, not a defect; everything else is reported.
++  if (cause !== 'offline') {
++    try {
++      report(link, failure, err);
++    } catch {
++      // A failing error reporter must not change what the user is told.
++    }
++  }
++  return failure;
++}
++
++/**
++ * Opens the link in the phone's browser. Resolves null when it opened, or the
++ * failure to show. Never rejects.
++ *
++ * Only a phone with no connection at all is stopped before opening: NetInfo's
++ * reachability probe can be wrong, and a browser shows its own offline page,
++ * so a "reachable: false" alone never blocks the tap. It is used only to
++ * explain an open that failed.
++ */
++export async function openTrustCenterLink(link: TrustCenterLink): Promise<LinkFailure | null> {
++  try {
++    if ((await connectivity()).definitelyOffline) {
++      return fail(link, 'offline', 'offline_before_open');
++    }
++    let supported: boolean;
++    try {
++      supported = await Linking.canOpenURL(link.url);
++    } catch (err) {
++      return fail(link, 'unexpected', 'can_open_url_rejected', err);
++    }
++    if (!supported) return fail(link, 'cannot_open', 'can_open_url_false');
++    try {
++      await Linking.openURL(link.url);
++      return null;
++    } catch (err) {
++      if ((await connectivity()).probablyOffline) {
++        return fail(link, 'offline', 'offline_after_open_rejected');
++      }
++      return fail(link, 'cannot_open', 'open_url_rejected', err);
++    }
++  } catch (err) {
++    return fail(link, 'unexpected', 'unexpected', err);
++  }
++}
+diff --git a/src/screens/trustCenterLinks.ts b/src/screens/trustCenterLinks.ts
+new file mode 100644
+index 0000000..ddc9cc2
+--- /dev/null
++++ b/src/screens/trustCenterLinks.ts
+@@ -0,0 +1,55 @@
++/**
++ * Links shown at the foot of the Trust & Privacy screen.
++ *
++ * The Privacy Policy and the Consumer Health Data Privacy Policy are public
++ * pages at the site root (see PRIVACY_POLICY_URL in config/env.ts). The
++ * consumer health policy must be reachable from the app's settings (RCW
++ * 19.373.010 counts in-app settings links as part of an app's homepage), so it
++ * sits here next to the Privacy Policy.
++ *
++ * When a link does not open, trustCenterLinkFailure.ts names the page
++ * (`pageName`) and says why and what to do next (OR-112-15).
++ */
++import { CONSUMER_HEALTH_POLICY_URL, PRIVACY_POLICY_URL, helpUrl } from '../config/env';
++
++export type TrustCenterLinkId = 'privacy_policy' | 'consumer_health_policy' | 'help_centre';
++
++export interface TrustCenterLink {
++  /** Stable id for diagnostics (Sentry), never shown. */
++  id: TrustCenterLinkId;
++  label: string;
++  url: string;
++  accessibilityLabel: string;
++  testID: string;
++  /** The page as named in failure copy, after "the" ("the Privacy Policy did not open"). */
++  pageName: string;
++}
++
++export function trustCenterLinks(): TrustCenterLink[] {
++  return [
++    {
++      id: 'privacy_policy',
++      label: 'Privacy Policy',
++      url: PRIVACY_POLICY_URL,
++      accessibilityLabel: 'Open the Privacy Policy',
++      testID: 'trust-link-privacy',
++      pageName: 'Privacy Policy',
++    },
++    {
++      id: 'consumer_health_policy',
++      label: 'Consumer Health Data Privacy Policy',
++      url: CONSUMER_HEALTH_POLICY_URL,
++      accessibilityLabel: 'Open the Consumer Health Data Privacy Policy',
++      testID: 'trust-link-consumer-health',
++      pageName: 'Consumer Health Data Privacy Policy',
++    },
++    {
++      id: 'help_centre',
++      label: 'Visit the help centre',
++      url: helpUrl(),
++      accessibilityLabel: 'Open the help centre',
++      testID: 'trust-link-help',
++      pageName: 'help centre',
++    },
++  ];
++}
+diff --git a/src/services/README.md b/src/services/README.md
+index 03cfeba..bc26030 100644
+--- a/src/services/README.md
++++ b/src/services/README.md
+@@ -22,7 +22,7 @@ Network, auth, observability, and offline-queue glue. The screens never call `ax
+ | `queryClient.ts` | The shared `QueryClient` plus an AsyncStorage-backed cache persister. Defaults: 30 s stale, 10 min gc, no focus refetch, 2 retries on read, 0 on mutate. |
+ | `foodLogQueue.ts` | Offline queue for `POST /log/food`. Stored as a JSON array under `pending_food_logs`. Flushed by `RootNavigator` on offline → online. |
+ | `refreshQueue.ts` | Single-flight refresh coordinator (currently unwired; `api.ts` has its own equivalent). Kept as a tested helper for a follow-up consolidation. |
+-| `sentry.ts` | `initSentry`, `wrap`, `captureError`, `setSentryUser`. No-ops when `EXPO_PUBLIC_SENTRY_DSN` is missing. |
++| `sentry.ts` | `initSentry`, `wrap`, `captureError`, `captureErrorWithoutPii` (same, but the event drops the signed-in user, request data and breadcrumbs via `stripPersonalData`), `setSentryUser`. No-ops when `EXPO_PUBLIC_SENTRY_DSN` is missing. |
+ 
+ ## Data flow
+ 
+diff --git a/src/services/__tests__/sentry.withoutPii.seam.test.ts b/src/services/__tests__/sentry.withoutPii.seam.test.ts
+new file mode 100644
+index 0000000..54b286b
+--- /dev/null
++++ b/src/services/__tests__/sentry.withoutPii.seam.test.ts
+@@ -0,0 +1,101 @@
++/**
++ * Main-merge seam of #315 (captureErrorWithoutPii, OR-112-15) with #327
++ * (B-327-6 URL-credential scrub) in src/services/sentry.ts. A Trust & Privacy
++ * link-failure report runs the scope processor (stripPersonalData) and then
++ * the init's beforeSend (content policy + credential scrub). The merge must
++ * keep both: no user, request or breadcrumbs; no credential anywhere; the
++ * support reference kept verbatim as a searchable tag and extra.
++ */
++type Processor = (event: Record<string, unknown>) => Record<string, unknown>;
++
++const mockScope = {
++  extras: {} as Record<string, unknown>,
++  tags: {} as Record<string, string>,
++  processors: [] as Processor[],
++  setExtra(k: string, v: unknown) {
++    this.extras[k] = v;
++  },
++  setTag(k: string, v: string) {
++    this.tags[k] = v;
++  },
++  addEventProcessor(fn: Processor) {
++    this.processors.push(fn);
++  },
++};
++const mockCaptureException = jest.fn();
++const mockInit = jest.fn();
++
++jest.mock('@sentry/react-native', () => ({
++  init: (...a: unknown[]) => mockInit(...a),
++  wrap: (c: unknown) => c,
++  withScope: (fn: (s: typeof mockScope) => void) => fn(mockScope),
++  captureException: (...a: unknown[]) => mockCaptureException(...a),
++  setUser: jest.fn(),
++}));
++jest.mock('expo-constants', () => ({
++  __esModule: true,
++  default: { expoConfig: { version: '1.0.0', ios: { buildNumber: '6' }, android: { versionCode: 4 }, extra: {} } },
++}));
++
++const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjF9.c2lnbmF0dXJlLXZhbHVl';
++const LINK = `https://api.example.test/v1/me/data-export/download?token=${JWT}`;
++
++describe('sentry seam: #315 report without personal data still passes the #327 credential scrub', () => {
++  const OLD = process.env.EXPO_PUBLIC_SENTRY_DSN;
++  beforeEach(() => {
++    jest.resetModules();
++    mockScope.extras = {};
++    mockScope.tags = {};
++    mockScope.processors = [];
++    mockCaptureException.mockReset();
++    mockInit.mockReset();
++    process.env.EXPO_PUBLIC_SENTRY_DSN = 'https://abc@o1.ingest.sentry.io/1';
++  });
++  afterAll(() => {
++    process.env.EXPO_PUBLIC_SENTRY_DSN = OLD;
++  });
++
++  it('scope processor, then beforeSend: no user/request/breadcrumbs, no credential, reference kept', () => {
++    const sentry = require('../sentry');
++    sentry.initSentry();
++    const beforeSend = mockInit.mock.calls[0][0].beforeSend as (e: unknown, h: unknown) => Record<string, unknown>;
++    sentry.captureErrorWithoutPii(new Error('trust_center link failed'), {
++      event: 'trust_center.link_failure',
++      link: 'privacy_policy',
++      reference: 'ab12cd34',
++    });
++    expect(mockScope.processors).toHaveLength(1);
++
++    const raw = {
++      exception: { values: [{ type: 'Error', value: `Could not open URL '${LINK}'` }] },
++      user: { id: 'acct-1', email: 'person@mail.invalid' },
++      request: { url: LINK },
++      breadcrumbs: [{ category: 'navigation', data: { to: LINK } }],
++      tags: { ...mockScope.tags, stray: JWT },
++      extra: { ...mockScope.extras, note: `retry ${LINK}` },
++    };
++    const out = beforeSend(mockScope.processors[0](raw), {}) as {
++      tags: Record<string, string>;
++      extra: Record<string, string>;
++    };
++    expect(out).not.toHaveProperty('user');
++    expect(out).not.toHaveProperty('request');
++    expect(out).not.toHaveProperty('breadcrumbs');
++    const text = JSON.stringify(out);
++    expect(text).not.toContain(JWT);
++    expect(text).not.toContain('person@mail.invalid');
++    expect(text).not.toContain('acct-1');
++    expect(text).toContain('Could not open URL');
++    expect(out.tags.reference).toBe('ab12cd34');
++    expect(out.tags.stray).toBe('[redacted]');
++    expect(out.extra.reference).toBe('ab12cd34');
++    expect(out.extra.link).toBe('privacy_policy');
++  });
++
++  it('no reference tag when the context has none', () => {
++    const sentry = require('../sentry');
++    sentry.initSentry();
++    sentry.captureErrorWithoutPii(new Error('x'), { event: 'trust_center.link_failure' });
++    expect(mockScope.tags).toEqual({});
++  });
++});
+diff --git a/src/services/__tests__/sentry.withoutPii.test.ts b/src/services/__tests__/sentry.withoutPii.test.ts
+new file mode 100644
+index 0000000..8606068
+--- /dev/null
++++ b/src/services/__tests__/sentry.withoutPii.test.ts
+@@ -0,0 +1,87 @@
++/**
++ * captureErrorWithoutPii (OR-112-15): a report that must not identify the
++ * person is sent without the signed-in user (account id), request data or
++ * breadcrumbs, even though setSentryUser tags every event app-wide.
++ */
++type Processor = (event: Record<string, unknown>) => Record<string, unknown>;
++
++const mockScope = {
++  extras: {} as Record<string, unknown>,
++  tags: {} as Record<string, string>,
++  processors: [] as Processor[],
++  setExtra(k: string, v: unknown) {
++    this.extras[k] = v;
++  },
++  setTag(k: string, v: string) {
++    this.tags[k] = v;
++  },
++  addEventProcessor(fn: Processor) {
++    this.processors.push(fn);
++  },
++};
++const mockCaptureException = jest.fn();
++const mockInit = jest.fn();
++
++jest.mock('@sentry/react-native', () => ({
++  init: (...a: unknown[]) => mockInit(...a),
++  wrap: (c: unknown) => c,
++  withScope: (fn: (s: typeof mockScope) => void) => fn(mockScope),
++  captureException: (...a: unknown[]) => mockCaptureException(...a),
++  setUser: jest.fn(),
++}));
++
++describe('captureErrorWithoutPii', () => {
++  beforeEach(() => {
++    jest.resetModules();
++    mockScope.extras = {};
++    mockScope.tags = {};
++    mockScope.processors = [];
++    mockCaptureException.mockReset();
++    mockInit.mockReset();
++  });
++
++  it('is a no-op before Sentry is initialised', () => {
++    const { captureErrorWithoutPii } = require('../sentry');
++    captureErrorWithoutPii(new Error('x'), { where: 'w' });
++    expect(mockCaptureException).not.toHaveBeenCalled();
++  });
++
++  it('sends the error with the given extras and a processor that drops user, request and breadcrumbs', () => {
++    process.env.EXPO_PUBLIC_SENTRY_DSN = 'https://public@sentry.invalid/1';
++    try {
++      const sentry = require('../sentry');
++      sentry.initSentry();
++      expect(mockInit).toHaveBeenCalledTimes(1);
++      const err = new Error('link failed');
++      sentry.captureErrorWithoutPii(err, { where: 'trust_center.link_open', reference: 'ab12cd34' });
++
++      expect(mockCaptureException).toHaveBeenCalledWith(err);
++      expect(mockScope.extras).toEqual({ where: 'trust_center.link_open', reference: 'ab12cd34' });
++      // Searchable support reference (B-326-4 parity), nothing else as a tag.
++      expect(mockScope.tags).toEqual({ reference: 'ab12cd34' });
++      expect(mockScope.processors).toHaveLength(1);
++
++      const event = {
++        message: 'm',
++        user: { id: 'u1', email: 'person@mail.invalid' },
++        request: { url: 'https://x.invalid/p?q=1' },
++        breadcrumbs: [{ data: { url: 'https://x.invalid/api?token=t' } }],
++        contexts: { os: { name: 'iOS' } },
++        extra: { where: 'trust_center.link_open' },
++      };
++      const out = mockScope.processors[0](event);
++      expect(out).toEqual({
++        message: 'm',
++        contexts: { os: { name: 'iOS' } },
++        extra: { where: 'trust_center.link_open' },
++      });
++    } finally {
++      delete process.env.EXPO_PUBLIC_SENTRY_DSN;
++    }
++  });
++
++  it('stripPersonalData leaves an event without personal data unchanged', () => {
++    const { stripPersonalData } = require('../sentry');
++    expect(stripPersonalData({ message: 'm', tags: { a: 'b' } })).toEqual({ message: 'm', tags: { a: 'b' } });
++  });
++});
+diff --git a/src/services/sentry.ts b/src/services/sentry.ts
+index 581a5e5..18aee24 100644
+--- a/src/services/sentry.ts
++++ b/src/services/sentry.ts
+@@ -157,6 +157,42 @@ export function captureError(err: unknown, context?: Record<string, unknown>): v
+   }
+ }
+ 
++/**
++ * Strip what can identify a person from one event: the signed-in user (the
++ * account id set app-wide by setSentryUser), request data and breadcrumbs
++ * (HTTP and navigation breadcrumbs can carry URLs).
++ */
++export function stripPersonalData<E extends { user?: unknown; request?: unknown; breadcrumbs?: unknown }>(
++  event: E,
++): E {
++  delete event.user;
++  delete event.request;
++  delete event.breadcrumbs;
++  return event;
++}
++
++/**
++ * Like captureError, but the event carries no personal data: stripPersonalData
++ * runs as a scope event processor, after the SDK's own processors (including
++ * the native device-context one that copies the native user), so the
++ * app-wide user tag is not attached. Context values must already be free of
++ * personal data. Used where the report must not identify the person (Trust &
++ * Privacy link failures, OR-112-15).
++ */
++export function captureErrorWithoutPii(err: unknown, context: Record<string, unknown>): void {
++  if (!initialized) return;
++  Sentry.withScope((scope) => {
++    Object.entries(context).forEach(([k, v]) => scope.setExtra(k, v));
++    // The support reference a person quotes is searchable as a tag (same rule
++    // as captureError, B-326-4); it is a generated id, never personal data.
++    if (typeof context.reference === 'string' && context.reference) {
++      scope.setTag('reference', context.reference);
++    }
++    scope.addEventProcessor((event) => stripPersonalData(event));
++    Sentry.captureException(err);
++  });
++}
++
+ /**
+  * Tag the current user so events are attributable. Call after login.
+  * Only the opaque account id is sent: the email is personal data and is

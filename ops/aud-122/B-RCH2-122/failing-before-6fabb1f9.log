@@ -1,0 +1,90 @@
+[heavy] waiting for a slot: npx jest --ci src/screens/roman/__tests__/useRomanChatErased.test.tsx
+FAIL src/screens/roman/__tests__/useRomanChatErased.test.tsx
+  ✓ control: an ordinary send before any delete goes to the live chat (16 ms)
+  ✕ list-one: erasing the open chat clears it from the live screen and the next send goes to a fresh chat (1292 ms)
+  ✕ list-all: erasing the open chat clears it from the live screen and the next send goes to a fresh chat (1035 ms)
+  ✕ transcript-one: erasing the open chat clears it from the live screen and the next send goes to a fresh chat (1023 ms)
+  ✕ a send right after the erase waits for the fresh chat instead of the erased one (32 ms)
+  ✓ control: deleting another chat leaves the live chat as it is (32 ms)
+
+  ● list-one: erasing the open chat clears it from the live screen and the next send goes to a fresh chat
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "fresh-chat-today"
+    Received: "live-chat-today"
+
+    [0m [90m 184 |[39m
+     [90m 185 |[39m     [90m// The erased text is gone from the live screen, which now holds a fresh chat.[39m
+    [31m[1m>[22m[39m[90m 186 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39msession[33m?[39m[33m.[39mid)[33m.[39mtoBe([33mFRESH[39m))[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 187 |[39m     expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39mphase)[33m.[39mtoBe([32m'ready'[39m)[33m;[39m
+     [90m 188 |[39m     expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39mmessages[33m.[39msome((m) [33m=>[39m m[33m.[39mid [33m===[39m [33mMESSAGE[39m[33m.[39mid))[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 189 |[39m[0m
+
+      at src/screens/roman/__tests__/useRomanChatErased.test.tsx:186:18
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● list-all: erasing the open chat clears it from the live screen and the next send goes to a fresh chat
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "fresh-chat-today"
+    Received: "live-chat-today"
+
+    [0m [90m 184 |[39m
+     [90m 185 |[39m     [90m// The erased text is gone from the live screen, which now holds a fresh chat.[39m
+    [31m[1m>[22m[39m[90m 186 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39msession[33m?[39m[33m.[39mid)[33m.[39mtoBe([33mFRESH[39m))[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 187 |[39m     expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39mphase)[33m.[39mtoBe([32m'ready'[39m)[33m;[39m
+     [90m 188 |[39m     expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39mmessages[33m.[39msome((m) [33m=>[39m m[33m.[39mid [33m===[39m [33mMESSAGE[39m[33m.[39mid))[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 189 |[39m[0m
+
+      at src/screens/roman/__tests__/useRomanChatErased.test.tsx:186:18
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● transcript-one: erasing the open chat clears it from the live screen and the next send goes to a fresh chat
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "fresh-chat-today"
+    Received: "live-chat-today"
+
+    [0m [90m 184 |[39m
+     [90m 185 |[39m     [90m// The erased text is gone from the live screen, which now holds a fresh chat.[39m
+    [31m[1m>[22m[39m[90m 186 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39msession[33m?[39m[33m.[39mid)[33m.[39mtoBe([33mFRESH[39m))[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 187 |[39m     expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39mphase)[33m.[39mtoBe([32m'ready'[39m)[33m;[39m
+     [90m 188 |[39m     expect(live[33m.[39mresult[33m.[39mcurrent[33m.[39mmessages[33m.[39msome((m) [33m=>[39m m[33m.[39mid [33m===[39m [33mMESSAGE[39m[33m.[39mid))[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 189 |[39m[0m
+
+      at src/screens/roman/__tests__/useRomanChatErased.test.tsx:186:18
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● a send right after the erase waits for the fresh chat instead of the erased one
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "sent"
+    Received: "send-failed"
+
+    [0m [90m 205 |[39m     outcome [33m=[39m [36mawait[39m live[33m.[39mresult[33m.[39mcurrent[33m.[39msend([32m'Straight away'[39m)[33m;[39m
+     [90m 206 |[39m   })[33m;[39m
+    [31m[1m>[22m[39m[90m 207 |[39m   expect(outcome)[33m.[39mtoBe([32m'sent'[39m)[33m;[39m
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m 208 |[39m   expect(mockSend)[33m.[39mtoHaveBeenLastCalledWith([33mFRESH[39m[33m,[39m [32m'Straight away'[39m)[33m;[39m
+     [90m 209 |[39m })[33m;[39m
+     [90m 210 |[39m[0m
+
+      at Object.toBe (src/screens/roman/__tests__/useRomanChatErased.test.tsx:207:19)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 2 passed, 6 total
+Snapshots:   0 total
+Time:        4.354 s, estimated 14 s
+Ran all test suites matching /src\/screens\/roman\/__tests__\/useRomanChatErased.test.tsx/i.

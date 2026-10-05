@@ -1,0 +1,20 @@
+diff --git a/src/checkout/dunning.service.ts b/src/checkout/dunning.service.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/dunning.service.ts
+index c5769567..82194f9b 100644
+--- a/src/checkout/dunning.service.ts
++++ b/src/checkout/dunning.service.ts
+@@ -4,13 +4,10 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+ import { EmailService } from '../email/email.service';
+ import { EmailTemplateKey } from '../email/email.types';
+ import { PrismaService } from '../prisma.service';
+-<<<<<<< 764af2e1 (Merge dunning D2a (#688 restack 2662d01a) into D2b (merge-only restack, B-DUNR2-120))
++import { ADMIN_PURCHASE_OMIT, type AdminPurchaseView } from './admin-purchase.select';
+ import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
+ import { DUNNING_UPDATE_CARD_URL } from './dunning-v2/dunning-v2.cadence';
+ import { DUNNING_V2_REVERSAL_REASON } from './dunning-v2/dunning-v2.service';
+-=======
+-import { ADMIN_PURCHASE_OMIT, type AdminPurchaseView } from './admin-purchase.select';
+->>>>>>> 610c5254 (Merge #687 head c140575c into D-piece #688 (merge-only restack, B-DUNR3-122))
+ 
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Dunning v1 — webhook-driven failed-payment recovery.

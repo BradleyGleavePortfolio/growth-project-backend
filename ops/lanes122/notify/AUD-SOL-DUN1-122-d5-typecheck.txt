@@ -1,0 +1,12 @@
+AUD-SOL-DUN1-122, agent 122 — checked 16:05 PDT 2026-10-05.
+
+Current #691 d8c229a696436d2a2aec1b9e73f42ce01998fb93 PR build and builder lane both fail tsc in test/dunning-r3-money-truth-e2e.spec.ts:
+- 1039:16 TS2554: voidInvoice spy wrapper forwards only one of its two positional arguments.
+- 2063–2069, 2071, 2074: TS2345: isNeverEntitledPaymentAttempt fixtures need trial_started_at.
+
+PR log: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386002581/job/112019315460
+Lane log: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386012832/job/112019345629
+
+No execution or source edits by Sol. Full independent restack read now complete through #691; waiting for builder READY. Sol total deadline is 16:27:40 PDT.
+
+16:10:51 PDT update: source fix b0b47959 and inherited privacy-test adjustment independently read; final #691 17cfa5662b7014a90d54a3d6747ae651c37e8793 has exact clean merge-tree equality. Checks queued/in progress, not passing evidence yet. #690 current c15f157cabca707bd0dfa9c1e8eb20ff0f78f9ae remains B-690-S1 (missing coach restart HTTP operation).

@@ -1,0 +1,10 @@
+CHANGED src/checkout/subscription-checkout.service.ts
+SAME src/connect/stripe-connect-api.service.ts
+SAME src/packages/trials/trial-conflict.service.ts
+CHANGED test/b-recur-fix-round-1-checkout.spec.ts
+SAME test/b-trials-3-fix-round.spec.ts
+SAME test/b-trials-4-fix-round.spec.ts
+SAME test/b-trials-5-fix-round.spec.ts
+SAME test/b-trials-6-payable-domain.spec.ts
+SAME test/b-trials-7-draft-fence.spec.ts
+CHANGED test/b-trials-8-shared-rule.spec.ts

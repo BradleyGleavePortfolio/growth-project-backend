@@ -1,0 +1,238 @@
+[heavy] waiting for a slot: env CI=true npx jest --runInBand --runTestsByPath src/__tests__/audit122W3NormalFlows.test.tsx src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+PASS src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+FAIL src/__tests__/audit122W3NormalFlows.test.tsx
+  ● Console
+
+    console.warn
+      Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+    [0m [90m 304 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+     [90m 305 |[39m         navigation[33m.[39mdispatch(
+    [31m[1m>[22m[39m[90m 306 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 307 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+     [90m 308 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+     [90m 309 |[39m           })[33m,[39m[0m
+
+      at Object.warn [as navigate] (../../deps/mobile/node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:306:25)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● W3 ordinary one-person package flows › a saved fourteen-day trial is not silently discarded from the actual request
+
+    Unable to find an element with placeholder: 0
+
+    [36m<View>[39m
+      [36m<View>[39m
+        [36m<View[39m
+          [33maccessibilityLabel[39m=[32m"Go back"[39m
+          [33maccessibilityRole[39m=[32m"button"[39m
+          [33maccessible[39m=[32m{true}[39m
+        [36m>[39m
+          [36m<Text>[39m
+            [0m[0m
+          [36m</Text>[39m
+        [36m</View>[39m
+        [36m<Text>[39m
+          [0mEdit package[0m
+        [36m</Text>[39m
+        [36m<View />[39m
+      [36m</View>[39m
+      [36m<RCTScrollView>[39m
+        [36m<View>[39m
+          [36m<Text>[39m
+            [0mName[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"e.g. 12-week transformation"[39m
+            [33mvalue[39m=[32m"Coaching"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mDescription[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"What's included? Who is this for?"[39m
+            [33mvalue[39m=[32m"Weekly coaching"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mPrice (USD)[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"199.00"[39m
+            [33mvalue[39m=[32m"99.00"[39m
+          [36m/>[39m
+          [36m<Text>[39m
+            [0mBilling[0m
+          [36m</Text>[39m
+          [36m<View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"One-time"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mOne-time[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Monthly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": true,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mMonthly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Quarterly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mQuarterly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+            [36m<View[39m
+              [33maccessibilityLabel[39m=[32m"Yearly"[39m
+              [33maccessibilityRole[39m=[32m"button"[39m
+              [33maccessibilityState[39m=[32m{
+                {
+                  "selected": false,
+                }
+              }[39m
+              [33maccessible[39m=[32m{true}[39m
+            [36m>[39m
+              [36m<Text>[39m
+                [0mYearly[0m
+              [36m</Text>[39m
+            [36m</View>[39m
+          [36m</View>[39m
+          [36m<Text>[39m
+            [0mFeatures (one per line)[0m
+          [36m</Text>[39m
+          [36m<TextInput[39m
+            [33mplaceholder[39m=[32m"Weekly check-ins
+    Custom workout plan
+    Meal plan"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Save changes"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessibilityState[39m=[32m{
+              {
+                "disabled": false,
+              }
+            }[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mSave changes[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Preview as buyer"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mPreview as buyer[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Share links are coming soon"[39m
+            [33maccessibilityRole[39m=[32m"text"[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mShare links are coming soon[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Archive package"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessibilityState[39m=[32m{
+              {
+                "disabled": false,
+              }
+            }[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0mArchive package[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Manage content"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mManage content[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"View subscribers"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mView subscribers ([0m
+              [0m0[0m
+              [0m)[0m
+            [36m</Text>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+      [36m</RCTScrollView>[39m
+    [36m</View>[39m
+
+    [0m [90m 127 |[39m       [33m/[39m[33m>[39m[33m,[39m
+     [90m 128 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 129 |[39m     [36mawait[39m fireEvent[33m.[39mchangeText(s[33m.[39mgetByPlaceholderText([32m"0"[39m)[33m,[39m [32m"14"[39m)[33m;[39m
+     [90m     |[39m                                  [31m[1m^[22m[39m
+     [90m 130 |[39m     [36mawait[39m fireEvent[33m.[39mpress(s[33m.[39mgetByLabelText([32m"Save changes"[39m))[33m;[39m
+     [90m 131 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(mockPatch)[33m.[39mtoHaveBeenCalledTimes([35m1[39m))[33m;[39m
+     [90m 132 |[39m     expect(mockPatch[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m])[33m.[39mtoEqual([0m
+
+      at Object.getByPlaceholderText (src/__tests__/audit122W3NormalFlows.test.tsx:129:34)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 7 passed, 8 total
+Snapshots:   0 total
+Time:        3.59 s
+Ran all test suites within paths "src/__tests__/audit122W3NormalFlows.test.tsx", "src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx".
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.

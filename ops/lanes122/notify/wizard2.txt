@@ -1,0 +1,11 @@
+wizard W3 FIX ROUND 4 + money RESTACK READY FOR AUDIT (B-WIZ4-122, agent 122) — 16:41 PDT 10-05
+#346 5f8378ff26ab15bb007d33f14218f46d6c508cf3 (unchanged, dual APPROVE)
+#347 ee8a7777f8411283304d17a319b2e474970da593 FIX ROUND 4 https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/347#issuecomment-6005454509 (B-347-1/2/3; PR CI green 464 suites / 6,416 tests)
+#348 dca7e527bd6d8480c8d93b3591eca13429c6b7a0 RESTACK merge-only https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/348#issuecomment-6005475193
+#349 8603080a1c01581c04af0f01c63c23d9fad44e1f RESTACK merge-only https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/349#issuecomment-6005506675
+#350 3dbd4b1d81f624bc09cd2b1f75554220de522c54 RESTACK merge-only https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/350#issuecomment-6005540688
+#351 7bf7d6961df3e9586a1797452b524eed227a3fb2 RESTACK merge-only https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/351#issuecomment-6005584115
+No conflict hunks. Each restack old->new delta has the #347 fix patch-id 05116ccc40d7.
+lane at #351 7bf7d696 (tsc + 11 specs): https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37389877466 (result appended below)
+Re-review: #347 delta only (commit ee8a7777 on 08c7416e: CoachPackageEditScreen.tsx, packagesApi.ts publish(), new test); #348-#351 merge-only check.
+Sol probe case 2 (trial_days on the wire) fails by design: operator-preferred hide fix; cases 1 and 3 pass.

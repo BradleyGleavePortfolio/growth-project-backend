@@ -1,0 +1,43 @@
+commit 538a0ba4baacefcea5208c0a8a11e87a1a09fb86
+Merge: d90b4842 5cde6253
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Mon Oct 5 23:09:10 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Mon Oct 5 23:09:10 2026 +0000
+
+    Merge origin/main into coachless split 1/3 (main refresh)
+    
+    Conflict: prisma/schema.prisma, one hunk at the end of the file (both sides
+    appended models after AiProcessingConsentEvent). Resolved by keeping both:
+    FeaturedCoachConfig, CoachCodeRedemption, CoachlessPromptState (this PR),
+    then SchedulingJobLease (main). No other content change.
+
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+remerge CONFLICT (content): Merge conflict in prisma/schema.prisma
+index c8e94849..e6f0e67f 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -7991,7 +7991,6 @@ model AiProcessingConsentEvent {
+   @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
+ }
+ 
+-<<<<<<< d90b4842 (fix(coachless): live RLS anon case accepts 42501 like main's clinic-engagement spec (inherited red from #657 run 37082215722))
+ // ─── A1-COACHLESS: coachless Home, scripted Roman pitch, coach code ─────────
+ //
+ // FeaturedCoachConfig is a singleton (id = 'default', CHECK-enforced) holding
+@@ -8057,7 +8056,8 @@ model CoachlessPromptState {
+   roman_not_now_at        DateTime?
+   created_at              DateTime  @default(now())
+   updated_at              DateTime  @updatedAt
+-=======
++}
++
+ // S-SCHED-5 auto-expiry: single-runner lease for scheduling sweeps (one row
+ // per job), the same shape and acquisition rule as the S-FEE CronLease
+ // (backend #627). A machine runs the sweep only while it holds an unexpired
+@@ -8068,5 +8068,4 @@ model SchedulingJobLease {
+   lease_until DateTime
+   acquired_at DateTime
+   updated_at  DateTime @updatedAt
+->>>>>>> 5cde6253 (Merge pull request #731 from BradleyGleavePortfolio/agent121/flag-wearables-ingest-post)
+ }

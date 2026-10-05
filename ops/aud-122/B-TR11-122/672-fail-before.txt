@@ -1,0 +1,3 @@
+    ✕ maps trial_ending to its own prefix, so the push worker gate lets it through (16 ms)
+    ✕ writes the in-app notice and delivers the push with digest switched off (2 ms)
+Tests:       2 failed, 2 total

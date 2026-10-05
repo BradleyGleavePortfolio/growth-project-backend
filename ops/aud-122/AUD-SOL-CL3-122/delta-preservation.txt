@@ -1,0 +1,35 @@
+# 721 exact normalized change lines (excluding empty added line placement)
+PASS: all nonempty PR change lines preserved
+# 722 exact normalized change lines (excluding empty added line placement)
+PASS: all nonempty PR change lines preserved
+# 723 exact normalized change lines (excluding empty added line placement)
+PASS: all nonempty PR change lines preserved
+# 721 new-file byte comparison
+PASS prisma/migrations/20270301000000_coachless_featured_coach/down.sql f316ebeae8359fb013eb4a7fdf17263b08e1c96c
+PASS prisma/migrations/20270301000000_coachless_featured_coach/migration.sql 0699c88681b624e3a74d2ae7b3a94db4a5070159
+PASS test/rls/coachless-rls.spec.ts 1c59da568b838c7b77d9c7855885abcd747cffcc
+# 721 parent and size evidence
+538a0ba4baacefcea5208c0a8a11e87a1a09fb86 d90b484278f432e6e73e41326dc31cadc8892999 5cde6253f941112f2d9afbcf572a4da838dbb16a
+ 6 files changed, 808 insertions(+)
+# 722 new-file byte comparison
+PASS src/coachless/coach-code-lookup.service.ts 1b61010f11394936c869d2fbe2d6813da2ced156
+PASS src/coachless/coachless-feature.guard.ts b08062cf2ebe833e3a6179b3fb56b3ea3dda408d
+PASS src/coachless/coachless-home.service.ts a9cefadeddf003423dea933ead7357067a5b13f3
+PASS src/coachless/coachless-prompt.service.ts cb441c49dd8201ddc055798b723cb2dd94de3afd
+PASS src/coachless/coachless.errors.ts a40b90f5f7366dec928c675097151ec9259fd1c5
+PASS src/coachless/featured-coach.service.ts c74c0f34935fc78ba57cfcf9a309241b36f09701
+PASS test/coachless/coachless-fixture.ts 3027b2c58fd0c63a4328b078be2b5bfa34605e70
+PASS test/coachless/coachless-home.spec.ts 042e18a5e86689bb2c70478ef3c686a178a961f6
+# 722 parent and size evidence
+f02a3904d0662731e0dc7bbb7cbbb026dfefdd71 c219d2f391c37edd700d5204f31b50286f280d82 538a0ba4baacefcea5208c0a8a11e87a1a09fb86
+ 15 files changed, 1290 insertions(+)
+# 723 new-file byte comparison
+PASS src/coachless/README.md c15447efa51daa4794a55890a793314098d96f14
+PASS src/coachless/coach-code-redemption.service.ts 4ce36b1770b8e8a43c36bd094f6c36ee7d1acf78
+PASS src/coachless/coachless.controller.ts 04e8c2c1ecb0527b6d4514e6a10bbe6864f1f58a
+PASS src/coachless/coachless.dto.ts 738355247479289ad7c5aa79e78dcffc30fe7c63
+PASS src/coachless/coachless.module.ts 5db2b4a215e36e080cc53e1bac078be56bf41b16
+PASS test/coachless/coach-code-redemption.spec.ts 9b9273cfd1920a523d9dd142f9e03def5f6c721e
+# 723 parent and size evidence
+8c9943673cd2129732fde9b59aef2c19389d4b6c e3368cc3cbb0961326ddf147728f7fc32d884188 f02a3904d0662731e0dc7bbb7cbbb026dfefdd71
+ 8 files changed, 1116 insertions(+), 1 deletion(-)

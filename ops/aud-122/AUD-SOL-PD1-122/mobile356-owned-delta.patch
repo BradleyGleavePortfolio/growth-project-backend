@@ -1,0 +1,63 @@
+diff --git a/src/screens/coach/CoachWorkoutBuilderScreen.tsx b/src/screens/coach/CoachWorkoutBuilderScreen.tsx
+index e84fc62..a5977c6 100644
+--- a/src/screens/coach/CoachWorkoutBuilderScreen.tsx
++++ b/src/screens/coach/CoachWorkoutBuilderScreen.tsx
+@@ -1372,7 +1372,10 @@ export default function CoachWorkoutBuilderScreen() {
+           });
+           return;
+         }
+-        if (isUnknownHistoryOutcome(err)) {
++        // B-356-2: on Check again the earlier request may have landed, so
++        // only a 200 or a parsed head-moved answer settles it. Any refusal of
++        // the retry keeps editing paused; it says nothing about the first.
++        if (isRetry || isUnknownHistoryOutcome(err)) {
+           setHistoryGate({ phase: 'unconfirmed', direction, target, expectedHead });
+           setHistoryNotice(describeUnconfirmedHistory(err, direction).message);
+           return;
+diff --git a/src/screens/coach/workoutBuilderUndo.ts b/src/screens/coach/workoutBuilderUndo.ts
+index 433dd9e..47637f9 100644
+--- a/src/screens/coach/workoutBuilderUndo.ts
++++ b/src/screens/coach/workoutBuilderUndo.ts
+@@ -72,14 +72,25 @@ export function isUnknownHistoryOutcome(err: unknown): boolean {
+     case "unknown":
+       return !(err.status >= 400 && err.status < 500);
+     case "conflict":
+-      // A 409 is a definite answer. A fenced undo's `undo_head_moved` is
+-      // handled by the caller; an unparsed 409 is still a refusal.
+-      return false;
++      // A 409 is a definite answer. A fenced undo's parsed `undo_head_moved`
++      // is handled by the caller; an unparsed 409 is still a refusal, EXCEPT
++      // an `undo_head_moved` that lacks its head or lock token (B-356-1): the
++      // head moved, maybe because this very undo landed, so it is unknown.
++      return !err.headMoved && namesUndoHeadMoved(err.cause);
+     default:
+       return false;
+   }
+ }
+ 
++/** True when an axios-shaped error's 409 body names `undo_head_moved`. */
++function namesUndoHeadMoved(cause: unknown): boolean {
++  if (!cause || typeof cause !== "object") return false;
++  const data = (cause as { response?: { data?: unknown } }).response?.data;
++  if (!data || typeof data !== "object") return false;
++  const d = data as { code?: unknown; error?: unknown };
++  return d.code === "undo_head_moved" || d.error === "undo_head_moved";
++}
++
+ /** Copy for a DEFINITE refusal: the server answered and nothing changed. */
+ export function describeHistoryFailure(
+   err: unknown,
+@@ -151,6 +162,13 @@ export function describeUnconfirmedHistory(
+       dropHistory: false,
+     };
+   }
++  if (kind === "unauthorized") {
++    return {
++      message: `Your session has ended, so the app could not confirm whether the change was ${verb}. Editing is paused so nothing is lost. Sign in again, then open this workout to see the latest saved version.`,
++      reference: null,
++      dropHistory: false,
++    };
++  }
+   const cause =
+     err instanceof WorkoutAutosaveApiError ? (err.cause ?? err) : err;
+   const full = extractRequestId(cause) ?? randomUuid();

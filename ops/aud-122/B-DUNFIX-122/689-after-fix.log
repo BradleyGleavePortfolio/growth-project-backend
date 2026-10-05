@@ -1,0 +1,24 @@
+[heavy] waiting for a slot: npx jest test/dunning-d3-fix-round.spec.ts
+PASS test/dunning-d3-fix-round.spec.ts (137 MB heap size)
+  B-D34-116 dunning D3 fix round (#689)
+    ✓ B-689-1: an open dispute in a payment cycle survives a paid card update and becomes the dispute cycle (34 ms)
+    ✓ B-689-1: a dispute recorded while the pay call is in flight is not cleared (10 ms)
+    ✓ B-689-1: the background reconcile keeps a dispute recorded before the payment settled (12 ms)
+    ✓ B-689-1 control: with no dispute the paid card update resolves the cycle and restores access (17 ms)
+    ✓ B-689-1: an authority read that fails never resolves the cycle (deferred to the webhook) (18 ms)
+    ✓ B-689-1: a dispute that closed lost during the cycle still blocks the card update (needs #688 B-688-5) (8 ms)
+    ✓ B-689-3: a paid invoice another collector paid during the await is never credited to the update (7 ms)
+    ✓ B-689-3 control: our own pay whose reply was lost is credited at once by the same-key replay (12 ms)
+    ✓ B-689-4: cancel of a disputed cycle ends access now even when the latest invoice reads paid (5 ms)
+    ✓ B-689-4: a disputed cycle canceled in the app before the lock ends access now and stays unresolved (16 ms)
+    ✓ B-689-4: a disputed cycle canceled in the app after the lock ends access now and stays unresolved (4 ms)
+    ✓ B-689-4: a disputed cycle canceled outside the app ends access now and stays unresolved (4 ms)
+    ✓ B-689-4 control: an ordinary cycle paid meanwhile keeps the paid period (option A) (11 ms)
+    ✓ B-689-2: provider, database and transport diagnostics never reach the logs (5 ms)
+    ✓ C-689-2 (Opus): failing operations back off so a healthy one is reconciled (73 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        2.476 s, estimated 4 s
+Ran all test suites matching test/dunning-d3-fix-round.spec.ts.

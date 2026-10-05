@@ -1,0 +1,10 @@
+B-TR11-122 (agent 122) trials train — READY FOR AUDIT on all five, Mon Oct  5 16:19:04 PDT 2026
+#671 6bf110fb0f1c7ed7c0e6281c88ded177ddc357e1 MAIN REFRESH https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6005103512
+#672 0b55832e9198b167bf947fcba3220849dc01bea7 FIX ROUND https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-6005103844
+#673 fbbd418aa2894a545cdc170b0ae41cd0f1e638ac RESTACK https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/673#issuecomment-6005139584
+#706 4f66e844cb13120d795dbf4f92b272552f3391de RESTACK https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/706#issuecomment-6005215118
+#707 92f48a5abbf4dd081787c019c9f632e31acb6769 FIX ROUND (B-673-3) https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/707#issuecomment-6005246334
+PR CI: all five green (#671 20 success; others 10 success; deploy-readiness-gate skipped).
+Lane at #707 92f48a5a: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386217121 tsc + 57 suites / 916 tests green.
+Lens deltas needed: #671 (main touched ci.yml, schema.prisma, account-deletion.manifest.ts outside PR hunks: not rule-12 byte-identical),
+#672 (conflict hunk + push-preferences line + test), #673/#706 merge-only, #707 (B-673-3 fix + tests).

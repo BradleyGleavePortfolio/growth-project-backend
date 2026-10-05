@@ -15,3 +15,8 @@ Initial no-new-B conclusion superseded by two normal-use candidates, independent
 IMPORTANT — operator's 15:41 "auth is back" mail received, but this worker's fresh `bash api_credentials=["github"]` probe at 15:44:46 PDT still returned proxy 401 Bad credentials. Alternate explicit github.com user probe at 15:45:03 PDT is still anonymous/rate-limited 403. Connector discovery still says CONNECTED, CLI-only. No #725 POST was retried because authenticated user probe never succeeded.
 
 Default now: operator posts the exact preserved #725 payload through the operator's working authorization after head verification, or refreshes this worker's credential context. This lens remains active for the written job and the original 16:27:40 PDT deadline; drafts are available, but no fresh train READY/new heads exist yet.
+
+RESOLVED 15:46:04 PDT — newly invoked default-host gh authenticated; #725 posted after immediate head check:
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/725#issuecomment-6004727149
+A/B/C 0/0/0, APPROVE @ 1dbc59b690119f03f010e406f9f1e0e43d1e6556.
+The failed 15:44 probe used a command invoked before reconnect, holding old injected credentials across its sleep. No continuing auth block. Required SoT pull now succeeds. Train heads #687–#689 have moved; reviewing deltas while waiting for complete builder READY (#690/#691 still old at 15:46:32).

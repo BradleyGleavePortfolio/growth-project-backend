@@ -1,0 +1,1337 @@
+targeted	Set up job	﻿2026-10-05T23:06:47.4902324Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-05T23:06:47.4922614Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-05T23:06:47.4923474Z Hosted Compute Agent
+targeted	Set up job	2026-10-05T23:06:47.4924015Z Version: 20260901.588
+targeted	Set up job	2026-10-05T23:06:47.4924543Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-05T23:06:47.4925143Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-05T23:06:47.4925760Z Worker ID: {dfd59f25-e6b0-4ef7-8e47-0061a6085bfd}
+targeted	Set up job	2026-10-05T23:06:47.4926356Z Azure Region: westus3
+targeted	Set up job	2026-10-05T23:06:47.4926841Z ##[endgroup]
+targeted	Set up job	2026-10-05T23:06:47.4928462Z ##[group]Operating System
+targeted	Set up job	2026-10-05T23:06:47.4928987Z Ubuntu
+targeted	Set up job	2026-10-05T23:06:47.4929498Z 24.04.5
+targeted	Set up job	2026-10-05T23:06:47.4929924Z LTS
+targeted	Set up job	2026-10-05T23:06:47.4930353Z ##[endgroup]
+targeted	Set up job	2026-10-05T23:06:47.4930822Z ##[group]Runner Image
+targeted	Set up job	2026-10-05T23:06:47.4931332Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-05T23:06:47.4931813Z Version: 20260927.320.1
+targeted	Set up job	2026-10-05T23:06:47.4932683Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-05T23:06:47.4934130Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-05T23:06:47.4934940Z ##[endgroup]
+targeted	Set up job	2026-10-05T23:06:47.4935939Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-05T23:06:47.4937871Z Contents: read
+targeted	Set up job	2026-10-05T23:06:47.4938387Z Metadata: read
+targeted	Set up job	2026-10-05T23:06:47.4938833Z Packages: read
+targeted	Set up job	2026-10-05T23:06:47.4939607Z ##[endgroup]
+targeted	Set up job	2026-10-05T23:06:47.4941277Z Secret source: Actions
+targeted	Set up job	2026-10-05T23:06:47.4942064Z Cache mode: write
+targeted	Set up job	2026-10-05T23:06:47.4942635Z Prepare workflow directory
+targeted	Set up job	2026-10-05T23:06:47.5513700Z Prepare all required actions
+targeted	Set up job	2026-10-05T23:06:47.5558917Z Getting action download info
+targeted	Set up job	2026-10-05T23:06:47.9304860Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-05T23:06:48.2351179Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-05T23:06:49.0641699Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-05T23:06:49.1253542Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1254435Z with:
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1255131Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1259431Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1259983Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1260605Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1261154Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1261746Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1262315Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1262944Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1263530Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1264080Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1264627Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1265154Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1265732Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1266366Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.1267134Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2137731Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2139879Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2140965Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2142242Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2469636Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2485646Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2496958Z Temporarily overriding HOME='/home/runner/work/_temp/3f931ee4-06b7-4e45-be34-95d6139f9d54' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2498701Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2501603Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2736374Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2740886Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2742563Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2743639Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2746522Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2941679Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2943665Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2945424Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2946460Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2947014Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2948081Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2949075Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2950066Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2951574Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2952505Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2953263Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2953925Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2954763Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2956567Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.2959290Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3055614Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3056562Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3058962Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3096829Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3098215Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3099059Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3102291Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3128040Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3379174Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3385254Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3408593Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3562109Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3566586Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3589282Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3743106Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3770851Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3794580Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3820193Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3843076Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3870085Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3871050Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-05T23:06:49.3876832Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +21bf8b1b829d2048cf2be85feb11fb3d9ea397a9:refs/remotes/origin/ci/B-RCH2-122-1
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0086803Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0088778Z  * [new ref]         21bf8b1b829d2048cf2be85feb11fb3d9ea397a9 -> origin/ci/B-RCH2-122-1
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0095555Z [command]/usr/bin/git branch --list --remote origin/ci/B-RCH2-122-1
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0115516Z   origin/ci/B-RCH2-122-1
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0122549Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-RCH2-122-1
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0138848Z 21bf8b1b829d2048cf2be85feb11fb3d9ea397a9
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0140881Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0141626Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0142366Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0146126Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0183388Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0204273Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.0207011Z [command]/usr/bin/git checkout --progress --force -B ci/B-RCH2-122-1 refs/remotes/origin/ci/B-RCH2-122-1
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.1002920Z Switched to a new branch 'ci/B-RCH2-122-1'
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.1007031Z branch 'ci/B-RCH2-122-1' set up to track 'origin/ci/B-RCH2-122-1'.
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.1011615Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.1042111Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-05T23:06:51.1059457Z 21bf8b1b829d2048cf2be85feb11fb3d9ea397a9
+targeted	Run actions/setup-node@v6	﻿2026-10-05T23:06:51.1285950Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:51.1286372Z with:
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:51.1286673Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:51.1287024Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:51.1287478Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:51.1289915Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:51.1290300Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:51.1290649Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:51.2494002Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:52.2812001Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:52.7179811Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:52.7298332Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/4277a674-7462-4e25-8a82-fa8f3db39455 -f /home/runner/work/_temp/b9d44e9b-6760-451f-82a6-a47c62fed995
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:53.8002750Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:56.1830438Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:56.3575216Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:56.3576118Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:56.3576555Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:56.3577639Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:56.3595033Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:56.4290203Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:56.6354984Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:57.8594519Z Received 41943040 of 241027159 (17.4%), 40.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:58.8793165Z Received 241027159 of 241027159 (100.0%), 113.8 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:58.8793994Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:58.8819313Z [command]/usr/bin/tar -xf /home/runner/work/_temp/d1354a53-bdf3-44db-a878-6f42553eb1a1/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:59.6998936Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-05T23:06:59.7086456Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-05T23:06:59.7238747Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-05T23:06:59.7239126Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-05T23:06:59.7407604Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-05T23:06:59.7407973Z ##[endgroup]
+targeted	Run npm ci	2026-10-05T23:07:04.2888423Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-05T23:07:04.4193840Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-05T23:07:04.4273167Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-05T23:07:04.4302614Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-05T23:07:04.4450726Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-05T23:07:04.5279101Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-05T23:07:04.5300991Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:07:04.5306202Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:07:04.5317562Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:07:04.5321721Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:07:04.5333679Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:07:04.5511420Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:07:04.5864680Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-05T23:07:04.8839486Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-05T23:07:05.3278196Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-05T23:07:08.5474555Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-05T23:07:49.9805014Z 
+targeted	Run npm ci	2026-10-05T23:07:49.9806083Z added 1108 packages, and audited 1109 packages in 50s
+targeted	Run npm ci	2026-10-05T23:07:49.9806531Z 
+targeted	Run npm ci	2026-10-05T23:07:49.9806892Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-05T23:07:49.9808259Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-05T23:07:50.2612668Z 
+targeted	Run npm ci	2026-10-05T23:07:50.2613886Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-05T23:07:50.2614273Z 
+targeted	Run npm ci	2026-10-05T23:07:50.2614624Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-05T23:07:50.2615304Z   npm audit fix
+targeted	Run npm ci	2026-10-05T23:07:50.2616012Z 
+targeted	Run npm ci	2026-10-05T23:07:50.2616394Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-05T23:07:50.2616986Z   npm audit fix --force
+targeted	Run npm ci	2026-10-05T23:07:50.2617528Z 
+targeted	Run npm ci	2026-10-05T23:07:50.2617731Z Run `npm audit` for details.
+targeted	Type-check (only when .ci-lane-tsc exists)	﻿2026-10-05T23:07:50.3748406Z ##[group]Run npx tsc --noEmit
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T23:07:50.3748767Z ^[[36;1mnpx tsc --noEmit^[[0m
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T23:07:50.3783716Z shell: /usr/bin/bash -e {0}
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T23:07:50.3784108Z ##[endgroup]
+targeted	Targeted jest	﻿2026-10-05T23:08:10.8075113Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T23:08:10.8075495Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T23:08:10.8075973Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T23:08:10.8076448Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T23:08:10.8076829Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:08:10.8077149Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:08:10.8113551Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T23:08:10.8113971Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T23:08:10.8183866Z specs: src/screens/roman/__tests__ src/screens/settings/__tests__/Roman src/screens/settings/__tests__/auditSolRomanLiveErase src/api/__tests__/roman src/components/roman/__tests__/RomanConversationsButton src/navigation/__tests__/roman src/services/__tests__/sessionFence src/services/__tests__/accountBinding src/services/health/__tests__/sessionFence src/components/ai/__tests__/AiConsentSheetSessionFence
+targeted	Targeted jest	2026-10-05T23:08:15.6689146Z PASS src/services/__tests__/sessionFence.refresh.test.ts
+targeted	Targeted jest	2026-10-05T23:08:19.9331459Z PASS src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx (7.769 s)
+targeted	Targeted jest	2026-10-05T23:08:20.1171542Z   ● Console
+targeted	Targeted jest	2026-10-05T23:08:20.1287900Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1358524Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1396698Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1437614Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1438770Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1439679Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1440215Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1440776Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1441324Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1441930Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1442450Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1443494Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1487747Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1538852Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.1584459Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1585617Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1586505Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1587487Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1588517Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1589638Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1590273Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1590795Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1591915Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1593214Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1594493Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1595822Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1596997Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1598093Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1599019Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1599969Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1600852Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1602192Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1602996Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1603870Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.1604880Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1606079Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:108:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1607174Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1608293Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1608816Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1609102Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1609831Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1610517Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1611231Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1611915Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1612331Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1612896Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1613417Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1613937Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1614467Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1615435Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1616227Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1616811Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1617679Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1618556Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1619345Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1620158Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1621120Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1622229Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1622828Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1623300Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1624367Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1625631Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1626885Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1630947Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1632233Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1633218Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1634149Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1635075Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1635982Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1636833Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1637811Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1638707Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.1639821Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1641306Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:108:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1642353Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1643274Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1643803Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1644061Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1644812Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1645519Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1646206Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1646887Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1647492Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1648047Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1648579Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1649114Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1649639Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1650623Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1651459Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1652380Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.1653380Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1654338Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1655089Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1656465Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1657494Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1658636Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1659290Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1659849Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1660980Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1662367Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1663674Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1664946Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1666202Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1667434Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1668500Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1669446Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1670565Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1671324Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1672179Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1673071Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.1674017Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1675110Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:133:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1676163Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1677116Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1678153Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1678419Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1679158Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1679893Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1680576Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1681267Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1681728Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1682356Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1682894Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1683437Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1683917Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1685128Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1685958Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1686558Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1687523Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1688501Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1689228Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1690090Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1691099Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1692227Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1692827Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1693342Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1694364Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1695676Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1696899Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1698267Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1699402Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1700425Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1701349Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1702461Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1703329Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1704100Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1704973Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1705943Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.1706894Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1708087Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:133:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1709166Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1710118Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1710597Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1710859Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1711562Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1712255Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1712967Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1713689Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1714299Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1714901Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1715460Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1731459Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1732144Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1733264Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1734006Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1734887Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.1736074Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1737067Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1738096Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1738927Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1739837Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1741041Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1741649Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1742201Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1743475Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1745123Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1746722Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1748621Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1750056Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1751650Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1752772Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1753899Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1755034Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1755974Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1757047Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1758796Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.1759939Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1761193Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:204:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1762439Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1765732Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1766581Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1766860Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1767959Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1768775Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1769626Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1778094Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1778764Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1779428Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1780084Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1780718Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1781281Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1782456Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1783619Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1784379Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1785394Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1786381Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1787412Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1788424Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1789670Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1791057Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1791770Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1792323Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1793665Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1795188Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1796642Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1798421Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1799764Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1800911Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1802046Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1803134Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1804129Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1805060Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1806102Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1807148Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.1808503Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1809759Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:204:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1810945Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1812047Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1812582Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1812889Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1813663Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1814432Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1815215Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1816014Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1816548Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1817111Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1817789Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1818425Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1818960Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1820026Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1820898Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1821781Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.1822902Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1823929Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1824909Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1825871Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1826865Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1828223Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1828881Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1829459Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1830634Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1832316Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1833738Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1835122Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1836506Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1837834Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1838954Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1839884Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1840715Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1841493Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1842233Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1843219Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.1844113Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1844949Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:212:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1845646Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1846278Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1846613Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1846768Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1847209Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1847986Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1848672Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1849398Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1849749Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1850255Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1850748Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1851162Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1851703Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1852631Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1853392Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1853934Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1854767Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1855589Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1856346Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1857165Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1858347Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1859501Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1860354Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1860945Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1862006Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1863336Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1864652Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1865974Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1867154Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1871686Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1872728Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1873737Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1874542Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1875405Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1876208Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1877145Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.1878174Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1879126Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:212:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1880251Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1881144Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1881602Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1881776Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1882464Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1883117Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1883738Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1884407Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1884820Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1885256Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1885783Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1886177Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1886567Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1887608Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1888361Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1889074Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.1889997Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1890821Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1891487Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1892170Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1892954Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1893960Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1894483Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1894907Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1895942Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1897102Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1898889Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1900079Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1901461Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1902471Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1903290Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1904198Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1904947Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1905729Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1906499Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1907471Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.1908415Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1909384Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:224:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1910345Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1911205Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1911590Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1911757Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1912372Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1913018Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1913602Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1914105Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1914457Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1914846Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1915213Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1915594Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1915924Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1916578Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1917124Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1917781Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1918459Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1919166Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1919770Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1920397Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1921239Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1922150Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1922592Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1922915Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1923733Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1924721Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1925687Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1926677Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1927683Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1928638Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1929456Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1930139Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1930815Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1931447Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1932091Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1932798Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.1933490Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1934349Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:224:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1935197Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1935922Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1936276Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1936448Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1936965Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1937608Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1938167Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1938719Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1939009Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1939439Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1939837Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1940204Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1940643Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1941419Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1942071Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1942704Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.1943584Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1944261Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1944882Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1945493Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1946221Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1947153Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1947669Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1948087Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1948937Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1949930Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1950901Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1951877Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1952778Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1953527Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1954280Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1955007Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1955697Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1956611Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1957192Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1958070Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.1958835Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1959656Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:327:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1960496Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1961158Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1961618Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1961742Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1962293Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1962800Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1963296Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1963922Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1964238Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1964618Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1965057Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1965383Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1965756Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1966525Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1967076Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1967642Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1968274Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1968932Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1969530Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1970123Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1970975Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1971938Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1972377Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1972734Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1973550Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1974480Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1975493Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.1976415Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1977590Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1978355Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1979052Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1979802Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1980438Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.1981031Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.1981674Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.1982310Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.1983094Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.1984118Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:327:7)
+targeted	Targeted jest	2026-10-05T23:08:20.1984893Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.1985611Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.1985949Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1986106Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.1986638Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.1987145Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1987840Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.1988351Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1988679Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.1989053Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.1989411Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.1989798Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.1990138Z       
+targeted	Targeted jest	2026-10-05T23:08:20.1990872Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.1991455Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1992040Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.1992795Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1993432Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1993993Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1994571Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1995221Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.1996015Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.1996435Z 
+targeted	Targeted jest	2026-10-05T23:08:20.1996758Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.1997955Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.1999056Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2000051Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2001084Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2002232Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2003134Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2003917Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2004826Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2005581Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2006263Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2007009Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2008016Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.2008859Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2009830Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:327:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2010773Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2011609Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2012018Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2012235Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2013103Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2013716Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2014302Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2014890Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2015221Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2015686Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2016125Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2016504Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2016919Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2018032Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2018769Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2019210Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2019968Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2020681Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2021383Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2022116Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2023042Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2024098Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2024565Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2024979Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2025918Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2027117Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2028484Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2029656Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2030696Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2031582Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2032470Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2033282Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2034050Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2034722Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2035469Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2036272Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.2037128Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2038116Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:327:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2039083Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2039937Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2040373Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2040535Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2041143Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2041717Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2042370Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2042959Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2043269Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2043714Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2044425Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2044807Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2045198Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2046072Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2046741Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2047585Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.2048551Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2049323Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2049952Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2050616Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2051362Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2052303Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2052847Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2053249Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2054192Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2055339Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2056517Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2058069Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2059171Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2059997Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2060838Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2061703Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2062441Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2063179Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2063878Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2064686Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2065543Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2066500Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:344:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2067559Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2068465Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2068913Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2069054Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2069681Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2070264Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2070831Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2071615Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2071931Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2072334Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2072776Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2073161Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2073600Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2074426Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2075093Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2075586Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2076495Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2077381Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2078152Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2078851Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2079845Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2080843Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2081349Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2081741Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2082716Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2083849Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2085077Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2086181Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2087406Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2088345Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2089162Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2090029Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2090765Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2091483Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2092228Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2093009Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2093857Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2094859Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:344:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2095790Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2096624Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2097038Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2097306Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2097929Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2098553Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2099127Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2099720Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2100069Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2100539Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2100984Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2101347Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2101777Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2102633Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2103331Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2103960Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.2104894Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2105717Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2106423Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2107070Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2108212Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2109231Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2109703Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2110115Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2111141Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2112273Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2113406Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2114544Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2115557Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2116504Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2117461Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2118316Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2119069Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2119783Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2120482Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2121262Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2122117Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2122988Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:361:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2123966Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2124778Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2125201Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2125380Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2125960Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2126555Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2127180Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2127840Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2128169Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2128615Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2129088Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2129507Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2129887Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2130752Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2131378Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2131863Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2132625Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2133349Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2133974Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2134716Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2135658Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2136614Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2137112Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2137621Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2138767Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2140007Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2141128Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2142189Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2143607Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2144864Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2145781Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2146516Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2147458Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2148107Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2148785Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2149497Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2150304Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2151187Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:361:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2152095Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2152985Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2153412Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2153552Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2154185Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2154777Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2155324Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2156019Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2156337Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2156763Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2157191Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2157821Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2158241Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2159069Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2159816Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2160528Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.2161416Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2162246Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2162888Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2163472Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2164276Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2165213Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2165774Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2166172Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2167172Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2168398Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2169619Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2170930Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2172008Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2172899Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2173721Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2174597Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2175322Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2176031Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2177368Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2178172Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.2179044Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2179981Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:361:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2180888Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2181735Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2182139Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2182342Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2182924Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2183544Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2184109Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2184694Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2185042Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2185427Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2185874Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2186257Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2186695Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2187788Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2188487Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2188968Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2189670Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2190373Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2191099Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2191785Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2192776Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2193842Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2194314Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2194722Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2195757Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2196873Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2198205Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2199323Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2200354Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2201284Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2202306Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2203237Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2204020Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2204723Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2205465Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2206272Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.2207125Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2208118Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:361:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2209119Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2209942Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2210366Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2210584Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2211155Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2211739Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2212379Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2212960Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2213291Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2213723Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2214189Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2214568Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2214968Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2215857Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2216496Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2217195Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.2218256Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2219021Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2219649Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2220358Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2221087Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2222054Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2222555Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2222964Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2223907Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2225116Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2226251Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2227602Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2228682Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2229553Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2230431Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2231250Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2231970Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2232677Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2233571Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2234410Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2235308Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2236225Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:373:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2237406Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2238268Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2238709Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2238846Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2239485Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2240047Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2240641Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2241286Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2241591Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2242030Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2242454Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2242909Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2243303Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2244112Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2244820Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2245257Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2245987Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2246763Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2247499Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2248211Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2249197Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2250210Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2250760Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2251175Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2252113Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2253267Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2254472Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2255551Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2256595Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2257564Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2258425Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2259324Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2260078Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2260770Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2261507Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2262276Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2263143Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2264146Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:373:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2265281Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2266197Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2266584Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2266758Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2267533Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2268204Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2268789Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2269423Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2269791Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2270217Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2270660Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2271040Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2271514Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2272324Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2272994Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2273706Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.2274592Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2275334Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2276071Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2276685Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2277630Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2278646Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2279135Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2279553Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2280550Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2281652Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2282811Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2283915Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2284988Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2285879Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2286691Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2287618Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2288395Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2289115Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2289803Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2290612Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2291444Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2292399Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:402:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2293329Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2294141Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2294567Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2294759Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2295363Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2296136Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2296761Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2297425Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2297866Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2298353Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2298817Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2299198Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2299566Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2300466Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2301151Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2301551Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2302308Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2303012Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2303632Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2304391Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2305234Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2306507Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2307115Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2307770Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2308935Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2310323Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2311665Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2312692Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2313763Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2314701Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2315565Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2316425Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2317153Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2318122Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2318849Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2319621Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2320525Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2321449Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:402:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2322454Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2323288Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2323723Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2323852Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2324521Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2325104Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2325726Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2326359Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2326690Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2327113Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2327773Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2328200Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2328802Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2329631Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2330342Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2331054Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.2331925Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2332761Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2333392Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2334018Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2334824Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2335766Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2336296Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2336713Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2337710Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2338665Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2339814Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2340825Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2341917Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2342802Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2343662Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2344469Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2345230Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2345930Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2346694Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2347595Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.2348435Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2349415Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:402:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2350331Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2351238Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2351649Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2351843Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2352433Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2353059Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2353617Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2354283Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2354641Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2355070Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2355509Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2355916Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2356343Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2357151Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2358051Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2358556Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2359253Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2360262Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2360950Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2361642Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2362589Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2363673Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2364184Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2364581Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2365550Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2366675Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2368017Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2369158Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2370223Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2371134Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2371962Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2372802Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2373561Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2374277Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2374970Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2375787Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:250:81)
+targeted	Targeted jest	2026-10-05T23:08:20.2376651Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2377709Z       at confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:402:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2378645Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2379460Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2379924Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2380126Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2380704Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2381292Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2381891Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2382480Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2382829Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2383256Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2383721Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2384079Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2384472Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2385363Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2386048Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2386654Z     ^[[0m ^[[90m 193 |^[[39m     ^[[36masync^[[39m (kind^[[33m:^[[39m ^[[32m'allow'^[[39m ^[[33m|^[[39m ^[[32m'withdraw'^[[39m) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:08:20.2387797Z      ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2388553Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2389196Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2389863Z      ^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2390615Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2391766Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2392272Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2392673Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2393672Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2394825Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2395952Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2397025Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2398298Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2399175Z       at setBusy (src/screens/settings/RomanAiConsentScreen.tsx:195:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2400007Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2400841Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2401553Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2402308Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2402978Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2403713Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2404615Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2405633Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:420:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2406642Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2407564Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2407982Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2408150Z     console.error
+targeted	Targeted jest	2026-10-05T23:08:20.2408787Z       An update to RomanAiConsentScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-05T23:08:20.2409369Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2409988Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-05T23:08:20.2410609Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2410947Z       act(() => {
+targeted	Targeted jest	2026-10-05T23:08:20.2411352Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-05T23:08:20.2411849Z       });
+targeted	Targeted jest	2026-10-05T23:08:20.2412230Z       /* assert on the output */
+targeted	Targeted jest	2026-10-05T23:08:20.2412614Z       
+targeted	Targeted jest	2026-10-05T23:08:20.2413985Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-05T23:08:20.2414666Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2415149Z     ^[[0m ^[[90m 194 |^[[39m       ^[[36mif^[[39m (busy) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2415849Z      ^[[90m 195 |^[[39m       setBusy(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2416631Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 196 |^[[39m       setNotice(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2417333Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2418161Z      ^[[90m 197 |^[[39m       ^[[36mconst^[[39m uid ^[[33m=^[[39m sessionUserId()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2419141Z      ^[[90m 198 |^[[39m       ^[[90m// One queue, fenced by the account that made the choice (Sol B-310-7):^[[39m
+targeted	Targeted jest	2026-10-05T23:08:20.2420379Z      ^[[90m 199 |^[[39m       ^[[90m// if that account is no longer signed in when the write's turn comes,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:08:20.2420880Z 
+targeted	Targeted jest	2026-10-05T23:08:20.2421277Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-05T23:08:20.2422257Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2423616Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2424827Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-05T23:08:20.2425905Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-05T23:08:20.2426983Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2428027Z       at setNotice (src/screens/settings/RomanAiConsentScreen.tsx:196:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2428839Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2429712Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2430422Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T23:08:20.2431120Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T23:08:20.2431886Z       at apply (src/screens/settings/RomanAiConsentScreen.tsx:238:6)
+targeted	Targeted jest	2026-10-05T23:08:20.2432634Z       at Object.act [as onPress] (src/screens/settings/RomanAiConsentScreen.tsx:245:56)
+targeted	Targeted jest	2026-10-05T23:08:20.2433544Z       at onPress (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:81:5)
+targeted	Targeted jest	2026-10-05T23:08:20.2434474Z       at Object.confirmLastAlert (src/screens/settings/__tests__/RomanAiConsentScreen.test.tsx:420:7)
+targeted	Targeted jest	2026-10-05T23:08:20.2435466Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:08:20.2436318Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:08:20.2436705Z 
+targeted	Targeted jest	2026-10-05T23:08:20.8416179Z PASS src/screens/settings/__tests__/RomanConversationsScreen.test.tsx (8.627 s)
+targeted	Targeted jest	2026-10-05T23:08:21.1307631Z PASS src/services/__tests__/accountBinding.transport.test.ts
+targeted	Targeted jest	2026-10-05T23:08:21.3755008Z PASS src/components/ai/__tests__/AiConsentSheetSessionFence.test.tsx (5.703 s)
+targeted	Targeted jest	2026-10-05T23:08:21.9596840Z PASS src/screens/settings/__tests__/RomanConversationScreen.test.tsx
+targeted	Targeted jest	2026-10-05T23:08:22.1680261Z PASS src/screens/roman/__tests__/romanA11yR3.test.tsx
+targeted	Targeted jest	2026-10-05T23:08:22.4357705Z PASS src/api/__tests__/romanApi.test.ts
+targeted	Targeted jest	2026-10-05T23:08:22.4403124Z PASS src/api/__tests__/romanChatsApi.test.ts
+targeted	Targeted jest	2026-10-05T23:08:22.6408624Z PASS src/api/__tests__/romanApiAiRefusal.test.ts
+targeted	Targeted jest	2026-10-05T23:08:22.7188706Z PASS src/screens/roman/__tests__/useRomanChatErased.test.tsx
+targeted	Targeted jest	2026-10-05T23:08:22.7788703Z PASS src/services/health/__tests__/sessionFence.test.ts
+targeted	Targeted jest	2026-10-05T23:08:22.8608558Z PASS src/navigation/__tests__/romanFlagOff.test.ts
+targeted	Targeted jest	2026-10-05T23:08:23.1682613Z PASS src/screens/roman/__tests__/zzAudOpusRch1Probe.test.ts
+targeted	Targeted jest	2026-10-05T23:08:23.2024798Z PASS src/screens/settings/__tests__/auditSolRomanLiveErase.test.tsx
+targeted	Targeted jest	2026-10-05T23:08:23.2048638Z   ● Console
+targeted	Targeted jest	2026-10-05T23:08:23.2077540Z 
+targeted	Targeted jest	2026-10-05T23:08:23.2078260Z     console.info
+targeted	Targeted jest	2026-10-05T23:08:23.2105407Z       AUD-SOL-RCH1-122 normal sequential erase {"operation":"list-one","erased":true,"retained":[],"openCount":2,"sendCalls":[["fresh-live-chat","Start fresh"]],"outcome":"sent"}
+targeted	Targeted jest	2026-10-05T23:08:23.2126244Z 
+targeted	Targeted jest	2026-10-05T23:08:23.2127548Z       at info (src/screens/settings/__tests__/auditSolRomanLiveErase.test.tsx:165:13)
+targeted	Targeted jest	2026-10-05T23:08:23.2128096Z 
+targeted	Targeted jest	2026-10-05T23:08:23.2128244Z     console.info
+targeted	Targeted jest	2026-10-05T23:08:23.2129324Z       AUD-SOL-RCH1-122 normal sequential erase {"operation":"list-all","erased":true,"retained":[],"openCount":2,"sendCalls":[["fresh-live-chat","Start fresh"]],"outcome":"sent"}
+targeted	Targeted jest	2026-10-05T23:08:23.2132571Z 
+targeted	Targeted jest	2026-10-05T23:08:23.2133102Z       at info (src/screens/settings/__tests__/auditSolRomanLiveErase.test.tsx:165:13)
+targeted	Targeted jest	2026-10-05T23:08:23.2133546Z 
+targeted	Targeted jest	2026-10-05T23:08:23.2133674Z     console.info
+targeted	Targeted jest	2026-10-05T23:08:23.2134647Z       AUD-SOL-RCH1-122 normal sequential erase {"operation":"transcript-one","erased":true,"retained":[],"openCount":2,"sendCalls":[["fresh-live-chat","Start fresh"]],"outcome":"sent"}
+targeted	Targeted jest	2026-10-05T23:08:23.2135977Z 
+targeted	Targeted jest	2026-10-05T23:08:23.2138018Z       at info (src/screens/settings/__tests__/auditSolRomanLiveErase.test.tsx:165:13)
+targeted	Targeted jest	2026-10-05T23:08:23.2138442Z 
+targeted	Targeted jest	2026-10-05T23:08:23.3060964Z PASS src/navigation/__tests__/romanConversationsReachable.test.ts
+targeted	Targeted jest	2026-10-05T23:08:23.4323080Z PASS src/components/roman/__tests__/RomanConversationsButton.test.tsx
+targeted	Targeted jest	2026-10-05T23:08:23.4458462Z PASS src/screens/roman/__tests__/useRomanChatStoredTurn.test.ts
+targeted	Targeted jest	2026-10-05T23:08:23.9778768Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+targeted	Targeted jest	2026-10-05T23:08:23.9795073Z 
+targeted	Targeted jest	2026-10-05T23:08:23.9801097Z Test Suites: 18 passed, 18 total
+targeted	Targeted jest	2026-10-05T23:08:23.9801808Z Tests:       264 passed, 264 total
+targeted	Targeted jest	2026-10-05T23:08:23.9802340Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T23:08:23.9802646Z Time:        12.367 s
+targeted	Targeted jest	2026-10-05T23:08:23.9804330Z Ran all test suites matching /src\/screens\/roman\/__tests__|src\/screens\/settings\/__tests__\/Roman|src\/screens\/settings\/__tests__\/auditSolRomanLiveErase|src\/api\/__tests__\/roman|src\/components\/roman\/__tests__\/RomanConversationsButton|src\/navigation\/__tests__\/roman|src\/services\/__tests__\/sessionFence|src\/services\/__tests__\/accountBinding|src\/services\/health\/__tests__\/sessionFence|src\/components\/ai\/__tests__\/AiConsentSheetSessionFence/i.
+targeted	Post Run actions/setup-node@v6	﻿2026-10-05T23:08:23.9998850Z Post job cleanup.
+targeted	Post Run actions/setup-node@v6	2026-10-05T23:08:24.1006888Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06, not saving cache.
+targeted	Post Run actions/checkout@v6	﻿2026-10-05T23:08:24.1120458Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.1802693Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.1829742Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.1858325Z Temporarily overriding HOME='/home/runner/work/_temp/a684c0e0-d165-4ca9-ae55-9d6c570ba63f' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.1859667Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.1863437Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.1885796Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.1890859Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.1916074Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2072745Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2076372Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2099332Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2253988Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2259245Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2279492Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2280485Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2281377Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2281844Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2285609Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2301291Z /home/runner/work/_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2310338Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2368875Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2386731Z /home/runner/work/_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2394628Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2501965Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2516865Z /github/runner_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2522548Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2545637Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2560729Z /github/runner_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2567727Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2593026Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-05T23:08:24.2744116Z Removing credentials config '/home/runner/work/_temp/git-credentials-48ded0ff-a049-4f91-9cb8-a5132d00e752.config'
+targeted	Complete job	﻿2026-10-05T23:08:24.2862177Z Cleaning up orphan processes

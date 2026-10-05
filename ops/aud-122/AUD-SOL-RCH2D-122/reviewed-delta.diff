@@ -1,0 +1,402 @@
+diff --git a/src/screens/roman/__tests__/useRomanChatErased.test.tsx b/src/screens/roman/__tests__/useRomanChatErased.test.tsx
+new file mode 100644
+index 0000000..a84cb72
+--- /dev/null
++++ b/src/screens/roman/__tests__/useRomanChatErased.test.tsx
+@@ -0,0 +1,223 @@
++/**
++ * B-376-1 (Sol 6004856689, Opus 6004927452): the live Roman chat stays
++ * mounted under "Your conversations with Roman", which #376 opens from the
++ * chat header. When the person erases the chat the live screen holds (Delete
++ * on its row, Delete all, or Delete in its transcript), the live screen must
++ * drop it: the erased text leaves the screen and the next message goes to a
++ * freshly opened chat, never to the erased one (the server answers 404).
++ * Adapted from both lens probes (Sol run 37384807869, Opus run 37385259212).
++ */
++import React from 'react';
++import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
++import RomanConversationsScreen from '../../settings/RomanConversationsScreen';
++import RomanConversationScreen from '../../settings/RomanConversationScreen';
++import { useRomanChat } from '../useRomanChat';
++import { RomanApiError, type RomanMessage } from '../../../api/romanApi';
++import { authEpoch, type AccountBinding } from '../../../services/accountBinding';
++import { ROMAN_CHATS_COPY } from '../../settings/romanChatsCopy';
++import type { RomanChatsApi, RomanChatSummary } from '../../../api/romanChatsApi';
++
++const mockOpen = jest.fn();
++const mockList = jest.fn();
++const mockSend = jest.fn();
++
++jest.mock('../../../api/romanApi', () => {
++  const actual = jest.requireActual('../../../api/romanApi');
++  return {
++    ...actual,
++    openOrResumeSession: (...args: unknown[]) => mockOpen(...args),
++    listMessages: (...args: unknown[]) => mockList(...args),
++    sendMessage: (...args: unknown[]) => mockSend(...args),
++    deleteSession: jest.fn(),
++  };
++});
++jest.mock('../../../services/api', () => ({ __esModule: true, default: {} }));
++jest.mock('../../../utils/haptics', () => ({
++  lightTap: jest.fn(),
++  mediumTap: jest.fn(),
++  warningTap: jest.fn(),
++  selectionTap: jest.fn(),
++}));
++jest.mock('../../../utils/logger', () => ({
++  logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn(), log: jest.fn() },
++}));
++jest.mock('../../../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: new Proxy({}, { get: () => '#123456' }) }),
++}));
++jest.mock('expo-font', () => ({ isLoaded: () => true, loadAsync: jest.fn() }));
++jest.mock('../../../services/sentry', () => ({ captureError: jest.fn(), setSentryUser: jest.fn() }));
++
++const LIVE = 'live-chat-today';
++const FRESH = 'fresh-chat-today';
++const OLDER = 'older-chat';
++const USER = 'user-a';
++const MESSAGE: RomanMessage = {
++  id: 'm-live-1',
++  role: 'user',
++  content: 'A private question for Roman',
++  interrupted: false,
++  createdAt: '2026-10-05T20:00:00.000Z',
++};
++const summary = (id: string, dayKey: string): RomanChatSummary => ({
++  id,
++  surface: 'client',
++  dayKey,
++  messageCount: 1,
++  startedAt: `${dayKey}T20:00:00.000Z`,
++  lastActivityAt: `${dayKey}T20:00:00.000Z`,
++});
++const TODAY = summary(LIVE, '2026-10-05');
++const YESTERDAY = summary(OLDER, '2026-10-04');
++const sessionUserId = () => USER;
++const captureBinding = async (): Promise<AccountBinding> => ({ subject: `sub:${USER}`, epoch: authEpoch() });
++const navigation = { navigate: jest.fn(), goBack: jest.fn() };
++
++/** Server state: which chats are erased. */
++let erased = new Set<string>();
++
++function historyApi(): RomanChatsApi {
++  return {
++    list: jest.fn(async () => ({
++      ok: true as const,
++      value: { sessions: [TODAY, YESTERDAY].filter((c) => !erased.has(c.id)), nextCursor: null },
++    })),
++    deleteOne: jest.fn(async (_binding: AccountBinding, id: string) => {
++      erased.add(id);
++      return { ok: true as const, value: null };
++    }),
++    deleteAll: jest.fn(async () => {
++      erased = new Set([LIVE, OLDER]);
++      return { ok: true as const, value: null };
++    }),
++    readMessages: jest.fn(async () => ({ ok: true as const, value: { messages: [MESSAGE], nextCursor: null } })),
++  } as unknown as RomanChatsApi;
++}
++
++beforeEach(() => {
++  erased = new Set();
++  jest.clearAllMocks();
++  // open-or-resume answers today's live chat, or a fresh one once it is erased.
++  mockOpen.mockImplementation(async () => ({
++    id: erased.has(LIVE) ? FRESH : LIVE,
++    surface: 'client',
++    messageCount: erased.has(LIVE) ? 0 : 1,
++  }));
++  mockList.mockImplementation(async (id: string) => {
++    if (erased.has(id)) throw new RomanApiError('unavailable', 'Roman is not available right now.');
++    return { messages: id === LIVE ? [MESSAGE] : [], nextCursor: null };
++  });
++  mockSend.mockImplementation(async (id: string) => {
++    if (erased.has(id)) throw new RomanApiError('unavailable', 'Roman is not available right now.');
++    return { text: 'A reply', messageId: `reply-${id}`, interrupted: false };
++  });
++});
++
++async function liveChat() {
++  const live = await renderHook(() => useRomanChat('client'));
++  await waitFor(() => expect(live.result.current.phase).toBe('ready'));
++  expect(live.result.current.session?.id).toBe(LIVE);
++  expect(live.result.current.messages).toEqual([MESSAGE]);
++  return live;
++}
++
++async function historyList() {
++  const api = historyApi();
++  const screen = await render(
++    <RomanConversationsScreen
++      navigation={navigation as never}
++      api={api}
++      sessionUserId={sessionUserId}
++      captureBinding={captureBinding}
++    />,
++  );
++  await screen.findByTestId(`roman-chat-row-${LIVE}`);
++  return screen;
++}
++
++async function deleteRow(id: string) {
++  const screen = await historyList();
++  await fireEvent.press(screen.getByTestId(`roman-chat-delete-${id}`));
++  await fireEvent.press(screen.getByTestId('roman-chats-confirm-one-confirm'));
++  await screen.findByText(ROMAN_CHATS_COPY.deletedOne);
++}
++
++async function erase(operation: 'list-one' | 'list-all' | 'transcript-one') {
++  if (operation === 'list-one') return deleteRow(LIVE);
++  if (operation === 'list-all') {
++    const screen = await historyList();
++    await fireEvent.press(screen.getByTestId('roman-chats-delete-all'));
++    await fireEvent.changeText(screen.getByTestId('roman-chats-confirm-all-input'), 'DELETE');
++    await fireEvent.press(screen.getByTestId('roman-chats-confirm-all-confirm'));
++    await screen.findByText(ROMAN_CHATS_COPY.deletedAll);
++    return;
++  }
++  const binding = await captureBinding();
++  const transcript = await render(
++    <RomanConversationScreen
++      navigation={navigation as never}
++      route={{ params: { ...TODAY, ownerId: USER, binding } }}
++      api={historyApi()}
++      sessionUserId={sessionUserId}
++    />,
++  );
++  await fireEvent.press(await transcript.findByTestId('roman-chat-transcript-delete'));
++  await fireEvent.press(transcript.getByTestId('roman-chat-transcript-confirm-confirm'));
++  await waitFor(() => expect(navigation.goBack).toHaveBeenCalledTimes(1));
++}
++
++it('control: an ordinary send before any delete goes to the live chat', async () => {
++  const live = await liveChat();
++  let outcome: string | undefined;
++  await act(async () => {
++    outcome = await live.result.current.send('Normal message');
++  });
++  expect(outcome).toBe('sent');
++  expect(mockSend).toHaveBeenCalledWith(LIVE, 'Normal message');
++});
++
++it.each(['list-one', 'list-all', 'transcript-one'] as const)(
++  '%s: erasing the open chat clears it from the live screen and the next send goes to a fresh chat',
++  async (operation) => {
++    const live = await liveChat();
++    await erase(operation);
++    expect(erased.has(LIVE)).toBe(true);
++
++    // The erased text is gone from the live screen, which now holds a fresh chat.
++    await waitFor(() => expect(live.result.current.session?.id).toBe(FRESH));
++    expect(live.result.current.phase).toBe('ready');
++    expect(live.result.current.messages.some((m) => m.id === MESSAGE.id)).toBe(false);
++
++    let outcome: string | undefined;
++    await act(async () => {
++      outcome = await live.result.current.send('Start fresh');
++    });
++    expect(outcome).toBe('sent');
++    expect(mockSend).toHaveBeenLastCalledWith(FRESH, 'Start fresh');
++    expect(mockSend).not.toHaveBeenCalledWith(LIVE, expect.anything());
++  },
++);
++
++it('a send right after the erase waits for the fresh chat instead of the erased one', async () => {
++  const live = await liveChat();
++  await deleteRow(LIVE);
++  let outcome: string | undefined;
++  await act(async () => {
++    outcome = await live.result.current.send('Straight away');
++  });
++  expect(outcome).toBe('sent');
++  expect(mockSend).toHaveBeenLastCalledWith(FRESH, 'Straight away');
++});
++
++it('control: deleting another chat leaves the live chat as it is', async () => {
++  const live = await liveChat();
++  await deleteRow(OLDER);
++  expect(mockOpen).toHaveBeenCalledTimes(1);
++  expect(live.result.current.session?.id).toBe(LIVE);
++  expect(live.result.current.messages).toEqual([MESSAGE]);
++  let outcome: string | undefined;
++  await act(async () => {
++    outcome = await live.result.current.send('Still here');
++  });
++  expect(outcome).toBe('sent');
++  expect(mockSend).toHaveBeenLastCalledWith(LIVE, 'Still here');
++});
+diff --git a/src/screens/roman/useRomanChat.ts b/src/screens/roman/useRomanChat.ts
+index 41b6d54..1344358 100644
+--- a/src/screens/roman/useRomanChat.ts
++++ b/src/screens/roman/useRomanChat.ts
+@@ -13,6 +13,12 @@
+  * in-flight send is guarded by `sendingRef` so a double-tap cannot fire two
+  * turns. Failed sends DO NOT clear the draft — the screen preserves it for
+  * retry (brief §3).
++ *
++ * Erased chats (B-376-1): this screen stays mounted under the history screens
++ * its header opens. When the person erases the chat it holds there (Delete on
++ * its row or in its transcript, or Delete all), it drops that chat at once (no
++ * erased text stays on screen) and opens a fresh one; a send made before the
++ * fresh chat is open waits for it, so nothing is ever sent to the erased chat.
+  */
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import {
+@@ -29,6 +35,7 @@ import {
+ } from '../../api/romanApi';
+ import { logger } from '../../utils/logger';
+ import type { AiRefusal } from '../../lib/ai/aiRefusal';
++import { romanChatsEvents } from '../settings/romanChatsEvents';
+ 
+ /** Page size for the initial / "load older" message fetch (<= backend cap 100). */
+ const PAGE_LIMIT = 30;
+@@ -110,6 +117,8 @@ export function useRomanChat(surface: RomanSurface): UseRomanChatResult {
+   const active = useRef(true);
+   const sendingRef = useRef(false);
+   const sessionRef = useRef<RomanSession | null>(null);
++  /** The open in flight, if any (never rejects). */
++  const openingRef = useRef<Promise<void> | null>(null);
+ 
+   useEffect(() => {
+     active.current = true;
+@@ -118,7 +127,7 @@ export function useRomanChat(surface: RomanSurface): UseRomanChatResult {
+     };
+   }, []);
+ 
+-  const open = useCallback(async () => {
++  const runOpen = useCallback(async () => {
+     if (active.current) setPhase('loading');
+     try {
+       const s = await openOrResumeSession(surface);
+@@ -142,6 +151,36 @@ export function useRomanChat(surface: RomanSurface): UseRomanChatResult {
+     }
+   }, [surface]);
+ 
++  const open = useCallback((): Promise<void> => {
++    const run = runOpen();
++    openingRef.current = run;
++    void run.finally(() => {
++      if (openingRef.current === run) openingRef.current = null;
++    });
++    return run;
++  }, [runOpen]);
++
++  // The chat this screen holds was erased from the history screens: drop it
++  // (transcript and session id) and open a fresh one (B-376-1).
++  useEffect(() => {
++    const drop = (id: string | null) => {
++      if (!active.current) return;
++      if (id !== null && id !== sessionRef.current?.id) return;
++      sessionRef.current = null;
++      setSession(null);
++      setMessages([]);
++      setNextCursor(null);
++      setSendError(null);
++      void open();
++    };
++    const offGone = romanChatsEvents.onGone((e) => drop(e.id));
++    const offErased = romanChatsEvents.onErased((e) => drop(e.id));
++    return () => {
++      offGone();
++      offErased();
++    };
++  }, [open]);
++
+   useEffect(() => {
+     open();
+   }, [open]);
+@@ -170,8 +209,18 @@ export function useRomanChat(surface: RomanSurface): UseRomanChatResult {
+ 
+   const send = useCallback(async (content: string): Promise<RomanSendOutcome> => {
+     const trimmed = content.trim();
+-    const s = sessionRef.current;
+-    if (trimmed === '' || !s || sendingRef.current) return 'noop';
++    if (trimmed === '' || sendingRef.current) return 'noop';
++    let s = sessionRef.current;
++    if (!s && openingRef.current) {
++      // A fresh chat is opening (the held one was just erased): send there.
++      sendingRef.current = true;
++      setSending(true);
++      await openingRef.current;
++      sendingRef.current = false;
++      s = sessionRef.current;
++      if (!s && active.current) setSending(false);
++    }
++    if (!s) return 'noop';
+     sendingRef.current = true;
+     setSending(true);
+     setSendError(null);
+diff --git a/src/screens/settings/README.md b/src/screens/settings/README.md
+index 942520e..2c1df39 100644
+--- a/src/screens/settings/README.md
++++ b/src/screens/settings/README.md
+@@ -87,6 +87,7 @@ Also: `src/services/__tests__/deletionApi.test.ts` (wire shapes, header, Apple c
+ 3. Delete one: confirm sheet ("permanently deletes ... cannot be undone"), the row leaves at once, comes back in place if the server does not confirm. A 404 `ROMAN_SESSION_NOT_FOUND` on delete is the requested outcome (already gone). A repeat delete is a quiet 204 on the server.
+ 4. Delete all: confirm sheet plus typing `DELETE` (case-insensitive). The list empties at once; on failure the previous list comes back, and after a partial or unknown failure the list is re-read to show what is left.
+ 5. The transcript screen tells the list a chat is gone through `romanChatsEvents.ts` (in memory, carries the owner id and the sign-in epoch).
++6. The live Roman chat (`useRomanChat`) stays mounted under these screens when its header opens them. A confirmed Delete (row or transcript) of the chat it holds, or Delete all, reaches it through `romanChatsEvents.ts` (`onGone`, `onErased`): it drops that chat (no erased text stays on screen) and opens a fresh one, and a send waits for the fresh chat, so nothing is sent to an erased chat (B-376-1).
+ 
+ **Account binding (Sol A-331-4, B-331-6):** the list is loaded under an `AccountBinding` (`src/services/accountBinding.ts`: the token subject plus the auth epoch). Every Roman request, read or delete, carries it, and the API client (`services/api.ts`) sends it only with a credential of that same account and sign-in, checked after the SecureStore read, immediately before transport, and again before a 401 replay; otherwise the request is cancelled and never sent. Any `authEvents` emit (sign-out, sign-in, even the same account signing in again) bumps the epoch: reads in flight are aborted, every answer for the old sign-in is dropped (`account_changed`), the list and transcript clear at once, confirm sheets close (the typed DELETE resets; sheets are keyed by sign-in), and stale confirm or retry closures do nothing (`deleteOne(chat, binding)` / `deleteAll(binding)` run only for the list's current binding). The transcript checks the binding before every state change, list event, navigation and report after its delete settles. A refresh overtaken by a sign-out or sign-in never writes its tokens over the new session and never signs the new session out. This is ordered by one fence (`src/services/sessionFence.ts`, A-331-7 / B-331-8): every write of the session keys moves a session generation at call time; the refresh publishes its tokens, and a failed refresh signs out, only while holding the fence for the generation it started in, taken with no await after the check; a sign-in or sign-out that starts meanwhile waits and lands last. A request is replayed after a refresh only in the session it was first sent in; an unbound request whose session ended under it keeps its original 401 (C-331-8). Nothing is stored on the device; the server sends `no-store`. Both screens carry `ph-no-capture`.
+ 
+diff --git a/src/screens/settings/romanChatsEvents.ts b/src/screens/settings/romanChatsEvents.ts
+index 2d669da..5f04581 100644
+--- a/src/screens/settings/romanChatsEvents.ts
++++ b/src/screens/settings/romanChatsEvents.ts
+@@ -14,8 +14,20 @@ export interface RomanChatGone {
+   notice?: string;
+ }
+ 
++/**
++ * Signal from the list to the live Roman chat: the server confirmed a chat
++ * erased (Delete on its row: `id`) or every chat erased (Delete all: `id`
++ * null). The live chat screen stays mounted under the history screens, so
++ * when it holds an erased chat it drops it and opens a fresh one (B-376-1).
++ */
++export interface RomanChatErased {
++  id: string | null;
++}
++
+ type Listener = (e: RomanChatGone) => void;
+ const listeners = new Set<Listener>();
++type ErasedListener = (e: RomanChatErased) => void;
++const erasedListeners = new Set<ErasedListener>();
+ 
+ export const romanChatsEvents = {
+   emitGone(e: RomanChatGone): void {
+@@ -27,4 +39,13 @@ export const romanChatsEvents = {
+       listeners.delete(fn);
+     };
+   },
++  emitErased(e: RomanChatErased): void {
++    erasedListeners.forEach((fn) => fn(e));
++  },
++  onErased(fn: ErasedListener): () => void {
++    erasedListeners.add(fn);
++    return () => {
++      erasedListeners.delete(fn);
++    };
++  },
+ };
+diff --git a/src/screens/settings/useRomanChats.ts b/src/screens/settings/useRomanChats.ts
+index f4fbfd8..02baf37 100644
+--- a/src/screens/settings/useRomanChats.ts
++++ b/src/screens/settings/useRomanChats.ts
+@@ -381,6 +381,8 @@ export function useRomanChats({
+           erased.current.add(chat.id);
+           setChats((prev) => prev.filter((c) => c.id !== chat.id));
+           setNotice({ text: out.ok ? ROMAN_CHATS_COPY.deletedOne : ROMAN_CHATS_COPY.alreadyGone });
++          // The live Roman chat drops it if it holds this chat (B-376-1).
++          romanChatsEvents.emitErased({ id: chat.id });
+           return;
+         }
+         // Roll back: the chat returns to its place.
+@@ -435,6 +437,7 @@ export function useRomanChats({
+           before.forEach((c) => erased.current.add(c.id));
+           setPhase('ready');
+           setNotice({ text: ROMAN_CHATS_COPY.deletedAll });
++          romanChatsEvents.emitErased({ id: null });
+           if (again) void load({ keepNotice: true });
+           return;
+         }

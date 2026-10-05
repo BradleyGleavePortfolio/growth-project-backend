@@ -1,0 +1,2427 @@
+diff --git a/src/config/__tests__/supportEmail.test.ts b/src/config/__tests__/supportEmail.test.ts
+new file mode 100644
+index 0000000..f42ff7a
+--- /dev/null
++++ b/src/config/__tests__/supportEmail.test.ts
+@@ -0,0 +1,51 @@
++/**
++ * S-SCHED-4 B-325-3: the support destination is the owner-ruled address
++ * (2026-10-01 14:19 PDT, "Support email: Bradleyapple1031@gmail.com"; one
++ * SUPPORT_EMAIL everywhere). Pinned to the ruling's literal, not to the
++ * constant, so a wrong constant fails here.
++ */
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++import * as fs from 'fs';
++import * as path from 'path';
++import { SUPPORT_EMAIL, supportMailto } from '../../constants/support';
++import { SUPPORT_EMAIL as CONSULTATION_SUPPORT_EMAIL } from '../../lib/consultation/copy';
++import { calendarErrorMessage } from '../../calendar/schedulingErrors';
++import { DELETION_SUPPORT_EMAIL, HELP_UNAVAILABLE_COPY } from '../../screens/settings/deletionErrors';
++
++const RULED = 'Bradleyapple1031@gmail.com';
++
++describe('support address (owner ruling)', () => {
++  it('is the ruled address and the mailto targets it', () => {
++    expect(SUPPORT_EMAIL).toBe(RULED);
++    expect(supportMailto()).toBe(`mailto:${RULED}`);
++    expect(supportMailto('Calendar help')).toBe(`mailto:${RULED}?subject=Calendar%20help`);
++  });
++
++  it('consultation, Calendar and deletion recovery copy all name the ruled address', () => {
++    expect(CONSULTATION_SUPPORT_EMAIL).toBe(RULED);
++    expect(DELETION_SUPPORT_EMAIL).toBe(RULED);
++    expect(HELP_UNAVAILABLE_COPY).toContain(RULED);
++    expect(calendarErrorMessage({ response: { status: 500 } }, 'load upcoming sessions')).toContain(RULED);
++    expect(calendarErrorMessage({ response: { status: 500 } }, 'save time off', 'coach')).toContain(RULED);
++  });
++
++  it('the scheduling, calendar and deletion sources declare no other address', () => {
++    const root = path.resolve(__dirname, '../..');
++    const files = [
++      'constants/support.ts',
++      'lib/consultation/copy.ts',
++      'calendar/schedulingErrors.ts',
++      'calendar/phoneCalendar.ts',
++      'screens/settings/deletionErrors.ts',
++      'screens/client/calendar/CalendarHomeScreen.tsx',
++      'screens/client/calendar/CalendarBookScreen.tsx',
++      'screens/client/calendar/CalendarSessionScreen.tsx',
++      'screens/coach/CoachBookingInboxScreen.tsx',
++    ];
++    for (const rel of files) {
++      const src = fs.readFileSync(path.join(root, rel), 'utf8');
++      const addresses = src.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? [];
++      expect({ rel, others: addresses.filter((a) => a !== RULED) }).toEqual({ rel, others: [] });
++    }
++  });
++});
+diff --git a/src/navigation/ClientNavigator.tsx b/src/navigation/ClientNavigator.tsx
+index 4dcab1a..6c71e13 100644
+--- a/src/navigation/ClientNavigator.tsx
++++ b/src/navigation/ClientNavigator.tsx
+@@ -86,7 +86,6 @@ import SupportInboxScreen from '../screens/support/SupportInboxScreen';
+ // Sprint B-2 — client surfaces from PR #130 wired here.
+ import ClientMacrosScreen from '../screens/client/ClientMacrosScreen';
+ // Concierge Phase 1 — scheduling client surfaces.
+-import ClientBookingRequestScreen from '../screens/client/ClientBookingRequestScreen';
+ import ClientUpcomingSessionsScreen from '../screens/client/ClientUpcomingSessionsScreen';
+ // Payments — checkout surface for a coach's package share link.
+ import PackageCheckoutScreen from '../screens/client/PackageCheckoutScreen';
+@@ -143,6 +142,11 @@ import { setTutorialRoute } from '../tutorial/tutorialStore';
+ import { focusedRoutePath, withInitialLeaf, type NavStateLike } from '../tutorial/navigationFocus';
+ import type { TutorialNavTarget } from '../tutorial/tutorialSteps';
+ import { logger } from '../utils/logger';
++// S-SCHED — client Calendar tab (featureFlags.clientCalendar, default OFF).
++import CalendarHomeScreen from '../screens/client/calendar/CalendarHomeScreen';
++import CalendarBookScreen from '../screens/client/calendar/CalendarBookScreen';
++import CalendarSessionScreen from '../screens/client/calendar/CalendarSessionScreen';
++import type { CalendarStackParamList } from './calendarRoutes';
+ 
+ const ProtectedWorkoutScreen = withProtectedScreen(WorkoutScreen);
+ const ProtectedActiveWorkoutScreen = withProtectedScreen(ActiveWorkoutScreen);
+@@ -161,8 +165,12 @@ const ProtectedAIGuideScreen = withProtectedScreen(AIGuideScreen);
+ // ClientEntitlementGuard; only voice-upload is paid and still 402s into the
+ // paywall). It is also the one action the iOS coach-managed gate offers, so
+ // gating it here would trap an unentitled client in a loop.
+-const ProtectedClientBookingRequestScreen = withProtectedScreen(ClientBookingRequestScreen);
+ const ProtectedClientUpcomingSessionsScreen = withProtectedScreen(ClientUpcomingSessionsScreen);
++// Scheduling endpoints sit behind ClientEntitlementGuard server-side, so the
++// Calendar screens take the same client-side gate as the booking screens.
++const ProtectedCalendarHomeScreen = withProtectedScreen(CalendarHomeScreen);
++const ProtectedCalendarBookScreen = withProtectedScreen(CalendarBookScreen);
++const ProtectedCalendarSessionScreen = withProtectedScreen(CalendarSessionScreen);
+ // ─── Param lists ──────────────────────────────────────────────────────────────
+ 
+ export type HomeStackParamList = {
+@@ -183,6 +191,8 @@ export type ClientTabParamList = {
+   WorkoutTab: undefined;  // Train
+   Log:        undefined;  // Coach (Log+Plan hub — keeps Log screen for food logging)
+   MoreTab:    undefined;  // Profile / More
++  // S-SCHED — only mounted when featureFlags.clientCalendar is true.
++  CalendarTab: { screen?: keyof CalendarStackParamList; params?: object } | undefined;
+   // v1-5 Community tab — only mounted when featureFlags.communityTab is true.
+   CommunityTab: undefined;
+ };
+@@ -271,7 +281,6 @@ export type MoreStackParamList = {
+   ClientWorkoutViewer: { assignmentId: string };
+   WorkoutAssignmentDetail: { assignmentId: string };
+   /** Concierge Phase 1 — scheduling client surfaces. */
+-  ClientBookingRequest:    undefined;
+   ClientUpcomingSessions:  undefined;
+   /** Phase 10 — GDPR Article 20 data portability */
+   DataExport: undefined;
+@@ -334,6 +343,26 @@ const Tab           = createBottomTabNavigator<ClientTabParamList>();
+ const HomeStackNav  = createNativeStackNavigator<HomeStackParamList>();
+ const WorkoutStackNav = createNativeStackNavigator<WorkoutStackParamList>();
+ const MoreStackNav  = createNativeStackNavigator<MoreStackParamList>();
++const CalendarStackNav = createNativeStackNavigator<CalendarStackParamList>();
++
++function CalendarStackNavigator() {
++  return (
++    <CalendarStackNav.Navigator
++      screenOptions={{
++        headerShown: true,
++        headerTitle: '',
++        headerShadowVisible: false,
++        headerStyle: { backgroundColor: colors.bone },
++        headerTintColor: colors.ink,
++        contentStyle: { backgroundColor: colors.bone },
++      }}
++    >
++      <CalendarStackNav.Screen name="CalendarHome" component={ProtectedCalendarHomeScreen} options={{ headerShown: false }} />
++      <CalendarStackNav.Screen name="CalendarBook" component={ProtectedCalendarBookScreen} />
++      <CalendarStackNav.Screen name="CalendarSession" component={ProtectedCalendarSessionScreen} />
++    </CalendarStackNav.Navigator>
++  );
++}
+ 
+ function HomeStackNavigator() {
+   // The Home stack runs headerShown:false, so a headerRight bell here never
+@@ -476,11 +505,9 @@ function MoreStackNavigator() {
+       <MoreStackNav.Screen name="ClientDailyMealPlan" component={ProtectedClientDailyMealPlanScreen} />
+       <MoreStackNav.Screen name="ClientWorkoutViewer" component={ProtectedClientWorkoutViewerScreen} />
+       <MoreStackNav.Screen name="WorkoutAssignmentDetail" component={ProtectedWorkoutAssignmentDetailScreen} />
+-      {/* Concierge Phase 1 — scheduling client surfaces. */}
+-      <MoreStackNav.Screen
+-        name="ClientBookingRequest"
+-        component={ProtectedClientBookingRequestScreen}
+-      />
++      {/* Concierge Phase 1 — scheduling client surfaces. The old
++          ClientBookingRequest route (no entry point, superseded by the
++          Calendar tab's booking) was removed in S-SCHED-4. */}
+       <MoreStackNav.Screen
+         name="ClientUpcomingSessions"
+         component={ProtectedClientUpcomingSessionsScreen}
+@@ -549,10 +576,13 @@ function CommunityTabBarIcon({ color }: { color: string }) {
+   );
+ }
+ 
++// Order must match the rendered <Tab.Screen> order (the overlay spotlights
++// tab N of this list).
+ const TUTORIAL_TABS = [
+   'Home',
+   'WorkoutTab',
+   'Log',
++  ...(featureFlags.clientCalendar ? ['CalendarTab'] : []),
+   'MoreTab',
+   ...(featureFlags.communityTab ? ['CommunityTab'] : []),
+ ];
+@@ -567,7 +597,10 @@ export default function ClientNavigator() {
+   const tabNavRef = React.useRef<{ navigate: (name: string, params?: object) => void } | null>(null);
+   const onTutorialNavigate = React.useCallback((t: TutorialNavTarget) => {
+     try {
+-      tabNavRef.current?.navigate(t.tab, t.screen ? { screen: t.screen } : undefined);
++      tabNavRef.current?.navigate(
++        t.tab,
++        t.screen ? { screen: t.screen, ...(t.params ? { params: t.params } : {}) } : undefined,
++      );
+     } catch (err) {
+       logger.warn('ClientNavigator', 'tutorial navigate failed', err);
+     }
+@@ -635,6 +668,20 @@ export default function ClientNavigator() {
+           ),
+         }}
+       />
++      {/* S-SCHED Calendar tab — gated by featureFlags.clientCalendar (default
++          OFF). Off: the tab, its routes and deep links do not register. */}
++      {featureFlags.clientCalendar && (
++        <Tab.Screen
++          name="CalendarTab"
++          component={CalendarStackNavigator}
++          options={{
++            tabBarAccessibilityLabel: 'Calendar',
++            tabBarIcon: ({ color }) => (
++              <Ionicons name="calendar-outline" size={24} color={color} />
++            ),
++          }}
++        />
++      )}
+       <Tab.Screen
+         name="MoreTab"
+         component={MoreStackNavigator}
+diff --git a/src/navigation/__tests__/noLegacyBookingRoute.test.ts b/src/navigation/__tests__/noLegacyBookingRoute.test.ts
+new file mode 100644
+index 0000000..7484517
+--- /dev/null
++++ b/src/navigation/__tests__/noLegacyBookingRoute.test.ts
+@@ -0,0 +1,19 @@
++/**
++ * S-SCHED-4 follow-up: the Concierge Phase 1 ClientBookingRequest route had
++ * no entry point (nothing navigated to it) and is superseded by the Calendar
++ * tab's booking flow, so it is gone: no route, no param, no screen file.
++ */
++import * as fs from 'fs';
++import * as path from 'path';
++
++const SRC = path.resolve(__dirname, '../..');
++
++it('the client navigator no longer registers ClientBookingRequest, and the screen file is removed', () => {
++  const nav = fs.readFileSync(path.join(SRC, 'navigation/ClientNavigator.tsx'), 'utf8');
++  expect(nav).not.toMatch(/name="ClientBookingRequest"/);
++  expect(nav).not.toMatch(/ClientBookingRequest:\s/);
++  expect(nav).not.toMatch(/import ClientBookingRequestScreen/);
++  expect(fs.existsSync(path.join(SRC, 'screens/client/ClientBookingRequestScreen.tsx'))).toBe(false);
++  // Calendar booking stays registered.
++  expect(nav).toMatch(/name="CalendarBook"/);
++});
+diff --git a/src/navigation/calendarRoutes.ts b/src/navigation/calendarRoutes.ts
+new file mode 100644
+index 0000000..142da34
+--- /dev/null
++++ b/src/navigation/calendarRoutes.ts
+@@ -0,0 +1,19 @@
++/**
++ * S-SCHED — client Calendar tab stack routes. Registered only when
++ * featureFlags.clientCalendar is on (see ClientNavigator).
++ */
++export type CalendarStackParamList = {
++  CalendarHome: undefined;
++  /**
++   * Pick a time and book (or move an existing session).
++   *   - welcome: resolve the coach's welcome appointment type (tutorial end).
++   *   - rescheduleSessionId: move that session instead of booking a new one.
++   */
++  CalendarBook: {
++    coachId?: string;
++    sessionTypeId?: string;
++    rescheduleSessionId?: string;
++    welcome?: boolean;
++  };
++  CalendarSession: { sessionId: string };
++};
+diff --git a/src/screens/client/ClientBookingRequestScreen.tsx b/src/screens/client/ClientBookingRequestScreen.tsx
+deleted file mode 100644
+index ae00ba0..0000000
+--- a/src/screens/client/ClientBookingRequestScreen.tsx
++++ /dev/null
+@@ -1,368 +0,0 @@
+-/**
+- * ClientBookingRequestScreen — request a coaching session.
+- *
+- * The backend has no "open slots" endpoint yet (documented in
+- * /home/user/workspace/concierge-phase1-mobile/AUDIT.md §3). When the
+- * coach's availability is empty or when the open-slots fetch fails,
+- * render the empty-state path: a calm placeholder with a retry button.
+- *
+- * Phase 1 keeps coach selection simple: the assigned coach comes from
+- * `useCurrentUser().coach_id` (single-valued today). If the user has
+- * no coach, render an empty state.
+- */
+-
+-import React, { useCallback, useMemo, useState } from 'react';
+-import {
+-  ActivityIndicator,
+-  ScrollView,
+-  StyleSheet,
+-  Text,
+-  TextInput,
+-  TouchableOpacity,
+-  View,
+-} from 'react-native';
+-import {
+-  useCoachAvailability,
+-  useRequestSession,
+-} from '../../hooks/useScheduling';
+-import { useCurrentUser } from '../../hooks/useCurrentUser';
+-import { spacing, typography } from '../../theme/tokens';
+-import { useTheme } from '../../theme/ThemeProvider';
+-
+-export default function ClientBookingRequestScreen() {
+-  const { colors } = useTheme();
+-  const oxblood = colors.error;
+-  const user = useCurrentUser();
+-  const coachId = user?.coach_id;
+-
+-  const [pickedDate, setPickedDate] = useState<Date>(() => {
+-    const d = new Date();
+-    d.setHours(0, 0, 0, 0);
+-    return d;
+-  });
+-  const [notes, setNotes] = useState('');
+-  const [submitted, setSubmitted] = useState(false);
+-
+-  const {
+-    data: windows,
+-    isLoading,
+-    isError,
+-    refetch,
+-  } = useCoachAvailability(coachId);
+-  const requestSession = useRequestSession();
+-
+-  const dayOptions = useMemo(() => {
+-    const out: Date[] = [];
+-    for (let i = 0; i < 14; i += 1) {
+-      const d = new Date();
+-      d.setHours(0, 0, 0, 0);
+-      d.setDate(d.getDate() + i);
+-      out.push(d);
+-    }
+-    return out;
+-  }, []);
+-
+-  const onChooseSlot = useCallback(
+-    (startAt: Date, endAt: Date) => {
+-      if (!coachId) return;
+-      // V-5 mitigation: pass the device IANA timezone alongside the ISO
+-      // timestamps so the backend can resolve to the coach's wall clock
+-      // when the two diverge. Defensive fallback for older runtimes that
+-      // do not expose Intl.DateTimeFormat.
+-      let clientTz: string | undefined;
+-      try {
+-        clientTz =
+-          Intl?.DateTimeFormat?.().resolvedOptions?.().timeZone || undefined;
+-      } catch {
+-        clientTz = undefined;
+-      }
+-      requestSession.mutate(
+-        {
+-          coach_id: coachId,
+-          title: 'Coaching session',
+-          start_at: startAt.toISOString(),
+-          end_at: endAt.toISOString(),
+-          // V-4: forward the multi-line note the user typed. Empty string
+-          // becomes undefined so the backend sees a clean absent field.
+-          notes: notes.trim() ? notes.trim() : undefined,
+-          client_timezone: clientTz,
+-        },
+-        {
+-          onSuccess: () => setSubmitted(true),
+-        },
+-      );
+-    },
+-    [coachId, notes, requestSession],
+-  );
+-
+-  if (!coachId) {
+-    return (
+-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+-        <Text style={[typography.body, { color: colors.textPrimary, textAlign: 'center' }]}>
+-          You do not have an assigned coach yet.
+-        </Text>
+-      </View>
+-    );
+-  }
+-
+-  if (submitted) {
+-    return (
+-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+-        <Text style={[typography.h2, { color: colors.textPrimary, textAlign: 'center' }]}>
+-          Request sent.
+-        </Text>
+-        <Text
+-          style={[
+-            typography.body,
+-            {
+-              color: colors.textMuted,
+-              textAlign: 'center',
+-              marginTop: spacing.sm,
+-            },
+-          ]}
+-        >
+-          Your coach will confirm.
+-        </Text>
+-      </View>
+-    );
+-  }
+-
+-  const dayOfWeek = pickedDate.getDay();
+-  const dayWindows = (windows ?? []).filter((w) => w.day_of_week === dayOfWeek);
+-
+-  return (
+-    <ScrollView
+-      style={{ backgroundColor: colors.background }}
+-      contentContainerStyle={styles.container}
+-    >
+-      <Text style={[typography.h2, { color: colors.textPrimary }]}>
+-        Request a session
+-      </Text>
+-
+-      <Text
+-        style={[
+-          typography.bodySmall,
+-          { color: colors.textMuted, marginTop: spacing.md },
+-        ]}
+-      >
+-        Date
+-      </Text>
+-      <ScrollView
+-        horizontal
+-        showsHorizontalScrollIndicator={false}
+-        contentContainerStyle={styles.dayStrip}
+-      >
+-        {dayOptions.map((d) => {
+-          const selected = d.getTime() === pickedDate.getTime();
+-          return (
+-            <TouchableOpacity
+-              key={d.toISOString()}
+-              accessibilityRole="button"
+-              accessibilityLabel={`Pick ${d.toDateString()}`}
+-              accessibilityState={{ selected }}
+-              onPress={() => setPickedDate(d)}
+-              style={[
+-                styles.dayChip,
+-                {
+-                  borderColor: selected ? oxblood : colors.border,
+-                  backgroundColor: selected ? oxblood : colors.surface,
+-                },
+-              ]}
+-            >
+-              <Text
+-                style={[
+-                  typography.bodySmall,
+-                  {
+-                    color: selected ? colors.textOnPrimary : colors.textMuted,
+-                  },
+-                ]}
+-              >
+-                {dayShortLabel(d)}
+-              </Text>
+-              <Text
+-                style={[
+-                  typography.body,
+-                  {
+-                    color: selected ? colors.textOnPrimary : colors.textPrimary,
+-                  },
+-                ]}
+-              >
+-                {d.getDate()}
+-              </Text>
+-            </TouchableOpacity>
+-          );
+-        })}
+-      </ScrollView>
+-
+-      <Text
+-        style={[
+-          typography.bodySmall,
+-          { color: colors.textMuted, marginTop: spacing.lg },
+-        ]}
+-      >
+-        Available times
+-      </Text>
+-
+-      {isLoading ? (
+-        <View style={styles.loadingBox}>
+-          <ActivityIndicator color={oxblood} />
+-        </View>
+-      ) : isError || dayWindows.length === 0 ? (
+-        <View
+-          style={[
+-            styles.emptyBox,
+-            { backgroundColor: colors.surface, borderColor: colors.border },
+-          ]}
+-        >
+-          <Text
+-            style={[
+-              typography.body,
+-              { color: colors.textPrimary, textAlign: 'center' },
+-            ]}
+-          >
+-            Available times will appear once your coach has set availability.
+-          </Text>
+-          <TouchableOpacity
+-            accessibilityRole="button"
+-            onPress={() => refetch()}
+-            style={[
+-              styles.retryBtn,
+-              { borderColor: oxblood, marginTop: spacing.md },
+-            ]}
+-          >
+-            <Text style={[typography.body, { color: oxblood }]}>Retry</Text>
+-          </TouchableOpacity>
+-        </View>
+-      ) : (
+-        dayWindows
+-          .slice()
+-          .sort((a, b) => a.start_minute - b.start_minute)
+-          .map((w) => {
+-            const start = new Date(pickedDate);
+-            start.setMinutes(start.getMinutes() + w.start_minute);
+-            const end = new Date(pickedDate);
+-            end.setMinutes(end.getMinutes() + w.end_minute);
+-            const label = `${formatTime(start)}–${formatTime(end)}`;
+-            const pending = requestSession.isPending;
+-            return (
+-              <TouchableOpacity
+-                key={w.id}
+-                accessibilityRole="button"
+-                accessibilityLabel={`Request session ${label}`}
+-                disabled={pending}
+-                onPress={() => onChooseSlot(start, end)}
+-                style={[
+-                  styles.slotBtn,
+-                  {
+-                    borderColor: oxblood,
+-                    backgroundColor: colors.surface,
+-                    opacity: pending ? 0.6 : 1,
+-                  },
+-                ]}
+-              >
+-                <Text style={[typography.body, { color: oxblood }]}>
+-                  {label}
+-                </Text>
+-              </TouchableOpacity>
+-            );
+-          })
+-      )}
+-
+-      <Text
+-        style={[
+-          typography.bodySmall,
+-          { color: colors.textMuted, marginTop: spacing.lg },
+-        ]}
+-      >
+-        Notes for your coach (optional)
+-      </Text>
+-      <TextInput
+-        accessibilityLabel="Notes for your coach"
+-        value={notes}
+-        onChangeText={setNotes}
+-        multiline
+-        placeholder="What's top of mind?"
+-        placeholderTextColor={colors.textMuted}
+-        style={[
+-          styles.notes,
+-          {
+-            color: colors.textPrimary,
+-            borderColor: colors.border,
+-            backgroundColor: colors.surface,
+-          },
+-        ]}
+-      />
+-
+-      {requestSession.isError ? (
+-        <Text
+-          style={[
+-            typography.bodySmall,
+-            { color: oxblood, marginTop: spacing.sm },
+-          ]}
+-        >
+-          Could not send request. Try again.
+-        </Text>
+-      ) : null}
+-    </ScrollView>
+-  );
+-}
+-
+-function formatTime(d: Date): string {
+-  const h = d.getHours();
+-  const m = d.getMinutes();
+-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+-}
+-
+-function dayShortLabel(d: Date): string {
+-  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+-}
+-
+-const styles = StyleSheet.create({
+-  container: { padding: spacing.md, paddingBottom: spacing.xl },
+-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+-  dayStrip: { paddingVertical: spacing.xs, paddingRight: spacing.md },
+-  dayChip: {
+-    borderWidth: 1,
+-    borderRadius: 12,
+-    paddingHorizontal: spacing.md,
+-    paddingVertical: spacing.sm,
+-    marginRight: spacing.sm,
+-    minWidth: 60,
+-    alignItems: 'center',
+-    minHeight: 60,
+-    justifyContent: 'center',
+-  },
+-  loadingBox: { paddingVertical: spacing.lg, alignItems: 'center' },
+-  emptyBox: {
+-    borderWidth: 1,
+-    borderRadius: 12,
+-    padding: spacing.lg,
+-    marginTop: spacing.xs,
+-    alignItems: 'center',
+-  },
+-  retryBtn: {
+-    borderWidth: 1,
+-    borderRadius: 8,
+-    paddingHorizontal: spacing.md,
+-    paddingVertical: spacing.sm,
+-    minHeight: 44,
+-    justifyContent: 'center',
+-  },
+-  slotBtn: {
+-    borderWidth: 1,
+-    borderRadius: 10,
+-    padding: spacing.md,
+-    marginTop: spacing.sm,
+-    alignItems: 'center',
+-    minHeight: 48,
+-    justifyContent: 'center',
+-  },
+-  notes: {
+-    borderWidth: 1,
+-    borderRadius: 10,
+-    padding: spacing.md,
+-    marginTop: spacing.xs,
+-    minHeight: 96,
+-    textAlignVertical: 'top',
+-  },
+-});
+diff --git a/src/screens/client/calendar/CalendarBookScreen.tsx b/src/screens/client/calendar/CalendarBookScreen.tsx
+new file mode 100644
+index 0000000..36729c8
+--- /dev/null
++++ b/src/screens/client/calendar/CalendarBookScreen.tsx
+@@ -0,0 +1,386 @@
++/**
++ * CalendarBookScreen — S-SCHED pick an open time and book (or move) a session.
++ *
++ * Slots come from the server (open-slots honours time off, booked sessions,
++ * the appointment type length and the coach time zone). They are shown in
++ * the client's time zone, with the coach's clock when it differs.
++ *
++ * Auto-approve types are confirmed instantly; others read "Requested,
++ * waiting for your coach". One tap books once: the submit is locked while a
++ * request is in flight. A slot taken by someone else a moment earlier
++ * returns 409 and the list refreshes.
++ *
++ * `welcome: true` preselects the coach's welcome type from the persistent
++ * server marker (my-coaches `welcome`, SessionType.is_welcome); the day-1
++ * seed name is only a fallback for an older backend. When the welcome call
++ * is already booked or done, the screen says so (and satisfies the tutorial
++ * step) instead of offering a second booking.
++ * No open times provides a refresh and a working coach-message action.
++ */
++import React, { useEffect, useMemo, useRef, useState } from 'react';
++import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import type { NativeStackScreenProps } from '@react-navigation/native-stack';
++import {
++  resolveClientTimezone,
++  schedulingErrorStatus,
++  type CoachingSession,
++} from '../../../api/schedulingApi';
++import { useBookableTypes, useMyCoaches, useOpenSlots } from '../../../hooks/useCalendar';
++import { useRequestSession, useRescheduleSession, useSession } from '../../../hooks/useScheduling';
++import {
++  coachTimeLabel,
++  formatRange,
++  formatTime,
++  formatWhen,
++  groupSlotsByDay,
++  nowToMinuteIso,
++  zoneAbbrev,
++  type Slot,
++} from '../../../calendar/calendarTime';
++import { addSessionToPhoneCalendar, phoneCalendarResultMessage } from '../../../calendar/phoneCalendar';
++import { bookingOutcomeUncertain, calendarErrorMessage, shouldRefreshSlots } from '../../../calendar/schedulingErrors';
++import { emitTutorialSignal } from '../../../tutorial/tutorialEvents';
++import type { CalendarStackParamList } from '../../../navigation/calendarRoutes';
++import { useTheme } from '../../../theme/ThemeProvider';
++import { radius, spacing, typography } from '../../../theme/tokens';
++import { useOpenMessages } from './CalendarHomeScreen';
++import { Body, Note, PrimaryButton, SecondaryButton, Title, calendarStyles } from './calendarUi';
++
++type Props = NativeStackScreenProps<CalendarStackParamList, 'CalendarBook'>;
++
++export function bookingErrorMessage(err: unknown): string {
++  return calendarErrorMessage(err, 'confirm the booking');
++}
++
++/** Repeated after every move: phone-calendar copies never update themselves. */
++export const MOVED_PHONE_COPY_NOTE =
++  'If you copied this session to your phone calendar, update that copy in your calendar app.';
++
++export function bookedMessage(session: CoachingSession, coachName: string, moved: boolean): string {
++  const copyNote = moved ? ` ${MOVED_PHONE_COPY_NOTE}` : '';
++  if (session.status === 'requested') {
++    return `Requested, waiting for your coach. Check Calendar to see when ${coachName} confirms.${copyNote}`;
++  }
++  if (session.status === 'pending_provider') return `Your time is reserved. The call link is being prepared. Open Calendar to check its status.${copyNote}`;
++  const base = moved ? `Moved. ${coachName} has the new time.` : `Booked. ${coachName} will see it in Calendar.`;
++  const linkNote = session.meeting_link_status === 'pending' ? ` ${coachName} will add the call link before it starts.` : '';
++  return `${base}${linkNote}${copyNote}`;
++}
++
++/**
++ * S-SCHED-3 (C-325-4 / backend C-634-4): moving a confirmed session of a type
++ * that needs approval sends it back as a request and gives up the current
++ * time. Say so before the client picks a new time.
++ */
++export function moveNeedsApprovalWarning(
++  moving: CoachingSession | undefined,
++  autoApprove: boolean | undefined,
++  coachName: string,
++): string | null {
++  if (!moving || moving.status !== 'scheduled') return null;
++  const needsApproval = autoApprove === false || moving.session_type?.auto_approve === false;
++  if (!needsApproval) return null;
++  return `This session is confirmed. Moving it sends the new time to ${coachName} for approval and gives up your current time. If ${coachName} declines, you will need to pick another time.`;
++}
++
++/** Welcome type for a coach: server marker first, day-1 seed name as fallback. */
++export function pickWelcomeType<T extends { id: string; name: string; is_welcome?: boolean }>(
++  list: readonly T[],
++  markerTypeId: string | null | undefined,
++): T | null {
++  return (
++    (markerTypeId ? list.find((t) => t.id === markerTypeId) : undefined) ??
++    list.find((t) => t.is_welcome === true) ??
++    list.find((t) => t.name === 'Quick initialization') ??
++    null
++  );
++}
++
++export default function CalendarBookScreen({ route, navigation }: Props) {
++  const { semanticColors: sc } = useTheme();
++  const params: CalendarStackParamList['CalendarBook'] = route.params ?? {};
++  const openMessages = useOpenMessages();
++  const clientTz = resolveClientTimezone();
++
++  const coaches = useMyCoaches();
++  const moving = useSession(params.rescheduleSessionId);
++  const coachId = params.coachId ?? moving.data?.coach_id ?? coaches.data?.[0]?.coach_id;
++  const coach = coaches.data?.find((c) => c.coach_id === coachId);
++  const coachName = coach?.name ?? 'your coach';
++  const types = useBookableTypes(coachId);
++
++  const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
++  const welcomeInfo = coach?.welcome ?? null;
++  const type = useMemo(() => {
++    const list = (types.data ?? []).filter((t) => !t.archived_at);
++    // The server marks the welcome type; renamed offerings stay bookable by
++    // explicit selection instead of inferring a welcome call by length.
++    if (params.welcome && !selectedTypeId) return pickWelcomeType(list, welcomeInfo?.session_type_id);
++    const id = selectedTypeId ?? params.sessionTypeId ?? moving.data?.session_type_id ?? undefined;
++    return list.find((t) => t.id === id) ?? null;
++  }, [types.data, params.welcome, params.sessionTypeId, moving.data?.session_type_id, selectedTypeId, welcomeInfo?.session_type_id]);
++
++  // Persistent marker: the welcome call is already booked (upcoming) or done.
++  const welcomeDone =
++    !!params.welcome && !params.rescheduleSessionId && !selectedTypeId && !!welcomeInfo &&
++    (!!welcomeInfo.active_session_id || !!welcomeInfo.completed_at);
++  useEffect(() => {
++    if (welcomeDone) emitTutorialSignal('welcome_call_booked');
++  }, [welcomeDone]);
++
++  const [fromIso] = useState(() => nowToMinuteIso());
++  const slotsQ = useOpenSlots(coachId, type, fromIso);
++  const days = useMemo(() => {
++    const own = moving.data;
++    const slots = (slotsQ.data?.slots ?? []).filter((s) => !own || s.start_at !== own.start_at);
++    return groupSlotsByDay(slots, clientTz);
++  }, [slotsQ.data, clientTz, moving.data]);
++
++  const [picked, setPicked] = useState<Slot | null>(null);
++  const [error, setError] = useState<string | null>(null);
++  const [done, setDone] = useState<CoachingSession | null>(null);
++  const [verifyBooking, setVerifyBooking] = useState(false);
++  const [phoneMsg, setPhoneMsg] = useState<string | null>(null);
++  const inFlight = useRef(false);
++  const request = useRequestSession();
++  const reschedule = useRescheduleSession();
++  const busy = request.isPending || reschedule.isPending;
++
++  const submit = () => {
++    if (!picked || !type || !coachId || inFlight.current || verifyBooking || busy) return;
++    if (Date.parse(picked.start_at) < Date.now() + 5 * 60_000) {
++      setPicked(null);
++      setError('That time is too close or has passed. Refresh open times and choose a later time.');
++      void slotsQ.refetch();
++      return;
++    }
++    // A refetch may invalidate a previously selected slot or appointment.
++    if (!slotsQ.data?.slots.some((s) => s.start_at === picked.start_at && s.end_at === picked.end_at)) {
++      setPicked(null);
++      setError('That time is no longer in the open times. Refresh and choose another time.');
++      return;
++    }
++    inFlight.current = true;
++    setError(null);
++    const onSuccess = (s: CoachingSession) => {
++      setDone(s);
++      if (params.welcome) emitTutorialSignal('welcome_call_booked');
++    };
++    const onError = (err: unknown) => {
++      setError(bookingErrorMessage(err));
++      if (bookingOutcomeUncertain(err)) setVerifyBooking(true);
++      if (shouldRefreshSlots(err) || schedulingErrorStatus(err) === 409) {
++        setPicked(null);
++        void slotsQ.refetch();
++      }
++    };
++    const onSettled = () => {
++      inFlight.current = false;
++    };
++    if (params.rescheduleSessionId) {
++      reschedule.mutate(
++        {
++          id: params.rescheduleSessionId,
++          input: { start_at: picked.start_at, end_at: picked.end_at, client_timezone: clientTz },
++        },
++        { onSuccess, onError, onSettled },
++      );
++    } else {
++      request.mutate(
++        {
++          coach_id: coachId,
++          session_type_id: type.id,
++          title: type.name,
++          start_at: picked.start_at,
++          end_at: picked.end_at,
++        },
++        { onSuccess, onError, onSettled },
++      );
++    }
++  };
++
++  const addToPhone = async (s: CoachingSession) => {
++    const r = await addSessionToPhoneCalendar(s, coachName);
++    setPhoneMsg(phoneCalendarResultMessage(r));
++  };
++
++  const screen = (children: React.ReactNode) => (
++    <SafeAreaView style={[calendarStyles.screen, { backgroundColor: sc.bgPrimary }]} edges={['bottom']}>
++      <ScrollView contentContainerStyle={calendarStyles.content} testID="calendar-book">
++        {children}
++      </ScrollView>
++    </SafeAreaView>
++  );
++
++  if (done) {
++    return screen(
++      <View testID="calendar-book-done">
++        <Title>{done.status === 'requested' ? 'Requested' : params.rescheduleSessionId ? 'Moved' : 'Booked'}</Title>
++        <Body>{bookedMessage(done, coachName, !!params.rescheduleSessionId)}</Body>
++        <Note text={`${formatWhen(done.start_at, clientTz)}. ${formatRange(done.start_at, done.end_at, clientTz)}.`} />
++        {done.status === 'scheduled' ? <SecondaryButton label="Add to my calendar" onPress={() => void addToPhone(done)} testID="calendar-add-phone" /> : null}
++        {phoneMsg ? <Note text={phoneMsg} testID="calendar-phone-msg" /> : null}
++        <PrimaryButton
++          label="Done"
++          onPress={() => navigation.navigate('CalendarSession', { sessionId: done.id })}
++          testID="calendar-book-finish"
++        />
++      </View>,
++    );
++  }
++
++  if (welcomeDone && welcomeInfo) {
++    const upcomingId = welcomeInfo.active_session_id;
++    const startAt = welcomeInfo.active_session_start_at;
++    return screen(
++      <View testID="calendar-welcome-done">
++        <Title>{`Welcome call with ${coachName}`}</Title>
++        <Body>
++          {upcomingId && startAt
++            ? welcomeInfo.active_session_status === 'requested'
++              ? `You asked for ${formatWhen(startAt, clientTz)}. ${coachName} will confirm it.`
++              : `It is booked for ${formatWhen(startAt, clientTz)}.`
++            : `You have had your welcome call with ${coachName}. Book other sessions from Calendar.`}
++        </Body>
++        {upcomingId ? (
++          <PrimaryButton
++            label="Open the session"
++            onPress={() => navigation.navigate('CalendarSession', { sessionId: upcomingId })}
++            testID="calendar-welcome-open"
++          />
++        ) : null}
++        <SecondaryButton label="See Calendar" onPress={() => navigation.navigate('CalendarHome')} testID="calendar-welcome-home" />
++      </View>,
++    );
++  }
++
++  const loading = coaches.isLoading || types.isLoading || (!!params.rescheduleSessionId && moving.isLoading) || (!!type && slotsQ.isLoading);
++  if (loading) return screen(<Note text="Loading open times." />);
++
++  const offline = coaches.isError || types.isError || slotsQ.isError || moving.isError;
++  if (offline) {
++    return screen(
++      <View testID="calendar-book-offline">
++        <Body>{calendarErrorMessage(coaches.error ?? types.error ?? slotsQ.error ?? moving.error, 'load open times')}</Body>
++        <SecondaryButton label="Refresh open times" onPress={() => {
++          void coaches.refetch();
++          void types.refetch();
++          if (type) void slotsQ.refetch();
++          if (params.rescheduleSessionId) void moving.refetch();
++        }} />
++        <SecondaryButton label="Message your coach" onPress={openMessages} />
++      </View>,
++    );
++  }
++
++  const noTimes = !type || days.length === 0;
++  if (noTimes) {
++    return screen(
++      <View testID="calendar-book-fallback">
++        <Title>{params.welcome ? `Welcome call with ${coachName}` : type?.name ?? 'Book a time'}</Title>
++        <Body muted>
++          {!type
++            ? params.welcome
++              ? `${coachName} has not opened welcome calls yet. You can see other times in Calendar, or ask in your conversation.`
++              : 'This appointment type is no longer offered.'
++            : `There are no open times in the next two weeks. ${coachName} can suggest one in your conversation.`}
++        </Body>
++        {!type && params.welcome ? (types.data ?? []).filter((t) => !t.archived_at).map((t) => (
++          <SecondaryButton key={t.id} label={`${t.name}, ${t.duration_minutes} minutes`} onPress={() => { setSelectedTypeId(t.id); setPicked(null); }} />
++        )) : null}
++        {type ? <SecondaryButton label="Refresh open times" onPress={() => void slotsQ.refetch()} /> : null}
++        <SecondaryButton label="Message your coach" onPress={openMessages} testID="calendar-fallback-message" />
++        <SecondaryButton label="See Calendar" onPress={() => navigation.navigate('CalendarHome')} testID="calendar-fallback-home" />
++      </View>,
++    );
++  }
++
++  return screen(
++    <View>
++      <Title>{params.welcome ? `Book your welcome call with ${coachName}` : type.name}</Title>
++      <Note
++        text={`${type.duration_minutes} minutes. ${type.auto_approve ? 'Confirmed right away.' : `${coachName} confirms each request.`} Times are in your time zone.`}
++      />
++      {(() => {
++        const warning = params.rescheduleSessionId ? moveNeedsApprovalWarning(moving.data, type.auto_approve, coachName) : null;
++        return warning ? <Note text={warning} testID="calendar-move-approval-warning" /> : null;
++      })()}
++      {days.map((d) => (
++        <View key={d.key} style={styles.day}>
++          <Text style={[styles.dayLabel, { color: sc.textPrimary }]} accessibilityRole="header">
++            {d.label}
++          </Text>
++          <View style={styles.slotWrap}>
++            {d.slots.map((s) => {
++              const sel = picked?.start_at === s.start_at;
++              const coachClock = coachTimeLabel(s.start_at, slotsQ.data?.timezone ?? coach?.timezone, clientTz);
++              const clock = formatTime(new Date(s.start_at), clientTz);
++              const repeatedClock = d.slots.some((other) => other.start_at !== s.start_at && formatTime(new Date(other.start_at), clientTz) === clock);
++              return (
++                <Pressable
++                  key={s.start_at}
++                  onPress={() => {
++                    setPicked(s);
++                    setError(null);
++                  }}
++                  disabled={busy || verifyBooking}
++                  accessibilityRole="button"
++                  accessibilityState={{ selected: sel }}
++                  accessibilityLabel={`${d.label}, ${formatTime(new Date(s.start_at), clientTz)} ${zoneAbbrev(new Date(s.start_at), clientTz)}${coachClock ? `, ${coachClock}` : ''}`}
++                  style={[
++                    styles.slot,
++                    { borderColor: sc.textPrimary, backgroundColor: sel ? sc.textPrimary : 'transparent' },
++                  ]}
++                  testID={`calendar-slot-${s.start_at}`}
++                >
++                  <Text style={[styles.slotText, { color: sel ? sc.bgPrimary : sc.textPrimary }]}>
++                    {repeatedClock ? `${clock} ${zoneAbbrev(new Date(s.start_at), clientTz)}` : clock}
++                  </Text>
++                </Pressable>
++              );
++            })}
++          </View>
++        </View>
++      ))}
++      {picked ? (
++        <View style={[styles.confirm, { borderColor: sc.border }]} testID="calendar-confirm">
++          <Body>{`${formatWhen(picked.start_at, clientTz)}. ${formatRange(picked.start_at, picked.end_at, clientTz)}.`}</Body>
++          {(() => {
++            const c = coachTimeLabel(picked.start_at, slotsQ.data?.timezone ?? coach?.timezone, clientTz);
++            return c ? <Note text={c} /> : null;
++          })()}
++          <PrimaryButton
++            label={params.rescheduleSessionId ? 'Move to this time' : type.auto_approve ? 'Book this time' : 'Request this time'}
++            onPress={submit}
++            busy={busy}
++            disabled={verifyBooking}
++            testID="calendar-submit"
++          />
++        </View>
++      ) : null}
++      {error ? <Note text={error} testID="calendar-book-error" /> : null}
++      {verifyBooking ? (
++        <SecondaryButton label="Check Calendar before booking again" onPress={() => navigation.navigate('CalendarHome')} testID="calendar-verify-booking" />
++      ) : null}
++      <SecondaryButton label="Refresh open times" onPress={() => { setPicked(null); void slotsQ.refetch(); }} disabled={busy} />
++    </View>,
++  );
++}
++
++const styles = StyleSheet.create({
++  day: { marginTop: spacing.lg },
++  dayLabel: { ...typography.bodyMd, marginBottom: spacing.sm },
++  slotWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
++  slot: {
++    minHeight: 44,
++    minWidth: 88,
++    borderWidth: 1,
++    borderRadius: radius.sm,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: spacing.md,
++  },
++  slotText: { ...typography.body },
++  confirm: { marginTop: spacing.xl, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.lg },
++});
+diff --git a/src/screens/client/calendar/CalendarHomeScreen.tsx b/src/screens/client/calendar/CalendarHomeScreen.tsx
+new file mode 100644
+index 0000000..eab93f7
+--- /dev/null
++++ b/src/screens/client/calendar/CalendarHomeScreen.tsx
+@@ -0,0 +1,306 @@
++/**
++ * CalendarHomeScreen — S-SCHED client Calendar tab root.
++ *
++ * My coaches -> each coach's approved appointment types -> book; then
++ * Upcoming sessions with their status, then Past sessions (paged). The
++ * welcome call card reads the persistent server marker (book / booked /
++ * done). Times are in the client's own time zone. Empty and failed states
++ * give recovery actions instead of a fake empty schedule. Phone-calendar
++ * exports are explicit user-controlled copies.
++ */
++import React, { useMemo } from 'react';
++import { RefreshControl, ScrollView, View } from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
++import type { NativeStackScreenProps } from '@react-navigation/native-stack';
++import type { BookableCoach, CoachingSession, SessionType } from '../../../api/schedulingApi';
++import { resolveClientTimezone } from '../../../api/schedulingApi';
++import { useBookableTypes, useMyCoaches, useMySessions, usePastSessions } from '../../../hooks/useCalendar';
++import { coachTimeLabel, formatRange, formatWhen } from '../../../calendar/calendarTime';
++import { calendarErrorMessage } from '../../../calendar/schedulingErrors';
++import { SUPPORT_EMAIL } from '../../../constants/support';
++import { SupportEmailFallback, useSupportEmail } from '../../../components/support/SupportEmailFallback';
++import type { CalendarStackParamList } from '../../../navigation/calendarRoutes';
++import { useTheme } from '../../../theme/ThemeProvider';
++import { Body, Card, Note, SecondaryButton, Section, Title, calendarStyles, statusLabel } from './calendarUi';
++
++type Props = NativeStackScreenProps<CalendarStackParamList, 'CalendarHome'>;
++
++export function useOpenMessages(): () => void {
++  const nav = useNavigation<NavigationProp<ParamListBase>>();
++  return () => {
++    // Messages lives in the Home stack; jump there from any tab.
++    nav.navigate('Home', { screen: 'Messages' });
++  };
++}
++
++function CoachTypes({
++  coach,
++  onBook,
++  onMessage,
++}: {
++  coach: BookableCoach;
++  onBook: (coach: BookableCoach, t: SessionType) => void;
++  onMessage: () => void;
++}) {
++  const types = useBookableTypes(coach.coach_id);
++  const clientTz = resolveClientTimezone();
++  const tzNote =
++    coach.timezone && coach.timezone !== clientTz
++      ? `${coach.name} works in ${coach.timezone.replace(/_/g, ' ')}. Times below are in your time.`
++      : null;
++  const list = (types.data ?? []).filter((t) => !t.archived_at);
++  return (
++    <View testID={`calendar-coach-${coach.coach_id}`}>
++      <Body>{coach.name}</Body>
++      {tzNote ? <Note text={tzNote} /> : null}
++      <View style={calendarStyles.gap} />
++      {types.isLoading ? <Note text="Loading appointment types." /> : null}
++      {types.isError ? (
++        <View>
++          <Note text={calendarErrorMessage(types.error, 'load appointment types')} testID="calendar-types-error" />
++          <SecondaryButton label="Refresh appointment types" onPress={() => void types.refetch()} />
++        </View>
++      ) : null}
++      {!types.isLoading && !types.isError && list.length === 0 ? (
++        <View testID="calendar-types-empty">
++          <Body muted>{`${coach.name} has not opened any appointment types yet. You can ask in your conversation.`}</Body>
++          <SecondaryButton label="Message your coach" onPress={onMessage} testID="calendar-message-coach" />
++        </View>
++      ) : null}
++      {list.map((t) => (
++        <Card
++          key={t.id}
++          onPress={() => onBook(coach, t)}
++          accessibilityLabel={`${t.name}, ${t.duration_minutes} minutes. ${t.auto_approve ? 'Confirmed right away.' : `${coach.name} confirms each request.`}`}
++          accessibilityHint="Shows open times"
++          testID={`calendar-type-${t.id}`}
++        >
++          <Body>{t.is_welcome ? `${t.name} (welcome call)` : t.name}</Body>
++          <Note text={`${t.duration_minutes} minutes. ${t.auto_approve ? 'Confirmed right away.' : `${coach.name} confirms each request.`}`} />
++          {t.description ? <Note text={t.description} /> : null}
++        </Card>
++      ))}
++    </View>
++  );
++}
++
++/** Persistent welcome-call marker for one coach: book it, see it, or done. */
++function WelcomeCard({
++  coach,
++  onBook,
++  onOpen,
++}: {
++  coach: BookableCoach;
++  onBook: () => void;
++  onOpen: (sessionId: string) => void;
++}) {
++  const w = coach.welcome;
++  if (!w) return null;
++  if (w.active_session_id && w.active_session_start_at) {
++    const id = w.active_session_id;
++    const when = formatWhen(w.active_session_start_at);
++    return (
++      <Card
++        onPress={() => onOpen(id)}
++        accessibilityLabel={`Welcome call with ${coach.name}, ${when}. ${statusLabel(w.active_session_status ?? 'scheduled')}.`}
++        accessibilityHint="Opens the session"
++        testID={`calendar-welcome-booked-${coach.coach_id}`}
++      >
++        <Body>{`Welcome call with ${coach.name}`}</Body>
++        <Note text={`${when}. ${statusLabel(w.active_session_status ?? 'scheduled')}.`} />
++      </Card>
++    );
++  }
++  if (w.completed_at) return null;
++  return (
++    <Card
++      onPress={onBook}
++      accessibilityLabel={`Book your welcome call with ${coach.name}, ${w.duration_minutes} minutes`}
++      accessibilityHint="Shows open times"
++      testID={`calendar-welcome-book-${coach.coach_id}`}
++    >
++      <Body>{`Book your welcome call with ${coach.name}`}</Body>
++      <Note text={`${w.name}, ${w.duration_minutes} minutes.`} />
++    </Card>
++  );
++}
++
++function linkNote(s: CoachingSession): string | null {
++  // pending_provider already reads "call link is being prepared".
++  if (s.status !== 'scheduled') return null;
++  if (s.meeting_link_status === 'pending') return 'Your coach will add the call link before it starts.';
++  return null;
++}
++
++function SessionRow({
++  s,
++  coachTz,
++  onPress,
++}: {
++  s: CoachingSession;
++  coachTz: string | null;
++  onPress: () => void;
++}) {
++  const coachClock = coachTimeLabel(s.start_at, coachTz);
++  const link = linkNote(s);
++  return (
++    <Card
++      onPress={onPress}
++      accessibilityLabel={`${s.title}. ${formatWhen(s.start_at)}. ${statusLabel(s.status)}.`}
++      accessibilityHint="Opens the session"
++      testID={`calendar-session-${s.id}`}
++    >
++      <Body>{s.title}</Body>
++      <Note text={`${formatWhen(s.start_at)}. ${formatRange(s.start_at, s.end_at)}.`} />
++      {coachClock ? <Note text={coachClock} /> : null}
++      <Note text={statusLabel(s.status)} />
++      {link ? <Note text={link} /> : null}
++    </Card>
++  );
++}
++
++function PastSessions({ onOpen }: { onOpen: (sessionId: string) => void }) {
++  const past = usePastSessions();
++  const rows = (past.data?.pages ?? []).flat();
++  return (
++    <Section title="Past sessions">
++      {past.isLoading ? <Note text="Loading past sessions." /> : null}
++      {past.isError ? (
++        <View>
++          <Note text={calendarErrorMessage(past.error, 'load past sessions')} testID="calendar-past-error" />
++          <SecondaryButton label="Refresh past sessions" onPress={() => void past.refetch()} />
++        </View>
++      ) : null}
++      {!past.isLoading && !past.isError && rows.length === 0 ? (
++        <Note text="Sessions you have had appear here, with any recap from your coach." testID="calendar-past-empty" />
++      ) : null}
++      {rows.map((s) => (
++        <Card
++          key={s.id}
++          onPress={() => onOpen(s.id)}
++          accessibilityLabel={`${s.title}. ${formatWhen(s.start_at)}. ${statusLabel(s.status)}.`}
++          accessibilityHint="Opens the session"
++          testID={`calendar-past-${s.id}`}
++        >
++          <Body>{s.title}</Body>
++          <Note text={`${formatWhen(s.start_at)}. ${statusLabel(s.status)}.`} />
++          {s.client_recap_md ? <Note text="Recap from your coach inside." /> : null}
++        </Card>
++      ))}
++      {past.hasNextPage ? (
++        <SecondaryButton
++          label="Show earlier sessions"
++          onPress={() => void past.fetchNextPage()}
++          disabled={past.isFetchingNextPage}
++          testID="calendar-past-more"
++        />
++      ) : null}
++    </Section>
++  );
++}
++
++export default function CalendarHomeScreen({ navigation }: Props) {
++  const { semanticColors: sc } = useTheme();
++  const coaches = useMyCoaches();
++  const upcoming = useMySessions();
++  // One shared support-email opener (mobile #324, Sol B-324-1): a phone with
++  // no email app gets the address as selectable text, Copy and Try again.
++  const supportEmail = useSupportEmail('Calendar help');
++  const openMessages = useOpenMessages();
++
++  const coachById = useMemo(() => {
++    const m = new Map<string, BookableCoach>();
++    for (const c of coaches.data ?? []) m.set(c.coach_id, c);
++    return m;
++  }, [coaches.data]);
++
++  const refreshing = coaches.isRefetching || upcoming.isRefetching;
++  const onRefresh = () => {
++    void coaches.refetch();
++    void upcoming.refetch();
++  };
++
++  const list = upcoming;
++  const rows = list.data ?? [];
++
++  return (
++    <SafeAreaView style={[calendarStyles.screen, { backgroundColor: sc.bgPrimary }]} edges={['top']}>
++      <ScrollView
++        contentContainerStyle={calendarStyles.content}
++        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
++        testID="calendar-home"
++      >
++        <Title>Calendar</Title>
++        <Body muted>Book time with your coach and see your sessions. Times are shown in your time zone.</Body>
++
++        <Section title={(coaches.data?.length ?? 0) > 1 ? 'Your coaches' : 'Your coach'}>
++          {coaches.isLoading ? <Note text="Loading your coach." /> : null}
++          {coaches.isError ? (
++            <View>
++              <Note text={calendarErrorMessage(coaches.error, 'load your coach')} testID="calendar-coaches-error" />
++              <SecondaryButton label="Refresh your coach" onPress={() => void coaches.refetch()} />
++            </View>
++          ) : null}
++          {!coaches.isLoading && !coaches.isError && (coaches.data ?? []).length === 0 ? (
++            <View testID="calendar-no-coach">
++              <Body muted>You are not matched with a coach yet. Once you are, their open times appear here.</Body>
++              <Note text={`Ask your coach for an invite code or contact ${SUPPORT_EMAIL} for help getting matched.`} />
++              <SecondaryButton label="Contact support" onPress={() => void supportEmail.open()} testID="calendar-contact-support" />
++              <SupportEmailFallback
++                handle={supportEmail}
++                textStyle={[calendarStyles.noteText, { color: sc.textMuted }]}
++                linkColor={sc.accentText}
++                testID="calendar-support-fallback"
++              />
++            </View>
++          ) : null}
++          {(coaches.data ?? []).map((c) => (
++            <WelcomeCard
++              key={`welcome-${c.coach_id}`}
++              coach={c}
++              onBook={() => navigation.navigate('CalendarBook', { coachId: c.coach_id, welcome: true })}
++              onOpen={(sessionId) => navigation.navigate('CalendarSession', { sessionId })}
++            />
++          ))}
++          {(coaches.data ?? []).map((c) => (
++            <CoachTypes
++              key={c.coach_id}
++              coach={c}
++              onMessage={openMessages}
++              onBook={(coach, t) =>
++                navigation.navigate('CalendarBook', { coachId: coach.coach_id, sessionTypeId: t.id })
++              }
++            />
++          ))}
++        </Section>
++
++        <Section title="Upcoming sessions">
++          {list.isLoading ? <Note text="Loading upcoming sessions." /> : null}
++          {list.isError ? (
++            <View>
++              <Note text={calendarErrorMessage(list.error, 'load upcoming sessions')} testID="calendar-sessions-error" />
++              <SecondaryButton label="Refresh sessions" onPress={() => void list.refetch()} />
++            </View>
++          ) : null}
++          {!list.isLoading && !list.isError && rows.length === 0 ? (
++            <View testID="calendar-upcoming-empty">
++              <Body muted>Nothing booked yet. Pick an appointment type above, or message your coach.</Body>
++              <SecondaryButton label="Message your coach" onPress={openMessages} testID="calendar-empty-message" />
++            </View>
++          ) : null}
++          {rows.map((s) => (
++            <SessionRow
++              key={s.id}
++              s={s}
++              coachTz={coachById.get(s.coach_id)?.timezone ?? null}
++              onPress={() => navigation.navigate('CalendarSession', { sessionId: s.id })}
++            />
++          ))}
++        </Section>
++
++        <PastSessions onOpen={(sessionId) => navigation.navigate('CalendarSession', { sessionId })} />
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
+diff --git a/src/screens/client/calendar/CalendarSessionScreen.tsx b/src/screens/client/calendar/CalendarSessionScreen.tsx
+new file mode 100644
+index 0000000..41ee2d8
+--- /dev/null
++++ b/src/screens/client/calendar/CalendarSessionScreen.tsx
+@@ -0,0 +1,237 @@
++/**
++ * CalendarSessionScreen — S-SCHED one session for the client.
++ *
++ * Status, time (client zone, coach clock when different), Join when a real
++ * video link exists (Call when the coach gave a phone number, S-SCHED-3), the coach's recap when present, Add to my calendar,
++ * Reschedule and Cancel. Cancel asks once and explains manual calendar-copy
++ * removal. Booking action notifications can route to this registered screen.
++ */
++import React, { useEffect, useRef, useState } from 'react';
++import { Alert, Linking, ScrollView, View } from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import type { NativeStackScreenProps } from '@react-navigation/native-stack';
++import { resolveCallLink, resolveClientTimezone, type CallLink, type CoachingSession } from '../../../api/schedulingApi';
++import { useMyCoaches } from '../../../hooks/useCalendar';
++import { useCancelSession, useSession } from '../../../hooks/useScheduling';
++import { coachTimeLabel, formatRange, formatWhen } from '../../../calendar/calendarTime';
++import { addSessionToPhoneCalendar, phoneCalendarResultMessage } from '../../../calendar/phoneCalendar';
++import { calendarErrorMessage } from '../../../calendar/schedulingErrors';
++import type { CalendarStackParamList } from '../../../navigation/calendarRoutes';
++import { useTheme } from '../../../theme/ThemeProvider';
++import { useOpenMessages } from './CalendarHomeScreen';
++import { Body, Note, PrimaryButton, SecondaryButton, Section, Title, calendarStyles, statusLabel } from './calendarUi';
++
++type Props = NativeStackScreenProps<CalendarStackParamList, 'CalendarSession'>;
++
++const LIVE_STATUSES = new Set(['requested', 'scheduled', 'pending_provider']);
++/** Join opens 15 minutes before the start and stays until the end. */
++const JOIN_EARLY_MS = 15 * 60 * 1000;
++
++export function canJoin(s: CoachingSession, now: number = Date.now()): boolean {
++  if (s.status !== 'scheduled') return false;
++  if (!resolveCallLink(s.video_url)) return false;
++  const start = new Date(s.start_at).getTime();
++  const end = new Date(s.end_at).getTime();
++  return now >= start - JOIN_EARLY_MS && now <= end;
++}
++
++export function canChange(s: CoachingSession, now: number = Date.now()): boolean {
++  if (!LIVE_STATUSES.has(s.status)) return false;
++  if (s.cancellable !== undefined) return s.cancellable;
++  // Older backend without server flags: keep the conservative 24-hour lock.
++  return new Date(s.start_at).getTime() - now > 24 * 60 * 60 * 1000;
++}
++
++/** Server rule first (S-SCHED-2 `reschedulable`), else the cancel rule. */
++export function canReschedule(s: CoachingSession, now: number = Date.now()): boolean {
++  if (s.reschedulable !== undefined) return s.reschedulable && canChange(s, now);
++  return canChange(s, now) && (s.status === 'requested' || s.status === 'scheduled');
++}
++
++/**
++ * Open the call. A phone number goes to the dialer. A device that cannot
++ * place calls (tablet, simulator) rejects the dialer link; the client then
++ * gets the number and a next step instead of a silent failure. (No
++ * canOpenURL pre-check: on iOS it needs a declared query scheme.)
++ */
++export async function openCallLink(link: CallLink, coachName: string): Promise<string | null> {
++  if (link.kind === 'phone') {
++    try {
++      await Linking.openURL(link.url);
++      return null;
++    } catch {
++      return `This device could not start the call. Call ${link.display} from a phone, or message ${coachName}.`;
++    }
++  }
++  try {
++    await Linking.openURL(link.url);
++    return null;
++  } catch (err) {
++    return calendarErrorMessage(err, 'open the call link');
++  }
++}
++
++/** Calm, specific call-link line for the client, or null when not needed. */
++export function clientLinkLine(s: CoachingSession, coachName: string, hasLink: boolean): string | null {
++  if (s.status === 'requested') return `The call link appears here once ${coachName} confirms.`;
++  // pending_provider already reads "call link is being prepared".
++  if (s.status !== 'scheduled') return null;
++  if (hasLink) return null;
++  const pending = s.meeting_link_status === undefined || s.meeting_link_status === 'pending';
++  return pending ? `${coachName} will add the call link before the session. You do not need to do anything.` : null;
++}
++
++export default function CalendarSessionScreen({ route, navigation }: Props) {
++  const { semanticColors: sc } = useTheme();
++  const sessionId = route.params?.sessionId;
++  const q = useSession(sessionId);
++  const coaches = useMyCoaches();
++  const cancel = useCancelSession();
++  const openMessages = useOpenMessages();
++  const [msg, setMsg] = useState<string | null>(null);
++  const cancelling = useRef(false);
++  const clientTz = resolveClientTimezone();
++  const [now, setNow] = useState(Date.now());
++  useEffect(() => {
++    const timer = setInterval(() => setNow(Date.now()), 30_000);
++    return () => clearInterval(timer);
++  }, []);
++
++  const wrap = (children: React.ReactNode) => (
++    <SafeAreaView style={[calendarStyles.screen, { backgroundColor: sc.bgPrimary }]} edges={['bottom']}>
++      <ScrollView contentContainerStyle={calendarStyles.content} testID="calendar-session">
++        {children}
++      </ScrollView>
++    </SafeAreaView>
++  );
++
++  if (!sessionId) {
++    return wrap(
++      <View testID="calendar-session-incomplete-link">
++        <Body>This session link is incomplete. Open Calendar to find your session.</Body>
++        <PrimaryButton label="See Calendar" onPress={() => navigation.navigate('CalendarHome')} />
++      </View>,
++    );
++  }
++  if (q.isLoading) return wrap(<Note text="Loading." />);
++  if (!q.data) {
++    return wrap(
++      <View testID="calendar-session-missing">
++        <Body>{calendarErrorMessage(q.error, 'load this session')}</Body>
++        <SecondaryButton label="Try again" onPress={() => void q.refetch()} />
++      </View>,
++    );
++  }
++
++  const s = q.data;
++  const coach = coaches.data?.find((c) => c.coach_id === s.coach_id);
++  const coachName = coach?.name ?? s.coach_name ?? 'your coach';
++  const coachClock = coachTimeLabel(s.start_at, coach?.timezone, clientTz);
++  const link = resolveCallLink(s.video_url);
++  const changeable = canChange(s, now);
++  const movable = canReschedule(s, now);
++  const live = LIVE_STATUSES.has(s.status) && new Date(s.end_at).getTime() > Date.now();
++  const linkLine = live ? clientLinkLine(s, coachName, !!link) : null;
++
++  const onCancel = () => {
++    if (cancelling.current) return;
++    Alert.alert('Cancel this session?', `${coachName} will be told.`, [
++      { text: 'Keep it', style: 'cancel' },
++      {
++        text: 'Cancel session',
++        style: 'destructive',
++        onPress: () => {
++          if (cancelling.current) return;
++          cancelling.current = true;
++          cancel.mutate(
++            { id: s.id },
++            {
++              onSuccess: () => {
++                setMsg('Cancelled in TGP. If you copied this session to your phone calendar, remove that copy in your calendar app.');
++              },
++              onError: (err) => { setMsg(calendarErrorMessage(err, 'cancel the session')); void q.refetch(); },
++              onSettled: () => {
++                cancelling.current = false;
++              },
++            },
++          );
++        },
++      },
++    ]);
++  };
++
++  const onAdd = async () => {
++    const r = await addSessionToPhoneCalendar(s, coachName);
++    setMsg(phoneCalendarResultMessage(r));
++  };
++
++  return wrap(
++    <View>
++      <Title>{s.title}</Title>
++      <Body testID="calendar-session-status">{statusLabel(s.status)}</Body>
++      <Note text={`${formatWhen(s.start_at, clientTz)}. ${formatRange(s.start_at, s.end_at, clientTz)}.`} />
++      {coachClock ? <Note text={coachClock} /> : null}
++      <Note text={`With ${coachName}.`} />
++
++      {canJoin(s, now) && link ? (
++        <PrimaryButton
++          label={link.kind === 'phone' ? `Call ${link.display}` : 'Join'}
++          onPress={() => void openCallLink(link, coachName).then((m) => { if (m) setMsg(m); })}
++          accessibilityHint={link.kind === 'phone' ? 'Opens your phone app to call your coach' : 'Opens the video call'}
++          testID="calendar-join"
++        />
++      ) : null}
++      {s.status === 'scheduled' && link && !canJoin(s, now) && live ? (
++        <Note
++          text={
++            link.kind === 'phone'
++              ? `This is a phone call on ${link.display}. Call opens 15 minutes before the start.`
++              : 'Join opens 15 minutes before the start.'
++          }
++          testID="calendar-join-later"
++        />
++      ) : null}
++      {linkLine ? <Note text={linkLine} testID="calendar-session-link-pending" /> : null}
++
++      {live && s.status === 'scheduled' ? (
++        <SecondaryButton label="Add to my calendar" onPress={() => void onAdd()} testID="calendar-add-phone" />
++      ) : null}
++      {live && !changeable ? (
++        <Note
++          text={
++            s.cancellable === false
++              ? 'This session has started, so it can no longer be changed here. Message your coach if you need help.'
++              : 'Changes are locked within 24 hours of the start. Message your coach if you need help changing this session.'
++          }
++        />
++      ) : null}
++      {changeable ? (
++        <>
++          {movable ? (
++          <SecondaryButton
++            label="Reschedule"
++            onPress={() =>
++              navigation.navigate('CalendarBook', {
++                coachId: s.coach_id,
++                sessionTypeId: s.session_type_id ?? undefined,
++                rescheduleSessionId: s.id,
++              })
++            }
++            testID="calendar-reschedule"
++          />
++          ) : null}
++          <SecondaryButton label="Cancel session" onPress={onCancel} disabled={cancel.isPending} testID="calendar-cancel" />
++        </>
++      ) : null}
++      {msg ? <Note text={msg} testID="calendar-session-msg" /> : null}
++
++      {s.client_recap_md ? (
++        <Section title={`Recap from ${coachName}`}>
++          <Body testID="calendar-recap">{s.client_recap_md}</Body>
++        </Section>
++      ) : null}
++
++      <SecondaryButton label="Message your coach" onPress={openMessages} testID="calendar-session-message" />
++    </View>,
++  );
++}
+diff --git a/src/screens/client/calendar/__tests__/calendarScreens.test.tsx b/src/screens/client/calendar/__tests__/calendarScreens.test.tsx
+new file mode 100644
+index 0000000..d44a139
+--- /dev/null
++++ b/src/screens/client/calendar/__tests__/calendarScreens.test.tsx
+@@ -0,0 +1,626 @@
++/**
++ * S-SCHED client Calendar screens: types per attached coach, calm empty
++ * states, booking (auto-approve vs request), one tap books once, a taken
++ * slot refreshes, welcome mode resolves the seeded offering by name and
++ * emits the tutorial signal, fallback when there is nothing to book, and
++ * the session view (Join only with a link near the start, cancel explains
++ * manual phone-calendar copy removal, recap shown).
++ */
++import React from 'react';
++import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++import { Alert, Linking } from 'react-native';
++import type { CoachingSession, SessionType } from '../../../../api/schedulingApi';
++
++jest.mock('../../../../services/sentry', () => ({ captureError: jest.fn() }));
++
++jest.mock('../../../../api/schedulingApi', () => {
++  const actual = jest.requireActual('../../../../api/schedulingApi');
++  return {
++    ...actual,
++    resolveClientTimezone: () => 'America/Los_Angeles',
++    schedulingApi: {
++      listMyCoaches: jest.fn(),
++      listSessionTypes: jest.fn(),
++      getOpenSlots: jest.fn(),
++      listMySessions: jest.fn(),
++      getSession: jest.fn(),
++      requestSession: jest.fn(),
++      rescheduleSession: jest.fn(),
++      cancelSession: jest.fn(),
++    },
++  };
++});
++const mockNavigate = jest.fn();
++jest.mock('@react-navigation/native', () => ({
++  ...jest.requireActual('@react-navigation/native'),
++  useNavigation: () => ({ navigate: mockNavigate }),
++}));
++jest.mock('../../../../calendar/phoneCalendar', () => ({
++  addSessionToPhoneCalendar: jest.fn(async () => ({ kind: 'added', eventId: 'e1' })),
++  phoneCalendarResultMessage: () => 'Saved to your phone calendar.',
++}));
++jest.mock('react-native-safe-area-context', () => {
++  const R = jest.requireActual('react');
++  const { View } = jest.requireActual('react-native');
++  return {
++    SafeAreaView: ({ children, style }: { children: React.ReactNode; style?: object }) =>
++      R.createElement(View, { style }, children),
++    SafeAreaProvider: ({ children }: { children: React.ReactNode }) => children,
++    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
++  };
++});
++jest.mock('../../../../tutorial/tutorialEvents', () => ({ emitTutorialSignal: jest.fn() }));
++const mockSetString = jest.fn();
++jest.mock('expo-clipboard', () => ({ setStringAsync: (...a: unknown[]) => mockSetString(...a) }));
++
++import { schedulingApi } from '../../../../api/schedulingApi';
++import { addSessionToPhoneCalendar } from '../../../../calendar/phoneCalendar';
++import type { CalendarStackParamList } from '../../../../navigation/calendarRoutes';
++import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
++import { emitTutorialSignal } from '../../../../tutorial/tutorialEvents';
++import CalendarHomeScreen from '../CalendarHomeScreen';
++import CalendarBookScreen, { bookedMessage, bookingErrorMessage, moveNeedsApprovalWarning } from '../CalendarBookScreen';
++import CalendarSessionScreen, { canJoin } from '../CalendarSessionScreen';
++import { pickWelcomeType } from '../CalendarBookScreen';
++
++describe('pickWelcomeType', () => {
++  const list = [
++    { id: 'a', name: 'Quick initialization' },
++    { id: 'b', name: 'Renamed welcome', is_welcome: true },
++    { id: 'c', name: 'Other' },
++  ];
++  it('marker id first, then is_welcome, then the seed name', () => {
++    expect(pickWelcomeType(list, 'c')?.id).toBe('c');
++    expect(pickWelcomeType(list, null)?.id).toBe('b');
++    expect(pickWelcomeType([list[0], list[2]], undefined)?.id).toBe('a');
++    expect(pickWelcomeType([list[2]], 'missing')).toBeNull();
++  });
++});
++
++const api = schedulingApi as jest.Mocked<typeof schedulingApi>;
++
++const COACH = { coach_id: 'coach-1', name: 'Bradley', timezone: 'America/New_York' };
++const WELCOME = {
++  session_type_id: 'st-w',
++  name: 'Quick initialization',
++  duration_minutes: 15,
++  active_session_id: null,
++  active_session_status: null,
++  active_session_start_at: null,
++  completed_at: null,
++};
++function type(over: Partial<SessionType> = {}): SessionType {
++  return {
++    id: 'st-1',
++    coach_id: 'coach-1',
++    name: 'Quick Q/A Call',
++    description: null,
++    duration_minutes: 20,
++    auto_approve: true,
++    default_video_provider: 'manual',
++    archived_at: null,
++    created_at: '2026-10-01T00:00:00.000Z',
++    updated_at: '2026-10-01T00:00:00.000Z',
++    ...over,
++  };
++}
++function sess(over: Partial<CoachingSession> = {}): CoachingSession {
++  return {
++    id: 'sess-1',
++    coach_id: 'coach-1',
++    client_id: 'client-1',
++    session_type_id: 'st-1',
++    status: 'scheduled',
++    start_at: '2030-10-07T16:00:00.000Z',
++    end_at: '2030-10-07T16:20:00.000Z',
++    title: 'Quick Q/A Call',
++    coach_notes_md: null,
++    client_recap_md: null,
++    video_provider: 'manual',
++    video_url: null,
++    video_meeting_id: null,
++    calendar_provider: 'stub',
++    calendar_event_id: null,
++    approved_at: null,
++    ended_at: null,
++    end_reason: null,
++    created_at: '2026-10-01T00:00:00.000Z',
++    updated_at: '2026-10-01T00:00:00.000Z',
++    ...over,
++  };
++}
++const SLOT_A = { start_at: '2030-10-07T16:00:00.000Z', end_at: '2030-10-07T16:20:00.000Z' };
++const SLOT_B = { start_at: '2030-10-07T17:00:00.000Z', end_at: '2030-10-07T17:20:00.000Z' };
++
++function nav() {
++  return { navigate: jest.fn(), goBack: jest.fn() };
++}
++
++const clients: QueryClient[] = [];
++afterEach(async () => {
++  await cleanup();
++  for (const client of clients.splice(0)) client.clear();
++});
++
++async function renderQ(node: React.ReactElement) {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } });
++  clients.push(qc);
++  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  api.listMyCoaches.mockResolvedValue([COACH]);
++  api.listSessionTypes.mockResolvedValue([type()]);
++  api.getOpenSlots.mockResolvedValue({ coach_id: 'coach-1', timezone: 'America/New_York', generated_at: '', slots: [SLOT_A, SLOT_B] });
++  api.listMySessions.mockResolvedValue([]);
++});
++
++function testNavigation<RouteName extends keyof CalendarStackParamList>(
++  n: ReturnType<typeof nav>,
++): NativeStackNavigationProp<CalendarStackParamList, RouteName> {
++  // @ts-expect-error R0 partial navigator test double supplies the only two navigation methods these screens use; no real navigation container runs.
++  return n;
++}
++const homeProps = (n = nav()) => ({ navigation: testNavigation<'CalendarHome'>(n), route: { key: 'h', name: 'CalendarHome' as const } });
++const bookProps = (params: CalendarStackParamList['CalendarBook'], n = nav()) => ({ navigation: testNavigation<'CalendarBook'>(n), route: { key: 'b', name: 'CalendarBook' as const, params } });
++const sessionProps = (n = nav()) => ({ navigation: testNavigation<'CalendarSession'>(n), route: { key: 's', name: 'CalendarSession' as const, params: { sessionId: 'sess-1' } } });
++
++describe('CalendarHomeScreen', () => {
++  it('lists the coach and their appointment types; tapping one opens booking', async () => {
++    const n = nav();
++    const r = await renderQ(<CalendarHomeScreen {...homeProps(n)} />);
++    await waitFor(() => expect(r.getByTestId('calendar-type-st-1')).toBeTruthy());
++    expect(r.getByText('Bradley')).toBeTruthy();
++    expect(r.getByText(/works in America\/New York/)).toBeTruthy();
++    await fireEvent.press(r.getByTestId('calendar-type-st-1'));
++    expect(n.navigate).toHaveBeenCalledWith('CalendarBook', { coachId: 'coach-1', sessionTypeId: 'st-1' });
++  });
++
++  it('no types yet -> calm note and Message your coach', async () => {
++    api.listSessionTypes.mockResolvedValue([]);
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-types-empty')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('calendar-message-coach'));
++    expect(mockNavigate).toHaveBeenCalledWith('Home', { screen: 'Messages' });
++  });
++
++  it('no coach -> calm note, no booking', async () => {
++    api.listMyCoaches.mockResolvedValue([]);
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-no-coach')).toBeTruthy());
++  });
++
++  it('S-SCHED-5 merge (#324): no coach -> Contact support opens the one support draft; no email app -> address, Copy, Try again', async () => {
++    api.listMyCoaches.mockResolvedValue([]);
++    const open = jest.spyOn(Linking, 'openURL').mockRejectedValueOnce(new Error('No email app')).mockResolvedValue(true);
++    mockSetString.mockResolvedValue(true);
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-no-coach')).toBeTruthy());
++    expect(r.queryByTestId('calendar-support-fallback')).toBeNull();
++    await fireEvent.press(r.getByTestId('calendar-contact-support'));
++    expect(open).toHaveBeenCalledWith('mailto:Bradleyapple1031@gmail.com?subject=Calendar%20help');
++    await waitFor(() => expect(r.getByTestId('calendar-support-fallback-status')).toBeTruthy());
++    expect(r.getByTestId('calendar-support-fallback-address').props.children).toBe('Bradleyapple1031@gmail.com');
++    await fireEvent.press(r.getByTestId('calendar-support-fallback-copy'));
++    await waitFor(() => expect(mockSetString).toHaveBeenCalledWith('Bradleyapple1031@gmail.com'));
++    await fireEvent.press(r.getByTestId('calendar-support-fallback-retry'));
++    await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
++    open.mockRestore();
++  });
++
++  it('shows upcoming with status using the existing list contract', async () => {
++    api.listMySessions.mockResolvedValue([sess({ status: 'requested' })]);
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-session-sess-1')).toBeTruthy());
++    expect(r.getByText('Requested, waiting for your coach')).toBeTruthy();
++    expect(api.listMySessions).toHaveBeenCalledWith(50);
++  });
++
++  it('welcome card: not booked yet -> books in welcome mode', async () => {
++    api.listMyCoaches.mockResolvedValue([{ ...COACH, welcome: WELCOME }]);
++    const n = nav();
++    const r = await renderQ(<CalendarHomeScreen {...homeProps(n)} />);
++    await waitFor(() => expect(r.getByTestId('calendar-welcome-book-coach-1')).toBeTruthy());
++    expect(r.getByText('Book your welcome call with Bradley')).toBeTruthy();
++    await fireEvent.press(r.getByTestId('calendar-welcome-book-coach-1'));
++    expect(n.navigate).toHaveBeenCalledWith('CalendarBook', { coachId: 'coach-1', welcome: true });
++  });
++
++  it('welcome card: booked -> shows its status and opens the session; done -> no card', async () => {
++    api.listMyCoaches.mockResolvedValue([
++      { ...COACH, welcome: { ...WELCOME, active_session_id: 'sess-w', active_session_status: 'requested', active_session_start_at: '2030-10-07T16:00:00.000Z' } },
++    ]);
++    const n = nav();
++    const r = await renderQ(<CalendarHomeScreen {...homeProps(n)} />);
++    await waitFor(() => expect(r.getByTestId('calendar-welcome-booked-coach-1')).toBeTruthy());
++    expect(r.getByText(/Requested, waiting for your coach/)).toBeTruthy();
++    await fireEvent.press(r.getByTestId('calendar-welcome-booked-coach-1'));
++    expect(n.navigate).toHaveBeenCalledWith('CalendarSession', { sessionId: 'sess-w' });
++    await cleanup();
++
++    api.listMyCoaches.mockResolvedValue([{ ...COACH, welcome: { ...WELCOME, completed_at: '2030-09-01T10:00:00.000Z' } }]);
++    const r2 = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r2.getByTestId('calendar-type-st-1')).toBeTruthy());
++    expect(r2.queryByTestId('calendar-welcome-book-coach-1')).toBeNull();
++    expect(r2.queryByTestId('calendar-welcome-booked-coach-1')).toBeNull();
++  });
++
++  it('a confirmed session without a call link reads calm, not broken', async () => {
++    api.listMySessions.mockImplementation(async (_l, opts) => (opts?.scope === 'past' ? [] : [sess({ meeting_link_status: 'pending' })]));
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-session-sess-1')).toBeTruthy());
++    expect(r.getByText('Your coach will add the call link before it starts.')).toBeTruthy();
++  });
++
++  it('past sessions: newest first, Show earlier pages with the before cursor', async () => {
++    const page1 = Array.from({ length: 20 }, (_, i) =>
++      sess({ id: `past-${i}`, status: 'completed', start_at: new Date(Date.UTC(2026, 8, 30 - i, 16)).toISOString(), end_at: new Date(Date.UTC(2026, 8, 30 - i, 17)).toISOString() }),
++    );
++    const page2 = [sess({ id: 'past-old', status: 'completed', start_at: '2026-08-01T16:00:00.000Z', end_at: '2026-08-01T17:00:00.000Z', client_recap_md: 'Nice work.' })];
++    api.listMySessions.mockImplementation(async (_l, opts) => {
++      if (opts?.scope !== 'past') return [];
++      return opts.before ? page2 : page1;
++    });
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-past-past-0')).toBeTruthy());
++    expect(api.listMySessions).toHaveBeenCalledWith(20, { scope: 'past', before: undefined, beforeId: undefined });
++    await fireEvent.press(r.getByTestId('calendar-past-more'));
++    await waitFor(() => expect(r.getByTestId('calendar-past-past-old')).toBeTruthy());
++    // S-SCHED-3 (B-634-4 pair): the cursor carries the last row's id too.
++    expect(api.listMySessions).toHaveBeenCalledWith(20, { scope: 'past', before: page1[19].start_at, beforeId: page1[19].id });
++    expect(r.getByText('Recap from your coach inside.')).toBeTruthy();
++    expect(r.queryByTestId('calendar-past-more')).toBeNull();
++  });
++
++  it('no past sessions -> a plain note', async () => {
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-past-empty')).toBeTruthy());
++  });
++
++  it('failed sessions never pretend to be an empty schedule', async () => {
++    api.listMySessions.mockImplementation((_l, opts) =>
++      opts?.scope === 'past' ? Promise.resolve([]) : Promise.reject({ response: { status: 401 } }),
++    );
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-sessions-error')).toBeTruthy());
++    expect(r.getByText(/login expired/)).toBeTruthy();
++    expect(r.queryByTestId('calendar-upcoming-empty')).toBeNull();
++  });
++});
++
++describe('CalendarBookScreen', () => {
++  it('auto-approve: one tap books once and reads Booked', async () => {
++    let resolve: (s: CoachingSession) => void = () => undefined;
++    api.requestSession.mockImplementation(() => new Promise((res) => (resolve = res)));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1' })} />);
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    // Client sees their own clock (PDT) and the coach clock (EDT).
++    expect(r.getByText('9:00 AM')).toBeTruthy();
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    expect(r.getByText('12:00 PM EDT coach time')).toBeTruthy();
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    expect(api.requestSession).toHaveBeenCalledTimes(1);
++    expect(api.requestSession.mock.calls[0][0]).toMatchObject({
++      coach_id: 'coach-1',
++      session_type_id: 'st-1',
++      start_at: SLOT_A.start_at,
++      end_at: SLOT_A.end_at,
++    });
++    await act(async () => resolve(sess()));
++    await waitFor(() => expect(r.getByTestId('calendar-book-done')).toBeTruthy());
++    expect(r.getByText('Booked. Bradley will see it in Calendar.')).toBeTruthy();
++    await fireEvent.press(r.getByTestId('calendar-add-phone'));
++    await waitFor(() => expect(addSessionToPhoneCalendar).toHaveBeenCalled());
++    expect(emitTutorialSignal).not.toHaveBeenCalled();
++  });
++
++  it('needs approval: reads Requested, waiting for your coach', async () => {
++    api.listSessionTypes.mockResolvedValue([type({ auto_approve: false, name: 'Tele-Health Dietary/Fitness Check-in', duration_minutes: 45 })]);
++    api.requestSession.mockResolvedValue(sess({ status: 'requested' }));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1' })} />);
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    expect(r.getByText('Request this time')).toBeTruthy();
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(r.getByText(/Requested, waiting for your coach\./)).toBeTruthy());
++  });
++
++  it('a slot taken a moment earlier: calm message and the list refreshes', async () => {
++    api.requestSession.mockRejectedValue({ response: { status: 409, data: { error: 'SLOT_TAKEN' } } });
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1' })} />);
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(r.getByTestId('calendar-book-error')).toBeTruthy());
++    expect(r.getByText('Someone just booked that time. Refresh open times and pick another time.')).toBeTruthy();
++    await waitFor(() => expect(api.getOpenSlots.mock.calls.length).toBeGreaterThanOrEqual(2));
++  });
++
++  it('welcome mode preselects the seeded type and uses its approved duration', async () => {
++    api.listSessionTypes.mockResolvedValue([
++      type({ id: 'st-qa', name: 'Quick Q/A Call' }),
++      type({ id: 'st-w', name: 'Quick initialization', duration_minutes: 15 }),
++    ]);
++    api.requestSession.mockResolvedValue(sess({ session_type_id: 'st-w' }));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true })} />);
++    await waitFor(() => expect(r.getByText('Book your welcome call with Bradley')).toBeTruthy());
++    expect(api.getOpenSlots).toHaveBeenCalledWith('coach-1', expect.objectContaining({ durationMinutes: 15 }));
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(emitTutorialSignal).toHaveBeenCalledWith('welcome_call_booked'));
++  });
++
++  it('welcome mode follows the server marker even when the type was renamed', async () => {
++    api.listMyCoaches.mockResolvedValue([{ ...COACH, welcome: { ...WELCOME, session_type_id: 'st-renamed', name: 'First chat', duration_minutes: 25 } }]);
++    api.listSessionTypes.mockResolvedValue([
++      type({ id: 'st-qa', name: 'Quick Q/A Call' }),
++      type({ id: 'st-renamed', name: 'First chat', duration_minutes: 25, is_welcome: true }),
++    ]);
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true })} />);
++    await waitFor(() => expect(r.getByText('Book your welcome call with Bradley')).toBeTruthy());
++    expect(api.getOpenSlots).toHaveBeenCalledWith('coach-1', expect.objectContaining({ durationMinutes: 25, sessionTypeId: 'st-renamed' }));
++  });
++
++  it('welcome already booked -> shows it, satisfies the tutorial step, offers no second booking', async () => {
++    api.listMyCoaches.mockResolvedValue([
++      { ...COACH, welcome: { ...WELCOME, active_session_id: 'sess-w', active_session_status: 'scheduled', active_session_start_at: '2030-10-07T16:00:00.000Z' } },
++    ]);
++    api.listSessionTypes.mockResolvedValue([type({ id: 'st-w', name: 'Quick initialization', duration_minutes: 15, is_welcome: true })]);
++    const n = nav();
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true }, n)} />);
++    await waitFor(() => expect(r.getByTestId('calendar-welcome-done')).toBeTruthy());
++    expect(r.getByText(/It is booked for/)).toBeTruthy();
++    expect(emitTutorialSignal).toHaveBeenCalledWith('welcome_call_booked');
++    expect(r.queryByTestId('calendar-submit')).toBeNull();
++    await fireEvent.press(r.getByTestId('calendar-welcome-open'));
++    expect(n.navigate).toHaveBeenCalledWith('CalendarSession', { sessionId: 'sess-w' });
++  });
++
++  it('welcome already done -> plain note and the tutorial step is satisfied', async () => {
++    api.listMyCoaches.mockResolvedValue([{ ...COACH, welcome: { ...WELCOME, completed_at: '2030-09-01T10:00:00.000Z' } }]);
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true })} />);
++    await waitFor(() => expect(r.getByTestId('calendar-welcome-done')).toBeTruthy());
++    expect(r.getByText(/You have had your welcome call with Bradley/)).toBeTruthy();
++    expect(emitTutorialSignal).toHaveBeenCalledWith('welcome_call_booked');
++    expect(r.queryByTestId('calendar-welcome-open')).toBeNull();
++  });
++
++  it('pending request limit and busy calendar get their own next step', async () => {
++    api.requestSession.mockRejectedValueOnce({ response: { status: 409, data: { code: 'PENDING_REQUEST_LIMIT' } } });
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1' })} />);
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(r.getByText(/several requests waiting for your coach/)).toBeTruthy());
++    expect(bookingErrorMessage({ response: { status: 503, data: { code: 'CALENDAR_BUSY' } } })).toMatch(/Wait a few seconds/);
++  });
++
++  it('a booking with no call link yet says the coach will add it', async () => {
++    api.requestSession.mockResolvedValue(sess({ meeting_link_status: 'pending' }));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1' })} />);
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(r.getByText('Booked. Bradley will see it in Calendar. Bradley will add the call link before it starts.')).toBeTruthy());
++  });
++
++  it('welcome mode without a welcome type falls back to Calendar and Message your coach', async () => {
++    api.listSessionTypes.mockResolvedValue([type()]);
++    const n = nav();
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true }, n)} />);
++    await waitFor(() => expect(r.getByTestId('calendar-book-fallback')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('calendar-fallback-home'));
++    expect(n.navigate).toHaveBeenCalledWith('CalendarHome');
++    await fireEvent.press(r.getByTestId('calendar-fallback-message'));
++    expect(mockNavigate).toHaveBeenCalledWith('Home', { screen: 'Messages' });
++  });
++
++  it('no open times -> fallback, nothing to submit', async () => {
++    api.getOpenSlots.mockResolvedValue({ coach_id: 'coach-1', timezone: 'UTC', generated_at: '', slots: [] });
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1' })} />);
++    await waitFor(() => expect(r.getByTestId('calendar-book-fallback')).toBeTruthy());
++    expect(r.queryByTestId('calendar-submit')).toBeNull();
++  });
++
++  it('reschedule moves the existing session', async () => {
++    api.getSession.mockResolvedValue(sess());
++    api.rescheduleSession.mockResolvedValue(sess({ start_at: SLOT_B.start_at, end_at: SLOT_B.end_at }));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1', rescheduleSessionId: 'sess-1' })} />);
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_B.start_at}`)).toBeTruthy());
++    // The session's own current slot is not offered.
++    expect(r.queryByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeNull();
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_B.start_at}`));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(api.rescheduleSession).toHaveBeenCalledWith('sess-1', expect.objectContaining({ start_at: SLOT_B.start_at })));
++    await waitFor(() =>
++      expect(
++        r.getByText(
++          'Moved. Bradley has the new time. If you copied this session to your phone calendar, update that copy in your calendar app.',
++        ),
++      ).toBeTruthy(),
++    );
++  });
++
++  it('error copy: offline, payment, forbidden', () => {
++    expect(bookingErrorMessage(new Error('Network Error'))).toMatch(/connection dropped/);
++    expect(bookingErrorMessage({ response: { status: 402, data: {} } })).toMatch(/coaching plan/);
++    expect(bookingErrorMessage({ response: { status: 403, data: {} } })).toMatch(/assigned coach/);
++  });
++
++  it('unknown booking outcome prevents repeat submission and asks to verify Calendar', async () => {
++    api.requestSession.mockRejectedValue({ response: { status: 503, data: { request_id: 'req_1234567890123456' } } });
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1' })} />);
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(r.getByTestId('calendar-verify-booking')).toBeTruthy());
++    expect(r.getByText(/reference req_12345678/)).toBeTruthy();
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    expect(api.requestSession).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('CalendarSessionScreen', () => {
++  it('an incomplete session link gives a working Calendar fallback instead of crashing', async () => {
++    const n = nav();
++    const malformed = sessionProps(n);
++    // @ts-expect-error R0 deliberately exercise missing runtime notification params despite the typed navigation contract.
++    malformed.route.params = undefined;
++    const r = await renderQ(<CalendarSessionScreen {...malformed} />);
++    expect(r.getByText(/This session link is incomplete/)).toBeTruthy();
++    expect(api.getSession).not.toHaveBeenCalled();
++    await fireEvent.press(r.getByText('See Calendar'));
++    expect(n.navigate).toHaveBeenCalledWith('CalendarHome');
++  });
++
++  it('Join shows only with a real link inside the join window', () => {
++    const start = Date.parse('2030-10-07T16:00:00.000Z');
++    const withLink = sess({ video_url: 'https://meet.example/room' });
++    expect(canJoin(withLink, start - 10 * 60_000)).toBe(true);
++    expect(canJoin(withLink, start - 60 * 60_000)).toBe(false);
++    expect(canJoin(sess({ video_url: 'tgp-stub://x' }), start)).toBe(false);
++    expect(canJoin(sess({ video_url: 'https://meet.example/room', status: 'requested' }), start)).toBe(false);
++  });
++
++  it('opens the link on Join and shows the recap', async () => {
++    const now = Date.now();
++    api.getSession.mockResolvedValue(
++      sess({
++        start_at: new Date(now + 5 * 60_000).toISOString(),
++        end_at: new Date(now + 25 * 60_000).toISOString(),
++        video_url: 'https://meet.example/room',
++        client_recap_md: 'Keep protein steady this week.',
++      }),
++    );
++    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-join')).toBeTruthy());
++    expect(r.getByTestId('calendar-recap')).toBeTruthy();
++    await fireEvent.press(r.getByTestId('calendar-join'));
++    expect(open).toHaveBeenCalledWith('https://meet.example/room');
++    expect(r.queryByTestId('calendar-cancel')).toBeNull();
++    open.mockRestore();
++  });
++
++  it('cancels after confirmation and discloses manual calendar-copy removal', async () => {
++    api.getSession.mockResolvedValue(sess({ cancellable: true }));
++    api.cancelSession.mockResolvedValue(sess({ status: 'canceled' }));
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
++      buttons?.find((b) => b.style === 'destructive')?.onPress?.();
++    });
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-cancel')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('calendar-cancel'));
++    await waitFor(() => expect(api.cancelSession).toHaveBeenCalledWith('sess-1', undefined));
++    await waitFor(() => expect(r.getByText(/remove that copy/)).toBeTruthy());
++    alert.mockRestore();
++  });
++
++  it('server flags: cancel allowed, reschedule not; pending link reads calm', async () => {
++    api.getSession.mockResolvedValue(sess({ cancellable: true, reschedulable: false, meeting_link_status: 'pending' }));
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-cancel')).toBeTruthy());
++    expect(r.queryByTestId('calendar-reschedule')).toBeNull();
++    expect(r.getByTestId('calendar-session-link-pending')).toBeTruthy();
++    expect(r.getByText(/will add the call link before the session/)).toBeTruthy();
++  });
++
++  it('a started session (server says not cancellable) explains why it is locked', async () => {
++    api.getSession.mockResolvedValue(sess({ cancellable: false, reschedulable: false }));
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-session-status')).toBeTruthy());
++    expect(r.getByText(/has started, so it can no longer be changed here/)).toBeTruthy();
++    expect(r.queryByTestId('calendar-cancel')).toBeNull();
++  });
++
++  it('a past or cancelled session offers no reschedule or cancel', async () => {
++    api.getSession.mockResolvedValue(sess({ status: 'canceled' }));
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-session-status')).toBeTruthy());
++    expect(r.getByText('Cancelled')).toBeTruthy();
++    expect(r.queryByTestId('calendar-reschedule')).toBeNull();
++    expect(r.queryByTestId('calendar-cancel')).toBeNull();
++    expect(r.queryByTestId('calendar-add-phone')).toBeNull();
++  });
++});
++
++// ─── S-SCHED-3 fix round (mobile #325 @ b0c02156 audit repros) ──────────────
++
++describe('S-SCHED-3 B-325-1: a phone-call link is usable end to end', () => {
++  const soon = () => {
++    const now = Date.now();
++    return { start_at: new Date(now + 5 * 60_000).toISOString(), end_at: new Date(now + 25 * 60_000).toISOString() };
++  };
++
++  it('a ready phone-call session offers Call, which opens the dialer with the number', async () => {
++    api.getSession.mockResolvedValue(sess({ ...soon(), video_url: 'tel:+1 425 555 0100', meeting_link_status: 'ready' }));
++    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-join')).toBeTruthy());
++    expect(r.getByText('Call +1 425 555 0100')).toBeTruthy();
++    expect(r.queryByTestId('calendar-session-link-pending')).toBeNull();
++    await fireEvent.press(r.getByTestId('calendar-join'));
++    expect(open).toHaveBeenCalledWith('tel:+14255550100');
++    open.mockRestore();
++  });
++
++  it('a device that refuses the dialer gets the number and a next step', async () => {
++    api.getSession.mockResolvedValue(sess({ ...soon(), video_url: 'tel:+1 425 555 0100' }));
++    const open = jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('Unable to open URL: tel:+14255550100'));
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-join')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('calendar-join'));
++    await waitFor(() =>
++      expect(r.getByTestId('calendar-session-msg').props.children).toBe(
++        'This device could not start the call. Call +1 425 555 0100 from a phone, or message Bradley.',
++      ),
++    );
++    open.mockRestore();
++  });
++
++  it('before the window the phone number is shown with when Call opens', async () => {
++    api.getSession.mockResolvedValue(sess({ video_url: 'tel:+1 425 555 0100' }));
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps()} />);
++    await waitFor(() => expect(r.getByTestId('calendar-join-later')).toBeTruthy());
++    expect(r.getByText('This is a phone call on +1 425 555 0100. Call opens 15 minutes before the start.')).toBeTruthy();
++  });
++
++  it('other schemes never become a Join or Call action', () => {
++    const start = Date.parse('2030-10-07T16:00:00.000Z');
++    expect(canJoin(sess({ video_url: 'tel:+14255550100' }), start)).toBe(true);
++    for (const url of ['javascript:alert(1)', 'sms:+14255550100', 'http://meet.example/room', 'https://u:p@meet.example/room', 'tel:call-me']) {
++      expect(canJoin(sess({ video_url: url }), start)).toBe(false);
++    }
++  });
++});
++
++describe('S-SCHED-3 C-325-4: moving a confirmed approval-type session warns first', () => {
++  it('shows the warning for a confirmed session whose type needs approval', async () => {
++    api.listSessionTypes.mockResolvedValue([type({ auto_approve: false })]);
++    api.getSession.mockResolvedValue(sess({ status: 'scheduled' }));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1', rescheduleSessionId: 'sess-1' })} />);
++    await waitFor(() => expect(r.getByTestId('calendar-move-approval-warning')).toBeTruthy());
++    expect(
++      r.getByText(
++        'This session is confirmed. Moving it sends the new time to Bradley for approval and gives up your current time. If Bradley declines, you will need to pick another time.',
++      ),
++    ).toBeTruthy();
++  });
++
++  it('no warning for instant-confirm types or for a move of a request', async () => {
++    api.getSession.mockResolvedValue(sess({ status: 'scheduled' }));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ coachId: 'coach-1', sessionTypeId: 'st-1', rescheduleSessionId: 'sess-1' })} />);
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_B.start_at}`)).toBeTruthy());
++    expect(r.queryByTestId('calendar-move-approval-warning')).toBeNull();
++    expect(moveNeedsApprovalWarning(sess({ status: 'requested' }), false, 'Bradley')).toBeNull();
++  });
++
++  it('a moved request repeats the phone-calendar note too', () => {
++    expect(bookedMessage(sess({ status: 'requested' }), 'Bradley', true)).toMatch(/update that copy in your calendar app\.$/);
++    expect(bookedMessage(sess({ status: 'scheduled' }), 'Bradley', false)).not.toMatch(/phone calendar/);
++  });
++});
+diff --git a/src/screens/client/calendar/calendarUi.tsx b/src/screens/client/calendar/calendarUi.tsx
+new file mode 100644
+index 0000000..0b3e9d6
+--- /dev/null
++++ b/src/screens/client/calendar/calendarUi.tsx
+@@ -0,0 +1,217 @@
++/**
++ * calendarUi — small shared pieces for the S-SCHED client Calendar screens.
++ * Plain words, no emoji, no exclamation marks (TGP copy rules).
++ */
++import React from 'react';
++import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
++import type { SchedulingSessionStatus } from '../../../api/schedulingApi';
++import { useTheme } from '../../../theme/ThemeProvider';
++import { radius, spacing, typography } from '../../../theme/tokens';
++
++export function statusLabel(status: SchedulingSessionStatus): string {
++  switch (status) {
++    case 'requested':
++      return 'Requested, waiting for your coach';
++    case 'scheduled':
++      return 'Confirmed';
++    case 'pending_provider':
++      return 'Booked, call link is being prepared';
++    case 'declined':
++      return 'Not accepted';
++    case 'canceled':
++      return 'Cancelled';
++    case 'completed':
++      return 'Completed';
++    case 'no_show':
++      return 'Missed';
++    default:
++      return 'Status unavailable. Refresh Calendar or message your coach.';
++  }
++}
++
++export function Section({ title, children }: { title: string; children: React.ReactNode }) {
++  const { semanticColors: sc } = useTheme();
++  return (
++    <View style={styles.section}>
++      <Text style={[styles.sectionTitle, { color: sc.textMuted }]} accessibilityRole="header">
++        {title}
++      </Text>
++      {children}
++    </View>
++  );
++}
++
++export function Card({
++  children,
++  onPress,
++  accessibilityLabel,
++  accessibilityHint,
++  testID,
++}: {
++  children: React.ReactNode;
++  onPress?: () => void;
++  accessibilityLabel?: string;
++  accessibilityHint?: string;
++  testID?: string;
++}) {
++  const { semanticColors: sc } = useTheme();
++  const style = [styles.card, { backgroundColor: sc.bgSurface, borderColor: sc.border }];
++  if (!onPress) {
++    return (
++      <View style={style} testID={testID}>
++        {children}
++      </View>
++    );
++  }
++  return (
++    <Pressable
++      onPress={onPress}
++      style={({ pressed }) => [style, pressed ? styles.pressed : null]}
++      accessibilityRole="button"
++      accessibilityLabel={accessibilityLabel}
++      accessibilityHint={accessibilityHint}
++      testID={testID}
++    >
++      {children}
++    </Pressable>
++  );
++}
++
++export function PrimaryButton({
++  label,
++  onPress,
++  disabled,
++  busy,
++  testID,
++  accessibilityHint,
++}: {
++  label: string;
++  onPress: () => void;
++  disabled?: boolean;
++  busy?: boolean;
++  testID?: string;
++  accessibilityHint?: string;
++}) {
++  const { semanticColors: sc } = useTheme();
++  const off = disabled || busy;
++  return (
++    <Pressable
++      onPress={off ? undefined : onPress}
++      disabled={off}
++      accessibilityRole="button"
++      accessibilityLabel={label}
++      accessibilityHint={accessibilityHint}
++      accessibilityState={{ disabled: !!off, busy: !!busy }}
++      style={[styles.primary, { backgroundColor: off ? sc.disabledBg : sc.accent }]}
++      testID={testID}
++    >
++      {busy ? (
++        <ActivityIndicator color={sc.textOnAccent} />
++      ) : (
++        <Text style={[styles.primaryText, { color: off ? sc.textOnDisabled : sc.textOnAccent }]}>
++          {label}
++        </Text>
++      )}
++    </Pressable>
++  );
++}
++
++export function SecondaryButton({
++  label,
++  onPress,
++  disabled,
++  testID,
++  accessibilityHint,
++}: {
++  label: string;
++  onPress: () => void;
++  disabled?: boolean;
++  testID?: string;
++  accessibilityHint?: string;
++}) {
++  const { semanticColors: sc } = useTheme();
++  return (
++    <Pressable
++      onPress={disabled ? undefined : onPress}
++      disabled={disabled}
++      accessibilityRole="button"
++      accessibilityLabel={label}
++      accessibilityHint={accessibilityHint}
++      accessibilityState={{ disabled: !!disabled }}
++      style={[styles.secondary, { borderColor: sc.textPrimary, opacity: disabled ? 0.5 : 1 }]}
++      testID={testID}
++    >
++      <Text style={[styles.secondaryText, { color: sc.textPrimary }]}>{label}</Text>
++    </Pressable>
++  );
++}
++
++export function Note({ text, testID }: { text: string; testID?: string }) {
++  const { semanticColors: sc } = useTheme();
++  return (
++    <Text style={[styles.note, { color: sc.textMuted }]} testID={testID} accessibilityLiveRegion="polite">
++      {text}
++    </Text>
++  );
++}
++
++export function Body({ children, muted, testID }: { children: React.ReactNode; muted?: boolean; testID?: string }) {
++  const { semanticColors: sc } = useTheme();
++  return (
++    <Text style={[styles.body, { color: muted ? sc.textMuted : sc.textPrimary }]} testID={testID}>
++      {children}
++    </Text>
++  );
++}
++
++export function Title({ children }: { children: React.ReactNode }) {
++  const { semanticColors: sc } = useTheme();
++  return (
++    <Text style={[styles.title, { color: sc.textPrimary }]} accessibilityRole="header">
++      {children}
++    </Text>
++  );
++}
++
++export const calendarStyles = StyleSheet.create({
++  screen: { flex: 1 },
++  content: { padding: spacing.lg, paddingBottom: spacing['3xl'] },
++  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
++  gap: { height: spacing.md },
++  /** Body-small text for inline support fallbacks (matches Note). */
++  noteText: { ...typography.bodySmall },
++});
++
++const styles = StyleSheet.create({
++  section: { marginTop: spacing.xl },
++  sectionTitle: { ...typography.caption, textTransform: 'uppercase', letterSpacing: 1, marginBottom: spacing.sm },
++  card: {
++    borderWidth: StyleSheet.hairlineWidth,
++    borderRadius: radius.lg,
++    padding: spacing.lg,
++    marginBottom: spacing.sm,
++  },
++  pressed: { opacity: 0.7 },
++  primary: {
++    minHeight: 48,
++    borderRadius: radius.sm,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: spacing.lg,
++    marginTop: spacing.md,
++  },
++  primaryText: { ...typography.bodyMd },
++  secondary: {
++    minHeight: 48,
++    borderRadius: radius.sm,
++    borderWidth: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: spacing.lg,
++    marginTop: spacing.md,
++  },
++  secondaryText: { ...typography.bodyMd },
++  note: { ...typography.bodySmall, marginTop: spacing.sm },
++  body: { ...typography.body },
++  title: { ...typography.h2, marginBottom: spacing.sm },
++});

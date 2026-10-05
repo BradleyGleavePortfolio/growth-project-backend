@@ -1,0 +1,5 @@
+    ✕ ordinary abandoned A checkout: the B offer agrees with the trial actually sold (21 ms)
+    ✓ same-plan resume is unchanged: reopening A reuses its attempt and its trial (2 ms)
+    Expected: false
+    Received: true
+Tests:       1 failed, 8 skipped, 1 passed, 10 total

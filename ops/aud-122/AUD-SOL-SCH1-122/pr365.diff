@@ -1,0 +1,2499 @@
+diff --git a/app.json b/app.json
+index 87308ca..d0e3937 100644
+--- a/app.json
++++ b/app.json
+@@ -44,6 +44,10 @@
+       },
+       "package": "com.growthproject.app",
+       "versionCode": 5,
++      "blockedPermissions": [
++        "android.permission.READ_CALENDAR",
++        "android.permission.WRITE_CALENDAR"
++      ],
+       "intentFilters": [
+         {
+           "action": "VIEW",
+@@ -142,6 +146,15 @@
+       "expo-web-browser",
+       "expo-font",
+       "expo-localization",
++      [
++        "expo-calendar",
++        {
++          "calendarPermission": "The Growth Project lets you save the confirmed coaching sessions you choose to your device calendar. Calendar copies do not update automatically.",
++          "writeOnlyAccess": true,
++          "writeOnlyCalendarPermission": "The Growth Project lets you save the confirmed coaching sessions you choose to your device calendar.",
++          "remindersPermission": false
++        }
++      ],
+       [
+         "expo-local-authentication",
+         {
+diff --git a/config/expected-env.json b/config/expected-env.json
+index 71d0b01..95d85c1 100644
+--- a/config/expected-env.json
++++ b/config/expected-env.json
+@@ -66,6 +66,11 @@
+       "default": "on in dev, off in release",
+       "reason": "Feature flag read via featureFlags.ts with a literal key."
+     },
++    "EXPO_PUBLIC_FF_CLIENT_CALENDAR": {
++      "kind": "flag",
++      "default": "off",
++      "reason": "Native client Calendar tab and Roman booking tutorial; on in clinic and production profiles."
++    },
+     "EXPO_PUBLIC_FF_CLIENT_TUTORIAL": {
+       "kind": "flag",
+       "default": "off",
+diff --git a/eas.json b/eas.json
+index e126cc9..b09e444 100644
+--- a/eas.json
++++ b/eas.json
+@@ -38,7 +38,8 @@
+         "TGP_ANDROID_HEALTH_CONNECT": "0",
+         "EXPO_PUBLIC_USE_MOCK_COMMAND_CENTER": "false",
+         "EXPO_PUBLIC_NOTIFICATIONS_MOCK": "false",
+-        "EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES": "true"
++        "EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES": "true",
++        "EXPO_PUBLIC_FF_CLIENT_CALENDAR": "true"
+       }
+     },
+     "clinic": {
+@@ -53,6 +54,7 @@
+         "EXPO_PUBLIC_FF_COMMUNITY_HALL": "true",
+         "EXPO_PUBLIC_FF_COMMUNITY_COHORTS": "true",
+         "EXPO_PUBLIC_FF_COACH_BRIEF": "true",
++        "EXPO_PUBLIC_FF_CLIENT_CALENDAR": "true",
+         "EXPO_PUBLIC_FF_CONSULTATION_ONBOARDING": "true",
+         "EXPO_PUBLIC_FF_COMMUNITY_DM": "false"
+       }
+diff --git a/jest.setup.js b/jest.setup.js
+index 92bc67d..6098a93 100644
+--- a/jest.setup.js
++++ b/jest.setup.js
+@@ -34,6 +34,23 @@ jest.mock('@react-native-async-storage/async-storage', () =>
+   require('@react-native-async-storage/async-storage/jest'),
+ );
+ 
++// expo-calendar (S-SCHED "Add to my calendar"): native module, so tests get
++// a deterministic OS-editor stand-in. Specs that need other behaviour
++// override these jest.fn()s.
++jest.mock('expo-calendar/legacy', () => ({
++  EntityTypes: { EVENT: 'event', REMINDER: 'reminder' },
++  CalendarDialogResultActions: { saved: 'saved', canceled: 'canceled', done: 'done', deleted: 'deleted' },
++  isAvailableAsync: jest.fn(async () => true),
++  createEventInCalendarAsync: jest.fn(async () => ({ action: 'saved', id: 'event' })),
++  getCalendarPermissionsAsync: jest.fn(async () => ({ granted: true, canAskAgain: true, status: 'granted' })),
++  requestCalendarPermissionsAsync: jest.fn(async () => ({ granted: true, canAskAgain: true, status: 'granted' })),
++  getDefaultCalendarAsync: jest.fn(async () => ({ id: 'cal-default', allowsModifications: true })),
++  getCalendarsAsync: jest.fn(async () => [{ id: 'cal-default', allowsModifications: true, isPrimary: true }]),
++  createEventAsync: jest.fn(async () => 'evt-1'),
++  updateEventAsync: jest.fn(async (id) => id),
++  deleteEventAsync: jest.fn(async () => undefined),
++}), { virtual: true });
++
+ // expo-crypto: counter-backed UUID so tests get distinct ids without pulling
+ // in the native module. Format matches the v4-UUID shape we use for the
+ // food-log idempotency keys.
+diff --git a/package-lock.json b/package-lock.json
+index 927aed7..7a9338e 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -31,6 +31,7 @@
+         "expo-application": "~56.0.3",
+         "expo-audio": "~56.0.12",
+         "expo-auth-session": "~56.0.14",
++        "expo-calendar": "~56.0.8",
+         "expo-clipboard": "~56.0.4",
+         "expo-constants": "~56.0.15",
+         "expo-crypto": "~56.0.4",
+@@ -6823,6 +6824,16 @@
+         "react-native": "*"
+       }
+     },
++    "node_modules/expo-calendar": {
++      "version": "56.0.10",
++      "resolved": "https://registry.npmjs.org/expo-calendar/-/expo-calendar-56.0.10.tgz",
++      "integrity": "sha512-s/ger32P8OPxQATOtn0Tmi9ndFvIG5Xh/JQSzorZgpJIlY5wns/OAITYA1PlxWIgLxfS3aqacExnIHHegLTnow==",
++      "license": "MIT",
++      "peerDependencies": {
++        "expo": "*",
++        "react-native": "*"
++      }
++    },
+     "node_modules/expo-clipboard": {
+       "version": "56.0.4",
+       "resolved": "https://registry.npmjs.org/expo-clipboard/-/expo-clipboard-56.0.4.tgz",
+diff --git a/package.json b/package.json
+index 77f4a3b..f30db13 100644
+--- a/package.json
++++ b/package.json
+@@ -56,6 +56,7 @@
+     "expo-application": "~56.0.3",
+     "expo-audio": "~56.0.12",
+     "expo-auth-session": "~56.0.14",
++    "expo-calendar": "~56.0.8",
+     "expo-clipboard": "~56.0.4",
+     "expo-constants": "~56.0.15",
+     "expo-crypto": "~56.0.4",
+diff --git a/src/api/__tests__/schedulingApi.test.ts b/src/api/__tests__/schedulingApi.test.ts
+index 6244f90..33ff3c2 100644
+--- a/src/api/__tests__/schedulingApi.test.ts
++++ b/src/api/__tests__/schedulingApi.test.ts
+@@ -1,102 +1,106 @@
+-/**
+- * schedulingApi — Lane 4 contract tests.
+- *
+- * Verifies the runtime guarantees added for P1-6 (client_timezone is
+- * always present on the wire for requestSession and rescheduleSession,
+- * even when the caller forgets it) and P3-3 (CoachingSession type
+- * supports the optional `cancellable` flag).
+- */
++/** Existing backend DTOs reject speculative civil-time/note fields. */
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn() },
++}));
+ 
+-jest.mock('axios', () => {
+-  const instance = {
+-    get: jest.fn(),
+-    post: jest.fn(),
+-    put: jest.fn(),
+-    patch: jest.fn(),
+-    delete: jest.fn(),
+-    interceptors: {
+-      request: { use: jest.fn() },
+-      response: { use: jest.fn() },
+-    },
+-    defaults: { headers: { common: {} } },
+-  };
+-  return {
+-    __esModule: true,
+-    default: { create: jest.fn(() => instance) },
+-    __instance: instance,
+-  };
+-});
++import api from '../../services/api';
++import { schedulingApi, resolveClientTimezone } from '../schedulingApi';
+ 
+-const axiosMock = jest.requireMock('axios') as {
+-  __instance: { post: jest.Mock };
++const mockApi = jest.mocked(api);
++const input = {
++  coach_id: 'c1',
++  session_type_id: 'type1',
++  title: 'Quick initialization',
++  start_at: '2030-05-21T15:00:00Z',
++  end_at: '2030-05-21T15:15:00Z',
+ };
+ 
+-// eslint-disable-next-line @typescript-eslint/no-var-requires
+-const { schedulingApi, resolveClientTimezone } = require('../schedulingApi');
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockApi.get.mockResolvedValue({ data: {} });
++  mockApi.post.mockResolvedValue({ data: {} });
++});
+ 
+-describe('schedulingApi — P1-6 client_timezone enforcement', () => {
+-  beforeEach(() => {
+-    axiosMock.__instance.post.mockReset().mockResolvedValue({ data: {} });
+-  });
++it('resolves a time zone for display without changing absolute booking instants', () => {
++  expect(resolveClientTimezone().length).toBeGreaterThan(0);
++});
+ 
+-  it('resolveClientTimezone returns a non-empty IANA-shaped string', () => {
+-    const tz = resolveClientTimezone();
+-    expect(typeof tz).toBe('string');
+-    expect(tz.length).toBeGreaterThan(0);
+-  });
++it('request sends the existing strict DTO, excluding unsupported notes/timezone', async () => {
++  await schedulingApi.requestSession({ ...input, notes: 'private note', client_timezone: 'Europe/Berlin' });
++  expect(mockApi.post).toHaveBeenCalledWith('/scheduling/sessions', input);
++});
+ 
+-  it('requestSession forwards a caller-provided client_timezone unchanged', async () => {
+-    await schedulingApi.requestSession({
+-      coach_id: 'c1',
+-      title: 'Coaching session',
+-      start_at: '2026-05-21T15:00:00Z',
+-      end_at: '2026-05-21T15:30:00Z',
+-      client_timezone: 'Europe/Berlin',
+-    });
+-    const [, payload] = axiosMock.__instance.post.mock.calls[0];
+-    expect(payload.client_timezone).toBe('Europe/Berlin');
+-  });
++it('request with no speculative fields preserves its shape', async () => {
++  await schedulingApi.requestSession(input);
++  expect(mockApi.post).toHaveBeenCalledWith('/scheduling/sessions', input);
++});
+ 
+-  it('requestSession force-resolves client_timezone when the caller omits it', async () => {
+-    await schedulingApi.requestSession({
+-      coach_id: 'c1',
+-      title: 'Coaching session',
+-      start_at: '2026-05-21T15:00:00Z',
+-      end_at: '2026-05-21T15:30:00Z',
+-    });
+-    const [, payload] = axiosMock.__instance.post.mock.calls[0];
+-    expect(payload.client_timezone).toBeTruthy();
+-    expect(typeof payload.client_timezone).toBe('string');
+-  });
++it('reschedule excludes unsupported timezone and keeps the absolute instants', async () => {
++  await schedulingApi.rescheduleSession('s1', { start_at: input.start_at, end_at: input.end_at, client_timezone: 'Asia/Tokyo' });
++  expect(mockApi.post).toHaveBeenCalledWith('/scheduling/sessions/s1/reschedule', { start_at: input.start_at, end_at: input.end_at });
++});
+ 
+-  it('requestSession force-resolves client_timezone when the caller passes undefined', async () => {
+-    await schedulingApi.requestSession({
+-      coach_id: 'c1',
+-      title: 'Coaching session',
+-      start_at: '2026-05-21T15:00:00Z',
+-      end_at: '2026-05-21T15:30:00Z',
+-      client_timezone: undefined as unknown as string,
+-    });
+-    const [, payload] = axiosMock.__instance.post.mock.calls[0];
+-    expect(payload.client_timezone).toBeTruthy();
++it('open slots passes the approved duration to the existing backend contract', async () => {
++  await schedulingApi.getOpenSlots('c1', { from: input.start_at, to: input.end_at, durationMinutes: 15 });
++  expect(mockApi.get).toHaveBeenCalledWith('/scheduling/coaches/c1/open-slots', {
++    params: { from: input.start_at, to: input.end_at, duration_minutes: '15' },
+   });
++});
+ 
+-  it('rescheduleSession forwards a caller-provided client_timezone unchanged', async () => {
+-    await schedulingApi.rescheduleSession('sess-1', {
+-      start_at: '2026-05-21T15:00:00Z',
+-      end_at: '2026-05-21T15:30:00Z',
+-      client_timezone: 'Asia/Tokyo',
+-    });
+-    const [, payload] = axiosMock.__instance.post.mock.calls[0];
+-    expect(payload.client_timezone).toBe('Asia/Tokyo');
++it('bookable coaches come from the S-SCHED-2 my-coaches contract with the welcome marker', async () => {
++  const row = {
++    coach_id: 'c1', name: 'Coach', avatar_url: null, timezone: 'America/Los_Angeles', relationship: 'head',
++    bookable_type_count: 2,
++    welcome: { session_type_id: 't1', name: 'Quick initialization', duration_minutes: 15, active_session_id: null, active_session_status: null, active_session_start_at: null, completed_at: null },
++  };
++  mockApi.get.mockResolvedValueOnce({ data: [row] });
++  await expect(schedulingApi.listMyCoaches()).resolves.toEqual([row]);
++  expect(mockApi.get).toHaveBeenCalledTimes(1);
++  expect(mockApi.get).toHaveBeenCalledWith('/scheduling/my-coaches');
++});
++
++it('an older backend without my-coaches (bare 404) falls back to the assigned-coach endpoint', async () => {
++  mockApi.get
++    .mockRejectedValueOnce({ response: { status: 404, data: { statusCode: 404, message: 'Cannot GET /scheduling/my-coaches', error: 'Not Found' } } })
++    .mockResolvedValueOnce({ data: { id: 'c1', name: 'Coach' } });
++  await expect(schedulingApi.listMyCoaches()).resolves.toEqual([{ coach_id: 'c1', name: 'Coach', timezone: null }]);
++  expect(mockApi.get).toHaveBeenLastCalledWith('/v1/clients/me/coach');
++});
++
++it('a coded my-coaches failure is surfaced, never masked by the fallback', async () => {
++  mockApi.get.mockRejectedValueOnce({ response: { status: 403, data: { code: 'COACH_NOT_BOOKABLE' } } });
++  await expect(schedulingApi.listMyCoaches()).rejects.toMatchObject({ response: { status: 403 } });
++  expect(mockApi.get).toHaveBeenCalledTimes(1);
++});
++
++it('only explicit no assignment becomes an empty coach list; other 404s remain errors', async () => {
++  const bare404 = { response: { status: 404, data: { error: 'Not Found' } } };
++  mockApi.get.mockRejectedValueOnce(bare404).mockRejectedValueOnce({ response: { status: 404, data: { error: 'COACH_NOT_ASSIGNED' } } });
++  await expect(schedulingApi.listMyCoaches()).resolves.toEqual([]);
++  mockApi.get.mockRejectedValueOnce(bare404).mockRejectedValueOnce({ response: { status: 404, data: { error: 'COACH_NOT_FOUND' } } });
++  await expect(schedulingApi.listMyCoaches()).rejects.toMatchObject({ response: { status: 404 } });
++});
++
++it('open slots sends the session type so the server sizes slots to it', async () => {
++  await schedulingApi.getOpenSlots('c1', { from: input.start_at, to: input.end_at, durationMinutes: 15, sessionTypeId: 'type1' });
++  expect(mockApi.get).toHaveBeenCalledWith('/scheduling/coaches/c1/open-slots', {
++    params: { from: input.start_at, to: input.end_at, duration_minutes: '15', session_type_id: 'type1' },
+   });
++});
++
++it('session types: archived ones only on explicit request', async () => {
++  await schedulingApi.listSessionTypes('c1');
++  expect(mockApi.get).toHaveBeenLastCalledWith('/scheduling/coaches/c1/session-types');
++  await schedulingApi.listSessionTypes('c1', { includeArchived: true });
++  expect(mockApi.get).toHaveBeenLastCalledWith('/scheduling/coaches/c1/session-types', { params: { include_archived: 'true' } });
++});
+ 
+-  it('rescheduleSession force-resolves client_timezone when the caller omits it', async () => {
+-    await schedulingApi.rescheduleSession('sess-1', {
+-      start_at: '2026-05-21T15:00:00Z',
+-      end_at: '2026-05-21T15:30:00Z',
+-    });
+-    const [, payload] = axiosMock.__instance.post.mock.calls[0];
+-    expect(payload.client_timezone).toBeTruthy();
++it('past sessions page with scope=past and the before cursor', async () => {
++  await schedulingApi.listMySessions(20, { scope: 'past', before: '2030-05-01T10:00:00.000Z' });
++  expect(mockApi.get).toHaveBeenLastCalledWith('/scheduling/sessions', {
++    params: { limit: '20', scope: 'past', before: '2030-05-01T10:00:00.000Z' },
+   });
++  await schedulingApi.listMySessions(5);
++  expect(mockApi.get).toHaveBeenLastCalledWith('/scheduling/sessions', { params: { limit: '5' } });
+ });
+diff --git a/src/api/__tests__/schedulingCallLinkAndCursor.test.ts b/src/api/__tests__/schedulingCallLinkAndCursor.test.ts
+new file mode 100644
+index 0000000..c6b9946
+--- /dev/null
++++ b/src/api/__tests__/schedulingCallLinkAndCursor.test.ts
+@@ -0,0 +1,115 @@
++/**
++ * S-SCHED-3 (mobile #325 fix round): the call-link contract matches the
++ * backend (`MEETING_LINK_PATTERN`: https or a bounded tel: number), every
++ * other scheme stays "no link", and the session list sends the compound
++ * (start_at, id) cursor, the status filter and expected_start_at.
++ */
++import api from '../../services/api';
++import {
++  normalizeCallLinkInput,
++  resolveCallLink,
++  resolveVideoUrl,
++  schedulingApi,
++} from '../schedulingApi';
++
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn() },
++}));
++
++const get = jest.mocked(api.get);
++const post = jest.mocked(api.post);
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  get.mockResolvedValue({ data: [] });
++  post.mockResolvedValue({ data: { id: 's1' } });
++});
++
++describe('resolveCallLink', () => {
++  it('resolves a backend-ready phone link to a dialable tel: URL', () => {
++    expect(resolveCallLink('tel:+1 425 555 0100')).toEqual({
++      kind: 'phone',
++      url: 'tel:+14255550100',
++      display: '+1 425 555 0100',
++    });
++    expect(resolveCallLink('tel:(425) 555-0100')).toEqual({
++      kind: 'phone',
++      url: 'tel:4255550100',
++      display: '(425) 555-0100',
++    });
++  });
++
++  it('keeps https video links and rejects every other scheme or credential link', () => {
++    expect(resolveCallLink('https://meet.example/room')).toEqual({ kind: 'video', url: 'https://meet.example/room' });
++    for (const bad of [
++      'tgp-stub://session/1',
++      'http://meet.example/room',
++      'javascript:alert(1)',
++      'sms:+14255550100',
++      'tel:call-me',
++      'tel:12',
++      'tel:+1 425 555 0100;ext=9',
++      'https://user:pw@meet.example/room',
++      'https://',
++      '',
++      null,
++    ]) {
++      expect(resolveCallLink(bad)).toBeNull();
++    }
++    expect(resolveVideoUrl('tel:+14255550100')).toBeNull();
++    expect(resolveVideoUrl('https://meet.example/room')).toBe('https://meet.example/room');
++  });
++});
++
++describe('normalizeCallLinkInput (coach entry)', () => {
++  it('accepts an https link, a bare phone number or a tel: link', () => {
++    expect(normalizeCallLinkInput(' https://meet.example/room ')).toEqual({ ok: true, url: 'https://meet.example/room' });
++    expect(normalizeCallLinkInput('+1 425 555 0100')).toEqual({ ok: true, url: 'tel:+14255550100' });
++    expect(normalizeCallLinkInput('tel:425.555.0100')).toEqual({ ok: true, url: 'tel:4255550100' });
++  });
++
++  it('refuses anything else with a next step', () => {
++    for (const bad of ['http://meet.example', 'call me', 'javascript:alert(1)', 'https://a:b@meet.example/x']) {
++      const r = normalizeCallLinkInput(bad);
++      expect(r.ok).toBe(false);
++      if (!r.ok) expect(r.message).toMatch(/https call link .* or a phone number .* tap Save call link\./);
++    }
++  });
++});
++
++describe('session list and transitions on the wire', () => {
++  it('past pages send before + before_id; upcoming pages send after + after_id and the status filter', async () => {
++    await schedulingApi.listMySessions(20, { scope: 'past', before: '2026-09-30T17:00:00.000Z', beforeId: 'sess-9' });
++    expect(get).toHaveBeenLastCalledWith('/scheduling/sessions', {
++      params: { limit: '20', scope: 'past', before: '2026-09-30T17:00:00.000Z', before_id: 'sess-9' },
++    });
++    await schedulingApi.listMySessions(50, {
++      status: ['scheduled', 'pending_provider'],
++      after: '2026-10-06T17:00:00.000Z',
++      afterId: 'sess-3',
++    });
++    expect(get).toHaveBeenLastCalledWith('/scheduling/sessions', {
++      params: {
++        limit: '50',
++        after: '2026-10-06T17:00:00.000Z',
++        after_id: 'sess-3',
++        status: 'scheduled,pending_provider',
++      },
++    });
++    // An id without its time is never sent (the server would refuse it).
++    await schedulingApi.listMySessions(20, { scope: 'past', beforeId: 'sess-9' });
++    expect(get).toHaveBeenLastCalledWith('/scheduling/sessions', { params: { limit: '20', scope: 'past' } });
++  });
++
++  it('approve and decline carry the start time the coach saw', async () => {
++    await schedulingApi.approveSession('s1', { expected_start_at: '2026-10-06T17:00:00.000Z' });
++    expect(post).toHaveBeenLastCalledWith('/scheduling/sessions/s1/approve', {
++      expected_start_at: '2026-10-06T17:00:00.000Z',
++    });
++    await schedulingApi.declineSession('s1', { expected_start_at: '2026-10-06T17:00:00.000Z' });
++    expect(post).toHaveBeenLastCalledWith('/scheduling/sessions/s1/decline', {
++      expected_start_at: '2026-10-06T17:00:00.000Z',
++    });
++  });
++});
+diff --git a/src/api/schedulingApi.ts b/src/api/schedulingApi.ts
+index 1c038eb..154097f 100644
+--- a/src/api/schedulingApi.ts
++++ b/src/api/schedulingApi.ts
+@@ -15,14 +15,23 @@
+  * with this client is a separate task (see
+  * `/home/user/workspace/sprint-scheduling-ui/AUDIT.md` §3).
+  *
+- * Notably NOT covered by this client today:
+- *   - CoachAvailabilityOverride CRUD (the schema/migration includes
+- *     the model, but the backend controller does not yet expose
+- *     overrides — held back to a backend follow-up).
+- *   - Computed open-slots endpoint (`/open-slots`) — does not exist
+- *     yet on the backend. Concrete slot rendering is deferred.
+- *   - Google OAuth browser flow (the mobile opens the URLs in an
+- *     in-app browser; not API client surface).
++ * S-SCHED (2026-10-01): the backend now exposes computed open slots
++ * (`GET /scheduling/coaches/:coachId/open-slots`, honours time off,
++ * booked sessions, the appointment type length and the coach time zone),
++ * coach time-off overrides (`/scheduling/coach/availability-overrides`),
++ * coach identity via the existing `/v1/clients/me/coach` endpoint.
++ *
++ * S-SCHED-2 (backend lifecycle slice): `GET /scheduling/my-coaches` (head
++ * coach + sub-coach, timezone, persistent welcome marker), open slots per
++ * appointment type (`session_type_id`), past sessions (`scope=past`),
++ * archived-type listing for the owning coach (`include_archived=true`),
++ * per-type default meeting link and a server SessionView (`meeting_link_status`,
++ * `cancellable`, `reschedulable`, type summary, both names). Every new field
++ * is optional here so an older backend still renders; the legacy coach
++ * identity endpoint is the fallback when my-coaches is not deployed yet.
++ *
++ * Not covered: the Google OAuth browser flow (Google Calendar sync stays
++ * off and is not a dependency of native scheduling).
+  */
+ 
+ import api from '../services/api';
+@@ -60,27 +69,69 @@ export type SchedulingSessionStatus =
+ export type SchedulingVideoProvider = 'stub' | 'google_meet' | 'zoom' | 'manual';
+ 
+ /**
+- * Helper: resolves a raw video_url from a CoachingSession to a
+- * displayable URL, or null if no real link is present.
+- *
+- * The stub adapter used to emit `tgp-stub://session/<key>` URLs which
+- * are not openable. Treat them — and any other non-http(s) URL — as
+- * "no link yet" so the UI can show the manual-link prompt instead.
++ * A call link the app can act on: an https video link (Join) or a phone
++ * number (Call). Mirrors the backend contract (`MEETING_LINK_PATTERN`,
++ * scheduling.types.ts): `https://` up to 500 characters, or `tel:` with 3-30
++ * digits, spaces, parentheses, dots or dashes and an optional leading +.
++ * Everything else (stub markers, http, javascript:, other schemes, links with
++ * a user name or password) is "no link yet".
+  */
+-export function resolveVideoUrl(raw: string | null | undefined): string | null {
++export type CallLink =
++  | { kind: 'video'; url: string }
++  | { kind: 'phone'; url: string; display: string };
++
++const TEL_LINK = /^tel:(\+?[0-9 ().-]{3,30})$/i;
++const HTTPS_LINK = /^https:\/\/[^\s<>"']{3,490}$/i;
++
++export function resolveCallLink(raw: string | null | undefined): CallLink | null {
+   if (!raw) return null;
+-  if (raw.startsWith('tgp-stub://')) return null;
+-  if (!/^https?:\/\//i.test(raw)) return null;
+-  return raw;
++  const value = raw.trim();
++  const tel = TEL_LINK.exec(value);
++  if (tel) {
++    const display = tel[1].trim();
++    const digits = display.replace(/[^0-9]/g, '');
++    if (digits.length < 3) return null;
++    return { kind: 'phone', url: `tel:${display.startsWith('+') ? '+' : ''}${digits}`, display };
++  }
++  if (!HTTPS_LINK.test(value)) return null;
++  try {
++    const parsed = new URL(value);
++    if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password) return null;
++  } catch {
++    return null;
++  }
++  return { kind: 'video', url: value };
++}
++
++/** The https video link, or null (phone numbers resolve via resolveCallLink). */
++export function resolveVideoUrl(raw: string | null | undefined): string | null {
++  const link = resolveCallLink(raw);
++  return link?.kind === 'video' ? link.url : null;
++}
++
++/**
++ * Coach entry for a session call link: an https link, or a phone number
++ * (with or without `tel:`), normalised to what the server accepts.
++ */
++export function normalizeCallLinkInput(
++  input: string,
++): { ok: true; url: string } | { ok: false; message: string } {
++  const value = input.trim();
++  const phone = /^(tel:)?\s*(\+?[0-9 ().-]{3,30})$/i.exec(value);
++  const candidate = phone ? `tel:${phone[2].trim()}` : value;
++  const link = resolveCallLink(candidate);
++  if (link) return { ok: true, url: link.url };
++  return {
++    ok: false,
++    message:
++      'Enter a complete https call link without a password, or a phone number such as +1 425 555 0100, then tap Save call link.',
++  };
+ }
+ 
+ /**
+  * Resolve the IANA timezone the device is currently in (e.g.
+- * "America/New_York"). Sent on every requestSession / rescheduleSession
+- * call so the backend can disambiguate cross-TZ bookings. Falls back to
+- * 'UTC' on the rare runtime where Intl is unavailable; the backend
+- * treats this as a hard error response signal rather than silently
+- * accepting client wall-clock.
++ * "America/New_York"). Used for display; booking payloads use the server's
++ * absolute ISO instants. Falls back to UTC when Intl is unavailable.
+  */
+ export function resolveClientTimezone(): string {
+   try {
+@@ -112,6 +163,13 @@ export interface SessionType {
+   archived_at: string | null;
+   created_at: string;
+   updated_at: string;
++  /** S-SCHED-2: the coach's welcome call type (at most one active per coach). */
++  is_welcome?: boolean;
++  /**
++   * S-SCHED-2: https link used when a session of this type has no other call
++   * link. Only the owning coach receives it; clients read null.
++   */
++  default_meeting_url?: string | null;
+ }
+ 
+ export interface CreateSessionTypeInput {
+@@ -120,6 +178,9 @@ export interface CreateSessionTypeInput {
+   duration_minutes: number;
+   auto_approve?: boolean;
+   default_video_provider?: SchedulingVideoProvider;
++  is_welcome?: boolean;
++  /** https only; empty string or null clears it. */
++  default_meeting_url?: string | null;
+ }
+ 
+ export interface UpdateSessionTypeInput {
+@@ -129,6 +190,94 @@ export interface UpdateSessionTypeInput {
+   auto_approve?: boolean;
+   default_video_provider?: SchedulingVideoProvider;
+   archived?: boolean;
++  is_welcome?: boolean;
++  default_meeting_url?: string | null;
++}
++
++/** The client's welcome call state with one coach (persistent marker). */
++export interface WelcomeCallInfo {
++  session_type_id: string;
++  name: string;
++  duration_minutes: number;
++  /** Upcoming welcome booking, if any. */
++  active_session_id: string | null;
++  active_session_status: SchedulingSessionStatus | null;
++  active_session_start_at: string | null;
++  /** When the most recent welcome call was completed, else null. */
++  completed_at: string | null;
++}
++
++/** A coach the client may book (GET /scheduling/my-coaches). */
++export interface BookableCoach {
++  coach_id: string;
++  name: string;
++  /** Coach zone. Null only on the legacy identity fallback. */
++  timezone: string | null;
++  avatar_url?: string | null;
++  relationship?: 'head_coach' | 'sub_coach';
++  bookable_type_count?: number;
++  /** Null when the coach has no welcome type; undefined on the legacy fallback. */
++  welcome?: WelcomeCallInfo | null;
++}
++
++/** GET /scheduling/coaches/:coachId/open-slots */
++export interface OpenSlotsPayload {
++  coach_id: string;
++  timezone: string;
++  generated_at: string;
++  slots: { start_at: string; end_at: string }[];
++  /** S-SCHED-2: echoed when slots were computed for one appointment type. */
++  session_type_id?: string | null;
++  duration_minutes?: number;
++}
++
++/** Server-derived call link state on a session (S-SCHED-2 SessionView). */
++export type MeetingLinkStatus = 'ready' | 'pending' | 'awaiting_approval' | 'none';
++
++/** Session list scope for GET /scheduling/sessions. */
++export type SessionListScope = 'upcoming' | 'past';
++
++export type AvailabilityOverrideKind = 'holiday' | 'block' | 'extra';
++
++/** A date-keyed exception to the weekly hours, in the coach's time zone. */
++export interface AvailabilityOverride {
++  id: string;
++  coach_id: string;
++  /** Calendar date; the backend returns an ISO string, use the first 10 chars. */
++  date: string;
++  start_minute: number | null;
++  end_minute: number | null;
++  kind: AvailabilityOverrideKind;
++  note: string | null;
++}
++
++export interface CreateAvailabilityOverrideInput {
++  /** YYYY-MM-DD in the coach's time zone. */
++  date: string;
++  kind: AvailabilityOverrideKind;
++  /** HH:MM, coach-local. Omit both for a full day off. */
++  start_time?: string;
++  end_time?: string;
++  note?: string;
++}
++
++/**
++ * Backend error code (e.g. SLOT_TAKEN, SLOT_UNAVAILABLE) from an axios-style
++ * error. Scheduling exceptions put the code in `error`; the global filter
++ * also forwards an optional `code`.
++ */
++export function schedulingErrorCode(err: unknown): string | null {
++  const data = (err as { response?: { data?: { code?: unknown; error?: unknown } } } | null)
++    ?.response?.data;
++  if (data && typeof data.code === 'string') return data.code;
++  if (data && typeof data.error === 'string' && /^[A-Z_]+$/.test(data.error)) return data.error;
++  return null;
++}
++
++/** HTTP status from an axios-style error, or null for network failures. */
++export function schedulingErrorStatus(err: unknown): number | null {
++  const status = (err as { response?: { status?: unknown } } | null)?.response?.status;
++  return typeof status === 'number' ? status : null;
+ }
+ 
+ // ─── Availability (recurring weekly windows) ────────────────────────────────
+@@ -192,6 +341,19 @@ export interface CoachingSession {
+   // older backend builds may omit it; the client falls back to the
+   // device-clock lockout only when this is undefined.
+   cancellable?: boolean;
++  // S-SCHED-2 SessionView (optional so older backends still render).
++  reschedulable?: boolean;
++  meeting_link_status?: MeetingLinkStatus;
++  session_type?: {
++    id: string;
++    name: string;
++    duration_minutes: number;
++    auto_approve: boolean;
++    is_welcome: boolean;
++    archived: boolean;
++  } | null;
++  coach_name?: string | null;
++  client_name?: string | null;
+ }
+ 
+ export interface RequestSessionInput {
+@@ -200,22 +362,10 @@ export interface RequestSessionInput {
+   title: string;
+   start_at: string; // ISO 8601
+   end_at: string; // ISO 8601
+-  // V-4: optional free-text the client wants their coach to read before
+-  // the session. The backend stores this on the CoachingSession row; an
+-  // older backend that does not yet accept the field ignores it without
+-  // error (extra-keys-whitelisted).
++  // Deprecated scaffold metadata; the current server DTO does not accept
++  // this field. Native Calendar does not collect it; send a coach message.
+   notes?: string;
+-  // V-5 / P1-6: the IANA timezone the start_at/end_at were composed in.
+-  // The backend uses this to disambiguate when the client's device TZ
+-  // does not match the coach's `CoachProfile.timezone` — the booking
+-  // must resolve to the coach's wall clock, not the client's.
+-  //
+-  // Required at runtime: `schedulingApi.requestSession` force-resolves
+-  // a value via `resolveClientTimezone()` when callers omit it or pass
+-  // undefined, so a payload that reaches the wire ALWAYS carries this
+-  // field. The TS type is still ?-optional during the rollout window
+-  // to keep older internal call sites compiling without a coordinated
+-  // edit; treat omission as a programmer error.
++  // Deprecated display metadata, excluded from the current strict DTO.
+   client_timezone?: string;
+ }
+ 
+@@ -223,13 +373,27 @@ export interface RescheduleSessionInput {
+   start_at: string;
+   end_at: string;
+   reason?: string;
+-  // V-5 / P1-6 (see RequestSessionInput) — required at runtime; force-
+-  // resolved inside `rescheduleSession`.
++  // Deprecated display metadata, excluded from the current strict DTO.
+   client_timezone?: string;
+ }
+ 
+ export interface CancelSessionInput {
+   reason?: string;
++  /** Start time the actor saw; a moved session answers SESSION_MOVED. */
++  expected_start_at?: string;
++}
++
++export interface ApproveSessionInput {
++  expected_start_at?: string;
++}
++
++export interface SessionListOptions {
++  scope?: SessionListScope;
++  before?: string;
++  beforeId?: string;
++  after?: string;
++  afterId?: string;
++  status?: readonly SchedulingSessionStatus[];
+ }
+ 
+ export interface CompleteSessionInput {
+@@ -252,14 +416,81 @@ export const schedulingApi = {
+     return res.data;
+   },
+ 
+-  // Session types
+-  listSessionTypes: async (coachId: string): Promise<SessionType[]> => {
+-    const res = await api.get<SessionType[]>(
+-      `/scheduling/coaches/${encodeURIComponent(coachId)}/session-types`,
++  // Bookable coaches (client): head coach first, then an assigned sub-coach.
++  listMyCoaches: async (): Promise<BookableCoach[]> => {
++    try {
++      const res = await api.get<BookableCoach[]>('/scheduling/my-coaches');
++      return Array.isArray(res.data) ? res.data : [];
++    } catch (err) {
++      // Older backend without the route: a bare 404 (no scheduling code).
++      // Fall back to the legacy identity endpoint so Calendar still works.
++      if (schedulingErrorStatus(err) !== 404 || schedulingErrorCode(err) !== null) throw err;
++    }
++    try {
++      const res = await api.get<{ id: string; name: string }>('/v1/clients/me/coach');
++      return [{ coach_id: res.data.id, name: res.data.name, timezone: null }];
++    } catch (err) {
++      if (schedulingErrorStatus(err) === 404 && schedulingErrorCode(err) === 'COACH_NOT_ASSIGNED') {
++        return [];
++      }
++      throw err;
++    }
++  },
++
++  // Session types. Archived types are listed only for the owning coach.
++  listSessionTypes: async (
++    coachId: string,
++    opts: { includeArchived?: boolean } = {},
++  ): Promise<SessionType[]> => {
++    const url = `/scheduling/coaches/${encodeURIComponent(coachId)}/session-types`;
++    const res = opts.includeArchived
++      ? await api.get<SessionType[]>(url, { params: { include_archived: 'true' } })
++      : await api.get<SessionType[]>(url);
++    return res.data;
++  },
++
++  // Open slots (server-computed; max 14-day range). With a session type the
++  // server sizes slots to that type and honours type-scoped hours; the
++  // duration is still sent for older backends that ignore session_type_id.
++  getOpenSlots: async (
++    coachId: string,
++    args: { from: string; to: string; durationMinutes: number; sessionTypeId?: string },
++  ): Promise<OpenSlotsPayload> => {
++    const params: Record<string, string> = { from: args.from, to: args.to };
++    params.duration_minutes = String(args.durationMinutes);
++    if (args.sessionTypeId) params.session_type_id = args.sessionTypeId;
++    const res = await api.get<OpenSlotsPayload>(
++      `/scheduling/coaches/${encodeURIComponent(coachId)}/open-slots`,
++      { params },
+     );
+     return res.data;
+   },
+ 
++  // Coach time off
++  listMyAvailabilityOverrides: async (
++    args: { from?: string; to?: string } = {},
++  ): Promise<AvailabilityOverride[]> => {
++    const res = await api.get<AvailabilityOverride[]>(
++      '/scheduling/coach/availability-overrides',
++      { params: args },
++    );
++    return res.data;
++  },
++
++  createAvailabilityOverride: async (
++    input: CreateAvailabilityOverrideInput,
++  ): Promise<AvailabilityOverride> => {
++    const res = await api.post<AvailabilityOverride>(
++      '/scheduling/coach/availability-overrides',
++      input,
++    );
++    return res.data;
++  },
++
++  deleteAvailabilityOverride: async (id: string): Promise<void> => {
++    await api.delete(`/scheduling/coach/availability-overrides/${encodeURIComponent(id)}`);
++  },
++
+   createSessionType: async (
+     input: CreateSessionTypeInput,
+   ): Promise<SessionType> => {
+@@ -297,9 +528,24 @@ export const schedulingApi = {
+     return res.data;
+   },
+ 
+-  // Sessions
+-  listMySessions: async (limit?: number): Promise<CoachingSession[]> => {
+-    const params = limit !== undefined ? { limit: String(limit) } : undefined;
++  // Sessions. scope=upcoming (default): not ended, soonest first; page with
++  // after/after_id = the last row's start_at and id. scope=past: ended,
++  // newest first; page with before/before_id. The id breaks ties between
++  // sessions that share a start time (S-SCHED-3, backend B-634-4). `status`
++  // filters on the server (e.g. the coach inbox asks for requests only).
++  listMySessions: async (
++    limit?: number,
++    opts: SessionListOptions = {},
++  ): Promise<CoachingSession[]> => {
++    const p: Record<string, string> = {};
++    if (limit !== undefined) p.limit = String(limit);
++    if (opts.scope === 'past') p.scope = 'past';
++    if (opts.before) p.before = opts.before;
++    if (opts.before && opts.beforeId) p.before_id = opts.beforeId;
++    if (opts.after) p.after = opts.after;
++    if (opts.after && opts.afterId) p.after_id = opts.afterId;
++    if (opts.status && opts.status.length > 0) p.status = opts.status.join(',');
++    const params = Object.keys(p).length > 0 ? p : undefined;
+     const res = await api.get<CoachingSession[]>('/scheduling/sessions', {
+       params,
+     });
+@@ -316,13 +562,10 @@ export const schedulingApi = {
+   requestSession: async (
+     input: RequestSessionInput,
+   ): Promise<CoachingSession> => {
+-    // P1-6: client_timezone is required on the contract; force-resolve
+-    // here so an older call site that passes an empty string (or that
+-    // bypasses the type — e.g. through `as`) cannot ship an unset TZ.
+-    const payload: RequestSessionInput = {
+-      ...input,
+-      client_timezone: input.client_timezone || resolveClientTimezone(),
+-    };
++    // Main's strict DTO accepts neither notes nor client_timezone.
++    // Slots already contain absolute ISO instants, so do not send civil-time
++    // metadata that the current server rejects with forbidNonWhitelisted.
++    const { notes: _notes, client_timezone: _timezone, ...payload } = input;
+     const res = await api.post<CoachingSession>(
+       '/scheduling/sessions',
+       payload,
+@@ -330,9 +573,16 @@ export const schedulingApi = {
+     return res.data;
+   },
+ 
+-  approveSession: async (id: string): Promise<CoachingSession> => {
++  // expected_start_at: the start time the coach was looking at. If the client
++  // moved the request meanwhile, the server answers SESSION_MOVED instead of
++  // confirming a time the coach never saw.
++  approveSession: async (
++    id: string,
++    input: ApproveSessionInput = {},
++  ): Promise<CoachingSession> => {
+     const res = await api.post<CoachingSession>(
+       `/scheduling/sessions/${encodeURIComponent(id)}/approve`,
++      input,
+     );
+     return res.data;
+   },
+@@ -352,11 +602,7 @@ export const schedulingApi = {
+     id: string,
+     input: RescheduleSessionInput,
+   ): Promise<CoachingSession> => {
+-    // P1-6: see requestSession.
+-    const payload: RescheduleSessionInput = {
+-      ...input,
+-      client_timezone: input.client_timezone || resolveClientTimezone(),
+-    };
++    const { client_timezone: _timezone, ...payload } = input;
+     const res = await api.post<CoachingSession>(
+       `/scheduling/sessions/${encodeURIComponent(id)}/reschedule`,
+       payload,
+diff --git a/src/calendar/__tests__/calendarTime.test.ts b/src/calendar/__tests__/calendarTime.test.ts
+new file mode 100644
+index 0000000..a242a60
+--- /dev/null
++++ b/src/calendar/__tests__/calendarTime.test.ts
+@@ -0,0 +1,49 @@
++/**
++ * S-SCHED calendar time helpers: client-zone display, coach clock label
++ * only when it differs, and day grouping across a DST change.
++ */
++import { coachTimeLabel, formatRange, formatWhen, groupSlotsByDay, nowToMinuteIso, zonesDiffer } from '../calendarTime';
++
++describe('calendarTime', () => {
++  it('formats in the given client zone', () => {
++    expect(formatWhen('2026-10-05T16:00:00.000Z', 'America/Los_Angeles')).toBe('Monday, October 5 at 9:00 AM');
++    expect(formatRange('2026-10-05T16:00:00.000Z', '2026-10-05T16:20:00.000Z', 'America/New_York')).toBe('12:00 PM to 12:20 PM');
++  });
++
++  it('labels the coach clock only when it differs from the client clock', () => {
++    expect(coachTimeLabel('2026-10-05T16:00:00.000Z', 'America/Los_Angeles', 'America/Los_Angeles')).toBeNull();
++    expect(coachTimeLabel('2026-10-05T16:00:00.000Z', null, 'America/New_York')).toBeNull();
++    expect(coachTimeLabel('2026-10-05T16:00:00.000Z', 'America/Los_Angeles', 'America/New_York')).toBe('9:00 AM PDT coach time');
++    // Same offset, different name: no label.
++    expect(zonesDiffer(new Date('2026-10-05T16:00:00.000Z'), 'America/Los_Angeles', 'America/Vancouver')).toBe(false);
++  });
++
++  it('groups by client-local day and keeps wall-clock times across the fall DST change', () => {
++    const days = groupSlotsByDay(
++      [
++        { start_at: '2026-11-02T17:00:00.000Z', end_at: '2026-11-02T17:30:00.000Z' }, // Mon 9:00 PST
++        { start_at: '2026-10-30T16:00:00.000Z', end_at: '2026-10-30T16:30:00.000Z' }, // Fri 9:00 PDT
++        { start_at: '2026-10-31T06:30:00.000Z', end_at: '2026-10-31T07:00:00.000Z' }, // Fri 23:30 PDT
++      ],
++      'America/Los_Angeles',
++    );
++    expect(days.map((d) => d.key)).toEqual(['2026-10-30', '2026-11-02']);
++    expect(days[0].slots).toHaveLength(2);
++    expect(days[1].label).toBe('Monday, November 2');
++    expect(formatWhen(days[1].slots[0].start_at, 'America/Los_Angeles')).toBe('Monday, November 2 at 9:00 AM');
++  });
++
++  it('rounds now to the minute for a stable query key', () => {
++    expect(nowToMinuteIso(Date.parse('2026-10-01T10:15:42.123Z'))).toBe('2026-10-01T10:15:00.000Z');
++  });
++
++  it('keeps both repeated fall-back times as distinct instants', () => {
++    const days = groupSlotsByDay([
++      { start_at: '2026-11-01T08:30:00Z', end_at: '2026-11-01T08:45:00Z' },
++      { start_at: '2026-11-01T09:30:00Z', end_at: '2026-11-01T09:45:00Z' },
++    ], 'America/Los_Angeles');
++    expect(days).toHaveLength(1);
++    expect(days[0].slots).toHaveLength(2);
++    expect(days[0].slots[0].start_at).not.toBe(days[0].slots[1].start_at);
++  });
++});
+diff --git a/src/calendar/__tests__/phoneCalendar.test.ts b/src/calendar/__tests__/phoneCalendar.test.ts
+new file mode 100644
+index 0000000..759c9e6
+--- /dev/null
++++ b/src/calendar/__tests__/phoneCalendar.test.ts
+@@ -0,0 +1,113 @@
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++
++import * as Calendar from 'expo-calendar/legacy';
++import type { CoachingSession } from '../../api/schedulingApi';
++import { addSessionToPhoneCalendar, phoneCalendarResultMessage } from '../phoneCalendar';
++
++const cal = Calendar as jest.Mocked<typeof Calendar>;
++const session: CoachingSession = {
++  id: 's1', coach_id: 'c1', client_id: 'u1', session_type_id: 't1', status: 'scheduled',
++  start_at: '2030-10-05T16:00:00Z', end_at: '2030-10-05T16:15:00Z',
++  title: 'Quick initialization', coach_notes_md: null, client_recap_md: null,
++  video_provider: 'manual', video_url: 'https://meet.example/room', video_meeting_id: null,
++  calendar_provider: 'stub', calendar_event_id: null, approved_at: null, ended_at: null,
++  end_reason: null, created_at: '', updated_at: '',
++};
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  cal.isAvailableAsync.mockResolvedValue(true);
++  cal.createEventInCalendarAsync.mockResolvedValue({ action: Calendar.CalendarDialogResultActions.saved, id: 'event' });
++});
++
++it('opens the OS editor with absolute times, both reminders and no account linking', async () => {
++  await expect(addSessionToPhoneCalendar(session, 'Coach')).resolves.toEqual({ kind: 'added' });
++  expect(cal.createEventInCalendarAsync).toHaveBeenCalledWith(
++    expect.objectContaining({
++      title: 'Quick initialization',
++      startDate: new Date(session.start_at),
++      endDate: new Date(session.end_at),
++      alarms: [{ relativeOffset: -1440 }, { relativeOffset: -60 }],
++      url: 'https://meet.example/room',
++    }),
++    { startNewActivityTask: false },
++  );
++  expect(cal.requestCalendarPermissionsAsync).not.toHaveBeenCalled();
++  expect(cal.getCalendarsAsync).not.toHaveBeenCalled();
++});
++
++it('does not claim that Android done means saved', async () => {
++  cal.createEventInCalendarAsync.mockResolvedValue({ action: Calendar.CalendarDialogResultActions.done, id: null });
++  const result = await addSessionToPhoneCalendar(session, 'Coach');
++  expect(result).toEqual({ kind: 'opened' });
++  expect(phoneCalendarResultMessage(result)).toMatch(/confirm you saved/);
++});
++
++it('handles dismissal without claiming a write', async () => {
++  cal.createEventInCalendarAsync.mockResolvedValue({ action: Calendar.CalendarDialogResultActions.canceled, id: null });
++  const result = await addSessionToPhoneCalendar(session, 'Coach');
++  expect(result).toEqual({ kind: 'canceled' });
++  expect(phoneCalendarResultMessage(result)).toMatch(/without saving/);
++});
++
++it('reports an unavailable calendar with a recovery action', async () => {
++  cal.isAvailableAsync.mockResolvedValue(false);
++  const result = await addSessionToPhoneCalendar(session, 'Coach');
++  expect(result).toEqual({ kind: 'unavailable' });
++  expect(phoneCalendarResultMessage(result)).toMatch(/Install or enable/);
++  expect(cal.createEventInCalendarAsync).not.toHaveBeenCalled();
++});
++
++it.each(['requested', 'canceled', 'pending_provider'] as const)('never copies a %s session', async (status) => {
++  expect((await addSessionToPhoneCalendar({ ...session, status }, 'Coach')).kind).toBe('error');
++  expect(cal.createEventInCalendarAsync).not.toHaveBeenCalled();
++});
++
++it('rejects malformed dates and preserves TGP booking after a native error', async () => {
++  expect((await addSessionToPhoneCalendar({ ...session, start_at: 'bad' }, 'Coach')).kind).toBe('error');
++  cal.createEventInCalendarAsync.mockRejectedValue(new Error('native failure'));
++  const result = await addSessionToPhoneCalendar(session, 'Coach');
++  expect(result.kind).toBe('error');
++  expect(phoneCalendarResultMessage(result)).toMatch(/reference CAL-/);
++});
++
++it('serializes native editor presentation on rapid taps', async () => {
++  let finish: (value: Calendar.DialogEventResult) => void = () => undefined;
++  cal.createEventInCalendarAsync.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
++  const first = addSessionToPhoneCalendar(session, 'Coach');
++  await Promise.resolve();
++  expect(await addSessionToPhoneCalendar(session, 'Coach')).toEqual({ kind: 'opened' });
++  finish({ action: Calendar.CalendarDialogResultActions.saved, id: 'event' });
++  await first;
++  expect(cal.createEventInCalendarAsync).toHaveBeenCalledTimes(1);
++});
++
++// S-SCHED-3 C-325-6 and B-325-1: neutral description; phone calls keep the number.
++function editorEvent(i: number) {
++  const event = cal.createEventInCalendarAsync.mock.calls[i]?.[0];
++  if (!event) throw new Error(`the calendar editor was not opened (call ${i})`);
++  return event;
++}
++it('describes the copy with the appointment type, or "Coaching session"', async () => {
++  await addSessionToPhoneCalendar({ ...session, session_type: { id: 't1', name: 'Quick initialization', duration_minutes: 15, auto_approve: true, is_welcome: true, archived: false } }, 'Coach');
++  expect(editorEvent(0).notes).toMatch(/^Quick initialization with Coach\./);
++  await addSessionToPhoneCalendar(session, 'Coach');
++  const notes = String(editorEvent(1).notes);
++  expect(notes).toMatch(/^Coaching session with Coach\./);
++  expect(notes).not.toMatch(/Personal-training/);
++});
++
++it('a phone-call session keeps the number in the copy and links it', async () => {
++  await addSessionToPhoneCalendar({ ...session, video_url: 'tel:+1 425 555 0100' }, 'Coach');
++  const event = editorEvent(0);
++  expect(event.notes).toContain('Phone call: +1 425 555 0100');
++  expect(event.notes).not.toContain('Join:');
++  expect(event.url).toBe('tel:+14255550100');
++});
++
++it('an unsafe link never reaches the calendar copy', async () => {
++  await addSessionToPhoneCalendar({ ...session, video_url: 'javascript:alert(1)' }, 'Coach');
++  const event = editorEvent(0);
++  expect(event.url).toBeUndefined();
++  expect(event.notes).not.toContain('javascript');
++});
+diff --git a/src/calendar/__tests__/schedulingErrors.test.ts b/src/calendar/__tests__/schedulingErrors.test.ts
+new file mode 100644
+index 0000000..5409171
+--- /dev/null
++++ b/src/calendar/__tests__/schedulingErrors.test.ts
+@@ -0,0 +1,196 @@
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++import { captureError } from '../../services/sentry';
++import { SUPPORT_EMAIL } from '../../constants/support';
++import {
++  COACH_CODE_MESSAGES,
++  COACH_INTENT_CODE_MESSAGES,
++  SCHEDULING_CODE_MESSAGES,
++  bookingOutcomeUncertain,
++  calendarErrorMessage,
++  shouldRefreshSlots,
++} from '../schedulingErrors';
++
++beforeEach(() => jest.clearAllMocks());
++
++it.each([
++  [401, /Log in again/], [402, /Membership/], [403, /assigned coach/],
++  [404, /no longer available/], [400, /form fields/], [422, /form fields/],
++  [409, /schedule changed/], [429, /Wait a minute/],
++])('maps HTTP %s to a specific scheduling recovery action', (status, expected) => {
++  expect(calendarErrorMessage({ response: { status } }, 'book')).toMatch(expected);
++});
++
++it.each([
++  ['SLOT_TAKEN', /pick another/], ['SLOT_UNAVAILABLE', /pick another/],
++  ['SESSION_IN_PAST', /later time/], ['COACH_NOT_ASSIGNED', /invite code/],
++])('maps machine code %s before status copy', (code, expected) => {
++  expect(calendarErrorMessage({ response: { status: 400, data: { code } } }, 'book')).toMatch(expected);
++});
++
++it('never says a timeout proves nothing was booked', () => {
++  const err = { code: 'ETIMEDOUT' };
++  expect(calendarErrorMessage(err, 'confirm booking')).toMatch(/check Calendar before sending another booking/);
++  expect(bookingOutcomeUncertain(err)).toBe(true);
++  expect(bookingOutcomeUncertain({ response: { status: 503 } })).toBe(true);
++  expect(bookingOutcomeUncertain({ response: { status: 409 } })).toBe(false);
++});
++
++it('unknown failures carry a short server reference and redact raw diagnostic content', () => {
++  const err = {
++    response: { status: 500, data: { request_id: 'req-123456789012345', private: 'not diagnostic' } },
++    config: { headers: { Authorization: 'secret' } },
++  };
++  expect(calendarErrorMessage(err, 'book')).toMatch(/reference req-12345678/);
++  expect(calendarErrorMessage(err, 'book')).toMatch(/The app could not book\. /);
++  expect(calendarErrorMessage(err, 'book')).toContain(SUPPORT_EMAIL);
++  const [, metadata] = jest.mocked(captureError).mock.calls[0];
++  expect(metadata).toEqual({ area: 'calendar', audience: 'client', status: 500, code: null, request_id: 'req-12345678' });
++  expect(JSON.stringify(metadata)).not.toMatch(/secret|not diagnostic|Authorization/);
++});
++
++// S-SCHED-2: every backend scheduling code has its own next-step copy.
++const BACKEND_CODES = [
++  'SESSION_TYPE_REQUIRED', 'SESSION_TYPE_UNAVAILABLE', 'DURATION_MISMATCH', 'SESSION_IN_PAST',
++  'BEYOND_BOOKING_HORIZON', 'INVALID_TIME', 'SLOT_UNAVAILABLE', 'SLOT_TAKEN', 'CALENDAR_BUSY',
++  'PENDING_REQUEST_LIMIT', 'WELCOME_ALREADY_BOOKED', 'SESSION_STATE_CHANGED', 'SESSION_NOT_ACTIVE',
++  'SESSION_STARTED', 'COACH_NOT_BOOKABLE', 'COACH_NOT_FOUND', 'SESSION_NOT_FOUND',
++  'NOT_SESSION_PARTICIPANT', 'INVALID_MEETING_LINK',
++  // S-SCHED-3 (backend #634 fix round)
++  'SESSION_MOVED', 'INVALID_LIST_QUERY',
++];
++
++it.each(BACKEND_CODES)('backend code %s has plain, specific copy', (code) => {
++  const msg = calendarErrorMessage({ response: { status: 409, data: { code, error: code, message: 'server text' } } }, 'book');
++  expect(msg).toBe(SCHEDULING_CODE_MESSAGES[code]);
++  expect(msg).not.toMatch(/!|Something went wrong|server text/);
++  // A complete sentence that names the next step, not a bare status.
++  expect(msg).toMatch(/\.$/);
++  expect(msg.length).toBeGreaterThan(30);
++});
++
++it('reads the code from `error` when only that is present', () => {
++  expect(calendarErrorMessage({ response: { status: 409, data: { error: 'SLOT_TAKEN' } } }, 'book')).toMatch(/Someone just booked/);
++});
++
++it('CALENDAR_BUSY is a definite not-booked; slot codes refresh the list', () => {
++  const busy = { response: { status: 503, data: { code: 'CALENDAR_BUSY' } } };
++  expect(bookingOutcomeUncertain(busy)).toBe(false);
++  expect(shouldRefreshSlots({ response: { status: 409, data: { code: 'SLOT_TAKEN' } } })).toBe(true);
++  expect(shouldRefreshSlots({ response: { status: 400, data: { code: 'SLOT_UNAVAILABLE' } } })).toBe(true);
++  expect(shouldRefreshSlots({ response: { status: 400, data: { code: 'PENDING_REQUEST_LIMIT' } } })).toBe(false);
++});
++
++// S-SCHED-3 B-325-2: coach screens get coach-worded copy, never "your coach".
++describe('coach audience', () => {
++  const COACH_CODES = [
++    'SESSION_STARTED', 'SESSION_TYPE_UNAVAILABLE', 'SESSION_STATE_CHANGED', 'NOT_SESSION_PARTICIPANT',
++    'COACH_NOT_BOOKABLE', 'SESSION_MOVED', 'INVALID_LIST_QUERY',
++  ];
++  it.each(COACH_CODES)('%s has coach copy that differs from the client copy', (code) => {
++    const err = { response: { status: 409, data: { code } } };
++    const coach = calendarErrorMessage(err, 'confirm the request', 'coach');
++    expect(coach).toBe(COACH_CODE_MESSAGES[code]);
++    expect(coach).not.toBe(calendarErrorMessage(err, 'confirm the request'));
++    expect(coach).not.toMatch(/your coach|Message your coach|!/i);
++    expect(coach).toMatch(/\.$/);
++  });
++
++  it.each([401, 402, 403, 404, 400, 409, 429])('HTTP %s never sends a coach to "your coach" or client Calendar', (status) => {
++    const msg = calendarErrorMessage({ response: { status } }, 'save time off', 'coach');
++    expect(msg).not.toMatch(/your coach|assigned coach|choose an available time/i);
++  });
++
++  it('network and unknown failures name a coach next step and the shared support address', () => {
++    expect(calendarErrorMessage(new Error('Network Error'), 'save time off', 'coach')).toMatch(/refresh your schedule/);
++    const unknown = calendarErrorMessage({ response: { status: 500, data: { request_id: 'req_abcdefabcdef12' } } }, 'save time off', 'coach');
++    expect(unknown).toMatch(/Refresh your schedule and try again/);
++    expect(unknown).toContain(SUPPORT_EMAIL);
++    expect(unknown).toMatch(/reference req_abcdefab/);
++    expect(jest.mocked(captureError).mock.calls[0][1]).toEqual(expect.objectContaining({ audience: 'coach' }));
++  });
++
++  it('client copy for the new codes points at Calendar', () => {
++    expect(calendarErrorMessage({ response: { status: 409, data: { code: 'SESSION_MOVED' } } }, 'cancel')).toMatch(/new time/);
++    expect(calendarErrorMessage({ response: { status: 400, data: { code: 'INVALID_LIST_QUERY' } } }, 'load')).toMatch(/Refresh Calendar/);
++  });
++});
++
++describe('S-SCHED-4 B-325-2: SESSION_STARTED next step depends on what the coach did', () => {
++  const started = { response: { status: 409, data: { code: 'SESSION_STARTED' } } };
++
++  it('Confirm on an expired request: the time passed, tap Decline (the backend approvalTooLate step)', () => {
++    const msg = calendarErrorMessage(started, 'confirm the request', 'coach', 'approve');
++    expect(msg).toMatch(/requested time has already passed/);
++    expect(msg).toMatch(/Tap Decline/);
++    expect(msg).not.toMatch(/complete|no-show|message your coach/i);
++  });
++
++  it('other coach actions never propose complete / no-show (no such control in the app)', () => {
++    for (const intent of [undefined, 'decline', 'cancel', 'save_link'] as const) {
++      const msg = calendarErrorMessage(started, 'cancel the session', 'coach', intent);
++      expect(msg).not.toMatch(/complete|no-show/i);
++      expect(msg).toMatch(/Refresh the inbox/);
++    }
++  });
++
++  it('an intent never changes client copy', () => {
++    expect(calendarErrorMessage(started, 'cancel the session', 'client', 'approve')).toBe(
++      SCHEDULING_CODE_MESSAGES.SESSION_STARTED,
++    );
++  });
++});
++
++// B-325-4: every owned scheduling message (coded, HTTP, network, unknown) for both audiences is in the
++// product voice: no first person, no exclamation marks, no emojis, and it still ends as a full sentence.
++describe('B-325-4 scheduling copy voice', () => {
++  const FIRST_PERSON = /\b(we|us|our|ours|we're|we've|we'll|we'd)\b/i;
++  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
++  const audiences = ['client', 'coach'] as const;
++  const outcomes: Array<[string, unknown]> = [
++    ...[400, 401, 402, 403, 404, 409, 422, 429].map((status): [string, unknown] => [`HTTP ${status}`, { response: { status } }]),
++    ['ERR_NETWORK', { code: 'ERR_NETWORK' }],
++    ['ECONNABORTED', { code: 'ECONNABORTED' }],
++    ['ETIMEDOUT', { code: 'ETIMEDOUT' }],
++    ['Network Error', new Error('Network Error')],
++    ['unknown 500', { response: { status: 500, data: { request_id: 'req-abcdef123456' } } }],
++    ['no response', null],
++  ];
++
++  function assertVoice(msg: string) {
++    expect(msg).not.toMatch(FIRST_PERSON);
++    expect(msg).not.toMatch(/!/);
++    expect(msg).not.toMatch(EMOJI);
++    expect(msg).toMatch(/\.$/);
++  }
++
++  it.each(audiences.flatMap((a) => outcomes.map(([label, err]) => [a, label, err] as const)))(
++    '%s / %s fallback has no first person, exclamation mark or emoji',
++    (audience, _label, err) => {
++      assertVoice(calendarErrorMessage(err, 'book this session', audience));
++    },
++  );
++
++  it.each([
++    ...Object.entries(SCHEDULING_CODE_MESSAGES),
++    ...Object.entries(COACH_CODE_MESSAGES),
++    ...Object.values(COACH_INTENT_CODE_MESSAGES).flatMap((m) => Object.entries(m ?? {})),
++  ])('coded message %s is in the product voice', (_code, msg) => {
++    assertVoice(msg as string);
++  });
++
++  it('keeps each recovery action and the uncertainty caution after the rewrite', () => {
++    expect(calendarErrorMessage({ response: { status: 401 } }, 'cancel the session', 'client')).toBe(
++      'Your login expired before the app could cancel the session. Log in again, then check Calendar.',
++    );
++    expect(calendarErrorMessage({ code: 'ETIMEDOUT' }, 'book this session', 'client')).toBe(
++      'The connection dropped before the app could book this session. Reconnect and check Calendar before sending another booking.',
++    );
++    expect(calendarErrorMessage({ code: 'ETIMEDOUT' }, 'save time off', 'coach')).toBe(
++      'The connection dropped before the app could save time off. Reconnect and refresh your schedule before trying again.',
++    );
++    const coachUnknown = calendarErrorMessage({ response: { status: 500, data: { request_id: 'req-coach0000001' } } }, 'save time off', 'coach');
++    expect(coachUnknown).toBe(
++      `The app could not save time off. Refresh your schedule and try again. If it keeps failing, contact support at ${SUPPORT_EMAIL} with reference req-coach000.`,
++    );
++  });
++});
+diff --git a/src/calendar/calendarTime.ts b/src/calendar/calendarTime.ts
+new file mode 100644
+index 0000000..03102ec
+--- /dev/null
++++ b/src/calendar/calendarTime.ts
+@@ -0,0 +1,115 @@
++/**
++ * calendarTime — S-SCHED display helpers for the client Calendar.
++ *
++ * Times are always shown in the client's own (device) time zone. When the
++ * coach works in a different zone, a short "coach time" label is added so
++ * nobody books the wrong hour. All formatting goes through Intl with an
++ * explicit timeZone, so DST is handled by the platform tables, not by
++ * offset arithmetic here.
++ */
++import { resolveClientTimezone } from '../api/schedulingApi';
++
++export interface Slot {
++  start_at: string;
++  end_at: string;
++}
++
++export interface SlotDay {
++  /** YYYY-MM-DD in the client zone. */
++  key: string;
++  /** e.g. "Monday, October 5". */
++  label: string;
++  slots: Slot[];
++}
++
++export function calendarDateInZone(d: Date, tz: string): string {
++  const parts = new Intl.DateTimeFormat('en-US', {
++    timeZone: tz,
++    year: 'numeric',
++    month: '2-digit',
++    day: '2-digit',
++  }).formatToParts(d);
++  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
++  return `${value('year')}-${value('month')}-${value('day')}`;
++}
++
++export function formatDayLabel(d: Date, tz: string = resolveClientTimezone()): string {
++  return new Intl.DateTimeFormat('en-US', {
++    timeZone: tz,
++    weekday: 'long',
++    month: 'long',
++    day: 'numeric',
++  }).format(d);
++}
++
++export function formatTime(d: Date, tz: string = resolveClientTimezone()): string {
++  return new Intl.DateTimeFormat('en-US', {
++    timeZone: tz,
++    hour: 'numeric',
++    minute: '2-digit',
++  }).format(d);
++}
++
++/** Short zone name at that instant, e.g. "PDT" or "GMT+1". */
++export function zoneAbbrev(d: Date, tz: string): string {
++  const part = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' })
++    .formatToParts(d)
++    .find((p) => p.type === 'timeZoneName');
++  return part?.value ?? tz;
++}
++
++/** True when the two zones show a different wall clock at instant `d`. */
++export function zonesDiffer(d: Date, a: string, b: string): boolean {
++  if (a === b) return false;
++  return formatTime(d, a) !== formatTime(d, b) || calendarDateInZone(d, a) !== calendarDateInZone(d, b);
++}
++
++/** "Monday, October 5 at 9:00 AM" in the client zone. */
++export function formatWhen(iso: string, tz: string = resolveClientTimezone()): string {
++  const d = new Date(iso);
++  return `${formatDayLabel(d, tz)} at ${formatTime(d, tz)}`;
++}
++
++/** "9:00 AM to 9:30 AM". */
++export function formatRange(startIso: string, endIso: string, tz: string = resolveClientTimezone()): string {
++  return `${formatTime(new Date(startIso), tz)} to ${formatTime(new Date(endIso), tz)}`;
++}
++
++/**
++ * "10:00 AM PDT coach time" when the coach zone shows a different clock,
++ * otherwise null.
++ */
++export function coachTimeLabel(
++  iso: string,
++  coachTz: string | null | undefined,
++  clientTz: string = resolveClientTimezone(),
++): string | null {
++  if (!coachTz) return null;
++  const d = new Date(iso);
++  if (!zonesDiffer(d, coachTz, clientTz)) return null;
++  return `${formatTime(d, coachTz)} ${zoneAbbrev(d, coachTz)} coach time`;
++}
++
++/** Group slots by client-local day, preserving order. */
++export function groupSlotsByDay(slots: Slot[], tz: string = resolveClientTimezone()): SlotDay[] {
++  const out: SlotDay[] = [];
++  const byKey = new Map<string, SlotDay>();
++  const sorted = [...slots].sort((a, b) => a.start_at.localeCompare(b.start_at));
++  for (const s of sorted) {
++    const d = new Date(s.start_at);
++    const key = calendarDateInZone(d, tz);
++    let day = byKey.get(key);
++    if (!day) {
++      day = { key, label: formatDayLabel(d, tz), slots: [] };
++      byKey.set(key, day);
++      out.push(day);
++    }
++    day.slots.push(s);
++  }
++  return out;
++}
++
++/** Current time rounded down to the minute (stable query key). */
++export function nowToMinuteIso(now: number = Date.now()): string {
++  return new Date(Math.floor(now / 60000) * 60000).toISOString();
++}
+diff --git a/src/calendar/phoneCalendar.ts b/src/calendar/phoneCalendar.ts
+new file mode 100644
+index 0000000..932a64b
+--- /dev/null
++++ b/src/calendar/phoneCalendar.ts
+@@ -0,0 +1,87 @@
++/**
++ * An explicit, user-controlled copy into the device calendar.
++ * Uses the OS event editor, not account linking or full-calendar reads.
++ * Copies do not auto-sync; TGP remains authoritative for booking status.
++ */
++import * as Calendar from 'expo-calendar/legacy';
++import type { CoachingSession } from '../api/schedulingApi';
++import { resolveCallLink } from '../api/schedulingApi';
++import { calendarErrorMessage } from './schedulingErrors';
++
++export type AddResult =
++  | { kind: 'added' }
++  | { kind: 'opened' }
++  | { kind: 'canceled' }
++  | { kind: 'unavailable' }
++  | { kind: 'error'; message: string };
++
++let presenting = false;
++
++/**
++ * Neutral description for the calendar copy (S-SCHED-3 C-325-6): the
++ * appointment type's name, else "Coaching session".
++ */
++export function sessionKindLabel(session: CoachingSession): string {
++  const name = session.session_type?.name?.trim();
++  return name ? name : 'Coaching session';
++}
++
++export async function addSessionToPhoneCalendar(
++  session: CoachingSession,
++  coachName: string,
++): Promise<AddResult> {
++  if (presenting) return { kind: 'opened' };
++  if (session.status !== 'scheduled') {
++    return { kind: 'error', message: 'Only confirmed sessions can be copied. Open Calendar to check the booking status.' };
++  }
++  const start = new Date(session.start_at);
++  const end = new Date(session.end_at);
++  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
++    return { kind: 'error', message: 'This session has an invalid time. Message your coach before adding it to your calendar.' };
++  }
++  presenting = true;
++  try {
++    if (!(await Calendar.isAvailableAsync())) return { kind: 'unavailable' };
++    const link = resolveCallLink(session.video_url);
++    const result = await Calendar.createEventInCalendarAsync(
++      {
++        title: session.title || `Session with ${coachName}`,
++        startDate: start,
++        endDate: end,
++        notes: [
++          `${sessionKindLabel(session)} with ${coachName}.`,
++          ...(link?.kind === 'video' ? [`Join: ${link.url}`] : []),
++          ...(link?.kind === 'phone' ? [`Phone call: ${link.display}`] : []),
++          'Check The Growth Project for booking status. This calendar copy does not update automatically.',
++        ].join('\n'),
++        url: link?.url ?? undefined,
++        alarms: [{ relativeOffset: -1440 }, { relativeOffset: -60 }],
++      },
++      { startNewActivityTask: false },
++    );
++    if (result.action === 'saved') return { kind: 'added' };
++    if (result.action === 'canceled' || result.action === 'deleted') return { kind: 'canceled' };
++    // Android cannot report whether the user saved or dismissed the editor.
++    // Never claim that returning from the native editor proves a write.
++    return { kind: 'opened' };
++  } catch (err) {
++    return { kind: 'error', message: calendarErrorMessage(err, 'open the phone calendar') };
++  } finally {
++    presenting = false;
++  }
++}
++
++export function phoneCalendarResultMessage(result: AddResult): string {
++  switch (result.kind) {
++    case 'added':
++      return 'Saved to your phone calendar. If the session changes, update this copy in your calendar app.';
++    case 'opened':
++      return 'Check your calendar app to confirm you saved the event. Calendar copies do not update automatically.';
++    case 'canceled':
++      return 'The calendar editor was closed without saving. Tap Add to my calendar to open it again.';
++    case 'unavailable':
++      return 'No calendar editor is available on this device. Install or enable a calendar app, then tap Add to my calendar.';
++    case 'error':
++      return result.message;
++  }
++}
+diff --git a/src/calendar/schedulingErrors.ts b/src/calendar/schedulingErrors.ts
+new file mode 100644
+index 0000000..8513c12
+--- /dev/null
++++ b/src/calendar/schedulingErrors.ts
+@@ -0,0 +1,181 @@
++import { schedulingErrorCode, schedulingErrorStatus } from '../api/schedulingApi';
++import { SUPPORT_EMAIL } from '../constants/support';
++import { captureError } from '../services/sentry';
++
++/** Who reads the message: clients book; coaches run the inbox and settings. */
++export type CalendarAudience = 'client' | 'coach';
++
++const references = new WeakMap<object, string>();
++const reported = new WeakSet<object>();
++
++function referenceFor(err: unknown): string {
++  const data = (err as { response?: { data?: { request_id?: unknown } } } | null)?.response?.data;
++  const serverId = data?.request_id;
++  if (typeof serverId === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(serverId)) {
++    return serverId.slice(0, 12);
++  }
++  if (err && typeof err === 'object') {
++    const cached = references.get(err);
++    if (cached) return cached;
++  }
++  const ref = `CAL-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
++  if (err && typeof err === 'object') references.set(err, ref);
++  return ref;
++}
++
++/**
++ * S-SCHED-2 backend scheduling codes -> plain next-step copy. Every entry says
++ * what happened and what to do next; the server message is never shown raw.
++ */
++export const SCHEDULING_CODE_MESSAGES: Readonly<Record<string, string>> = {
++  SLOT_TAKEN: 'Someone just booked that time. Refresh open times and pick another time.',
++  SLOT_UNAVAILABLE: 'That time is no longer open. Refresh open times and pick another time.',
++  SESSION_IN_PAST: 'That time is too close or has passed. Refresh open times and choose a later time.',
++  BEYOND_BOOKING_HORIZON: 'That time is too far ahead to book yet. Choose a time within the next four months.',
++  INVALID_TIME: 'That time could not be read. Refresh open times and pick a time from the list.',
++  DURATION_MISMATCH: 'That time does not match the length of this appointment type. Refresh open times and pick a time from the list.',
++  SESSION_TYPE_REQUIRED: 'Choose an appointment type first, then pick a time.',
++  SESSION_TYPE_UNAVAILABLE: 'This appointment type is no longer offered. Go back to Calendar and choose another type.',
++  PENDING_REQUEST_LIMIT: 'You already have several requests waiting for your coach. Wait for a reply, or cancel one in Calendar, then request another time.',
++  WELCOME_ALREADY_BOOKED: 'Your welcome call is already booked. Open Calendar to see it or move it.',
++  CALENDAR_BUSY: "Your coach's calendar is busy with other bookings right now. Wait a few seconds, then pick the time again.",
++  SESSION_STATE_CHANGED: 'This session changed a moment ago. Refresh Calendar to see where it stands now.',
++  SESSION_NOT_ACTIVE: 'This session is no longer active. Refresh Calendar to see your current sessions.',
++  SESSION_STARTED: 'This session has already started, so it can no longer be changed here. Message your coach if you need help.',
++  COACH_NOT_BOOKABLE: 'You can book only with the coach you are matched with. Open Calendar to see your coach.',
++  COACH_NOT_FOUND: 'This coach is not available for booking. Open Calendar to see your coach.',
++  SESSION_NOT_FOUND: 'This session is not available to you. Open Calendar to find your sessions.',
++  NOT_SESSION_PARTICIPANT: 'You can no longer change this session from here. Message your coach to change it.',
++  INVALID_MEETING_LINK: 'Enter a complete https call link or a phone number, then save it again.',
++  SESSION_MOVED: 'This session was moved to a new time a moment ago. Refresh Calendar to see the new time.',
++  INVALID_LIST_QUERY: 'Calendar could not load more sessions from where you were. Refresh Calendar to start the list again.',
++  COACH_NOT_ASSIGNED: 'You are not matched with a coach yet. Ask your coach for an invite code, then open Accept invite in Profile and more.',
++};
++
++/**
++ * Coach-facing copy for the codes a coach can meet in the booking inbox,
++ * appointment types, time off and weekly hours (S-SCHED-3 B-325-2). Codes not
++ * listed here read the same for both audiences.
++ */
++export const COACH_CODE_MESSAGES: Readonly<Record<string, string>> = {
++  SESSION_STARTED: 'This session has already started, so it can no longer be changed here. Refresh the inbox to see where it stands now.',
++  SESSION_TYPE_UNAVAILABLE: 'This appointment type is archived or was removed. Open Appointment types to restore it or choose another type.',
++  SESSION_STATE_CHANGED: 'This changed a moment ago, on another device or by your client. Refresh this screen to see where it stands now.',
++  SESSION_MOVED: 'Your client moved this request to a new time a moment ago. Refresh the inbox, check the new time, then confirm or decline it.',
++  NOT_SESSION_PARTICIPANT: 'This session belongs to another coach, so you cannot change it here. Refresh the inbox to see your own sessions.',
++  COACH_NOT_BOOKABLE: 'This client is not matched with you, so the session cannot be booked with you. Check the client in your roster.',
++  SESSION_NOT_FOUND: 'This session is no longer in your schedule. Refresh the inbox to see your current sessions.',
++  SESSION_NOT_ACTIVE: 'This session is no longer active. Refresh the inbox to see your current sessions.',
++  SLOT_TAKEN: 'Another session already uses that time. Refresh and choose a different time.',
++  CALENDAR_BUSY: 'Your calendar is busy saving other changes right now. Wait a few seconds, then try again.',
++  INVALID_LIST_QUERY: 'The inbox could not load more sessions from where you were. Refresh the inbox to start the list again.',
++};
++
++/**
++ * What the coach was doing when the error came back (S-SCHED-4 B-325-2).
++ * The same machine code can need a different next step: SESSION_STARTED on
++ * Confirm means the requested time passed, and the only action the request
++ * card offers that works is Decline (backend approvalTooLate; a requested
++ * session cannot be completed or marked no-show).
++ */
++export type CoachSchedulingIntent = 'approve' | 'decline' | 'cancel' | 'save_link';
++
++export const COACH_INTENT_CODE_MESSAGES: Readonly<
++  Partial<Record<CoachSchedulingIntent, Readonly<Record<string, string>>>>
++> = {
++  approve: {
++    SESSION_STARTED:
++      'The requested time has already passed, so it can no longer be confirmed. Tap Decline on this request so your client can choose another time.',
++  },
++};
++
++function audienceWords(audience: CalendarAudience): { home: string; ask: string } {
++  return audience === 'coach'
++    ? { home: 'your schedule', ask: 'contact support' }
++    : { home: 'Calendar', ask: 'message your coach' };
++}
++
++/** Error diagnostics contain no payload, URL, token, user text or raw axios error. */
++export function calendarErrorMessage(
++  err: unknown,
++  operation: string,
++  audience: CalendarAudience = 'client',
++  intent?: CoachSchedulingIntent,
++): string {
++  const status = schedulingErrorStatus(err);
++  const code = schedulingErrorCode(err);
++  const intentMessages = audience === 'coach' && intent ? COACH_INTENT_CODE_MESSAGES[intent] : undefined;
++  if (intentMessages && code && Object.prototype.hasOwnProperty.call(intentMessages, code)) {
++    return intentMessages[code];
++  }
++  if (audience === 'coach' && code && Object.prototype.hasOwnProperty.call(COACH_CODE_MESSAGES, code)) {
++    return COACH_CODE_MESSAGES[code];
++  }
++  if (code && Object.prototype.hasOwnProperty.call(SCHEDULING_CODE_MESSAGES, code)) {
++    return SCHEDULING_CODE_MESSAGES[code];
++  }
++  const w = audienceWords(audience);
++  if (status === 401) return `Your login expired before the app could ${operation}. Log in again, then check ${w.home}.`;
++  if (status === 402) {
++    return audience === 'coach'
++      ? 'Your plan does not include this scheduling action. Open Membership in Profile and more, or contact support.'
++      : 'Your coaching plan does not allow this scheduling action. Open Membership in Profile and more, or message your coach.';
++  }
++  if (status === 403) {
++    return audience === 'coach'
++      ? 'You do not have access to this scheduling action. Refresh your schedule, or contact support.'
++      : 'You do not have access to this scheduling action. Open Calendar for your assigned coach, or contact support.';
++  }
++  if (status === 404) {
++    return audience === 'coach'
++      ? 'This client, appointment type or session is no longer available. Refresh your schedule.'
++      : 'This coach, appointment type or session is no longer available. Open Calendar again, or message your coach.';
++  }
++  if (status === 400 || status === 422) return `The scheduling details were not accepted. Refresh ${w.home} and check the time or form fields before trying again.`;
++  if (status === 409) {
++    return audience === 'coach'
++      ? 'The schedule changed while you were using it. Refresh your schedule and try again.'
++      : 'The schedule changed while you were using it. Refresh Calendar and choose an available time.';
++  }
++  if (status === 429) return `Too many scheduling actions were sent. Wait a minute, then refresh ${w.home} before trying again.`;
++  const networkCode = (err as { code?: unknown } | null)?.code;
++  if (
++    networkCode === 'ERR_NETWORK' ||
++    networkCode === 'ECONNABORTED' ||
++    networkCode === 'ETIMEDOUT' ||
++    (err instanceof Error && err.message === 'Network Error')
++  ) {
++    return audience === 'coach'
++      ? `The connection dropped before the app could ${operation}. Reconnect and refresh your schedule before trying again.`
++      : `The connection dropped before the app could ${operation}. Reconnect and check Calendar before sending another booking.`;
++  }
++  const ref = referenceFor(err);
++  if (!err || typeof err !== 'object' || !reported.has(err)) {
++    captureError(new Error(`Calendar could not ${operation}`), {
++      area: 'calendar',
++      audience,
++      status,
++      code,
++      request_id: ref,
++    });
++    if (err && typeof err === 'object') reported.add(err);
++  }
++  return audience === 'coach'
++    ? `The app could not ${operation}. Refresh your schedule and try again. If it keeps failing, contact support at ${SUPPORT_EMAIL} with reference ${ref}.`
++    : `The app could not ${operation}. Check Calendar before sending another booking. If it remains unavailable, contact support at ${SUPPORT_EMAIL} with reference ${ref}.`;
++}
++
++export function bookingOutcomeUncertain(err: unknown): boolean {
++  const status = schedulingErrorStatus(err);
++  // CALENDAR_BUSY (503) is a definite "not booked": the lock wait timed out
++  // before anything was written.
++  if (schedulingErrorCode(err) === 'CALENDAR_BUSY') return false;
++  return status === null || status >= 500;
++}
++
++/** Codes after which the open-times list should be refreshed. */
++export function shouldRefreshSlots(err: unknown): boolean {
++  const code = schedulingErrorCode(err);
++  if (code === 'SLOT_TAKEN' || code === 'SLOT_UNAVAILABLE' || code === 'SESSION_IN_PAST' || code === 'DURATION_MISMATCH' || code === 'INVALID_TIME') return true;
++  return schedulingErrorStatus(err) === 409;
++}
+diff --git a/src/config/__tests__/calendarPermissionsBlocked.test.js b/src/config/__tests__/calendarPermissionsBlocked.test.js
+new file mode 100644
+index 0000000..620362f
+--- /dev/null
++++ b/src/config/__tests__/calendarPermissionsBlocked.test.js
+@@ -0,0 +1,30 @@
++/**
++ * S-SCHED-3 C-325-5: "Add to my calendar" only opens the OS event editor
++ * (an intent on Android), which needs no calendar permission. The
++ * expo-calendar plugin would otherwise add READ_CALENDAR and WRITE_CALENDAR
++ * to the Android manifest, so both are blocked in every build mode.
++ */
++const app = require('../../../app.json').expo;
++const configure = require('../../../app.config');
++
++const CALENDAR = ['android.permission.READ_CALENDAR', 'android.permission.WRITE_CALENDAR'];
++const originalSwitch = process.env.TGP_ANDROID_HEALTH_CONNECT;
++
++afterEach(() => {
++  if (originalSwitch === undefined) delete process.env.TGP_ANDROID_HEALTH_CONNECT;
++  else process.env.TGP_ANDROID_HEALTH_CONNECT = originalSwitch;
++});
++
++test.each([undefined, '1'])('calendar permissions are blocked with TGP_ANDROID_HEALTH_CONNECT=%s', (value) => {
++  if (value === undefined) delete process.env.TGP_ANDROID_HEALTH_CONNECT;
++  else process.env.TGP_ANDROID_HEALTH_CONNECT = value;
++  const result = configure();
++  expect(result.android.blockedPermissions).toEqual(expect.arrayContaining(CALENDAR));
++  expect(result.android.permissions ?? []).not.toEqual(expect.arrayContaining([CALENDAR[0]]));
++});
++
++test('the phone-calendar feature never asks for calendar access', () => {
++  const source = require('fs').readFileSync(require('path').join(__dirname, '../../calendar/phoneCalendar.ts'), 'utf8');
++  expect(source).not.toMatch(/requestCalendarPermissionsAsync|getCalendarsAsync|createEventAsync\(/);
++  expect(app.android.blockedPermissions).toEqual(expect.arrayContaining(CALENDAR));
++});
+diff --git a/src/config/featureFlags.ts b/src/config/featureFlags.ts
+index c1a07b9..906b16a 100644
+--- a/src/config/featureFlags.ts
++++ b/src/config/featureFlags.ts
+@@ -31,6 +31,7 @@ const isDev =
+ const PUBLIC_ENV = {
+   EXPO_PUBLIC_FEATURE_BLOODWORK: process.env.EXPO_PUBLIC_FEATURE_BLOODWORK,
+   EXPO_PUBLIC_FF_ADMIN_CONTROL_ROOM: process.env.EXPO_PUBLIC_FF_ADMIN_CONTROL_ROOM,
++  EXPO_PUBLIC_FF_CLIENT_CALENDAR: process.env.EXPO_PUBLIC_FF_CLIENT_CALENDAR,
+   EXPO_PUBLIC_FF_CLIENT_PATH_COPILOT: process.env.EXPO_PUBLIC_FF_CLIENT_PATH_COPILOT,
+   EXPO_PUBLIC_FF_CLIENT_TUTORIAL: process.env.EXPO_PUBLIC_FF_CLIENT_TUTORIAL,
+   EXPO_PUBLIC_FF_COACH_BRIEF: process.env.EXPO_PUBLIC_FF_COACH_BRIEF,
+@@ -116,6 +117,21 @@ export const featureFlags = {
+    */
+   clientTutorial: readFlag('EXPO_PUBLIC_FF_CLIENT_TUTORIAL', false),
+ 
++  // ─── S-SCHED — client Calendar tab (native scheduling) ───────────────────
++  /**
++   * The client Calendar bottom tab (coach, appointment types, open slots,
++   * booking, upcoming sessions, Add to my calendar), the booking
++   * push routes into it, and the two Roman tutorial steps that depend on it
++   * (Calendar intro, welcome call). OFF by default unconditionally; the
++   * kill switch. ON in the clinic and production EAS profiles once the
++   * S-SCHED audits pass. Off means: no tab, no Calendar routes, booking
++   * pushes open the notification center, the tutorial is exactly as before.
++   * Google Calendar sync is unrelated and stays off.
++   *
++   * env: EXPO_PUBLIC_FF_CLIENT_CALENDAR
++   */
++  clientCalendar: readFlag('EXPO_PUBLIC_FF_CLIENT_CALENDAR', false),
++
+   // ─── Wave 11 — runtime scaffolding ───────────────────────────────────────
+   /** Client Path Copilot — AI summaries + drafts on the client home tab. */
+   clientPathCopilot: readFlag('EXPO_PUBLIC_FF_CLIENT_PATH_COPILOT', isDev),
+diff --git a/src/hooks/useCalendar.ts b/src/hooks/useCalendar.ts
+new file mode 100644
+index 0000000..5d4b7bc
+--- /dev/null
++++ b/src/hooks/useCalendar.ts
+@@ -0,0 +1,218 @@
++/**
++ * useCalendar — S-SCHED client Calendar and coach scheduling-settings hooks.
++ *
++ * Builds on useScheduling.ts (same query-key namespace) so the existing
++ * mutations' invalidations keep these lists fresh:
++ *   ['scheduling', 'myCoaches']
++ *   ['scheduling', 'openSlots', coachId, sessionTypeId, durationMinutes, from]
++ *   ['scheduling', 'sessions', 'me', { limit }]
++ *   ['scheduling', 'sessions', 'me', 'past']
++ *   ['scheduling', 'sessionTypes', coachId]            (bookable, active only)
++ *   ['scheduling', 'sessionTypes', coachId, 'all']     (owning coach, with archived)
++ *   ['scheduling', 'overrides']
++ */
++import {
++  useInfiniteQuery,
++  useMutation,
++  useQuery,
++  useQueryClient,
++  type InfiniteData,
++} from '@tanstack/react-query';
++import {
++  schedulingApi,
++  type SchedulingSessionStatus,
++  type AvailabilityOverride,
++  type BookableCoach,
++  type CoachingSession,
++  type CreateAvailabilityOverrideInput,
++  type OpenSlotsPayload,
++  type SessionType,
++} from '../api/schedulingApi';
++
++const THIRTY_S_MS = 30 * 1000;
++const FIVE_MIN_MS = 5 * 60 * 1000;
++/** The backend caps an open-slots range at 14 days. */
++export const OPEN_SLOTS_RANGE_DAYS = 14;
++
++export function useMyCoaches(enabled = true) {
++  return useQuery<BookableCoach[]>({
++    queryKey: ['scheduling', 'myCoaches'],
++    queryFn: () => schedulingApi.listMyCoaches(),
++    enabled,
++    staleTime: FIVE_MIN_MS,
++  });
++}
++
++/** The existing open-slots response is authoritative for the coach's zone. */
++export function useSchedulingTimezone(coachId: string | undefined) {
++  return useQuery<string>({
++    queryKey: ['scheduling', 'timezone', coachId],
++    queryFn: async () => {
++      const from = new Date();
++      const result = await schedulingApi.getOpenSlots(coachId as string, {
++        from: from.toISOString(),
++        to: new Date(from.getTime() + 24 * 60 * 60 * 1000).toISOString(),
++        durationMinutes: 60,
++      });
++      // Validate before using a server configuration value in Intl.
++      new Intl.DateTimeFormat('en-US', { timeZone: result.timezone }).format(from);
++      return result.timezone;
++    },
++    enabled: !!coachId,
++    staleTime: FIVE_MIN_MS,
++  });
++}
++
++/** Active appointment types a client may book (the server hides archived ones). */
++export function useBookableTypes(coachId: string | undefined) {
++  return useQuery<SessionType[]>({
++    queryKey: ['scheduling', 'sessionTypes', coachId],
++    queryFn: () => schedulingApi.listSessionTypes(coachId as string),
++    enabled: !!coachId,
++    staleTime: FIVE_MIN_MS,
++  });
++}
++
++/** Every appointment type of the signed-in coach, archived ones included. */
++export function useCoachAppointmentTypes(coachId: string | undefined) {
++  return useQuery<SessionType[]>({
++    queryKey: ['scheduling', 'sessionTypes', coachId, 'all'],
++    queryFn: () => schedulingApi.listSessionTypes(coachId as string, { includeArchived: true }),
++    enabled: !!coachId,
++    staleTime: THIRTY_S_MS,
++  });
++}
++
++/**
++ * Open slots for one appointment type over the next 14 days (from now). The
++ * server sizes them to the type and honours type-scoped hours. The `from`
++ * key is rounded to the minute so re-renders do not refetch.
++ */
++export function useOpenSlots(
++  coachId: string | undefined,
++  type: Pick<SessionType, 'id' | 'duration_minutes'> | null | undefined,
++  fromIso: string,
++) {
++  const sessionTypeId = type?.id;
++  const durationMinutes = type?.duration_minutes;
++  return useQuery<OpenSlotsPayload>({
++    queryKey: ['scheduling', 'openSlots', coachId, sessionTypeId, durationMinutes, fromIso],
++    queryFn: () => {
++      const from = new Date(fromIso);
++      const to = new Date(from.getTime() + OPEN_SLOTS_RANGE_DAYS * 24 * 60 * 60 * 1000);
++      return schedulingApi.getOpenSlots(coachId as string, {
++        from: from.toISOString(),
++        to: to.toISOString(),
++        durationMinutes: durationMinutes as number,
++        sessionTypeId,
++      });
++    },
++    enabled: !!coachId && !!durationMinutes,
++    staleTime: THIRTY_S_MS,
++    refetchOnMount: 'always',
++    refetchInterval: THIRTY_S_MS,
++  });
++}
++
++export function useMySessions(limit = 50) {
++  return useQuery<CoachingSession[]>({
++    queryKey: ['scheduling', 'sessions', 'me', { limit }],
++    queryFn: () => schedulingApi.listMySessions(limit),
++    staleTime: THIRTY_S_MS,
++    refetchOnMount: 'always',
++    refetchInterval: THIRTY_S_MS,
++  });
++}
++
++export const PAST_SESSIONS_PAGE = 20;
++
++/** Keyset cursor: the last row's start time and id (ties break on id). */
++export interface SessionCursor {
++  start_at: string;
++  id: string;
++}
++
++function lastCursor(page: CoachingSession[], size: number): SessionCursor | undefined {
++  if (page.length < size) return undefined;
++  const last = page[page.length - 1];
++  return last ? { start_at: last.start_at, id: last.id } : undefined;
++}
++
++/**
++ * Ended sessions, newest first. Pages on (start_at, id) so sessions that
++ * share a start time are neither skipped nor repeated (S-SCHED-3, B-634-4).
++ */
++export function usePastSessions(enabled = true) {
++  return useInfiniteQuery<CoachingSession[], Error, InfiniteData<CoachingSession[]>, readonly unknown[], SessionCursor | null>({
++    queryKey: ['scheduling', 'sessions', 'me', 'past'],
++    queryFn: ({ pageParam }) =>
++      schedulingApi.listMySessions(PAST_SESSIONS_PAGE, {
++        scope: 'past',
++        before: pageParam?.start_at,
++        beforeId: pageParam?.id,
++      }),
++    initialPageParam: null,
++    getNextPageParam: (last) => lastCursor(last, PAST_SESSIONS_PAGE),
++    enabled,
++    staleTime: FIVE_MIN_MS,
++  });
++}
++
++export const COACH_INBOX_PAGE = 50;
++
++/**
++ * Upcoming sessions in the given statuses, soonest first, filtered and paged
++ * by the server (S-SCHED-3 C-325-3): the coach inbox asks for requests, the
++ * agenda for confirmed sessions, so neither is cut off by a fixed list size.
++ */
++export function useUpcomingSessionsByStatus(
++  statuses: readonly SchedulingSessionStatus[],
++  enabled = true,
++) {
++  return useInfiniteQuery<CoachingSession[], Error, InfiniteData<CoachingSession[]>, readonly unknown[], SessionCursor | null>({
++    queryKey: ['scheduling', 'sessions', 'me', 'upcoming', statuses.join(',')],
++    queryFn: ({ pageParam }) =>
++      schedulingApi.listMySessions(COACH_INBOX_PAGE, {
++        status: statuses,
++        after: pageParam?.start_at,
++        afterId: pageParam?.id,
++      }),
++    initialPageParam: null,
++    getNextPageParam: (last) => lastCursor(last, COACH_INBOX_PAGE),
++    enabled,
++    staleTime: THIRTY_S_MS,
++    refetchOnMount: 'always',
++    refetchInterval: THIRTY_S_MS,
++  });
++}
++
++export function useMyAvailabilityOverrides(fromDate: string, toDate: string) {
++  return useQuery<AvailabilityOverride[]>({
++    queryKey: ['scheduling', 'overrides', fromDate, toDate],
++    queryFn: () => schedulingApi.listMyAvailabilityOverrides({ from: fromDate, to: toDate }),
++    enabled: !!fromDate && !!toDate,
++    staleTime: THIRTY_S_MS,
++  });
++}
++
++export function useCreateAvailabilityOverride() {
++  const qc = useQueryClient();
++  return useMutation<AvailabilityOverride, Error, CreateAvailabilityOverrideInput>({
++    mutationFn: (input) => schedulingApi.createAvailabilityOverride(input),
++    onSuccess: () => {
++      qc.invalidateQueries({ queryKey: ['scheduling', 'overrides'] });
++      qc.invalidateQueries({ queryKey: ['scheduling', 'openSlots'] });
++    },
++  });
++}
++
++export function useDeleteAvailabilityOverride() {
++  const qc = useQueryClient();
++  return useMutation<void, Error, { id: string }>({
++    mutationFn: ({ id }) => schedulingApi.deleteAvailabilityOverride(id),
++    onSuccess: () => {
++      qc.invalidateQueries({ queryKey: ['scheduling', 'overrides'] });
++      qc.invalidateQueries({ queryKey: ['scheduling', 'openSlots'] });
++    },
++  });
++}
+diff --git a/src/hooks/useScheduling.ts b/src/hooks/useScheduling.ts
+index 81037a7..1cc3eff 100644
+--- a/src/hooks/useScheduling.ts
++++ b/src/hooks/useScheduling.ts
+@@ -77,6 +77,8 @@ export function useSession(sessionId: string | undefined) {
+     queryFn: () => schedulingApi.getSession(sessionId as string),
+     enabled: !!sessionId,
+     staleTime: SIXTY_S_MS,
++    refetchOnMount: 'always',
++    refetchInterval: SIXTY_S_MS,
+   });
+ }
+ 
+@@ -90,6 +92,7 @@ export function useCreateSessionType() {
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessionTypes', created.coach_id],
+       });
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+     },
+   });
+ }
+@@ -103,9 +106,19 @@ export function useUpdateSessionType() {
+   >({
+     mutationFn: ({ id, input }) => schedulingApi.updateSessionType(id, input),
+     onSuccess: (updated) => {
++      // Show the saved row at once (archive/restore, welcome move) while the
++      // lists refetch. The server keeps one welcome type per coach.
++      qc.setQueriesData<SessionType[]>(
++        { queryKey: ['scheduling', 'sessionTypes', updated.coach_id] },
++        (rows) =>
++          rows?.map((row) =>
++            row.id === updated.id ? updated : updated.is_welcome ? { ...row, is_welcome: false } : row,
++          ),
++      );
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessionTypes', updated.coach_id],
+       });
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+     },
+   });
+ }
+@@ -126,18 +139,31 @@ export function useRequestSession() {
+   const qc = useQueryClient();
+   return useMutation<CoachingSession, Error, RequestSessionInput>({
+     mutationFn: (input) => schedulingApi.requestSession(input),
++    // S-SCHED: a booking, move or cancel changes which slots are open.
++    onSettled: () => {
++      qc.invalidateQueries({ queryKey: ['scheduling', 'openSlots'] });
++    },
+     onSuccess: () => {
+       qc.invalidateQueries({ queryKey: ['scheduling', 'sessions', 'me'] });
++      // Welcome-call marker (book / booked / done) lives on my-coaches.
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+     },
+   });
+ }
+ 
+ export function useApproveSession() {
+   const qc = useQueryClient();
+-  return useMutation<CoachingSession, Error, { id: string }>({
+-    mutationFn: ({ id }) => schedulingApi.approveSession(id),
++  return useMutation<CoachingSession, Error, { id: string; expectedStartAt?: string }>({
++    // S-SCHED-3: send the start time the coach saw; a moved request answers
++    // SESSION_MOVED instead of confirming a time the coach never saw.
++    mutationFn: ({ id, expectedStartAt }) =>
++      expectedStartAt
++        ? schedulingApi.approveSession(id, { expected_start_at: expectedStartAt })
++        : schedulingApi.approveSession(id),
+     onSuccess: (session) => {
+       qc.invalidateQueries({ queryKey: ['scheduling', 'sessions', 'me'] });
++      // Welcome-call marker (book / booked / done) lives on my-coaches.
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessions', session.id],
+       });
+@@ -155,6 +181,8 @@ export function useDeclineSession() {
+     mutationFn: ({ id, input }) => schedulingApi.declineSession(id, input),
+     onSuccess: (session) => {
+       qc.invalidateQueries({ queryKey: ['scheduling', 'sessions', 'me'] });
++      // Welcome-call marker (book / booked / done) lives on my-coaches.
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessions', session.id],
+       });
+@@ -170,8 +198,14 @@ export function useCancelSession() {
+     { id: string; input?: CancelSessionInput }
+   >({
+     mutationFn: ({ id, input }) => schedulingApi.cancelSession(id, input),
++    // S-SCHED: a booking, move or cancel changes which slots are open.
++    onSettled: () => {
++      qc.invalidateQueries({ queryKey: ['scheduling', 'openSlots'] });
++    },
+     onSuccess: (session) => {
+       qc.invalidateQueries({ queryKey: ['scheduling', 'sessions', 'me'] });
++      // Welcome-call marker (book / booked / done) lives on my-coaches.
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessions', session.id],
+       });
+@@ -187,8 +221,14 @@ export function useRescheduleSession() {
+     { id: string; input: RescheduleSessionInput }
+   >({
+     mutationFn: ({ id, input }) => schedulingApi.rescheduleSession(id, input),
++    // S-SCHED: a booking, move or cancel changes which slots are open.
++    onSettled: () => {
++      qc.invalidateQueries({ queryKey: ['scheduling', 'openSlots'] });
++    },
+     onSuccess: (session) => {
+       qc.invalidateQueries({ queryKey: ['scheduling', 'sessions', 'me'] });
++      // Welcome-call marker (book / booked / done) lives on my-coaches.
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessions', session.id],
+       });
+@@ -206,6 +246,8 @@ export function useCompleteSession() {
+     mutationFn: ({ id, input }) => schedulingApi.completeSession(id, input),
+     onSuccess: (session) => {
+       qc.invalidateQueries({ queryKey: ['scheduling', 'sessions', 'me'] });
++      // Welcome-call marker (book / booked / done) lives on my-coaches.
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessions', session.id],
+       });
+@@ -223,6 +265,8 @@ export function useMarkNoShow() {
+     mutationFn: ({ id, input }) => schedulingApi.markNoShow(id, input),
+     onSuccess: (session) => {
+       qc.invalidateQueries({ queryKey: ['scheduling', 'sessions', 'me'] });
++      // Welcome-call marker (book / booked / done) lives on my-coaches.
++      qc.invalidateQueries({ queryKey: ['scheduling', 'myCoaches'] });
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessions', session.id],
+       });
+@@ -240,6 +284,7 @@ export function useAttachManualVideoLink() {
+     mutationFn: ({ id, input }) =>
+       schedulingApi.attachManualVideoLink(id, input),
+     onSuccess: (session) => {
++      qc.invalidateQueries({ queryKey: ['scheduling', 'sessions', 'me'] });
+       qc.invalidateQueries({
+         queryKey: ['scheduling', 'sessions', session.id],
+       });
+diff --git a/src/services/__tests__/notificationsNormalize.test.ts b/src/services/__tests__/notificationsNormalize.test.ts
+new file mode 100644
+index 0000000..abb4e07
+--- /dev/null
++++ b/src/services/__tests__/notificationsNormalize.test.ts
+@@ -0,0 +1,53 @@
++jest.mock('../api', () => ({ __esModule: true, default: { get: jest.fn(), post: jest.fn(), patch: jest.fn(), put: jest.fn() } }));
++
++import { normalizeNotification } from '../notificationsApi';
++
++describe('normalizeNotification (S-SCHED-2 live rows)', () => {
++  it('maps a backend booking row to a routable center item', () => {
++    const n = normalizeNotification({
++      id: 'n-1',
++      kind: 'booking_confirmed',
++      body: 'Your session on Tue 3 Mar at 10:00 is confirmed.',
++      payload: { title: 'Session confirmed', actionScreen: 'CalendarSession', actionParams: { sessionId: 's-1' }, category: 'booking' },
++      deep_link: 'tgp://calendar/session/s-1',
++      read_at: null,
++      created_at: '2027-03-01T10:00:00.000Z',
++    });
++    expect(n).toEqual({
++      id: 'n-1',
++      kind: 'coach',
++      title: 'Session confirmed',
++      body: 'Your session on Tue 3 Mar at 10:00 is confirmed.',
++      read: false,
++      createdAt: '2027-03-01T10:00:00.000Z',
++      actionScreen: 'CalendarSession',
++      actionParams: { sessionId: 's-1' },
++    });
++  });
++
++  it('reminders map to the reminder kind; read_at marks read; missing title gets a plain default', () => {
++    const n = normalizeNotification({
++      id: 'n-2',
++      kind: 'booking_reminder_24h',
++      body: 'Your session is tomorrow.',
++      payload: { actionScreen: 'CoachBookingInbox', actionParams: { sessionId: 's-2', bad: { nested: true }, 'x y': 'z' } },
++      read_at: '2027-03-01T11:00:00.000Z',
++      created_at: '2027-03-01T10:00:00.000Z',
++    });
++    expect(n?.kind).toBe('reminder');
++    expect(n?.read).toBe(true);
++    expect(n?.title).toBe('Session reminder');
++    expect(n?.actionParams).toEqual({ sessionId: 's-2' });
++  });
++
++  it('passes AppNotification-shaped items through and drops unusable rows', () => {
++    const app = { id: 'a', kind: 'milestone', title: 'Week done', body: 'b', read: true, createdAt: '2027-01-01T00:00:00.000Z' };
++    expect(normalizeNotification(app)).toEqual(app);
++    expect(normalizeNotification(null)).toBeNull();
++    expect(normalizeNotification({ kind: 'coach' })).toBeNull();
++    const odd = normalizeNotification({ id: 'z', kind: 'something_new', payload: { actionScreen: 'not a screen' }, created_at: 'nope' });
++    expect(odd?.kind).toBe('system');
++    expect(odd?.actionScreen).toBeUndefined();
++    expect(odd?.createdAt).toBe(new Date(0).toISOString());
++  });
++});
+diff --git a/src/services/__tests__/pushTapRouter.test.ts b/src/services/__tests__/pushTapRouter.test.ts
+index 157af12..02d48ba 100644
+--- a/src/services/__tests__/pushTapRouter.test.ts
++++ b/src/services/__tests__/pushTapRouter.test.ts
+@@ -2,6 +2,7 @@ const mockFlags = {
+   communityTab: true,
+   communityEvents: true,
+   coachCommunity: true,
++  clientCalendar: true,
+ };
+ jest.mock('../../config/featureFlags', () => ({
+   get featureFlags() {
+@@ -21,6 +22,7 @@ import {
+   flushPendingPushTap,
+   MAX_SEEN_IDS,
+   pushSessionFor,
++  routeInAppNotification,
+   routePushTap,
+   setPushSession,
+   PushNavigator,
+@@ -53,6 +55,7 @@ describe('pushTapRouter', () => {
+     mockFlags.communityTab = true;
+     mockFlags.communityEvents = true;
+     mockFlags.coachCommunity = true;
++    mockFlags.clientCalendar = true;
+     mockHidden = false;
+   });
+ 
+@@ -103,6 +106,70 @@ describe('pushTapRouter', () => {
+     });
+   });
+ 
++  describe('S-SCHED booking pushes', () => {
++    it('client CalendarSession -> Calendar tab session view with the session id', () => {
++      const nav = makeNav([...CLIENT_TABS, 'CalendarTab']);
++      attachPushNavigator(nav);
++      setPushSession(STUDENT_A);
++      routePushTap('CalendarSession', { sessionId: 's-1' }, 'nb1');
++      expect(nav.navigate).toHaveBeenCalledWith('CalendarTab', { screen: 'CalendarSession', params: { sessionId: 's-1' } });
++    });
++
++    it('client CalendarSession with the Calendar flag off -> notification center', () => {
++      mockFlags.clientCalendar = false;
++      const nav = makeNav(CLIENT_TABS);
++      attachPushNavigator(nav);
++      setPushSession(STUDENT_A);
++      routePushTap('CalendarSession', { sessionId: 's-1' }, 'nb2');
++      expect(nav.navigate).toHaveBeenCalledWith('Home', { screen: 'NotificationCenter', params: { sessionId: 's-1' } });
++    });
++
++    it('client CalendarSession when the tab is not mounted -> notification center, not a dead route', () => {
++      const nav = makeNav(CLIENT_TABS);
++      attachPushNavigator(nav);
++      setPushSession(STUDENT_A);
++      routePushTap('CalendarSession', { sessionId: 's-1' }, 'nb3');
++      expect(nav.navigate).toHaveBeenCalledWith('Home', { screen: 'NotificationCenter', params: { sessionId: 's-1' } });
++    });
++
++    it('in-app center rows use the same role-aware table (client and coach)', () => {
++      const clientNav = makeNav([...CLIENT_TABS, 'CalendarTab']);
++      attachPushNavigator(clientNav);
++      setPushSession(STUDENT_A);
++      expect(routeInAppNotification('CalendarSession', { sessionId: 's-9' })).toBe(true);
++      expect(clientNav.navigate).toHaveBeenCalledWith('CalendarTab', { screen: 'CalendarSession', params: { sessionId: 's-9' } });
++
++      const coachNav = makeNav(COACH_TABS);
++      attachPushNavigator(coachNav);
++      setPushSession(COACH_A);
++      expect(routeInAppNotification('CoachBookingInbox', { sessionId: 's-9' })).toBe(true);
++      expect(coachNav.navigate).toHaveBeenCalledWith('ClientsStack', { screen: 'CoachBookingInbox', params: { sessionId: 's-9' } });
++    });
++
++    it('in-app routing refuses when not in the app or the name is not routable', () => {
++      const nav = makeNav([...CLIENT_TABS, 'CalendarTab']);
++      attachPushNavigator(nav);
++      setPushSession({ kind: 'signedOut' });
++      expect(routeInAppNotification('CalendarSession', { sessionId: 's-9' })).toBe(false);
++      setPushSession(STUDENT_A);
++      expect(routeInAppNotification('not a screen', {})).toBe(false);
++      expect(routeInAppNotification(undefined, {})).toBe(false);
++      expect(nav.navigate).not.toHaveBeenCalled();
++      // Not dedupe-bound: the same row can be opened twice.
++      expect(routeInAppNotification('CalendarSession', { sessionId: 's-9' })).toBe(true);
++      expect(routeInAppNotification('CalendarSession', { sessionId: 's-9' })).toBe(true);
++      expect(nav.navigate).toHaveBeenCalledTimes(2);
++    });
++
++    it('coach CoachBookingInbox -> Clients stack booking inbox', () => {
++      const nav = makeNav(COACH_TABS);
++      attachPushNavigator(nav);
++      setPushSession(COACH_A);
++      routePushTap('CoachBookingInbox', { sessionId: 's-1' }, 'nb4');
++      expect(nav.navigate).toHaveBeenCalledWith('ClientsStack', { screen: 'CoachBookingInbox', params: { sessionId: 's-1' } });
++    });
++  });
++
+   describe('coach nested destinations (real tab roots)', () => {
+     it('Messages is a coach root tab', () => {
+       const nav = makeNav(COACH_TABS);
+diff --git a/src/services/notificationsApi.ts b/src/services/notificationsApi.ts
+index 4028ced..98c00f6 100644
+--- a/src/services/notificationsApi.ts
++++ b/src/services/notificationsApi.ts
+@@ -183,6 +183,86 @@ const MOCK_STORE: {
+   preferences: defaultPreferences(),
+ };
+ 
++// ─── Live row normalizer ──────────────────────────────────────────────────────
++//
++// S-SCHED-2: the live GET /notifications returns backend rows
++//   { id, kind, body, payload: { title, actionScreen, actionParams, ... },
++//     deep_link, read_at, created_at }
++// while this module's callers read AppNotification. Normalise every item so
++// the center shows the real title and routes a tap (booking rows carry
++// actionScreen CalendarSession / CoachBookingInbox + { sessionId }). Items
++// already in AppNotification shape pass through unchanged.
++
++const SCREEN_NAME = /^[A-Za-z][A-Za-z0-9_]{0,59}$/;
++const PARAM_KEY = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
++
++function asRecord(v: unknown): Record<string, unknown> | null {
++  return v && typeof v === 'object' && !Array.isArray(v) ? { ...v } : null;
++}
++
++function appKindFor(kind: string): NotificationKind {
++  const known = ALL_KINDS.find((k) => k === kind);
++  if (known) return known;
++  if (kind.startsWith('booking_reminder')) return 'reminder';
++  if (kind.startsWith('booking_')) return 'coach';
++  if (kind.includes('message')) return 'message';
++  return 'system';
++}
++
++function defaultTitleFor(kind: string): string {
++  if (kind.startsWith('booking_reminder')) return 'Session reminder';
++  if (kind.startsWith('booking_')) return 'Calendar update';
++  return 'Update';
++}
++
++function stringParams(raw: unknown): Record<string, string> | undefined {
++  const rec = asRecord(raw);
++  if (!rec) return undefined;
++  const out: Record<string, string> = {};
++  for (const [k, v] of Object.entries(rec).slice(0, 8)) {
++    if (!PARAM_KEY.test(k)) continue;
++    if (typeof v === 'string' && v.length <= 200) out[k] = v;
++    else if (typeof v === 'number' && Number.isFinite(v)) out[k] = String(v);
++  }
++  return Object.keys(out).length > 0 ? out : undefined;
++}
++
++/** Backend row or AppNotification -> AppNotification; null when unusable. */
++export function normalizeNotification(raw: unknown): AppNotification | null {
++  const r = asRecord(raw);
++  if (!r || typeof r.id !== 'string' || r.id.length === 0) return null;
++  const rawKind = typeof r.kind === 'string' ? r.kind : 'system';
++  const payload = asRecord(r.payload) ?? {};
++  const title =
++    typeof r.title === 'string' && r.title.trim()
++      ? r.title
++      : typeof payload.title === 'string' && payload.title.trim()
++        ? payload.title
++        : defaultTitleFor(rawKind);
++  const body = typeof r.body === 'string' ? r.body : '';
++  const read =
++    typeof r.read === 'boolean' ? r.read : r.read_at !== null && r.read_at !== undefined;
++  const createdRaw = typeof r.createdAt === 'string' ? r.createdAt : r.created_at;
++  const createdAt =
++    typeof createdRaw === 'string' && !Number.isNaN(Date.parse(createdRaw))
++      ? createdRaw
++      : new Date(0).toISOString();
++  const screenRaw = typeof r.actionScreen === 'string' ? r.actionScreen : payload.actionScreen;
++  const actionScreen =
++    typeof screenRaw === 'string' && SCREEN_NAME.test(screenRaw) ? screenRaw : undefined;
++  const actionParams = stringParams(r.actionParams ?? payload.actionParams);
++  return {
++    id: r.id,
++    kind: appKindFor(rawKind),
++    title,
++    body,
++    read,
++    createdAt,
++    ...(actionScreen ? { actionScreen } : {}),
++    ...(actionParams ? { actionParams } : {}),
++  };
++}
++
+ // ─── Mock helpers ─────────────────────────────────────────────────────────────
+ 
+ function simulateLatency(): Promise<void> {
+@@ -204,10 +284,16 @@ export async function fetchNotifications(
+     if (cursor) q.set('cursor', cursor);
+     if (limit) q.set('limit', String(limit));
+     const qs = q.toString();
+-    const res = await api.get<NotificationPage>(
++    const res = await api.get<{ items?: unknown; nextCursor?: unknown }>(
+       `/notifications${qs ? `?${qs}` : ''}`,
+     );
+-    return res.data;
++    const items = Array.isArray(res.data?.items) ? res.data.items : [];
++    return {
++      items: items
++        .map(normalizeNotification)
++        .filter((n): n is AppNotification => n !== null),
++      nextCursor: typeof res.data?.nextCursor === 'string' ? res.data.nextCursor : null,
++    };
+   }
+ 
+   await simulateLatency();
+diff --git a/src/services/pushTapRouter.ts b/src/services/pushTapRouter.ts
+index 6ab7d88..ecf0dfa 100644
+--- a/src/services/pushTapRouter.ts
++++ b/src/services/pushTapRouter.ts
+@@ -68,6 +68,14 @@ export const CLIENT_PUSH_ROUTES: Record<string, Resolver> = {
+   Deliverables: () => ({ root: 'MoreTab', screen: 'Deliverables' }),
+   WorkoutMain: () => ({ root: 'WorkoutTab', screen: 'WorkoutMain' }),
+   Log: () => ({ root: 'Log' }),
++  // S-SCHED destination for the existing actionScreen/actionParams format.
++  // Backend booking delivery must supply this format before launch; registering
++  // a destination does not establish an end-to-end notification transport.
++  // Flag off: the tab does not exist, so land on the notification center.
++  CalendarSession: () =>
++    featureFlags.clientCalendar
++      ? { root: 'CalendarTab', screen: 'CalendarSession' }
++      : { root: 'Home', screen: 'NotificationCenter' },
+   CommunityEventDetail: () =>
+     featureFlags.communityTab && featureFlags.communityEvents
+       ? { root: 'CommunityTab', screen: 'CommunityEventDetail' }
+@@ -80,6 +88,8 @@ export const COACH_PUSH_ROUTES: Record<string, Resolver> = {
+   NotificationCenter: () => ({ root: 'ClientsStack', screen: 'NotificationCenter' }),
+   Notifications: () => ({ root: 'ClientsStack', screen: 'NotificationCenter' }),
+   NotificationPreferences: () => ({ root: 'ClientsStack', screen: 'NotificationPreferences' }),
++  // S-SCHED: coach booking pushes open the booking inbox.
++  CoachBookingInbox: () => ({ root: 'ClientsStack', screen: 'CoachBookingInbox' }),
+   // AI credit top-ups are not purchasable on hidden iOS builds: a budget
+   // push lands on Settings, never on the checkout route (whose gated
+   // wrapper would only say "Managed on the web").
+@@ -250,21 +260,48 @@ export function flushPendingPushTap(): boolean {
+   if (!routeNames.includes(ROLE_ANCHOR[session.role])) return false;
+ 
+   const { screen, params } = pending;
+-  let target = resolvePushTarget(session.role, screen);
++  pending = null;
++  // Unroutable target: dropped rather than crashing (deliver returns false).
++  deliver(navigator, session.role, routeNames, screen, params);
++  return true;
++}
++
++function deliver(
++  nav: PushNavigator,
++  role: PushRole,
++  routeNames: readonly string[],
++  screen: string,
++  params: Record<string, string> | undefined,
++): boolean {
++  let target = resolvePushTarget(role, screen);
+   if (!routeNames.includes(target.root)) {
+-    target = resolvePushTarget(session.role, 'NotificationCenter');
++    target = resolvePushTarget(role, 'NotificationCenter');
+   }
+-  pending = null;
+   try {
+     if (target.screen) {
+-      navigator.navigate(target.root, { screen: target.screen, params });
++      nav.navigate(target.root, { screen: target.screen, params });
+     } else {
+-      navigator.navigate(target.root, params);
++      nav.navigate(target.root, params);
+     }
++    return true;
+   } catch {
+-    // Unroutable target: drop it rather than crash.
++    return false;
+   }
+-  return true;
++}
++
++/**
++ * S-SCHED-2: route a notification-center tap through the same role-aware,
++ * allow-listed table as a push tap (e.g. a client booking row opens
++ * Calendar > session, a coach row opens the booking inbox). Returns false
++ * when the app navigator is not ready or the screen name is not routable, so
++ * the caller can fall back. Never holds or replays the tap.
++ */
++export function routeInAppNotification(actionScreen: string | undefined, actionParams?: unknown): boolean {
++  if (!actionScreen || typeof actionScreen !== 'string' || !SCREEN_NAME.test(actionScreen)) return false;
++  if (session.kind !== 'app' || !navigator || !navigator.isReady()) return false;
++  const routeNames = navigator.getRootState()?.routeNames ?? [];
++  if (!routeNames.includes(ROLE_ANCHOR[session.role])) return false;
++  return deliver(navigator, session.role, routeNames, actionScreen, decodePushParams(actionParams));
+ }
+ 
+ /** Drop a held tap (kept for callers; setPushSession signedOut does this). */

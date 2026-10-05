@@ -1,0 +1,2111 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 572e41a6..876240b3 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -356,6 +356,17 @@ jobs:
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+ 
++      - name: Run coachless featured-coach live RLS suite (A1-COACHLESS)
++        # Applies prisma/migrations/20270301000000_coachless_featured_coach
++        # verbatim on top of the shim + RLS-01 bootstrap + hardened helpers,
++        # then proves self-only reads of CoachCodeRedemption and
++        # CoachlessPromptState (no coach/owner branch), owner-only reads of
++        # FeaturedCoachConfig, no non-service writes, anon deny, CHECK/unique/
++        # FK cascade behaviour and down/up. Refuses to skip under CI=true.
++        run: npx jest --config jest.rls.config.js test/rls/coachless-rls.spec.ts --runInBand --testTimeout=60000
++        env:
++          NODE_OPTIONS: --max-old-space-size=4096
++
+       - name: Run clinic engagement live RLS suite (#609)
+         # Proves the 20270213000000 policies on the real migration output:
+         # RLS enabled + forced, the exact policy set, who reads which rows
+diff --git a/prisma/migrations/20270301000000_coachless_featured_coach/down.sql b/prisma/migrations/20270301000000_coachless_featured_coach/down.sql
+new file mode 100644
+index 00000000..f316ebea
+--- /dev/null
++++ b/prisma/migrations/20270301000000_coachless_featured_coach/down.sql
+@@ -0,0 +1,6 @@
++-- Down for 20270301000000_coachless_featured_coach. Drops the owner's
++-- featured-coach offer copy, the redemption ledger and the Roman card state;
++-- use only for a confirmed pre-launch defect.
++DROP TABLE IF EXISTS "CoachlessPromptState";
++DROP TABLE IF EXISTS "CoachCodeRedemption";
++DROP TABLE IF EXISTS "FeaturedCoachConfig";
+diff --git a/prisma/migrations/20270301000000_coachless_featured_coach/migration.sql b/prisma/migrations/20270301000000_coachless_featured_coach/migration.sql
+new file mode 100644
+index 00000000..0699c886
+--- /dev/null
++++ b/prisma/migrations/20270301000000_coachless_featured_coach/migration.sql
+@@ -0,0 +1,186 @@
++-- A1-COACHLESS — coachless Home featured-coach config, coach-code redemption
++-- ledger and the scripted Roman card state.
++--
++-- Additive-only. Creates three tables, their indexes, FKs, CHECK constraints
++-- and RLS. No existing table, column, index or constraint is altered or
++-- dropped. The User / CoachPackage back-relations in schema.prisma are
++-- Prisma-virtual and emit no DDL.
++--
++-- RLS POLICY CITATION (ENGINEERING_RULES §2), helpers from
++-- 20261212000000_rls_helper_search_path / 20260704000000_rls01_helper_searchpath_hibp:
++--   app.current_user_id()  session GUC set by RlsContextInterceptor
++--   app.is_owner()         platform owner context
++--
++-- FeaturedCoachConfig (platform singleton; owner-edited offer copy):
++--   p_featuredcoachconfig_service_role_all  service_role ALL (server reads, owner PUT)
++--   p_featuredcoachconfig_select_owner      SELECT platform owner only
++--   no public INSERT/UPDATE/DELETE (written by the owner route through the server)
++--   RESTRICTIVE anon deny-all
++--   Clients never read this table directly: GET /coachless/home serves a
++--   projection of it (no updated_by, no caps they do not need).
++--
++-- CoachCodeRedemption (idempotency ledger + attempt record; tenancy: self):
++--   p_coachcoderedemption_service_role_all  service_role ALL
++--   p_coachcoderedemption_select_self       SELECT the redeeming user only
++--   no public INSERT/UPDATE/DELETE; no owner or coach branch (a coach never
++--   reads another user's redemption attempts through RLS)
++--   RESTRICTIVE anon deny-all
++--
++-- CoachlessPromptState (Roman card frequency cap + persisted "Not now"):
++--   p_coachlesspromptstate_service_role_all  service_role ALL
++--   p_coachlesspromptstate_select_self       SELECT the user only
++--   no public INSERT/UPDATE/DELETE
++--   RESTRICTIVE anon deny-all
++--
++-- Account erasure: CoachCodeRedemption and CoachlessPromptState cascade with
++-- the User row; FeaturedCoachConfig.coach_user_id is SET NULL (the offer
++-- turns itself off because no coach resolves).
++--
++-- Rollback: down.sql drops the three tables (loses the owner's offer copy and
++-- the redemption ledger; only for a confirmed pre-launch defect). Otherwise
++-- fix forward.
++
++SET lock_timeout = '5s';
++
++-- CreateTable
++CREATE TABLE "FeaturedCoachConfig" (
++    "id" TEXT NOT NULL DEFAULT 'default',
++    "coach_user_id" TEXT,
++    "code" TEXT,
++    "package_id" TEXT,
++    "banner_title" TEXT NOT NULL,
++    "offer_text" TEXT,
++    "roman_pitch_text" TEXT,
++    "accepting_clients" BOOLEAN NOT NULL DEFAULT false,
++    "roman_enabled" BOOLEAN NOT NULL DEFAULT false,
++    "roman_min_hours_between" INTEGER NOT NULL DEFAULT 24,
++    "roman_max_per_week" INTEGER NOT NULL DEFAULT 3,
++    "roman_snooze_days" INTEGER NOT NULL DEFAULT 14,
++    "roman_max_not_now" INTEGER NOT NULL DEFAULT 2,
++    "updated_by_user_id" TEXT,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "FeaturedCoachConfig_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "CoachCodeRedemption" (
++    "id" TEXT NOT NULL,
++    "user_id" TEXT NOT NULL,
++    "idempotency_key" TEXT NOT NULL,
++    "request_hash" TEXT NOT NULL,
++    "status" TEXT NOT NULL DEFAULT 'in_progress',
++    "outcome" TEXT,
++    "coach_id" TEXT,
++    "http_status" INTEGER,
++    "response" JSONB,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "CoachCodeRedemption_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "CoachlessPromptState" (
++    "user_id" TEXT NOT NULL,
++    "roman_seen_count" INTEGER NOT NULL DEFAULT 0,
++    "roman_window_started_at" TIMESTAMP(3),
++    "roman_last_seen_at" TIMESTAMP(3),
++    "roman_not_now_count" INTEGER NOT NULL DEFAULT 0,
++    "roman_not_now_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "CoachlessPromptState_pkey" PRIMARY KEY ("user_id")
++);
++
++-- CreateIndex
++CREATE INDEX "CoachCodeRedemption_user_id_created_at_idx" ON "CoachCodeRedemption"("user_id", "created_at");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "CoachCodeRedemption_user_id_idempotency_key_key" ON "CoachCodeRedemption"("user_id", "idempotency_key");
++
++-- AddForeignKey
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_coach_user_id_fkey" FOREIGN KEY ("coach_user_id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_package_id_fkey" FOREIGN KEY ("package_id") REFERENCES "CoachPackage"("id") ON DELETE SET NULL ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "CoachCodeRedemption" ADD CONSTRAINT "CoachCodeRedemption_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "CoachlessPromptState" ADD CONSTRAINT "CoachlessPromptState_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- CHECK constraints (not modelled by Prisma; schema parity ignores them).
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_singleton_check" CHECK ("id" = 'default');
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_text_check" CHECK (
++    length("banner_title") BETWEEN 1 AND 120
++    AND ("offer_text" IS NULL OR length("offer_text") BETWEEN 1 AND 200)
++    AND ("roman_pitch_text" IS NULL OR length("roman_pitch_text") BETWEEN 1 AND 400)
++    AND ("code" IS NULL OR "code" ~ '^[A-Za-z0-9-]{3,32}$')
++);
++ALTER TABLE "FeaturedCoachConfig" ADD CONSTRAINT "FeaturedCoachConfig_caps_check" CHECK (
++    "roman_min_hours_between" BETWEEN 1 AND 720
++    AND "roman_max_per_week" BETWEEN 1 AND 14
++    AND "roman_snooze_days" BETWEEN 1 AND 365
++    AND "roman_max_not_now" BETWEEN 1 AND 10
++);
++ALTER TABLE "CoachCodeRedemption" ADD CONSTRAINT "CoachCodeRedemption_status_check" CHECK ("status" IN ('in_progress', 'completed', 'failed'));
++ALTER TABLE "CoachCodeRedemption" ADD CONSTRAINT "CoachCodeRedemption_key_check" CHECK (
++    "idempotency_key" ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
++    AND "request_hash" ~ '^[0-9a-f]{64}$'
++);
++ALTER TABLE "CoachlessPromptState" ADD CONSTRAINT "CoachlessPromptState_counts_check" CHECK ("roman_seen_count" >= 0 AND "roman_not_now_count" >= 0);
++
++-- ─── FeaturedCoachConfig ──────────────────────────────────────────────
++ALTER TABLE "FeaturedCoachConfig" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "FeaturedCoachConfig" FORCE ROW LEVEL SECURITY;
++REVOKE ALL ON TABLE "FeaturedCoachConfig" FROM anon;
++
++DROP POLICY IF EXISTS "p_featuredcoachconfig_service_role_all" ON "FeaturedCoachConfig";
++CREATE POLICY "p_featuredcoachconfig_service_role_all" ON "FeaturedCoachConfig" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_featuredcoachconfig_service_role_all" ON "FeaturedCoachConfig" IS 'Primitive A: service_role access for the server read path and the audited owner PUT.';
++
++DROP POLICY IF EXISTS "p_featuredcoachconfig_select_owner" ON "FeaturedCoachConfig";
++CREATE POLICY "p_featuredcoachconfig_select_owner" ON "FeaturedCoachConfig" AS PERMISSIVE FOR SELECT TO public USING (app.is_owner());
++COMMENT ON POLICY "p_featuredcoachconfig_select_owner" ON "FeaturedCoachConfig" IS 'Platform owner reads the featured-coach config; clients read a server projection only. No public writes.';
++
++DROP POLICY IF EXISTS "p_featuredcoachconfig_anon_deny" ON "FeaturedCoachConfig";
++CREATE POLICY "p_featuredcoachconfig_anon_deny" ON "FeaturedCoachConfig" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++COMMENT ON POLICY "p_featuredcoachconfig_anon_deny" ON "FeaturedCoachConfig" IS 'RESTRICTIVE deny-all: anon never reads or writes this table.';
++
++-- ─── CoachCodeRedemption ──────────────────────────────────────────────
++ALTER TABLE "CoachCodeRedemption" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "CoachCodeRedemption" FORCE ROW LEVEL SECURITY;
++REVOKE ALL ON TABLE "CoachCodeRedemption" FROM anon;
++
++DROP POLICY IF EXISTS "p_coachcoderedemption_service_role_all" ON "CoachCodeRedemption";
++CREATE POLICY "p_coachcoderedemption_service_role_all" ON "CoachCodeRedemption" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_coachcoderedemption_service_role_all" ON "CoachCodeRedemption" IS 'Primitive A: service_role access for the redemption writer and account erasure.';
++
++DROP POLICY IF EXISTS "p_coachcoderedemption_select_self" ON "CoachCodeRedemption";
++CREATE POLICY "p_coachcoderedemption_select_self" ON "CoachCodeRedemption" AS PERMISSIVE FOR SELECT TO public USING (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id());
++COMMENT ON POLICY "p_coachcoderedemption_select_self" ON "CoachCodeRedemption" IS 'Self-only read: a user reads only their own redemption attempts. No owner, coach or sub-coach branch. No public writes.';
++
++DROP POLICY IF EXISTS "p_coachcoderedemption_anon_deny" ON "CoachCodeRedemption";
++CREATE POLICY "p_coachcoderedemption_anon_deny" ON "CoachCodeRedemption" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++COMMENT ON POLICY "p_coachcoderedemption_anon_deny" ON "CoachCodeRedemption" IS 'RESTRICTIVE deny-all: anon never reads or writes this table.';
++
++-- ─── CoachlessPromptState ──────────────────────────────────────────────
++ALTER TABLE "CoachlessPromptState" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "CoachlessPromptState" FORCE ROW LEVEL SECURITY;
++REVOKE ALL ON TABLE "CoachlessPromptState" FROM anon;
++
++DROP POLICY IF EXISTS "p_coachlesspromptstate_service_role_all" ON "CoachlessPromptState";
++CREATE POLICY "p_coachlesspromptstate_service_role_all" ON "CoachlessPromptState" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_coachlesspromptstate_service_role_all" ON "CoachlessPromptState" IS 'Primitive A: service_role access for the prompt-state writer and account erasure.';
++
++DROP POLICY IF EXISTS "p_coachlesspromptstate_select_self" ON "CoachlessPromptState";
++CREATE POLICY "p_coachlesspromptstate_select_self" ON "CoachlessPromptState" AS PERMISSIVE FOR SELECT TO public USING (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id());
++COMMENT ON POLICY "p_coachlesspromptstate_select_self" ON "CoachlessPromptState" IS 'Self-only read: a user reads only their own Roman card state. No public writes.';
++
++DROP POLICY IF EXISTS "p_coachlesspromptstate_anon_deny" ON "CoachlessPromptState";
++CREATE POLICY "p_coachlesspromptstate_anon_deny" ON "CoachlessPromptState" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++COMMENT ON POLICY "p_coachlesspromptstate_anon_deny" ON "CoachlessPromptState" IS 'RESTRICTIVE deny-all: anon never reads or writes this table.';
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index a4d571fa..bf084eb1 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -200,6 +200,11 @@ model User {
+   signup_ref                String?
+ 
+   profile                        UserProfile?
++  // A1-COACHLESS — featured-coach config rows naming this coach, the user's
++  // coach-code redemption ledger and the coachless Roman card state.
++  featured_coach_configs         FeaturedCoachConfig[]    @relation("FeaturedCoachConfigCoach")
++  coach_code_redemptions         CoachCodeRedemption[]    @relation("CoachCodeRedemptionUser")
++  coachless_prompt_state         CoachlessPromptState?    @relation("CoachlessPromptStateUser")
+   logged_entries                 LoggedFoodEntry[]
+   workouts                       WorkoutSession[]
+   fasting_windows                FastingWindow[]
+@@ -3540,6 +3545,8 @@ model CoachPackage {
+   // C01 — invite codes / permanent coach codes bound to this package.
+   bound_invite_codes    InviteCode[]   @relation("InviteCodePackage")
+   bound_coach_profiles  CoachProfile[] @relation("CoachProfileInviteCodePackage")
++  // A1-COACHLESS — featured-coach configs that sell this package.
++  featured_coach_configs FeaturedCoachConfig[] @relation("FeaturedCoachConfigPackage")
+ 
+   // R43 Storefront Phase 1 — guest-checkout share links.
+   // share_token is minted on demand via POST /packages/:id/share-link and
+@@ -7771,3 +7778,70 @@ model AiProcessingConsentEvent {
+ 
+   @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
+ }
++
++// ─── A1-COACHLESS: coachless Home, scripted Roman pitch, coach code ─────────
++//
++// FeaturedCoachConfig is a singleton (id = 'default', CHECK-enforced) holding
++// the platform's featured-coach offer shown to coachless clients: the code,
++// the banner/offer/Roman copy and the Roman card frequency caps. Edited only
++// by the platform owner through PUT /admin/featured-coach (audited). The
++// "accepting clients" state served to clients is this row's switch AND the
++// featured coach being able to accept clients (code resolves, coach role,
++// CoachSubscription active/trialing/grandfathered).
++model FeaturedCoachConfig {
++  id                      String        @id @default("default")
++  coach_user_id           String?
++  coach                   User?         @relation("FeaturedCoachConfigCoach", fields: [coach_user_id], references: [id], onDelete: SetNull)
++  code                    String?
++  package_id              String?
++  package                 CoachPackage? @relation("FeaturedCoachConfigPackage", fields: [package_id], references: [id], onDelete: SetNull)
++  banner_title            String
++  offer_text              String?
++  roman_pitch_text        String?
++  accepting_clients       Boolean       @default(false)
++  roman_enabled           Boolean       @default(false)
++  roman_min_hours_between Int           @default(24)
++  roman_max_per_week      Int           @default(3)
++  roman_snooze_days       Int           @default(14)
++  roman_max_not_now       Int           @default(2)
++  updated_by_user_id      String?
++  created_at              DateTime      @default(now())
++  updated_at              DateTime      @updatedAt
++}
++
++// Idempotency ledger + attempt record for POST /coachless/coach-code/redeem.
++// One row per (user, Idempotency-Key). 'completed' rows replay their stored
++// response; 'failed' rows may be reclaimed by a retry of the same key;
++// 'in_progress' rows older than the stale window may be reclaimed after a
++// crash. Rows cascade with the user (account erasure).
++model CoachCodeRedemption {
++  id              String   @id @default(uuid())
++  user_id         String
++  user            User     @relation("CoachCodeRedemptionUser", fields: [user_id], references: [id], onDelete: Cascade)
++  idempotency_key String
++  request_hash    String
++  status          String   @default("in_progress")
++  outcome         String?
++  coach_id        String?
++  http_status     Int?
++  response        Json?
++  created_at      DateTime @default(now())
++  updated_at      DateTime @updatedAt
++
++  @@unique([user_id, idempotency_key])
++  @@index([user_id, created_at])
++}
++
++// Per-user state of the scripted coachless Roman card: impression counts for
++// the frequency cap and the persisted "Not now". Cascades with the user.
++model CoachlessPromptState {
++  user_id                 String    @id
++  user                    User      @relation("CoachlessPromptStateUser", fields: [user_id], references: [id], onDelete: Cascade)
++  roman_seen_count        Int       @default(0)
++  roman_window_started_at DateTime?
++  roman_last_seen_at      DateTime?
++  roman_not_now_count     Int       @default(0)
++  roman_not_now_at        DateTime?
++  created_at              DateTime  @default(now())
++  updated_at              DateTime  @updatedAt
++}
+diff --git a/src/account-deletion/account-deletion.manifest.ts b/src/account-deletion/account-deletion.manifest.ts
+index cdac555b..68bfc120 100644
+--- a/src/account-deletion/account-deletion.manifest.ts
++++ b/src/account-deletion/account-deletion.manifest.ts
+@@ -301,6 +301,19 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
+     action: detach('intended_email'),
+     match: 'email',
+   },
++  // A1-COACHLESS (#657): the redemption ledger and the Roman card state are the
++  // user's own rows (FK cascade); a ledger row naming an erased coach replays
++  // that coach's card, so it goes too. The featured-coach singleton stays and
++  // only loses the erased person (FK SET NULL for the coach).
++  { model: 'CoachCodeRedemption', field: 'user_id', action: del },
++  { model: 'CoachCodeRedemption', field: 'coach_id', action: del },
++  { model: 'CoachlessPromptState', field: 'user_id', action: del },
++  { model: 'FeaturedCoachConfig', field: 'coach_user_id', action: detach('coach_user_id') },
++  {
++    model: 'FeaturedCoachConfig',
++    field: 'updated_by_user_id',
++    action: detach('updated_by_user_id'),
++  },
+ 
+   // ── Teams and sub-coaches (B-608-6)
+   { model: 'TeamSubCoachAssignment', field: 'head_coach_id', action: del },
+diff --git a/src/app.module.ts b/src/app.module.ts
+index 937082e4..e92dee95 100644
+--- a/src/app.module.ts
++++ b/src/app.module.ts
+@@ -36,6 +36,7 @@ import { PrismaModule } from './prisma/prisma.module';
+ import { KmsModule } from './common/kms/kms.module';
+ import { HealthModule } from './health/health.module';
+ import { InviteCodesModule } from './invite-codes/invite-codes.module';
++import { CoachlessModule } from './coachless/coachless.module';
+ import { InviteGrantModule } from './invite-grant/invite-grant.module';
+ import { MessagingModule } from './messaging/messaging.module';
+ import { MessagesSafetyModule } from './messages-safety/messages-safety.module';
+@@ -228,6 +229,8 @@ import { WearablesModule } from './wearables/wearables.module';
+     WaterModule,
+     HealthModule,
+     InviteCodesModule,
++    // A1-COACHLESS — coachless Home, featured-coach config, coach-code redemption.
++    CoachlessModule,
+     // Clinic C01 — invite-code → package grants, free-package claims, revoke.
+     InviteGrantModule,
+     MessagingModule,
+diff --git a/src/coachless/README.md b/src/coachless/README.md
+new file mode 100644
+index 00000000..c15447ef
+--- /dev/null
++++ b/src/coachless/README.md
+@@ -0,0 +1,65 @@
++# Coachless Home (A1-COACHLESS)
++
++Gives a client with no coach a complete Home plus one clear way to get a coach: enter a coach
++code. Kill switch: `FEATURE_COACHLESS_HOME` (only the value `"true"` turns it on; unset means
++off). When the flag is off, every client route returns `404 coachless_disabled`. The mobile flag
++key is `coachless_home`, and it is true only for students when the env is on.
++
++## Routes
++
++| Route | Who | Purpose |
++| --- | --- | --- |
++| `GET /coachless/home` | client | Banner (`title`, owner `offer_text`, `code`), Roman card (`text`, `code`) or the reason it is hidden, featured coach card with its package. `eligible:false` once a coach is attached. |
++| `POST /coachless/coach-code/check` | client | Instant validation for the code sheet. Writes nothing. Returns `{valid:true, coach}` or `{valid:false, code}`. |
++| `POST /coachless/coach-code/redeem` | client | Attaches the client to the coach. Requires an `Idempotency-Key` UUID header. Returns the coach card plus `next.featured_package` / `next.packages_available` for the attach screen. |
++| `POST /coachless/roman-card/seen` | client | Records one impression (the frequency cap). |
++| `POST /coachless/roman-card/not-now` | client | Persists "Not now", which snoozes the card and, after `roman_max_not_now`, hides it for good. |
++| `GET/PUT /admin/featured-coach` | owner | Reads and edits the featured coach, code, package, banner title, offer text, Roman copy, accepting switch and caps. The change is audited as `featured_coach_config.updated`. `create_code_if_missing` mints a vanity code (for example `GP-BRADLEY`) for the featured coach. |
++
++All copy (banner title, offer text, Roman pitch) and the featured code come from
++`FeaturedCoachConfig`. None of it is in the code. The config is cached for 30 seconds, and a save
++invalidates the cache.
++
++## Redemption
++
++`CoachCodeRedemptionService` delegates the write to the single canonical attach writer,
++`InviteCodesService.attachUserToCoachByCode`. That writer handles tenancy (no re-parenting a
++client of another coach), seat accounting and the redemption analytics.
++
++The service adds:
++
++- **Ledger.** `CoachCodeRedemption` with a unique `(user_id, idempotency_key)`.
++- **Retries.** A retry with the same key replays the stored response with `replayed:true`. A key
++  reused for a different code returns `422 idempotency_key_reused`. Failed keys, and claims stuck
++  `in_progress` for 60 seconds, can be reclaimed.
++- **Specific error codes.** `code_invalid`, `code_expired`, `code_revoked`, `code_exhausted`,
++  `code_email_mismatch`, `coach_not_accepting`, `already_attached`, `role_cannot_redeem`,
++  `account_not_found`, `idempotency_key_required`, `idempotency_key_reused`,
++  `redemption_in_progress`, and `redemption_failed` (which carries `request_id`).
++
++## Roman card
++
++The Roman card is scripted. It uses no AI and has no consent dependency. It is shown only when
++all of these hold:
++
++- the owner enabled it;
++- pitch copy exists;
++- the featured coach is accepting (owner switch on, active subscription, code valid);
++- the client has no coach.
++
++Caps, all editable by the owner:
++
++- one impression per `roman_min_hours_between`;
++- at most `roman_max_per_week` per rolling 7 days;
++- "Not now" snoozes for `roman_snooze_days`;
++- after `roman_max_not_now` "Not now"s, the card never returns.
++
++## Data and RLS
++
++Migration `20270301000000_coachless_featured_coach` creates three tables, all with RLS enabled
++and forced, anon revoked and denied, and writes allowed only to `service_role`:
++
++- `FeaturedCoachConfig` is a singleton that only the owner can read.
++- `CoachCodeRedemption` and `CoachlessPromptState` can be read only by their own user.
++
++The live proof is `test/rls/coachless-rls.spec.ts`.
+diff --git a/src/coachless/coach-code-lookup.service.ts b/src/coachless/coach-code-lookup.service.ts
+new file mode 100644
+index 00000000..1b61010f
+--- /dev/null
++++ b/src/coachless/coach-code-lookup.service.ts
+@@ -0,0 +1,157 @@
++import { Injectable } from '@nestjs/common';
++import { PrismaService } from '../prisma.service';
++import { isWellFormedInviteCode } from '../invite-codes/invite-codes.service';
++import { COACHLESS_ERROR, type CoachlessErrorCode } from './coachless.errors';
++
++/** A code resolved to its coach WITHOUT applying lifecycle rules. */
++export type ResolvedCoachCode =
++  | { kind: 'profile'; code: string; coachId: string; coachRole: string | null }
++  | {
++      kind: 'row';
++      code: string;
++      coachId: string;
++      coachRole: string | null;
++      revoked: boolean;
++      expiresAt: Date | null;
++      maxUses: number | null;
++      usedCount: number;
++    };
++
++/** Subscription states that let a coach take new clients (mirrors InviteCodesService). */
++export const ACCEPTING_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
++  'active',
++  'trialing',
++  'grandfathered',
++]);
++
++/**
++ * A1-COACHLESS — read-only code lookup shared by the featured-coach config
++ * and the redemption route. It never writes and never attaches: the ONE
++ * canonical writer stays InviteCodesService.attachUserToCoachByCode.
++ *
++ * Case: generated codes are upper-case (GP-XXXXXX). The lookup tries the
++ * trimmed input exactly first, then its upper-case form, so a client that
++ * typed "gp-bradley" resolves to the stored "GP-BRADLEY" while a legacy
++ * mixed-case code still resolves exactly.
++ */
++@Injectable()
++export class CoachCodeLookupService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  async resolve(raw: string): Promise<ResolvedCoachCode | null> {
++    const trimmed = typeof raw === 'string' ? raw.trim() : '';
++    if (!isWellFormedInviteCode(trimmed)) return null;
++    const exact = await this.resolveExact(trimmed);
++    if (exact) return exact;
++    const upper = trimmed.toUpperCase();
++    return upper === trimmed ? null : this.resolveExact(upper);
++  }
++
++  private async resolveExact(code: string): Promise<ResolvedCoachCode | null> {
++    const profile = await this.prisma.coachProfile.findUnique({
++      where: { invite_code: code },
++      select: { user: { select: { id: true, role: true } } },
++    });
++    if (profile?.user) {
++      return {
++        kind: 'profile',
++        code,
++        coachId: profile.user.id,
++        coachRole: profile.user.role ?? null,
++      };
++    }
++    const row = await this.prisma.inviteCode.findUnique({
++      where: { code },
++      select: {
++        coach_id: true,
++        revoked: true,
++        expires_at: true,
++        max_uses: true,
++        used_count: true,
++        coach: { select: { role: true } },
++      },
++    });
++    if (!row) return null;
++    return {
++      kind: 'row',
++      code,
++      coachId: row.coach_id,
++      coachRole: row.coach?.role ?? null,
++      revoked: row.revoked,
++      expiresAt: row.expires_at,
++      maxUses: row.max_uses,
++      usedCount: row.used_count,
++    };
++  }
++
++  /**
++   * Why a NEW redemption of this code would be refused, or null when the code
++   * is redeemable as far as the code itself goes. Order: unknown/non-coach ->
++   * revoked -> expired -> exhausted -> coach subscription.
++   */
++  async refusalFor(
++    resolved: ResolvedCoachCode | null,
++    now = new Date(),
++  ): Promise<CoachlessErrorCode | null> {
++    if (!resolved || resolved.coachRole !== 'coach') return COACHLESS_ERROR.CODE_INVALID;
++    if (resolved.kind === 'row') {
++      if (resolved.revoked) return COACHLESS_ERROR.CODE_REVOKED;
++      if (resolved.expiresAt && resolved.expiresAt.getTime() <= now.getTime())
++        return COACHLESS_ERROR.CODE_EXPIRED;
++      if (resolved.maxUses !== null && resolved.usedCount >= resolved.maxUses)
++        return COACHLESS_ERROR.CODE_EXHAUSTED;
++    }
++    if (!(await this.coachCanAcceptClients(resolved.coachId)))
++      return COACHLESS_ERROR.COACH_NOT_ACCEPTING;
++    return null;
++  }
++
++  /** CoachSubscription is authoritative (CoachProfile.subscription_status is a stale mirror). */
++  async coachCanAcceptClients(coachId: string): Promise<boolean> {
++    const sub = await this.prisma.coachSubscription.findUnique({
++      where: { coach_id: coachId },
++      select: { status: true },
++    });
++    return !!sub && ACCEPTING_SUBSCRIPTION_STATUSES.has(sub.status);
++  }
++
++  /** Public-safe coach card for the attach moment and the banner. */
++  async coachCard(coachId: string): Promise<CoachCard | null> {
++    const coach = await this.prisma.user.findUnique({
++      where: { id: coachId },
++      select: {
++        id: true,
++        name: true,
++        role: true,
++        profile: { select: { avatar_url: true } },
++        coach_profile: { select: { business_name: true, bio: true } },
++      },
++    });
++    if (!coach || coach.role !== 'coach') return null;
++    return {
++      id: coach.id,
++      name: coach.name,
++      photo_url: coach.profile?.avatar_url ?? null,
++      business_name: coach.coach_profile?.business_name ?? null,
++      bio: coach.coach_profile?.bio ?? null,
++    };
++  }
++}
++
++export interface CoachCard {
++  id: string;
++  name: string;
++  photo_url: string | null;
++  business_name: string | null;
++  bio: string | null;
++}
++
++/** Unique-constraint violation (Prisma P2002), duck-typed so test doubles qualify. */
++export function isUniqueViolation(err: unknown): boolean {
++  return (
++    !!err &&
++    typeof err === 'object' &&
++    'code' in err &&
++    (err as { code?: unknown }).code === 'P2002'
++  );
++}
+diff --git a/src/coachless/coach-code-redemption.service.ts b/src/coachless/coach-code-redemption.service.ts
+new file mode 100644
+index 00000000..4ce36b17
+--- /dev/null
++++ b/src/coachless/coach-code-redemption.service.ts
+@@ -0,0 +1,381 @@
++import { HttpException, Injectable, Logger } from '@nestjs/common';
++import { createHash } from 'crypto';
++import { Prisma } from '@prisma/client';
++import { PrismaService } from '../prisma.service';
++import { AuditService } from '../audit/audit.service';
++import { describeFailure } from '../observability/log-pii';
++import {
++  INVITE_ATTACH_ERROR,
++  InviteCodesService,
++  inviteAttachErrorCode,
++  type AttachGrant,
++} from '../invite-codes/invite-codes.service';
++import {
++  CoachCodeLookupService,
++  isUniqueViolation,
++  type CoachCard,
++} from './coach-code-lookup.service';
++import { FeaturedCoachService, type FeaturedPackage } from './featured-coach.service';
++import { COACHLESS_ERROR, CoachlessError, type CoachlessErrorCode } from './coachless.errors';
++
++/** An in_progress claim older than this is treated as abandoned (crash) and may be reclaimed. */
++export const REDEMPTION_STALE_MS = 60_000;
++/** How long a concurrent same-key request waits for the winner before answering 409 in_progress. */
++export const REDEMPTION_REPLAY_WAIT_MS = 5_000;
++const REPLAY_POLL_MS = 100;
++
++export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
++
++/** Response of a successful redemption (also what a replay returns). */
++export interface RedeemResponse {
++  status: 'attached';
++  /** false = this request attached the client (show the welcome moment); true = already this coach's client. */
++  already_attached: boolean;
++  coach: CoachCard;
++  next: {
++    /** The package to offer first: the code's bound package, else the featured offer's package for this coach. */
++    featured_package: FeaturedPackage | null;
++    /** Active packages the coach sells; 0 means the welcome screen leads to messaging instead of a plan. */
++    packages_available: number;
++  };
++  grant: AttachGrant | null;
++  replayed: boolean;
++}
++
++/** Map the canonical attach writer's codes onto the coachless contract. */
++const ATTACH_TO_COACHLESS: Record<string, CoachlessErrorCode> = {
++  [INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS]: COACHLESS_ERROR.COACH_NOT_ACCEPTING,
++  [INVITE_ATTACH_ERROR.ALREADY_ATTACHED_TO_DIFFERENT_COACH]: COACHLESS_ERROR.ALREADY_ATTACHED,
++  [INVITE_ATTACH_ERROR.INVITE_INTENDED_EMAIL_MISMATCH]: COACHLESS_ERROR.CODE_EMAIL_MISMATCH,
++  [INVITE_ATTACH_ERROR.OWNER_CANNOT_REDEEM]: COACHLESS_ERROR.ROLE_CANNOT_REDEEM,
++  [INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM]: COACHLESS_ERROR.ROLE_CANNOT_REDEEM,
++  [INVITE_ATTACH_ERROR.USER_NOT_FOUND]: COACHLESS_ERROR.ACCOUNT_NOT_FOUND,
++};
++
++/**
++ * A1-COACHLESS — post-signup coach-code redemption.
++ *
++ * - Tenancy: the ONLY writer of User.coach_id stays
++ *   InviteCodesService.attachUserToCoachByCode (conditional attach, no
++ *   re-parenting, no role rewrite). This service adds the idempotency
++ *   ledger, specific error codes and the welcome-moment payload on top.
++ * - Idempotency: one CoachCodeRedemption row per (user, Idempotency-Key).
++ *   A completed key replays its stored response byte-for-byte (so a lost
++ *   response still shows the welcome moment); the same key with a different
++ *   code is 422; a concurrent duplicate waits for the winner; a failed key
++ *   may be retried; an abandoned in_progress claim is reclaimed after
++ *   REDEMPTION_STALE_MS.
++ * - Featured offer: when the code is the owner's featured code and the owner
++ *   has paused it (accepting_clients=false), redemption is refused with
++ *   coach_not_accepting before any write.
++ */
++@Injectable()
++export class CoachCodeRedemptionService {
++  private readonly logger = new Logger(CoachCodeRedemptionService.name);
++
++  constructor(
++    private readonly prisma: PrismaService,
++    private readonly inviteCodes: InviteCodesService,
++    private readonly lookup: CoachCodeLookupService,
++    private readonly featured: FeaturedCoachService,
++    private readonly audit: AuditService,
++  ) {}
++
++  static requestHash(code: string): string {
++    return createHash('sha256')
++      .update(JSON.stringify({ action: 'coach_code_redeem', code: code.trim().toUpperCase() }))
++      .digest('hex');
++  }
++
++  /**
++   * Instant validation for the code sheet (no write, no seat). Same refusal
++   * order as a redemption so the sheet and the Join button never disagree.
++   */
++  async check(
++    user: { id: string; role: string; coach_id: string | null },
++    rawCode: string,
++  ): Promise<{ valid: true; coach: CoachCard } | { valid: false; code: CoachlessErrorCode }> {
++    if (user.role !== 'student') return { valid: false, code: COACHLESS_ERROR.ROLE_CANNOT_REDEEM };
++    const resolved = await this.lookup.resolve(rawCode);
++    if (user.coach_id) {
++      if (resolved && resolved.coachId === user.coach_id) {
++        const card = await this.lookup.coachCard(resolved.coachId);
++        if (card) return { valid: true, coach: card };
++      }
++      return { valid: false, code: COACHLESS_ERROR.ALREADY_ATTACHED };
++    }
++    const refusal =
++      (await this.lookup.refusalFor(resolved)) ?? (await this.featuredPauseRefusal(resolved?.code));
++    if (refusal || !resolved)
++      return { valid: false, code: refusal ?? COACHLESS_ERROR.CODE_INVALID };
++    const card = await this.lookup.coachCard(resolved.coachId);
++    return card
++      ? { valid: true, coach: card }
++      : { valid: false, code: COACHLESS_ERROR.CODE_INVALID };
++  }
++
++  async redeem(args: {
++    userId: string;
++    rawCode: string;
++    idempotencyKey: string;
++    requestId?: string;
++  }): Promise<RedeemResponse> {
++    const { userId, rawCode, idempotencyKey, requestId } = args;
++    if (!UUID_RE.test(idempotencyKey))
++      throw new CoachlessError(COACHLESS_ERROR.IDEMPOTENCY_KEY_REQUIRED);
++    const hash = CoachCodeRedemptionService.requestHash(rawCode);
++
++    const claim = await this.claim(userId, idempotencyKey, hash);
++    if (claim.kind === 'replay') return { ...claim.response, replayed: true };
++
++    try {
++      const response = await this.execute(userId, rawCode);
++      await this.prisma.coachCodeRedemption.update({
++        where: { id: claim.id },
++        data: {
++          status: 'completed',
++          outcome: response.already_attached ? 'already_attached_same_coach' : 'attached',
++          coach_id: response.coach.id,
++          http_status: 200,
++          response: toJson(response),
++        },
++      });
++      await this.audit.write({
++        action: 'coach_code.redeemed',
++        actorId: userId,
++        actorRole: 'student',
++        targetUserId: userId,
++        targetType: 'CoachCodeRedemption',
++        targetId: claim.id,
++        tenantCoachId: response.coach.id,
++        metadata: {
++          already_attached: response.already_attached,
++          grant_status: response.grant?.status ?? null,
++        },
++      });
++      return response;
++    } catch (err) {
++      const mapped = this.toCoachlessError(err, requestId);
++      await this.prisma.coachCodeRedemption
++        .update({
++          where: { id: claim.id },
++          data: {
++            status: 'failed',
++            outcome: mapped.coachlessCode,
++            http_status: mapped.getStatus(),
++          },
++        })
++        .catch((e: unknown) =>
++          this.logger.error(
++            `redemption ledger failure-mark failed: ${describeFailure(e)}`,
++          ),
++        );
++      await this.audit.write({
++        action: 'coach_code.redeem_refused',
++        actorId: userId,
++        actorRole: null,
++        targetUserId: userId,
++        targetType: 'CoachCodeRedemption',
++        targetId: claim.id,
++        metadata: { code: mapped.coachlessCode },
++      });
++      if (mapped.coachlessCode === COACHLESS_ERROR.REDEMPTION_FAILED) {
++        this.logger.error(
++          `coach code redemption failed unexpectedly user=${userId} request=${requestId ?? 'none'}: ${
++            describeFailure(err)
++          }`,
++        );
++      }
++      throw mapped;
++    }
++  }
++
++  private async featuredPauseRefusal(code: string | undefined): Promise<CoachlessErrorCode | null> {
++    if (!code) return null;
++    const cfg = await this.featured.get();
++    if (
++      cfg.configured &&
++      cfg.code &&
++      cfg.code.toUpperCase() === code.toUpperCase() &&
++      !cfg.accepting_clients
++    ) {
++      return COACHLESS_ERROR.COACH_NOT_ACCEPTING;
++    }
++    return null;
++  }
++
++  /** The redemption itself (runs while this request holds the claim). */
++  private async execute(userId: string, rawCode: string): Promise<RedeemResponse> {
++    const resolved = await this.lookup.resolve(rawCode);
++    if (!resolved) throw new CoachlessError(COACHLESS_ERROR.CODE_INVALID);
++
++    const me = await this.prisma.user.findUnique({
++      where: { id: userId },
++      select: { coach_id: true },
++    });
++    const isReplayOfSameCoach = !!me && me.coach_id === resolved.coachId;
++    if (!isReplayOfSameCoach) {
++      const paused = await this.featuredPauseRefusal(resolved.code);
++      if (paused) throw new CoachlessError(paused);
++    }
++
++    let attach: Awaited<ReturnType<InviteCodesService['attachUserToCoachByCode']>>;
++    try {
++      attach = await this.inviteCodes.attachUserToCoachByCode(userId, resolved.code);
++    } catch (err) {
++      const attachCode = inviteAttachErrorCode(err);
++      if (attachCode === INVITE_ATTACH_ERROR.INVITE_CODE_INVALID) {
++        // The canonical writer collapses every lifecycle failure; say which.
++        const why = await this.lookup.refusalFor(await this.lookup.resolve(resolved.code));
++        throw new CoachlessError(why ?? COACHLESS_ERROR.CODE_INVALID);
++      }
++      const mapped = ATTACH_TO_COACHLESS[attachCode];
++      if (mapped) throw new CoachlessError(mapped);
++      throw err;
++    }
++
++    const coachId = attach.coach_id ?? resolved.coachId;
++    const coach = await this.lookup.coachCard(coachId);
++    if (!coach) throw new CoachlessError(COACHLESS_ERROR.CODE_INVALID);
++    return {
++      status: 'attached',
++      already_attached: attach.already_attached,
++      coach,
++      next: {
++        featured_package: await this.featuredPackageFor(
++          resolved.code,
++          coachId,
++          attach.grant ?? null,
++        ),
++        packages_available: await this.prisma.coachPackage.count({
++          where: { coach_id: coachId, is_active: true, archived_at: null },
++        }),
++      },
++      grant: attach.grant ?? null,
++      replayed: false,
++    };
++  }
++
++  /** The code's own bound package first; else the featured offer's package when it is this coach's. */
++  private async featuredPackageFor(
++    code: string,
++    coachId: string,
++    grant: AttachGrant | null,
++  ): Promise<FeaturedPackage | null> {
++    const bound =
++      grant?.package_id ??
++      (await this.prisma.inviteCode.findUnique({ where: { code }, select: { package_id: true } }))
++        ?.package_id ??
++      (
++        await this.prisma.coachProfile.findUnique({
++          where: { invite_code: code },
++          select: { invite_code_package_id: true },
++        })
++      )?.invite_code_package_id ??
++      null;
++    if (bound) {
++      const p = await this.featured.activePackageOf(bound, coachId);
++      if (p) return p;
++    }
++    const cfg = await this.featured.get();
++    if (cfg.package && cfg.coach?.id === coachId) return cfg.package;
++    return null;
++  }
++
++  private toCoachlessError(err: unknown, requestId?: string): CoachlessError {
++    if (err instanceof CoachlessError) return err;
++    if (err instanceof HttpException) {
++      const mapped = ATTACH_TO_COACHLESS[inviteAttachErrorCode(err)];
++      if (mapped) return new CoachlessError(mapped);
++    }
++    return new CoachlessError(COACHLESS_ERROR.REDEMPTION_FAILED, { request_id: requestId });
++  }
++
++  /**
++   * Claim (user, key). Returns the row id to execute under, or the stored
++   * response to replay. Throws 422 on a different code and 409 when a
++   * concurrent duplicate is still running after REDEMPTION_REPLAY_WAIT_MS.
++   */
++  private async claim(
++    userId: string,
++    key: string,
++    hash: string,
++  ): Promise<{ kind: 'run'; id: string } | { kind: 'replay'; response: RedeemResponse }> {
++    try {
++      const row = await this.prisma.coachCodeRedemption.create({
++        data: { user_id: userId, idempotency_key: key, request_hash: hash, status: 'in_progress' },
++        select: { id: true },
++      });
++      return { kind: 'run', id: row.id };
++    } catch (err) {
++      if (!isUniqueViolation(err)) throw err;
++    }
++    const deadline = Date.now() + REDEMPTION_REPLAY_WAIT_MS;
++    for (;;) {
++      const row = await this.prisma.coachCodeRedemption.findUnique({
++        where: { user_id_idempotency_key: { user_id: userId, idempotency_key: key } },
++        select: { id: true, request_hash: true, status: true, response: true, updated_at: true },
++      });
++      if (!row) {
++        // The winner's row vanished (account erasure race): start over once.
++        return this.claimFresh(userId, key, hash);
++      }
++      if (row.request_hash !== hash)
++        throw new CoachlessError(COACHLESS_ERROR.IDEMPOTENCY_KEY_REUSED);
++      if (row.status === 'completed' && isRedeemResponse(row.response)) {
++        return { kind: 'replay', response: row.response };
++      }
++      const stale =
++        row.status === 'in_progress' && Date.now() - row.updated_at.getTime() > REDEMPTION_STALE_MS;
++      if (row.status === 'failed' || stale) {
++        // Conditional reclaim: exactly one retry wins the row.
++        const won = await this.prisma.coachCodeRedemption.updateMany({
++          where: { id: row.id, status: row.status, updated_at: row.updated_at },
++          data: { status: 'in_progress', outcome: null, http_status: null },
++        });
++        if (won.count === 1) return { kind: 'run', id: row.id };
++      }
++      if (Date.now() >= deadline) throw new CoachlessError(COACHLESS_ERROR.REDEMPTION_IN_PROGRESS);
++      await new Promise((r) => setTimeout(r, REPLAY_POLL_MS));
++    }
++  }
++
++  private async claimFresh(
++    userId: string,
++    key: string,
++    hash: string,
++  ): Promise<{ kind: 'run'; id: string }> {
++    try {
++      const row = await this.prisma.coachCodeRedemption.create({
++        data: { user_id: userId, idempotency_key: key, request_hash: hash, status: 'in_progress' },
++        select: { id: true },
++      });
++      return { kind: 'run', id: row.id };
++    } catch {
++      throw new CoachlessError(COACHLESS_ERROR.REDEMPTION_IN_PROGRESS);
++    }
++  }
++}
++
++/** Plain JSON copy of a response for the ledger (Dates become ISO strings). */
++function toJson(value: RedeemResponse): Prisma.InputJsonValue {
++  const json: Prisma.InputJsonValue = JSON.parse(JSON.stringify(value));
++  return json;
++}
++
++/** Narrow a stored ledger response back to the wire shape before replaying it. */
++export function isRedeemResponse(value: unknown): value is RedeemResponse {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
++  const v = value as Record<string, unknown>;
++  const coach = v.coach as Record<string, unknown> | null | undefined;
++  return (
++    v.status === 'attached' &&
++    typeof v.already_attached === 'boolean' &&
++    !!coach &&
++    typeof coach === 'object' &&
++    typeof coach.id === 'string' &&
++    typeof coach.name === 'string' &&
++    !!v.next &&
++    typeof v.next === 'object'
++  );
++}
+diff --git a/src/coachless/coachless-feature.guard.ts b/src/coachless/coachless-feature.guard.ts
+new file mode 100644
+index 00000000..b08062cf
+--- /dev/null
++++ b/src/coachless/coachless-feature.guard.ts
+@@ -0,0 +1,19 @@
++import { CanActivate, Injectable } from '@nestjs/common';
++import { COACHLESS_ERROR, CoachlessError } from './coachless.errors';
++
++/** Kill switch name. Defaults OFF: only the literal 'true' enables the coachless surfaces. */
++export const COACHLESS_FLAG_ENV = 'FEATURE_COACHLESS_HOME';
++
++/** Read per request (never boot-cached) so a runtime kill takes effect without a redeploy. */
++export function coachlessHomeEnabled(): boolean {
++  return process.env.FEATURE_COACHLESS_HOME === 'true';
++}
++
++/** Every client-facing /coachless/* route answers 404 coachless_disabled while the flag is off. */
++@Injectable()
++export class CoachlessFeatureGuard implements CanActivate {
++  canActivate(): boolean {
++    if (!coachlessHomeEnabled()) throw new CoachlessError(COACHLESS_ERROR.COACHLESS_DISABLED);
++    return true;
++  }
++}
+diff --git a/src/coachless/coachless-home.service.ts b/src/coachless/coachless-home.service.ts
+new file mode 100644
+index 00000000..a9cefade
+--- /dev/null
++++ b/src/coachless/coachless-home.service.ts
+@@ -0,0 +1,89 @@
++import { Injectable } from '@nestjs/common';
++import { FeaturedCoachService, type FeaturedPackage } from './featured-coach.service';
++import {
++  CoachlessPromptService,
++  decideRomanCard,
++  type RomanCardHiddenReason,
++} from './coachless-prompt.service';
++import type { CoachCard } from './coach-code-lookup.service';
++
++export interface CoachlessHomeResponse {
++  /** True only for a student with no coach: the coachless surfaces apply. */
++  eligible: boolean;
++  coach_attached: boolean;
++  banner: {
++    title: string;
++    /** The owner's offer line; null while the featured coach is not accepting clients. */
++    offer_text: string | null;
++    /** The featured code to prefill the sheet; null while not accepting. */
++    code: string | null;
++  } | null;
++  roman_card: {
++    text: string;
++    code: string;
++  } | null;
++  roman_card_hidden_reason: RomanCardHiddenReason | null;
++  featured_coach:
++    | (Pick<CoachCard, 'name' | 'photo_url' | 'business_name'> & {
++        package: FeaturedPackage | null;
++      })
++    | null;
++}
++
++/**
++ * A1-COACHLESS — what the coachless Home shows. A coachless client is a
++ * complete state: the banner is a quiet entry point (always available while
++ * coachless), the offer line and the Roman card appear only while the
++ * featured coach is accepting clients, and both disappear once a coach is
++ * attached.
++ */
++@Injectable()
++export class CoachlessHomeService {
++  constructor(
++    private readonly featured: FeaturedCoachService,
++    private readonly prompts: CoachlessPromptService,
++  ) {}
++
++  async home(
++    user: { id: string; role: string; coach_id: string | null },
++    now = new Date(),
++  ): Promise<CoachlessHomeResponse> {
++    const attached = !!user.coach_id;
++    if (user.role !== 'student' || attached) {
++      return {
++        eligible: false,
++        coach_attached: attached,
++        banner: null,
++        roman_card: null,
++        roman_card_hidden_reason: null,
++        featured_coach: null,
++      };
++    }
++    const offer = await this.featured.get();
++    const accepting = offer.accepting_clients;
++    const decision = decideRomanCard(offer, await this.prompts.getState(user.id), now);
++    return {
++      eligible: true,
++      coach_attached: false,
++      banner: {
++        title: offer.banner_title,
++        offer_text: accepting ? offer.offer_text : null,
++        code: accepting ? offer.code : null,
++      },
++      roman_card:
++        decision.show && offer.roman_pitch_text && offer.code
++          ? { text: offer.roman_pitch_text, code: offer.code }
++          : null,
++      roman_card_hidden_reason: decision.show ? null : decision.reason,
++      featured_coach:
++        accepting && offer.coach
++          ? {
++              name: offer.coach.name,
++              photo_url: offer.coach.photo_url,
++              business_name: offer.coach.business_name,
++              package: offer.package,
++            }
++          : null,
++    };
++  }
++}
+diff --git a/src/coachless/coachless-prompt.service.ts b/src/coachless/coachless-prompt.service.ts
+new file mode 100644
+index 00000000..cb441c49
+--- /dev/null
++++ b/src/coachless/coachless-prompt.service.ts
+@@ -0,0 +1,146 @@
++import { Injectable } from '@nestjs/common';
++import type { CoachlessPromptState } from '@prisma/client';
++import { isUniqueViolation } from './coach-code-lookup.service';
++import { PrismaService } from '../prisma.service';
++import type { ResolvedFeaturedCoach, RomanCaps } from './featured-coach.service';
++
++const HOUR_MS = 3_600_000;
++const DAY_MS = 24 * HOUR_MS;
++const WEEK_MS = 7 * DAY_MS;
++/** Two "Not now" taps inside this window count once (double tap, retry). */
++export const NOT_NOW_DEBOUNCE_MS = 60_000;
++
++export type RomanCardHiddenReason =
++  'offer_off' | 'not_accepting' | 'not_now_final' | 'snoozed' | 'weekly_cap';
++
++export type RomanCardDecision = { show: true } | { show: false; reason: RomanCardHiddenReason };
++
++/**
++ * Frequency rules for the scripted coachless Roman card (no AI call, no
++ * consent dependency — the copy is the owner's config text).
++ *
++ * An "impression" is a window of `min_hours_between` hours that starts the
++ * first time the card is seen; the card stays visible for the rest of that
++ * window (no flicker between Home visits), and at most `max_per_week`
++ * impressions start in any rolling 7-day window. "Not now" hides the card
++ * for `snooze_days`; after `max_not_now` taps it never returns.
++ */
++export function decideRomanCard(
++  offer: Pick<
++    ResolvedFeaturedCoach,
++    'roman_enabled' | 'roman_pitch_text' | 'code' | 'accepting_clients'
++  > & {
++    roman_caps: RomanCaps;
++  },
++  state: Pick<
++    CoachlessPromptState,
++    | 'roman_seen_count'
++    | 'roman_window_started_at'
++    | 'roman_last_seen_at'
++    | 'roman_not_now_count'
++    | 'roman_not_now_at'
++  > | null,
++  now: Date,
++): RomanCardDecision {
++  if (!offer.roman_enabled || !offer.roman_pitch_text || !offer.code)
++    return { show: false, reason: 'offer_off' };
++  if (!offer.accepting_clients) return { show: false, reason: 'not_accepting' };
++  const caps = offer.roman_caps;
++  const t = now.getTime();
++  if (state) {
++    if (state.roman_not_now_count >= caps.max_not_now)
++      return { show: false, reason: 'not_now_final' };
++    if (
++      state.roman_not_now_at &&
++      t - state.roman_not_now_at.getTime() < caps.snooze_days * DAY_MS
++    ) {
++      return { show: false, reason: 'snoozed' };
++    }
++    const inImpression =
++      !!state.roman_last_seen_at &&
++      t - state.roman_last_seen_at.getTime() < caps.min_hours_between * HOUR_MS;
++    if (inImpression) return { show: true };
++    const windowOpen =
++      !!state.roman_window_started_at && t - state.roman_window_started_at.getTime() < WEEK_MS;
++    if (windowOpen && state.roman_seen_count >= caps.max_per_week)
++      return { show: false, reason: 'weekly_cap' };
++  }
++  return { show: true };
++}
++
++@Injectable()
++export class CoachlessPromptService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  async getState(userId: string): Promise<CoachlessPromptState | null> {
++    return this.prisma.coachlessPromptState.findUnique({ where: { user_id: userId } });
++  }
++
++  /**
++   * Record that the card was rendered. Starts a new impression only when the
++   * previous one has ended (conditional update, so concurrent calls from two
++   * screens count once) and resets the weekly window when it has expired.
++   */
++  async recordSeen(
++    userId: string,
++    caps: RomanCaps,
++    now = new Date(),
++  ): Promise<CoachlessPromptState> {
++    await this.ensureRow(userId);
++    const impressionCutoff = new Date(now.getTime() - caps.min_hours_between * HOUR_MS);
++    const windowCutoff = new Date(now.getTime() - WEEK_MS);
++    // New weekly window: the old one expired (or never started).
++    const reset = await this.prisma.coachlessPromptState.updateMany({
++      where: {
++        user_id: userId,
++        OR: [{ roman_window_started_at: null }, { roman_window_started_at: { lte: windowCutoff } }],
++      },
++      data: { roman_window_started_at: now, roman_seen_count: 1, roman_last_seen_at: now },
++    });
++    if (reset.count === 0) {
++      await this.prisma.coachlessPromptState.updateMany({
++        where: {
++          user_id: userId,
++          OR: [{ roman_last_seen_at: null }, { roman_last_seen_at: { lte: impressionCutoff } }],
++        },
++        data: { roman_seen_count: { increment: 1 }, roman_last_seen_at: now },
++      });
++    }
++    return this.read(userId);
++  }
++
++  /** Persist "Not now". A second tap within NOT_NOW_DEBOUNCE_MS is the same decision. */
++  async recordNotNow(userId: string, now = new Date()): Promise<CoachlessPromptState> {
++    await this.ensureRow(userId);
++    await this.prisma.coachlessPromptState.updateMany({
++      where: {
++        user_id: userId,
++        OR: [
++          { roman_not_now_at: null },
++          { roman_not_now_at: { lte: new Date(now.getTime() - NOT_NOW_DEBOUNCE_MS) } },
++        ],
++      },
++      data: { roman_not_now_count: { increment: 1 }, roman_not_now_at: now },
++    });
++    return this.read(userId);
++  }
++
++  private async read(userId: string): Promise<CoachlessPromptState> {
++    const row = await this.prisma.coachlessPromptState.findUnique({ where: { user_id: userId } });
++    if (!row) throw new Error('CoachlessPromptState row missing right after upsert');
++    return row;
++  }
++
++  private async ensureRow(userId: string): Promise<void> {
++    try {
++      await this.prisma.coachlessPromptState.upsert({
++        where: { user_id: userId },
++        create: { user_id: userId },
++        update: {},
++      });
++    } catch (err) {
++      // Two first-ever calls racing the insert: the row now exists.
++      if (!isUniqueViolation(err)) throw err;
++    }
++  }
++}
+diff --git a/src/coachless/coachless.controller.ts b/src/coachless/coachless.controller.ts
+new file mode 100644
+index 00000000..04e8c2c1
+--- /dev/null
++++ b/src/coachless/coachless.controller.ts
+@@ -0,0 +1,159 @@
++import {
++  Body,
++  Controller,
++  Get,
++  Headers,
++  HttpCode,
++  HttpStatus,
++  Post,
++  Put,
++  Request,
++  UseGuards,
++} from '@nestjs/common';
++import { ApiBearerAuth, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
++import { Throttle } from '@nestjs/throttler';
++import type { AuthedRequest } from '../auth/auth-request';
++import { JwtAuthGuard } from '../auth/auth.guard';
++import { OwnerGuard } from '../common/guards/owner.guard';
++import { Roles } from '../common/decorators/roles.decorator';
++import { CoachlessFeatureGuard } from './coachless-feature.guard';
++import { CoachCodeDto, FeaturedCoachConfigDto } from './coachless.dto';
++import { CoachCodeRedemptionService } from './coach-code-redemption.service';
++import { CoachlessHomeService } from './coachless-home.service';
++import { CoachlessPromptService, decideRomanCard } from './coachless-prompt.service';
++import { FeaturedCoachService } from './featured-coach.service';
++import { COACHLESS_ERROR, COACHLESS_ERROR_MESSAGE, CoachlessError } from './coachless.errors';
++
++function headerValue(v: string | string[] | undefined): string {
++  return (Array.isArray(v) ? v[0] : (v ?? '')).trim();
++}
++
++/**
++ * A1-COACHLESS client routes. All behind FEATURE_COACHLESS_HOME (404 while
++ * off). Every refusal is `{ code, message }` with a stable code from
++ * COACHLESS_ERROR; the global filter adds request_id.
++ */
++@ApiTags('coachless')
++@ApiBearerAuth('bearer')
++@Controller('coachless')
++@UseGuards(JwtAuthGuard, CoachlessFeatureGuard)
++// Every account role reaches the handlers, which answer non-students
++// specifically (eligible: false on Home, role_cannot_redeem on check and
++// redeem) instead of a bare 403 (roles-enforced gate).
++@Roles('student', 'coach', 'owner', 'sub_coach')
++export class CoachlessController {
++  constructor(
++    private readonly home: CoachlessHomeService,
++    private readonly redemption: CoachCodeRedemptionService,
++    private readonly prompts: CoachlessPromptService,
++    private readonly featured: FeaturedCoachService,
++  ) {}
++
++  @ApiOperation({ summary: 'Coachless Home: banner, featured offer and the scripted Roman card' })
++  @Get('home')
++  async getHome(@Request() req: AuthedRequest) {
++    return this.home.home(req.user);
++  }
++
++  @ApiOperation({ summary: 'Instant validation for the code sheet (no write)' })
++  @Throttle({ default: { ttl: 60_000, limit: 20 } })
++  @Post('coach-code/check')
++  @HttpCode(HttpStatus.OK)
++  async check(@Request() req: AuthedRequest, @Body() body: CoachCodeDto) {
++    const result = await this.redemption.check(req.user, body.code);
++    return result.valid ? result : { ...result, message: COACHLESS_ERROR_MESSAGE[result.code] };
++  }
++
++  @ApiOperation({ summary: 'Redeem a coach code after signup (idempotent)' })
++  @ApiHeader({
++    name: 'Idempotency-Key',
++    required: true,
++    description: 'UUID; reuse it on retries of the same attempt.',
++  })
++  @ApiResponse({ status: 200, description: 'Attached (or already this coach’s client).' })
++  @ApiResponse({ status: 404, description: 'code_invalid' })
++  @ApiResponse({ status: 410, description: 'code_expired | code_revoked | code_exhausted' })
++  @ApiResponse({
++    status: 409,
++    description: 'coach_not_accepting | already_attached | redemption_in_progress',
++  })
++  @Throttle({ default: { ttl: 60_000, limit: 10 } })
++  @Post('coach-code/redeem')
++  @HttpCode(HttpStatus.OK)
++  async redeem(
++    @Request() req: AuthedRequest,
++    @Body() body: CoachCodeDto,
++    @Headers('idempotency-key') key: string | string[] | undefined,
++  ) {
++    const idempotencyKey = headerValue(key);
++    if (!idempotencyKey) throw new CoachlessError(COACHLESS_ERROR.IDEMPOTENCY_KEY_REQUIRED);
++    return this.redemption.redeem({
++      userId: req.user.id,
++      rawCode: body.code,
++      idempotencyKey,
++      requestId: req.requestId,
++    });
++  }
++
++  @ApiOperation({ summary: 'Record that the Roman card was shown (frequency cap)' })
++  @Throttle({ default: { ttl: 60_000, limit: 30 } })
++  @Post('roman-card/seen')
++  @HttpCode(HttpStatus.OK)
++  async romanSeen(@Request() req: AuthedRequest) {
++    const offer = await this.featured.get();
++    const state = await this.prompts.recordSeen(req.user.id, offer.roman_caps);
++    return { recorded: true, visible: decideRomanCard(offer, state, new Date()).show };
++  }
++
++  @ApiOperation({ summary: 'Persist "Not now" for the Roman card' })
++  @Throttle({ default: { ttl: 60_000, limit: 30 } })
++  @Post('roman-card/not-now')
++  @HttpCode(HttpStatus.OK)
++  async romanNotNow(@Request() req: AuthedRequest) {
++    const offer = await this.featured.get();
++    const state = await this.prompts.recordNotNow(req.user.id);
++    return { recorded: true, visible: decideRomanCard(offer, state, new Date()).show };
++  }
++}
++
++/**
++ * Owner-only featured-coach config (the admin-editable source of the code,
++ * offer and Roman copy). Not behind the client flag, so the owner can set the
++ * offer up before the flag flips. Every write is audited.
++ */
++@ApiTags('coachless')
++@ApiBearerAuth('bearer')
++@Controller('admin/featured-coach')
++@UseGuards(JwtAuthGuard, OwnerGuard)
++export class FeaturedCoachAdminController {
++  constructor(private readonly featured: FeaturedCoachService) {}
++
++  @Roles('owner')
++  @Get()
++  async get() {
++    return this.featured.getForOwner();
++  }
++
++  @Roles('owner')
++  @Put()
++  async put(@Request() req: AuthedRequest, @Body() body: FeaturedCoachConfigDto) {
++    return this.featured.update(
++      { id: req.user.id, email: req.user.email },
++      {
++        coach_user_id: body.coach_user_id ?? null,
++        code: body.code ?? null,
++        package_id: body.package_id ?? null,
++        banner_title: body.banner_title ?? null,
++        offer_text: body.offer_text ?? null,
++        roman_pitch_text: body.roman_pitch_text ?? null,
++        accepting_clients: body.accepting_clients,
++        roman_enabled: body.roman_enabled,
++        roman_min_hours_between: body.roman_min_hours_between,
++        roman_max_per_week: body.roman_max_per_week,
++        roman_snooze_days: body.roman_snooze_days,
++        roman_max_not_now: body.roman_max_not_now,
++        create_code_if_missing: body.create_code_if_missing ?? false,
++      },
++    );
++  }
++}
+diff --git a/src/coachless/coachless.dto.ts b/src/coachless/coachless.dto.ts
+new file mode 100644
+index 00000000..73835524
+--- /dev/null
++++ b/src/coachless/coachless.dto.ts
+@@ -0,0 +1,117 @@
++import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
++import {
++  IsBoolean,
++  IsInt,
++  IsOptional,
++  IsString,
++  Matches,
++  Max,
++  MaxLength,
++  Min,
++  MinLength,
++} from 'class-validator';
++import {
++  INVITE_CODE_MAX_LENGTH,
++  INVITE_CODE_MIN_LENGTH,
++} from '../invite-codes/invite-codes.service';
++
++const CODE_SHAPE = /^\s*[A-Za-z0-9-]+\s*$/;
++
++export class CoachCodeDto {
++  @ApiProperty({
++    example: 'GP-A1B2C3',
++    minLength: INVITE_CODE_MIN_LENGTH,
++    maxLength: INVITE_CODE_MAX_LENGTH + 8,
++  })
++  @IsString()
++  @MinLength(INVITE_CODE_MIN_LENGTH)
++  // Whitespace around a pasted code is trimmed server-side; allow a little.
++  @MaxLength(INVITE_CODE_MAX_LENGTH + 8)
++  @Matches(CODE_SHAPE)
++  code!: string;
++}
++
++/** Owner PUT /admin/featured-coach. Every field is replaced (null clears). */
++export class FeaturedCoachConfigDto {
++  @ApiPropertyOptional({ nullable: true })
++  @IsOptional()
++  @IsString()
++  @MaxLength(64)
++  coach_user_id?: string | null;
++
++  @ApiPropertyOptional({ nullable: true, example: 'GP-A1B2C3' })
++  @IsOptional()
++  @IsString()
++  @MinLength(INVITE_CODE_MIN_LENGTH)
++  @MaxLength(INVITE_CODE_MAX_LENGTH)
++  @Matches(/^[A-Za-z0-9-]+$/)
++  code?: string | null;
++
++  @ApiPropertyOptional({ nullable: true })
++  @IsOptional()
++  @IsString()
++  @MaxLength(64)
++  package_id?: string | null;
++
++  @ApiPropertyOptional({ nullable: true, maxLength: 120 })
++  @IsOptional()
++  @IsString()
++  @MaxLength(120)
++  banner_title?: string | null;
++
++  @ApiPropertyOptional({ nullable: true, maxLength: 200 })
++  @IsOptional()
++  @IsString()
++  @MaxLength(200)
++  offer_text?: string | null;
++
++  @ApiPropertyOptional({ nullable: true, maxLength: 400 })
++  @IsOptional()
++  @IsString()
++  @MaxLength(400)
++  roman_pitch_text?: string | null;
++
++  @ApiProperty()
++  @IsBoolean()
++  accepting_clients!: boolean;
++
++  @ApiProperty()
++  @IsBoolean()
++  roman_enabled!: boolean;
++
++  @ApiPropertyOptional({ minimum: 1, maximum: 720 })
++  @IsOptional()
++  @IsInt()
++  @Min(1)
++  @Max(720)
++  roman_min_hours_between?: number;
++
++  @ApiPropertyOptional({ minimum: 1, maximum: 14 })
++  @IsOptional()
++  @IsInt()
++  @Min(1)
++  @Max(14)
++  roman_max_per_week?: number;
++
++  @ApiPropertyOptional({ minimum: 1, maximum: 365 })
++  @IsOptional()
++  @IsInt()
++  @Min(1)
++  @Max(365)
++  roman_snooze_days?: number;
++
++  @ApiPropertyOptional({ minimum: 1, maximum: 10 })
++  @IsOptional()
++  @IsInt()
++  @Min(1)
++  @Max(10)
++  roman_max_not_now?: number;
++
++  @ApiPropertyOptional({
++    description:
++      'Create `code` as a permanent code of the featured coach when it does not exist yet.',
++  })
++  @IsOptional()
++  @IsBoolean()
++  create_code_if_missing?: boolean;
++}
+diff --git a/src/coachless/coachless.errors.ts b/src/coachless/coachless.errors.ts
+new file mode 100644
+index 00000000..a40b90f5
+--- /dev/null
++++ b/src/coachless/coachless.errors.ts
+@@ -0,0 +1,121 @@
++import { HttpException, HttpStatus } from '@nestjs/common';
++
++/**
++ * A1-COACHLESS — stable machine codes for every coachless-Home failure.
++ *
++ * Every refusal is `{ code, message }` (the ErrorEnvelope convention). Mobile
++ * maps `code` to specific copy (what happened + what to do next); `message`
++ * is a plain fallback for logs and API consumers and never echoes the code
++ * string, a coach id or an email.
++ */
++export const COACHLESS_ERROR = {
++  /** Unknown code, malformed code, or a code whose owner is not a coach. */
++  CODE_INVALID: 'code_invalid',
++  /** A per-row code past its expires_at. */
++  CODE_EXPIRED: 'code_expired',
++  /** A per-row code the coach revoked. */
++  CODE_REVOKED: 'code_revoked',
++  /** A per-row code with every seat used. */
++  CODE_EXHAUSTED: 'code_exhausted',
++  /** A single-recipient code redeemed from a different email. */
++  CODE_EMAIL_MISMATCH: 'code_email_mismatch',
++  /** The coach cannot take new clients (subscription, or the owner paused the featured offer). */
++  COACH_NOT_ACCEPTING: 'coach_not_accepting',
++  /** The caller already has a different coach (no re-parenting by code). */
++  ALREADY_ATTACHED: 'already_attached',
++  /** Coach, sub-coach and owner accounts are never attached to a coach. */
++  ROLE_CANNOT_REDEEM: 'role_cannot_redeem',
++  /** The caller's account row no longer exists. */
++  ACCOUNT_NOT_FOUND: 'account_not_found',
++  /** Missing or non-UUID Idempotency-Key header. */
++  IDEMPOTENCY_KEY_REQUIRED: 'idempotency_key_required',
++  /** The same Idempotency-Key was sent with a different code. */
++  IDEMPOTENCY_KEY_REUSED: 'idempotency_key_reused',
++  /** A request with this Idempotency-Key is still running. */
++  REDEMPTION_IN_PROGRESS: 'redemption_in_progress',
++  /** Unexpected server failure; the response carries the request reference. */
++  REDEMPTION_FAILED: 'redemption_failed',
++  /** FEATURE_COACHLESS_HOME is off. */
++  COACHLESS_DISABLED: 'coachless_disabled',
++  /** Owner config: the code belongs to a coach other than the featured coach. */
++  FEATURED_CODE_OTHER_COACH: 'featured_code_other_coach',
++  /** Owner config: the featured coach id is not a coach account. */
++  FEATURED_COACH_INVALID: 'featured_coach_invalid',
++  /** Owner config: the package is not an active package of the featured coach. */
++  FEATURED_PACKAGE_INVALID: 'featured_package_invalid',
++  /** Owner config: the code does not resolve and creation was not requested. */
++  FEATURED_CODE_UNKNOWN: 'featured_code_unknown',
++} as const;
++
++export type CoachlessErrorCode = (typeof COACHLESS_ERROR)[keyof typeof COACHLESS_ERROR];
++
++/** Default human message per code (never shown verbatim by mobile; logs/API only). */
++export const COACHLESS_ERROR_MESSAGE: Record<CoachlessErrorCode, string> = {
++  code_invalid:
++    'That code does not match a coach. Check the spelling or ask your coach to resend it.',
++  code_expired: 'That code has expired. Ask your coach for a new one.',
++  code_revoked: 'That code is no longer active. Ask your coach for a current code.',
++  code_exhausted:
++    'That code has been used the maximum number of times. Ask your coach for a new one.',
++  code_email_mismatch:
++    'That code was sent to a different email address. Sign in with that email or ask your coach for your own code.',
++  coach_not_accepting:
++    'This coach is not taking new clients right now. Try again later or use another coach code.',
++  already_attached: 'Your account already has a coach. Contact support to change coaches.',
++  role_cannot_redeem: 'Coach and owner accounts cannot join a coach with a client code.',
++  account_not_found: 'Your account could not be found. Sign out and sign in again.',
++  idempotency_key_required: 'Idempotency-Key header is required and must be a UUID.',
++  idempotency_key_reused:
++    'This Idempotency-Key was already used with a different code. Send a new key.',
++  redemption_in_progress:
++    'This code is still being applied. Wait a moment, then retry with the same key.',
++  redemption_failed:
++    'The code could not be applied because of a server problem. Retry, or contact support with the reference.',
++  coachless_disabled: 'Not found.',
++  featured_code_other_coach: 'That code belongs to a different coach.',
++  featured_coach_invalid: 'The featured coach must be an existing coach account.',
++  featured_package_invalid: 'The featured package must be an active package of the featured coach.',
++  featured_code_unknown:
++    'That code does not exist yet. Set create_code_if_missing to create it for the featured coach.',
++};
++
++export const COACHLESS_ERROR_STATUS: Record<CoachlessErrorCode, number> = {
++  code_invalid: HttpStatus.NOT_FOUND,
++  code_expired: HttpStatus.GONE,
++  code_revoked: HttpStatus.GONE,
++  code_exhausted: HttpStatus.GONE,
++  code_email_mismatch: HttpStatus.FORBIDDEN,
++  coach_not_accepting: HttpStatus.CONFLICT,
++  already_attached: HttpStatus.CONFLICT,
++  role_cannot_redeem: HttpStatus.FORBIDDEN,
++  account_not_found: HttpStatus.NOT_FOUND,
++  idempotency_key_required: HttpStatus.BAD_REQUEST,
++  idempotency_key_reused: HttpStatus.UNPROCESSABLE_ENTITY,
++  redemption_in_progress: HttpStatus.CONFLICT,
++  redemption_failed: HttpStatus.INTERNAL_SERVER_ERROR,
++  coachless_disabled: HttpStatus.NOT_FOUND,
++  featured_code_other_coach: HttpStatus.CONFLICT,
++  featured_coach_invalid: HttpStatus.BAD_REQUEST,
++  featured_package_invalid: HttpStatus.BAD_REQUEST,
++  featured_code_unknown: HttpStatus.BAD_REQUEST,
++};
++
++export interface CoachlessErrorBody {
++  code: CoachlessErrorCode;
++  message: string;
++  request_id?: string;
++}
++
++export class CoachlessError extends HttpException {
++  constructor(
++    readonly coachlessCode: CoachlessErrorCode,
++    extra: { request_id?: string } = {},
++  ) {
++    const body: CoachlessErrorBody = {
++      code: coachlessCode,
++      message: COACHLESS_ERROR_MESSAGE[coachlessCode],
++      ...(extra.request_id ? { request_id: extra.request_id } : {}),
++    };
++    super(body, COACHLESS_ERROR_STATUS[coachlessCode]);
++  }
++}
+diff --git a/src/coachless/coachless.module.ts b/src/coachless/coachless.module.ts
+new file mode 100644
+index 00000000..5db2b4a2
+--- /dev/null
++++ b/src/coachless/coachless.module.ts
+@@ -0,0 +1,26 @@
++import { Module } from '@nestjs/common';
++import { InviteCodesModule } from '../invite-codes/invite-codes.module';
++import { CoachlessController, FeaturedCoachAdminController } from './coachless.controller';
++import { CoachCodeLookupService } from './coach-code-lookup.service';
++import { CoachCodeRedemptionService } from './coach-code-redemption.service';
++import { CoachlessHomeService } from './coachless-home.service';
++import { CoachlessPromptService } from './coachless-prompt.service';
++import { FeaturedCoachService } from './featured-coach.service';
++
++// A1-COACHLESS — coachless Home (banner + scripted Roman card), the owner's
++// featured-coach config and post-signup coach-code redemption. PrismaService
++// and the auth guards are global; InviteCodesModule exports the canonical
++// attach writer this module delegates to.
++@Module({
++  imports: [InviteCodesModule],
++  controllers: [CoachlessController, FeaturedCoachAdminController],
++  providers: [
++    CoachCodeLookupService,
++    CoachCodeRedemptionService,
++    CoachlessHomeService,
++    CoachlessPromptService,
++    FeaturedCoachService,
++  ],
++  exports: [FeaturedCoachService],
++})
++export class CoachlessModule {}
+diff --git a/src/coachless/featured-coach.service.ts b/src/coachless/featured-coach.service.ts
+new file mode 100644
+index 00000000..c74c0f34
+--- /dev/null
++++ b/src/coachless/featured-coach.service.ts
+@@ -0,0 +1,306 @@
++import { Injectable, Logger } from '@nestjs/common';
++import type { FeaturedCoachConfig } from '@prisma/client';
++import { PrismaService } from '../prisma.service';
++import { AuditService } from '../audit/audit.service';
++import {
++  CoachCodeLookupService,
++  isUniqueViolation,
++  type CoachCard,
++} from './coach-code-lookup.service';
++import { CoachlessError, COACHLESS_ERROR } from './coachless.errors';
++
++/** Server default for the banner title when the owner has not set one. */
++export const DEFAULT_COACHLESS_BANNER_TITLE = 'Enter coach code for coaching and programs';
++
++/** Resolved config is cached per process; the owner PUT invalidates it locally. */
++export const FEATURED_COACH_CACHE_TTL_MS = 30_000;
++
++export const FEATURED_COACH_CONFIG_ID = 'default';
++
++export interface FeaturedPackage {
++  id: string;
++  name: string;
++  description: string | null;
++  amount_cents: number;
++  currency: string;
++  billing_type: string;
++  interval: string | null;
++  interval_count: number;
++}
++
++export interface RomanCaps {
++  min_hours_between: number;
++  max_per_week: number;
++  snooze_days: number;
++  max_not_now: number;
++}
++
++/** The featured-coach offer as clients may see it (no audit fields). */
++export interface ResolvedFeaturedCoach {
++  configured: boolean;
++  banner_title: string;
++  offer_text: string | null;
++  roman_pitch_text: string | null;
++  code: string | null;
++  /** Owner switch AND the code resolves to this coach AND the coach can take clients. */
++  accepting_clients: boolean;
++  roman_enabled: boolean;
++  roman_caps: RomanCaps;
++  coach: CoachCard | null;
++  package: FeaturedPackage | null;
++}
++
++export interface FeaturedCoachConfigInput {
++  coach_user_id: string | null;
++  code: string | null;
++  package_id: string | null;
++  banner_title: string | null;
++  offer_text: string | null;
++  roman_pitch_text: string | null;
++  accepting_clients: boolean;
++  roman_enabled: boolean;
++  roman_min_hours_between?: number;
++  roman_max_per_week?: number;
++  roman_snooze_days?: number;
++  roman_max_not_now?: number;
++  create_code_if_missing?: boolean;
++}
++
++const DEFAULT_CAPS: RomanCaps = {
++  min_hours_between: 24,
++  max_per_week: 3,
++  snooze_days: 14,
++  max_not_now: 2,
++};
++
++/**
++ * A1-COACHLESS — the featured-coach offer for coachless clients.
++ *
++ * Source of truth: the FeaturedCoachConfig singleton row (owner-edited via
++ * PUT /admin/featured-coach, audited). Nothing about the offer — code, price
++ * wording, Roman copy — is hard-coded; only the neutral banner title has a
++ * server default. Resolution is cached for FEATURED_COACH_CACHE_TTL_MS with a
++ * single in-flight load (no stampede); other instances converge within the TTL.
++ */
++@Injectable()
++export class FeaturedCoachService {
++  private readonly logger = new Logger(FeaturedCoachService.name);
++  private cache: { value: ResolvedFeaturedCoach; expiresAt: number } | null = null;
++  private inflight: Promise<ResolvedFeaturedCoach> | null = null;
++
++  constructor(
++    private readonly prisma: PrismaService,
++    private readonly lookup: CoachCodeLookupService,
++    private readonly audit: AuditService,
++  ) {}
++
++  /** Test/ops hook and the owner PUT: drop this instance's cached resolution. */
++  invalidate(): void {
++    this.cache = null;
++    this.inflight = null;
++  }
++
++  async get(now: number = Date.now()): Promise<ResolvedFeaturedCoach> {
++    if (this.cache && this.cache.expiresAt > now) return this.cache.value;
++    if (this.inflight) return this.inflight;
++    const load = this.load()
++      .then((value) => {
++        if (this.inflight === load) {
++          this.cache = { value, expiresAt: Date.now() + FEATURED_COACH_CACHE_TTL_MS };
++          this.inflight = null;
++        }
++        return value;
++      })
++      .catch((err: unknown) => {
++        if (this.inflight === load) this.inflight = null;
++        throw err;
++      });
++    this.inflight = load;
++    return load;
++  }
++
++  private async load(): Promise<ResolvedFeaturedCoach> {
++    const row = await this.prisma.featuredCoachConfig.findUnique({
++      where: { id: FEATURED_COACH_CONFIG_ID },
++    });
++    return this.resolveRow(row);
++  }
++
++  /** Pure-ish projection of a config row; exported through get() only. */
++  async resolveRow(row: FeaturedCoachConfig | null): Promise<ResolvedFeaturedCoach> {
++    if (!row) {
++      return {
++        configured: false,
++        banner_title: DEFAULT_COACHLESS_BANNER_TITLE,
++        offer_text: null,
++        roman_pitch_text: null,
++        code: null,
++        accepting_clients: false,
++        roman_enabled: false,
++        roman_caps: DEFAULT_CAPS,
++        coach: null,
++        package: null,
++      };
++    }
++    const coach = row.coach_user_id ? await this.lookup.coachCard(row.coach_user_id) : null;
++    let accepting = false;
++    if (row.accepting_clients && coach && row.code) {
++      const resolved = await this.lookup.resolve(row.code);
++      accepting =
++        !!resolved &&
++        resolved.coachId === coach.id &&
++        (await this.lookup.refusalFor(resolved)) === null;
++    }
++    const pkg =
++      row.package_id && coach ? await this.activePackageOf(row.package_id, coach.id) : null;
++    return {
++      configured: true,
++      banner_title: row.banner_title,
++      offer_text: row.offer_text,
++      roman_pitch_text: row.roman_pitch_text,
++      code: row.code,
++      accepting_clients: accepting,
++      roman_enabled: row.roman_enabled,
++      roman_caps: {
++        min_hours_between: row.roman_min_hours_between,
++        max_per_week: row.roman_max_per_week,
++        snooze_days: row.roman_snooze_days,
++        max_not_now: row.roman_max_not_now,
++      },
++      coach,
++      package: pkg,
++    };
++  }
++
++  /** An ACTIVE package owned by `coachId`, or null (never another coach's package). */
++  async activePackageOf(packageId: string, coachId: string): Promise<FeaturedPackage | null> {
++    const p = await this.prisma.coachPackage.findFirst({
++      where: { id: packageId, coach_id: coachId, is_active: true, archived_at: null },
++      select: {
++        id: true,
++        name: true,
++        description: true,
++        amount_cents: true,
++        currency: true,
++        billing_type: true,
++        interval: true,
++        interval_count: true,
++      },
++    });
++    return p ?? null;
++  }
++
++  /** Owner view: the raw row (or null) plus the resolved projection. */
++  async getForOwner(): Promise<{
++    config: FeaturedCoachConfig | null;
++    resolved: ResolvedFeaturedCoach;
++  }> {
++    const row = await this.prisma.featuredCoachConfig.findUnique({
++      where: { id: FEATURED_COACH_CONFIG_ID },
++    });
++    return { config: row, resolved: await this.resolveRow(row) };
++  }
++
++  /**
++   * Owner PUT. Validates every reference server-side: the coach is a coach
++   * account, the code resolves to THAT coach (or is created for it when
++   * create_code_if_missing), and the package is an active package of that
++   * coach. Writes the row and its audit entry in one transaction.
++   */
++  async update(
++    owner: { id: string; email?: string | null },
++    input: FeaturedCoachConfigInput,
++  ): Promise<{
++    config: FeaturedCoachConfig;
++    resolved: ResolvedFeaturedCoach;
++    code_created: boolean;
++  }> {
++    const coachId = input.coach_user_id;
++    if (coachId) {
++      const coach = await this.prisma.user.findUnique({
++        where: { id: coachId },
++        select: { role: true },
++      });
++      if (!coach || coach.role !== 'coach')
++        throw new CoachlessError(COACHLESS_ERROR.FEATURED_COACH_INVALID);
++    }
++    let code = input.code ? input.code.trim() : null;
++    let createCode = false;
++    if (code) {
++      if (!coachId) throw new CoachlessError(COACHLESS_ERROR.FEATURED_COACH_INVALID);
++      const resolved = await this.lookup.resolve(code);
++      if (resolved) {
++        if (resolved.coachId !== coachId)
++          throw new CoachlessError(COACHLESS_ERROR.FEATURED_CODE_OTHER_COACH);
++        code = resolved.code; // store the canonical stored form
++      } else if (input.create_code_if_missing) {
++        createCode = true;
++      } else {
++        throw new CoachlessError(COACHLESS_ERROR.FEATURED_CODE_UNKNOWN);
++      }
++    }
++    if (input.package_id) {
++      if (!coachId || !(await this.activePackageOf(input.package_id, coachId))) {
++        throw new CoachlessError(COACHLESS_ERROR.FEATURED_PACKAGE_INVALID);
++      }
++    }
++    const data = {
++      coach_user_id: coachId,
++      code,
++      package_id: input.package_id,
++      banner_title: input.banner_title?.trim() || DEFAULT_COACHLESS_BANNER_TITLE,
++      offer_text: input.offer_text?.trim() || null,
++      roman_pitch_text: input.roman_pitch_text?.trim() || null,
++      accepting_clients: input.accepting_clients,
++      roman_enabled: input.roman_enabled,
++      roman_min_hours_between: input.roman_min_hours_between ?? DEFAULT_CAPS.min_hours_between,
++      roman_max_per_week: input.roman_max_per_week ?? DEFAULT_CAPS.max_per_week,
++      roman_snooze_days: input.roman_snooze_days ?? DEFAULT_CAPS.snooze_days,
++      roman_max_not_now: input.roman_max_not_now ?? DEFAULT_CAPS.max_not_now,
++      updated_by_user_id: owner.id,
++    };
++    let config: FeaturedCoachConfig;
++    try {
++      config = await this.prisma.$transaction(async (tx) => {
++        if (createCode && code && coachId) {
++          // A permanent, unlimited code for the featured coach (owner action).
++          await tx.inviteCode.create({ data: { code, coach_id: coachId } });
++        }
++        const saved = await tx.featuredCoachConfig.upsert({
++          where: { id: FEATURED_COACH_CONFIG_ID },
++          create: { id: FEATURED_COACH_CONFIG_ID, ...data },
++          update: data,
++        });
++        await this.audit.writeTx(tx, {
++          action: 'featured_coach_config.updated',
++          actorId: owner.id,
++          actorRole: 'owner',
++          actorEmail: owner.email ?? null,
++          targetType: 'FeaturedCoachConfig',
++          targetId: FEATURED_COACH_CONFIG_ID,
++          tenantCoachId: coachId,
++          metadata: {
++            coach_user_id: coachId,
++            code,
++            code_created: createCode,
++            package_id: input.package_id,
++            accepting_clients: input.accepting_clients,
++            roman_enabled: input.roman_enabled,
++          },
++        });
++        return saved;
++      });
++    } catch (err) {
++      // A code minted concurrently by someone else: report it as taken.
++      if (isUniqueViolation(err)) {
++        throw new CoachlessError(COACHLESS_ERROR.FEATURED_CODE_OTHER_COACH);
++      }
++      throw err;
++    }
++    this.invalidate();
++    this.logger.log(
++      `featured coach config updated by owner=${owner.id} coach=${coachId ?? 'none'}`,
++    );
++    return { config, resolved: await this.resolveRow(config), code_created: createCode };
++  }
++}
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index 4b12a0f6..efb6f0d7 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -2055,6 +2055,15 @@ export const ENV_RULES: EnvRule[] = [
+     default: 'unset → off (only "true")',
+     reason: 'Community events.',
+   },
++  {
++    name: 'FEATURE_COACHLESS_HOME',
++    values: ['true', 'false'],
++    unsetIs: 'off',
++    tier: 'optional',
++    default: 'unset → off (only "true")',
++    reason:
++      'A1-COACHLESS kill switch for the coachless Home surfaces: GET /coachless/home, the coach-code check/redeem routes and the scripted Roman card routes (404 coachless_disabled while off), and the coachless_home key of GET /me/feature-flags. The owner-only /admin/featured-coach config is not gated so the offer can be set up before the flip.',
++  },
+   {
+     name: 'FEATURE_COMMUNITY_SEARCH',
+     values: ['true', 'false'],
+diff --git a/src/feature-flags/__tests__/feature-flags.controller.spec.ts b/src/feature-flags/__tests__/feature-flags.controller.spec.ts
+index 1f3e85ab..6d18e082 100644
+--- a/src/feature-flags/__tests__/feature-flags.controller.spec.ts
++++ b/src/feature-flags/__tests__/feature-flags.controller.spec.ts
+@@ -33,6 +33,7 @@ describe('FeatureFlagsController', () => {
+     coach_community_wearable_prompts: true,
+     community_classroom: true,
+     community_events: true,
++    coachless_home: true,
+   };
+ 
+   beforeEach(() => {
+diff --git a/src/feature-flags/__tests__/feature-flags.service.spec.ts b/src/feature-flags/__tests__/feature-flags.service.spec.ts
+index 4ee88c12..211661a9 100644
+--- a/src/feature-flags/__tests__/feature-flags.service.spec.ts
++++ b/src/feature-flags/__tests__/feature-flags.service.spec.ts
+@@ -16,6 +16,7 @@ const FLAG_ENVS = [
+   'FEATURE_COMMUNITY_WEARABLE_PROMPTS',
+   'FEATURE_COMMUNITY_CLASSROOM_POSTS',
+   'FEATURE_COMMUNITY_EVENTS',
++  'FEATURE_COACHLESS_HOME',
+ ] as const;
+ 
+ describe('FeatureFlagsService', () => {
+@@ -54,9 +55,21 @@ describe('FeatureFlagsService', () => {
+       coach_community_wearable_prompts: false,
+       community_classroom: false,
+       community_events: false,
++      coachless_home: false,
+     });
+   });
+ 
++  // A1-COACHLESS — client-only kill switch, independent of the community gate.
++  it('coachless_home is ON only for a student when FEATURE_COACHLESS_HOME is exactly "true"', () => {
++    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(false);
++    process.env.FEATURE_COACHLESS_HOME = 'TRUE';
++    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(false);
++    process.env.FEATURE_COACHLESS_HOME = 'true';
++    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(true);
++    expect(service.evaluate({ userId: 'c1', role: 'coach' }).coachless_home).toBe(false);
++    expect(service.evaluate({ userId: 'o1', role: 'owner' }).coachless_home).toBe(false);
++  });
++
+   it('resolves per-flag env gates when the master gate is globally on', () => {
+     process.env.FEATURE_COMMUNITY_API = 'true';
+     process.env.FEATURE_COMMUNITY_SEARCH = 'true';
+diff --git a/src/feature-flags/feature-flags.dto.ts b/src/feature-flags/feature-flags.dto.ts
+index 3d16d31f..56a97968 100644
+--- a/src/feature-flags/feature-flags.dto.ts
++++ b/src/feature-flags/feature-flags.dto.ts
+@@ -34,6 +34,7 @@ export const FEATURE_FLAG_KEYS = [
+   'coach_community_wearable_prompts',
+   'community_classroom',
+   'community_events',
++  'coachless_home',
+ ] as const;
+ 
+ export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
+diff --git a/src/feature-flags/feature-flags.service.ts b/src/feature-flags/feature-flags.service.ts
+index 6a4028a7..248fc0f3 100644
+--- a/src/feature-flags/feature-flags.service.ts
++++ b/src/feature-flags/feature-flags.service.ts
+@@ -66,6 +66,9 @@ export class FeatureFlagsService {
+         communityReachable && envOn('FEATURE_COMMUNITY_CLASSROOM_POSTS'),
+       community_events:
+         communityReachable && envOn('FEATURE_COMMUNITY_EVENTS'),
++      // A1-COACHLESS — a client-only surface (coachless Home banner, code
++      // sheet, Roman card). Coaches and owners always read it as OFF.
++      coachless_home: ctx.role === 'student' && envOn('FEATURE_COACHLESS_HOME'),
+     };
+   }
+ 

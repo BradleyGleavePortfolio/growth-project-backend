@@ -1,0 +1,164 @@
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index 3be9e6c9..269cadce 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -2740,7 +2740,16 @@ export class CheckoutWebhookHandlerService {
+     // Legacy test stubs of DunningV2Service lack the read; production has it.
+     const v2 = this.dunningV2;
+     if (!v2 || typeof v2.isDisputePaused !== 'function') return false;
+-    return v2.isDisputePaused(purchaseId, client);
++    try {
++      return await v2.isDisputePaused(purchaseId, client);
++    } catch (err) {
++      // B-690-2: an unknown answer fails the delivery with a closed code, so
++      // Stripe redelivers it and the cause never reaches the logs.
++      this.logger.warn(
++        `dunningV2.isDisputePaused failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
++      );
++      throw new DunningWebhookRetryError('DUNNING_DISPUTE_CHECK_FAILED');
++    }
+   }
+ 
+   /**
+diff --git a/test/b-recur5b-117-authority.spec.ts b/test/b-recur5b-117-authority.spec.ts
+index 0bcb7108..2dab5558 100644
+--- a/test/b-recur5b-117-authority.spec.ts
++++ b/test/b-recur5b-117-authority.spec.ts
+@@ -211,7 +211,8 @@ describe('B-680-2: a decline read before a payment never reopens dunning', () =>
+     await expect(h.svc.handle(decline, h.prisma, pre)).rejects.toThrow(/redeliver/);
+     expect(h.dunning.recordFailure).not.toHaveBeenCalled();
+     await expect(h.deliver(decline)).resolves.toMatchObject({ claimed: true });
+-    expect(h.row()).toMatchObject({ status: 'past_due', entitlement_active: true, last_error: 'Your card was declined.' });
++    // D4 (C-690-1): last_error is a decline code, never Stripe's message.
++    expect(h.row()).toMatchObject({ status: 'past_due', entitlement_active: true, last_error: 'invoice_payment_failed' });
+     expect(h.dunning.recordFailure).toHaveBeenCalledTimes(1);
+   });
+ 
+diff --git a/test/b-recur7b-119-authority.spec.ts b/test/b-recur7b-119-authority.spec.ts
+index c69d9be5..e3c12a5c 100644
+--- a/test/b-recur7b-119-authority.spec.ts
++++ b/test/b-recur7b-119-authority.spec.ts
+@@ -263,7 +263,8 @@ describe('B-680-2 (R119): no write after the decline read is exempt from the fen
+     expect(h.row()).toMatchObject({
+       status: 'past_due',
+       entitlement_active: true,
+-      last_error: 'Your card was declined.',
++      // D4 (C-690-1): last_error is a decline code, never Stripe's message.
++      last_error: 'invoice_payment_failed',
+     });
+     expect(h.dunning.recordFailure).toHaveBeenCalledTimes(1);
+   });
+diff --git a/test/dunning-d4-fix-round.spec.ts b/test/dunning-d4-fix-round.spec.ts
+index 56f9e8a6..6d10d216 100644
+--- a/test/dunning-d4-fix-round.spec.ts
++++ b/test/dunning-d4-fix-round.spec.ts
+@@ -182,7 +182,8 @@ describe('B-D34-116 dunning D4 fix round (#690)', () => {
+     await b.reached;
+     expect((await w.billing.cancelPlan('client', 'purchase')).outcome).toBe('ended');
+     b.release();
+-    await expect(pending).resolves.toMatchObject({ reason: 'stale_after_cancel' });
++    // Main's B-680-1 lock check sees the ended plan first (same outcome).
++    await expect(pending).resolves.toMatchObject({ reason: 'subscription_already_ended' });
+     expect(w.purchase()).toMatchObject({ status: 'canceled', entitlement_active: false });
+   });
+ 
+@@ -226,7 +227,7 @@ describe('B-D34-116 dunning D4 fix round (#690)', () => {
+     expect(logged()).not.toContain('SYNTHETIC');
+   });
+ 
+-  it('B-690-3: a failed dispute closure is redelivered (no processed row) and the retry unlocks', async () => {
++  it('B-690-3: a failed dispute closure is redelivered (no processed row) and the retry applies it', async () => {
+     const w = world('charge_disputed');
+     Object.assign(w.purchase()!, { status: 'active' });
+     w.fake.seed('connectTransfer', {
+@@ -252,7 +253,10 @@ describe('B-D34-116 dunning D4 fix round (#690)', () => {
+     expect(w.fake.rows('stripeProcessedEvent')).toHaveLength(0);
+     await expect(w.outer.handleEvent(stub(won))).resolves.toMatchObject({ processed: true });
+     expect(closure).toHaveBeenCalledTimes(2);
+-    expect(w.state()).toMatchObject({ status: 'resolved', locked_out_at: null });
++    // D2c (R-DISPUTE-PAUSE): a closed dispute keeps the plan paused until the
++    // coach restarts it; the retry pauses billing at Stripe.
++    expect(w.state()).toMatchObject({ status: 'active', locked_out_at: expect.any(Date) });
++    expect(w.stripe.calls.map((c) => c.op)).toContain('pauseSubscriptionCollection');
+     expect(logged()).not.toContain('SYNTHETIC');
+   });
+ 
+diff --git a/test/dunning-r2-native-card-1a-2a-e2e.spec.ts b/test/dunning-r2-native-card-1a-2a-e2e.spec.ts
+index 81e61820..dbc60897 100644
+--- a/test/dunning-r2-native-card-1a-2a-e2e.spec.ts
++++ b/test/dunning-r2-native-card-1a-2a-e2e.spec.ts
+@@ -380,6 +380,8 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
+         customer: 'cus_dv2_client',
+         metadata: { tgp_client_user_id: 'client-1', tgp_purpose: 'client_card_update' },
+         idempotencyKey: `tgp-card-setup-client-1-${UUID(7)}`,
++        // Main's signature (B-DUNB-120): the plan's coach account; this fixture plan has none.
++        onBehalfOf: '',
+       });
+       expect(w.stripe.setupIntents.get(a.setup_intent_id)?.usage).toBe('off_session');
+     });
+diff --git a/test/dunning-v2-c680-18.spec.ts b/test/dunning-v2-c680-18.spec.ts
+index ba124bdf..b7798b6e 100644
+--- a/test/dunning-v2-c680-18.spec.ts
++++ b/test/dunning-v2-c680-18.spec.ts
+@@ -312,16 +312,10 @@ describe('C-680-18 through the webhook (invoice.paid, then customer.subscription
+       await h.deliver(paid());
+       expect(h.row().entitlement_active).toBe(false);
+       expect(h.states[0].locked_out_at).toEqual(LOCKED_AT);
+-      // The webhook tx is passed on (it holds the purchase lock), and no
+-      // DunningState lock is taken before v1 writes that row on its own
+-      // connection (a 5 s stall and a failed delivery otherwise).
+-      expect(clear.mock.calls[0][2]).toBe(h.db);
+-      const v1At = (h.dunning.recordResolution as jest.Mock).mock.invocationCallOrder[0];
+-      const raw = (h.db.$queryRaw as jest.Mock).mock;
+-      raw.calls.forEach((c: [TemplateStringsArray], i: number) => {
+-        if (c[0].join('?').includes('"DunningState"'))
+-          expect(raw.invocationCallOrder[i]).toBeGreaterThan(v1At);
+-      });
++      // D4 (B-628-13): the paid invoice keeps the dispute cycle; no clear and
++      // no v1 resolution run (so no DunningState write on a second connection).
++      expect(clear).not.toHaveBeenCalled();
++      expect(h.dunning.recordResolution).not.toHaveBeenCalled();
+       h.row().updated_at = new Date(Date.now() - 30_000);
+       await h.deliver(ev('customer.subscription.updated', sub('active')));
+       expect(h.row().entitlement_active).toBe(false);
+diff --git a/test/support/fake-stripe-billing.ts b/test/support/fake-stripe-billing.ts
+index 22023b6c..abff988b 100644
+--- a/test/support/fake-stripe-billing.ts
++++ b/test/support/fake-stripe-billing.ts
+@@ -22,7 +22,7 @@ export type CardBehavior = 'ok' | 'decline' | 'requires_action';
+ export interface FakeInvoice {
+   id: string;
+   object: 'invoice';
+-  status: 'open' | 'paid' | 'void';
++  status: 'open' | 'paid' | 'void' | 'uncollectible';
+   subscription: string;
+   customer: string;
+   amount_due: number;
+@@ -361,6 +361,27 @@ export class FakeStripeBilling {
+     return { id: sub.id, status: sub.status };
+   }
+ 
++  // D2c dispute pause (main's signatures): billing paused, open invoices
++  // marked uncollectible.
++  async pauseSubscriptionCollection(args: {
++    subscriptionId: string;
++    idempotencyKey: string;
++  }): Promise<FakeSubscription> {
++    this.calls.push({ op: 'pauseSubscriptionCollection', key: args.idempotencyKey, args });
++    return { ...this.mustSub(args.subscriptionId) };
++  }
++
++  async markInvoiceUncollectible(args: {
++    invoiceId: string;
++    idempotencyKey: string;
++  }): Promise<FakeInvoice> {
++    this.calls.push({ op: 'markInvoiceUncollectible', key: args.idempotencyKey, args });
++    const inv = this.invoices.get(args.invoiceId);
++    if (!inv) throw new StripeConnectApiError('No such invoice', 404, 'resource_missing', 'invalid_request_error');
++    inv.status = 'uncollectible';
++    return this.copy(inv);
++  }
++
+   async retrieveSubscription(id: string): Promise<FakeSubscription> {
+     this.calls.push({ op: 'retrieveSubscription', args: id });
+     return { ...this.mustSub(id) };

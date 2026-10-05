@@ -1,0 +1,40 @@
+
+  ● POST /v1/coach/purchases/:id/dispute-restart › a client cannot call it: 403 before the service runs
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+    [0m [90m 70 |[39m
+     [90m 71 |[39m   it([32m'a client cannot call it: 403 before the service runs'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 72 |[39m     expect(([36mawait[39m post([32m'client-1:student'[39m))[33m.[39mstatus)[33m.[39mtoBe([35m403[39m)[33m;[39m
+     [90m    |[39m                                                     [31m[1m^[22m[39m
+     [90m 73 |[39m     expect(restart)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m 74 |[39m   })[33m;[39m
+     [90m 75 |[39m[0m
+
+      at Object.<anonymous> (test/dunning-v2-coach-restart-route.spec.ts:72:53)
+
+  ● POST /v1/coach/purchases/:id/dispute-restart › a refusal carries its code and next step
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 409
+    Received: 404
+
+    [0m [90m 77 |[39m     restart[33m.[39mmockResolvedValueOnce({ restarted[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'other_live_plan'[39m })[33m;[39m
+     [90m 78 |[39m     [36mconst[39m r [33m=[39m [36mawait[39m post([32m'coach-1:coach'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 79 |[39m     expect(r[33m.[39mstatus)[33m.[39mtoBe([35m409[39m)[33m;[39m
+     [90m    |[39m                      [31m[1m^[22m[39m
+     [90m 80 |[39m     expect(r[33m.[39mbody[33m.[39mmessage)[33m.[39mtoMatch([35m/would bill them twice\. Nothing was changed\./[39m)[33m;[39m
+     [90m 81 |[39m   })[33m;[39m
+     [90m 82 |[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (test/dunning-v2-coach-restart-route.spec.ts:79:22)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 4 total
+Snapshots:   0 total
+Time:        5.079 s
+Ran all test suites matching test/dunning-v2-coach-restart-route.spec.ts.

@@ -1,0 +1,11 @@
+AUD-SOL-RCH1-122 complete. Five exact-head verdicts posted independently.
+#372 61141c05c6fe5281a7a4c61370e3240163409f9e APPROVE A/B/C 0/0/1
+#373 70c24e710b9c5dddc49d87e0ea3e9e84298c9a26 APPROVE A/B/C 0/0/0
+#374 0ae9013fe06cbd1d5f1dbaf6ad6072f72f92358a APPROVE A/B/C 0/0/1
+#375 a10123f222013416edff450b15bd1bd34952dd90 APPROVE A/B/C 0/0/0
+#376 6fabb1f989a985bf187552c2c8ad0f93d5486d4a REQUEST CHANGES A/B/C 0/1/0
+B-376-1: ordinary live chat -> history -> confirmed deletion -> back retains deleted text and sends next message to erased session ID. Three sequential CI counterexamples fail; 108 other tests pass. No races, timing, retries or auth switch required.
+Comment: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/376#issuecomment-6004856689
+Probe: https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37384807869/job/112015346643
+Report: /home/user/workspace/ops/reports/AUD-SOL-RCH1-122.md
+Default: fix live-session invalidation/reopen in one small round; keep one-train landing held. Leave edge C-372-1 at 10k clients, C-374-1 copy with Roman memory/notes.

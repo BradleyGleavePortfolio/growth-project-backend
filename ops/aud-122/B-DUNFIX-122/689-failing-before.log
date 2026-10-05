@@ -1,0 +1,30 @@
+    [31m[1m>[22m[39m[90m 152 |[39m     expect(res[33m.[39mmessage)[33m.[39mtoMatch([35m/payment dispute or inquiry is open/[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 153 |[39m     expect(res[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/reversed/[39m)[33m;[39m
+     [90m 154 |[39m     expect(res[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/still updating/[39m)[33m;[39m
+     [90m 155 |[39m     expect(w[33m.[39mstate())[33m.[39mtoMatchObject({[0m
+
+      at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:152:25)
+
+  ● B-D34-116 dunning D3 fix round (#689) › B-689-4: cancel of a disputed cycle ends access now even when the latest invoice reads paid
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /does not settle the open payment dispute or inquiry/
+    Received string:  "Your plan has ended, and you will not be charged again. Your data stays in your account until you delete it. Ending the plan does not settle the payment your bank reversed; contact support at Bradleyapple1031@gmail.com to sort it out."
+
+    [0m [90m 268 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m w[33m.[39mbilling[33m.[39mcancelPlan([32m'client'[39m[33m,[39m [32m'purchase'[39m)[33m;[39m
+     [90m 269 |[39m     expect(res)[33m.[39mtoMatchObject({ outcome[33m:[39m [32m'ended'[39m[33m,[39m paid_period_kept[33m:[39m [36mfalse[39m })[33m;[39m
+    [31m[1m>[22m[39m[90m 270 |[39m     expect(res[33m.[39mmessage)[33m.[39mtoMatch([35m/does not settle the open payment dispute or inquiry/[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 271 |[39m     expect(res[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/reversed/[39m)[33m;[39m
+     [90m 272 |[39m     expect(w[33m.[39mstripe[33m.[39msubs[33m.[39m[36mget[39m([32m'sub_client'[39m)[33m?[39m[33m.[39mstatus)[33m.[39mtoBe([32m'canceled'[39m)[33m;[39m
+     [90m 273 |[39m     expect(w[33m.[39mfake[33m.[39mfind([32m'clientPurchase'[39m[33m,[39m { id[33m:[39m [32m'purchase'[39m }))[33m.[39mtoMatchObject({[0m
+
+      at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:270:25)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 13 passed, 15 total
+Snapshots:   0 total
+Time:        4.002 s
+Ran all test suites matching test/dunning-d3-fix-round.spec.ts.

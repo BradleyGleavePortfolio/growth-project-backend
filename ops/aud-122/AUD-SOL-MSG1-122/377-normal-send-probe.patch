@@ -1,0 +1,57 @@
+diff --git a/src/screens/client/__tests__/MessagesScreenV2.test.tsx b/src/screens/client/__tests__/MessagesScreenV2.test.tsx
+index 1cf024e..9aa5f37 100644
+--- a/src/screens/client/__tests__/MessagesScreenV2.test.tsx
++++ b/src/screens/client/__tests__/MessagesScreenV2.test.tsx
+@@ -6,7 +6,7 @@
+  */
+ import React from 'react';
+ import { Platform } from 'react-native';
+-import { fireEvent, render, waitFor } from '@testing-library/react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+ import api from '../../../services/api';
+ 
+ const originalOS = Platform.OS;
+@@ -36,7 +36,10 @@ jest.mock('../../../services/api', () => ({
+   },
+   profileApi: { get: jest.fn(async () => ({ data: {} })) },
+ }));
+-jest.mock('../../../services/realtime', () => ({ subscribeToMessages: () => () => undefined }));
++const mockSubscribe = jest.fn((..._args: unknown[]) => () => undefined);
++jest.mock('../../../services/realtime', () => ({
++  subscribeToMessages: (...args: unknown[]) => mockSubscribe(...args),
++}));
+ jest.mock('../../../hooks/useFeatureFlags', () => ({
+   useFeatureFlags: () => ({ flags: { messaging_core_v2: true } }),
+ }));
+@@ -100,6 +103,31 @@ beforeEach(() => {
+ });
+ 
+ describe('client MessagesScreen with messaging_core_v2 ON', () => {
++  it('Sol122: a routine repeated reply is not silently discarded after an unsent v2 send', async () => {
++    const previous = row({
++      id: 'yesterday-thanks',
++      sender_id: 'client-1',
++      body: 'Thanks',
++      client_message_id: 'previous-send',
++    });
++    mockList.mockResolvedValue({ data: { messages: [previous] } });
++    postMock.mockImplementation(async (url: string) => {
++      if (url === '/messages') throw axiosErr({});
++      return { data: {} };
++    });
++    const utils = await render(<MessagesScreen />);
++    await utils.findByLabelText(/Message: Thanks/);
++    await fireEvent.changeText(utils.getByLabelText('Message text'), 'Thanks');
++    await fireEvent.press(utils.getByLabelText('Send message'));
++    expect(await utils.findByText('Not sent. Long press to send again')).toBeTruthy();
++    const ping = mockSubscribe.mock.calls[0][1] as () => void;
++    const loadsBeforePing = mockList.mock.calls.length;
++    await act(async () => { ping(); });
++    await waitFor(() => expect(mockList.mock.calls.length).toBeGreaterThan(loadsBeforePing));
++    expect(utils.getByText('Not sent. Long press to send again')).toBeTruthy();
++    expect(utils.getAllByLabelText(/Message: Thanks/)).toHaveLength(2);
++  });
++
+   it('coach message is the coach side even without sender_role; read goes up to it; server quote renders', async () => {
+     const utils = await render(<MessagesScreen />);
+     await utils.findByLabelText(/Message: from the coach/);

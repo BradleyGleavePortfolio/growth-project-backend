@@ -1,0 +1,69 @@
+targeted	Targeted jest	﻿2026-10-05T22:56:18.3427945Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T22:56:18.3428302Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T22:56:18.3428701Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T22:56:18.3429211Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T22:56:18.3429835Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T22:56:18.3430337Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T22:56:18.3496468Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T22:56:18.3496833Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T22:56:18.3594345Z specs: src/screens/roman/__tests__/zzAudOpusRch1Probe.test.ts
+targeted	Targeted jest	2026-10-05T22:56:25.2270211Z FAIL src/screens/roman/__tests__/zzAudOpusRch1Probe.test.ts (5.298 s)
+targeted	Targeted jest	2026-10-05T22:56:25.2273209Z   B-376-1: today's chat deleted from the history screen
+targeted	Targeted jest	2026-10-05T22:56:25.2276101Z     ✕ P1: the deleted conversation is no longer shown on the chat screen (527 ms)
+targeted	Targeted jest	2026-10-05T22:56:25.2277441Z     ✕ P2: the next message goes to a live conversation, not the erased one (4 ms)
+targeted	Targeted jest	2026-10-05T22:56:25.2278721Z     ✓ control: an ordinary send in a live conversation works (3 ms)
+targeted	Targeted jest	2026-10-05T22:56:25.2279240Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2280559Z   ● B-376-1: today's chat deleted from the history screen › P1: the deleted conversation is no longer shown on the chat screen
+targeted	Targeted jest	2026-10-05T22:56:25.2281444Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2281819Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T22:56:25.2282263Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2282457Z     - Expected  - 1
+targeted	Targeted jest	2026-10-05T22:56:25.2282994Z     + Received  + 3
+targeted	Targeted jest	2026-10-05T22:56:25.2283239Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2283410Z     - Array []
+targeted	Targeted jest	2026-10-05T22:56:25.2283797Z     + Array [
+targeted	Targeted jest	2026-10-05T22:56:25.2284225Z     +   "my private question",
+targeted	Targeted jest	2026-10-05T22:56:25.2284662Z     + ]
+targeted	Targeted jest	2026-10-05T22:56:25.2284847Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2286813Z     ^[[0m ^[[90m 58 |^[[39m       romanChatsEvents^[[33m.^[[39memitGone({ ownerId^[[33m:^[[39m ^[[32m'u1'^[[39m^[[33m,^[[39m epoch^[[33m:^[[39m ^[[35m0^[[39m^[[33m,^[[39m id^[[33m:^[[39m ^[[33mTODAY^[[39m^[[33m.^[[39mid^[[33m,^[[39m notice^[[33m:^[[39m ^[[32m'Conversation deleted.'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2288729Z      ^[[90m 59 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2291307Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 60 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(result^[[33m.^[[39mcurrent^[[33m.^[[39mmessages^[[33m.^[[39mmap((m) ^[[33m=>^[[39m m^[[33m.^[[39mcontent))^[[33m.^[[39mtoEqual([])^[[33m,^[[39m { timeout^[[33m:^[[39m ^[[35m500^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2293183Z      ^[[90m    |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2293859Z      ^[[90m 61 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2294371Z      ^[[90m 62 |^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2295706Z      ^[[90m 63 |^[[39m   it(^[[32m'P2: the next message goes to a live conversation, not the erased one'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-05T22:56:25.2296601Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2297178Z       at Object.<anonymous> (src/screens/roman/__tests__/zzAudOpusRch1Probe.test.ts:60:18)
+targeted	Targeted jest	2026-10-05T22:56:25.2298386Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T22:56:25.2299482Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T22:56:25.2300427Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2301496Z   ● B-376-1: today's chat deleted from the history screen › P2: the next message goes to a live conversation, not the erased one
+targeted	Targeted jest	2026-10-05T22:56:25.2302390Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2302798Z     expect(jest.fn()).toHaveBeenLastCalledWith(...expected)
+targeted	Targeted jest	2026-10-05T22:56:25.2303273Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2303522Z     Expected: "s-fresh", "hi again"
+targeted	Targeted jest	2026-10-05T22:56:25.2304096Z     Received: "s-today", "hi again"
+targeted	Targeted jest	2026-10-05T22:56:25.2304430Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2304612Z     Number of calls: 1
+targeted	Targeted jest	2026-10-05T22:56:25.2304865Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2305873Z     ^[[0m ^[[90m 75 |^[[39m       outcome ^[[33m=^[[39m ^[[36mawait^[[39m result^[[33m.^[[39mcurrent^[[33m.^[[39msend(^[[32m'hi again'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2307003Z      ^[[90m 76 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2309289Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 77 |^[[39m     expect(mockSend)^[[33m.^[[39mtoHaveBeenLastCalledWith(^[[33mFRESH^[[39m^[[33m.^[[39mid^[[33m,^[[39m ^[[32m'hi again'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2311145Z      ^[[90m    |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2312297Z      ^[[90m 78 |^[[39m     expect(outcome)^[[33m.^[[39mtoBe(^[[32m'sent'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2313172Z      ^[[90m 79 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T22:56:25.2313727Z      ^[[90m 80 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T22:56:25.2313996Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2314722Z       at Object.toHaveBeenLastCalledWith (src/screens/roman/__tests__/zzAudOpusRch1Probe.test.ts:77:22)
+targeted	Targeted jest	2026-10-05T22:56:25.2316106Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T22:56:25.2317267Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T22:56:25.2317851Z 
+targeted	Targeted jest	2026-10-05T22:56:25.2318157Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-05T22:56:25.2318921Z Tests:       2 failed, 1 passed, 3 total
+targeted	Targeted jest	2026-10-05T22:56:25.2319514Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T22:56:25.2320233Z Time:        5.682 s
+targeted	Targeted jest	2026-10-05T22:56:25.2321150Z Ran all test suites matching /src\/screens\/roman\/__tests__\/zzAudOpusRch1Probe.test.ts/i.
+targeted	Targeted jest	2026-10-05T22:56:26.2335401Z Jest did not exit one second after the test run has completed.
+targeted	Targeted jest	2026-10-05T22:56:26.2336543Z 
+targeted	Targeted jest	2026-10-05T22:56:26.2338632Z 'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+targeted	Targeted jest	2026-10-05T22:56:28.6896907Z ##[error]Process completed with exit code 1.

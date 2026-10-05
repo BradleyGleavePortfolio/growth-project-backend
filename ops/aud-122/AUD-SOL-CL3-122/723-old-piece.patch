@@ -1,0 +1,1165 @@
+diff --git a/src/app.module.ts b/src/app.module.ts
+index 937082e4..e92dee95 100644
+--- a/src/app.module.ts
++++ b/src/app.module.ts
+@@ -38,0 +39 @@ import { InviteCodesModule } from './invite-codes/invite-codes.module';
++import { CoachlessModule } from './coachless/coachless.module';
+@@ -230,0 +232,2 @@ import { WearablesModule } from './wearables/wearables.module';
++    // A1-COACHLESS — coachless Home, featured-coach config, coach-code redemption.
++    CoachlessModule,
+diff --git a/src/coachless/README.md b/src/coachless/README.md
+new file mode 100644
+index 00000000..c15447ef
+--- /dev/null
++++ b/src/coachless/README.md
+@@ -0,0 +1,65 @@
++# Coachless Home (A1-COACHLESS)
++
++Gives a client with no coach a complete Home plus one clear way to get a coach: enter a coach
++code. Kill switch: `FEATURE_COACHLESS_HOME` (only the value `"true"` turns it on; unset means
++off). When the flag is off, every client route returns `404 coachless_disabled`. The mobile flag
++key is `coachless_home`, and it is true only for students when the env is on.
++
++## Routes
++
++| Route | Who | Purpose |
++| --- | --- | --- |
++| `GET /coachless/home` | client | Banner (`title`, owner `offer_text`, `code`), Roman card (`text`, `code`) or the reason it is hidden, featured coach card with its package. `eligible:false` once a coach is attached. |
++| `POST /coachless/coach-code/check` | client | Instant validation for the code sheet. Writes nothing. Returns `{valid:true, coach}` or `{valid:false, code}`. |
++| `POST /coachless/coach-code/redeem` | client | Attaches the client to the coach. Requires an `Idempotency-Key` UUID header. Returns the coach card plus `next.featured_package` / `next.packages_available` for the attach screen. |
++| `POST /coachless/roman-card/seen` | client | Records one impression (the frequency cap). |
++| `POST /coachless/roman-card/not-now` | client | Persists "Not now", which snoozes the card and, after `roman_max_not_now`, hides it for good. |
++| `GET/PUT /admin/featured-coach` | owner | Reads and edits the featured coach, code, package, banner title, offer text, Roman copy, accepting switch and caps. The change is audited as `featured_coach_config.updated`. `create_code_if_missing` mints a vanity code (for example `GP-BRADLEY`) for the featured coach. |
++
++All copy (banner title, offer text, Roman pitch) and the featured code come from
++`FeaturedCoachConfig`. None of it is in the code. The config is cached for 30 seconds, and a save
++invalidates the cache.
++
++## Redemption
++
++`CoachCodeRedemptionService` delegates the write to the single canonical attach writer,
++`InviteCodesService.attachUserToCoachByCode`. That writer handles tenancy (no re-parenting a
++client of another coach), seat accounting and the redemption analytics.
++
++The service adds:
++
++- **Ledger.** `CoachCodeRedemption` with a unique `(user_id, idempotency_key)`.
++- **Retries.** A retry with the same key replays the stored response with `replayed:true`. A key
++  reused for a different code returns `422 idempotency_key_reused`. Failed keys, and claims stuck
++  `in_progress` for 60 seconds, can be reclaimed.
++- **Specific error codes.** `code_invalid`, `code_expired`, `code_revoked`, `code_exhausted`,
++  `code_email_mismatch`, `coach_not_accepting`, `already_attached`, `role_cannot_redeem`,
++  `account_not_found`, `idempotency_key_required`, `idempotency_key_reused`,
++  `redemption_in_progress`, and `redemption_failed` (which carries `request_id`).
++
++## Roman card
++
++The Roman card is scripted. It uses no AI and has no consent dependency. It is shown only when
++all of these hold:
++
++- the owner enabled it;
++- pitch copy exists;
++- the featured coach is accepting (owner switch on, active subscription, code valid);
++- the client has no coach.
++
++Caps, all editable by the owner:
++
++- one impression per `roman_min_hours_between`;
++- at most `roman_max_per_week` per rolling 7 days;
++- "Not now" snoozes for `roman_snooze_days`;
++- after `roman_max_not_now` "Not now"s, the card never returns.
++
++## Data and RLS
++
++Migration `20270301000000_coachless_featured_coach` creates three tables, all with RLS enabled
++and forced, anon revoked and denied, and writes allowed only to `service_role`:
++
++- `FeaturedCoachConfig` is a singleton that only the owner can read.
++- `CoachCodeRedemption` and `CoachlessPromptState` can be read only by their own user.
++
++The live proof is `test/rls/coachless-rls.spec.ts`.
+diff --git a/src/coachless/coach-code-redemption.service.ts b/src/coachless/coach-code-redemption.service.ts
+new file mode 100644
+index 00000000..4ce36b17
+--- /dev/null
++++ b/src/coachless/coach-code-redemption.service.ts
+@@ -0,0 +1,381 @@
++import { HttpException, Injectable, Logger } from '@nestjs/common';
++import { createHash } from 'crypto';
++import { Prisma } from '@prisma/client';
++import { PrismaService } from '../prisma.service';
++import { AuditService } from '../audit/audit.service';
++import { describeFailure } from '../observability/log-pii';
++import {
++  INVITE_ATTACH_ERROR,
++  InviteCodesService,
++  inviteAttachErrorCode,
++  type AttachGrant,
++} from '../invite-codes/invite-codes.service';
++import {
++  CoachCodeLookupService,
++  isUniqueViolation,
++  type CoachCard,
++} from './coach-code-lookup.service';
++import { FeaturedCoachService, type FeaturedPackage } from './featured-coach.service';
++import { COACHLESS_ERROR, CoachlessError, type CoachlessErrorCode } from './coachless.errors';
++
++/** An in_progress claim older than this is treated as abandoned (crash) and may be reclaimed. */
++export const REDEMPTION_STALE_MS = 60_000;
++/** How long a concurrent same-key request waits for the winner before answering 409 in_progress. */
++export const REDEMPTION_REPLAY_WAIT_MS = 5_000;
++const REPLAY_POLL_MS = 100;
++
++export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
++
++/** Response of a successful redemption (also what a replay returns). */
++export interface RedeemResponse {
++  status: 'attached';
++  /** false = this request attached the client (show the welcome moment); true = already this coach's client. */
++  already_attached: boolean;
++  coach: CoachCard;
++  next: {
++    /** The package to offer first: the code's bound package, else the featured offer's package for this coach. */
++    featured_package: FeaturedPackage | null;
++    /** Active packages the coach sells; 0 means the welcome screen leads to messaging instead of a plan. */
++    packages_available: number;
++  };
++  grant: AttachGrant | null;
++  replayed: boolean;
++}
++
++/** Map the canonical attach writer's codes onto the coachless contract. */
++const ATTACH_TO_COACHLESS: Record<string, CoachlessErrorCode> = {
++  [INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS]: COACHLESS_ERROR.COACH_NOT_ACCEPTING,
++  [INVITE_ATTACH_ERROR.ALREADY_ATTACHED_TO_DIFFERENT_COACH]: COACHLESS_ERROR.ALREADY_ATTACHED,
++  [INVITE_ATTACH_ERROR.INVITE_INTENDED_EMAIL_MISMATCH]: COACHLESS_ERROR.CODE_EMAIL_MISMATCH,
++  [INVITE_ATTACH_ERROR.OWNER_CANNOT_REDEEM]: COACHLESS_ERROR.ROLE_CANNOT_REDEEM,
++  [INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM]: COACHLESS_ERROR.ROLE_CANNOT_REDEEM,
++  [INVITE_ATTACH_ERROR.USER_NOT_FOUND]: COACHLESS_ERROR.ACCOUNT_NOT_FOUND,
++};
++
++/**
++ * A1-COACHLESS — post-signup coach-code redemption.
++ *
++ * - Tenancy: the ONLY writer of User.coach_id stays
++ *   InviteCodesService.attachUserToCoachByCode (conditional attach, no
++ *   re-parenting, no role rewrite). This service adds the idempotency
++ *   ledger, specific error codes and the welcome-moment payload on top.
++ * - Idempotency: one CoachCodeRedemption row per (user, Idempotency-Key).
++ *   A completed key replays its stored response byte-for-byte (so a lost
++ *   response still shows the welcome moment); the same key with a different
++ *   code is 422; a concurrent duplicate waits for the winner; a failed key
++ *   may be retried; an abandoned in_progress claim is reclaimed after
++ *   REDEMPTION_STALE_MS.
++ * - Featured offer: when the code is the owner's featured code and the owner
++ *   has paused it (accepting_clients=false), redemption is refused with
++ *   coach_not_accepting before any write.
++ */
++@Injectable()
++export class CoachCodeRedemptionService {
++  private readonly logger = new Logger(CoachCodeRedemptionService.name);
++
++  constructor(
++    private readonly prisma: PrismaService,
++    private readonly inviteCodes: InviteCodesService,
++    private readonly lookup: CoachCodeLookupService,
++    private readonly featured: FeaturedCoachService,
++    private readonly audit: AuditService,
++  ) {}
++
++  static requestHash(code: string): string {
++    return createHash('sha256')
++      .update(JSON.stringify({ action: 'coach_code_redeem', code: code.trim().toUpperCase() }))
++      .digest('hex');
++  }
++
++  /**
++   * Instant validation for the code sheet (no write, no seat). Same refusal
++   * order as a redemption so the sheet and the Join button never disagree.
++   */
++  async check(
++    user: { id: string; role: string; coach_id: string | null },
++    rawCode: string,
++  ): Promise<{ valid: true; coach: CoachCard } | { valid: false; code: CoachlessErrorCode }> {
++    if (user.role !== 'student') return { valid: false, code: COACHLESS_ERROR.ROLE_CANNOT_REDEEM };
++    const resolved = await this.lookup.resolve(rawCode);
++    if (user.coach_id) {
++      if (resolved && resolved.coachId === user.coach_id) {
++        const card = await this.lookup.coachCard(resolved.coachId);
++        if (card) return { valid: true, coach: card };
++      }
++      return { valid: false, code: COACHLESS_ERROR.ALREADY_ATTACHED };
++    }
++    const refusal =
++      (await this.lookup.refusalFor(resolved)) ?? (await this.featuredPauseRefusal(resolved?.code));
++    if (refusal || !resolved)
++      return { valid: false, code: refusal ?? COACHLESS_ERROR.CODE_INVALID };
++    const card = await this.lookup.coachCard(resolved.coachId);
++    return card
++      ? { valid: true, coach: card }
++      : { valid: false, code: COACHLESS_ERROR.CODE_INVALID };
++  }
++
++  async redeem(args: {
++    userId: string;
++    rawCode: string;
++    idempotencyKey: string;
++    requestId?: string;
++  }): Promise<RedeemResponse> {
++    const { userId, rawCode, idempotencyKey, requestId } = args;
++    if (!UUID_RE.test(idempotencyKey))
++      throw new CoachlessError(COACHLESS_ERROR.IDEMPOTENCY_KEY_REQUIRED);
++    const hash = CoachCodeRedemptionService.requestHash(rawCode);
++
++    const claim = await this.claim(userId, idempotencyKey, hash);
++    if (claim.kind === 'replay') return { ...claim.response, replayed: true };
++
++    try {
++      const response = await this.execute(userId, rawCode);
++      await this.prisma.coachCodeRedemption.update({
++        where: { id: claim.id },
++        data: {
++          status: 'completed',
++          outcome: response.already_attached ? 'already_attached_same_coach' : 'attached',
++          coach_id: response.coach.id,
++          http_status: 200,
++          response: toJson(response),
++        },
++      });
++      await this.audit.write({
++        action: 'coach_code.redeemed',
++        actorId: userId,
++        actorRole: 'student',
++        targetUserId: userId,
++        targetType: 'CoachCodeRedemption',
++        targetId: claim.id,
++        tenantCoachId: response.coach.id,
++        metadata: {
++          already_attached: response.already_attached,
++          grant_status: response.grant?.status ?? null,
++        },
++      });
++      return response;
++    } catch (err) {
++      const mapped = this.toCoachlessError(err, requestId);
++      await this.prisma.coachCodeRedemption
++        .update({
++          where: { id: claim.id },
++          data: {
++            status: 'failed',
++            outcome: mapped.coachlessCode,
++            http_status: mapped.getStatus(),
++          },
++        })
++        .catch((e: unknown) =>
++          this.logger.error(
++            `redemption ledger failure-mark failed: ${describeFailure(e)}`,
++          ),
++        );
++      await this.audit.write({
++        action: 'coach_code.redeem_refused',
++        actorId: userId,
++        actorRole: null,
++        targetUserId: userId,
++        targetType: 'CoachCodeRedemption',
++        targetId: claim.id,
++        metadata: { code: mapped.coachlessCode },
++      });
++      if (mapped.coachlessCode === COACHLESS_ERROR.REDEMPTION_FAILED) {
++        this.logger.error(
++          `coach code redemption failed unexpectedly user=${userId} request=${requestId ?? 'none'}: ${
++            describeFailure(err)
++          }`,
++        );
++      }
++      throw mapped;
++    }
++  }
++
++  private async featuredPauseRefusal(code: string | undefined): Promise<CoachlessErrorCode | null> {
++    if (!code) return null;
++    const cfg = await this.featured.get();
++    if (
++      cfg.configured &&
++      cfg.code &&
++      cfg.code.toUpperCase() === code.toUpperCase() &&
++      !cfg.accepting_clients
++    ) {
++      return COACHLESS_ERROR.COACH_NOT_ACCEPTING;
++    }
++    return null;
++  }
++
++  /** The redemption itself (runs while this request holds the claim). */
++  private async execute(userId: string, rawCode: string): Promise<RedeemResponse> {
++    const resolved = await this.lookup.resolve(rawCode);
++    if (!resolved) throw new CoachlessError(COACHLESS_ERROR.CODE_INVALID);
++
++    const me = await this.prisma.user.findUnique({
++      where: { id: userId },
++      select: { coach_id: true },
++    });
++    const isReplayOfSameCoach = !!me && me.coach_id === resolved.coachId;
++    if (!isReplayOfSameCoach) {
++      const paused = await this.featuredPauseRefusal(resolved.code);
++      if (paused) throw new CoachlessError(paused);
++    }
++
++    let attach: Awaited<ReturnType<InviteCodesService['attachUserToCoachByCode']>>;
++    try {
++      attach = await this.inviteCodes.attachUserToCoachByCode(userId, resolved.code);
++    } catch (err) {
++      const attachCode = inviteAttachErrorCode(err);
++      if (attachCode === INVITE_ATTACH_ERROR.INVITE_CODE_INVALID) {
++        // The canonical writer collapses every lifecycle failure; say which.
++        const why = await this.lookup.refusalFor(await this.lookup.resolve(resolved.code));
++        throw new CoachlessError(why ?? COACHLESS_ERROR.CODE_INVALID);
++      }
++      const mapped = ATTACH_TO_COACHLESS[attachCode];
++      if (mapped) throw new CoachlessError(mapped);
++      throw err;
++    }
++
++    const coachId = attach.coach_id ?? resolved.coachId;
++    const coach = await this.lookup.coachCard(coachId);
++    if (!coach) throw new CoachlessError(COACHLESS_ERROR.CODE_INVALID);
++    return {
++      status: 'attached',
++      already_attached: attach.already_attached,
++      coach,
++      next: {
++        featured_package: await this.featuredPackageFor(
++          resolved.code,
++          coachId,
++          attach.grant ?? null,
++        ),
++        packages_available: await this.prisma.coachPackage.count({
++          where: { coach_id: coachId, is_active: true, archived_at: null },
++        }),
++      },
++      grant: attach.grant ?? null,
++      replayed: false,
++    };
++  }
++
++  /** The code's own bound package first; else the featured offer's package when it is this coach's. */
++  private async featuredPackageFor(
++    code: string,
++    coachId: string,
++    grant: AttachGrant | null,
++  ): Promise<FeaturedPackage | null> {
++    const bound =
++      grant?.package_id ??
++      (await this.prisma.inviteCode.findUnique({ where: { code }, select: { package_id: true } }))
++        ?.package_id ??
++      (
++        await this.prisma.coachProfile.findUnique({
++          where: { invite_code: code },
++          select: { invite_code_package_id: true },
++        })
++      )?.invite_code_package_id ??
++      null;
++    if (bound) {
++      const p = await this.featured.activePackageOf(bound, coachId);
++      if (p) return p;
++    }
++    const cfg = await this.featured.get();
++    if (cfg.package && cfg.coach?.id === coachId) return cfg.package;
++    return null;
++  }
++
++  private toCoachlessError(err: unknown, requestId?: string): CoachlessError {
++    if (err instanceof CoachlessError) return err;
++    if (err instanceof HttpException) {
++      const mapped = ATTACH_TO_COACHLESS[inviteAttachErrorCode(err)];
++      if (mapped) return new CoachlessError(mapped);
++    }
++    return new CoachlessError(COACHLESS_ERROR.REDEMPTION_FAILED, { request_id: requestId });
++  }
++
++  /**
++   * Claim (user, key). Returns the row id to execute under, or the stored
++   * response to replay. Throws 422 on a different code and 409 when a
++   * concurrent duplicate is still running after REDEMPTION_REPLAY_WAIT_MS.
++   */
++  private async claim(
++    userId: string,
++    key: string,
++    hash: string,
++  ): Promise<{ kind: 'run'; id: string } | { kind: 'replay'; response: RedeemResponse }> {
++    try {
++      const row = await this.prisma.coachCodeRedemption.create({
++        data: { user_id: userId, idempotency_key: key, request_hash: hash, status: 'in_progress' },
++        select: { id: true },
++      });
++      return { kind: 'run', id: row.id };
++    } catch (err) {
++      if (!isUniqueViolation(err)) throw err;
++    }
++    const deadline = Date.now() + REDEMPTION_REPLAY_WAIT_MS;
++    for (;;) {
++      const row = await this.prisma.coachCodeRedemption.findUnique({
++        where: { user_id_idempotency_key: { user_id: userId, idempotency_key: key } },
++        select: { id: true, request_hash: true, status: true, response: true, updated_at: true },
++      });
++      if (!row) {
++        // The winner's row vanished (account erasure race): start over once.
++        return this.claimFresh(userId, key, hash);
++      }
++      if (row.request_hash !== hash)
++        throw new CoachlessError(COACHLESS_ERROR.IDEMPOTENCY_KEY_REUSED);
++      if (row.status === 'completed' && isRedeemResponse(row.response)) {
++        return { kind: 'replay', response: row.response };
++      }
++      const stale =
++        row.status === 'in_progress' && Date.now() - row.updated_at.getTime() > REDEMPTION_STALE_MS;
++      if (row.status === 'failed' || stale) {
++        // Conditional reclaim: exactly one retry wins the row.
++        const won = await this.prisma.coachCodeRedemption.updateMany({
++          where: { id: row.id, status: row.status, updated_at: row.updated_at },
++          data: { status: 'in_progress', outcome: null, http_status: null },
++        });
++        if (won.count === 1) return { kind: 'run', id: row.id };
++      }
++      if (Date.now() >= deadline) throw new CoachlessError(COACHLESS_ERROR.REDEMPTION_IN_PROGRESS);
++      await new Promise((r) => setTimeout(r, REPLAY_POLL_MS));
++    }
++  }
++
++  private async claimFresh(
++    userId: string,
++    key: string,
++    hash: string,
++  ): Promise<{ kind: 'run'; id: string }> {
++    try {
++      const row = await this.prisma.coachCodeRedemption.create({
++        data: { user_id: userId, idempotency_key: key, request_hash: hash, status: 'in_progress' },
++        select: { id: true },
++      });
++      return { kind: 'run', id: row.id };
++    } catch {
++      throw new CoachlessError(COACHLESS_ERROR.REDEMPTION_IN_PROGRESS);
++    }
++  }
++}
++
++/** Plain JSON copy of a response for the ledger (Dates become ISO strings). */
++function toJson(value: RedeemResponse): Prisma.InputJsonValue {
++  const json: Prisma.InputJsonValue = JSON.parse(JSON.stringify(value));
++  return json;
++}
++
++/** Narrow a stored ledger response back to the wire shape before replaying it. */
++export function isRedeemResponse(value: unknown): value is RedeemResponse {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
++  const v = value as Record<string, unknown>;
++  const coach = v.coach as Record<string, unknown> | null | undefined;
++  return (
++    v.status === 'attached' &&
++    typeof v.already_attached === 'boolean' &&
++    !!coach &&
++    typeof coach === 'object' &&
++    typeof coach.id === 'string' &&
++    typeof coach.name === 'string' &&
++    !!v.next &&
++    typeof v.next === 'object'
++  );
++}
+diff --git a/src/coachless/coachless.controller.ts b/src/coachless/coachless.controller.ts
+new file mode 100644
+index 00000000..04e8c2c1
+--- /dev/null
++++ b/src/coachless/coachless.controller.ts
+@@ -0,0 +1,159 @@
++import {
++  Body,
++  Controller,
++  Get,
++  Headers,
++  HttpCode,
++  HttpStatus,
++  Post,
++  Put,
++  Request,
++  UseGuards,
++} from '@nestjs/common';
++import { ApiBearerAuth, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
++import { Throttle } from '@nestjs/throttler';
++import type { AuthedRequest } from '../auth/auth-request';
++import { JwtAuthGuard } from '../auth/auth.guard';
++import { OwnerGuard } from '../common/guards/owner.guard';
++import { Roles } from '../common/decorators/roles.decorator';
++import { CoachlessFeatureGuard } from './coachless-feature.guard';
++import { CoachCodeDto, FeaturedCoachConfigDto } from './coachless.dto';
++import { CoachCodeRedemptionService } from './coach-code-redemption.service';
++import { CoachlessHomeService } from './coachless-home.service';
++import { CoachlessPromptService, decideRomanCard } from './coachless-prompt.service';
++import { FeaturedCoachService } from './featured-coach.service';
++import { COACHLESS_ERROR, COACHLESS_ERROR_MESSAGE, CoachlessError } from './coachless.errors';
++
++function headerValue(v: string | string[] | undefined): string {
++  return (Array.isArray(v) ? v[0] : (v ?? '')).trim();
++}
++
++/**
++ * A1-COACHLESS client routes. All behind FEATURE_COACHLESS_HOME (404 while
++ * off). Every refusal is `{ code, message }` with a stable code from
++ * COACHLESS_ERROR; the global filter adds request_id.
++ */
++@ApiTags('coachless')
++@ApiBearerAuth('bearer')
++@Controller('coachless')
++@UseGuards(JwtAuthGuard, CoachlessFeatureGuard)
++// Every account role reaches the handlers, which answer non-students
++// specifically (eligible: false on Home, role_cannot_redeem on check and
++// redeem) instead of a bare 403 (roles-enforced gate).
++@Roles('student', 'coach', 'owner', 'sub_coach')
++export class CoachlessController {
++  constructor(
++    private readonly home: CoachlessHomeService,
++    private readonly redemption: CoachCodeRedemptionService,
++    private readonly prompts: CoachlessPromptService,
++    private readonly featured: FeaturedCoachService,
++  ) {}
++
++  @ApiOperation({ summary: 'Coachless Home: banner, featured offer and the scripted Roman card' })
++  @Get('home')
++  async getHome(@Request() req: AuthedRequest) {
++    return this.home.home(req.user);
++  }
++
++  @ApiOperation({ summary: 'Instant validation for the code sheet (no write)' })
++  @Throttle({ default: { ttl: 60_000, limit: 20 } })
++  @Post('coach-code/check')
++  @HttpCode(HttpStatus.OK)
++  async check(@Request() req: AuthedRequest, @Body() body: CoachCodeDto) {
++    const result = await this.redemption.check(req.user, body.code);
++    return result.valid ? result : { ...result, message: COACHLESS_ERROR_MESSAGE[result.code] };
++  }
++
++  @ApiOperation({ summary: 'Redeem a coach code after signup (idempotent)' })
++  @ApiHeader({
++    name: 'Idempotency-Key',
++    required: true,
++    description: 'UUID; reuse it on retries of the same attempt.',
++  })
++  @ApiResponse({ status: 200, description: 'Attached (or already this coach’s client).' })
++  @ApiResponse({ status: 404, description: 'code_invalid' })
++  @ApiResponse({ status: 410, description: 'code_expired | code_revoked | code_exhausted' })
++  @ApiResponse({
++    status: 409,
++    description: 'coach_not_accepting | already_attached | redemption_in_progress',
++  })
++  @Throttle({ default: { ttl: 60_000, limit: 10 } })
++  @Post('coach-code/redeem')
++  @HttpCode(HttpStatus.OK)
++  async redeem(
++    @Request() req: AuthedRequest,
++    @Body() body: CoachCodeDto,
++    @Headers('idempotency-key') key: string | string[] | undefined,
++  ) {
++    const idempotencyKey = headerValue(key);
++    if (!idempotencyKey) throw new CoachlessError(COACHLESS_ERROR.IDEMPOTENCY_KEY_REQUIRED);
++    return this.redemption.redeem({
++      userId: req.user.id,
++      rawCode: body.code,
++      idempotencyKey,
++      requestId: req.requestId,
++    });
++  }
++
++  @ApiOperation({ summary: 'Record that the Roman card was shown (frequency cap)' })
++  @Throttle({ default: { ttl: 60_000, limit: 30 } })
++  @Post('roman-card/seen')
++  @HttpCode(HttpStatus.OK)
++  async romanSeen(@Request() req: AuthedRequest) {
++    const offer = await this.featured.get();
++    const state = await this.prompts.recordSeen(req.user.id, offer.roman_caps);
++    return { recorded: true, visible: decideRomanCard(offer, state, new Date()).show };
++  }
++
++  @ApiOperation({ summary: 'Persist "Not now" for the Roman card' })
++  @Throttle({ default: { ttl: 60_000, limit: 30 } })
++  @Post('roman-card/not-now')
++  @HttpCode(HttpStatus.OK)
++  async romanNotNow(@Request() req: AuthedRequest) {
++    const offer = await this.featured.get();
++    const state = await this.prompts.recordNotNow(req.user.id);
++    return { recorded: true, visible: decideRomanCard(offer, state, new Date()).show };
++  }
++}
++
++/**
++ * Owner-only featured-coach config (the admin-editable source of the code,
++ * offer and Roman copy). Not behind the client flag, so the owner can set the
++ * offer up before the flag flips. Every write is audited.
++ */
++@ApiTags('coachless')
++@ApiBearerAuth('bearer')
++@Controller('admin/featured-coach')
++@UseGuards(JwtAuthGuard, OwnerGuard)
++export class FeaturedCoachAdminController {
++  constructor(private readonly featured: FeaturedCoachService) {}
++
++  @Roles('owner')
++  @Get()
++  async get() {
++    return this.featured.getForOwner();
++  }
++
++  @Roles('owner')
++  @Put()
++  async put(@Request() req: AuthedRequest, @Body() body: FeaturedCoachConfigDto) {
++    return this.featured.update(
++      { id: req.user.id, email: req.user.email },
++      {
++        coach_user_id: body.coach_user_id ?? null,
++        code: body.code ?? null,
++        package_id: body.package_id ?? null,
++        banner_title: body.banner_title ?? null,
++        offer_text: body.offer_text ?? null,
++        roman_pitch_text: body.roman_pitch_text ?? null,
++        accepting_clients: body.accepting_clients,
++        roman_enabled: body.roman_enabled,
++        roman_min_hours_between: body.roman_min_hours_between,
++        roman_max_per_week: body.roman_max_per_week,
++        roman_snooze_days: body.roman_snooze_days,
++        roman_max_not_now: body.roman_max_not_now,
++        create_code_if_missing: body.create_code_if_missing ?? false,
++      },
++    );
++  }
++}
+diff --git a/src/coachless/coachless.dto.ts b/src/coachless/coachless.dto.ts
+new file mode 100644
+index 00000000..73835524
+--- /dev/null
++++ b/src/coachless/coachless.dto.ts
+@@ -0,0 +1,117 @@
++import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
++import {
++  IsBoolean,
++  IsInt,
++  IsOptional,
++  IsString,
++  Matches,
++  Max,
++  MaxLength,
++  Min,
++  MinLength,
++} from 'class-validator';
++import {
++  INVITE_CODE_MAX_LENGTH,
++  INVITE_CODE_MIN_LENGTH,
++} from '../invite-codes/invite-codes.service';
++
++const CODE_SHAPE = /^\s*[A-Za-z0-9-]+\s*$/;
++
++export class CoachCodeDto {
++  @ApiProperty({
++    example: 'GP-A1B2C3',
++    minLength: INVITE_CODE_MIN_LENGTH,
++    maxLength: INVITE_CODE_MAX_LENGTH + 8,
++  })
++  @IsString()
++  @MinLength(INVITE_CODE_MIN_LENGTH)
++  // Whitespace around a pasted code is trimmed server-side; allow a little.
++  @MaxLength(INVITE_CODE_MAX_LENGTH + 8)
++  @Matches(CODE_SHAPE)
++  code!: string;
++}
++
++/** Owner PUT /admin/featured-coach. Every field is replaced (null clears). */
++export class FeaturedCoachConfigDto {
++  @ApiPropertyOptional({ nullable: true })
++  @IsOptional()
++  @IsString()
++  @MaxLength(64)
++  coach_user_id?: string | null;
++
++  @ApiPropertyOptional({ nullable: true, example: 'GP-A1B2C3' })
++  @IsOptional()
++  @IsString()
++  @MinLength(INVITE_CODE_MIN_LENGTH)
++  @MaxLength(INVITE_CODE_MAX_LENGTH)
++  @Matches(/^[A-Za-z0-9-]+$/)
++  code?: string | null;
++
++  @ApiPropertyOptional({ nullable: true })
++  @IsOptional()
++  @IsString()
++  @MaxLength(64)
++  package_id?: string | null;
++
++  @ApiPropertyOptional({ nullable: true, maxLength: 120 })
++  @IsOptional()
++  @IsString()
++  @MaxLength(120)
++  banner_title?: string | null;
++
++  @ApiPropertyOptional({ nullable: true, maxLength: 200 })
++  @IsOptional()
++  @IsString()
++  @MaxLength(200)
++  offer_text?: string | null;
++
++  @ApiPropertyOptional({ nullable: true, maxLength: 400 })
++  @IsOptional()
++  @IsString()
++  @MaxLength(400)
++  roman_pitch_text?: string | null;
++
++  @ApiProperty()
++  @IsBoolean()
++  accepting_clients!: boolean;
++
++  @ApiProperty()
++  @IsBoolean()
++  roman_enabled!: boolean;
++
++  @ApiPropertyOptional({ minimum: 1, maximum: 720 })
++  @IsOptional()
++  @IsInt()
++  @Min(1)
++  @Max(720)
++  roman_min_hours_between?: number;
++
++  @ApiPropertyOptional({ minimum: 1, maximum: 14 })
++  @IsOptional()
++  @IsInt()
++  @Min(1)
++  @Max(14)
++  roman_max_per_week?: number;
++
++  @ApiPropertyOptional({ minimum: 1, maximum: 365 })
++  @IsOptional()
++  @IsInt()
++  @Min(1)
++  @Max(365)
++  roman_snooze_days?: number;
++
++  @ApiPropertyOptional({ minimum: 1, maximum: 10 })
++  @IsOptional()
++  @IsInt()
++  @Min(1)
++  @Max(10)
++  roman_max_not_now?: number;
++
++  @ApiPropertyOptional({
++    description:
++      'Create `code` as a permanent code of the featured coach when it does not exist yet.',
++  })
++  @IsOptional()
++  @IsBoolean()
++  create_code_if_missing?: boolean;
++}
+diff --git a/src/coachless/coachless.module.ts b/src/coachless/coachless.module.ts
+new file mode 100644
+index 00000000..5db2b4a2
+--- /dev/null
++++ b/src/coachless/coachless.module.ts
+@@ -0,0 +1,26 @@
++import { Module } from '@nestjs/common';
++import { InviteCodesModule } from '../invite-codes/invite-codes.module';
++import { CoachlessController, FeaturedCoachAdminController } from './coachless.controller';
++import { CoachCodeLookupService } from './coach-code-lookup.service';
++import { CoachCodeRedemptionService } from './coach-code-redemption.service';
++import { CoachlessHomeService } from './coachless-home.service';
++import { CoachlessPromptService } from './coachless-prompt.service';
++import { FeaturedCoachService } from './featured-coach.service';
++
++// A1-COACHLESS — coachless Home (banner + scripted Roman card), the owner's
++// featured-coach config and post-signup coach-code redemption. PrismaService
++// and the auth guards are global; InviteCodesModule exports the canonical
++// attach writer this module delegates to.
++@Module({
++  imports: [InviteCodesModule],
++  controllers: [CoachlessController, FeaturedCoachAdminController],
++  providers: [
++    CoachCodeLookupService,
++    CoachCodeRedemptionService,
++    CoachlessHomeService,
++    CoachlessPromptService,
++    FeaturedCoachService,
++  ],
++  exports: [FeaturedCoachService],
++})
++export class CoachlessModule {}
+diff --git a/test/coachless/coach-code-redemption.spec.ts b/test/coachless/coach-code-redemption.spec.ts
+new file mode 100644
+index 00000000..9b9273cf
+--- /dev/null
++++ b/test/coachless/coach-code-redemption.spec.ts
+@@ -0,0 +1,356 @@
++// A1-COACHLESS — post-signup coach-code redemption: specific coded errors,
++// tenancy (no cross-coach attach), Idempotency-Key semantics and the welcome
++// payload. Real canonical attach writer over the stateful DB double.
++import 'reflect-metadata';
++import { addRowCode, addUser, code, outcome, user } from '../support/attach-fixture';
++import {
++  CoachCodeRedemptionService,
++  REDEMPTION_STALE_MS,
++} from '../../src/coachless/coach-code-redemption.service';
++import {
++  COACH_A,
++  COACH_B,
++  KEY1,
++  KEY2,
++  PKG_B,
++  buildCoachless,
++  featuredRow,
++} from './coachless-fixture';
++
++const redeem = (
++  svc: CoachCodeRedemptionService,
++  userId: string,
++  rawCode: string,
++  idempotencyKey = KEY1,
++) => outcome(svc.redeem({ userId, rawCode, idempotencyKey, requestId: 'req-test-1' }));
++
++describe('coach-code redemption — attach and welcome payload', () => {
++  it('a coachless student joins the coach and gets the coach card, the first package and a completed ledger row', async () => {
++    const { db, redemption, audit } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    const r = await redeem(redemption, 'stu', 'GP-BBBBBB');
++    expect(r).toMatchObject({
++      ok: {
++        status: 'attached',
++        already_attached: false,
++        replayed: false,
++        coach: {
++          id: COACH_B,
++          name: 'Coach B',
++          photo_url: 'https://cdn.example.test/b.jpg',
++          business_name: 'B Training',
++        },
++        next: { packages_available: 1, featured_package: null },
++      },
++    });
++    expect(user(db, 'stu').coach_id).toBe(COACH_B);
++    expect(db.state.coachCodeRedemption).toHaveLength(1);
++    expect(db.state.coachCodeRedemption[0]).toMatchObject({
++      status: 'completed',
++      outcome: 'attached',
++      coach_id: COACH_B,
++      http_status: 200,
++    });
++    expect(audit.write).toHaveBeenCalledWith(
++      expect.objectContaining({ action: 'coach_code.redeemed', tenantCoachId: COACH_B }),
++    );
++  });
++
++  it('offers the featured package when the code is the featured offer of this coach', async () => {
++    const { db, redemption } = await buildCoachless();
++    db.state.featuredCoachConfig.push(featuredRow());
++    addUser(db, { id: 'stu' });
++    const r = await redeem(redemption, 'stu', 'GP-BBBBBB');
++    expect(r).toMatchObject({
++      ok: {
++        next: { featured_package: { id: PKG_B, amount_cents: 4900, billing_type: 'recurring' } },
++      },
++    });
++  });
++
++  it('resolves a code typed in lower case to the stored upper-case code', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    expect(await redeem(redemption, 'stu', '  gp-bbbbbb ')).toMatchObject({
++      ok: { coach: { id: COACH_B } },
++    });
++    expect(user(db, 'stu').coach_id).toBe(COACH_B);
++  });
++});
++
++describe('coach-code redemption — tenancy', () => {
++  it('a client of coach A cannot be attached to coach B by code (409 already_attached, no re-parent, no seat)', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu', coach_id: COACH_A });
++    addRowCode(db, { code: 'GP-ROWB22', coach_id: COACH_B, max_uses: 5 });
++    expect(await redeem(redemption, 'stu', 'GP-ROWB22')).toMatchObject({
++      status: 409,
++      body: { code: 'already_attached' },
++    });
++    expect(user(db, 'stu').coach_id).toBe(COACH_A);
++    expect(code(db, 'GP-ROWB22').used_count).toBe(0);
++    expect(db.state.coachCodeRedemption[0]).toMatchObject({
++      status: 'failed',
++      outcome: 'already_attached',
++      http_status: 409,
++    });
++  });
++
++  it('coach and owner accounts are refused and never rewritten', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'coach-x', role: 'coach' });
++    addUser(db, { id: 'owner-x', role: 'owner' });
++    expect(await redeem(redemption, 'coach-x', 'GP-BBBBBB')).toMatchObject({
++      status: 403,
++      body: { code: 'role_cannot_redeem' },
++    });
++    expect(await redeem(redemption, 'owner-x', 'GP-BBBBBB', KEY2)).toMatchObject({
++      status: 403,
++      body: { code: 'role_cannot_redeem' },
++    });
++    expect(user(db, 'coach-x')).toMatchObject({ role: 'coach', coach_id: null });
++    expect(user(db, 'owner-x')).toMatchObject({ role: 'owner', coach_id: null });
++  });
++
++  it('the same coach again is an idempotent success flagged already_attached (no second seat)', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    addRowCode(db, { code: 'GP-ONCE22', coach_id: COACH_B, max_uses: 1 });
++    await redeem(redemption, 'stu', 'GP-ONCE22', KEY1);
++    expect(await redeem(redemption, 'stu', 'GP-ONCE22', KEY2)).toMatchObject({
++      ok: { already_attached: true, replayed: false, coach: { id: COACH_B } },
++    });
++    expect(code(db, 'GP-ONCE22').used_count).toBe(1);
++  });
++});
++
++describe('coach-code redemption — specific error codes', () => {
++  it.each([
++    ['unknown code', 'GP-NOPE22', undefined, 404, 'code_invalid'],
++    ['revoked code', 'GP-REVK22', { revoked: true }, 410, 'code_revoked'],
++    [
++      'expired code',
++      'GP-EXPD22',
++      { expires_at: new Date(Date.now() - 60_000) },
++      410,
++      'code_expired',
++    ],
++    ['exhausted code', 'GP-FULL22', { max_uses: 1, used_count: 1 }, 410, 'code_exhausted'],
++    [
++      'code sent to another email',
++      'GP-MAIL22',
++      { intended_email: 'someone-else@example.test' },
++      403,
++      'code_email_mismatch',
++    ],
++  ])('%s -> %s', async (_label, c, row, status, errCode) => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    if (row) addRowCode(db, { code: c, coach_id: COACH_B, ...row });
++    expect(await redeem(redemption, 'stu', c)).toMatchObject({ status, body: { code: errCode } });
++    expect(user(db, 'stu').coach_id).toBeNull();
++  });
++
++  it('coach without an active subscription -> 409 coach_not_accepting', async () => {
++    const { db, redemption } = await buildCoachless();
++    db.state.coachSubscription.find((s) => s.coach_id === COACH_B)!.status = 'canceled';
++    addUser(db, { id: 'stu' });
++    expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
++      status: 409,
++      body: { code: 'coach_not_accepting' },
++    });
++    expect(user(db, 'stu').coach_id).toBeNull();
++  });
++
++  it('the owner pausing the featured offer refuses its code with coach_not_accepting before any write', async () => {
++    const { db, redemption } = await buildCoachless();
++    db.state.featuredCoachConfig.push(featuredRow({ accepting_clients: false }));
++    addUser(db, { id: 'stu' });
++    expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
++      status: 409,
++      body: { code: 'coach_not_accepting' },
++    });
++    expect(user(db, 'stu').coach_id).toBeNull();
++  });
++
++  it('a malformed code is code_invalid, never a 500', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    expect(await redeem(redemption, 'stu', 'GP BAD!')).toMatchObject({
++      status: 404,
++      body: { code: 'code_invalid' },
++    });
++  });
++
++  it('an unexpected failure is redemption_failed with the request reference, and the key stays retryable', async () => {
++    const { db, redemption, invites } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    const spy = jest
++      .spyOn(invites, 'attachUserToCoachByCode')
++      .mockRejectedValueOnce(new Error('pool timeout'));
++    expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
++      status: 500,
++      body: { code: 'redemption_failed', request_id: 'req-test-1' },
++    });
++    spy.mockRestore();
++    expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
++      ok: { already_attached: false },
++    });
++  });
++});
++
++describe('coach-code redemption — Idempotency-Key', () => {
++  it('requires a UUID key', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    expect(await redeem(redemption, 'stu', 'GP-BBBBBB', 'not-a-uuid')).toMatchObject({
++      status: 400,
++      body: { code: 'idempotency_key_required' },
++    });
++    expect(db.state.coachCodeRedemption).toHaveLength(0);
++  });
++
++  it('a retried key replays the original response (welcome moment survives a lost response); one attach, one audit', async () => {
++    const { db, redemption, analytics, audit } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    const first = await redeem(redemption, 'stu', 'GP-BBBBBB');
++    const again = await redeem(redemption, 'stu', 'GP-BBBBBB');
++    expect(first).toMatchObject({ ok: { already_attached: false, replayed: false } });
++    expect(again).toMatchObject({
++      ok: { already_attached: false, replayed: true, coach: { id: COACH_B } },
++    });
++    expect(db.state.coachCodeRedemption).toHaveLength(1);
++    expect(analytics.capture.mock.calls.filter((c) => c[1] === 'invite_redeemed')).toHaveLength(1);
++    expect(
++      audit.write.mock.calls.filter((c) => c[0].action === 'coach_code.redeemed'),
++    ).toHaveLength(1);
++  });
++
++  it('the same key with a different code is 422 idempotency_key_reused and changes nothing', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    await redeem(redemption, 'stu', 'GP-BBBBBB');
++    expect(await redeem(redemption, 'stu', 'GP-AAAAAA')).toMatchObject({
++      status: 422,
++      body: { code: 'idempotency_key_reused' },
++    });
++    expect(user(db, 'stu').coach_id).toBe(COACH_B);
++  });
++
++  it('keys are per user: another user reusing the UUID runs their own redemption', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    addUser(db, { id: 'stu2' });
++    await redeem(redemption, 'stu', 'GP-BBBBBB');
++    expect(await redeem(redemption, 'stu2', 'GP-BBBBBB')).toMatchObject({
++      ok: { already_attached: false, replayed: false },
++    });
++    expect(user(db, 'stu2').coach_id).toBe(COACH_B);
++  });
++
++  it('two concurrent requests with one key attach once; the loser replays the winner', async () => {
++    const { db, redemption, analytics } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    const [a, b] = await Promise.all([
++      redeem(redemption, 'stu', 'GP-BBBBBB'),
++      redeem(redemption, 'stu', 'GP-BBBBBB'),
++    ]);
++    const oks = [a, b].map((r) => ('ok' in r ? r.ok : null));
++    expect(oks.every((o) => o && o.coach.id === COACH_B && o.already_attached === false)).toBe(
++      true,
++    );
++    expect(oks.filter((o) => o?.replayed)).toHaveLength(1);
++    expect(db.state.coachCodeRedemption).toHaveLength(1);
++    expect(analytics.capture.mock.calls.filter((c) => c[1] === 'invite_redeemed')).toHaveLength(1);
++  });
++
++  it('a failed key can be retried once the cause is fixed', async () => {
++    const { db, redemption } = await buildCoachless();
++    const sub = db.state.coachSubscription.find((s) => s.coach_id === COACH_B)!;
++    sub.status = 'canceled';
++    addUser(db, { id: 'stu' });
++    expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
++      status: 409,
++      body: { code: 'coach_not_accepting' },
++    });
++    sub.status = 'active';
++    expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
++      ok: { already_attached: false },
++    });
++    expect(db.state.coachCodeRedemption).toHaveLength(1);
++    expect(db.state.coachCodeRedemption[0].status).toBe('completed');
++  });
++
++  it('an abandoned in_progress claim (crash) is reclaimed after the stale window', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    const old = new Date(Date.now() - REDEMPTION_STALE_MS - 1_000);
++    db.state.coachCodeRedemption.push({
++      id: 'stale-1',
++      user_id: 'stu',
++      idempotency_key: KEY1,
++      request_hash: CoachCodeRedemptionService.requestHash('GP-BBBBBB'),
++      status: 'in_progress',
++      outcome: null,
++      coach_id: null,
++      http_status: null,
++      response: null,
++      created_at: old,
++      updated_at: old,
++    });
++    expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
++      ok: { already_attached: false },
++    });
++    expect(db.state.coachCodeRedemption[0]).toMatchObject({ id: 'stale-1', status: 'completed' });
++  });
++
++  it('the request hash ignores case and surrounding whitespace (a retry of the same typed code is the same request)', () => {
++    expect(CoachCodeRedemptionService.requestHash(' gp-bbbbbb ')).toBe(
++      CoachCodeRedemptionService.requestHash('GP-BBBBBB'),
++    );
++    expect(CoachCodeRedemptionService.requestHash('GP-BBBBBB')).not.toBe(
++      CoachCodeRedemptionService.requestHash('GP-AAAAAA'),
++    );
++  });
++});
++
++describe('coach-code check (instant validation, no write)', () => {
++  it('a valid code returns the coach card and writes nothing', async () => {
++    const { db, redemption } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    const r = await redemption.check({ id: 'stu', role: 'student', coach_id: null }, 'gp-bbbbbb');
++    expect(r).toMatchObject({ valid: true, coach: { id: COACH_B, name: 'Coach B' } });
++    expect(user(db, 'stu').coach_id).toBeNull();
++    expect(db.state.coachCodeRedemption).toHaveLength(0);
++  });
++
++  it.each([
++    ['unknown', 'GP-NOPE33', undefined, 'code_invalid'],
++    ['revoked', 'GP-REVK33', { revoked: true }, 'code_revoked'],
++    ['expired', 'GP-EXPD33', { expires_at: new Date(Date.now() - 1_000) }, 'code_expired'],
++    ['exhausted', 'GP-FULL33', { max_uses: 2, used_count: 2 }, 'code_exhausted'],
++  ])('%s -> %s', async (_l, c, row, errCode) => {
++    const { db, redemption } = await buildCoachless();
++    if (row) addRowCode(db, { code: c, coach_id: COACH_B, ...row });
++    expect(await redemption.check({ id: 'stu', role: 'student', coach_id: null }, c)).toEqual({
++      valid: false,
++      code: errCode,
++    });
++  });
++
++  it('a client of another coach is told already_attached; coaches are told role_cannot_redeem', async () => {
++    const { redemption } = await buildCoachless();
++    expect(
++      await redemption.check({ id: 's', role: 'student', coach_id: COACH_A }, 'GP-BBBBBB'),
++    ).toEqual({
++      valid: false,
++      code: 'already_attached',
++    });
++    expect(await redemption.check({ id: 'c', role: 'coach', coach_id: null }, 'GP-BBBBBB')).toEqual(
++      {
++        valid: false,
++        code: 'role_cannot_redeem',
++      },
++    );
++  });
++});
+diff --git a/test/coachless/coachless-fixture.ts b/test/coachless/coachless-fixture.ts
+index 3027b2c5..85e2a00b 100644
+--- a/test/coachless/coachless-fixture.ts
++++ b/test/coachless/coachless-fixture.ts
+@@ -15,0 +16 @@ import { CoachCodeLookupService } from '../../src/coachless/coach-code-lookup.se
++import { CoachCodeRedemptionService } from '../../src/coachless/coach-code-redemption.service';
+@@ -76 +77,8 @@ export async function buildCoachless() {
+-  return { db, invites, analytics, audit, lookup, featured, prompts, home };
++  const redemption = new CoachCodeRedemptionService(
++    prisma,
++    invites,
++    lookup,
++    featured,
++    asAudit(audit),
++  );
++  return { db, invites, analytics, audit, lookup, featured, prompts, home, redemption };

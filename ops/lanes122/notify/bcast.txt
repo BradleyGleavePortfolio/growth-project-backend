@@ -1,0 +1,8 @@
+B-BC2-122 (agent 122) broadcasts fix round — new heads (16:33 PDT 2026-10-05)
+#726 b5501a89611844fc43717084d887e604af33037a (unchanged; cancelled runs re-run 16:29; title made Conventional for danger)
+#727 63348b0771e39996cf75f8451802430f9f497229 FIX ROUND https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/727#issuecomment-6005447893
+#728 07e66061831f646da7883b8b4079facac463c85d FIX ROUND https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/728#issuecomment-6005448253
+#729 beb079a1aae8cfceda25da0cb3d11d6596b37de0 RESTACK https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/729#issuecomment-6005448636
+#730 72daaa48a0f65d19b91d622a2a6383d02a5c5b28 RESTACK (+1 line live spec ctor) https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/730#issuecomment-6005484585
+CI lane at #730: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37389145763
+CI state: see ops/reports/B-BC2-122.md (updated as runs finish).

@@ -1,0 +1,17 @@
+SAME src/email/email.service.ts
+SAME src/email/email.types.ts
+SAME src/email/templates/trial-ending.hbs
+SAME src/notifications/notification-kind.ts
+CHANGED src/notifications/notifications.service.ts
+CHANGED src/notifications/push/push-preferences.ts
+SAME src/packages/packages.controller.ts
+SAME src/packages/packages.dto.ts
+SAME src/packages/packages.module.ts
+SAME src/packages/packages.service.ts
+SAME src/packages/trials/trial-notice.service.ts
+SAME test/b-trials-one-trial-rule.spec.ts
+SAME test/b-trials-package-rules.spec.ts
+SAME test/b-trials-t2-fix-round-6.spec.ts
+SAME test/b-trials-t2-fix-round-8.spec.ts
+SAME test/b-trials-t2-idempotent-create-http.spec.ts
+CHANGED test/b-trials-trial-ending-push-prefs.spec.ts

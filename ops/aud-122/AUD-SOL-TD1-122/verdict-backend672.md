@@ -1,0 +1,11 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#672 @ 0b55832e9198b167bf947fcba3220849dc01bea7 — VERDICT: APPROVE
+
+AUD-SOL-TD1-122, agent 122 — independent T4 conflict/push-preference delta. **A/B/C = 0/0/1.**
+
+The notification-service resolution is byte-identical to refreshed #671: main's delegation is kept, and the same `trial_ending` condition is ported to the shared mapping at `src/notifications/push/push-preferences.ts:60–63`; the other 14 piece-file patches remain identical to the prior Sol-approved piece. ([Fix/conflict explanation](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-6005103844), [prior Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-6004660960))
+
+Traced the unchanged `TrialNoticeService` into main's real inbox writer and `pushToUser`; the three-days-before-charge notice no longer falls into disabled digest preferences, and the shared push-worker gate also allows its dedicated prefix. The two-case regression passes in both the integrated lane and exact top PR CI; builder failing-before evidence reports both cases failing without the port. ([Fix and before evidence](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-6005103844), [verified lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386217121/job/112020030805), [top PR CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386814529))
+
+- **C-672-1 (carried, outside this delta):** full-stack/mobile/webhook deployment qualification remains an operator acceptance item, not a new code blocker. ([Prior Sol qualification](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-5984411900))
+
+No normal-use A/B found; prior B-672-3 stays closed by unchanged source. Size 2,993; exact-head checks are 10 success and one skipped deploy-readiness gate. ([Exact-head checks](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672/checks)) Land only as the complete train; reused CI evidence is not a new independent execution, and no local test/build, source edit, push, merge or deployment was performed.

@@ -1,0 +1,13 @@
+SAME .env.example
+SAME docs/stripe-setup.md
+SAME src/billing/billing.service.ts
+SAME src/checkout/checkout-webhook-handler.service.ts
+SAME src/checkout/checkout.module.ts
+SAME src/checkout/checkout.service.ts
+SAME src/checkout/client-purchases.select.ts
+SAME src/checkout/subscription-checkout.service.ts
+SAME src/connect/stripe-connect-api.service.ts
+SAME src/packages/trials/trial-conflict.service.ts
+SAME test/b-trials-3-fix-round.spec.ts
+SAME test/b-trials-idempotent-create-compose.spec.ts
+SAME test/b-trials-notice-and-webhook.spec.ts

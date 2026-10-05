@@ -1,0 +1,72 @@
+{
+  "required": 11,
+  "all_green": true,
+  "checks": [
+    {
+      "name": "build-and-test",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845528/job/112022085588"
+    },
+    {
+      "name": "rls-floor-guard",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845528/job/112022085572"
+    },
+    {
+      "name": "rls-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845528/job/112022085629"
+    },
+    {
+      "name": "mwb-3-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845528/job/112022085252"
+    },
+    {
+      "name": "npm audit (high+critical, whole graph)",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845526/job/112022085897"
+    },
+    {
+      "name": "CodeQL JS/TS (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845515/job/112022085510"
+    },
+    {
+      "name": "Banned cast tokens (R75 / R100.A2)",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845530/job/112022085583"
+    },
+    {
+      "name": "build-sbom",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845579/job/112022085481"
+    },
+    {
+      "name": "danger",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845636/job/112023453023"
+    },
+    {
+      "name": "Schema parity (migrations match schema.prisma)",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845679/job/112022086564"
+    },
+    {
+      "name": "community-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386845528/job/112022085571"
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+targeted	Targeted jest	﻿2026-10-05T23:17:15.0495897Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T23:17:15.0496254Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T23:17:15.0496646Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T23:17:15.0497155Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T23:17:15.0497515Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:17:15.0497784Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:17:15.0563856Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T23:17:15.0564226Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T23:17:15.0668298Z specs: src/__tests__/audit122W3NormalFlows.test.tsx
+targeted	Targeted jest	2026-10-05T23:17:27.8216518Z   console.warn
+targeted	Targeted jest	2026-10-05T23:17:27.8219011Z     Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+targeted	Targeted jest	2026-10-05T23:17:27.8219937Z 
+targeted	Targeted jest	2026-10-05T23:17:27.8221217Z     ^[[0m ^[[90m 296 |^[[39m         ^[[90m// CommonActions.reset equivalent via dispatch with a single route.^[[39m
+targeted	Targeted jest	2026-10-05T23:17:27.8222782Z      ^[[90m 297 |^[[39m         navigation^[[33m.^[[39mdispatch(
+targeted	Targeted jest	2026-10-05T23:17:27.8223859Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 298 |^[[39m           ^[[33mCommonActions^[[39m^[[33m.^[[39mnavigate({
+targeted	Targeted jest	2026-10-05T23:17:27.8225158Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:17:27.8226153Z      ^[[90m 299 |^[[39m             name^[[33m:^[[39m ^[[32m"CoachPackageEdit"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:17:27.8227844Z      ^[[90m 300 |^[[39m             params^[[33m:^[[39m { packageId^[[33m:^[[39m res^[[33m.^[[39mdata^[[33m.^[[39mid^[[33m,^[[39m initialPackage^[[33m:^[[39m res^[[33m.^[[39mdata }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:17:27.8229118Z      ^[[90m 301 |^[[39m           })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:17:27.8229507Z 
+targeted	Targeted jest	2026-10-05T23:17:27.8230158Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+targeted	Targeted jest	2026-10-05T23:17:27.8231418Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:298:25)
+targeted	Targeted jest	2026-10-05T23:17:27.8232621Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:17:27.8233772Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:17:27.8234352Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0558013Z FAIL src/__tests__/audit122W3NormalFlows.test.tsx (11.304 s)
+targeted	Targeted jest	2026-10-05T23:17:28.0559695Z   W3 ordinary one-person package flows
+targeted	Targeted jest	2026-10-05T23:17:28.0563254Z     ✕ a coach can rename the free first package without changing its zero price (3446 ms)
+targeted	Targeted jest	2026-10-05T23:17:28.0565312Z     ✕ a saved fourteen-day trial is not silently discarded from the actual request (41 ms)
+targeted	Targeted jest	2026-10-05T23:17:28.0567022Z     ✕ a completed coach can make a newly-created paid package live from the editor (1475 ms)
+targeted	Targeted jest	2026-10-05T23:17:28.0567754Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0568421Z   ● W3 ordinary one-person package flows › a coach can rename the free first package without changing its zero price
+targeted	Targeted jest	2026-10-05T23:17:28.0568883Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0569091Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+targeted	Targeted jest	2026-10-05T23:17:28.0569381Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0569872Z     Expected: "/v1/coach/packages/pkg_normal", ObjectContaining {"amount_cents": 0, "name": "Free coaching renamed"}, Any<Object>
+targeted	Targeted jest	2026-10-05T23:17:28.0570353Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0570449Z     Number of calls: 0
+targeted	Targeted jest	2026-10-05T23:17:28.0570597Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0570777Z     ^[[0m ^[[90m 111 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0571467Z      ^[[90m 112 |^[[39m     ^[[36mawait^[[39m fireEvent^[[33m.^[[39mpress(s^[[33m.^[[39mgetByLabelText(^[[32m"Save changes"^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0572200Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 113 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0572690Z      ^[[90m     |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0573189Z      ^[[90m 114 |^[[39m       expect(mockPatch)^[[33m.^[[39mtoHaveBeenCalledWith(
+targeted	Targeted jest	2026-10-05T23:17:28.0573749Z      ^[[90m 115 |^[[39m         ^[[32m"/v1/coach/packages/pkg_normal"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0574949Z      ^[[90m 116 |^[[39m         expect^[[33m.^[[39mobjectContaining({ name^[[33m:^[[39m ^[[32m"Free coaching renamed"^[[39m^[[33m,^[[39m amount_cents^[[33m:^[[39m ^[[35m0^[[39m })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:17:28.0576124Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0576409Z       at Object.<anonymous> (src/__tests__/audit122W3NormalFlows.test.tsx:113:18)
+targeted	Targeted jest	2026-10-05T23:17:28.0577044Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:17:28.0577656Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:17:28.0577961Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0578501Z   ● W3 ordinary one-person package flows › a saved fourteen-day trial is not silently discarded from the actual request
+targeted	Targeted jest	2026-10-05T23:17:28.0578949Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0579137Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:17:28.0579375Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0579474Z     - Expected  - 2
+targeted	Targeted jest	2026-10-05T23:17:28.0579717Z     + Received  + 7
+targeted	Targeted jest	2026-10-05T23:17:28.0579841Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0579961Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-05T23:17:28.0580218Z     -   "trial_days": 14,
+targeted	Targeted jest	2026-10-05T23:17:28.0580458Z     + Object {
+targeted	Targeted jest	2026-10-05T23:17:28.0580674Z     +   "amount_cents": 9900,
+targeted	Targeted jest	2026-10-05T23:17:28.0580954Z     +   "billing_interval": "month",
+targeted	Targeted jest	2026-10-05T23:17:28.0581254Z     +   "billing_interval_count": 1,
+targeted	Targeted jest	2026-10-05T23:17:28.0581865Z     +   "billing_type": "recurring",
+targeted	Targeted jest	2026-10-05T23:17:28.0582429Z     +   "description": "Weekly coaching",
+targeted	Targeted jest	2026-10-05T23:17:28.0582967Z     +   "name": "Coaching",
+targeted	Targeted jest	2026-10-05T23:17:28.0583394Z       }
+targeted	Targeted jest	2026-10-05T23:17:28.0583580Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0584849Z     ^[[0m ^[[90m 130 |^[[39m     ^[[36mawait^[[39m fireEvent^[[33m.^[[39mpress(s^[[33m.^[[39mgetByLabelText(^[[32m"Save changes"^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0586845Z      ^[[90m 131 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(mockPatch)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0588716Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 132 |^[[39m     expect(mockPatch^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m0^[[39m][^[[35m1^[[39m])^[[33m.^[[39mtoEqual(
+targeted	Targeted jest	2026-10-05T23:17:28.0590044Z      ^[[90m     |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0591292Z      ^[[90m 133 |^[[39m       expect^[[33m.^[[39mobjectContaining({ trial_days^[[33m:^[[39m ^[[35m14^[[39m })^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0592271Z      ^[[90m 134 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0592898Z      ^[[90m 135 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:17:28.0593228Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0593708Z       at Object.toEqual (src/__tests__/audit122W3NormalFlows.test.tsx:132:40)
+targeted	Targeted jest	2026-10-05T23:17:28.0595081Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:17:28.0596210Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:17:28.0596758Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0597749Z   ● W3 ordinary one-person package flows › a completed coach can make a newly-created paid package live from the editor
+targeted	Targeted jest	2026-10-05T23:17:28.0598625Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0598981Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-05T23:17:28.0599430Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0599600Z     Expected: true
+targeted	Targeted jest	2026-10-05T23:17:28.0599977Z     Received: false
+targeted	Targeted jest	2026-10-05T23:17:28.0600193Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0601519Z     ^[[0m ^[[90m 165 |^[[39m       ^[[35m/publish|make .*live/i^[[39m^[[33m.^[[39mtest(node^[[33m.^[[39mprops^[[33m.^[[39maccessibilityLabel ^[[33m?^[[39m^[[33m?^[[39m ^[[32m""^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0602960Z      ^[[90m 166 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0604280Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 167 |^[[39m     expect(published ^[[33m||^[[39m publishControl)^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0605898Z      ^[[90m     |^[[39m                                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0606685Z      ^[[90m 168 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0607336Z      ^[[90m 169 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:17:28.0607922Z      ^[[90m 170 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:17:28.0608185Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0608926Z       at Object.toBe (src/__tests__/audit122W3NormalFlows.test.tsx:167:41)
+targeted	Targeted jest	2026-10-05T23:17:28.0610274Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T23:17:28.0611391Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T23:17:28.0611947Z 
+targeted	Targeted jest	2026-10-05T23:17:28.0612231Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-05T23:17:28.0612777Z Tests:       3 failed, 3 total
+targeted	Targeted jest	2026-10-05T23:17:28.0613261Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T23:17:28.0613670Z Time:        11.844 s
+targeted	Targeted jest	2026-10-05T23:17:28.0614797Z Ran all test suites matching /src\/__tests__\/audit122W3NormalFlows.test.tsx/i.
+targeted	Targeted jest	2026-10-05T23:17:28.2208482Z ##[error]Process completed with exit code 1.

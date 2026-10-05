@@ -1,0 +1,70 @@
+
+--- PR #671 per-file +/- and patch-id ---
+UNCHANGED a9231802b1df513556c51691d718ae60fd077c81 .github/workflows/ci.yml
+UNCHANGED bc954a371571731f575e7a638ae4248321cc1b57 prisma/migrations/20270228000000_package_free_trials/down.sql
+UNCHANGED 1991cc0b8fa78ce7f0882b2372c47864711586d0 prisma/migrations/20270228000000_package_free_trials/migration.sql
+UNCHANGED c2d9e9fc9bd25603abcdca5d387ca80b845b942c prisma/migrations/20270313000000_package_trial_truth/down.sql
+UNCHANGED 6272a961fa31ebccc7da58ce11c60e417462d361 prisma/migrations/20270313000000_package_trial_truth/migration.sql
+UNCHANGED 32dac3e5fccbc5bd9a4273c13fe685d4786fc9eb prisma/schema.prisma
+UNCHANGED 32821c26e39de7bc424e0ee085c6471ad1da1004 src/account-deletion/account-deletion.manifest.ts
+UNCHANGED 7070f79c5f164a04dd1b37ed154560d0e8c182c5 src/packages/trials/trial-checkout-capability.ts
+UNCHANGED b25aae080e4a21c2569a537d40e33e3c64f9cf4c src/packages/trials/trial-copy.ts
+UNCHANGED c961535aa01759240ae620c1ec38cd234d1373d8 src/packages/trials/trial-diagnostics.ts
+UNCHANGED 36a78d5ead1ead2a887a25f5d602e0144d561267 src/packages/trials/trial-rules.ts
+UNCHANGED 07e5e0ed886c4775e21bf6f903c71115713b9b8f src/packages/trials/trial-usage.service.ts
+UNCHANGED 8056d5f08d2bd8ae206a301ca9835508a793a986 src/packages/trials/trial-view.ts
+UNCHANGED 4e1fb7cefbf017e09cb3e6a58ccb41b646a32a53 test/b-trials-one-trial-rule.spec.ts
+UNCHANGED 62a6051ce272a840040ea95315c5b11d10c5b5da test/b-trials-t1-fix-round-6.spec.ts
+UNCHANGED 2b4c83f96c327015124a79d9afb92eaee01e7955 test/b-trials-usage-concurrency.live.spec.ts
+UNCHANGED 906b2d5873ed382f3b4a67968368a6d55eefaad4 test/utils/trial-fakes.ts
+
+--- PR #672 per-file +/- and patch-id ---
+UNCHANGED 3abd0c9688f2c22b0d7d4451911500e69092a87a src/email/email.service.ts
+UNCHANGED a1650c88c8395587227cf8eb3e1e55d71b46dfcc src/email/email.types.ts
+UNCHANGED f65198511e080a09f637cc256b4ba6b17ddf5995 src/email/templates/trial-ending.hbs
+UNCHANGED da7c4dc090161bb665d3c3172547f9e63a16468c src/notifications/notification-kind.ts
+CHANGED 8d4a2d58cef2f649cac41c9a161be778f3760cee ->  src/notifications/notifications.service.ts
+CHANGED  -> d20c6b561b4c0183c6628f8278328a2d9d7ee96b src/notifications/push/push-preferences.ts
+UNCHANGED a98645dd2b09d2fb8e9af21e36abedc575beb945 src/packages/packages.controller.ts
+UNCHANGED 84376ae2d0d2ade94e4e424cc3bb151a5a31be9d src/packages/packages.dto.ts
+UNCHANGED 73782bc89dc04251ec32191de51d7cd41318b87b src/packages/packages.module.ts
+UNCHANGED 436c2a3c0cf0ee6e1a907c831e59f92bcd88b641 src/packages/packages.service.ts
+UNCHANGED 3c1152575aac9c7c9ebdbb7d5e7dcd6721f41b1c src/packages/trials/trial-notice.service.ts
+UNCHANGED c2f251d14eb058e7fded39dce82e971e336764d5 test/b-trials-one-trial-rule.spec.ts
+UNCHANGED b66ec8e912dc388c7d9568a44000feac1a17f4b0 test/b-trials-package-rules.spec.ts
+UNCHANGED 733be31754654a6efe2e43689efe5c31c59fc6e3 test/b-trials-t2-fix-round-6.spec.ts
+UNCHANGED 00248604383de73c6c0554aa4a4e77d7a7471057 test/b-trials-t2-fix-round-8.spec.ts
+UNCHANGED 8fabbcd60b4a1d3e9565cfc6b65d3477a7cee2be test/b-trials-t2-idempotent-create-http.spec.ts
+CHANGED  -> 7541ba2fb74bf9c0968fac1e0655d6701dd7f38d test/b-trials-trial-ending-push-prefs.spec.ts
+
+--- PR #673 per-file +/- and patch-id ---
+UNCHANGED 8847b3e0ebaf46c77f0284efbde14f105984be83 .env.example
+UNCHANGED a9b99b845363aabcee94dad054f3ec151425e35c docs/stripe-setup.md
+UNCHANGED 5e47158c1122e54be1d052afba0f3b5e90fa1178 src/billing/billing.service.ts
+UNCHANGED 6b3be01ba9345a20f426a7629cf2ba47a3b831eb src/checkout/checkout-webhook-handler.service.ts
+UNCHANGED 5dc3408176f191daf7663b80797fdb9215fa492c src/checkout/checkout.module.ts
+UNCHANGED 1e463e454e27ea7b641dcc2f2b47278876737d23 src/checkout/checkout.service.ts
+UNCHANGED 105d68db2700c1b327b2433065d5b9a57692fb2f src/checkout/client-purchases.select.ts
+UNCHANGED 61ec20a0295bd0205ee1cf4a54977111969d4213 src/checkout/subscription-checkout.service.ts
+UNCHANGED 5f38a7453fa64b1ae60553a3e62bdf38d2fd52d5 src/connect/stripe-connect-api.service.ts
+UNCHANGED 0e07dc4b8903a8b6ec19c6bfac3034d2a9654847 src/packages/trials/trial-conflict.service.ts
+UNCHANGED 4727d3610dff2f42924ca607811125be2cde098b test/b-trials-3-fix-round.spec.ts
+UNCHANGED c18fe903f6ee18ee46aed7a4f5dffd4fd024d0da test/b-trials-idempotent-create-compose.spec.ts
+UNCHANGED 4a768fe2c9bbf7c808e814623f9bed4e1e55456f test/b-trials-notice-and-webhook.spec.ts
+
+--- PR #706 per-file +/- and patch-id ---
+UNCHANGED 30fedbb6afff71262c86af684447c97b6e129171 test/b-trials-4-fix-round.spec.ts
+UNCHANGED 63bd63340fd144af0ff669e06b620035bd0fc570 test/b-trials-5-fix-round.spec.ts
+UNCHANGED 531a94fb7214312f2fea23a9e34cfb602bc2062b test/b-trials-8-shared-rule.spec.ts
+
+--- PR #707 per-file +/- and patch-id ---
+CHANGED  -> 41fb21648412b70078e99d43633207eaaa82affd src/checkout/subscription-checkout.service.ts
+UNCHANGED 4c3490ccaaceda3df00c5bd2c4f9ff77202438c3 src/connect/stripe-connect-api.service.ts
+UNCHANGED fbec08edfe64e6e08778f40de5cac191abebf648 src/packages/trials/trial-conflict.service.ts
+CHANGED  -> 700e70102ebe6bd668102d5a09a3955ffbaf2419 test/b-recur-fix-round-1-checkout.spec.ts
+UNCHANGED 9907131f997ff70175f50f5ae6f27c6f38e2c031 test/b-trials-3-fix-round.spec.ts
+UNCHANGED 92188d40f7c3a2ecf4a4c216521752d246b7c858 test/b-trials-4-fix-round.spec.ts
+UNCHANGED d4750f4e02fc7336a4b1e01ed6181b55d4453f87 test/b-trials-5-fix-round.spec.ts
+UNCHANGED 56d44fbc3287800cb363dcc7972b62365f08ea70 test/b-trials-6-payable-domain.spec.ts
+UNCHANGED 8e24d69682616a2f29742b650aa4f49a220f42d4 test/b-trials-7-draft-fence.spec.ts
+CHANGED  -> a8ad46121ce6d1810e428e86f29e4f557858dddb test/b-trials-8-shared-rule.spec.ts

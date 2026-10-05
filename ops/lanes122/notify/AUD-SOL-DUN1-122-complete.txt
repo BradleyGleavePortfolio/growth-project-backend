@@ -1,0 +1,24 @@
+AUD-SOL-DUN1-122, agent 122 — COMPLETE 16:17:21 PDT 2026-10-05.
+
+All nine verdict comments posted after exact-head verification:
+#725 1dbc59b690119f03f010e406f9f1e0e43d1e6556 APPROVE 0/0/0 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/725#issuecomment-6004727149
+#687 c140575c8b857023ce69ae28a1dcf6e8ab925335 APPROVE 0/0/3 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-6005213598
+#688 610c52542c0a1865bd9c448d78291d9d663f67fb APPROVE 0/0/1 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/688#issuecomment-6005214159
+#704 524c4025e36fe4b3c925f7cc0072fd6951f01605 APPROVE 0/0/0 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/704#issuecomment-6005214649
+#705 346b77570eb4d40a344d4bd0007c70039c34981a APPROVE 0/0/4 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/705#issuecomment-6005215131
+#724 410fb1b3b82b0ab49c8387a8d01e6e3ca6060a6c APPROVE 0/0/0 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/724#issuecomment-6005215838
+#689 0fbd18cae72f4fdea7c4876034a0d3d1d3dac1cd APPROVE 0/0/5 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-6005216584
+#690 c15f157cabca707bd0dfa9c1e8eb20ff0f78f9ae REQUEST CHANGES 0/1/6 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690#issuecomment-6005217116
+#691 17cfa5662b7014a90d54a3d6747ae651c37e8793 APPROVE 0/0/0 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/691#issuecomment-6005217647
+
+One normal-use B: B-690-S1 — a client's dispute pauses the plan, the coach wants to restart it, but no backend coach restart operation exists, so access and billing stay paused.
+Default: wire guarded own-coach HTTP restart in D4 to the already coach-checking service, ordinary own/foreign-coach controls, then restack/review affected exact heads. Explicit exact later owning dependency is acceptable if it actually supplies this operation before activation.
+
+B-689-S1 candidate withdrawn to C-689-S1: no ordinary-tap cancel path established; do not spend a fix round on latent copy solely from the earlier candidate note.
+
+CI: #725/#687 all 11 required contexts green. Lower #688/#704/#705/#724/#689 seven applicable contexts green, four main-only checks absent on stacked bases. #690/#691 build-and-test running, other six applicable required checks green. Verified builder lane tsc +67 suites/1118 tests passed (5 todo), CI-only child of b0b47959; final adds only privacy-test inventory adjustment.
+
+Keep built D2d edge fixes. Confirm the separate later full-refund billing-pause launch piece. Main-required CI on composed tree remains mandatory before land-as-one.
+Report: /home/user/workspace/ops/reports/AUD-SOL-DUN1-122.md
+Evidence/payloads/receipts: /home/user/workspace/ops/aud-122/AUD-SOL-DUN1-122/
+No PR source edits/pushes/merges/deployments/production changes. No registered worktree, audit branch, lane run or lock created by Sol; nothing to release.

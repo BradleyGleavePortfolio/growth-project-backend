@@ -1,0 +1,553 @@
+targeted	Set up job	﻿2026-10-05T23:17:21.9265100Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-05T23:17:21.9285613Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-05T23:17:21.9286320Z Hosted Compute Agent
+targeted	Set up job	2026-10-05T23:17:21.9286919Z Version: 20260901.588
+targeted	Set up job	2026-10-05T23:17:21.9287445Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-05T23:17:21.9288106Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-05T23:17:21.9288850Z Worker ID: {ad86f82c-8d61-4641-b781-bbad1cd8d0b2}
+targeted	Set up job	2026-10-05T23:17:21.9289675Z Azure Region: westcentralus
+targeted	Set up job	2026-10-05T23:17:21.9290418Z ##[endgroup]
+targeted	Set up job	2026-10-05T23:17:21.9291855Z ##[group]Operating System
+targeted	Set up job	2026-10-05T23:17:21.9292741Z Ubuntu
+targeted	Set up job	2026-10-05T23:17:21.9293337Z 24.04.5
+targeted	Set up job	2026-10-05T23:17:21.9294062Z LTS
+targeted	Set up job	2026-10-05T23:17:21.9294980Z ##[endgroup]
+targeted	Set up job	2026-10-05T23:17:21.9295632Z ##[group]Runner Image
+targeted	Set up job	2026-10-05T23:17:21.9296292Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-05T23:17:21.9296994Z Version: 20260927.320.1
+targeted	Set up job	2026-10-05T23:17:21.9298274Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-05T23:17:21.9300328Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-05T23:17:21.9301122Z ##[endgroup]
+targeted	Set up job	2026-10-05T23:17:21.9302170Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-05T23:17:21.9303855Z Contents: read
+targeted	Set up job	2026-10-05T23:17:21.9304463Z Metadata: read
+targeted	Set up job	2026-10-05T23:17:21.9304967Z Packages: read
+targeted	Set up job	2026-10-05T23:17:21.9305511Z ##[endgroup]
+targeted	Set up job	2026-10-05T23:17:21.9307180Z Secret source: Actions
+targeted	Set up job	2026-10-05T23:17:21.9307979Z Cache mode: write
+targeted	Set up job	2026-10-05T23:17:21.9308588Z Prepare workflow directory
+targeted	Set up job	2026-10-05T23:17:21.9822645Z Prepare all required actions
+targeted	Set up job	2026-10-05T23:17:21.9861276Z Getting action download info
+targeted	Set up job	2026-10-05T23:17:22.2581066Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-05T23:17:22.7773109Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-05T23:17:22.9671909Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-05T23:17:23.0081286Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-05T23:17:23.0091902Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-05T23:17:23.0671306Z '1.48'
+targeted	Initialize containers	2026-10-05T23:17:23.0686369Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-05T23:17:23.0687073Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-05T23:17:23.0817129Z '1.48'
+targeted	Initialize containers	2026-10-05T23:17:23.0828338Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-05T23:17:23.0832290Z ##[endgroup]
+targeted	Initialize containers	2026-10-05T23:17:23.0835001Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-05T23:17:23.0839346Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=abec32"
+targeted	Initialize containers	2026-10-05T23:17:23.0959045Z ##[command]/usr/bin/docker network prune --force --filter "label=abec32"
+targeted	Initialize containers	2026-10-05T23:17:23.1060227Z ##[endgroup]
+targeted	Initialize containers	2026-10-05T23:17:23.1060712Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-05T23:17:23.1068644Z ##[command]/usr/bin/docker network create --label abec32 github_network_12a762f234a14c6785ea918e427b1da4
+targeted	Initialize containers	2026-10-05T23:17:23.1876251Z 22d182743e1f0ad346229e8431b399108f8d6443bce59500828a0da24a1b8dc0
+targeted	Initialize containers	2026-10-05T23:17:23.1895637Z ##[endgroup]
+targeted	Initialize containers	2026-10-05T23:17:23.1916737Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-05T23:17:23.1933976Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-05T23:17:23.8905717Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-05T23:17:24.0872170Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-05T23:17:24.0873085Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-05T23:17:24.0874003Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-05T23:17:24.0874699Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-05T23:17:24.0875379Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-05T23:17:24.0876050Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-05T23:17:24.0876729Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-05T23:17:24.0877370Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-05T23:17:24.0878006Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-05T23:17:24.0878663Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-05T23:17:24.0879328Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-05T23:17:24.3195750Z 83234986c742: Verifying Checksum
+targeted	Initialize containers	2026-10-05T23:17:24.3197604Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-05T23:17:24.3642059Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-05T23:17:24.3643527Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-05T23:17:24.4786747Z 16333ee0c00f: Verifying Checksum
+targeted	Initialize containers	2026-10-05T23:17:24.4788469Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-05T23:17:24.5651733Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-05T23:17:24.5734891Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-05T23:17:24.5735347Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-05T23:17:24.6907163Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-05T23:17:24.6907669Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-05T23:17:24.7488124Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-05T23:17:24.7488572Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-05T23:17:24.7853441Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-05T23:17:24.7853993Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-05T23:17:29.7458868Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-05T23:17:29.8563442Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-05T23:17:30.1701514Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-05T23:17:30.1785345Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-05T23:17:30.1845198Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-05T23:17:30.1922699Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-05T23:17:30.1954659Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-05T23:17:30.1965663Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-05T23:17:30.1972289Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-05T23:17:30.2004568Z ##[command]/usr/bin/docker create --name b26f76f888b84052bc6a472f2a42a888_redis7alpine_edc5e9 --label abec32 --network github_network_12a762f234a14c6785ea918e427b1da4 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-05T23:17:30.2212432Z 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Initialize containers	2026-10-05T23:17:30.2229967Z ##[command]/usr/bin/docker start 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Initialize containers	2026-10-05T23:17:30.3754346Z 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Initialize containers	2026-10-05T23:17:30.3775549Z ##[command]/usr/bin/docker ps --all --filter id=4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-05T23:17:30.3879577Z 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-05T23:17:30.3896268Z ##[command]/usr/bin/docker port 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Initialize containers	2026-10-05T23:17:30.3993388Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-05T23:17:30.3994005Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-05T23:17:30.4028897Z ##[endgroup]
+targeted	Initialize containers	2026-10-05T23:17:30.4035957Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-05T23:17:30.4046648Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Initialize containers	2026-10-05T23:17:30.4139828Z starting
+targeted	Initialize containers	2026-10-05T23:17:30.4155582Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-05T23:17:32.4165453Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Initialize containers	2026-10-05T23:17:32.4269501Z starting
+targeted	Initialize containers	2026-10-05T23:17:32.4280504Z redis service is starting, waiting 4 seconds before checking again.
+targeted	Initialize containers	2026-10-05T23:17:36.7228393Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Initialize containers	2026-10-05T23:17:36.7328277Z healthy
+targeted	Initialize containers	2026-10-05T23:17:36.7341357Z redis service is healthy.
+targeted	Initialize containers	2026-10-05T23:17:36.7341970Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-05T23:17:36.7557322Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7557744Z with:
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7558000Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7560037Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7560214Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7560568Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7560754Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7560951Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7561129Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7561337Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7561502Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7561673Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7561852Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7562010Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7562182Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7562382Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.7562755Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8391335Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8392901Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8393402Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8394180Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8394399Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8395752Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8406122Z Temporarily overriding HOME='/home/runner/work/_temp/3d9a0282-049a-48b3-9525-e3a1641f176a' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8406848Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8410370Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8446184Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8449574Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8451324Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8454879Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8455497Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8522108Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8522824Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8523457Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8524154Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8524388Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8524741Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8525091Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8525329Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8525903Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8526336Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8526518Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8526722Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8526991Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8527554Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8531819Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8565807Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8566187Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8568689Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8592415Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8592768Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8593258Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8597779Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8621631Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8923870Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8927974Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.8952095Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9126736Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9132254Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9157350Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9336953Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9365077Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9390257Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9417040Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9441822Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9498517Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9498862Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-05T23:17:36.9504591Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b1c8d80de2a9f0e5e898e2503ada6cb8fe0c67dc:refs/remotes/origin/audit/AUD-OPUS-RMN1-122/stack-2
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8593219Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8594287Z  * [new ref]         b1c8d80de2a9f0e5e898e2503ada6cb8fe0c67dc -> origin/audit/AUD-OPUS-RMN1-122/stack-2
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8602214Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-RMN1-122/stack-2
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8622700Z   origin/audit/AUD-OPUS-RMN1-122/stack-2
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8629782Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-RMN1-122/stack-2
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8648588Z b1c8d80de2a9f0e5e898e2503ada6cb8fe0c67dc
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8660019Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8660420Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8661103Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8661403Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8694664Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8717147Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-05T23:17:38.8721248Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-RMN1-122/stack-2 refs/remotes/origin/audit/AUD-OPUS-RMN1-122/stack-2
+targeted	Run actions/checkout@v6	2026-10-05T23:17:39.0542013Z Switched to a new branch 'audit/AUD-OPUS-RMN1-122/stack-2'
+targeted	Run actions/checkout@v6	2026-10-05T23:17:39.0545321Z branch 'audit/AUD-OPUS-RMN1-122/stack-2' set up to track 'origin/audit/AUD-OPUS-RMN1-122/stack-2'.
+targeted	Run actions/checkout@v6	2026-10-05T23:17:39.0554422Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T23:17:39.0594453Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-05T23:17:39.0614866Z b1c8d80de2a9f0e5e898e2503ada6cb8fe0c67dc
+targeted	Run actions/setup-node@v6	﻿2026-10-05T23:17:39.0812090Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:39.0812319Z with:
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:39.0812481Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:39.0812654Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:39.0812819Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:39.0814863Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:39.0815051Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:39.0815259Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:39.1914077Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:40.0319119Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:40.6287034Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:40.6428117Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ac40725d-eda7-4be6-8586-3512c5d62ecc -f /home/runner/work/_temp/01073842-d9c6-442f-b43a-fefbae2148dc
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:41.4964570Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:43.1834462Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:43.3537192Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:43.3537605Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:43.3537780Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:43.3538204Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:43.3551444Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:43.4366545Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:43.6260265Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:44.8264102Z Received 41943040 of 86828135 (48.3%), 40.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:45.1224475Z Received 86828135 of 86828135 (100.0%), 63.9 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:45.1224973Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:45.1248890Z [command]/usr/bin/tar -xf /home/runner/work/_temp/d50cd194-82a0-4f4d-949d-8ccbcb770f87/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:45.2615543Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-05T23:17:45.2655849Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-05T23:17:45.2832275Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-05T23:17:45.2832524Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-05T23:17:45.3005013Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-05T23:17:45.3005255Z ##[endgroup]
+targeted	Run npm ci	2026-10-05T23:17:49.9301866Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-05T23:17:50.2154430Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-05T23:17:51.7223725Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:17:52.6048396Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:17:52.6157085Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:17:52.6636686Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T23:18:02.7576349Z 
+targeted	Run npm ci	2026-10-05T23:18:02.7577153Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-05T23:18:02.7577624Z > prisma generate
+targeted	Run npm ci	2026-10-05T23:18:02.7577793Z 
+targeted	Run npm ci	2026-10-05T23:18:03.4628104Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-05T23:18:06.5761706Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-05T23:18:06.5762510Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+targeted	Run npm ci	2026-10-05T23:18:06.5762917Z │                                                         │
+targeted	Run npm ci	2026-10-05T23:18:06.5763328Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-05T23:18:06.5764034Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-05T23:18:06.5764455Z │                                                         │
+targeted	Run npm ci	2026-10-05T23:18:06.5765186Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-05T23:18:06.5765567Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-05T23:18:06.5765924Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-05T23:18:06.5766307Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-05T23:18:06.5766503Z 
+targeted	Run npm ci	2026-10-05T23:18:06.5766838Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.68s
+targeted	Run npm ci	2026-10-05T23:18:06.5767121Z 
+targeted	Run npm ci	2026-10-05T23:18:06.5767414Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-05T23:18:06.5767693Z 
+targeted	Run npm ci	2026-10-05T23:18:06.5767934Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npm ci	2026-10-05T23:18:06.5768158Z 
+targeted	Run npm ci	2026-10-05T23:18:06.6237650Z 
+targeted	Run npm ci	2026-10-05T23:18:06.6240494Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-05T23:18:06.6241139Z > lefthook install
+targeted	Run npm ci	2026-10-05T23:18:06.6241438Z 
+targeted	Run npm ci	2026-10-05T23:18:06.6653527Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-05T23:18:06.6793388Z 
+targeted	Run npm ci	2026-10-05T23:18:06.6794112Z added 1115 packages, and audited 1116 packages in 21s
+targeted	Run npm ci	2026-10-05T23:18:06.6794462Z 
+targeted	Run npm ci	2026-10-05T23:18:06.6794671Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-05T23:18:06.6795077Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-05T23:18:06.6820872Z 
+targeted	Run npm ci	2026-10-05T23:18:06.6821172Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-05T23:18:06.6821377Z 
+targeted	Run npm ci	2026-10-05T23:18:06.6821576Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-05T23:18:06.6822337Z   npm audit fix --force
+targeted	Run npm ci	2026-10-05T23:18:06.6822536Z 
+targeted	Run npm ci	2026-10-05T23:18:06.6822696Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-05T23:18:06.7333883Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-05T23:18:06.7334167Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-05T23:18:06.7387741Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-05T23:18:06.7387962Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-05T23:18:07.7227741Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-05T23:18:10.8350934Z 
+targeted	Run npx prisma generate	2026-10-05T23:18:10.8351900Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.70s
+targeted	Run npx prisma generate	2026-10-05T23:18:10.8352237Z 
+targeted	Run npx prisma generate	2026-10-05T23:18:10.8352541Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-05T23:18:10.8352820Z 
+targeted	Run npx prisma generate	2026-10-05T23:18:10.8353050Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npx prisma generate	2026-10-05T23:18:10.8353281Z 
+targeted	Targeted jest	﻿2026-10-05T23:18:10.9317335Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T23:18:10.9317614Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T23:18:10.9317929Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T23:18:10.9318325Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T23:18:10.9318608Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:18:10.9318848Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:18:10.9374795Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T23:18:10.9375083Z env:
+targeted	Targeted jest	2026-10-05T23:18:10.9375273Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-05T23:18:10.9375575Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-05T23:18:10.9375838Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T23:18:10.9455510Z specs: test/roman/audit-opus-rmn1-122.probe.spec.ts
+targeted	Targeted jest	2026-10-05T23:18:12.0954281Z   console.log
+targeted	Targeted jest	2026-10-05T23:18:12.1014241Z     INFO emergency phrasings:
+targeted	Targeted jest	2026-10-05T23:18:12.1014670Z     normal	I took 20 of my sleeping pills
+targeted	Targeted jest	2026-10-05T23:18:12.1015200Z     normal	I took a bunch of pills an hour ago
+targeted	Targeted jest	2026-10-05T23:18:12.1015654Z     injury_pain	My chest hurts and my left arm is numb
+targeted	Targeted jest	2026-10-05T23:18:12.1044847Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1075112Z       at Object.<anonymous> (test/roman/audit-opus-rmn1-122.probe.spec.ts:58:13)
+targeted	Targeted jest	2026-10-05T23:18:12.1075448Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1238848Z FAIL test/roman/audit-opus-rmn1-122.probe.spec.ts (48 MB heap size)
+targeted	Targeted jest	2026-10-05T23:18:12.1239776Z   AUD-OPUS-RMN1-122 CONTROL
+targeted	Targeted jest	2026-10-05T23:18:12.1241707Z     ✓ I want to kill myself -> self_harm (5 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1242215Z     ✓ I want to end my life -> self_harm (2 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1243373Z     ✓ I can’t breathe -> emergency
+targeted	Targeted jest	2026-10-05T23:18:12.1244105Z     ✓ I think I am going into anaphylactic shock -> emergency (1 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1244683Z     ✓ I took a whole bottle of pills -> emergency
+targeted	Targeted jest	2026-10-05T23:18:12.1245178Z     ✓ I cannot go on anymore -> self_harm (1 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1245714Z     ✓ I am ending my workout early today -> normal (4 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1246340Z     ✓ My dad had a heart attack last year -> medical_scope (2 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1246941Z   AUD-OPUS-RMN1-122 FINDING self_harm phrasings must reach the 988 template
+targeted	Targeted jest	2026-10-05T23:18:12.1247542Z     ✕ I have been thinking about ending my life (4 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1248028Z     ✕ I want to take my own life (1 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1248491Z     ✕ I am going to take my life tonight (1 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1248826Z     ✕ I keep thinking about ending it all
+targeted	Targeted jest	2026-10-05T23:18:12.1249111Z     ✕ I want to end my own life (1 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1249433Z     ✕ I don’t see the point in living anymore (5 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1249805Z     ✕ Everyone would be better off without me (1 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1250244Z   AUD-OPUS-RMN1-122 INFO emergency phrasings (reported, not asserted)
+targeted	Targeted jest	2026-10-05T23:18:12.1250605Z     ✓ prints the class of each (13 ms)
+targeted	Targeted jest	2026-10-05T23:18:12.1250757Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1251190Z   ● AUD-OPUS-RMN1-122 FINDING self_harm phrasings must reach the 988 template › I have been thinking about ending my life
+targeted	Targeted jest	2026-10-05T23:18:12.1251543Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1251692Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:18:12.1251874Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1251963Z     - Expected  - 2
+targeted	Targeted jest	2026-10-05T23:18:12.1252147Z     + Received  + 2
+targeted	Targeted jest	2026-10-05T23:18:12.1252254Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1252332Z       Object {
+targeted	Targeted jest	2026-10-05T23:18:12.1252511Z     -   "cls": "self_harm",
+targeted	Targeted jest	2026-10-05T23:18:12.1252722Z     +   "cls": "normal",
+targeted	Targeted jest	2026-10-05T23:18:12.1252989Z         "msg": "I have been thinking about ending my life",
+targeted	Targeted jest	2026-10-05T23:18:12.1253268Z     -   "short_circuit": true,
+targeted	Targeted jest	2026-10-05T23:18:12.1253495Z     +   "short_circuit": false,
+targeted	Targeted jest	2026-10-05T23:18:12.1253894Z       }
+targeted	Targeted jest	2026-10-05T23:18:12.1253992Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1254364Z     ^[[0m ^[[90m 44 |^[[39m   it^[[33m.^[[39meach(^[[33mSELF_HARM_EXPECTED^[[39m)(^[[32m'%s'^[[39m^[[33m,^[[39m (msg) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:18:12.1254905Z      ^[[90m 45 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m classifySafety(msg)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1255926Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 46 |^[[39m     expect({ msg^[[33m,^[[39m cls^[[33m:^[[39m r^[[33m.^[[39m^[[36mclass^[[39m^[[33m,^[[39m short_circuit^[[33m:^[[39m r^[[33m.^[[39mshort_circuit })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-05T23:18:12.1256597Z      ^[[90m    |^[[39m                                                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1256957Z      ^[[90m 47 |^[[39m       msg^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1257306Z      ^[[90m 48 |^[[39m       cls^[[33m:^[[39m ^[[32m'self_harm'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1257718Z      ^[[90m 49 |^[[39m       short_circuit^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:12.1257933Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1258095Z       at test/roman/audit-opus-rmn1-122.probe.spec.ts:46:67
+targeted	Targeted jest	2026-10-05T23:18:12.1258283Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1258639Z   ● AUD-OPUS-RMN1-122 FINDING self_harm phrasings must reach the 988 template › I want to take my own life
+targeted	Targeted jest	2026-10-05T23:18:12.1258946Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1259086Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:18:12.1259275Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1259361Z     - Expected  - 2
+targeted	Targeted jest	2026-10-05T23:18:12.1259541Z     + Received  + 2
+targeted	Targeted jest	2026-10-05T23:18:12.1259642Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1259712Z       Object {
+targeted	Targeted jest	2026-10-05T23:18:12.1259897Z     -   "cls": "self_harm",
+targeted	Targeted jest	2026-10-05T23:18:12.1260092Z     +   "cls": "normal",
+targeted	Targeted jest	2026-10-05T23:18:12.1260315Z         "msg": "I want to take my own life",
+targeted	Targeted jest	2026-10-05T23:18:12.1260565Z     -   "short_circuit": true,
+targeted	Targeted jest	2026-10-05T23:18:12.1260788Z     +   "short_circuit": false,
+targeted	Targeted jest	2026-10-05T23:18:12.1260992Z       }
+targeted	Targeted jest	2026-10-05T23:18:12.1261089Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1261573Z     ^[[0m ^[[90m 44 |^[[39m   it^[[33m.^[[39meach(^[[33mSELF_HARM_EXPECTED^[[39m)(^[[32m'%s'^[[39m^[[33m,^[[39m (msg) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:18:12.1262218Z      ^[[90m 45 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m classifySafety(msg)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1262984Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 46 |^[[39m     expect({ msg^[[33m,^[[39m cls^[[33m:^[[39m r^[[33m.^[[39m^[[36mclass^[[39m^[[33m,^[[39m short_circuit^[[33m:^[[39m r^[[33m.^[[39mshort_circuit })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-05T23:18:12.1263816Z      ^[[90m    |^[[39m                                                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1264163Z      ^[[90m 47 |^[[39m       msg^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1264504Z      ^[[90m 48 |^[[39m       cls^[[33m:^[[39m ^[[32m'self_harm'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1264926Z      ^[[90m 49 |^[[39m       short_circuit^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:12.1265133Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1265283Z       at test/roman/audit-opus-rmn1-122.probe.spec.ts:46:67
+targeted	Targeted jest	2026-10-05T23:18:12.1265483Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1265854Z   ● AUD-OPUS-RMN1-122 FINDING self_harm phrasings must reach the 988 template › I am going to take my life tonight
+targeted	Targeted jest	2026-10-05T23:18:12.1266192Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1266329Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:18:12.1266509Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1266592Z     - Expected  - 2
+targeted	Targeted jest	2026-10-05T23:18:12.1266770Z     + Received  + 2
+targeted	Targeted jest	2026-10-05T23:18:12.1266875Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1266947Z       Object {
+targeted	Targeted jest	2026-10-05T23:18:12.1267132Z     -   "cls": "self_harm",
+targeted	Targeted jest	2026-10-05T23:18:12.1267325Z     +   "cls": "normal",
+targeted	Targeted jest	2026-10-05T23:18:12.1267563Z         "msg": "I am going to take my life tonight",
+targeted	Targeted jest	2026-10-05T23:18:12.1267823Z     -   "short_circuit": true,
+targeted	Targeted jest	2026-10-05T23:18:12.1268047Z     +   "short_circuit": false,
+targeted	Targeted jest	2026-10-05T23:18:12.1268242Z       }
+targeted	Targeted jest	2026-10-05T23:18:12.1268331Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1268679Z     ^[[0m ^[[90m 44 |^[[39m   it^[[33m.^[[39meach(^[[33mSELF_HARM_EXPECTED^[[39m)(^[[32m'%s'^[[39m^[[33m,^[[39m (msg) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:18:12.1269203Z      ^[[90m 45 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m classifySafety(msg)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1269954Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 46 |^[[39m     expect({ msg^[[33m,^[[39m cls^[[33m:^[[39m r^[[33m.^[[39m^[[36mclass^[[39m^[[33m,^[[39m short_circuit^[[33m:^[[39m r^[[33m.^[[39mshort_circuit })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-05T23:18:12.1270612Z      ^[[90m    |^[[39m                                                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1271092Z      ^[[90m 47 |^[[39m       msg^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1271448Z      ^[[90m 48 |^[[39m       cls^[[33m:^[[39m ^[[32m'self_harm'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1271852Z      ^[[90m 49 |^[[39m       short_circuit^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:12.1272057Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1272205Z       at test/roman/audit-opus-rmn1-122.probe.spec.ts:46:67
+targeted	Targeted jest	2026-10-05T23:18:12.1272394Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1272765Z   ● AUD-OPUS-RMN1-122 FINDING self_harm phrasings must reach the 988 template › I keep thinking about ending it all
+targeted	Targeted jest	2026-10-05T23:18:12.1273098Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1273233Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:18:12.1273412Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1273493Z     - Expected  - 2
+targeted	Targeted jest	2026-10-05T23:18:12.1273760Z     + Received  + 2
+targeted	Targeted jest	2026-10-05T23:18:12.1273863Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1273933Z       Object {
+targeted	Targeted jest	2026-10-05T23:18:12.1274116Z     -   "cls": "self_harm",
+targeted	Targeted jest	2026-10-05T23:18:12.1274310Z     +   "cls": "normal",
+targeted	Targeted jest	2026-10-05T23:18:12.1274549Z         "msg": "I keep thinking about ending it all",
+targeted	Targeted jest	2026-10-05T23:18:12.1274813Z     -   "short_circuit": true,
+targeted	Targeted jest	2026-10-05T23:18:12.1275029Z     +   "short_circuit": false,
+targeted	Targeted jest	2026-10-05T23:18:12.1275224Z       }
+targeted	Targeted jest	2026-10-05T23:18:12.1275311Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1275660Z     ^[[0m ^[[90m 44 |^[[39m   it^[[33m.^[[39meach(^[[33mSELF_HARM_EXPECTED^[[39m)(^[[32m'%s'^[[39m^[[33m,^[[39m (msg) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:18:12.1276175Z      ^[[90m 45 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m classifySafety(msg)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1276914Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 46 |^[[39m     expect({ msg^[[33m,^[[39m cls^[[33m:^[[39m r^[[33m.^[[39m^[[36mclass^[[39m^[[33m,^[[39m short_circuit^[[33m:^[[39m r^[[33m.^[[39mshort_circuit })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-05T23:18:12.1277681Z      ^[[90m    |^[[39m                                                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1278016Z      ^[[90m 47 |^[[39m       msg^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1278350Z      ^[[90m 48 |^[[39m       cls^[[33m:^[[39m ^[[32m'self_harm'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1278767Z      ^[[90m 49 |^[[39m       short_circuit^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:12.1278975Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1279127Z       at test/roman/audit-opus-rmn1-122.probe.spec.ts:46:67
+targeted	Targeted jest	2026-10-05T23:18:12.1279320Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1279660Z   ● AUD-OPUS-RMN1-122 FINDING self_harm phrasings must reach the 988 template › I want to end my own life
+targeted	Targeted jest	2026-10-05T23:18:12.1279953Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1280098Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:18:12.1280284Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1280361Z     - Expected  - 2
+targeted	Targeted jest	2026-10-05T23:18:12.1280547Z     + Received  + 2
+targeted	Targeted jest	2026-10-05T23:18:12.1280642Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1280719Z       Object {
+targeted	Targeted jest	2026-10-05T23:18:12.1280889Z     -   "cls": "self_harm",
+targeted	Targeted jest	2026-10-05T23:18:12.1281087Z     +   "cls": "normal",
+targeted	Targeted jest	2026-10-05T23:18:12.1281309Z         "msg": "I want to end my own life",
+targeted	Targeted jest	2026-10-05T23:18:12.1281556Z     -   "short_circuit": true,
+targeted	Targeted jest	2026-10-05T23:18:12.1281781Z     +   "short_circuit": false,
+targeted	Targeted jest	2026-10-05T23:18:12.1281980Z       }
+targeted	Targeted jest	2026-10-05T23:18:12.1282073Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1282410Z     ^[[0m ^[[90m 44 |^[[39m   it^[[33m.^[[39meach(^[[33mSELF_HARM_EXPECTED^[[39m)(^[[32m'%s'^[[39m^[[33m,^[[39m (msg) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:18:12.1282929Z      ^[[90m 45 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m classifySafety(msg)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1283752Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 46 |^[[39m     expect({ msg^[[33m,^[[39m cls^[[33m:^[[39m r^[[33m.^[[39m^[[36mclass^[[39m^[[33m,^[[39m short_circuit^[[33m:^[[39m r^[[33m.^[[39mshort_circuit })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-05T23:18:12.1284400Z      ^[[90m    |^[[39m                                                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1284737Z      ^[[90m 47 |^[[39m       msg^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1285063Z      ^[[90m 48 |^[[39m       cls^[[33m:^[[39m ^[[32m'self_harm'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1285467Z      ^[[90m 49 |^[[39m       short_circuit^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:12.1285770Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1285924Z       at test/roman/audit-opus-rmn1-122.probe.spec.ts:46:67
+targeted	Targeted jest	2026-10-05T23:18:12.1286112Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1286500Z   ● AUD-OPUS-RMN1-122 FINDING self_harm phrasings must reach the 988 template › I don’t see the point in living anymore
+targeted	Targeted jest	2026-10-05T23:18:12.1286837Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1286978Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:18:12.1287149Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1287235Z     - Expected  - 2
+targeted	Targeted jest	2026-10-05T23:18:12.1287412Z     + Received  + 2
+targeted	Targeted jest	2026-10-05T23:18:12.1287513Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1287593Z       Object {
+targeted	Targeted jest	2026-10-05T23:18:12.1287773Z     -   "cls": "self_harm",
+targeted	Targeted jest	2026-10-05T23:18:12.1287974Z     +   "cls": "normal",
+targeted	Targeted jest	2026-10-05T23:18:12.1288271Z         "msg": "I don’t see the point in living anymore",
+targeted	Targeted jest	2026-10-05T23:18:12.1288537Z     -   "short_circuit": true,
+targeted	Targeted jest	2026-10-05T23:18:12.1288751Z     +   "short_circuit": false,
+targeted	Targeted jest	2026-10-05T23:18:12.1288946Z       }
+targeted	Targeted jest	2026-10-05T23:18:12.1289036Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1289385Z     ^[[0m ^[[90m 44 |^[[39m   it^[[33m.^[[39meach(^[[33mSELF_HARM_EXPECTED^[[39m)(^[[32m'%s'^[[39m^[[33m,^[[39m (msg) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:18:12.1289900Z      ^[[90m 45 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m classifySafety(msg)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1290639Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 46 |^[[39m     expect({ msg^[[33m,^[[39m cls^[[33m:^[[39m r^[[33m.^[[39m^[[36mclass^[[39m^[[33m,^[[39m short_circuit^[[33m:^[[39m r^[[33m.^[[39mshort_circuit })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-05T23:18:12.1291289Z      ^[[90m    |^[[39m                                                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1291726Z      ^[[90m 47 |^[[39m       msg^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1292056Z      ^[[90m 48 |^[[39m       cls^[[33m:^[[39m ^[[32m'self_harm'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1292451Z      ^[[90m 49 |^[[39m       short_circuit^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:12.1292657Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1292914Z       at test/roman/audit-opus-rmn1-122.probe.spec.ts:46:67
+targeted	Targeted jest	2026-10-05T23:18:12.1293211Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1293734Z   ● AUD-OPUS-RMN1-122 FINDING self_harm phrasings must reach the 988 template › Everyone would be better off without me
+targeted	Targeted jest	2026-10-05T23:18:12.1294251Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1294470Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T23:18:12.1294753Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1294878Z     - Expected  - 2
+targeted	Targeted jest	2026-10-05T23:18:12.1295058Z     + Received  + 2
+targeted	Targeted jest	2026-10-05T23:18:12.1295160Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1295235Z       Object {
+targeted	Targeted jest	2026-10-05T23:18:12.1295406Z     -   "cls": "self_harm",
+targeted	Targeted jest	2026-10-05T23:18:12.1295604Z     +   "cls": "normal",
+targeted	Targeted jest	2026-10-05T23:18:12.1295860Z         "msg": "Everyone would be better off without me",
+targeted	Targeted jest	2026-10-05T23:18:12.1296130Z     -   "short_circuit": true,
+targeted	Targeted jest	2026-10-05T23:18:12.1296353Z     +   "short_circuit": false,
+targeted	Targeted jest	2026-10-05T23:18:12.1296546Z       }
+targeted	Targeted jest	2026-10-05T23:18:12.1296639Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1296997Z     ^[[0m ^[[90m 44 |^[[39m   it^[[33m.^[[39meach(^[[33mSELF_HARM_EXPECTED^[[39m)(^[[32m'%s'^[[39m^[[33m,^[[39m (msg) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T23:18:12.1297518Z      ^[[90m 45 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m classifySafety(msg)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1298263Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 46 |^[[39m     expect({ msg^[[33m,^[[39m cls^[[33m:^[[39m r^[[33m.^[[39m^[[36mclass^[[39m^[[33m,^[[39m short_circuit^[[33m:^[[39m r^[[33m.^[[39mshort_circuit })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-05T23:18:12.1298917Z      ^[[90m    |^[[39m                                                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1299253Z      ^[[90m 47 |^[[39m       msg^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1299591Z      ^[[90m 48 |^[[39m       cls^[[33m:^[[39m ^[[32m'self_harm'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-05T23:18:12.1299990Z      ^[[90m 49 |^[[39m       short_circuit^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:12.1300193Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1300344Z       at test/roman/audit-opus-rmn1-122.probe.spec.ts:46:67
+targeted	Targeted jest	2026-10-05T23:18:12.1300543Z 
+targeted	Targeted jest	2026-10-05T23:18:12.1300677Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-05T23:18:12.1301067Z Tests:       7 failed, 9 passed, 16 total
+targeted	Targeted jest	2026-10-05T23:18:12.1301297Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T23:18:12.1301493Z Time:        0.538 s
+targeted	Targeted jest	2026-10-05T23:18:12.1301823Z Ran all test suites matching test/roman/audit-opus-rmn1-122.probe.spec.ts.
+targeted	Targeted jest	2026-10-05T23:18:12.1525997Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-05T23:18:12.1619067Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.2317201Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.2350372Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.2381315Z Temporarily overriding HOME='/home/runner/work/_temp/caceb65a-4b6f-4718-bda2-599e7d841bff' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.2382528Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.2386189Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.3212003Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.3219990Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.3254752Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.3462397Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.3469283Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.3491633Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.3673425Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.3678369Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4259313Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4260058Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4260555Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4260904Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4267670Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4290564Z /home/runner/work/_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4299100Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4345369Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4363355Z /home/runner/work/_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4370712Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4424657Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4441506Z /github/runner_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4447199Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4504238Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4522130Z /github/runner_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4530237Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4564375Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-05T23:18:12.4748737Z Removing credentials config '/home/runner/work/_temp/git-credentials-0bc1b7e4-721e-4988-b55b-7ab81e3fb8f3.config'
+targeted	Stop containers	﻿2026-10-05T23:18:12.4848107Z Print service container logs: b26f76f888b84052bc6a472f2a42a888_redis7alpine_edc5e9
+targeted	Stop containers	2026-10-05T23:18:12.4851581Z ##[command]/usr/bin/docker logs --details 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Stop containers	2026-10-05T23:18:12.4958898Z  1:C 05 Oct 2026 23:17:30.379 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-05T23:18:12.4960914Z  1:C 05 Oct 2026 23:17:30.379 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-05T23:18:12.4961567Z  1:C 05 Oct 2026 23:17:30.379 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-05T23:18:12.4962533Z  1:C 05 Oct 2026 23:17:30.379 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-05T23:18:12.4963784Z  1:M 05 Oct 2026 23:17:30.379 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-05T23:18:12.4964263Z  1:M 05 Oct 2026 23:17:30.379 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-05T23:18:12.4964676Z  1:M 05 Oct 2026 23:17:30.380 * Server initialized
+targeted	Stop containers	2026-10-05T23:18:12.4965075Z  1:M 05 Oct 2026 23:17:30.380 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-05T23:18:12.4979814Z Stop and remove container: b26f76f888b84052bc6a472f2a42a888_redis7alpine_edc5e9
+targeted	Stop containers	2026-10-05T23:18:12.4983862Z ##[command]/usr/bin/docker rm --force 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Stop containers	2026-10-05T23:18:17.3726528Z 4e2689558d84a6e8be2585ee7d3ab65e58096dff460d4051cfd4e24e7f86110c
+targeted	Stop containers	2026-10-05T23:18:17.3751136Z Remove container network: github_network_12a762f234a14c6785ea918e427b1da4
+targeted	Stop containers	2026-10-05T23:18:17.3754959Z ##[command]/usr/bin/docker network rm github_network_12a762f234a14c6785ea918e427b1da4
+targeted	Stop containers	2026-10-05T23:18:17.4877477Z github_network_12a762f234a14c6785ea918e427b1da4
+targeted	Complete job	﻿2026-10-05T23:18:17.4937589Z Cleaning up orphan processes

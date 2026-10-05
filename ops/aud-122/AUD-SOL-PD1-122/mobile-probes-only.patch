@@ -1,0 +1,129 @@
+diff --git a/.ci-lane-tsc b/.ci-lane-tsc
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/api/__tests__/audSolPD122Roster.test.ts b/src/api/__tests__/audSolPD122Roster.test.ts
+new file mode 100644
+index 0000000..c06a22a
+--- /dev/null
++++ b/src/api/__tests__/audSolPD122Roster.test.ts
+@@ -0,0 +1,39 @@
++/** Sol B-355-1 replay at the real three-argument coachApi.getClients seam. */
++const mockGetClients = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: {},
++  coachApi: { getClients: (...args: unknown[]) => mockGetClients(...args) },
++}));
++import { programsApi } from '../programsApi';
++
++const all = Array.from({ length: 25 }, (_, i) => ({
++  id: `client-${String(i).padStart(2, '0')}`,
++  name: `Client ${String(i).padStart(2, '0')}`,
++  email: `synthetic-${i}@example.invalid`,
++  archived_at: null,
++}));
++
++beforeEach(() => mockGetClients.mockReset());
++
++it('returns all 25 clients using the last-row cursor and real take parameter', async () => {
++  mockGetClients.mockImplementation(async (status: string, cursor?: string, take?: number) => {
++    expect(status).toBe('active');
++    const from = cursor ? all.findIndex((row) => row.id === cursor) + 1 : 0;
++    return { data: all.slice(from, from + (take ?? 20)) };
++  });
++  const rows = await programsApi.assignableClients();
++  expect(rows.map((row) => row.id)).toEqual(all.map((row) => row.id));
++  expect(mockGetClients.mock.calls).toEqual([
++    ['active', undefined, 20],
++    ['active', 'client-19', 20],
++  ]);
++});
++
++it('does not return a seemingly complete first page when the second page fails', async () => {
++  mockGetClients.mockResolvedValueOnce({ data: all.slice(0, 20) });
++  mockGetClients.mockRejectedValueOnce({ response: { status: 503 } });
++  await expect(programsApi.assignableClients()).rejects.toMatchObject({
++    response: { status: 503 },
++  });
++});
+diff --git a/src/screens/coach/programs/__tests__/audSolPD122P4.test.tsx b/src/screens/coach/programs/__tests__/audSolPD122P4.test.tsx
+new file mode 100644
+index 0000000..14b9f43
+--- /dev/null
++++ b/src/screens/coach/programs/__tests__/audSolPD122P4.test.tsx
+@@ -0,0 +1,75 @@
++/** AUD-SOL-PD1-122, agent 122: replay only the two remaining Sol P4 Bs. */
++import React from "react";
++import { Alert } from "react-native";
++import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
++
++const mockNavigation = { navigate: jest.fn(), setOptions: jest.fn(), goBack: jest.fn() };
++const mockUnassign = jest.fn();
++const mockCapture = jest.fn();
++const mockAssignees = jest.fn();
++
++jest.mock("@react-navigation/native", () => ({ useNavigation: () => mockNavigation }));
++jest.mock("@expo/vector-icons", () => ({ Ionicons: () => null }));
++jest.mock("../../../../theme/ThemeProvider", () => ({
++  useTheme: () => ({ colors: new Proxy({}, { get: () => "#123456" }) }),
++}));
++jest.mock("../../../../services/sentry", () => ({
++  captureError: (...args: unknown[]) => mockCapture(...args),
++}));
++jest.mock("../../../../services/api", () => ({ __esModule: true, default: {}, coachApi: {} }));
++jest.mock("../../../../hooks/usePrograms", () => ({
++  useProgram: () => ({ data: { id: "p1", name: "Master", filled_days: 1 }, isLoading: false }),
++  useInvalidatePrograms: () => async () => undefined,
++  useProgramRevisions: () => ({ data: { items: [] }, isLoading: false }),
++  useProgramAssignees: () => ({ data: { pages: [{ items: mockAssignees() }] }, isLoading: false }),
++}));
++jest.mock("../../../../api/programsApi", () => ({
++  ...jest.requireActual("../../../../api/programsApi"),
++  programsApi: {
++    unassign: (...args: unknown[]) => mockUnassign(...args),
++  },
++}));
++
++import ProgramHistoryScreen from "../ProgramHistoryScreen";
++import { scrubEvent } from "../../../../services/sentryPrivacy";
++import { scrubEvent as scrubCredentials } from "../../../../services/sentryScrub";
++
++function fake<T>(value: unknown): T { return value as T; }
++function historyProps() {
++  return fake<Parameters<typeof ProgramHistoryScreen>[0]>({
++    route: { params: { programId: "p1" } }, navigation: mockNavigation,
++  });
++}
++const assignee = {
++  client_id: "c1", client_name: "Synthetic PersonPrivate", copy_program_id: "run1",
++  start_date: "2026-10-05", end_date: "2026-11-02", workouts: 2, completed: 0,
++};
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockAssignees.mockReturnValue([assignee]);
++  mockUnassign.mockResolvedValue({ removed_workouts: 2, kept_workouts: 0 });
++});
++afterEach(() => jest.restoreAllMocks());
++
++it("P4 privacy: a failed removal must not forward a client name through telemetry action metadata", async () => {
++  mockUnassign.mockRejectedValueOnce(new Error("Network Error"));
++  const alert = jest.spyOn(Alert, "alert");
++  const screen = await render(<ProgramHistoryScreen {...historyProps()} />);
++  await fireEvent.press(screen.getByLabelText("Remove"));
++  const remove = alert.mock.calls[0][2]!.find((b) => b.text === "Remove")!;
++  await act(async () => { await remove.onPress!(); });
++  await waitFor(() => expect(mockCapture).toHaveBeenCalled());
++  const event = scrubCredentials(scrubEvent({ extra: mockCapture.mock.calls[0][1] }));
++  expect(JSON.stringify(event)).not.toContain(assignee.client_name);
++});
++
++it("P4 destructive copy: a remove confirmation cannot claim only one run's count while deleting all runs", async () => {
++  mockAssignees.mockReturnValue([
++    assignee,
++    { ...assignee, copy_program_id: "run2", workouts: 5, start_date: "2026-11-09", end_date: "2026-12-07" },
++  ]);
++  const alert = jest.spyOn(Alert, "alert");
++  const screen = await render(<ProgramHistoryScreen {...historyProps()} />);
++  await fireEvent.press(screen.getAllByLabelText("Remove")[0]);
++  expect(alert.mock.calls[0][1]).toContain("7 upcoming workouts");
++});

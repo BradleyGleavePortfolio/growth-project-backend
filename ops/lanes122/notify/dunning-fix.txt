@@ -1,0 +1,12 @@
+B-DUNFIX-122 (agent 122) — dunning fix round READY FOR AUDIT, 16:33 PDT 2026-10-05
+
+New full heads (growth-project-backend):
+- #689 agent115/dunning-split-3-client-billing   68796f675df9c67c0618145efff58caf32a26b04  (FIX ROUND 4: C-689-6 neutral dispute-or-inquiry copy; SetupIntent omits empty on_behalf_of)  https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-6005485883
+- #690 agent115/dunning-split-4-lockout-webhooks 5d41f7678438c11865762a7925ad53520948fe75  (FIX ROUND 3: B-690-8 / B-690-S1 coach restart route + clean #689 merge)               https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690#issuecomment-6005486208
+- #691 agent115/dunning-split-5-e2e-specs        3dc0e9472954bdd8381d3394aeb79ab0d5712514  (RESTACK, clean merge of #690; tree == merge-tree)                                    https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/691#issuecomment-6005486528
+Unchanged (dual APPROVE stands): #687 c140575c, #688 610c5254, #704 524c4025, #705 346b7757, #724 410fb1b3; #725 1dbc59b6 (base main).
+
+Re-review scope: #689 4 commits 46fe43f7..68796f67; #690 d46ea900 + 5d41f767 (+ clean merge 79601701); #691 merge-only.
+Lane ci/B-DUNFIX-122-1 run 37388562724 at #691 3dc0e947: GREEN (tsc --noEmit; 26 suites / 571 tests).
+PR CI: all required checks green on all three heads (16:38 PDT).
+Lock dunning: held by B-DUNFIX-122 while it stands by for the re-review verdicts (released at verdicts or 18:15 PDT).

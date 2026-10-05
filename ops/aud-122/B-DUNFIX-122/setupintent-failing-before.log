@@ -1,0 +1,30 @@
+[heavy] waiting for a slot: npx jest test/b-recur-subscription-wire.spec.ts
+FAIL test/b-recur-subscription-wire.spec.ts (51 MB heap size)
+  StripeConnectApiService.createSubscription wire format (Stripe-Version 2024-09-30.acacia)
+    ✓ default_incomplete, save card on_subscription, expand first invoice PI, on_behalf_of, no fee / transfer_data (10 ms)
+    ✓ trial: trial_period_days, cancel when the trial ends without a card, expand pending_setup_intent (2 ms)
+    ✓ resume and trial-card writes carry their own idempotency keys (1 ms)
+    ✕ SetupIntent omits on_behalf_of when no plan has a destination account (3 ms)
+
+  ● StripeConnectApiService.createSubscription wire format (Stripe-Version 2024-09-30.acacia) › SetupIntent omits on_behalf_of when no plan has a destination account
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+    [0m [90m 84 |[39m     [36mawait[39m api[33m.[39mcreateSetupIntent({ [33m...[39mbase[33m,[39m onBehalfOf[33m:[39m [32m''[39m })[33m;[39m
+     [90m 85 |[39m     [36mawait[39m api[33m.[39mcreateSetupIntent({ [33m...[39mbase[33m,[39m onBehalfOf[33m:[39m [32m'acct_coach'[39m })[33m;[39m
+    [31m[1m>[22m[39m[90m 86 |[39m     expect(api[33m.[39mcalls[[35m0[39m][33m.[39mform[33m.[39mhas([32m'on_behalf_of'[39m))[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m    |[39m                                                   [31m[1m^[22m[39m
+     [90m 87 |[39m     expect(api[33m.[39mcalls[[35m1[39m][33m.[39mform[33m.[39m[36mget[39m([32m'on_behalf_of'[39m))[33m.[39mtoBe([32m'acct_coach'[39m)[33m;[39m
+     [90m 88 |[39m   })[33m;[39m
+     [90m 89 |[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (test/b-recur-subscription-wire.spec.ts:86:51)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 3 passed, 4 total
+Snapshots:   0 total
+Time:        1.189 s
+Ran all test suites matching test/b-recur-subscription-wire.spec.ts.

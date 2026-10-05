@@ -1,0 +1,23 @@
+coachless main refresh (B-CL2-122, agent 122) Mon Oct  5 16:16:17 PDT 2026
+#721 538a0ba4baacefcea5208c0a8a11e87a1a09fb86 (was d90b484278f432e6e73e41326dc31cadc8892999) MAIN REFRESH https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/721#issuecomment-6005202279
+#722 f02a3904d0662731e0dc7bbb7cbbb026dfefdd71 (was c219d2f391c37edd700d5204f31b50286f280d82) RESTACK https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/722#issuecomment-6005202626
+#723 8c9943673cd2129732fde9b59aef2c19389d4b6c (was e3368cc3cbb0961326ddf147728f7fc32d884188) RESTACK https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/723#issuecomment-6005203117
+Conflict hunks: #721 1 (schema.prisma EOF models), #722 4 (feature-flags coachless_home + messaging_core_v2), #723 0
+
+tree_check:
+== #721
+$ tree_check.sh growth-project-backend d90b484278f432e6e73e41326dc31cadc8892999 538a0ba4baacefcea5208c0a8a11e87a1a09fb86
+FAIL 2: .github/workflows/ci.yml changed (876240b3b80f6487513dd3705ae9f38c57294c97 -> 869cba7bba107bafb1084e3ca623168842f7b5d5)
+FAIL 2: prisma/schema.prisma changed (bf084eb1d4589425fbe632d1116ac3833293cd84 -> e6f0e67f8640da06d3d9990416631e476f5d2126)
+FAIL 2: src/account-deletion/account-deletion.manifest.ts changed (68bfc1209c5a7f8323bd22008c435d4f9ac724dc -> a5bf0fd3271d799a17f271eb8b13ad372bc57764)
+exit 1
+== #722
+$ tree_check.sh growth-project-backend c219d2f391c37edd700d5204f31b50286f280d82 f02a3904d0662731e0dc7bbb7cbbb026dfefdd71
+FAIL 1: parents are not <approved> + a main commit
+exit 1
+== #723
+$ tree_check.sh growth-project-backend e3368cc3cbb0961326ddf147728f7fc32d884188 8c9943673cd2129732fde9b59aef2c19389d4b6c
+FAIL 1: parents are not <approved> + a main commit
+exit 1
+
+All three READY FOR AUDIT (delta: conflict hunks only). CI 16:25 PDT: all green at the three new heads (#721 all 11 required incl. rls-live-tests and danger after retitle to feat(coachless): ...). Report: ops/reports/B-CL2-122.md

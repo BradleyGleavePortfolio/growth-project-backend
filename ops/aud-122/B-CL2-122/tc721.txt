@@ -1,0 +1,5 @@
+$ tree_check.sh growth-project-backend d90b484278f432e6e73e41326dc31cadc8892999 538a0ba4baacefcea5208c0a8a11e87a1a09fb86
+FAIL 2: .github/workflows/ci.yml changed (876240b3b80f6487513dd3705ae9f38c57294c97 -> 869cba7bba107bafb1084e3ca623168842f7b5d5)
+FAIL 2: prisma/schema.prisma changed (bf084eb1d4589425fbe632d1116ac3833293cd84 -> e6f0e67f8640da06d3d9990416631e476f5d2126)
+FAIL 2: src/account-deletion/account-deletion.manifest.ts changed (68bfc1209c5a7f8323bd22008c435d4f9ac724dc -> a5bf0fd3271d799a17f271eb8b13ad372bc57764)
+exit 1

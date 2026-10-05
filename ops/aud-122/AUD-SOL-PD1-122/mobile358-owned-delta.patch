@@ -1,0 +1,420 @@
+diff --git a/src/screens/coach/programs/ProgramHistoryScreen.tsx b/src/screens/coach/programs/ProgramHistoryScreen.tsx
+index 7a5262e..4b121ad 100644
+--- a/src/screens/coach/programs/ProgramHistoryScreen.tsx
++++ b/src/screens/coach/programs/ProgramHistoryScreen.tsx
+@@ -1,9 +1,10 @@
+ /**
+  * S-MWB — revision history of a program (every structural change is a
+  * revision) and the clients currently on it, with "Remove from program"
+- * (deletes the client's not-started workouts; finished ones stay in history).
++ * (deletes the client's not-started workouts across every run of the program,
++ * package copies included; started and finished ones stay in history).
+  */
+-import React, { useEffect, useState } from "react";
++import React, { useEffect, useMemo, useState } from "react";
+ import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+ import { useTheme } from "../../../theme/ThemeProvider";
+ import { programsApi, ProgramAssignee } from "../../../api/programsApi";
+@@ -42,23 +43,54 @@ export default function ProgramHistoryScreen({
+   const invalidate = useInvalidatePrograms();
+   const revisions = useProgramRevisions(programId);
+   const assignees = useProgramAssignees(programId);
+-  const assigneeItems = (assignees.data?.pages ?? []).flatMap((p) => p.items);
++  const assigneeItems = useMemo(
++    () => (assignees.data?.pages ?? []).flatMap((p) => p.items),
++    [assignees.data],
++  );
+   const [busy, setBusy] = useState<string | null>(null);
+   const [failure, setFailure] = useState<ProgramFailure | null>(null);
++  const [done, setDone] = useState<string | null>(null);
+ 
+   useEffect(() => {
+     navigation.setOptions({ title: "History and clients" });
+   }, [navigation]);
+ 
+-  const unassign = (a: ProgramAssignee) => {
+-    const remaining = a.workouts - a.completed;
++  // One row per client: the server's remove applies to every run (copy) of
++  // this program the client is on, including copies a package delivered, so
++  // the confirmation and the button are per client, never per run (B-358-2).
++  const clients = useMemo(() => {
++    const byClient = new Map<string, ProgramAssignee[]>();
++    for (const a of assigneeItems) {
++      const runs = byClient.get(a.client_id) ?? [];
++      runs.push(a);
++      byClient.set(a.client_id, runs);
++    }
++    return Array.from(byClient.values());
++  }, [assigneeItems]);
++  // Another page can hold more runs of the same client, so sums are only a
++  // ceiling once every page is loaded; otherwise no count is promised.
++  const allLoaded = !assignees.hasNextPage;
++
++  const unassign = (runs: ProgramAssignee[]) => {
++    const a = runs[0];
++    const notFinished = runs.reduce((n, r) => n + r.workouts - r.completed, 0);
++    const finished = runs.reduce((n, r) => n + r.completed, 0);
++    const scope =
++      runs.length > 1
++        ? `${a.client_name} is on ${plural(runs.length, "run", "runs")} of this program. `
++        : "";
++    const counts = !allLoaded
++      ? " Finished workouts, and any workout already started, stay in their history."
++      : notFinished === 0
++        ? " No upcoming workouts are left to remove; finished workouts stay in their history."
++        : ` Up to ${plural(notFinished, "upcoming workout is", "upcoming workouts are")} removed. ${plural(
++            finished,
++            "finished workout stays",
++            "finished workouts stay",
++          )} in their history, and so does any workout already started.`;
+     Alert.alert(
+       `Remove ${a.client_name} from this program?`,
+-      `${plural(remaining, "upcoming workout is", "upcoming workouts are")} removed from their plan. ${plural(
+-        a.completed,
+-        "finished workout stays",
+-        "finished workouts stay",
+-      )} in their history.`,
++      `${scope}Every run of this program on their plan, including copies delivered by a package, loses the workouts not yet started.${counts} This cannot be undone.`,
+       [
+         { text: "Keep", style: "cancel" },
+         {
+@@ -67,18 +99,31 @@ export default function ProgramHistoryScreen({
+           onPress: async () => {
+             setBusy(a.client_id);
+             setFailure(null);
++            setDone(null);
+             try {
+-              await programsApi.unassign(
++              const res = await programsApi.unassign(
+                 programId,
+                 a.client_id,
+                 generateIdempotencyKey(),
+               );
++              setDone(
++                `${a.client_name} is off this program: ${plural(
++                  res.removed_workouts,
++                  "upcoming workout was",
++                  "upcoming workouts were",
++                )} removed and ${plural(
++                  res.kept_workouts,
++                  "workout stays",
++                  "workouts stay",
++                )} in their history.`,
++              );
+               await invalidate();
+             } catch (err) {
++              // Telemetry gets this action text: never a client name (B-358-3).
+               setFailure(
+                 describeProgramFailure(
+                   err,
+-                  `remove ${a.client_name} from the program`,
++                  "remove this client from the program",
+                 ),
+               );
+               await invalidate();
+@@ -98,6 +143,14 @@ export default function ProgramHistoryScreen({
+     >
+       <SectionTitle>Clients on this program</SectionTitle>
+       {failure ? <FailureBox failure={failure} /> : null}
++      {done ? (
++        <Text
++          accessibilityLiveRegion="polite"
++          style={[styles.muted, { color: colors.textPrimary }]}
++        >
++          {done}
++        </Text>
++      ) : null}
+       {assignees.isLoading ? (
+         <LoadingRow label="Loading clients" />
+       ) : assignees.error && assigneeItems.length === 0 ? (
+@@ -113,33 +166,41 @@ export default function ProgramHistoryScreen({
+           No clients are on this program yet.
+         </Text>
+       ) : (
+-        assigneeItems.map((a) => (
+-          <View
+-            key={`${a.client_id}:${a.copy_program_id}`}
+-            style={[
+-              styles.row,
+-              { backgroundColor: colors.surface, borderColor: colors.border },
+-            ]}
+-          >
+-            <View style={{ flex: 1, gap: 2 }}>
+-              <Text style={[styles.title, { color: colors.textPrimary }]}>
+-                {a.client_name}
+-              </Text>
+-              <Text style={[styles.muted, { color: colors.textSecondary }]}>
+-                {a.start_date.slice(0, 10)} to {a.end_date.slice(0, 10)} ·{" "}
+-                {a.completed} of {plural(a.workouts, "workout", "workouts")}{" "}
+-                done
+-              </Text>
++        clients.map((runs) => {
++          const a = runs[0];
++          return (
++            <View
++              key={a.client_id}
++              style={[
++                styles.row,
++                { backgroundColor: colors.surface, borderColor: colors.border },
++              ]}
++            >
++              <View style={{ flex: 1, gap: 2 }}>
++                <Text style={[styles.title, { color: colors.textPrimary }]}>
++                  {a.client_name}
++                </Text>
++                {runs.map((r) => (
++                  <Text
++                    key={r.copy_program_id}
++                    style={[styles.muted, { color: colors.textSecondary }]}
++                  >
++                    {r.start_date.slice(0, 10)} to {r.end_date.slice(0, 10)} ·{" "}
++                    {r.completed} of {plural(r.workouts, "workout", "workouts")}{" "}
++                    done
++                  </Text>
++                ))}
++              </View>
++              <SmallButton
++                tone="danger"
++                label={busy === a.client_id ? "Removing" : "Remove"}
++                disabled={!!busy}
++                onPress={() => unassign(runs)}
++                accessibilityHint={`Removes ${a.client_name}'s workouts not yet started from every run of this program`}
++              />
+             </View>
+-            <SmallButton
+-              tone="danger"
+-              label={busy === a.client_id ? "Removing" : "Remove"}
+-              disabled={!!busy}
+-              onPress={() => unassign(a)}
+-              accessibilityHint={`Removes ${a.client_name}'s upcoming workouts from this program`}
+-            />
+-          </View>
+-        ))
++          );
++        })
+       )}
+ 
+       {assignees.hasNextPage ? (
+diff --git a/src/screens/coach/programs/ProgramPackagesScreen.tsx b/src/screens/coach/programs/ProgramPackagesScreen.tsx
+index 0baabd0..5f0c34c 100644
+--- a/src/screens/coach/programs/ProgramPackagesScreen.tsx
++++ b/src/screens/coach/programs/ProgramPackagesScreen.tsx
+@@ -87,7 +87,8 @@ export default function ProgramPackagesScreen({
+         `${pkg.title} now delivers ${program.data.name}. New clients get it from their join date. Clients already in the package do not get it automatically; send it to them from Settings, Packages, then this package's contents.`,
+       );
+     } catch (err) {
+-      const f = describeProgramFailure(err, `add the program to ${pkg.title}`);
++      // Telemetry gets this action text: never a coach-entered title (B-358-3).
++      const f = describeProgramFailure(err, "add the program to this package");
+       if (!f.reference) keys.current.delete(pkg.id);
+       setFailure({
+         f,
+diff --git a/src/screens/coach/programs/__tests__/programHistoryRemove.test.tsx b/src/screens/coach/programs/__tests__/programHistoryRemove.test.tsx
+new file mode 100644
+index 0000000..4fd8ac8
+--- /dev/null
++++ b/src/screens/coach/programs/__tests__/programHistoryRemove.test.tsx
+@@ -0,0 +1,203 @@
++/**
++ * Programs fix round (B-358-2 / B-358-3) — "Remove from program" acts on
++ * every run of the program a client is on, so the screen offers one Remove
++ * per client and the confirmation states that scope; failure telemetry never
++ * carries a client name or a package title.
++ */
++import React from "react";
++import { Alert } from "react-native";
++import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
++
++const mockNavigation = { navigate: jest.fn(), setOptions: jest.fn() };
++const mockAssignees = jest.fn();
++const mockUnassign = jest.fn();
++const mockAttach = jest.fn();
++const mockCapture = jest.fn();
++
++jest.mock("@react-navigation/native", () => ({
++  useNavigation: () => mockNavigation,
++}));
++jest.mock("@expo/vector-icons", () => ({ Ionicons: () => null }));
++jest.mock("../../../../theme/ThemeProvider", () => ({
++  useTheme: () => ({ colors: new Proxy({}, { get: () => "#123456" }) }),
++}));
++jest.mock("@tanstack/react-query", () => ({
++  useQuery: () => ({
++    data: [
++      {
++        id: "pkg1",
++        title: "Private Package Title",
++        priceCents: 0,
++        currency: "usd",
++        status: "active",
++        subscriberCount: 3,
++        archivedAt: null,
++      },
++    ],
++    isLoading: false,
++    error: null,
++    refetch: jest.fn(),
++  }),
++}));
++jest.mock("../../../../services/sentry", () => ({
++  captureError: (...a: unknown[]) => mockCapture(...a),
++}));
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: {},
++  coachApi: {},
++}));
++jest.mock("../../../../hooks/usePrograms", () => ({
++  useProgram: () => ({
++    data: { id: "p1", name: "Master", packages: [] },
++    isLoading: false,
++    error: null,
++  }),
++  useProgramRevisions: () => ({ data: { items: [] }, isLoading: false }),
++  useProgramAssignees: (...a: unknown[]) => mockAssignees(...a),
++  useInvalidatePrograms: () => async () => undefined,
++}));
++jest.mock("../../../../api/programsApi", () => ({
++  ...jest.requireActual("../../../../api/programsApi"),
++  programsApi: { unassign: (...a: unknown[]) => mockUnassign(...a) },
++}));
++jest.mock("../../../../api/packagesApi", () => ({ coachPackagesApi: {} }));
++jest.mock("../../../../api/packageContentsApi", () => ({
++  coachPackageContentsApi: {
++    attach: (...a: unknown[]) => mockAttach(...a),
++  },
++}));
++
++import ProgramHistoryScreen from "../ProgramHistoryScreen";
++import ProgramPackagesScreen from "../ProgramPackagesScreen";
++
++function fake<T>(v: unknown): T {
++  return v as T;
++}
++const props = <T,>() =>
++  fake<T>({
++    route: { params: { programId: "p1" } },
++    navigation: mockNavigation,
++  });
++
++const run1 = {
++  client_id: "c1",
++  client_name: "Synthetic Person",
++  copy_program_id: "run1",
++  start_date: "2026-09-07",
++  end_date: "2026-10-02",
++  workouts: 12,
++  completed: 10,
++};
++const run2 = {
++  ...run1,
++  copy_program_id: "run2",
++  start_date: "2026-11-02",
++  end_date: "2026-11-27",
++  workouts: 5,
++  completed: 0,
++};
++
++function assigneesReturn(items: unknown[], hasNextPage = false) {
++  return {
++    data: { pages: [{ items, next_cursor: hasNextPage ? "n" : null }] },
++    isLoading: false,
++    error: null,
++    hasNextPage,
++    isFetchingNextPage: false,
++    refetch: jest.fn(),
++    fetchNextPage: jest.fn(),
++  };
++}
++
++async function confirmRemove() {
++  const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
++  const screen = await render(
++    <ProgramHistoryScreen
++      {...props<Parameters<typeof ProgramHistoryScreen>[0]>()}
++    />,
++  );
++  const removes = screen.getAllByLabelText("Remove");
++  await fireEvent.press(removes[0]);
++  return { screen, removes, alert };
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  jest.restoreAllMocks();
++  mockAssignees.mockReturnValue(assigneesReturn([run2, run1]));
++  mockUnassign.mockResolvedValue({ removed_workouts: 7, kept_workouts: 10 });
++});
++
++describe("ProgramHistoryScreen Remove scope (B-358-2)", () => {
++  it("a client on two runs gets one Remove whose confirmation covers every run", async () => {
++    const { removes, alert } = await confirmRemove();
++    expect(removes).toHaveLength(1);
++    const message = String(alert.mock.calls[0][1]);
++    expect(message).toContain("is on 2 runs of this program");
++    expect(message).toContain(
++      "Every run of this program on their plan, including copies delivered by a package",
++    );
++    // 2 + 5 not finished across both runs; started ones stay, so "up to".
++    expect(message).toContain("Up to 7 upcoming workouts are removed");
++    expect(message).toContain("10 finished workouts stay");
++    expect(message).toContain("any workout already started");
++  });
++
++  it("with more clients still to load, no count is promised", async () => {
++    mockAssignees.mockReturnValue(assigneesReturn([run2, run1], true));
++    const { alert } = await confirmRemove();
++    const message = String(alert.mock.calls[0][1]);
++    expect(message).toContain("Every run of this program");
++    expect(message).not.toMatch(/\d+ upcoming/);
++  });
++
++  it("after removal the server's own totals are shown", async () => {
++    const { screen, alert } = await confirmRemove();
++    const remove = alert.mock.calls[0][2]!.find((b) => b.text === "Remove")!;
++    await act(async () => {
++      await remove.onPress!();
++    });
++    expect(mockUnassign).toHaveBeenCalledWith("p1", "c1", expect.any(String));
++    expect(
++      screen.getByText(
++        "Synthetic Person is off this program: 7 upcoming workouts were removed and 10 workouts stay in their history.",
++      ),
++    ).toBeTruthy();
++  });
++});
++
++describe("Programs failure telemetry carries no names (B-358-3)", () => {
++  it("a failed removal sends no client name to telemetry", async () => {
++    mockUnassign.mockRejectedValueOnce(new Error("Network Error"));
++    const { alert } = await confirmRemove();
++    const remove = alert.mock.calls[0][2]!.find((b) => b.text === "Remove")!;
++    await act(async () => {
++      await remove.onPress!();
++    });
++    await waitFor(() => expect(mockCapture).toHaveBeenCalled());
++    expect(JSON.stringify(mockCapture.mock.calls)).not.toContain(
++      "Synthetic Person",
++    );
++  });
++
++  it("a failed package attach sends no package title to telemetry", async () => {
++    mockAttach.mockRejectedValueOnce(new Error("Network Error"));
++    const screen = await render(
++      <ProgramPackagesScreen
++        {...props<Parameters<typeof ProgramPackagesScreen>[0]>()}
++      />,
++    );
++    await act(async () => {
++      await fireEvent.press(
++        screen.getByLabelText(
++          "Private Package Title, Free ($0), active, 3 clients",
++        ),
++      );
++    });
++    await waitFor(() => expect(mockCapture).toHaveBeenCalled());
++    expect(JSON.stringify(mockCapture.mock.calls)).not.toContain(
++      "Private Package Title",
++    );
++  });
++});

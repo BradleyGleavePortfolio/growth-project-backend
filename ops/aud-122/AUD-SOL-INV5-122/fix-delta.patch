@@ -1,0 +1,79 @@
+diff --git a/src/invite-codes/README.md b/src/invite-codes/README.md
+index 698fe242..d60dddad 100644
+--- a/src/invite-codes/README.md
++++ b/src/invite-codes/README.md
+@@ -144,7 +144,8 @@ flag is off. `:id` is an `InviteCode` id or the literal `coach-link`.
+ Team Mode (`resolveTeamAttribution`, as the legacy create): an active team
+ sub-coach's codes are stored under the head coach with `invited_by_user_id` =
+ the sub-coach. A sub-coach lists, rotates, revokes and counts only their own
+-codes and has no coach link (`403 coach_link_head_coach_only`); the head coach
++codes, has no coach link (`403 coach_link_head_coach_only`) and cannot put a
++package on a code (`403 code_package_head_coach_only`, nothing written); the head coach
+ sees and manages every team code (`issued_by_user_id` in each view).
+ 
+ Every create / rotate / revoke writes an audit row (`invite_code.created`,
+diff --git a/src/invite-codes/coach-code-tools.service.ts b/src/invite-codes/coach-code-tools.service.ts
+index e38b9be6..aa66774b 100644
+--- a/src/invite-codes/coach-code-tools.service.ts
++++ b/src/invite-codes/coach-code-tools.service.ts
+@@ -252,6 +252,15 @@ export class CoachCodeToolsService {
+       });
+     }
+     const scope = await this.scopeOf(actor.id);
++    // B-658-9: packages belong to the head coach (as legacy setBinding and
++    // NoActiveSubCoachGuard), so a sub-coach never binds one to a code.
++    if (scope.issuerId && (input.package_id || input.grant_mode)) {
++      throw new ForbiddenException({
++        code: 'code_package_head_coach_only',
++        message:
++          'Packages on codes are set by your head coach. Create this code without a package, or ask your head coach to add one.',
++      });
++    }
+     // Keys are per issuer, so a team member's key never replays another member's code.
+     const key = clean ? `${actor.id}:${clean}` : null;
+     const replay = async () =>
+diff --git a/test/coach-code-tools.service.spec.ts b/test/coach-code-tools.service.spec.ts
+index 7fb7c8ab..282c23ca 100644
+--- a/test/coach-code-tools.service.spec.ts
++++ b/test/coach-code-tools.service.spec.ts
+@@ -605,11 +605,12 @@ describe('fix round 1 (agent 120): team attribution, atomic binding, coach link
+ 
+   it('B-658-1: a sub-coach code lives in the head tenant, scoped to its issuer', async () => {
+     const t = team();
+-    const { code } = await t.tools.create(sub1, { package_id: 'pkg-1', grant_mode: 'free' }, null);
++    const { code } = await t.tools.create(sub1, { label: 'Front desk' }, null);
+     expect(t.codes[0]).toMatchObject({
+       coach_id: 'coach-a',
+       invited_by_user_id: 'sub-1',
+-      package_id: 'pkg-1', // the head coach's package
++      package_id: null, // B-658-9: packages stay with the head coach
++      grant_mode: 'none',
+     });
+     expect(code.issued_by_user_id).toBe('sub-1');
+     expect(t.teamAudit).toEqual([
+@@ -638,6 +639,25 @@ describe('fix round 1 (agent 120): team attribution, atomic binding, coach link
+     });
+   });
+ 
++  it('B-658-9 (Opus P1): a sub-coach cannot bind the head coach package to a code', async () => {
++    const t = team();
++    for (const input of [
++      { package_id: 'pkg-1', grant_mode: 'free' as const },
++      { package_id: 'pkg-1', grant_mode: 'prepaid' as const },
++      { package_id: 'pkg-1' },
++      { grant_mode: 'free' as const },
++    ])
++      expect(await errCode(t.tools.create(sub1, input, 'sub-bind-key-01'))).toEqual({
++        status: 403,
++        code: 'code_package_head_coach_only',
++      });
++    expect(t.codes).toHaveLength(0);
++    expect(t.teamAudit).toEqual([]);
++    // The head coach still binds the same package.
++    const ok = await t.tools.create(coachA, { package_id: 'pkg-1', grant_mode: 'free' }, null);
++    expect(ok.code).toMatchObject({ package: { id: 'pkg-1' }, grant_mode: 'free' });
++  });
++
+   const gated = () => {
+     let release: (ok: boolean) => void = () => undefined;
+     const gate = new Promise<boolean>((r) => (release = r));

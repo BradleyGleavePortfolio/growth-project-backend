@@ -1,0 +1,571 @@
+diff --git a/src/filters/error-details.ts b/src/filters/error-details.ts
+index 3d6e273e..b76108c9 100644
+--- a/src/filters/error-details.ts
++++ b/src/filters/error-details.ts
+@@ -10,6 +10,8 @@
+ // exception body (Stripe codes, ids, internals) is dropped exactly as before.
+ // Envelope keys can never be overridden by a detail.
+ 
++import { LOCK_TOKEN_RE, type MwbHeadConflictCode } from '../workout-builder/workout-builder-autosave.dto';
++
+ type DetailCheck = (value: unknown) => boolean;
+ 
+ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+@@ -26,6 +28,24 @@ const oneOf =
+   (...allowed: string[]): DetailCheck =>
+   (v) =>
+     typeof v === 'string' && allowed.includes(v);
++const revisionIndex: DetailCheck = (v) =>
++  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
++const lockToken: DetailCheck = (v) => typeof v === 'string' && LOCK_TOKEN_RE.test(v);
++
++// B-MWB409 — a workout-builder head conflict carries the plan's current head
++// index and the fresh optimistic-lock token for it, both already returned to
++// the same authorised coach on a 200, so the app rebases without a refetch.
++const MWB_HEAD_CONFLICT: Readonly<Record<string, DetailCheck>> = {
++  head_revision_index: revisionIndex,
++  lock_token: lockToken,
++};
++const MWB_HEAD_CONFLICT_DETAILS: Readonly<
++  Record<MwbHeadConflictCode, Readonly<Record<string, DetailCheck>>>
++> = {
++  autosave_lock_stale: MWB_HEAD_CONFLICT,
++  autosave_conflict_retry: MWB_HEAD_CONFLICT,
++  undo_head_moved: MWB_HEAD_CONFLICT,
++};
+ 
+ /** code -> field name -> shape check. Extend only with client-safe facts. */
+ export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<string, DetailCheck>>>> =
+@@ -55,6 +75,7 @@ export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<str
+     PACKAGE_COACH_NOT_CONNECTED: {
+       reason: oneOf('no_coach', 'other_coach'),
+     },
++    ...MWB_HEAD_CONFLICT_DETAILS,
+   };
+ 
+ const ENVELOPE_KEYS = new Set([
+diff --git a/src/workout-builder/workout-builder-autosave.controller.ts b/src/workout-builder/workout-builder-autosave.controller.ts
+index 49ca23a4..9a48814d 100644
+--- a/src/workout-builder/workout-builder-autosave.controller.ts
++++ b/src/workout-builder/workout-builder-autosave.controller.ts
+@@ -75,7 +75,9 @@ export class WorkoutBuilderAutosaveController {
+     status: 409,
+     description:
+       'autosave_lock_stale (stale lock_token) or autosave_conflict_retry ' +
+-      '(stale base_revision_index / serialization conflict).',
++      '(stale base_revision_index / serialization conflict). Both carry code, ' +
++      'the current head_revision_index and a fresh lock_token, except a ' +
++      'serialization conflict (plain message, no head to report).',
+   })
+   autosaveBatch(
+     @Req() req: AuthedRequest,
+diff --git a/src/workout-builder/workout-builder-autosave.dto.ts b/src/workout-builder/workout-builder-autosave.dto.ts
+index 18c2af87..9c6e52c7 100644
+--- a/src/workout-builder/workout-builder-autosave.dto.ts
++++ b/src/workout-builder/workout-builder-autosave.dto.ts
+@@ -180,19 +180,46 @@ export interface UndoResponseDto {
+   lock_token: string;
+ }
+ 
++/**
++ * B-MWB409 — the three 409 codes whose body carries the current head index and
++ * a fresh lock token. HttpExceptionFilter passes exactly these two fields to the
++ * client for exactly these codes (src/filters/error-details.ts), keyed on the
++ * exception's `code`, so every one of these bodies sets `code` (= `error`).
++ */
++export type MwbHeadConflictCode =
++  | 'autosave_lock_stale'
++  | 'autosave_conflict_retry'
++  | 'undo_head_moved';
++
++/** 409 body of a head conflict: the client adopts the head and token, then retries. */
++export interface MwbHeadConflictDto {
++  code: MwbHeadConflictCode;
++  error: MwbHeadConflictCode;
++  message?: string;
++  head_revision_index: number;
++  lock_token: string;
++}
++
+ /**
+  * 409 conflict body for an autosave optimistic-concurrency failure (spec §6.2).
+  * Two discriminated causes share this shape:
+  *   - `autosave_lock_stale`     — the client's `lock_token` does not match the
+  *     deterministic token derived from the plan's persisted (version,
+  *     head_revision_id) state (a stale optimistic lock).
+- *   - `autosave_conflict_retry` — a stale `base_revision_index` (or a Postgres
+- *     serialization conflict coerced to this code).
++ *   - `autosave_conflict_retry` — a stale `base_revision_index`.
+  * Both carry the current head index + a freshly-derived lock_token so the client
+  * can rebase and retry. The lock_token wire shape is unchanged (16 hex chars).
++ * A Postgres serialization conflict is a plain 409 `autosave_conflict_retry`
++ * message with neither field (there is no committed head to report).
+  */
+-export interface AutosaveConflictDto {
++export interface AutosaveConflictDto extends MwbHeadConflictDto {
++  code: 'autosave_conflict_retry' | 'autosave_lock_stale';
+   error: 'autosave_conflict_retry' | 'autosave_lock_stale';
+-  head_revision_index: number;
+-  lock_token: string;
++}
++
++/** 409 body of a fenced undo whose `expected_head_index` is no longer the head. */
++export interface UndoHeadMovedDto extends MwbHeadConflictDto {
++  code: 'undo_head_moved';
++  error: 'undo_head_moved';
++  message: string;
+ }
+diff --git a/src/workout-builder/workout-builder-autosave.service.ts b/src/workout-builder/workout-builder-autosave.service.ts
+index bf75e449..76e47c9a 100644
+--- a/src/workout-builder/workout-builder-autosave.service.ts
++++ b/src/workout-builder/workout-builder-autosave.service.ts
+@@ -54,8 +54,10 @@ import {
+   AutosaveBatchInput,
+   AutosaveBatchSchema,
+   AutosaveCause,
++  AutosaveConflictDto,
+   AutosaveOpInput,
+   AutosaveResponseDto,
++  UndoHeadMovedDto,
+   UndoRequestInput,
+   UndoRequestSchema,
+   UndoResponseDto,
+@@ -205,22 +207,28 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
+             locked.version,
+             locked.headRevisionId,
+           );
++          // B-MWB409: `code` keys the filter's allowlist, so the head index and
++          // token reach the HTTP body (src/filters/error-details.ts).
+           if (body.lock_token !== expectedToken) {
+-            throw new ConflictException({
++            const conflict: AutosaveConflictDto = {
++              code: 'autosave_lock_stale',
+               error: 'autosave_lock_stale',
+               head_revision_index: locked.headIndex,
+               lock_token: expectedToken,
+-            });
++            };
++            throw new ConflictException(conflict);
+           }
+ 
+           // (c.2) Base-index assert (kept). A stale base index => 409 with the
+           // current head index + a fresh lock_token so the client rebases.
+           if (body.base_revision_index !== locked.headIndex) {
+-            throw new ConflictException({
++            const conflict: AutosaveConflictDto = {
++              code: 'autosave_conflict_retry',
+               error: 'autosave_conflict_retry',
+               head_revision_index: locked.headIndex,
+               lock_token: expectedToken,
+-            });
++            };
++            throw new ConflictException(conflict);
+           }
+ 
+           // (d) Apply ops to the in-memory snapshot, then persist row mutations
+@@ -313,7 +321,7 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
+             body.expected_head_index !== undefined &&
+             body.expected_head_index !== locked.headIndex
+           ) {
+-            throw new ConflictException({
++            const conflict: UndoHeadMovedDto = {
+               error: 'undo_head_moved',
+               code: 'undo_head_moved',
+               message:
+@@ -324,7 +332,8 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
+                 locked.version,
+                 locked.headRevisionId,
+               ),
+-            });
++            };
++            throw new ConflictException(conflict);
+           }
+ 
+           // (a) The target must be strictly earlier than the current head — you
+diff --git a/test/mwb-head-conflict-409-http.spec.ts b/test/mwb-head-conflict-409-http.spec.ts
+new file mode 100644
+index 00000000..1383d229
+--- /dev/null
++++ b/test/mwb-head-conflict-409-http.spec.ts
+@@ -0,0 +1,381 @@
++/**
++ * B-MWB409 — the workout-builder autosave and undo 409 answers over real HTTP:
++ * the real WorkoutBuilderAutosaveController, the real
++ * WorkoutBuilderAutosaveService on an in-memory Prisma double, the real
++ * feature guard and RolesGuard, and the real global HttpExceptionFilter.
++ *
++ * Before this fix the filter sent only the fixed envelope, so the app never
++ * received the head index and fresh lock token of `autosave_lock_stale` (the
++ * first save of every editing session), `autosave_conflict_retry` or
++ * `undo_head_moved`. Autosave never completed and Undo reported "nothing was
++ * undone" even when it had worked. Those two fields now pass for exactly these
++ * three codes, with a checked shape; every other field and every other error
++ * is still reduced to the envelope.
++ */
++import 'reflect-metadata';
++import * as http from 'node:http';
++import type { AddressInfo } from 'node:net';
++import {
++  type CanActivate,
++  ConflictException,
++  Controller,
++  type ExecutionContext,
++  type INestApplication,
++  InternalServerErrorException,
++  NotFoundException,
++  Param,
++  Post,
++  UnauthorizedException,
++  ValidationPipe,
++} from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import { Prisma } from '@prisma/client';
++import { JwtAuthGuard } from '../src/auth/auth.guard';
++import { AnalyticsService } from '../src/analytics/analytics.service';
++import { HttpExceptionFilter } from '../src/filters/http-exception.filter';
++import { WorkoutBuilderAutosaveController } from '../src/workout-builder/workout-builder-autosave.controller';
++import { WorkoutBuilderAutosaveService } from '../src/workout-builder/workout-builder-autosave.service';
++import {
++  MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV,
++  computeLockToken,
++} from '../src/workout-builder/lock-token.helper';
++
++function fake<T>(value: unknown): T {
++  return value as T;
++}
++
++const PLAN_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
++const COACH_ID = 'coach-mwb409-1';
++const H_USER = 'x-test-user';
++const HEAD = 5;
++const VERSION = 7;
++const HEAD_REV = 'head-rev';
++/** What the app sends before it knows the token (mobile #355 bootstrap). */
++const PLACEHOLDER_TOKEN = '0000000000000000';
++const ENVELOPE = ['code', 'error', 'message', 'path', 'statusCode', 'timestamp'];
++
++class HeaderAuthGuard implements CanActivate {
++  canActivate(ctx: ExecutionContext): boolean {
++    const req = ctx.switchToHttp().getRequest();
++    const id = req.headers[H_USER];
++    if (typeof id !== 'string' || !id) throw new UnauthorizedException();
++    req.user = { id, role: 'coach' };
++    return true;
++  }
++}
++
++/**
++ * Exceptions shaped like the head conflicts but NOT allowed through: another
++ * code, the pre-fix body without `code`, the right code with wrong shapes and
++ * internal fields, and a 5xx.
++ */
++const GOOD_TOKEN = 'abcdef0123456789';
++function crafted(kind: string): Error {
++  switch (kind) {
++    case 'other_code':
++      return new ConflictException({
++        code: 'program_name_taken',
++        error: 'program_name_taken',
++        head_revision_index: 5,
++        lock_token: GOOD_TOKEN,
++      });
++    case 'no_code':
++      return new ConflictException({
++        error: 'autosave_lock_stale',
++        head_revision_index: 5,
++        lock_token: GOOD_TOKEN,
++      });
++    case 'bad_shapes':
++      return new ConflictException({
++        code: 'undo_head_moved',
++        error: 'undo_head_moved',
++        head_revision_index: -1,
++        lock_token: 'ABCDEF0123456789',
++        plan_id: PLAN_ID,
++        version: 7,
++        head_revision_id: HEAD_REV,
++        statusCode: 200,
++      });
++    case 'bad_index_type':
++      return new ConflictException({
++        code: 'autosave_conflict_retry',
++        error: 'autosave_conflict_retry',
++        head_revision_index: '5',
++        lock_token: `${GOOD_TOKEN}00`,
++      });
++    case 'server_error':
++      return new InternalServerErrorException({
++        code: 'autosave_lock_stale',
++        error: 'autosave_lock_stale',
++        head_revision_index: 5,
++        lock_token: GOOD_TOKEN,
++      });
++    default:
++      return new NotFoundException();
++  }
++}
++
++@Controller('mwb409-crafted')
++class CraftedErrorController {
++  @Post(':kind')
++  raise(@Param('kind') kind: string): never {
++    throw crafted(kind);
++  }
++}
++
++interface HttpResult {
++  status: number;
++  body: Record<string, unknown>;
++}
++
++describe('B-MWB409: autosave/undo 409 bodies through the real filter over HTTP', () => {
++  const ORIGINAL_SECRET = process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV];
++  const ORIGINAL_FLAG = process.env.FEATURE_MWB_AUTOSAVE_UNDO;
++  let app: INestApplication;
++  let baseUrl: string;
++
++  function makeDoubles(opts: { transactionError?: Error } = {}) {
++    const plan = {
++      name: 'Day 1',
++      type: 'strength',
++      duration_estimate_minutes: null,
++      week_index: 0,
++      day_index: 0,
++    };
++    const tx = {
++      $queryRaw: jest.fn(async () => [{ head_revision_id: HEAD_REV, version: VERSION }]),
++      workoutPlanRevision: {
++        findUnique: jest.fn(async (args: { where: { id?: string } }) =>
++          args.where.id
++            ? { revision_index: HEAD }
++            : { exercises_json: [], plan_meta_json: { name: 'Day 1', type: 'strength' } },
++        ),
++        create: jest.fn(async () => ({
++          id: 'rev-new',
++          created_at: new Date('2026-10-05T12:00:00.000Z'),
++        })),
++      },
++      workoutPlan: {
++        update: jest.fn(async () => plan),
++        findUniqueOrThrow: jest.fn(async () => plan),
++      },
++      workoutPlanExercise: {
++        updateMany: jest.fn(async () => ({ count: 0 })),
++        createMany: jest.fn(async () => ({ count: 0 })),
++        findMany: jest.fn(async () => []),
++        deleteMany: jest.fn(async () => ({ count: 0 })),
++      },
++    };
++    const prisma = {
++      user: { findUnique: jest.fn(async () => ({ coach_id: null })) },
++      workoutPlan: { findUnique: jest.fn(async () => ({ coach_id: COACH_ID, program_id: null })) },
++      $transaction: jest.fn(async (cb: (t: typeof tx) => unknown) => {
++        if (opts.transactionError) throw opts.transactionError;
++        return cb(tx);
++      }),
++    };
++    return { tx, prisma };
++  }
++
++  async function boot(opts: { transactionError?: Error } = {}) {
++    const { tx, prisma } = makeDoubles(opts);
++    const service = new WorkoutBuilderAutosaveService(
++      fake(prisma),
++      fake(undefined),
++      new AnalyticsService(),
++      fake(undefined),
++    );
++    const moduleRef = await Test.createTestingModule({
++      controllers: [WorkoutBuilderAutosaveController, CraftedErrorController],
++      providers: [{ provide: WorkoutBuilderAutosaveService, useValue: service }],
++    })
++      .overrideGuard(JwtAuthGuard)
++      .useClass(HeaderAuthGuard)
++      .compile();
++    app = moduleRef.createNestApplication({ logger: false });
++    app.useGlobalPipes(
++      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
++    );
++    app.useGlobalFilters(new HttpExceptionFilter());
++    await app.listen(0, '127.0.0.1');
++    const addr = fake<AddressInfo>(app.getHttpServer().address());
++    baseUrl = `http://127.0.0.1:${addr.port}`;
++    return { tx };
++  }
++
++  function call(method: 'PATCH' | 'POST', path: string, body: unknown): Promise<HttpResult> {
++    return new Promise((resolve, reject) => {
++      const payload = JSON.stringify(body);
++      const req = http.request(
++        `${baseUrl}${path}`,
++        {
++          method,
++          headers: {
++            [H_USER]: COACH_ID,
++            'content-type': 'application/json',
++            'content-length': Buffer.byteLength(payload).toString(),
++          },
++        },
++        (res) => {
++          let data = '';
++          res.on('data', (c) => (data += c));
++          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(data) }));
++        },
++      );
++      req.on('error', reject);
++      req.write(payload);
++      req.end();
++    });
++  }
++
++  const autosavePath = `/workout-plans/${PLAN_ID}/autosave`;
++  const undoPath = `/workout-plans/${PLAN_ID}/undo`;
++  const rename = { op: 'plan_meta', meta: { name: 'Day 1 Push' } };
++  const token = () => computeLockToken(PLAN_ID, VERSION, HEAD_REV);
++
++  beforeEach(() => {
++    process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV] = 'mwb409-secret-aaaaaaaaaaaaaaaaaaaaaaaaaa';
++    process.env.FEATURE_MWB_AUTOSAVE_UNDO = 'true';
++  });
++  afterEach(async () => {
++    await app?.close();
++    if (ORIGINAL_SECRET === undefined) delete process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV];
++    else process.env[MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV] = ORIGINAL_SECRET;
++    if (ORIGINAL_FLAG === undefined) delete process.env.FEATURE_MWB_AUTOSAVE_UNDO;
++    else process.env.FEATURE_MWB_AUTOSAVE_UNDO = ORIGINAL_FLAG;
++  });
++
++  describe('the three head conflicts carry head_revision_index and lock_token', () => {
++    it('autosave_lock_stale: the first save of a session gets the head and token, then saves', async () => {
++      const { tx } = await boot();
++      const first = await call('PATCH', autosavePath, {
++        base_revision_index: 0,
++        lock_token: PLACEHOLDER_TOKEN,
++        ops: [rename],
++        cause: 'autosave',
++      });
++      expect(first.status).toBe(409);
++      expect(first.body).toMatchObject({
++        statusCode: 409,
++        code: 'autosave_lock_stale',
++        error: 'autosave_lock_stale',
++        head_revision_index: HEAD,
++        lock_token: token(),
++        path: autosavePath,
++      });
++      expect(Object.keys(first.body).sort()).toEqual(
++        [...ENVELOPE, 'head_revision_index', 'lock_token'].sort(),
++      );
++      expect(tx.workoutPlanRevision.create).not.toHaveBeenCalled();
++
++      // The app adopts the head and token from the 409 and retries once.
++      const second = await call('PATCH', autosavePath, {
++        base_revision_index: first.body.head_revision_index,
++        lock_token: first.body.lock_token,
++        ops: [rename],
++        cause: 'autosave',
++      });
++      expect(second.status).toBe(200);
++      expect(second.body).toMatchObject({ head_revision_index: HEAD + 1 });
++      expect(tx.workoutPlanRevision.create).toHaveBeenCalledTimes(1);
++    });
++
++    it('autosave_conflict_retry: a stale base index gets the head and token', async () => {
++      const { tx } = await boot();
++      const r = await call('PATCH', autosavePath, {
++        base_revision_index: HEAD - 2,
++        lock_token: token(),
++        ops: [rename],
++        cause: 'autosave',
++      });
++      expect(r.status).toBe(409);
++      expect(r.body).toMatchObject({
++        statusCode: 409,
++        code: 'autosave_conflict_retry',
++        error: 'autosave_conflict_retry',
++        head_revision_index: HEAD,
++        lock_token: token(),
++      });
++      expect(Object.keys(r.body).sort()).toEqual(
++        [...ENVELOPE, 'head_revision_index', 'lock_token'].sort(),
++      );
++      expect(tx.workoutPlanRevision.create).not.toHaveBeenCalled();
++    });
++
++    it('undo_head_moved: a fenced undo on a moved head gets the head, token and copy', async () => {
++      const { tx } = await boot();
++      const r = await call('POST', undoPath, {
++        to_revision_index: 3,
++        expected_head_index: HEAD - 1,
++      });
++      expect(r.status).toBe(409);
++      expect(r.body).toMatchObject({
++        statusCode: 409,
++        code: 'undo_head_moved',
++        error: 'undo_head_moved',
++        message:
++          'This workout changed after the undo was requested. Showing the latest saved version.',
++        head_revision_index: HEAD,
++        lock_token: token(),
++        path: undoPath,
++      });
++      expect(Object.keys(r.body).sort()).toEqual(
++        [...ENVELOPE, 'head_revision_index', 'lock_token'].sort(),
++      );
++      expect(tx.workoutPlanRevision.create).not.toHaveBeenCalled();
++    });
++  });
++
++  describe('every other error still carries only the envelope', () => {
++    it('a serialization conflict (P2034) is a plain 409 with no head or token', async () => {
++      await boot({
++        transactionError: new Prisma.PrismaClientKnownRequestError('write conflict', {
++          code: 'P2034',
++          clientVersion: 'test',
++        }),
++      });
++      const r = await call('PATCH', autosavePath, {
++        base_revision_index: HEAD,
++        lock_token: token(),
++        ops: [rename],
++        cause: 'autosave',
++      });
++      expect(r.status).toBe(409);
++      expect(r.body.message).toBe('autosave_conflict_retry');
++      expect(r.body).not.toHaveProperty('head_revision_index');
++      expect(r.body).not.toHaveProperty('lock_token');
++      expect(r.body).not.toHaveProperty('code');
++    });
++
++    it.each([
++      ['other_code', 409],
++      ['no_code', 409],
++      ['server_error', 500],
++    ])('%s: head and token are dropped', async (kind, status) => {
++      await boot();
++      const r = await call('POST', `/mwb409-crafted/${kind}`, {});
++      expect(r.status).toBe(status);
++      expect(r.body).not.toHaveProperty('head_revision_index');
++      expect(r.body).not.toHaveProperty('lock_token');
++      expect(Object.keys(r.body).every((k) => [...ENVELOPE, 'request_id'].includes(k))).toBe(true);
++    });
++
++    it('a listed code with wrong shapes or internal fields passes none of them', async () => {
++      await boot();
++      for (const kind of ['bad_shapes', 'bad_index_type']) {
++        const r = await call('POST', `/mwb409-crafted/${kind}`, {});
++        expect(r.status).toBe(409);
++        expect(r.body.statusCode).toBe(409);
++        for (const field of [
++          'head_revision_index',
++          'lock_token',
++          'plan_id',
++          'version',
++          'head_revision_id',
++        ]) {
++          expect(r.body).not.toHaveProperty(field);
++        }
++      }
++    });
++  });
++});

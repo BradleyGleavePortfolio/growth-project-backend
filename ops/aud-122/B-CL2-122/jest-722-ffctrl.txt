@@ -1,0 +1,6 @@
+
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        1.865 s
+Ran all test suites matching src/feature-flags/__tests__/feature-flags.controller.spec.ts.

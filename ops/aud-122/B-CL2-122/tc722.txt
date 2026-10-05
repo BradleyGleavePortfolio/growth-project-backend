@@ -1,0 +1,3 @@
+$ tree_check.sh growth-project-backend c219d2f391c37edd700d5204f31b50286f280d82 f02a3904d0662731e0dc7bbb7cbbb026dfefdd71
+FAIL 1: parents are not <approved> + a main commit
+exit 1

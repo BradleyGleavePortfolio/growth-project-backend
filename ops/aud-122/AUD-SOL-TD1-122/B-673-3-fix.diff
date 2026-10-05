@@ -1,0 +1,154 @@
+commit 096d7ee8ccfbe0fa3ef057588ba56dac93622116
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Mon Oct 5 22:57:35 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Mon Oct 5 22:57:35 2026 +0000
+
+    fix(trials): a dismissed trial sheet for another plan never uses up the offered trial (B-673-3)
+    
+    A client opens package A's free-trial sheet, dismisses it without saving a
+    card, then opens package B of the same coach. The offer for B said the trial
+    was available, but checkout sold B with no trial because A's unstarted open
+    attempt still held the one trial (the stale-attempt cleanup only reached
+    attempts older than 23 h).
+    
+    A checkout for a plan that offers a trial now retires an unstarted trial
+    attempt for another plan of the same coach at any age, through the same
+    Stripe-confirmed retire path (no card saved: the SetupIntent is canceled and
+    the subscription ended, then the row is expired). B gets the trial its offer
+    showed. Unchanged: same-plan resume (this plan's own attempt keeps the reuse
+    window), started trials, and an attempt whose card was saved (still holds
+    the trial).
+    
+    Tests: Sol's offer-vs-checkout test in test/b-trials-8-shared-rule.spec.ts
+    (failed before), a same-plan resume control, and main's R1-1 another-package
+    test split into the no-card (retired, trial given) and card-saved (still
+    held) cases.
+
+diff --git a/src/checkout/subscription-checkout.service.ts b/src/checkout/subscription-checkout.service.ts
+index f8e6a66a..622f0602 100644
+--- a/src/checkout/subscription-checkout.service.ts
++++ b/src/checkout/subscription-checkout.service.ts
+@@ -294,8 +294,16 @@ export class SubscriptionCheckoutService {
+     // R1-6 — trial attempts abandoned before the card was saved stay
+     // `trialing` on Stripe until the trial ends (Stripe expires only
+     // `incomplete` ones after 23 h). Retire the stale ones now. Best effort:
+-    // it never blocks this checkout.
+-    const cardSaved = await this.retireStaleTrialAttempts(client.id, coach.id, pkg.id);
++    // it never blocks this checkout. B-673-3: a plan that offers a trial also
++    // retires an unstarted trial attempt for another plan of this coach at
++    // once (that sheet was dismissed without a card), so the trial the offer
++    // showed for this plan is the trial this checkout sells.
++    const cardSaved = await this.retireStaleTrialAttempts(
++      client.id,
++      coach.id,
++      pkg.id,
++      pkgTrial > 0,
++    );
+     // B-654-1 — a stale trial of THIS package whose card turned out saved is
+     // the client's plan (the webhook grants it); never start a second one.
+     const savedHere = cardSaved.find((r) => r.package_id === pkg.id);
+@@ -1333,8 +1341,9 @@ export class SubscriptionCheckoutService {
+   /**
+    * R1-6 — cancel trial attempts older than the reuse window whose card was
+    * never saved (Stripe `trialing`, no default payment method) and mark them
+-   * expired. A trial whose card WAS saved is left alone (its webhook is only
+-   * late; the webhook grants it). Bounded, out of any DB transaction, and
++   * expired. With `releaseOtherPlans` (B-673-3) an unstarted attempt for
++   * another plan of the coach counts at any age. A trial whose card WAS saved
++   * is left alone (its webhook is only late; the webhook grants it). Bounded, out of any DB transaction, and
+    * never throws: a failure leaves the attempt to end with its trial
+    * (`missing_payment_method=cancel`), exactly as before.
+    */
+@@ -1342,10 +1351,15 @@ export class SubscriptionCheckoutService {
+     clientId: string,
+     coachId: string,
+     packageId: string,
++    releaseOtherPlans: boolean,
+   ): Promise<ClientPurchase[]> {
+     const cardSaved: ClientPurchase[] = [];
+     try {
+       const before = new Date(Date.now() - OPEN_ATTEMPT_MAX_AGE_MS);
++      // This plan's own open attempt keeps the reuse window (same-plan resume).
++      const age = releaseOtherPlans
++        ? { OR: [{ created_at: { lte: before } }, { package_id: { not: packageId } }] }
++        : { created_at: { lte: before } };
+       const stale = await this.prisma.clientPurchase.findMany({
+         where: {
+           client_user_id: clientId,
+@@ -1356,7 +1370,7 @@ export class SubscriptionCheckoutService {
+           trial_days: { not: null },
+           status: { in: [...OPEN_ATTEMPT_STATUSES] },
+           idempotency_key: { startsWith: `sub-${clientId}-` },
+-          created_at: { lte: before },
++          ...age,
+         },
+         orderBy: { created_at: 'desc' },
+         take: STALE_TRIAL_RETIRE_LIMIT,
+diff --git a/test/b-recur-fix-round-1-checkout.spec.ts b/test/b-recur-fix-round-1-checkout.spec.ts
+index c15ff748..23f73299 100644
+--- a/test/b-recur-fix-round-1-checkout.spec.ts
++++ b/test/b-recur-fix-round-1-checkout.spec.ts
+@@ -125,13 +125,26 @@ describe('R1-1 a trial attempt after its $0 trial invoice (status trialing, no c
+     expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
+   });
+ 
+-  it('still holds the one trial with this coach for another package', async () => {
++  it('B-673-3: dismissed without a card, it is retired and another package gets its trial', async () => {
+     const { svc, stripe, prisma } = setup({ trial_days: 7 });
+     prisma._packages.push(recurringPkg({ id: PKG2, trial_days: 14, stripe_price_id: 'price_b' }));
+     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
+     prisma._purchases[0].status = 'trialing';
+     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG2, idempotency_key: KEY2 });
+-    expect(stripe.createSubscription).toHaveBeenCalledTimes(2);
++    expect(stripe.cancelSubscription).toHaveBeenCalledWith(prisma._purchases[0].stripe_subscription_id);
++    expect(prisma._purchases[0].status).toBe('expired');
++    expect(stripe.createSubscription.mock.calls[1][0].trialPeriodDays).toBe(14);
++  });
++
++  it('with its card saved, it still holds the one trial with this coach for another package', async () => {
++    const { svc, stripe, prisma } = setup({ trial_days: 7 });
++    prisma._packages.push(recurringPkg({ id: PKG2, trial_days: 14, stripe_price_id: 'price_b' }));
++    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
++    prisma._purchases[0].status = 'trialing';
++    const sub = stripe._subs.get(prisma._purchases[0].stripe_subscription_id);
++    Object.assign(sub, { default_payment_method: 'pm_card', cancel_at_period_end: false });
++    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG2, idempotency_key: KEY2 });
++    expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+     expect(stripe.createSubscription.mock.calls[1][0].trialPeriodDays).toBeUndefined();
+   });
+ 
+diff --git a/test/b-trials-8-shared-rule.spec.ts b/test/b-trials-8-shared-rule.spec.ts
+index 6a6355af..2cf4718f 100644
+--- a/test/b-trials-8-shared-rule.spec.ts
++++ b/test/b-trials-8-shared-rule.spec.ts
+@@ -189,6 +189,29 @@ describe('B-TR8-120 — one shared trial rule across the native checkout and the
+     expect(offers.get(PKG_A)).toEqual({ trial_days: 7, available: true, reason: 'offered' });
+   });
+ 
++  // B-673-3 (Sol): an abandoned A sheet (no card) never uses up the trial B's offer shows.
++  it('ordinary abandoned A checkout: the B offer agrees with the trial actually sold', async () => {
++    const w = world();
++    // Open A's card sheet, then dismiss it without saving a card.
++    await w.buy(PKG_A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
++    // Refresh the coach's offers and choose B, sequentially, on the same device.
++    const offers = await w.usage.offersForClient(CLIENT, w.prisma._packages);
++    const next = await w.buy(PKG_B, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
++    expect(offers.get(PKG_B)?.available).toBe(next.plan.trial_days > 0);
++    expect(next.plan.trial_days).toBe(14);
++    expect(w.stripe.cancelSubscription).toHaveBeenCalledWith(w.row(PKG_A).stripe_subscription_id);
++    expect(w.row(PKG_A).status).toBe('expired');
++  });
++
++  it('same-plan resume is unchanged: reopening A reuses its attempt and its trial', async () => {
++    const w = world();
++    const first = await w.buy(PKG_A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
++    const again = await w.buy(PKG_A, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
++    expect(again.subscription_id).toBe(first.subscription_id);
++    expect(again.plan.trial_days).toBe(7);
++    expect(w.stripe.cancelSubscription).not.toHaveBeenCalled();
++  });
++
+   it('native trial started: the ledger holds it, the offer says already_used and the next checkout has no trial', async () => {
+     const w = world();
+     const first = await w.buy(PKG_A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');

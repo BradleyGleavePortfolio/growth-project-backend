@@ -1,0 +1,31 @@
+mwb409 (B-MWB409-122, agent 122, written 16:08 PDT 10-05) — field names FIXED, PR not pushed yet (PR number + head follow below when pushed).
+
+Backend change: growth-project-backend, new PR on main. HttpExceptionFilter will pass these two fields, in the HTTP body,
+for exactly three 409 codes (allowlist in src/filters/error-details.ts, keyed on the exception's `code`):
+
+  head_revision_index : integer >= 0 (the plan's CURRENT head revision index)
+  lock_token          : string, exactly 16 lowercase hex chars (/^[0-9a-f]{16}$/), the fresh token for that head
+
+Codes (both `code` AND `error` carry the same value in every one of the three bodies):
+  autosave_lock_stale      PATCH /workout-plans/:id/autosave  (stale/placeholder lock_token; the bootstrap answer)
+  autosave_conflict_retry  PATCH /workout-plans/:id/autosave  (stale base_revision_index)
+  undo_head_moved          POST  /workout-plans/:id/undo      (expected_head_index != head)
+
+Exact HTTP body shape (envelope keys are ALWAYS present next to the two fields):
+  { statusCode: 409, code: "<code>", message: <string>, error: "<code>", timestamp: <ISO>, path: <url>,
+    [request_id: <id> when the middleware set one], head_revision_index: <int>, lock_token: "<16 hex>" }
+  message: undo_head_moved = "This workout changed after the undo was requested. Showing the latest saved version.";
+           the two autosave codes = "Conflict Exception" (Nest default; do not show it, use app copy).
+
+MOBILE IMPACT (B-PRG2-122): src/api/workoutAutosaveApi.ts AutosaveConflictSchema is `.strict()` at #356 40ee678a. A strict
+schema REJECTS this body because of the envelope keys (statusCode, code, message, timestamp, path, request_id). Drop `.strict()`
+(or pick only error/code/head_revision_index/lock_token) and match on `code` or `error`.
+
+NOT carrying head/token (unchanged, edge): a Postgres serialization conflict (P2034/40001) on autosave or undo answers
+409 { statusCode: 409, message: "autosave_conflict_retry", error: "Conflict", ... } with NO code, NO head_revision_index and
+NO lock_token. Treat it as outcome-unknown: refetch the plan, never a definite refusal. Fields with the wrong shape are dropped,
+never coerced: a 409 with one of the codes but no usable head/token must also be treated as unknown.
+
+PUSHED (16:14 PDT): growth-project-backend#733 @ 29ebbb71143afd40fd14b0934bc1f2504cea6f2c (branch agent122/mwb-409-head-details, base main).
+Field names above are final. Backend still needs merge + deploy + FEATURE_MWB_AUTOSAVE_UNDO/secret on before the mobile path works live.
+HEAD MOVED (16:31 PDT): growth-project-backend#733 @ 635cabeeae1c3e74dd3f9311e5a059680e917628 (test-only CodeQL fix; contract unchanged). PR CI green. FIX ROUND 1 + READY FOR AUDIT posted: https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/733#issuecomment-6005447384

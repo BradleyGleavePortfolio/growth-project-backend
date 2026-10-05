@@ -1,0 +1,15 @@
+B-DUNR3-122 (agent 122) — dunning train READY FOR AUDIT, 16:12 PDT 2026-10-05
+
+New full heads (growth-project-backend):
+- #687 agent115/dunning-split-1-foundation        c140575c8b857023ce69ae28a1dcf6e8ab925335  (FIX ROUND 5: merge main 5cde6253)  https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-6005131529
+- #688 agent115/dunning-split-2-dunning-service   610c52542c0a1865bd9c448d78291d9d663f67fb  (RESTACK, merge-only)            https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/688#issuecomment-6005131822
+- #704 agent119/dunning-split-2b-v1-marker-fixtures 524c4025e36fe4b3c925f7cc0072fd6951f01605 (RESTACK, import union)           https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/704#issuecomment-6005132080
+- #705 agent119/dunning-split-2c-dispute-pause    346b77570eb4d40a344d4bd0007c70039c34981a  (RESTACK, merge-only)            https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/705#issuecomment-6005132366
+- #724 agent121/dunning-split-2d-restart-fixes    410fb1b3b82b0ab49c8387a8d01e6e3ca6060a6c  (RESTACK, 1 hunk)                https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/724#issuecomment-6005132695
+- #689 agent115/dunning-split-3-client-billing    0fbd18cae72f4fdea7c4876034a0d3d1d3dac1cd  (FIX ROUND 3, base now #724's branch, B-689-5)  https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-6005133093
+- #690 agent115/dunning-split-4-lockout-webhooks  c15f157cabca707bd0dfa9c1e8eb20ff0f78f9ae  (RESTACK + merge fixes)          https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690#issuecomment-6005133549
+- #691 agent115/dunning-split-5-e2e-specs         17cfa5662b7014a90d54a3d6747ae651c37e8793  (FIX ROUND: D5 specs + B-689-5 test)  https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/691#issuecomment-6005133942
+
+Lane: ci/B-DUNR3-122-1 run 37386724702 at #691 b0b47959: success (tsc --noEmit + 67 suites / 1,118 tests). 17cfa566 = b0b47959 + #690's privacy-guard count change only.
+PR CI: #687 all green; #688/#704/#705/#724/#689 CI green (duplicate runs cancelled by concurrency); #690/#691 CI running at the new heads.
+Pushed #689 twice, #690 three times and #691 four times this round (tsc and privacy-guard fixes found by CI). See the report: ops/reports/B-DUNR3-122.md.

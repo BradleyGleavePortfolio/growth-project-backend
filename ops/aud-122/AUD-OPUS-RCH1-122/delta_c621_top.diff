@@ -1,0 +1,438 @@
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index f506b50..ff561e5 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -45,6 +45,7 @@ import { featureFlags } from '../config/featureFlags';
+ // bottom-tab ONLY when `featureFlags.coachCommunity` is true; when the flag is
+ // OFF the tab does not render and none of the six routes register.
+ import CoachCommunityNavigator from './CoachCommunityNavigator';
++import CommunityWearablePromptsScreen from '../screens/community/CommunityWearablePromptsScreen';
+ // Stage 3 — cross-pillar federated coach surface. Mounted as a nested
+ // navigator so the practice-selection picker, dashboard, roster, detail
+ // view, messages, and assignments all live under one settings entry.
+@@ -148,6 +149,13 @@ export type CoachTabParamList = {
+ export type ClientsStackParamList = {
+   ClientsList: undefined;
+   ClientDetail: { clientId: string; clientName: string };
++  /**
++   * S14 round 3: the coach-only wearable coaching prompts for one client,
++   * opened from the client's Health tab. Registered only behind
++   * `featureFlags.communityWearablePrompts` (the screen also re-checks the
++   * server flag `coach_community_wearable_prompts` and the coach role).
++   */
++  ClientWearablePrompts: { clientId: string; clientName?: string };
+   /**
+    * `initialDraft` is consumed by ClientMessagesScreen to prefill the
+    * composer — used by Coach AI v1's "Send check-in" action on the
+@@ -313,6 +321,13 @@ function ClientsStackNavigator() {
+     >
+       <ClientsStack.Screen name="ClientsList"       component={ClientsListScreen} />
+       <ClientsStack.Screen name="ClientDetail"      component={ClientDetailScreen} />
++      {featureFlags.communityWearablePrompts ? (
++        <ClientsStack.Screen
++          name="ClientWearablePrompts"
++          component={CommunityWearablePromptsScreen}
++          options={{ headerShown: false }}
++        />
++      ) : null}
+       <ClientsStack.Screen name="ClientMessages"    component={ClientMessagesScreen} />
+       <ClientsStack.Screen name="InviteCodes"       component={InviteCodesScreen} />
+       <ClientsStack.Screen name="RiskBoard"         component={RiskBoardScreen} />
+diff --git a/src/services/authActions.ts b/src/services/authActions.ts
+index d7b24b1..a22c677 100644
+--- a/src/services/authActions.ts
++++ b/src/services/authActions.ts
+@@ -22,6 +22,8 @@ import { deleteWorkoutLogsForUser } from '../offline/sync/sync-engine';
+ import { AUTOSAVE_MIRROR_KEY_PREFIX } from '../storage/autosaveMirror';
+ import { IMPORT_PAIRING_MIRROR_KEY_PREFIX } from '../storage/importPairingMirror';
+ import { IMPORT_OFFER_DECISION_KEY_PREFIX } from '../storage/importOfferDecision';
++import { retireOnDeviceStateAtSignOut } from './health/onDeviceState';
++import { stopOnDeviceHealthWork } from './health/sessionFence';
+ import { LEGACY_DRAFT_PREFIX, purgeConsultationDraft } from '../lib/consultation/storage';
+ import { useCoachStore } from '../store/coachStore';
+ import { useClientStore } from '../store/clientStore';
+@@ -33,7 +35,15 @@ import { SIGNUP_ROLE_NOTICE_KEY } from '../lib/signupRoleNotice';
+ import { COACH_RECOVERY_GATE_KEY, ROLE_SELECTION_OWNER_KEY } from '../lib/roleSelectionGate';
+ 
+ // Tokens live in SecureStore; everything else is plain AsyncStorage.
+-const SECURE_SIGN_OUT_KEYS = ['supabase_token', 'supabase_refresh_token'];
++const SECURE_SIGN_OUT_KEYS = [
++  'supabase_token',
++  'supabase_refresh_token',
++  // S14 (B-317-1): legacy provider-global on-device health cursors (pre-S14,
++  // shared by every account on the phone). No longer read; removed here so
++  // nothing from a previous account lingers.
++  'healthkit_last_sync_at',
++  'health_connect_last_sync_at',
++];
+ const ASYNC_SIGN_OUT_KEYS = [
+   'user_data',
+   'needs_role_selection',
+@@ -43,6 +53,9 @@ const ASYNC_SIGN_OUT_KEYS = [
+   'macro_targets',
+   'pending_email',
+   'day_one_completed',
++  // S14 (B-317-1): dormant Samsung Health cursor (provider-global, not read by
++  // any screen); removed so it can never carry over to another account.
++  'wearable:samsung-health:lastSyncAt',
+   'lean_onboarding_done',
+   'lean_onboarding_intent',
+   'lean_onboarding_synced',
+@@ -291,6 +304,27 @@ export interface SignOutOptions {
+ }
+ 
+ export async function signOut(userId?: string | null, opts: SignOutOptions = {}): Promise<void> {
++  // S-WEAR-3 (Sol B-317-7): the first statement, before any await. Every
++  // running Apple Health / Health Connect read for this person stops here:
++  // no new native page, record type, upload or progress write starts after
++  // the person taps Log out (the `logout` event below comes much later).
++  stopOnDeviceHealthWork();
++  // Sol B-362-7: health grants and progress leave through their own chain.
++  const healthStateRetired = retireOnDeviceStateAtSignOut();
++  try {
++    await signOutWhileHealthRetires(userId, healthStateRetired, opts);
++  } finally {
++    // Sol B-362-9: even when the rest of sign-out throws, it settles only after
++    // the health retirement (which never rejects) has finished.
++    await healthStateRetired;
++  }
++}
++
++async function signOutWhileHealthRetires(
++  userId: string | null | undefined,
++  healthStateRetired: Promise<void>,
++  opts: SignOutOptions,
++): Promise<void> {
+   // Clear all auth + session state and notify the root navigator.
+   // We surface failures via console.error instead of Alert because a sign-out
+   // button that appears to do nothing is worse than one that logs a warning.
+@@ -401,6 +435,10 @@ export async function signOut(userId?: string | null, opts: SignOutOptions = {})
+     ]);
+   } catch (err) {
+     logger.error('AuthActions', 'signOut: clear failed', err);
++  } finally {
++    // Sol B-362-9: a rejection above (clearUserCache, clearAllStorage, ...)
++    // never skips the health drain: `logout` is emitted only after it.
++    await healthStateRetired;
+   }
+   // Clear Sentry user binding so post-logout errors aren't tagged with the
+   // previous user's id. No-ops when Sentry is not configured.
+diff --git a/src/services/secureStorage.ts b/src/services/secureStorage.ts
+index a45846b..e5f328f 100644
+--- a/src/services/secureStorage.ts
++++ b/src/services/secureStorage.ts
+@@ -28,7 +28,7 @@
+ import { Platform } from 'react-native';
+ import AsyncStorage from '@react-native-async-storage/async-storage';
+ import * as SecureStore from 'expo-secure-store';
+-import { beforeSessionWrite, type SessionFencePass } from './sessionFence';
++import { runSessionMigration, runSessionWrite, sessionGeneration, type SessionFencePass } from './sessionFence';
+ 
+ const isWeb = Platform.OS === 'web';
+ 
+@@ -48,8 +48,26 @@ function isSessionKey(key: SecureKey): boolean {
+ const migrationPromises: Map<string, Promise<string | null>> = new Map();
+ 
+ async function doMigration(key: SecureKey): Promise<string | null> {
++  // Mobile #331 A-331-7 (Sol, round 3): a session key's legacy value belongs
++  // to the session current BEFORE it is read. A sign-in or sign-out that
++  // writes either key from here on moves the generation, and then the stale
++  // value is never copied (it could otherwise land after the newer session's
++  // writes: a mixed pair, or a signed-out session back).
++  const expected = sessionGeneration();
+   try {
+     const legacy = await AsyncStorage.getItem(key);
++    if (legacy && isSessionKey(key)) {
++      let value: string | null = null;
++      const copied = await runSessionMigration(expected, async () => {
++        // Held for the whole copy. Never over a newer value of the same
++        // session (a refresh commit that landed first).
++        const now = await SecureStore.getItemAsync(key);
++        if (now == null) await SecureStore.setItemAsync(key, legacy);
++        await AsyncStorage.removeItem(key);
++        value = now ?? legacy;
++      });
++      return copied ? value : null;
++    }
+     if (legacy) {
+       await SecureStore.setItemAsync(key, legacy);
+       await AsyncStorage.removeItem(key);
+@@ -75,6 +93,29 @@ function migrateFromAsyncStorageIfPresent(key: SecureKey): Promise<string | null
+   return promise;
+ }
+ 
++async function nativeSet(key: SecureKey, value: string): Promise<void> {
++  if (isWeb) {
++    await AsyncStorage.setItem(key, value);
++    return;
++  }
++  await SecureStore.setItemAsync(key, value);
++}
++
++async function nativeRemove(key: SecureKey): Promise<void> {
++  if (isWeb) {
++    await AsyncStorage.removeItem(key);
++    return;
++  }
++  try {
++    await SecureStore.deleteItemAsync(key);
++  } catch {
++    // deleteItemAsync throws if the key doesn't exist — safe to ignore.
++  }
++  // Also clear any stale AsyncStorage copy so the migration path can't
++  // resurrect an old token on a later read.
++  await AsyncStorage.removeItem(key).catch(() => {});
++}
++
+ export const secureStorage = {
+   async getItem(key: SecureKey): Promise<string | null> {
+     if (isWeb) return AsyncStorage.getItem(key);
+@@ -92,32 +133,18 @@ export const secureStorage = {
+   /**
+    * `pass` is only for the holder of the session fence (the token refresh
+    * commit, or the sign-out after a failed refresh); every other caller
+-   * omits it. For a session key the write is ordered by sessionFence: the
+-   * generation moves at call time and the write waits for the holder.
++   * omits it. A session-key write is ordered by sessionFence: the generation
++   * moves at call time, the write waits for any holder, holds the fence
++   * while it lands, and moves the generation again when it has landed.
+    */
+   async setItem(key: SecureKey, value: string, pass?: SessionFencePass): Promise<void> {
+-    if (isSessionKey(key)) await beforeSessionWrite(pass);
+-    if (isWeb) {
+-      await AsyncStorage.setItem(key, value);
+-      return;
+-    }
+-    await SecureStore.setItemAsync(key, value);
++    if (isSessionKey(key)) return runSessionWrite(pass, () => nativeSet(key, value));
++    return nativeSet(key, value);
+   },
+ 
+   async removeItem(key: SecureKey, pass?: SessionFencePass): Promise<void> {
+-    if (isSessionKey(key)) await beforeSessionWrite(pass);
+-    if (isWeb) {
+-      await AsyncStorage.removeItem(key);
+-      return;
+-    }
+-    try {
+-      await SecureStore.deleteItemAsync(key);
+-    } catch {
+-      // deleteItemAsync throws if the key doesn't exist — safe to ignore.
+-    }
+-    // Also clear any stale AsyncStorage copy so the migration path can't
+-    // resurrect an old token on a later read.
+-    await AsyncStorage.removeItem(key).catch(() => {});
++    if (isSessionKey(key)) return runSessionWrite(pass, () => nativeRemove(key));
++    return nativeRemove(key);
+   },
+ };
+ 
+diff --git a/src/services/sessionFence.ts b/src/services/sessionFence.ts
+index 33712fa..fd7fffc 100644
+--- a/src/services/sessionFence.ts
++++ b/src/services/sessionFence.ts
+@@ -6,29 +6,41 @@
+  * The token refresh in services/api.ts runs across several awaits (read the
+  * refresh token, ask Supabase, write two SecureStore keys), and sign-in and
+  * sign-out write the same keys from other call sites (LoginScreen,
+- * CreateAccountScreen, appleAuth, googleAuth, authActions.signOut). A check
+- * followed by an await is not a guard: another sign-in can land in the gap.
+- * So:
++ * CreateAccountScreen, appleAuth, googleAuth, authActions.signOut), one key
++ * at a time. A check followed by an await is not a guard: another sign-in can
++ * land in the gap. So:
+  *
+- *   - Every write or removal of a session key goes through
+- *     `beforeSessionWrite()` (secureStorage.setItem / removeItem call it for
+- *     those keys). It bumps the session GENERATION synchronously, at call
+- *     time, before any await, and then waits until no other party holds the
+- *     fence, so the newer write always lands last.
+- *   - A refresh captures the generation when it starts. It may publish its
+- *     tokens only by taking the fence for that same generation
+- *     (`holdSessionFence`), which is synchronous: there is no await between
+- *     the check and taking the fence. A sign-in or sign-out that began
+- *     earlier has already moved the generation, so the overtaken refresh
+- *     writes nothing. One that begins while the refresh writes waits, and
+- *     then overwrites.
++ *   - Every write or removal of a session key runs through `runSessionWrite`
++ *     (secureStorage.setItem / removeItem do this for those keys). It moves
++ *     the session GENERATION synchronously at call time, waits until nobody
++ *     holds the fence, then HOLDS the fence for its whole native write, and
++ *     moves the generation again when the write has landed. So nothing can
++ *     publish between "called" and "landed", and anything that started while
++ *     a write was pending sees the generation move.
++ *   - A refresh captures the generation when it starts, after waiting for
++ *     writes in flight (`sessionWritesSettled`). It may publish its tokens
++ *     only by taking the fence for that same generation (`holdSessionFence`),
++ *     synchronously, with no await between the check and taking it. A
++ *     sign-in or sign-out that wrote either key since the refresh started
++ *     (even one key of the pair, even one still landing) has moved the
++ *     generation, so the overtaken refresh writes nothing. One that begins
++ *     while the refresh writes waits, and then overwrites.
++ *   - A 401 for a request first sent in an older generation never starts or
++ *     joins a refresh (services/api.ts): it belongs to a session that ended.
++ *   - The one-time copy of a legacy AsyncStorage value into SecureStore
++ *     (secureStorage.ts, first read after an upgrade) runs through
++ *     `runSessionMigration`: bound to the generation read before the legacy
++ *     read, held for the whole copy, refused once a sign-in or sign-out moved
++ *     the generation (Sol A-331-7 round 3).
+  *   - A failed refresh signs out only by taking the fence for the generation
+- *     it started in, and holds it for the whole sign-out. A sign-in that
+- *     begins meanwhile waits and writes its tokens after the sign-out has
+- *     finished, so the new account is never signed out by the old one's
+- *     failure.
+- *   - The holder's own writes pass the fence with its pass (no bump, no
+- *     wait), so holding the fence can never deadlock its holder.
++ *     it started in, and holds it for the whole sign-out (kind 'signout').
++ *     A sign-in that begins meanwhile waits and writes its tokens after the
++ *     sign-out has finished. Releasing that hold ends the session (the
++ *     generation moves).
++ *   - The holder's own writes pass the fence with its pass (no wait), so
++ *     holding the fence can never deadlock its holder. Token reads by the
++ *     API client wait only for 'write' holds (short native writes), never
++ *     for a sign-out, which may itself make requests.
+  *
+  * Refreshing the same session does not change the generation. A sign-out and
+  * sign-in of the same account (A -> logout -> A) does. Nothing here is stored,
+@@ -36,14 +48,23 @@
+  */
+ 
+ declare const passBrand: unique symbol;
+-/** Opaque proof of holding the fence; only `holdSessionFence` makes one. */
++/** Opaque proof of holding the fence; only this module makes one. */
+ export type SessionFencePass = { readonly [passBrand]: true };
+ 
++type HoldKind = 'write' | 'signout';
++
+ interface Holder {
+   readonly pass: SessionFencePass;
++  readonly kind: HoldKind;
+   readonly done: Promise<void>;
+ }
+ 
++export interface SessionFenceHold {
++  readonly pass: SessionFencePass;
++  /** Release exactly once (finally). `endsSession` moves the generation. */
++  release: (endsSession?: boolean) => void;
++}
++
+ let generation = 0;
+ let holder: Holder | null = null;
+ 
+@@ -57,47 +78,92 @@ export function sessionFenceHeld(): boolean {
+   return holder !== null;
+ }
+ 
+-/**
+- * Call before writing or removing a session key. Without the holder's pass:
+- * bumps the generation now (synchronously) and resolves once no other party
+- * holds the fence. With the holder's pass: resolves at once, no bump.
+- */
+-export async function beforeSessionWrite(pass?: SessionFencePass): Promise<void> {
+-  if (pass !== undefined && holder !== null && holder.pass === pass) return;
+-  generation += 1;
+-  // Loop: another holder could take the fence before this write resumes.
+-  while (holder !== null && holder.pass !== pass) {
+-    await holder.done;
+-  }
+-}
+-
+-/**
+- * Take the fence for the session of generation `expected`. Returns null, and
+- * holds nothing, when that session was already replaced or ended (the
+- * generation moved) or someone else holds the fence. Release exactly once,
+- * in a finally block.
+- */
+-export function holdSessionFence(expected: number): { pass: SessionFencePass; release: () => void } | null {
+-  if (generation !== expected || holder !== null) return null;
++function take(kind: HoldKind): SessionFenceHold {
+   let resolveDone!: () => void;
+   const done = new Promise<void>((resolve) => {
+     resolveDone = resolve;
+   });
+   const pass = Object.freeze({}) as SessionFencePass;
+-  const mine: Holder = { pass, done };
++  const mine: Holder = { pass, kind, done };
+   holder = mine;
+   let released = false;
+   return {
+     pass,
+-    release: () => {
++    release: (endsSession = false) => {
+       if (released) return;
+       released = true;
++      if (endsSession) generation += 1;
+       if (holder === mine) holder = null;
+       resolveDone();
+     },
+   };
+ }
+ 
++/**
++ * Run one native write or removal of a session key. Without the holder's
++ * pass: moves the generation now (synchronously, at call time), waits until
++ * nobody holds the fence, holds it for the write, and moves the generation
++ * again once the write has landed. With the holder's pass: runs at once.
++ */
++export async function runSessionWrite<T>(pass: SessionFencePass | undefined, write: () => Promise<T>): Promise<T> {
++  if (pass !== undefined && holder !== null && holder.pass === pass) return write();
++  generation += 1;
++  while (holder !== null) {
++    await holder.done;
++  }
++  // No await between the loop's last check and taking the fence.
++  const mine = take('write');
++  try {
++    return await write();
++  } finally {
++    mine.release(true);
++  }
++}
++
++/**
++ * Mobile #331 A-331-7 (Sol, round 3): copy a legacy (pre-SecureStore) value of
++ * a session key for the session of generation `expected`, which the caller
++ * read BEFORE it read the legacy value. Waits only for short 'write' holds,
++ * never for a sign-out (which may itself read a token). Then, with no await
++ * between the check and taking the fence, it copies only while that session
++ * is still current and nobody holds the fence, and holds the fence until the
++ * copy has landed. A sign-in or sign-out that wrote either key since
++ * `expected` was read (even one still landing) has moved the generation, so
++ * nothing is copied (false). One that begins during the copy waits for it and
++ * then overwrites. The copy keeps the same session, so, like a refresh
++ * commit, it does not move the generation.
++ */
++export async function runSessionMigration(expected: number, copy: () => Promise<void>): Promise<boolean> {
++  while (holder !== null && holder.kind === 'write') {
++    await holder.done;
++  }
++  if (generation !== expected || holder !== null) return false;
++  const mine = take('write');
++  try {
++    await copy();
++    return true;
++  } finally {
++    mine.release();
++  }
++}
++
++/** Resolves once no session-key write (or refresh commit) is landing. */
++export async function sessionWritesSettled(): Promise<void> {
++  while (holder !== null && holder.kind === 'write') {
++    await holder.done;
++  }
++}
++
++/**
++ * Take the fence for the session of generation `expected`. Returns null, and
++ * holds nothing, when that session was already replaced or ended (the
++ * generation moved) or someone else holds the fence.
++ */
++export function holdSessionFence(expected: number, kind: HoldKind = 'write'): SessionFenceHold | null {
++  if (generation !== expected || holder !== null) return null;
++  return take(kind);
++}
++
+ /** Test-only reset. */
+ export function __resetSessionFenceForTests(): void {
+   generation = 0;

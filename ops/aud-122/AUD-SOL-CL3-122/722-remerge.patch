@@ -1,0 +1,90 @@
+commit f02a3904d0662731e0dc7bbb7cbbb026dfefdd71
+Merge: c219d2f3 538a0ba4
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Mon Oct 5 23:10:54 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Mon Oct 5 23:10:54 2026 +0000
+
+    Merge coachless split 1/3 (main refresh) into split 2/3 (restack)
+    
+    Conflicts: four hunks, each where this PR and main both appended a flag at
+    the end of the same list: src/feature-flags/feature-flags.dto.ts
+    (FEATURE_FLAG_KEYS), feature-flags.service.ts (evaluate map),
+    __tests__/feature-flags.service.spec.ts and
+    __tests__/feature-flags.controller.spec.ts (expected flag maps). Resolved by
+    keeping both: coachless_home (this PR) then messaging_core_v2 (main). No
+    other content change.
+
+diff --git a/src/feature-flags/__tests__/feature-flags.controller.spec.ts b/src/feature-flags/__tests__/feature-flags.controller.spec.ts
+remerge CONFLICT (content): Merge conflict in src/feature-flags/__tests__/feature-flags.controller.spec.ts
+index 4350c9cf..35913357 100644
+--- a/src/feature-flags/__tests__/feature-flags.controller.spec.ts
++++ b/src/feature-flags/__tests__/feature-flags.controller.spec.ts
+@@ -33,11 +33,8 @@ describe('FeatureFlagsController', () => {
+     coach_community_wearable_prompts: true,
+     community_classroom: true,
+     community_events: true,
+-<<<<<<< c219d2f3 (Merge COACHLESS split 1/3 (RLS spec fix) into split 2/3)
+     coachless_home: true,
+-=======
+     messaging_core_v2: true,
+->>>>>>> 538a0ba4 (Merge origin/main into coachless split 1/3 (main refresh))
+   };
+ 
+   beforeEach(() => {
+diff --git a/src/feature-flags/__tests__/feature-flags.service.spec.ts b/src/feature-flags/__tests__/feature-flags.service.spec.ts
+remerge CONFLICT (content): Merge conflict in src/feature-flags/__tests__/feature-flags.service.spec.ts
+index 83f2dcd8..9bdab631 100644
+--- a/src/feature-flags/__tests__/feature-flags.service.spec.ts
++++ b/src/feature-flags/__tests__/feature-flags.service.spec.ts
+@@ -55,11 +55,8 @@ describe('FeatureFlagsService', () => {
+       coach_community_wearable_prompts: false,
+       community_classroom: false,
+       community_events: false,
+-<<<<<<< c219d2f3 (Merge COACHLESS split 1/3 (RLS spec fix) into split 2/3)
+       coachless_home: false,
+-=======
+       messaging_core_v2: false,
+->>>>>>> 538a0ba4 (Merge origin/main into coachless split 1/3 (main refresh))
+     });
+   });
+ 
+diff --git a/src/feature-flags/feature-flags.dto.ts b/src/feature-flags/feature-flags.dto.ts
+remerge CONFLICT (content): Merge conflict in src/feature-flags/feature-flags.dto.ts
+index a4e3fca7..f284febc 100644
+--- a/src/feature-flags/feature-flags.dto.ts
++++ b/src/feature-flags/feature-flags.dto.ts
+@@ -38,11 +38,8 @@ export const FEATURE_FLAG_KEYS = [
+   'coach_community_wearable_prompts',
+   'community_classroom',
+   'community_events',
+-<<<<<<< c219d2f3 (Merge COACHLESS split 1/3 (RLS spec fix) into split 2/3)
+   'coachless_home',
+-=======
+   'messaging_core_v2',
+->>>>>>> 538a0ba4 (Merge origin/main into coachless split 1/3 (main refresh))
+ ] as const;
+ 
+ export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
+diff --git a/src/feature-flags/feature-flags.service.ts b/src/feature-flags/feature-flags.service.ts
+remerge CONFLICT (content): Merge conflict in src/feature-flags/feature-flags.service.ts
+index 0ea8cf11..e2b31fdd 100644
+--- a/src/feature-flags/feature-flags.service.ts
++++ b/src/feature-flags/feature-flags.service.ts
+@@ -67,16 +67,13 @@ export class FeatureFlagsService {
+         communityReachable && envOn('FEATURE_COMMUNITY_CLASSROOM_POSTS'),
+       community_events:
+         communityReachable && envOn('FEATURE_COMMUNITY_EVENTS'),
+-<<<<<<< c219d2f3 (Merge COACHLESS split 1/3 (RLS spec fix) into split 2/3)
+       // A1-COACHLESS — a client-only surface (coachless Home banner, code
+       // sheet, Roman card). Coaches and owners always read it as OFF.
+       coachless_home: ctx.role === 'student' && envOn('FEATURE_COACHLESS_HOME'),
+-=======
+       // A3-MSG-CORE: the canonical 1:1 thread (CoachMessage) is reachable by
+       // every coach and coached client, so only its own kill switch applies.
+       // Same literal-'true' rule as isMessagingCoreV2Enabled (case-insensitive).
+       messaging_core_v2: isMessagingCoreV2Enabled(),
+->>>>>>> 538a0ba4 (Merge origin/main into coachless split 1/3 (main refresh))
+     };
+   }
+ 

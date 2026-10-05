@@ -1,0 +1,11 @@
+PASS src/components/coach/setup/__tests__/w2FixRound118.test.tsx (10.65 s)
+PASS src/__tests__/CoachPackageContentsScreen.test.tsx (11.378 s)
+PASS src/components/coach/setup/__tests__/audOpusW12_119_346.test.tsx
+PASS src/components/coach/setup/__tests__/coachSetup.test.tsx
+PASS src/components/coach/setup/__tests__/coachSetupRound2.test.tsx (13.07 s)
+PASS src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+PASS src/components/coach/setup/__tests__/audOpusWL4_122_346.test.tsx
+FAIL src/components/coach/setup/__tests__/audOpusW12D_120_346.test.tsx
+PASS src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+Test Suites: 1 failed, 8 passed, 9 total
+Tests:       2 failed, 100 passed, 102 total

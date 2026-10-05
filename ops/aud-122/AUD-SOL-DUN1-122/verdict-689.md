@@ -1,17 +1,11 @@
-AUDIT GPT-6.1 Sol — growth-project-backend#689 @ bb992fedf0095446f916f3261742bd262c3d94da — VERDICT: REQUEST CHANGES
+AUDIT GPT-6.1 Sol — growth-project-backend#689 @ 0fbd18cae72f4fdea7c4876034a0d3d1d3dac1cd — VERDICT: APPROVE
 
-A/B/C = 0/1/4
-
-BASELINE DRAFT ONLY — DO NOT POST. Recheck builder READY's actual amount/copy fix and new exact head first.
+A/B/C = 0/0/5
 
 AUD-SOL-DUN1-122, agent 122. Independent ordinary money/access/cancel review; no edge probes or analysis.
 
-**B-689-S1 — inquiry cancellation falsely asserts a bank reversal.**
+Read the complete new owned delta: disputed amounts now come from the ChargeDispute ledger instead of failed-renewal amounts; SetupIntent supplies main's onBehalfOf and invoice voiding uses main's positional signature. The final type-only narrowing preserves SetupIntent client/customer ownership and successful-card checks. The D2d lower-piece merge independently recomputes to actual tree `8238bf2334c9a00f7a65cc0d82e41d21ef46f67b`. No normal-use regression identified in those repairs. [Reviewed D3 PR](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689).
 
-Normal-user story: A client whose bank opens an inquiry without reversing the payment cancels the paused plan and is told the bank reversed their money.
+Cs only: prior own B-689-1/4/5/6 are C (edge, deferred to 10k clients); C-689-S1 is latent inquiry-cancel reversal wording, not a proven normal-tap path because dispute status returns cancel_route=null and planView.can_cancel=false. Earlier own B-689-2/3 remain closed on unchanged owned code. [Own prior dispositions](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-5982476834), [current plan projection](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/0fbd18cae72f4fdea7c4876034a0d3d1d3dac1cd/src/checkout/subscription-plan.ts), [composed dispute status](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/b3ae2f295bba961d5c6532698281e91b5194559e/src/checkout/dunning-v2/dunning-v2.service.ts).
 
-`src/checkout/client-billing.service.ts:1643–1645` appends “Ending the plan does not settle the payment your bank reversed” for every dispute-pause cycle, including the supported bank-inquiry path. Sequential inquiry recording → pause → own-client cancellation takes this branch; no race or event-order condition is needed. Use neutral payment-dispute-or-inquiry wording, consistent with D1's corrected copy, while preserving the no-automatic-settlement rule. [Cancellation response](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/bb992fedf0095446f916f3261742bd262c3d94da/src/checkout/client-billing.service.ts), [ordinary inquiry/dispute recording](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e77a8d360f7a7ad02cf465b525eeed648a3a7825/src/checkout/refund-dispute-handler.service.ts).
-
-Prior own B-689-1/4/5/6: C (edge, deferred to 10k clients), per operator reclassification; no additional edge work requested. Earlier own B-689-2/3 remain closed on unchanged owned code. [Own prior dispositions](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-5982476834).
-
-No independent execution; builder's D2d restack/signature/amount delta and ordinary customer reachability must be checked before final publication. No other lens's current-round notes/comment read.
+CI: all seven checks that run on this stacked base are green; CodeQL JS/TS, banned casts, SBOM and danger are absent here and must execute on the composed main-targeted tree. Builder's attributable lane passed tsc plus 67 suites/1,118 tests, including the ledger-amount regression; lane child differs from b0b47959 only in its CI selector/workflow files. No independent execution. Composed activation remains blocked by D4's missing coach restart, B-690-S1. No other lens's current-round notes/comment read. [Exact-head build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386002055/job/112019312914), [verified builder lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37386724702/job/112021677637).

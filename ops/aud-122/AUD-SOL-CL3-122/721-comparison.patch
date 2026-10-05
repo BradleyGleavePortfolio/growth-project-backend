@@ -1,0 +1,18 @@
+--- /home/user/workspace/ops/aud-122/AUD-SOL-CL3-122/721-old-normalized.patch	2026-10-05 23:27:57.288045009 +0000
++++ /home/user/workspace/ops/aud-122/AUD-SOL-CL3-122/721-new-normalized.patch	2026-10-05 23:27:57.300045009 +0000
+@@ -222,7 +222,6 @@
+ +  coachless_prompt_state         CoachlessPromptState?    @relation("CoachlessPromptStateUser")
+ +  // A1-COACHLESS — featured-coach configs that sell this package.
+ +  featured_coach_configs FeaturedCoachConfig[] @relation("FeaturedCoachConfigPackage")
+-+
+ +// ─── A1-COACHLESS: coachless Home, scripted Roman pitch, coach code ─────────
+ +//
+ +// FeaturedCoachConfig is a singleton (id = 'default', CHECK-enforced) holding
+@@ -289,6 +288,7 @@
+ +  created_at              DateTime  @default(now())
+ +  updated_at              DateTime  @updatedAt
+ +}
+++
+ diff --git a/src/account-deletion/account-deletion.manifest.ts b/src/account-deletion/account-deletion.manifest.ts
+ --- a/src/account-deletion/account-deletion.manifest.ts
+ +++ b/src/account-deletion/account-deletion.manifest.ts

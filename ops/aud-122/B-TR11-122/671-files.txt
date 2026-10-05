@@ -1,0 +1,17 @@
+.github/workflows/ci.yml
+prisma/migrations/20270228000000_package_free_trials/down.sql
+prisma/migrations/20270228000000_package_free_trials/migration.sql
+prisma/migrations/20270313000000_package_trial_truth/down.sql
+prisma/migrations/20270313000000_package_trial_truth/migration.sql
+prisma/schema.prisma
+src/account-deletion/account-deletion.manifest.ts
+src/packages/trials/trial-checkout-capability.ts
+src/packages/trials/trial-copy.ts
+src/packages/trials/trial-diagnostics.ts
+src/packages/trials/trial-rules.ts
+src/packages/trials/trial-usage.service.ts
+src/packages/trials/trial-view.ts
+test/b-trials-one-trial-rule.spec.ts
+test/b-trials-t1-fix-round-6.spec.ts
+test/b-trials-usage-concurrency.live.spec.ts
+test/utils/trial-fakes.ts

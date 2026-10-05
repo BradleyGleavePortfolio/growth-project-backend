@@ -1,0 +1,1049 @@
+diff --git a/.env.example b/.env.example
+index 13df5a68..aef78afe 100644
+--- a/.env.example
++++ b/.env.example
+@@ -912,8 +912,10 @@ HELLOSIGN_TEST_MODE=true
+ # `true` to enable in a dev sandbox or once the operator green-lights launch.
+ # Requires ANTHROPIC_API_KEY (already required elsewhere) when enabled.
+ FEATURE_ROMAN_CHAT_ENABLED=false
+-# Daily spend cap for all Roman turns together (UTC day, USD). Unset = 25.
+-# Over the cap Roman answers 503 ROMAN_CAPACITY_REACHED; fails closed.
++# Platform-wide daily spend ceiling for all Roman turns together (UTC day,
++# USD), a runaway breaker sized to launch volume. Unset = 100. Over it Roman
++# answers 503 ROMAN_CAPACITY_REACHED; fails closed. The per-client limit is
++# the 429 ROMAN_RATE_LIMIT turn cap; each coach's monthly AI pool still applies.
+ ROMAN_DAILY_COST_CAP_USD=
+ 
+ # AI processing consent ledger (R2a; box 2 of the onboarding consent screen).
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index c20e1b2a..9923a76d 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -2114,9 +2114,9 @@ export const ENV_RULES: EnvRule[] = [
+   {
+     name: 'ROMAN_DAILY_COST_CAP_USD',
+     tier: 'optional',
+-    default: 'unset → 25 (ROMAN_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 25, never no cap',
++    default: 'unset → 100 (ROMAN_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 100, never no cap',
+     reason:
+-      'Daily spend cap for all Roman turns together (UTC day, US dollars). Over the cap Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 25.',
++      'Platform-wide daily spend ceiling for all Roman turns together (UTC day, US dollars), a runaway breaker sized to launch volume; the per-client limit is the 429 ROMAN_RATE_LIMIT turn cap and the per-coach bound is the monthly AI credit pool. Over the ceiling Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 100.',
+   },
+   {
+     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',
+diff --git a/src/roman/guardrails/roman-post-check.ts b/src/roman/guardrails/roman-post-check.ts
+index 0cc911e2..647b61f0 100644
+--- a/src/roman/guardrails/roman-post-check.ts
++++ b/src/roman/guardrails/roman-post-check.ts
+@@ -66,8 +66,26 @@ export interface PostCheckContext {
+   };
+   macro_method: { floor_kcal: number | null };
+   coach: { has_coach: boolean; coach_first_name: string | null };
+-  /** Optional extra kcal facts (food entries, wearable active energy, meal plan). */
+-  extra_kcal_facts?: number[];
++  /**
++   * B-668-3: extra kcal facts, each kept in its own field family and day, so
++   * one kind of number can never validate a claim about another (a burned
++   * total is not intake, yesterday is not today, a meal-plan slot is not a
++   * log).
++   */
++  kcal_facts?: PostCheckKcalFacts;
++}
++
++export interface PostCheckKcalFacts {
++  /** Today's individual logged food entries (intake, today). */
++  intake_entries_today?: number[];
++  /** Logged daily intake totals of earlier days (intake, past). */
++  intake_past_days?: number[];
++  /** Active energy burned today (wearable). */
++  burned_today?: number[];
++  /** Active energy burned on earlier days, and the 7-day average (wearable). */
++  burned_past?: number[];
++  /** kcal numbers of the client's meal plan slots (a plan, not a log). */
++  meal_plan?: number[];
+ }
+ 
+ export interface PostCheckInput {
+@@ -129,11 +147,28 @@ const FAMILY_WORDS: Array<{ family: KcalFamily; rx: RegExp }> = [
+ /** Clause boundaries inside one sentence. */
+ const CLAUSE_SPLIT = /,|;|\s[-\u2013\u2014]\s|\s(?:and|but|while|with|which|so)\s/i;
+ const KCAL_NUMBER = /\b(\d{1,2},\d{3}|\d{1,5})\s?(kcal|calories|cals?)\b/gi;
++/**
++ * B-666-3 (Opus): the unit-before-number form ("keep your calories at 900 a
++ * day", "calories: 900"). Group 1 is the number.
++ */
++const KCAL_NUMBER_UNIT_FIRST =
++  /\b(?:kcal|calories|cals?)\s*(?:intake\s*)?(?:at|to|of|around|about|near|under|below|:|=|is|are|be|should be|stays? at)?\s*(?:about\s+|around\s+|roughly\s+|only\s+|just\s+|~\s?)?(\d{1,2},\d{3}|\d{2,5})\b(?!\s?(?:kcal|calories|cals?|g\b|grams?|%|percent|minutes?|min\b|steps?|reps?|sets?|hours?))/gi;
++/**
++ * B-666-3 (Opus): a whole-day amount marker. Unlike DAILY it excludes
++ * "today" ("today's lunch was 450 kcal" is one meal, not a daily intake).
++ */
++const WHOLE_DAY =
++  /\b(a|per|each|every) day\b|\bdaily\b|\bin total\b|\bfor the (whole )?day\b|\ba day'?s\b/i;
++/** A clause about one meal, snack or serving is never a daily amount. */
++const MEAL_CLAUSE =
++  /\b(breakfast|lunch|dinner|supper|snacks?|meals?|servings?|portions?|plates?|bowls?|bars?|shakes?)\b/i;
+ /** A kcal number that is a change (deficit, surplus, "300 fewer"), not an intake. */
+ const KCAL_DELTA_AFTER =
+   /^\s*(deficit|surplus|less|fewer|more|extra|over|under|below|above|short|a day (deficit|surplus)|per day (deficit|surplus))\b/i;
++// B-668-3: only the imperative "burn 300 kcal" is a change amount; "you
++// burned 200 kcal today" states a fact and is checked against burned energy.
+ const KCAL_DELTA_BEFORE =
+-  /\b(deficit|surplus) of\s*$|\b(cut|trim|drop|remove|subtract|add|burn(ed)?|burnt)\s+(about\s+|around\s+|roughly\s+)?$/i;
++  /\b(deficit|surplus) of\s*$|\b(cut|trim|drop|remove|subtract|add|burn)\s+(an extra\s+|another\s+|about\s+|around\s+|roughly\s+)?$/i;
+ const MACRO_NUMBER =
+   /\b(\d{1,4})\s?g(?:rams?)?\s+(?:of\s+)?(protein|carbs?|carbohydrates|fat|fats)\b/gi;
+ const MACRO_NUMBER_REVERSED =
+@@ -144,7 +179,10 @@ const MEDICATION_DIRECTIVE: RegExp[] = [
+   /\b\d+(\.\d+)?\s?(mg|mcg|µg|milligrams?|micrograms?|iu|units of insulin)\b/i,
+   /\b(take|taking|try|use|using|pop|start|grab|have)\s+(some\s+|an?\s+|a couple of\s+|two\s+)?(ibuprofen|advil|motrin|aleve|naproxen|acetaminophen|paracetamol|tylenol|aspirin|antibiotics?|painkillers?|pain ?relievers?|muscle relaxants?|anti-?inflammator(y|ies)|nsaids?|prednisone|cortisone|antihistamines?|benadryl|melatonin|sleeping pills?)\b/i,
+   /\b(ibuprofen|advil|motrin|aleve|naproxen|acetaminophen|paracetamol|tylenol|aspirin|nsaids?|prednisone)\b[^.]{0,60}\b(twice|three times|every \d+ hours|daily|a day|per day|with food|before (bed|training))\b/i,
+-  /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+)?(your\s+)?(medication|meds|dose|insulin|prescription|metformin|ozempic|wegovy|mounjaro|semaglutide|tirzepatide)\b/i,
++  /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+)?(your\s+)?(medication|meds|dose|prescription|metformin|ozempic|wegovy|mounjaro|semaglutide|tirzepatide)\b/i,
++  // B-666-1 (Opus): "carbs raise insulin" is physiology; changing the
++  // client's own insulin is a medication directive.
++  /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+(your\s+)?|your\s+)insulin\b/i,
+   /\b(ice|heat) (it|the area|your [a-z]+) (for )?\d+\s?(minutes|min)\b[^.]{0,30}\b(times|every)\b/i,
+ ];
+ const FALSE_REASSURANCE: RegExp[] = [
+@@ -156,7 +194,34 @@ const FALSE_REASSURANCE: RegExp[] = [
+   /\b(it'?s|it is|that'?s|that is|this is) (probably |likely |almost certainly |definitely )?(fine|nothing serious|nothing|not serious|harmless|safe to (train|keep going))\b/i,
+   /\b(safe|fine|okay|ok) (for you )?to (keep )?(train|lift|run|exercise) (on|with) (it|that)\b/i,
+ ];
+-const STOP_DIRECTIVE = /\b(stop|pause|skip|leave out|avoid|ease off)\b/i;
++const STOP_DIRECTIVE =
++  /\b(stop|pause|skip|leave out|avoid|ease off|drop|hold off on|sit out|back off)\b/gi;
++/**
++ * B-666-3 (Sol): a stop word only counts when it is an AFFIRMATIVE instruction
++ * about the painful movement: not negated in its clause ("do not stop",
++ * "never skip", "no need to pause", "avoid skipping"), and with the pain or
++ * the movement as its object in the same clause.
++ */
++const STOP_NEGATED_BEFORE =
++  /(?:\b(?:not|never|no|without|instead of|rather than|avoid|nothing|dont|cant|wont|shouldnt|doesnt|didnt)\b|n't\b)(\s+\w+){0,3}\s*$/i;
++const STOP_OBJECT =
++  /\b(hurts?|hurting|pain(ful|s)?|sore(ness)?|aches?|aching|discomfort|twinges?|injur(y|ed|ies)|movements?|motions?|exercises?|lifts?|lifting|sets?|reps?|sessions?|training|workouts?|activit(y|ies)|range|load|weight|squats?|squatting|lunges?|deadlifts?|press(es|ing)?|bench(ing)?|rows?|rowing|curls?|pull-?ups?|push-?ups?|runs?|running|jog(s|ging)?|jumps?|jumping|sprints?|sprinting|cardio|planks?|stretch(es|ing)?|that|it|whatever|anything)\b/i;
++
++/** B-666-3 (Sol): the reply tells the client, affirmatively, to stop the movement that hurts. */
++function affirmativeStop(text: string): boolean {
++  for (const sentence of text.split(/(?<=[.!?])\s+/)) {
++    for (const m of sentence.matchAll(STOP_DIRECTIVE)) {
++      const at = m.index ?? 0;
++      const { text: clause, start } = clauseSpanAt(sentence, at);
++      const before = clause.slice(0, at - start);
++      const after = clause.slice(at - start + m[0].length);
++      if (STOP_NEGATED_BEFORE.test(before)) continue;
++      if (/^\s*(by|in|over|at|eating|logging|worrying|thinking)\b/i.test(after)) continue;
++      if (STOP_OBJECT.test(after) || STOP_OBJECT.test(before)) return true;
++    }
++  }
++  return false;
++}
+ const COACH_ROUTE = /\bcoach\b/i;
+ 
+ /** The reply routes the client to their coach (by role, or by the coach's first name). */
+@@ -175,22 +240,49 @@ const DIAGNOSIS: RegExp[] = [
+   // treat", "a dose of cardio"). Only treatment of a medical object, or a
+   // medication dose, is diagnosis/treatment language.
+   /\btreat(s|ed|ing)?\s+(it|this|that|the|your|an?|my)\s+(?:[a-z-]+\s+){0,2}(injury|injuries|pain|condition|symptoms?|infection|inflammation|wound|sprain|strain|tear|fracture|tendon|joint|knee|back|shoulder|[a-z]+itis)\b/i,
+-  /\b(you|i|we|they) (can|could|should|would|will) treat\b(?! yourself)/i,
++  // B-666-1 (Opus): "you can treat today as a lighter day" is coaching;
++  // treating a medical object, or treating it with something, is not.
++  /\btreat(s|ed|ing)?\s+(it|this|that|them)\s+with\b/i,
+   /\btreatments?\s+(plan|for|of|options?|protocol)\b/i,
+-  /\bcure(s|d)?\b/i,
+-  /\bprescri(be|bed|ption|ptions)\b/i,
++  // B-666-1 (Opus): "cured meats" is food; curing a condition is not.
++  /\bcure(s|d)?\s+(your|this|that|the|it|my|his|her|their)\b|\b(a|the|no|any) cure (for|of)\b/i,
++  // B-666-1 (Opus): "your coach prescribed four sets" is a program; a
++  // prescription for a medicine is not.
++  /\bprescri(be|bes|bed|bing|ption|ptions)\b[^.]{0,30}\b(medication|medicine|meds|drugs?|pills?|tablets?|antibiotics?|painkillers?|steroids?|insulin|rehab|physio(therapy)?|cream|ointment|inhaler)\b/i,
++  /\b(medication|medicine|meds|drugs?|pills?|antibiotics?|painkillers?)\b[^.]{0,30}\bprescri(be|bed|ption)\b|\b(a|your|the) prescription\b/i,
+   /\b(dose|dosage|dosing)\b[^.]{0,30}\b(medication|meds|medicine|insulin|drug|pills?|tablets?|capsules?|mg|mcg|milligrams?)\b/i,
+   /\b(medication|meds|medicine|insulin|drug|pill|prescription)\s+(dose|dosage|dosing)\b/i,
+ ];
+ 
++/**
++ * B-666-1 (Opus): substances that are also everyday physiology or food words
++ * ("a mild diuretic", "releases growth hormone", "carbs raise insulin").
++ * They are banned only as advice: an intake directive, an endorsement, or a
++ * weight, fat-loss or weigh-in purpose.
++ */
++const DUAL_USE_SUBSTANCE = '(diuretics?|laxatives?|water pills?|insulin|hgh|growth hormone)';
++const DUAL_USE_ADVICE: RegExp[] = [
++  new RegExp(
++    `\\b(take|taking|use|using|try|trying|start|starting|get|getting|buy|inject|injecting|pop|grab|add)\\s+(some\\s+|a\\s+|an\\s+|the\\s+|your\\s+)?([a-z-]+\\s+)?${DUAL_USE_SUBSTANCE}\\b`,
++    'i',
++  ),
++  new RegExp(
++    `\\b${DUAL_USE_SUBSTANCE}\\b[^.]{0,40}\\b(can|will|would|could|may|might|should|help|helps|work|works)\\s+(help|work|drop|reduce|flush|speed|get|make|cut|lean|shred|you)\\b`,
++    'i',
++  ),
++  new RegExp(
++    `\\b${DUAL_USE_SUBSTANCE}\\b[^.]{0,60}\\b(lose|losing|drop|dropping|cut|cutting|shred(ded|ding)?|lean(er)?|weight|weigh-?ins?|fat loss|burn fat|make weight)\\b`,
++    'i',
++  ),
++];
++
+ const BANNED: RegExp[] = [
+-  /\b(anabolic\s+steroids?|steroids?|sarms?|clenbuterol|ephedrine|dnp|trenbolone|hgh|growth hormone)\b/i,
++  /\b(anabolic\s+steroids?|steroids?|sarms?|clenbuterol|ephedrine|dnp|trenbolone)\b/i,
+   // B-651-3: starvation is banned as advice, not as a negated mention ("you
+   // are not starving yourself by eating at your target").
+   /(?<!\b(?:not|never|no|don'?t|do not|avoid|without|stop|instead of)\s+(?:\w+\s+){0,2})\bstarv(e|ation|ing)\b/i,
+   /\b(water\s+fast(?:ing)?(?:\s+for\s+\d+\s+days?)?|hcg\s+diet|cleanse|detox tea|juice cleanse)\b/i,
+-  /\b(diuretics?|laxatives?|water pills?)\b/i,
+-  /\binsulin\b[^.]{0,60}\b(weight|fat|lean(er)?|cut(ting)?|shred(ded)?)\b/i,
++  ...DUAL_USE_ADVICE,
+   /\b(purge|purging)\b[^.]{0,40}\b(calories|meal|food)\b/i,
+ ];
+ 
+@@ -220,13 +312,36 @@ function macroKeyOf(word: string): MacroKey {
+ const finite = (xs: Array<number | null | undefined>): number[] =>
+   xs.filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
+ 
+-/** kcal facts of the given field families (B-651-7: never pooled across families). */
+-function kcalFacts(ctx: PostCheckContext, families: ReadonlySet<KcalFamily>): number[] {
++/** A claim about an earlier day ("yesterday you logged ..."), not today. */
++const PAST_DAY =
++  /\b(yesterday|last (night|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|on (monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\d+ days? ago|the day before|earlier this week|over the (last|past) \d+ days|this past week)\b/i;
++/** A claim about the meal plan ("your plan has 450 kcal at lunch"), not a log. */
++const PLAN_WORD = /\b(meal plan|your plan|the plan|planned)\b/i;
++
++/**
++ * kcal facts of the given field families (B-651-7: never pooled across
++ * families). B-668-3: also never pooled across days or sources: a claim about
++ * today is checked against today's facts, a claim about an earlier day against
++ * earlier days, and a meal-plan claim against the plan.
++ */
++function kcalFacts(
++  ctx: PostCheckContext,
++  families: ReadonlySet<KcalFamily>,
++  sentence = '',
++): number[] {
+   const out: Array<number | null | undefined> = [];
+-  if (families.has('intake')) out.push(ctx.today.kcal, ...(ctx.extra_kcal_facts ?? []));
++  const f = ctx.kcal_facts ?? {};
++  const past = PAST_DAY.test(sentence);
++  if (families.has('intake')) {
++    if (past) out.push(...(f.intake_past_days ?? []));
++    else out.push(ctx.today.kcal, ...(f.intake_entries_today ?? []));
++    if (PLAN_WORD.test(sentence)) out.push(...(f.meal_plan ?? []));
++  }
+   if (families.has('remaining')) out.push(ctx.today.remaining_kcal);
+   if (families.has('average')) out.push(ctx.last_7_days.avg_kcal_on_logged_days);
+-  if (families.has('burned')) out.push(...(ctx.extra_kcal_facts ?? []));
++  if (families.has('burned')) {
++    out.push(...(past || families.has('average') ? (f.burned_past ?? []) : (f.burned_today ?? [])));
++  }
+   if (families.has('target')) out.push(ctx.targets.calories);
+   if (families.has('floor')) out.push(ctx.macro_method.floor_kcal);
+   return finite(out);
+@@ -352,14 +467,31 @@ function judgeSentence(
+   floor: number,
+   grounded: boolean,
+ ): NumberVerdict {
+-  for (const m of s.matchAll(KCAL_NUMBER)) {
+-    const n = toNumber(m[1]);
+-    const at = m.index ?? 0;
++  const kcalHits: Array<{ n: number; at: number; end: number }> = [
++    ...[...s.matchAll(KCAL_NUMBER)].map((m) => ({
++      n: toNumber(m[1]),
++      at: m.index ?? 0,
++      end: (m.index ?? 0) + m[0].length,
++    })),
++    ...[...s.matchAll(KCAL_NUMBER_UNIT_FIRST)].map((m) => {
++      const at = (m.index ?? 0) + m[0].lastIndexOf(m[1]);
++      return { n: toNumber(m[1]), at, end: at + m[1].length };
++    }),
++  ];
++  for (const { n, at, end } of kcalHits) {
+     const clause = clauseAt(s, at);
+     const { directive, daily } = directiveAt(s, clause);
+     // "a 300 kcal deficit", "300 kcal less", "cut 300 kcal": a change, not an intake.
+-    const delta =
+-      KCAL_DELTA_AFTER.test(s.slice(at + m[0].length)) || KCAL_DELTA_BEFORE.test(s.slice(0, at));
++    const delta = KCAL_DELTA_AFTER.test(s.slice(end)) || KCAL_DELTA_BEFORE.test(s.slice(0, at));
++    // B-666-3 (Opus): default-deny below the floor. A whole-day amount below
++    // the floor is refused whatever verb carries it ("Try 900 calories a
++    // day", "900 calories a day is plenty"), unless the clause states a
++    // fact of the client's own data (logged / remaining / average / burned),
++    // a change amount, or one meal.
++    if (!delta && n > 0 && n < floor && WHOLE_DAY.test(clause) && !MEAL_CLAUSE.test(clause)) {
++      const role = roleOf(s, at, end);
++      if (!FACT_FAMILIES.some((f) => role.has(f))) return 'calorie_floor';
++    }
+     if (daily && !delta) {
+       // B-651-6: every positive daily value below the floor is refused, and a
+       // daily directive is never waived because the digits match client_data.
+@@ -368,7 +500,7 @@ function judgeSentence(
+       continue;
+     }
+     if (directive || delta) continue; // a meal-level suggestion or a change amount
+-    const role = roleOf(s, at, at + m[0].length);
++    const role = roleOf(s, at, end);
+     if (role.size === 0) continue;
+     // Not a grounded turn (coach surface, or no client data was expected):
+     // there are no client facts to compare with, only the floor applies.
+@@ -376,7 +508,7 @@ function judgeSentence(
+     const factFamilies = new Set(FACT_FAMILIES.filter((f) => role.has(f)));
+     if (factFamilies.size > 0) {
+       // A quoted fact must match a fact of its OWN family ("670 kcal left").
+-      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies))) continue;
++      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies, s))) continue;
+       return 'ungrounded_number';
+     }
+     if (role.has('floor') && ctx && matchesFact(n, kcalFacts(ctx, new Set(['floor'])))) continue;
+@@ -468,7 +600,34 @@ export const ROMAN_POST_CHECK_TEMPLATES = {
+  * characters are dropped, exactly as the SafetyRouter normalises user text.
+  */
+ function predicateForm(text: string): string {
+-  return normalizeForSafety(text);
++  return normalizeForSafety(presentationFree(text));
++}
++
++/** A Markdown list marker, quote marker or heading at the start of a line. */
++const LINE_MARKER =
++  /^[ \t]*(?:#{1,6}|>+|[-*+\u2022\u2023\u2043\u2219\u25E6\u25AA\u25CF]|\(?\d{1,3}[.)])[ \t]+/;
++/** Inline emphasis and code marks (`**`, `*`, `__`, `_` at a word edge, backticks, `~~`). */
++const INLINE_MARKS = /\*+|`+|~~|(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu;
++
++/**
++ * B-666-2 (Sol): presentation syntax never changes what a sentence says, so
++ * the predicates read the reply without it. Emphasis and code marks are
++ * dropped ("Eat **900 kcal** per day" reads as "Eat 900 kcal per day"), and
++ * each list item or heading becomes its own sentence ("- Eat 900 kcal per
++ * day" reads as "Eat 900 kcal per day"). The client still receives the
++ * original text when nothing fires.
++ */
++function presentationFree(text: string): string {
++  const out: string[] = [];
++  for (const raw of (text ?? '').split(/\r?\n/)) {
++    const item = LINE_MARKER.test(raw);
++    const line = raw.replace(LINE_MARKER, '').replace(INLINE_MARKS, '').trim();
++    if (!line) continue;
++    const prev = out.length - 1;
++    if (item && prev >= 0 && !/[.!?:;]$/.test(out[prev])) out[prev] += '.';
++    out.push(line);
++  }
++  return out.join(' ');
+ }
+ 
+ /**
+@@ -483,7 +642,7 @@ function medicalReplyGap(
+ ): 'false_reassurance' | 'safe_step_missing' | null {
+   const t = predicateForm(text);
+   if (FALSE_REASSURANCE.some((rx) => rx.test(t))) return 'false_reassurance';
+-  if (routerClass === 'injury_pain' && !STOP_DIRECTIVE.test(t)) return 'safe_step_missing';
++  if (routerClass === 'injury_pain' && !affirmativeStop(t)) return 'safe_step_missing';
+   if (!routesToCoach(t, ctx)) return 'safe_step_missing';
+   return null;
+ }
+diff --git a/src/roman/guardrails/safety-router.ts b/src/roman/guardrails/safety-router.ts
+index 26727918..755ce216 100644
+--- a/src/roman/guardrails/safety-router.ts
++++ b/src/roman/guardrails/safety-router.ts
+@@ -17,6 +17,19 @@ export interface SafetyRouteResult {
+   short_circuit: boolean;
+ }
+ 
++/**
++ * B-666-1 / B-666-2: `<condition>` framed as happening now ("I am having",
++ * "she is in", "going into"), or asked about as happening ("is this",
++ * "could this be", "signs of"). A past or hypothetical mention ("my dad had
++ * a heart attack", "lower my risk of a heart attack") does not match.
++ */
++function acute(condition: string): RegExp {
++  return new RegExp(
++    `\\b(having|experiencing|going into|go into|just went into|in the middle of|signs of|symptoms of|(i'?m|i am|am|is|are|he'?s|she'?s|they'?re|we'?re) (now |currently )?in|(is|could|might) (this|it|that)( be)?|(i )?think (it'?s|this is|that'?s|i'?m in)) ${condition}\\b`,
++    'i',
++  );
++}
++
+ const EMERGENCY: RegExp[] = [
+   /\bchest (pain|pressure|tightness)\b/i,
+   /\b(crushing|squeezing) (pain|feeling) in my chest\b/i,
+@@ -37,10 +50,22 @@ const EMERGENCY: RegExp[] = [
+   /\b(face (is )?droop(ing)?|slurr(ed|ing) (my |his |her )?speech|one side of (my|his|her) (body|face) (is |went |feels )?(numb|weak|drooping))\b/i,
+   // B-651-2: a past allergic reaction is history, not an emergency; an acute
+   // one (or its airway signs) is.
+-  /\b(anaphyla|throat (is )?(closing|swelling)|epi ?pen|lips (are )?swelling|tongue (is )?swelling)\b/i,
++  /\b(throat (is )?(closing|swelling)|lips (are )?swelling|tongue (is )?swelling)\b/i,
+   /\b((i'?m|i am|think i'?m|might be|he'?s|she'?s) having|having) an allergic reaction\b|\ballergic reaction (right )?now\b/i,
+-  /\b(overdos(e|ed|ing)|poison(ed|ing))\b/i,
+-  /\b(heart attack|cardiac arrest)\b/i,
++  // B-666-1 (Sol) / B-666-2 (Opus): anaphylaxis, an EpiPen, a heart attack or
++  // cardiac arrest is an emergency when it is happening now, about to, or
++  // asked about as happening ("is this ..."). History, risk and family
++  // mentions go to the model with the medical hint (MEDICAL_SCOPE below).
++  acute('(an? )?(anaphyla(xis|ctic)( shock| reaction)?)'),
++  /\banaphyla(xis|ctic)( shock| reaction)?,? (right )?now\b/i,
++  /\b(used|use|using|grab|give (me|him|her|them)) (my |an |the |his |her |their )?epi ?-?pens?\b|\bneed(s|ed)? (my|his|her|their) epi ?-?pens?\b|\bepi ?-?pens? (now|is not working|isn'?t working|did not work|didn'?t work)\b/i,
++  acute('(a )?(heart attack|cardiac arrest)'),
++  /\b(heart attack|cardiac arrest),? (right )?now\b|\b(is|are|gone|going) into cardiac arrest\b/i,
++  // "food poisoning" last week is history (medical scope); a poisoning or an
++  // overdose happening now is not.
++  /\b(overdos(e|ed|ing)|(?<!food )poison(ed|ing))\b/i,
++  // A-666-1 (Opus): an overdose described without the word.
++  /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of)( of)?( my| the)? (\w+ )?(pills|tablets|meds|medication|medicine|capsules|painkillers|sleeping pills)\b/i,
+   /\b(coughing|throwing|vomiting) up blood\b/i,
+ ];
+ 
+@@ -57,6 +82,8 @@ const SELF_HARM: RegExp[] = [
+   /\bbetter off dead\b/i,
+   /\b(want|wish) (to die|i was dead|i were dead)\b/i,
+   /\bnot worth living\b/i,
++  // A-666-1 (Opus): "I cannot go on anymore" (but not "I can't go on the bike").
++  /\b(can'?t|cannot|can not) go on( (anymore|any more|any longer|like this|living))\b|\b(can'?t|cannot|can not) go on[.!?]*\s*$/i,
+ ];
+ 
+ const EATING_DISORDER: RegExp[] = [
+@@ -94,6 +121,9 @@ const MEDICAL_SCOPE: RegExp[] = [
+   /\b(fainted|passed out|blacked out|fainting|passing out|blacking out|faint|dizzy|dizziness|light-?headed)\b/i,
+   /\b(had|have had|history of|after|since) (a |my )?stroke\b/i,
+   /\ballergic reaction\b|\ballerg(y|ies|ic) to\b/i,
++  // B-666-1 / B-666-2: history, risk and family mentions of the acute
++  // emergencies above (the acute forms are caught first by EMERGENCY).
++  /\banaphyla(xis|ctic)\b|\bepi ?-?pens?\b|\bheart attacks?\b|\bcardiac arrest\b|\bfood poisoning\b/i,
+ ];
+ 
+ const INJURY_PAIN: RegExp[] = [
+diff --git a/src/roman/roman.constants.ts b/src/roman/roman.constants.ts
+index b51ff3d4..3c859d23 100644
+--- a/src/roman/roman.constants.ts
++++ b/src/roman/roman.constants.ts
+@@ -106,15 +106,21 @@ export const ROMAN_CURSOR_INVALID_MESSAGE =
+ // ─── OR-113-2: live chat launch hardening ───────────────────────────────────
+ 
+ /**
+- * Daily spend cap for all Roman turns together (UTC day), in US dollars.
+- * Env ROMAN_DAILY_COST_CAP_USD (registered in ENV_RULES); default 25. A turn
++ * Platform-wide daily spend ceiling for all Roman turns together (UTC day),
++ * in US dollars: a runaway breaker, not a per-client limit (the per-client
++ * limit is the 429 ROMAN_RATE_LIMIT turn cap above; the per-coach money
++ * bound is the coach's monthly AI credit pool). Env ROMAN_DAILY_COST_CAP_USD
++ * (registered in ENV_RULES); default 100, sized to launch volume (operator
++ * 121, 13:33): about 2,000 to 3,000 ordinary turns a day at $0.03 to $0.05
++ * each, or 23 clients each at the full 50-turn limit at the worst-case
++ * reservation, so ordinary launch use never meets it. A turn
+  * RESERVES its worst-case cost in the content-free ledger (AiRequestAudit,
+  * capability `roman.chat`) before the provider call and settles the actual
+  * tokens after it, so concurrent turns see each other. Fail closed: when
+  * today's spend cannot be read, no paid call is made.
+  */
+ export const ROMAN_DAILY_COST_CAP_USD_ENV = 'ROMAN_DAILY_COST_CAP_USD';
+-export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 25;
++export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 100;
+ /** claude-sonnet-4-6 list price per million tokens (input / output), USD. */
+ export const ROMAN_PRICE_PER_MTOK = { input: 3, output: 15 } as const;
+ /** The content-free ledger capability for one Roman turn. */
+@@ -173,6 +179,14 @@ export const ROMAN_NOT_CONFIGURED_MESSAGE_COACH =
+   `Roman is not set up on this server yet, and the support team has been told. ${ROMAN_COACH_NEXT_STEP}`;
+ export const ROMAN_SWITCHED_OFF_MESSAGE_COACH = `Roman is switched off at the moment. ${ROMAN_COACH_NEXT_STEP}`;
+ 
++/**
++ * 402 COACH_AI_BUDGET_EXHAUSTED (B-668-1): the coach's monthly AI credit pool
++ * is used up. The client copy never shows the coach's credit figures.
++ */
++export const ROMAN_COACH_POOL_EMPTY_MESSAGE =
++  "Your coach's AI credits for this month are used up, so Roman cannot answer right now. Your coach is in Messages any time, and your plan and logs work as usual.";
++export const ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH = `The AI credits on your coaching account are used up for this month, so Roman cannot answer right now. Add a credit pack to keep using Roman. ${ROMAN_COACH_NEXT_STEP}`;
++
+ /** The failure copy for one machine code, written for the caller's audience. */
+ export function romanFailureMessage(
+   kind: 'capacity_reached' | 'capacity_unknown' | 'model_unavailable' | 'not_configured' | 'switched_off',
+diff --git a/src/roman/roman.controller.ts b/src/roman/roman.controller.ts
+index 217fe95e..97f76608 100644
+--- a/src/roman/roman.controller.ts
++++ b/src/roman/roman.controller.ts
+@@ -137,6 +137,9 @@ export class RomanController {
+     // OR-113-2 — daily spend cap, checked before the turn is stored (coded
+     // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
+     if (!crisis) await this.roman.assertDailyCapacity(caller);
++    // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
++    // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
++    if (!crisis) await this.roman.assertCoachPoolOpen(caller);
+     await this.roman.appendMessage(caller, session.id, {
+       role: 'user',
+       content: dto.content,
+diff --git a/src/roman/roman.service.ts b/src/roman/roman.service.ts
+index 13aa7ff6..b6ad1f1c 100644
+--- a/src/roman/roman.service.ts
++++ b/src/roman/roman.service.ts
+@@ -71,9 +71,15 @@ import {
+   ROMAN_ERROR_MODEL_UNAVAILABLE,
+   ROMAN_LEDGER_CAPABILITY,
+   ROMAN_PRICE_PER_MTOK,
++  ROMAN_COACH_POOL_EMPTY_MESSAGE,
++  ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH,
++  romanAudienceOf,
+   romanFailureMessage,
+   romanRateLimitMessage,
+ } from './roman.constants';
++import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
++import { CoachAiBudgetExhaustedException } from '../ai-credits/budget-exhausted.exception';
++import { COACH_AI_BUDGET_EXHAUSTED_CODE } from '../ai-credits/ai-credits.constants';
+ import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
+ import {
+   classifySafety,
+@@ -199,6 +205,11 @@ export class RomanService {
+     // (ids and the route class only, never the message text).
+     @Optional()
+     private readonly audit: AuditService | null = null,
++    // B-668-1: the coach's monthly AI credit pool (src/ai-credits, @Global
++    // AiCreditsModule, so Nest always provides it). Every paid turn is
++    // checked against it before the provider call and debited after it.
++    @Optional()
++    private readonly budget: CoachAIBudgetService | null = null,
+   ) {}
+ 
+   // ─── Sessions ──────────────────────────────────────────────────────────────
+@@ -975,7 +986,19 @@ export class RomanService {
+     await this.egress.assertMaySend(subject, 'anthropic', 'roman.chat');
+ 
+     const grounded = session.surface === 'client' && caller.role === 'student';
++    // B-668-1: the coach pool is re-checked here (the controller checked it
++    // before storing the turn) and refuses before any spend is reserved.
++    const poolCoachId = await this.assertCoachPoolOpen(caller);
+     const reservation = await this.reserveDailySpend(caller);
++    // Every settle path that spent tokens also debits the coach pool.
++    const settle = async (
++      inputTokens: number,
++      outputTokens: number,
++      metadata: Record<string, string | number | boolean | string[] | null>,
++    ): Promise<void> => {
++      await this.settleSpend(reservation, inputTokens, outputTokens, metadata);
++      await this.debitCoachPool(poolCoachId, inputTokens, outputTokens, reservation);
++    };
+ 
+     let bundle: RomanClientContextBundle | null = null;
+     let contextUnavailable = false;
+@@ -1038,7 +1061,7 @@ export class RomanService {
+       }
+     } catch (err) {
+       if (isAiEgressRefusal(err)) {
+-        await this.settleSpend(reservation, 0, 0, { outcome: 'refused' });
++        await settle(0, 0, { outcome: 'refused' });
+         throw err;
+       }
+       interrupted = true;
+@@ -1054,7 +1077,7 @@ export class RomanService {
+     // Model failure before any text: honest, specific, coded. The user turn
+     // stays stored; nothing is invented for Roman.
+     if (failed && acc.trim().length === 0) {
+-      await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
++      await settle(promptTokens ?? 0, completionTokens ?? 0, {
+         outcome: 'model_error',
+       });
+       Sentry.captureMessage('roman.model_unavailable', {
+@@ -1093,13 +1116,13 @@ export class RomanService {
+       // The chat was deleted (or the write failed) while the model answered:
+       // nothing is stored, but the tokens were spent, so the ledger settles
+       // with the real usage instead of keeping the reservation estimate.
+-      await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
++      await settle(promptTokens ?? 0, completionTokens ?? 0, {
+         outcome: err instanceof NotFoundException ? 'session_gone' : 'persist_failed',
+         router_class: route.class,
+       });
+       throw err;
+     }
+-    await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
++    await settle(promptTokens ?? 0, completionTokens ?? 0, {
+       outcome: interrupted ? 'interrupted' : 'ok',
+       router_class: route.class,
+       guardrails_applied: checked.guardrails_applied,
+@@ -1307,6 +1330,112 @@ export class RomanService {
+     }
+   }
+ 
++  // ─── Coach AI credit pool (B-668-1, owner 11:40-11:41) ──────────────────
++
++  /**
++   * Whose monthly pool pays for this caller's turns: a client's coach (a
++   * sub-coach's client draws on the head coach), a coach's own (a
++   * sub-coach's head coach). The owner and a client without a coach have no
++   * pool; the per-client turn limit and the daily spend ceiling still apply.
++   * Same attribution as the AI gateway (resolveBudgetCoachId).
++   */
++  private async poolCoachIdFor(
++    budget: CoachAIBudgetService,
++    caller: RomanCaller,
++  ): Promise<string | null> {
++    if (caller.role === 'owner') return null;
++    if (caller.role === 'coach') return budget.resolveHeadCoachId(caller.id);
++    const user = await this.prisma.user.findUnique({
++      where: { id: caller.id },
++      select: { coach_id: true },
++    });
++    return user?.coach_id ? budget.resolveHeadCoachId(user.coach_id) : null;
++  }
++
++  /**
++   * B-668-1: refuse a paid turn when the coach's monthly pool is used up:
++   * 402 COACH_AI_BUDGET_EXHAUSTED with copy written for the caller (a client
++   * never sees the coach's credit figures; a coach also gets the pack
++   * options). Runs in the controller before the user turn is stored and
++   * again in the turn before any spend is reserved. A pool that cannot be
++   * read fails closed (coded 503, no provider call). Returns the pool's
++   * coach id for the debit, or null when the caller has no pool.
++   */
++  async assertCoachPoolOpen(caller: RomanCaller): Promise<string | null> {
++    const budget = this.budget;
++    if (!budget) return null;
++    let coachId: string | null;
++    let exhausted = false;
++    try {
++      coachId = await this.poolCoachIdFor(budget, caller);
++      if (!coachId) return null;
++      // Same gate as the AI gateway: refuse once the pool is at or over its ceiling.
++      const pre = await budget.canCharge(coachId, 0);
++      exhausted = pre.budget.actual_used_cents >= pre.budget.total_actual_available_cents;
++    } catch (err) {
++      this.logger.error(`roman.coach_pool_failed: ${romanErrorTag(err)}`);
++      Sentry.captureException(romanSanitizedError('roman.coach_pool_failed', err), {
++        tags: { feature: 'roman', op: 'roman.pool' },
++      });
++      throw new ServiceUnavailableException({
++        code: ROMAN_ERROR_UNAVAILABLE,
++        message: romanFailureMessage('capacity_unknown', caller.role),
++      });
++    }
++    if (!exhausted) return coachId;
++    this.logger.warn(`roman.coach_pool_empty role=${caller.role}`);
++    if (romanAudienceOf(caller.role) === 'client') {
++      throw new HttpException(
++        { code: COACH_AI_BUDGET_EXHAUSTED_CODE, message: ROMAN_COACH_POOL_EMPTY_MESSAGE },
++        HttpStatus.PAYMENT_REQUIRED,
++      );
++    }
++    const dto = await budget.getBudgetDto(coachId);
++    throw new CoachAiBudgetExhaustedException({
++      code: COACH_AI_BUDGET_EXHAUSTED_CODE,
++      message: ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH,
++      pack_options_cents: dto.pack_options_cents,
++      custom_pack_bounds_cents: dto.custom_pack_bounds_cents,
++      budget: {
++        period_end: dto.period_end,
++        base_displayed_cents: dto.base_displayed_cents,
++        pack_displayed_cents: dto.pack_displayed_cents,
++        used_displayed_cents: dto.used_displayed_cents,
++        remaining_displayed_cents: dto.remaining_displayed_cents,
++      },
++    });
++  }
++
++  /**
++   * B-668-1: debit the turn's actual cost (the same tokens the ledger
++   * settles) from the coach pool, in whole cents rounded up. The provider
++   * call already happened, so a failed debit is logged and reported, never
++   * thrown at the client.
++   */
++  private async debitCoachPool(
++    coachId: string | null,
++    inputTokens: number,
++    outputTokens: number,
++    requestId: string,
++  ): Promise<void> {
++    if (!coachId || !this.budget) return;
++    const cents = Math.ceil(RomanService.costUsd(inputTokens, outputTokens) * 100);
++    if (cents <= 0) return;
++    try {
++      await this.budget.recordUsage({
++        coachId,
++        actualCostCents: cents,
++        capability: ROMAN_LEDGER_CAPABILITY,
++        contextId: requestId,
++      });
++    } catch (err) {
++      this.logger.error(`roman.coach_pool_debit_failed: ${romanErrorTag(err)}`);
++      Sentry.captureException(romanSanitizedError('roman.coach_pool_debit_failed', err), {
++        tags: { feature: 'roman', op: 'roman.pool' },
++      });
++    }
++  }
++
+   // ─── helpers ─────────────────────────────────────────────────────────────
+ 
+   private isUniqueViolation(err: unknown): boolean {
+@@ -1321,26 +1450,33 @@ export class RomanService {
+ 
+ /**
+  * The typed facts the post-check may compare against, from the SAME bundle
+- * the model saw (B-R8-2). Extra kcal facts: today's food entries, wearable
+- * active energy and the meal-plan slot numbers.
++ * the model saw (B-R8-2). B-668-3: the extra kcal facts keep their family,
++ * day and source (today's entries, earlier days' intake, burned today,
++ * burned on earlier days and the 7-day average, meal-plan slots), so one kind
++ * of number never validates a claim about another.
+  */
+ export function postCheckContextOf(ctx: RomanClientContext): PostCheckContext {
+-  const extra: number[] = [
+-    ...ctx.today.entries.map((e) => e.kcal),
+-    ...ctx.wearables.days.map((d) => d.active_kcal).filter((n): n is number => n !== null),
+-    ...(ctx.wearables.avg_7d.active_kcal !== null ? [ctx.wearables.avg_7d.active_kcal] : []),
+-    ...(ctx.meal_plan?.items ?? []).flatMap((item) =>
+-      [...item.matchAll(/(\d{2,5}) kcal/g)].map((m) => Number(m[1])),
+-    ),
+-    ...ctx.last_7_days.days.map((d) => d.kcal),
+-  ];
++  const today = ctx.today.date;
++  const burned = (days: RomanClientContext['wearables']['days']) =>
++    days.map((d) => d.active_kcal).filter((n): n is number => n !== null);
+   return {
+     targets: ctx.targets,
+     today: ctx.today,
+     last_7_days: ctx.last_7_days,
+     macro_method: { floor_kcal: ctx.macro_method.floor_kcal },
+     coach: { has_coach: ctx.coach.has_coach, coach_first_name: ctx.coach.coach_first_name },
+-    extra_kcal_facts: extra,
++    kcal_facts: {
++      intake_entries_today: ctx.today.entries.map((e) => e.kcal),
++      intake_past_days: ctx.last_7_days.days.filter((d) => d.date !== today).map((d) => d.kcal),
++      burned_today: burned(ctx.wearables.days.filter((d) => d.date === today)),
++      burned_past: [
++        ...burned(ctx.wearables.days.filter((d) => d.date !== today)),
++        ...(ctx.wearables.avg_7d.active_kcal !== null ? [ctx.wearables.avg_7d.active_kcal] : []),
++      ],
++      meal_plan: (ctx.meal_plan?.items ?? []).flatMap((item) =>
++        [...item.matchAll(/(\d{2,5}) kcal/g)].map((m) => Number(m[1])),
++      ),
++    },
+   };
+ }
+ 
+diff --git a/test/roman/roman-guardrails-rb121.spec.ts b/test/roman/roman-guardrails-rb121.spec.ts
+new file mode 100644
+index 00000000..58942f63
+--- /dev/null
++++ b/test/roman/roman-guardrails-rb121.spec.ts
+@@ -0,0 +1,243 @@
++/**
++ * Fix round 1 (B-ROMAN-BFIX-121, agent 121) for #666 @ 0ec835ca: one
++ * regression per B finding of the two RB audits (AUD-SOL-RB-121 and
++ * AUD-OPUS-RB-121), plus the post-check half of B-668-3 (kcal facts keep
++ * their family, day and source). Red on 0ec835ca, green with the fix.
++ */
++import {
++  classifySafety,
++  ROMAN_PHYSICIAN_LINE_INJURY,
++} from '../../src/roman/guardrails/safety-router';
++import {
++  postCheckRomanReply,
++  type PostCheckContext,
++} from '../../src/roman/guardrails/roman-post-check';
++
++/** Persona: target 1450, today 780, remaining 670, 7-day average 1100, floor 1200. */
++const LEAN: PostCheckContext = {
++  targets: { source: 'coach_set', calories: 1450, protein_g: 120, carbs_g: 140, fat_g: 45 },
++  today: {
++    kcal: 780,
++    protein_g: 60,
++    carbs_g: 70,
++    fat_g: 25,
++    meals_logged: 2,
++    remaining_kcal: 670,
++    remaining_protein_g: 60,
++    remaining_carbs_g: 70,
++    remaining_fat_g: 20,
++    pct_kcal: 54,
++    pct_protein: 50,
++  },
++  last_7_days: {
++    days_logged: 5,
++    avg_kcal_on_logged_days: 1100,
++    avg_protein_g_on_logged_days: 110,
++    days_within_10pct_kcal: 4,
++  },
++  macro_method: { floor_kcal: 1200 },
++  coach: { has_coach: true, coach_first_name: 'Alex' },
++};
++
++const normal = (reply: string, context: PostCheckContext = LEAN) =>
++  postCheckRomanReply(reply, { routerClass: 'normal', context, contextUnavailable: false });
++
++describe('A-666-1 (Opus) acute anaphylaxis, overdose and self-harm phrasing reach the crisis route', () => {
++  it.each([
++    'I think I am going into anaphylactic shock',
++    'I am having anaphylaxis after eating shrimp',
++    'I took a whole bottle of pills',
++    'I took too many of my sleeping pills',
++    'I am having an allergic reaction',
++  ])('emergency: %s', (message) => {
++    const r = classifySafety(message);
++    expect(r.class).toBe('emergency');
++    expect(r.short_circuit).toBe(true);
++  });
++
++  it.each(['I cannot go on anymore', "I can't go on."])('self harm: %s', (message) => {
++    const r = classifySafety(message);
++    expect(r.class).toBe('self_harm');
++    expect(r.short_circuit).toBe(true);
++  });
++
++  it.each(["I can't go on the bike today, my knee hurts", 'I took too many rest days this week'])(
++    'not a crisis: %s',
++    (message) => {
++      expect(classifySafety(message).short_circuit).toBe(false);
++    },
++  );
++});
++
++describe('B-666-1 (Sol) / B-666-2 (Opus) router: acute emergencies short-circuit, history does not', () => {
++  it.each([
++    'I am having anaphylaxis right now.',
++    'My friend is having an anaphylactic reaction.',
++    'he is going into anaphylactic shock',
++    'I think I am having a heart attack',
++    'is this a heart attack',
++    'My throat is closing after I ate peanuts.',
++    'My throat is closing after eating peanuts',
++    'I just used my EpiPen and my lips are swelling',
++    'Should I use my EpiPen?',
++    'I have crushing pain in my chest',
++    'I took too many pills, I think I overdosed',
++  ])('emergency: %s', (message) => {
++    const r = classifySafety(message);
++    expect(r.class).toBe('emergency');
++    expect(r.short_circuit).toBe(true);
++  });
++
++  it.each([
++    'Does cardio lower my risk of a heart attack?',
++    'My dad had a heart attack last year, so I want to get fit.',
++    'I had food poisoning last week, when can I train again?',
++    'I carry an EpiPen for my peanut allergy, what snacks work for me?',
++    'I have a history of anaphylaxis to shellfish, is fish oil okay?',
++    'I had anaphylaxis to peanuts as a kid',
++    'My client had a heart attack two years ago; how should I adjust her program?',
++  ])('medical scope, not the 911 template: %s', (message) => {
++    const r = classifySafety(message);
++    expect(r.class).toBe('medical_scope');
++    expect(r.short_circuit).toBe(false);
++  });
++});
++
++describe('B-666-2 (Sol) Markdown and list formatting never waives the daily floor', () => {
++  it.each([
++    'Eat **900 kcal** per day.',
++    '- Eat 900 kcal per day.',
++    'Consume **300 kcal** per day.',
++    'Here is the plan:\n1. Eat 900 kcal per day\n2. Walk after dinner',
++    '> _Eat 900 kcal per day._',
++  ])('%s', (reply) => {
++    const r = normal(reply);
++    expect(r.guardrails_applied).toContain('calorie_floor');
++    expect(r.rewritten).toBe(true);
++    expect(r.text).not.toMatch(/\b(900|300) kcal\b/);
++  });
++
++  it('control: a snack-sized suggestion is unchanged', () => {
++    const reply = 'Try about 300 kcal for your next snack.';
++    expect(normal(reply)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
++  });
++
++  it('control: a formatted reply that passes is returned byte-for-byte', () => {
++    const reply = 'Two easy wins today:\n- **Protein** at lunch\n- A short walk after dinner';
++    expect(normal(reply)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
++  });
++});
++
++describe('B-666-3 (Opus) a below-floor daily amount is refused whatever verb carries it', () => {
++  it.each([
++    'Try 900 calories a day.',
++    'Keep your calories at 900 a day.',
++    'Cut your calories to 900 per day.',
++    '900 calories a day is plenty for you.',
++    'Eat 900 kcal per day.',
++  ])('%s', (reply) => {
++    const r = normal(reply);
++    expect(r.guardrails_applied).toContain('calorie_floor');
++    expect(r.text).not.toMatch(/\b900\b/);
++  });
++
++  it.each([
++    'Try about 300 kcal for your next snack.',
++    'A banana is about 100 calories.',
++    "Today's lunch was 450 kcal.",
++    'You averaged 1,100 kcal a day this week.',
++    'You have 670 kcal left for the day.',
++    'Aim for a 300 kcal per day deficit.',
++    'Burn 300 calories a day with walks.',
++    'Keep your calories at 1,450 a day.',
++  ])('control unchanged: %s', (reply) => {
++    expect(normal(reply)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
++  });
++});
++
++describe('B-666-3 (Sol) only an affirmative stop instruction satisfies the injury safe step', () => {
++  const injury = (reply: string) =>
++    postCheckRomanReply(reply, { routerClass: 'injury_pain', context: LEAN });
++
++  it.each([
++    `Do not stop the movement that hurts; message your coach. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
++    `Don't skip your workout; message your coach. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
++    `Never pause a set because of a twinge; message your coach. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
++    `Stop by the front desk and message your coach. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
++  ])('rewritten to the injury template: %s', (reply) => {
++    const r = injury(reply);
++    expect(r.guardrails_applied).toEqual(['safe_step_missing']);
++    expect(r.text).toContain('stop any movement that hurts today');
++  });
++
++  it.each([
++    `Stop the movement that hurts and message your coach. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
++    `Please stop squatting for today, and message Alex. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
++    `Avoid anything that hurts today and message Alex. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
++  ])('control unchanged: %s', (reply) => {
++    expect(injury(reply)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
++  });
++});
++
++describe('B-666-1 (Opus) everyday coaching words are not diagnosis or banned-substance language', () => {
++  it.each([
++    'Coffee still counts toward your water for the day; it is only a mild diuretic.',
++    'Deep sleep is when your body releases most of its growth hormone, so protect your bedtime.',
++    'Cured meats like bacon are high in sodium, so keep them to the occasional breakfast.',
++    'Your coach prescribed four sets of eight on squats today, so start there.',
++    'You can treat today as a lighter day and go for a walk instead.',
++    'Oats and prunes have a mild laxative effect thanks to their fiber.',
++    'Carbs raise insulin, but that alone does not make you gain fat.',
++  ])('unchanged: %s', (reply) => {
++    expect(normal(reply)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
++  });
++
++  it.each([
++    'Take 400 mg ibuprofen twice daily.',
++    'Try a water fast for 3 days.',
++    'A diuretic before your weigh-in will drop the water weight.',
++    'Some people use insulin to get leaner faster.',
++    'Laxatives can help after a heavy meal.',
++    'This should cure the soreness in a week.',
++    'I would treat this with ibuprofen at a 400 mg dose.',
++    'Your doctor can prescribe a stronger medication for that.',
++    'Lower your insulin before training.',
++  ])('control still rewritten: %s', (reply) => {
++    expect(normal(reply).rewritten).toBe(true);
++  });
++});
++
++describe('B-668-3 (post-check half) kcal facts keep their family, day and source', () => {
++  const FACTS: PostCheckContext = {
++    ...LEAN,
++    kcal_facts: {
++      intake_entries_today: [450, 330],
++      intake_past_days: [1850],
++      burned_today: [2500],
++      burned_past: [400, 380],
++      meal_plan: [200, 520],
++    },
++  };
++
++  it.each([
++    'You have logged 2500 kcal today.', // a burned total, not intake
++    'You have logged 1850 kcal today.', // yesterday's intake, not today
++    'You burned 200 kcal today.', // a meal-plan slot, not burned energy
++    'You burned 400 kcal today.', // an earlier day's burn, not today
++    'Yesterday you logged 780 kcal.', // today's intake, not yesterday
++  ])('rejected: %s', (reply) => {
++    const r = normal(reply, FACTS);
++    expect(r.guardrails_applied).toEqual(['ungrounded_number']);
++    expect(r.rewritten).toBe(true);
++  });
++
++  it.each([
++    'You have logged 780 kcal today.',
++    'You logged 450 kcal at lunch today.',
++    'You burned 2500 kcal today.',
++    'Yesterday you logged 1850 kcal.',
++    'Your meal plan has 520 kcal at dinner, and you have logged 780 kcal so far.',
++  ])('accepted: %s', (reply) => {
++    expect(normal(reply, FACTS)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
++  });
++});
+diff --git a/test/roman/roman-launch-hardening.spec.ts b/test/roman/roman-launch-hardening.spec.ts
+index 5cb0e763..b605a3de 100644
+--- a/test/roman/roman-launch-hardening.spec.ts
++++ b/test/roman/roman-launch-hardening.spec.ts
+@@ -454,6 +454,47 @@ describe('B-R8-2 / A-R4-4 one immutable bundle; only checked text is stored and
+     expect(pc.targets.calories).toBe(2000);
+     expect(pc.today.remaining_kcal).toBe(1100);
+   });
++
++  it('B-668-3 (Sol): kcal facts keep their family, day and source', () => {
++    const base = fakeBundle().context;
++    const day = (date: string, active_kcal: number | null) => ({
++      date,
++      steps: null,
++      active_kcal,
++      resting_hr_bpm: null,
++      hrv_ms: null,
++      sleep_hours: null,
++      sleep_efficiency_pct: null,
++      recovery_score: null,
++      readiness_score: null,
++    });
++    const pc = postCheckContextOf({
++      ...base,
++      today: {
++        ...base.today,
++        entries: [{ meal: 'lunch', name: 'Bowl', kcal: 450, protein_g: 30, logged_at: '12:10' }],
++      },
++      last_7_days: {
++        ...base.last_7_days,
++        days: [
++          { date: '2026-10-01', kcal: 1850, protein_g: 90, carbs_g: 200, fat_g: 60, meals_logged: 3 },
++        ],
++      },
++      wearables: {
++        ...base.wearables,
++        avg_7d: { ...base.wearables.avg_7d, active_kcal: 380 },
++        days: [day('2026-10-01', 400), day('2026-10-02', 2500)],
++      },
++      meal_plan: { title: 'Plan', items: ['Breakfast oats 200 kcal'] },
++    });
++    expect(pc.kcal_facts).toEqual({
++      intake_entries_today: [450],
++      intake_past_days: [1850],
++      burned_today: [2500],
++      burned_past: [400, 380],
++      meal_plan: [200],
++    });
++  });
+ });
+ 
+ // ─── A-R3-1: context failure logs no raw text and runs degraded ─────────────
+@@ -516,8 +557,8 @@ describe('OR-113-2 launch hardening', () => {
+ 
+   it('an invalid cap value never means "no cap"', () => {
+     const svc = new RomanService(fakeOf(makePrisma().prisma), grantAllEgress(), null);
+-    expect(svc.dailyCostCapUsd({ ROMAN_DAILY_COST_CAP_USD: 'lots' })).toBe(25);
+-    expect(svc.dailyCostCapUsd({})).toBe(25);
++    expect(svc.dailyCostCapUsd({ ROMAN_DAILY_COST_CAP_USD: 'lots' })).toBe(100);
++    expect(svc.dailyCostCapUsd({})).toBe(100);
+     expect(svc.dailyCostCapUsd({ ROMAN_DAILY_COST_CAP_USD: '40' })).toBe(40);
+   });
+ 
+diff --git a/test/roman/roman-streaming.spec.ts b/test/roman/roman-streaming.spec.ts
+index ce0dd1e1..20836fea 100644
+--- a/test/roman/roman-streaming.spec.ts
++++ b/test/roman/roman-streaming.spec.ts
+@@ -681,6 +681,19 @@ describe('Roman — a crisis message is answered without box 2; nothing else is'
+     expect(messages).toHaveLength(2);
+   });
+ 
++  it.each(['I think I am going into anaphylactic shock', 'I took a whole bottle of pills'])(
++    'A-666-1 (Opus) no grant + acute emergency without the trigger word (%s): the 911 template, zero model calls',
++    async (content) => {
++      const { ctrl, anthropic, messages } = setup([]);
++      const { res, writes } = makeRes();
++      await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content });
++      const done = parseFrames(writes).find((f) => f.data?.type === 'done');
++      expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.emergency);
++      expect(anthropic.messages.stream).not.toHaveBeenCalled();
++      expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
++    },
++  );
++
+   it('no AI provider configured: an emergency message still gets the 911 template', async () => {
+     const { ctrl, messages } = setup(['user-A'], false);
+     const { res, writes } = makeRes();

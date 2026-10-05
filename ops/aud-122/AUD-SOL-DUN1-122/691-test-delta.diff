@@ -1,0 +1,469 @@
+diff --git a/test/dunning-b689-5-ledger-amount.spec.ts b/test/dunning-b689-5-ledger-amount.spec.ts
+new file mode 100644
+index 00000000..a55c37db
+--- /dev/null
++++ b/test/dunning-b689-5-ledger-amount.spec.ts
+@@ -0,0 +1,148 @@
++/**
++ * B-689-5 (Opus, AUD-OPUS-D34-118 probe P3): the reversed amount the client
++ * sees (quote disputes[].amount_cents and the card-update reply) comes from
++ * the ChargeDispute ledger, or is omitted; never the cycle's last failed
++ * renewal amount.
++ */
++import { DunningService } from '../src/checkout/dunning.service';
++import { ClientBillingService } from '../src/checkout/client-billing.service';
++import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
++import { DunningV2Telemetry } from '../src/checkout/dunning-v2/dunning-v2.telemetry';
++import { FakePrisma } from './support/dunning-v2-fake-prisma';
++import { FakeStripeBilling } from './support/fake-stripe-billing';
++
++const DAY = 24 * 60 * 60 * 1000;
++const T0 = new Date('2026-10-05T16:00:00.000Z');
++const at = (ms: number) => new Date(T0.getTime() + ms);
++const sec = (d: Date) => Math.floor(d.getTime() / 1000);
++const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++const stub = (v: unknown): any => v;
++const flush = async () => {
++  for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r));
++};
++
++function world() {
++  const fake = new FakePrisma();
++  const prisma = fake.client();
++  const stripe = new FakeStripeBilling();
++  stripe.customers.set('cus_c', { id: 'cus_c', default_payment_method: 'pm_old' });
++  stripe.subs.set('sub_c', {
++    id: 'sub_c',
++    status: 'active',
++    customer: 'cus_c',
++    current_period_end: sec(at(30 * DAY)),
++    default_payment_method: 'pm_old',
++    cancel_at_period_end: false,
++    latest_invoice: null,
++  });
++  stripe.addCard('pm_old', 'decline', '0341');
++  stripe.addCard('pm_new_ok', 'ok', '4242');
++  const v1 = new DunningService(prisma, stub(stripe));
++  const v2 = new DunningV2Service(prisma, new DunningV2Telemetry(), undefined, stub(stripe));
++  const billing = new ClientBillingService(prisma, stub(stripe), v1, v2);
++  fake.seed('user', { id: 'coach-1', name: 'Morgan Coach', email: 'coach@tgp.invalid', role: 'coach' });
++  fake.seed('user', { id: 'client-1', name: 'Avery Client', email: 'client@tgp.invalid', role: 'student' });
++  fake.seed('coachPackage', {
++    id: 'pkg-1',
++    coach_user_id: 'coach-1',
++    billing_type: 'recurring',
++    interval: 'month',
++    duration_days: null,
++    price_cents: 15000,
++  });
++  fake.seed('connectCustomer', {
++    id: 'cc-1',
++    client_user_id: 'client-1',
++    stripe_customer_id: 'cus_c',
++    default_payment_method_id: 'pm_old',
++  });
++  fake.seed('clientPurchase', {
++    id: 'purchase-1',
++    client_user_id: 'client-1',
++    coach_user_id: 'coach-1',
++    package_id: 'pkg-1',
++    status: 'past_due',
++    entitlement_active: true,
++    billing_type: 'recurring',
++    amount_cents: 15000,
++    currency: 'usd',
++    stripe_subscription_id: 'sub_c',
++    access_expires_at: at(0),
++    current_period_end: at(0),
++    cancel_at_period_end: false,
++    canceled_at: null,
++    created_at: at(-60 * DAY),
++  });
++  const purchase = () => fake.find('clientPurchase', { id: 'purchase-1' })!;
++  const state = () => fake.find('dunningState', { purchase_id: 'purchase-1' });
++  return { fake, stripe, v1, v2, billing, purchase, state };
++}
++
++describe('B-689-5: the reversed amount shown is the ledger amount, never the last failed renewal', () => {
++  const prior = { ...process.env };
++  beforeEach(() => {
++    process.env['FEATURE_DUNNING_V2'] = 'true';
++    process.env['STRIPE_PUBLISHABLE_KEY'] = 'pk_test_b689_5';
++    jest.useFakeTimers({ now: T0, doNotFake: ['setImmediate', 'nextTick'] });
++  });
++  afterEach(() => {
++    jest.useRealTimers();
++    process.env = { ...prior };
++  });
++
++  it('a $99.00 dispute after a $150.00 renewal failed and was paid: quote and reply never say $150.00', async () => {
++    const w = world();
++    // Day 0: the $150.00 renewal fails; Day 1: Stripe's retry pays it.
++    w.stripe.addInvoice({ id: 'in_r1', subscription: 'sub_c', amount_due: 15000, created: sec(T0) });
++    w.stripe.subs.get('sub_c')!.status = 'past_due';
++    await w.v1.recordFailure({
++      purchase: stub(w.purchase()),
++      stripe_invoice_id: 'in_r1',
++      amount_due_cents: 15000,
++      attempt_number: 1,
++      reason: 'Your card was declined.',
++    });
++    await w.v2.recordPaymentFailed('purchase-1', T0);
++    await flush();
++    jest.setSystemTime(at(DAY));
++    w.stripe.subs.get('sub_c')!.default_payment_method = 'pm_new_ok';
++    expect(w.stripe.stripeRetry('in_r1')).toBe('paid');
++    Object.assign(w.purchase(), { status: 'active', entitlement_active: true, current_period_end: at(30 * DAY) });
++    await w.v1.recordResolution('purchase-1');
++    await w.v2.applyImmediateClear('purchase-1', 'retry');
++    expect(w.state()?.last_failed_amount_cents).toBe(15000);
++    // Day 12: the bank reverses an earlier $99.00 charge; the ledger has it.
++    jest.setSystemTime(at(12 * DAY));
++    w.fake.seed('chargeDispute', {
++      id: 'dp-first',
++      purchase_id: 'purchase-1',
++      stripe_dispute_id: 'dp_first',
++      stripe_charge_id: 'ch_first',
++      amount_cents: 9900,
++      currency: 'usd',
++      status: 'needs_response',
++      created_at: at(12 * DAY),
++    });
++    const opened = await w.v2.handleLateReversal({
++      purchaseId: 'purchase-1',
++      reversedChargeAt: at(12 * DAY),
++      disputeId: 'dp_first',
++      chargeId: 'ch_first',
++      now: at(12 * DAY),
++    });
++    expect(opened.opened).toBe(true);
++    jest.setSystemTime(at(13 * DAY));
++    const setup = await w.billing.createCardSetup('client-1', UUID(4));
++    w.stripe.confirmSetupIntentInSheet(setup.setup_intent_id, 'pm_new_ok');
++    const quote = await w.billing.getPaymentQuote('client-1');
++    expect(quote.disputes[0]?.amount_cents).toBe(9900);
++    expect(quote.disputes[0]?.currency).toBe('usd');
++    const res = await w.billing.confirmCardUpdate(
++      'client-1',
++      setup.setup_intent_id,
++      quote.lines.map((l) => ({ invoice_id: l.invoice_id, amount_cents: l.amount_cents, currency: l.currency })),
++    );
++    expect(res.message).not.toContain('$150.00');
++  });
++});
+diff --git a/test/dunning-r3-money-truth-e2e.spec.ts b/test/dunning-r3-money-truth-e2e.spec.ts
+index 814a32e3..008beef2 100644
+--- a/test/dunning-r3-money-truth-e2e.spec.ts
++++ b/test/dunning-r3-money-truth-e2e.spec.ts
+@@ -729,9 +729,12 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
+         status: 'needs_response',
+         created_at: at(12 * DAY),
+       });
++      // D2c (R-DISPUTE-PAUSE): the pause needs the Stripe dispute id.
+       const r = await w.v2.handleLateReversal({
+         purchaseId: 'purchase-1',
+         reversedChargeAt: at(12 * DAY),
++        disputeId: 'dp_1',
++        chargeId: 'ch_1',
+       });
+       expect(r.opened).toBe(true);
+     }
+@@ -770,7 +773,7 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
+       expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
+     });
+ 
+-    it('B-628-13 order 2: a dispute during a payment cycle, then the renewal is paid: the cycle stays as the dispute cycle until the dispute is won', async () => {
++    it('B-628-13 order 2: a dispute during a payment cycle, then the renewal is paid: the cycle stays as the dispute cycle; a won dispute keeps the pause', async () => {
+       await failRenewal(w);
+       expect(stateRow(w)?.status).toBe('active');
+       expect(stateRow(w)?.last_failure_reason).not.toBe('charge_disputed');
+@@ -791,7 +794,8 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
+         disputeId: 'dp_9',
+         chargeId: 'ch_0',
+       });
+-      expect(r).toMatchObject({ opened: false, reason: 'cycle_already_active' });
++      // D2c (R-DISPUTE-PAUSE): the dispute pauses the plan in the open cycle.
++      expect(r).toMatchObject({ opened: true, reason: 'paused' });
+       expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
+       // The renewal is paid while dispute dp_9 is open.
+       w.stripe.subs.get('sub_dv2_client')!.default_payment_method = 'pm_new_ok';
+@@ -803,17 +807,17 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
+         last_failure_reason: 'charge_disputed',
+       });
+       expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
+-      // Only the dispute closing in the client's favour ends it.
++      // D2c (R-DISPUTE-PAUSE): a won dispute keeps the pause; the coach restarts.
+       const closed = await w.v2.onDisputeClosed({
+         chargeId: 'ch_0',
+         disputeId: 'dp_9',
+         status: 'won',
+       });
+-      expect(closed).toEqual({ resolved: true, reason: 'dispute_won' });
+-      expect(stateRow(w)?.status).toBe('resolved');
++      expect(closed).toEqual({ resolved: false, reason: 'pause_kept' });
++      expect(stateRow(w)?.status).toBe('active');
+     });
+ 
+-    it('locks on its Day 10 although the subscription is active; a renewal payment and a card update do not settle it; a won dispute does', async () => {
++    it('locks at once although the subscription is active; a renewal payment, a card update and a won dispute do not settle it', async () => {
+       await openDispute();
+       // A renewal invoice.paid while the dispute is open keeps the cycle.
+       await w.handler.handle(fixture('invoice.paid'));
+@@ -822,9 +826,8 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
+         status: 'active',
+         last_failure_reason: 'charge_disputed',
+       });
+-      const lockAt = at(19 * DAY + 10 * MIN);
+-      jest.setSystemTime(lockAt);
+-      expect((await w.v2.runSweep(lockAt)).locked).toBe(1);
++      // D2c (R-DISPUTE-PAUSE): the dispute locked the plan when it paused it.
++      expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
+       expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
+       expect((await w.v2.getClientStatus('client-1')).kind).toBe('dispute');
+       const { res } = await cardUpdate(w, 'pm_new_ok', 8);
+@@ -836,10 +839,10 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
+         source_stripe_charge_id: 'ch_1',
+         purchase_id: 'purchase-1',
+       });
+-      const closed = await w.v2.onDisputeClosed({ chargeId: 'ch_1', status: 'won' });
+-      expect(closed.resolved).toBe(true);
+-      expect(stateRow(w)).toMatchObject({ status: 'resolved', locked_out_at: null });
+-      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
++      const closed = await w.v2.onDisputeClosed({ chargeId: 'ch_1', disputeId: 'dp_1', status: 'won' });
++      expect(closed.resolved).toBe(false);
++      expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
++      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
+     });
+   });
+ 
+@@ -1501,8 +1504,12 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
+       lockedDisputeCycle();
+       dispute('won', 'ch_won', 'won', 1);
+       dispute('open', 'ch_open', 'needs_response', 2);
+-      const closed = await w.v2.onDisputeClosed({ chargeId: 'ch_won', status: 'won' });
+-      expect(closed).toEqual({ resolved: false, reason: 'other_dispute_outstanding' });
++      const closed = await w.v2.onDisputeClosed({
++        chargeId: 'ch_won',
++        disputeId: 'dp_won',
++        status: 'won',
++      });
++      expect(closed.resolved).toBe(false);
+       expect(stateRow(w)).toMatchObject({
+         status: 'active',
+         last_failure_reason: 'charge_disputed',
+@@ -1539,7 +1546,7 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
+       expect(stateRow(w)?.status).toBe('active');
+     });
+ 
+-    it('the closing event wins over a table row the dispute handler has not updated yet: last open dispute won -> resolved and unlocked', async () => {
++    it('the closing event wins over a table row the dispute handler has not updated yet: last open dispute won keeps the pause', async () => {
+       await failRenewal(w);
+       lockedDisputeCycle();
+       dispute('a', 'ch_a', 'won', 1);
+@@ -1549,9 +1556,10 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
+         disputeId: 'dp_won',
+         status: 'won',
+       });
+-      expect(closed).toEqual({ resolved: true, reason: 'dispute_won' });
+-      expect(stateRow(w)).toMatchObject({ status: 'resolved', locked_out_at: null });
+-      expect(purchaseRow(w)?.entitlement_active).toBe(true);
++      // D2c (R-DISPUTE-PAUSE): access returns only through the coach restart.
++      expect(closed).toEqual({ resolved: false, reason: 'pause_kept' });
++      expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
++      expect(purchaseRow(w)?.entitlement_active).toBe(false);
+     });
+   });
+ 
+@@ -1827,7 +1835,7 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
+       disputeId: 'dp_b',
+       reversedChargeAt: at(13 * DAY),
+     });
+-    expect(probeB).toEqual({ opened: false, reason: 'cycle_already_active' });
++    expect(probeB).toEqual({ opened: false, reason: 'already_paused' });
+     expect(obligation('dp_b')).toMatchObject({ status: 'open', purchase_id: 'purchase-1' });
+     w.fake.find('chargeDispute', { id: 'cd-a' })!.status = 'won';
+     const closedA = await w.v2.onDisputeClosed({
+@@ -1835,20 +1843,20 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
+       disputeId: 'dp_a',
+       status: 'won',
+     });
+-    expect(closedA).toEqual({ resolved: false, reason: 'other_dispute_outstanding' });
++    expect(closedA.resolved).toBe(false);
+     expect(stateRow(w)).toMatchObject({ status: 'active', last_failure_reason: 'charge_disputed' });
+     expect(obligation('dp_a')?.status).toBe('won');
+-    // B wins later: now every obligation is settled in the client's favour.
++    // B wins later: D2c (R-DISPUTE-PAUSE) keeps the pause for the coach restart.
+     const closedB = await w.v2.onDisputeClosed({
+       chargeId: 'ch_b',
+       disputeId: 'dp_b',
+       status: 'won',
+     });
+-    expect(closedB).toEqual({ resolved: true, reason: 'dispute_won' });
+-    expect(stateRow(w)?.status).toBe('resolved');
++    expect(closedB.resolved).toBe(false);
++    expect(stateRow(w)?.status).toBe('active');
+   });
+ 
+-  it("A wins before B's probe runs: B (created before that resolution) reopens the reversal cycle", async () => {
++  it("A wins before B's probe runs: the pause stays and B's probe records its obligation", async () => {
+     await cycleFromDisputeA();
+     jest.setSystemTime(at(14 * DAY));
+     const closedA = await w.v2.onDisputeClosed({
+@@ -1856,14 +1864,16 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
+       disputeId: 'dp_a',
+       status: 'won',
+     });
+-    expect(closedA.resolved).toBe(true);
+-    // B was created on Day 13 (before A's resolution), its probe lands now.
++    // D2c (R-DISPUTE-PAUSE): A's win keeps the pause.
++    expect(closedA.resolved).toBe(false);
++    // B was created on Day 13, its probe lands now.
+     const probeB = await w.v2.detectAndHandleLateReversal({
+       chargeId: 'ch_b',
+       disputeId: 'dp_b',
+       reversedChargeAt: at(13 * DAY),
+     });
+-    expect(probeB).toEqual({ opened: true, reason: 'compressed_cycle_opened' });
++    expect(probeB).toEqual({ opened: false, reason: 'already_paused' });
++    expect(obligation('dp_b')).toMatchObject({ status: 'open', purchase_id: 'purchase-1' });
+     expect(stateRow(w)).toMatchObject({ status: 'active', last_failure_reason: 'charge_disputed' });
+     // A redelivered created probe for B is a no-op (not a second cycle).
+     const again = await w.v2.detectAndHandleLateReversal({
+@@ -1874,26 +1884,27 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
+     expect(again.opened).toBe(false);
+   });
+ 
+-  it("B's closed (won) webhook lands before its created one: the late created event opens nothing", async () => {
++  it("B's closed (won) webhook lands before its created one: the late created event changes nothing", async () => {
+     await cycleFromDisputeA();
+     w.fake.find('chargeDispute', { id: 'cd-a' })!.status = 'won';
++    // D2c (R-DISPUTE-PAUSE): a won dispute keeps the pause.
+     expect(
+       (await w.v2.onDisputeClosed({ chargeId: 'ch_a', disputeId: 'dp_a', status: 'won' })).resolved,
+-    ).toBe(true);
++    ).toBe(false);
+     jest.setSystemTime(at(15 * DAY));
+     const closedB = await w.v2.onDisputeClosed({
+       chargeId: 'ch_b',
+       disputeId: 'dp_b',
+       status: 'won',
+     });
+-    expect(closedB).toEqual({ resolved: false, reason: 'no_open_dispute_cycle' });
++    expect(closedB).toEqual({ resolved: false, reason: 'pause_kept' });
+     const lateCreated = await w.v2.detectAndHandleLateReversal({
+       chargeId: 'ch_b',
+       disputeId: 'dp_b',
+       reversedChargeAt: at(15 * DAY),
+     });
+-    expect(lateCreated).toEqual({ opened: false, reason: 'dispute_already_won' });
+-    expect(stateRow(w)?.status).toBe('resolved');
++    expect(lateCreated).toEqual({ opened: false, reason: 'already_paused' });
++    expect(stateRow(w)?.status).toBe('active');
+   });
+ 
+   it('a lost closure is recorded and outvotes a later contradictory won event for the same dispute', async () => {
+@@ -1903,7 +1914,7 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
+       disputeId: 'dp_a',
+       status: 'lost',
+     });
+-    expect(lost).toEqual({ resolved: false, reason: 'not_won' });
++    expect(lost).toEqual({ resolved: false, reason: 'pause_kept' });
+     expect(obligation('dp_a')?.status).toBe('lost');
+     const won = await w.v2.onDisputeClosed({ chargeId: 'ch_a', disputeId: 'dp_a', status: 'won' });
+     expect(won.resolved).toBe(false);
+@@ -1911,7 +1922,7 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
+     expect(stateRow(w)?.status).toBe('active');
+   });
+ 
+-  it('the Day 10 sweep locks while a recorded obligation is open, even when the ledger shows only won disputes', async () => {
++  it('the lock holds through the Day 10 sweep while a recorded obligation is open, even when the ledger shows only won disputes', async () => {
+     await cycleFromDisputeA();
+     await w.v2.detectAndHandleLateReversal({
+       chargeId: 'ch_b',
+@@ -1921,7 +1932,8 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
+     w.fake.find('chargeDispute', { id: 'cd-a' })!.status = 'won';
+     const lockAt = at(19 * DAY + 10 * MIN);
+     jest.setSystemTime(lockAt);
+-    expect((await w.v2.runSweep(lockAt)).locked).toBe(1);
++    // D2c (R-DISPUTE-PAUSE): the pause locked at once; the sweep keeps it.
++    await w.v2.runSweep(lockAt);
+     expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
+     expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
+   });
+@@ -1966,7 +1978,7 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
+       paymentIntentId: 'pi_renewal_9',
+       reversedChargeAt: at(13 * DAY),
+     });
+-    expect(probe.reason).toBe('cycle_already_active');
++    expect(probe.reason).toBe('already_paused');
+     expect(obligation('dp_renewal_9')).toMatchObject({
+       purchase_id: 'purchase-1',
+       status: 'open',
+diff --git a/test/dunning-v2-e2e-lifecycle.spec.ts b/test/dunning-v2-e2e-lifecycle.spec.ts
+index a13c25a4..78d9c7b2 100644
+--- a/test/dunning-v2-e2e-lifecycle.spec.ts
++++ b/test/dunning-v2-e2e-lifecycle.spec.ts
+@@ -91,6 +91,8 @@ interface World {
+     retrieveSubscription: jest.Mock;
+     retrievePaymentMethod: jest.Mock;
+     cancelSubscription: jest.Mock;
++    pauseSubscriptionCollection: jest.Mock;
++    listOpenInvoices: jest.Mock;
+   };
+   push: jest.Mock;
+   email: jest.Mock;
+@@ -113,6 +115,9 @@ function buildWorld(): World {
+     retrievePaymentMethod: jest.fn(async () => ({ card: { last4: '4242' } })),
+     // Present only so a stray cancel would be observed (v2 must never call it).
+     cancelSubscription: jest.fn(async () => ({ status: 'canceled' })),
++    // D2c (R-DISPUTE-PAUSE): a dispute pauses billing at Stripe.
++    pauseSubscriptionCollection: jest.fn(async () => ({ status: 'active' })),
++    listOpenInvoices: jest.fn(async () => []),
+   };
+   const push = jest.fn(async () => true);
+   const email = jest.fn(async () => ({ ok: true }));
+@@ -575,12 +580,17 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)',
+     expect(stateRow(w)?.locked_out_at).toBeNull();
+   });
+ 
+-  it('F5: a skipped renewal resync (outer tx, no prefetch) still closes dunning and unlocks', async () => {
++  it('F5: a renewal resync without its prefetch (outer tx) is redelivered; the redelivery closes dunning and unlocks', async () => {
+     await pastDueResync(w);
+     await failAttempt(w, 1);
+     await w.v2.runSweep(at(10 * DAY + HOUR));
+     expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
+-    await w.handler.handle(fixture('invoice.paid'), w.fake.client(true), undefined);
++    // Main's B-680-3: never acknowledged without its access and money effects.
++    await expect(
++      w.handler.handle(fixture('invoice.paid'), w.fake.client(true), undefined),
++    ).rejects.toThrow(/prefetch unavailable/);
++    expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
++    await w.handler.handle(fixture('invoice.paid'));
+     expect(stateRow(w)).toMatchObject({ status: 'resolved', locked_out_at: null });
+     expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
+   });
+@@ -595,7 +605,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)',
+     expect(stateRow(w)?.locked_out_at).toBeNull();
+   });
+ 
+-  it('F11: a refund never opens a dunning cycle; a dispute opens the compressed one', async () => {
++  it('F11: a refund never opens a dunning cycle; a dispute pauses the plan', async () => {
+     await pastDueResync(w);
+     await failAttempt(w, 1);
+     w.stripeSubStatus.value = 'active';
+@@ -615,10 +625,10 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)',
+ 
+     await w.handler.handle(fixture('charge.dispute.created', { created: sec(at(5 * DAY)) }));
+     await flush();
+-    expect(stateRow(w)).toMatchObject({ status: 'active', step_index: 2, reversal_count: 1 });
+-    // Compressed: coach at +4 days, lock at +7 days from the dispute.
+-    const status = await w.v2.getClientStatus('client-1');
+-    expect(status.lockout_at).toBe(at(12 * DAY).toISOString());
++    // D2c (R-DISPUTE-PAUSE): locked at once, billing paused at Stripe.
++    expect(stateRow(w)).toMatchObject({ status: 'active', last_failure_reason: 'charge_disputed' });
++    expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
++    expect(w.stripe.pauseSubscriptionCollection).toHaveBeenCalledTimes(1);
+   });
+ 
+   it('flag OFF: v2 is inert end to end (no claim, no notice, no lock, past_due paywalled as before)', async () => {

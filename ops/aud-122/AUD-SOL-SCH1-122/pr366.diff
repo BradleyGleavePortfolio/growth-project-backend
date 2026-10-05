@@ -1,0 +1,2180 @@
+diff --git a/src/components/tutorial/TutorialOverlay.tsx b/src/components/tutorial/TutorialOverlay.tsx
+index b869104..e873215 100644
+--- a/src/components/tutorial/TutorialOverlay.tsx
++++ b/src/components/tutorial/TutorialOverlay.tsx
+@@ -291,12 +291,23 @@ export default function TutorialOverlay({ tabs, onNavigate }: Props): React.Reac
+                     <Text style={[styles.secondaryText, { color: sc.textPrimary }]}>Take me there</Text>
+                   </Pressable>
+                 ) : null}
++                {gate.kind === 'signal' && gate.action ? (
++                  <Pressable
++                    onPress={() => gate.action && onNavigate(gate.action.target)}
++                    accessibilityRole="button"
++                    accessibilityLabel={gate.action.label(copy)}
++                    style={[styles.primary, styles.actionWide]}
++                    testID="tutorial-action"
++                  >
++                    <Text style={styles.primaryText}>{gate.action.label(copy)}</Text>
++                  </Pressable>
++                ) : null}
+                 {gate.kind === 'signal' && gate.allowDefer ? (
+                   <Pressable
+                     onPress={() => dispatchTutorial({ type: 'DEFER' })}
+                     accessibilityRole="button"
+                     accessibilityLabel="Later"
+-                    accessibilityHint="Connect a device another time"
++                    accessibilityHint={gate.deferHint ?? 'Connect a device another time'}
+                     style={[styles.secondary, { borderColor: sc.textPrimary }]}
+                     testID="tutorial-defer"
+                   >
+@@ -354,7 +365,8 @@ const styles = StyleSheet.create({
+     justifyContent: 'center',
+     paddingHorizontal: 16,
+   },
+-  primaryText: { ...typography.bodyMd, color: colors.bone },
++  primaryText: { ...typography.bodyMd, color: colors.bone, textAlign: 'center' },
++  actionWide: { flex: 2, paddingVertical: 8 },
+   secondary: {
+     flex: 1,
+     minHeight: 48,
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index e5d139b..2c2fce3 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -70,6 +70,9 @@ import CoachInvitesScreen from '../screens/coach/CoachInvitesScreen';
+ // Concierge Phase 1 — scheduling coach surfaces.
+ import CoachAvailabilityEditorScreen from '../screens/coach/CoachAvailabilityEditorScreen';
+ import CoachBookingInboxScreen from '../screens/coach/CoachBookingInboxScreen';
++// S-SCHED — appointment types manager + time off, next to Availability.
++import CoachAppointmentTypesScreen from '../screens/coach/CoachAppointmentTypesScreen';
++import CoachTimeOffScreen from '../screens/coach/CoachTimeOffScreen';
+ // Coach AI v1 — generate/edit/approve workout, meal, insight drafts per client.
+ import AIWorkoutDraftScreen from '../screens/coach/AIWorkoutDraftScreen';
+ import AIMealPlanDraftScreen from '../screens/coach/AIMealPlanDraftScreen';
+@@ -169,6 +172,9 @@ export type ClientsStackParamList = {
+   /** Concierge Phase 1 — scheduling coach surfaces. */
+   CoachAvailabilityEditor:  { coachId: string };
+   CoachBookingInbox:        undefined;
++  /** S-SCHED — appointment types (create / edit / archive) and time off. */
++  CoachAppointmentTypes:    { coachId?: string } | undefined;
++  CoachTimeOff:             undefined;
+   /** Coach AI v1 — review/edit/approve AI-generated workout program draft. */
+   AIWorkoutDraft:  { draftId: string; clientId: string; clientName: string };
+   /** Coach AI v1 — review/edit/approve AI-generated meal plan draft. */
+@@ -354,6 +360,14 @@ function ClientsStackNavigator() {
+         name="CoachBookingInbox"
+         component={CoachBookingInboxScreen}
+       />
++      <ClientsStack.Screen
++        name="CoachAppointmentTypes"
++        component={CoachAppointmentTypesScreen}
++      />
++      <ClientsStack.Screen
++        name="CoachTimeOff"
++        component={CoachTimeOffScreen}
++      />
+       {/* Coach AI v1 — companion routes for the per-client generate/edit/approve flow. */}
+       <ClientsStack.Screen
+         name="AIWorkoutDraft"
+diff --git a/src/screens/__tests__/conciergePhase1.test.tsx b/src/screens/__tests__/conciergePhase1.test.tsx
+index c9f4a70..de9db17 100644
+--- a/src/screens/__tests__/conciergePhase1.test.tsx
++++ b/src/screens/__tests__/conciergePhase1.test.tsx
+@@ -1,19 +1,18 @@
+ /**
+  * Concierge Phase 1 — screen-logic tests.
+  *
+- * Four cases:
++ * Three cases:
+  *   1. isWithinLockout boundary returns true within 4h, false beyond.
+  *   2. CoachBookingInbox confirms a pending session via useApproveSession.
+  *   3. CoachBookingInbox declines a pending session via useDeclineSession.
+- *   4. ClientBookingRequest renders the empty-state path when the
+- *      coach has no availability windows.
++ * (The ClientBookingRequest screen and route were removed in S-SCHED-4;
++ * clients book from the Calendar tab.)
+  */
+ 
+ import React from 'react';
+ import { render, fireEvent, waitFor } from '@testing-library/react-native';
+ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+ import CoachBookingInboxScreen from '../coach/CoachBookingInboxScreen';
+-import ClientBookingRequestScreen from '../client/ClientBookingRequestScreen';
+ import { isWithinLockout } from '../client/ClientUpcomingSessionsScreen';
+ import type { CoachingSession } from '../../api/schedulingApi';
+ 
+@@ -109,7 +108,10 @@ describe('CoachBookingInboxScreen', () => {
+     const btn = await findByLabelText('Confirm session Intro call');
+     await fireEvent.press(btn);
+     await waitFor(() =>
+-      expect(mockApi.approveSession).toHaveBeenCalledWith('sess-pending'),
++      // S-SCHED-3: the start time on the card goes with the answer.
++      expect(mockApi.approveSession).toHaveBeenCalledWith('sess-pending', {
++        expected_start_at: PENDING.start_at,
++      }),
+     );
+   });
+ 
+@@ -123,24 +125,9 @@ describe('CoachBookingInboxScreen', () => {
+     const btn = await findByLabelText('Decline session Intro call');
+     await fireEvent.press(btn);
+     await waitFor(() =>
+-      expect(mockApi.declineSession).toHaveBeenCalledWith(
+-        'sess-pending',
+-        undefined,
+-      ),
+-    );
+-  });
+-});
+-
+-describe('ClientBookingRequestScreen', () => {
+-  beforeEach(() => {
+-    jest.clearAllMocks();
+-  });
+-
+-  it('renders empty-state when coach has no availability windows', async () => {
+-    mockApi.getAvailability.mockResolvedValueOnce([]);
+-    const { findByText } = await withQc(<ClientBookingRequestScreen />);
+-    await findByText(
+-      'Available times will appear once your coach has set availability.',
++      expect(mockApi.declineSession).toHaveBeenCalledWith('sess-pending', {
++        expected_start_at: PENDING.start_at,
++      }),
+     );
+   });
+ });
+diff --git a/src/screens/coach/CoachAppointmentTypesScreen.tsx b/src/screens/coach/CoachAppointmentTypesScreen.tsx
+new file mode 100644
+index 0000000..24b2a5c
+--- /dev/null
++++ b/src/screens/coach/CoachAppointmentTypesScreen.tsx
+@@ -0,0 +1,297 @@
++/**
++ * CoachAppointmentTypesScreen — S-SCHED appointment types manager.
++ *
++ * Create, edit, archive and restore the appointment types clients book
++ * from: name, description, length, confirmed right away (auto-approve),
++ * S-SCHED-2 welcome call marker (one per coach; marking one clears the
++ * other) and a default call link used when a session has no other link.
++ * Archived types come from the server (include_archived) so they can be
++ * restored at any time.
++ */
++import React, { useRef, useState } from 'react';
++import {
++  Modal,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Switch,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import type { RouteProp } from '@react-navigation/native';
++import type { SessionType } from '../../api/schedulingApi';
++import { useCoachAppointmentTypes } from '../../hooks/useCalendar';
++import { calendarErrorMessage } from '../../calendar/schedulingErrors';
++import { useCreateSessionType, useUpdateSessionType } from '../../hooks/useScheduling';
++import { useCurrentUser } from '../../hooks/useCurrentUser';
++import { spacing, typography } from '../../theme/tokens';
++import { useTheme } from '../../theme/ThemeProvider';
++
++type Params = { CoachAppointmentTypes: { coachId?: string } | undefined };
++
++const DURATIONS = [15, 20, 30, 45, 60];
++
++export interface TypeDraft {
++  name: string;
++  description: string;
++  duration: string;
++  autoApprove: boolean;
++  isWelcome: boolean;
++  defaultLink: string;
++}
++
++export function emptyDraft(): TypeDraft {
++  return { name: '', description: '', duration: '30', autoApprove: false, isWelcome: false, defaultLink: '' };
++}
++
++export function draftFrom(t: SessionType): TypeDraft {
++  return {
++    name: t.name,
++    description: t.description ?? '',
++    duration: String(t.duration_minutes),
++    autoApprove: t.auto_approve,
++    isWelcome: t.is_welcome === true,
++    defaultLink: t.default_meeting_url ?? '',
++  };
++}
++
++/** True for a complete https link without embedded credentials. */
++export function isHttpsLink(raw: string): boolean {
++  const url = raw.trim();
++  if (url.length === 0 || url.length > 500) return false;
++  try {
++    const parsed = new URL(url);
++    return parsed.protocol === 'https:' && !!parsed.hostname && !parsed.username && !parsed.password;
++  } catch {
++    return false;
++  }
++}
++
++/** Returns an error message, or null when the draft can be saved. */
++export function validateDraft(d: TypeDraft): string | null {
++  if (d.name.trim().length === 0) return 'Give the appointment type a name.';
++  if (d.name.trim().length > 120) return 'Keep the name under 120 characters.';
++  const n = Number(d.duration);
++  if (!Number.isInteger(n) || n < 5 || n > 480) return 'Length must be between 5 and 480 minutes.';
++  if (d.description.length > 2000) return 'Keep the description under 2000 characters.';
++  if (d.defaultLink.trim().length > 0 && !isHttpsLink(d.defaultLink)) {
++    return 'Enter a complete https call link without a password, or leave the call link empty.';
++  }
++  return null;
++}
++
++export default function CoachAppointmentTypesScreen({ route }: { route?: RouteProp<Params, 'CoachAppointmentTypes'> }) {
++  const { colors } = useTheme();
++  const me = useCurrentUser();
++  const coachId = route?.params?.coachId ?? me?.id;
++  const q = useCoachAppointmentTypes(coachId);
++  const create = useCreateSessionType();
++  const update = useUpdateSessionType();
++  const [editing, setEditing] = useState<SessionType | 'new' | null>(null);
++  const [draft, setDraft] = useState<TypeDraft>(emptyDraft());
++  const [error, setError] = useState<string | null>(null);
++  const saving = useRef(false);
++
++  const open = (t: SessionType | 'new') => {
++    setEditing(t);
++    setDraft(t === 'new' ? emptyDraft() : draftFrom(t));
++    setError(null);
++  };
++
++  const save = () => {
++    if (saving.current || !editing) return;
++    const problem = validateDraft(draft);
++    if (problem) {
++      setError(problem);
++      return;
++    }
++    saving.current = true;
++    const link = draft.defaultLink.trim();
++    const linkValue = link.length > 0 ? link : null;
++    const before = editing === 'new' ? null : editing;
++    // Welcome marker and default link are sent only when they carry a value
++    // or change, so an unchanged edit keeps the existing DTO shape.
++    const common = {
++      name: draft.name.trim(),
++      description: draft.description.trim(),
++      duration_minutes: Number(draft.duration),
++      auto_approve: draft.autoApprove,
++      ...(draft.isWelcome !== (before?.is_welcome === true) ? { is_welcome: draft.isWelcome } : {}),
++      ...(linkValue !== (before?.default_meeting_url ?? null) ? { default_meeting_url: linkValue } : {}),
++    };
++    const done = {
++      onSuccess: () => setEditing(null),
++      onError: (err: unknown) => setError(calendarErrorMessage(err, 'save the appointment type', 'coach')),
++      onSettled: () => {
++        saving.current = false;
++      },
++    };
++    if (editing === 'new') {
++      create.mutate(
++        { ...common, default_video_provider: 'manual' },
++        done,
++      );
++    } else {
++      update.mutate({ id: editing.id, input: common }, done);
++    }
++  };
++
++  const setArchived = (t: SessionType, archived: boolean) => {
++    if (saving.current || busy) return;
++    saving.current = true;
++    setError(null);
++    update.mutate({ id: t.id, input: { archived } }, {
++      onError: (err: unknown) => setError(calendarErrorMessage(err, archived ? 'archive the appointment type' : 'restore the appointment type', 'coach')),
++      onSettled: () => { saving.current = false; },
++    });
++  };
++
++  const all = q.data ?? [];
++  const archivedRows = all.filter((row) => !!row.archived_at);
++  const rows = [...all.filter((row) => !row.archived_at), ...archivedRows];
++  const busy = create.isPending || update.isPending;
++
++  return (
++    <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container} testID="coach-types">
++      <Text style={[typography.h2, { color: colors.textPrimary }]} accessibilityRole="header">
++        Appointment types
++      </Text>
++      <Text style={[typography.bodySmall, { color: colors.textMuted, marginTop: spacing.sm }]}>
++        Clients book from these in their Calendar, inside your availability and time off.
++      </Text>
++      <Pressable
++        onPress={() => open('new')}
++        accessibilityRole="button"
++        accessibilityLabel="Add appointment type"
++        style={[styles.primary, { backgroundColor: colors.textPrimary }]}
++        testID="coach-types-add"
++      >
++        <Text style={[typography.bodyMd, { color: colors.background }]}>Add appointment type</Text>
++      </Pressable>
++      {q.isLoading ? <Text style={[typography.body, { color: colors.textMuted }]}>Loading.</Text> : null}
++      {q.isError ? (
++        <View>
++          <Text style={[typography.body, { color: colors.textMuted }]}>{calendarErrorMessage(q.error, 'load appointment types', 'coach')}</Text>
++          <Pressable onPress={() => void q.refetch()} accessibilityRole="button" accessibilityLabel="Refresh appointment types" style={[styles.primary, { borderColor: colors.border, borderWidth: 1 }]}>
++            <Text style={[typography.body, { color: colors.textPrimary }]}>Refresh appointment types</Text>
++          </Pressable>
++        </View>
++      ) : null}
++      {!q.isLoading && !q.isError && rows.length === 0 ? (
++        <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.lg }]} testID="coach-types-empty">
++          No appointment types yet. Clients cannot book until you add one.
++        </Text>
++      ) : null}
++      {rows.map((t) => (
++        <View key={t.id} style={[styles.card, { borderColor: colors.border, opacity: t.archived_at ? 0.6 : 1 }]} testID={`coach-type-${t.id}`}>
++          <Text style={[typography.bodyMd, { color: colors.textPrimary }]}>
++            {t.name}
++            {t.archived_at ? ' (archived)' : ''}
++          </Text>
++          <Text style={[typography.bodySmall, { color: colors.textMuted }]}>
++            {`${t.duration_minutes} minutes. ${t.auto_approve ? 'Confirmed right away.' : 'You confirm each request.'}`}
++          </Text>
++          {t.is_welcome && !t.archived_at ? (
++            <Text style={[typography.bodySmall, { color: colors.textMuted }]} testID={`coach-type-welcome-${t.id}`}>
++              Welcome call. New clients are asked to book this one first.
++            </Text>
++          ) : null}
++          {!t.archived_at ? (
++            <Text style={[typography.bodySmall, { color: colors.textMuted }]}>
++              {t.default_meeting_url ? 'Default call link set.' : 'No default call link. You add a link to each session.'}
++            </Text>
++          ) : null}
++          <View style={styles.actions}>
++            <Pressable onPress={() => open(t)} accessibilityRole="button" accessibilityLabel={`Edit ${t.name}`} style={[styles.secondary, { borderColor: colors.textPrimary }]} testID={`coach-type-edit-${t.id}`}>
++              <Text style={[typography.body, { color: colors.textPrimary }]}>Edit</Text>
++            </Pressable>
++            <Pressable
++              onPress={() => setArchived(t, !t.archived_at)}
++              disabled={busy}
++              accessibilityRole="button"
++              accessibilityLabel={t.archived_at ? `Restore ${t.name}` : `Archive ${t.name}`}
++              style={[styles.secondary, { borderColor: colors.textPrimary }]}
++              testID={`coach-type-archive-${t.id}`}
++            >
++              <Text style={[typography.body, { color: colors.textPrimary }]}>{t.archived_at ? 'Restore' : 'Archive'}</Text>
++            </Pressable>
++          </View>
++        </View>
++      ))}
++      {archivedRows.length ? <Text style={[typography.bodySmall, { color: colors.textMuted }]}>Archived types stay here so you can restore them. Clients cannot book them.</Text> : null}
++      {!editing && error ? <Text accessibilityLiveRegion="polite" style={[typography.bodySmall, { color: colors.error }]}>{error}</Text> : null}
++
++      <Modal visible={editing !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { if (!busy) setEditing(null); }}>
++        <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container} testID="coach-type-editor">
++          <Text style={[typography.h2, { color: colors.textPrimary }]} accessibilityRole="header">
++            {editing === 'new' ? 'New appointment type' : 'Edit appointment type'}
++          </Text>
++          <Text style={[styles.label, { color: colors.textMuted }]}>Name</Text>
++          <TextInput value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} maxLength={120} accessibilityLabel="Name" style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]} testID="coach-type-name" />
++          <Text style={[styles.label, { color: colors.textMuted }]}>Description (optional)</Text>
++          <TextInput value={draft.description} onChangeText={(description) => setDraft({ ...draft, description })} maxLength={2000} multiline accessibilityLabel="Description" style={[styles.input, { color: colors.textPrimary, borderColor: colors.border, minHeight: 72 }]} />
++          <Text style={[styles.label, { color: colors.textMuted }]}>Length in minutes</Text>
++          <View style={styles.chips}>
++            {DURATIONS.map((m) => (
++              <Pressable key={m} onPress={() => setDraft({ ...draft, duration: String(m) })} accessibilityRole="button" accessibilityState={{ selected: draft.duration === String(m) }} accessibilityLabel={`${m} minutes`} style={[styles.chip, { borderColor: colors.textPrimary, backgroundColor: draft.duration === String(m) ? colors.textPrimary : 'transparent' }]}>
++                <Text style={[typography.body, { color: draft.duration === String(m) ? colors.background : colors.textPrimary }]}>{m}</Text>
++              </Pressable>
++            ))}
++          </View>
++          <TextInput value={draft.duration} onChangeText={(duration) => setDraft({ ...draft, duration: duration.replace(/[^0-9]/g, '') })} keyboardType="number-pad" maxLength={3} accessibilityLabel="Length in minutes" style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]} testID="coach-type-duration" />
++          <View style={styles.switchRow}>
++            <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>Confirm right away (no approval)</Text>
++            <Switch value={draft.autoApprove} onValueChange={(autoApprove) => setDraft({ ...draft, autoApprove })} accessibilityLabel="Confirm right away" testID="coach-type-auto" />
++          </View>
++          <View style={styles.switchRow}>
++            <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>Welcome call (new clients book this first)</Text>
++            <Switch value={draft.isWelcome} onValueChange={(isWelcome) => setDraft({ ...draft, isWelcome })} accessibilityLabel="Welcome call" testID="coach-type-welcome" />
++          </View>
++          {draft.isWelcome ? (
++            <Text style={[typography.bodySmall, { color: colors.textMuted }]}>
++              Only one type can be the welcome call. Saving this one moves the welcome call here.
++            </Text>
++          ) : null}
++          <Text style={[styles.label, { color: colors.textMuted }]}>Default call link (optional)</Text>
++          <TextInput
++            value={draft.defaultLink}
++            onChangeText={(defaultLink) => setDraft({ ...draft, defaultLink })}
++            autoCapitalize="none"
++            autoCorrect={false}
++            keyboardType="url"
++            maxLength={500}
++            placeholder="https://your-call-link"
++            placeholderTextColor={colors.textMuted}
++            accessibilityLabel="Default call link"
++            style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]}
++            testID="coach-type-link"
++          />
++          <Text style={[typography.bodySmall, { color: colors.textMuted }]}>
++            Used for sessions of this type that have no other call link. Clients see it only on confirmed sessions.
++          </Text>
++          {error ? <Text style={[typography.bodySmall, { color: colors.error, marginTop: spacing.md }]} testID="coach-type-error" accessibilityLiveRegion="polite">{error}</Text> : null}
++          <Pressable onPress={save} disabled={busy} accessibilityRole="button" accessibilityLabel="Save" accessibilityState={{ disabled: busy, busy }} style={[styles.primary, { backgroundColor: colors.textPrimary, opacity: busy ? 0.6 : 1 }]} testID="coach-type-save">
++            <Text style={[typography.bodyMd, { color: colors.background }]}>Save</Text>
++          </Pressable>
++          <Pressable onPress={() => setEditing(null)} disabled={busy} accessibilityRole="button" accessibilityLabel="Close" style={[styles.secondary, { borderColor: colors.textPrimary, marginTop: spacing.md }]}>
++            <Text style={[typography.body, { color: colors.textPrimary }]}>Close</Text>
++          </Pressable>
++        </ScrollView>
++      </Modal>
++    </ScrollView>
++  );
++}
++
++const styles = StyleSheet.create({
++  container: { padding: spacing.lg, paddingBottom: spacing['3xl'] },
++  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 4, padding: spacing.md, marginTop: spacing.md },
++  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
++  primary: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg, paddingHorizontal: spacing.lg },
++  secondary: { flex: 1, minHeight: 44, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
++  label: { ...typography.caption, marginTop: spacing.lg, marginBottom: spacing.xs },
++  input: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 2, padding: spacing.md, ...typography.body },
++  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
++  chip: { minWidth: 56, minHeight: 40, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
++  switchRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg, gap: spacing.md },
++});
+diff --git a/src/screens/coach/CoachAvailabilityEditorScreen.tsx b/src/screens/coach/CoachAvailabilityEditorScreen.tsx
+index 37e16b1..106a11a 100644
+--- a/src/screens/coach/CoachAvailabilityEditorScreen.tsx
++++ b/src/screens/coach/CoachAvailabilityEditorScreen.tsx
+@@ -24,6 +24,8 @@ import {
+   useCoachAvailability,
+   useSetAvailability,
+ } from '../../hooks/useScheduling';
++import { useSchedulingTimezone } from '../../hooks/useCalendar';
++import { calendarErrorMessage } from '../../calendar/schedulingErrors';
+ import type {
+   AvailabilityWindow,
+   UpsertAvailabilityWindowInput,
+@@ -58,14 +60,6 @@ function minutesToLabel(min: number): string {
+   return `${hh}:${mm}`;
+ }
+ 
+-function deviceTimezone(): string {
+-  try {
+-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+-  } catch {
+-    return 'UTC';
+-  }
+-}
+-
+ type DraftWindow = UpsertAvailabilityWindowInput & { _key: string };
+ 
+ function toDraft(w: AvailabilityWindow): DraftWindow {
+@@ -82,7 +76,8 @@ export default function CoachAvailabilityEditorScreen({ route }: Props) {
+   const { coachId } = route.params;
+   const { colors } = useTheme();
+   const oxblood = colors.error;
+-  const { data, isLoading, isError, refetch } = useCoachAvailability(coachId);
++  const { data, isLoading, isError, error, refetch } = useCoachAvailability(coachId);
++  const calendarZone = useSchedulingTimezone(coachId);
+   const setAvailability = useSetAvailability(coachId);
+   const [draft, setDraft] = useState<DraftWindow[]>([]);
+ 
+@@ -127,11 +122,12 @@ export default function CoachAvailabilityEditorScreen({ route }: Props) {
+   );
+ 
+   const onSave = useCallback(() => {
++    if (!calendarZone.data || setAvailability.isPending) return;
+     const windows: UpsertAvailabilityWindowInput[] = draft.map(
+       ({ _key: _unused, ...rest }) => rest,
+     );
+     setAvailability.mutate({ windows });
+-  }, [draft, setAvailability]);
++  }, [draft, setAvailability, calendarZone.data]);
+ 
+   if (isLoading) {
+     return (
+@@ -145,7 +141,7 @@ export default function CoachAvailabilityEditorScreen({ route }: Props) {
+     return (
+       <View style={[styles.centered, { backgroundColor: colors.background }]}>
+         <Text style={[typography.body, { color: colors.textPrimary }]}>
+-          Could not load availability.
++          {calendarErrorMessage(error, 'load weekly availability', 'coach')}
+         </Text>
+         <TouchableOpacity
+           accessibilityRole="button"
+@@ -182,9 +178,17 @@ export default function CoachAvailabilityEditorScreen({ route }: Props) {
+             not the device TZ. That's correct behaviour (DST-stable, no
+             client-clock drift) but the label was misleading and the
+             audit caught it. Make the contract explicit. */}
+-        Times are stored in your coach profile timezone. Your device shows{' '}
+-        {deviceTimezone()}.
++        Times use your coach calendar time zone:{' '}
++        {calendarZone.data ?? 'loading the coach calendar time zone'}.
+       </Text>
++      {calendarZone.isError ? (
++        <View>
++          <Text style={[typography.bodySmall, { color: oxblood }]}>{calendarErrorMessage(calendarZone.error, 'load the calendar time zone', 'coach')}</Text>
++          <TouchableOpacity onPress={() => void calendarZone.refetch()} accessibilityRole="button" accessibilityLabel="Refresh calendar time zone" style={styles.primaryBtn}>
++            <Text style={[typography.body, { color: colors.textPrimary }]}>Refresh calendar time zone</Text>
++          </TouchableOpacity>
++        </View>
++      ) : null}
+ 
+       {DAY_LABELS.map((label, dayIdx) => (
+         <View
+@@ -307,8 +311,8 @@ export default function CoachAvailabilityEditorScreen({ route }: Props) {
+ 
+       <TouchableOpacity
+         accessibilityRole="button"
+-        disabled={isSaving}
+         onPress={onSave}
++        disabled={isSaving || !calendarZone.data}
+         style={[
+           styles.primaryBtn,
+           { backgroundColor: oxblood, opacity: isSaving ? 0.6 : 1 },
+@@ -326,7 +330,7 @@ export default function CoachAvailabilityEditorScreen({ route }: Props) {
+             { color: oxblood, marginTop: spacing.sm },
+           ]}
+         >
+-          Save failed. Check your connection and try again.
++          {calendarErrorMessage(setAvailability.error, 'save weekly availability', 'coach')}
+         </Text>
+       ) : null}
+       {setAvailability.isSuccess ? (
+diff --git a/src/screens/coach/CoachBookingInboxScreen.tsx b/src/screens/coach/CoachBookingInboxScreen.tsx
+index 6088c71..2123033 100644
+--- a/src/screens/coach/CoachBookingInboxScreen.tsx
++++ b/src/screens/coach/CoachBookingInboxScreen.tsx
+@@ -2,16 +2,21 @@
+  * CoachBookingInboxScreen — pending booking requests, with Confirm /
+  * Decline actions.
+  *
+- * Backend has no dedicated "pending" endpoint. We use the session
+- * list and filter to `status === 'requested'` client-side. Documented
+- * in /home/user/workspace/concierge-phase1-mobile/AUDIT.md §3.
++ * S-SCHED-3: requests and the agenda each come from the server's status
++ * filter (`status=requested`, `status=scheduled,pending_provider`), paged
++ * on (start_at, id), so a busy week never hides requests behind a fixed list
++ * size. Confirm and Decline send the start time the coach is looking at; a
++ * request the client moved meanwhile answers SESSION_MOVED and the inbox
++ * refreshes instead of confirming a time the coach never saw.
+  */
+ 
+-import React, { useMemo } from 'react';
++import React, { useMemo, useRef, useState } from 'react';
+ import {
+   ScrollView,
++  Alert,
+   StyleSheet,
+   Text,
++  TextInput,
+   TouchableOpacity,
+   View,
+ } from 'react-native';
+@@ -19,22 +24,138 @@ import { SkeletonScreen } from '../../ui/skeletons/Skeleton';
+ import {
+   useApproveSession,
+   useDeclineSession,
+-  useMyUpcomingSessions,
++  useAttachManualVideoLink,
++  useCancelSession,
+ } from '../../hooks/useScheduling';
+-import type { CoachingSession } from '../../api/schedulingApi';
++import { useUpcomingSessionsByStatus } from '../../hooks/useCalendar';
++import type { CoachingSession, SchedulingSessionStatus } from '../../api/schedulingApi';
+ import { spacing, typography } from '../../theme/tokens';
+ import { useTheme } from '../../theme/ThemeProvider';
++import { calendarErrorMessage } from '../../calendar/schedulingErrors';
++import { normalizeCallLinkInput, resolveCallLink } from '../../api/schedulingApi';
++
++const REQUESTED: readonly SchedulingSessionStatus[] = ['requested'];
++const CONFIRMED: readonly SchedulingSessionStatus[] = ['scheduled', 'pending_provider'];
++
++function initialLinkText(raw: string | null | undefined): string {
++  const link = resolveCallLink(raw);
++  if (!link) return '';
++  return link.kind === 'phone' ? link.display : link.url;
++}
++
++function CoachSessionActions({ session }: { session: CoachingSession }) {
++  const { colors } = useTheme();
++  const attach = useAttachManualVideoLink();
++  const cancel = useCancelSession();
++  const [link, setLink] = useState(initialLinkText(session.video_url));
++  const [message, setMessage] = useState<string | null>(null);
++  const inFlight = useRef(false);
++  const busy = attach.isPending || cancel.isPending;
++
++  const save = () => {
++    if (inFlight.current) return;
++    const parsed = normalizeCallLinkInput(link);
++    if (!parsed.ok) {
++      setMessage(parsed.message);
++      return;
++    }
++    const url = parsed.url;
++    inFlight.current = true;
++    attach.mutate({ id: session.id, input: { video_url: url } }, {
++      onSuccess: () =>
++        setMessage(
++          url.startsWith('tel:')
++            ? 'Phone number saved. Your client can call it from their session.'
++            : 'Call link saved. Your client can open it from their session.',
++        ),
++      onError: (err) => setMessage(calendarErrorMessage(err, 'save the call link', 'coach', 'save_link')),
++      onSettled: () => { inFlight.current = false; },
++    });
++  };
++  const onCancel = () => {
++    Alert.alert('Cancel this session?', 'Your client will be told. Calendar copies must be removed in the calendar app.', [
++      { text: 'Keep it', style: 'cancel' },
++      { text: 'Cancel session', style: 'destructive', onPress: () => {
++        if (inFlight.current) return;
++        inFlight.current = true;
++        cancel.mutate({ id: session.id, input: { expected_start_at: session.start_at } }, {
++          onSuccess: () => setMessage('Session cancelled in TGP.'),
++          onError: (err) => setMessage(calendarErrorMessage(err, 'cancel the session', 'coach', 'cancel')),
++          onSettled: () => { inFlight.current = false; },
++        });
++      } },
++    ]);
++  };
++  return (
++    <View>
++      <TextInput
++        value={link} onChangeText={setLink} autoCapitalize="none" autoCorrect={false} keyboardType="url"
++        accessibilityLabel={`Call link or phone number for ${session.title}`} placeholder="https://your-call-link or +1 425 555 0100"
++        placeholderTextColor={colors.textMuted} maxLength={2000}
++        style={[styles.linkInput, { color: colors.textPrimary, borderColor: colors.border }]}
++        testID={`coach-call-link-${session.id}`}
++      />
++      <TouchableOpacity onPress={save} disabled={busy} accessibilityRole="button" accessibilityLabel={`Save call link for ${session.title}`} style={[styles.primaryBtn, { backgroundColor: colors.textPrimary }]} testID={`coach-save-link-${session.id}`}>
++        <Text style={[typography.body, { color: colors.background }]}>Save call link</Text>
++      </TouchableOpacity>
++      <TouchableOpacity onPress={onCancel} disabled={busy} accessibilityRole="button" accessibilityLabel={`Cancel ${session.title}`} style={[styles.primaryBtn, { borderColor: colors.border, borderWidth: 1 }]} testID={`coach-cancel-session-${session.id}`}>
++        <Text style={[typography.body, { color: colors.textPrimary }]}>Cancel session</Text>
++      </TouchableOpacity>
++      {message ? <Text accessibilityLiveRegion="polite" style={[typography.bodySmall, { color: colors.textMuted }]}>{message}</Text> : null}
++    </View>
++  );
++}
+ 
+ export default function CoachBookingInboxScreen() {
+   const { colors } = useTheme();
+   const oxblood = colors.error;
+-  const { data, isLoading, isError, refetch } = useMyUpcomingSessions(100);
++  const requestsQ = useUpcomingSessionsByStatus(REQUESTED);
++  const agendaQ = useUpcomingSessionsByStatus(CONFIRMED);
++  const isLoading = requestsQ.isLoading || agendaQ.isLoading;
++  const isError = requestsQ.isError;
++  const error = requestsQ.error;
++  const refetch = async () => {
++    await Promise.all([requestsQ.refetch(), agendaQ.refetch()]);
++  };
+   const approve = useApproveSession();
+   const decline = useDeclineSession();
++  const [message, setMessage] = useState<string | null>(null);
++  const inFlight = useRef(false);
++  const actOnRequest = (s: CoachingSession, confirm: boolean) => {
++    if (inFlight.current) return;
++    inFlight.current = true;
++    setMessage(null);
++    const handlers = {
++      onError: (err: unknown) => {
++        setMessage(
++          calendarErrorMessage(
++            err,
++            confirm ? 'confirm the request' : 'decline the request',
++            'coach',
++            confirm ? 'approve' : 'decline',
++          ),
++        );
++        void refetch();
++      },
++      onSettled: () => { inFlight.current = false; },
++    };
++    // The start time on this card: a request moved since is refused, not confirmed.
++    if (confirm) approve.mutate({ id: s.id, expectedStartAt: s.start_at }, handlers);
++    else decline.mutate({ id: s.id, input: { expected_start_at: s.start_at } }, handlers);
++  };
+ 
++  // Server-filtered pages; the status check stays as a guard for an older
++  // backend that ignores the filter.
+   const pending = useMemo<CoachingSession[]>(
+-    () => (data ?? []).filter((s) => s.status === 'requested'),
+-    [data],
++    () => (requestsQ.data?.pages ?? []).flat().filter((s) => s.status === 'requested'),
++    [requestsQ.data],
++  );
++  const confirmed = useMemo<CoachingSession[]>(
++    () =>
++      (agendaQ.data?.pages ?? []).flat().filter(
++        (s) => s.status === 'scheduled' || s.status === 'pending_provider',
++      ),
++    [agendaQ.data],
+   );
+ 
+   if (isLoading) {
+@@ -45,11 +166,11 @@ export default function CoachBookingInboxScreen() {
+     return (
+       <View style={[styles.centered, { backgroundColor: colors.background }]}>
+         <Text style={[typography.body, { color: colors.textPrimary }]}>
+-          Could not load requests.
++          {calendarErrorMessage(error, 'load booking requests', 'coach')}
+         </Text>
+         <TouchableOpacity
+           accessibilityRole="button"
+-          onPress={() => refetch()}
++          onPress={() => void refetch()}
+           style={[styles.primaryBtn, { backgroundColor: oxblood }]}
+         >
+           <Text style={[typography.body, { color: colors.textOnPrimary }]}>
+@@ -68,6 +189,10 @@ export default function CoachBookingInboxScreen() {
+       <Text style={[typography.h2, { color: colors.textPrimary }]}>
+         Pending requests
+       </Text>
++      {message ? <Text accessibilityLiveRegion="polite" style={[typography.body, { color: colors.error }]}>{message}</Text> : null}
++      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Refresh sessions" onPress={() => void refetch()} style={[styles.primaryBtn, { borderColor: colors.border, borderWidth: 1 }]}>
++        <Text style={[typography.body, { color: colors.textPrimary }]}>Refresh sessions</Text>
++      </TouchableOpacity>
+ 
+       {pending.length === 0 ? (
+         <Text
+@@ -113,14 +238,14 @@ export default function CoachBookingInboxScreen() {
+                 { color: colors.textMuted, marginTop: spacing.xs },
+               ]}
+             >
+-              Client: {s.client_id ?? 'unknown'}
++              {s.client_name ? `Client: ${s.client_name}` : 'Client not named on this request'}
+             </Text>
+             <View style={styles.actions}>
+               <TouchableOpacity
+                 accessibilityRole="button"
+                 accessibilityLabel={`Confirm session ${s.title}`}
+                 disabled={busy}
+-                onPress={() => approve.mutate({ id: s.id })}
++                onPress={() => actOnRequest(s, true)}
+                 style={[
+                   styles.confirmBtn,
+                   { backgroundColor: oxblood, opacity: busy ? 0.6 : 1 },
+@@ -136,7 +261,7 @@ export default function CoachBookingInboxScreen() {
+                 accessibilityRole="button"
+                 accessibilityLabel={`Decline session ${s.title}`}
+                 disabled={busy}
+-                onPress={() => decline.mutate({ id: s.id })}
++                onPress={() => actOnRequest(s, false)}
+                 style={[
+                   styles.declineBtn,
+                   { borderColor: oxblood, opacity: busy ? 0.6 : 1 },
+@@ -150,10 +275,69 @@ export default function CoachBookingInboxScreen() {
+           </View>
+         );
+       })}
++
++      {requestsQ.hasNextPage ? (
++        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Show more requests" disabled={requestsQ.isFetchingNextPage} onPress={() => void requestsQ.fetchNextPage()} style={[styles.primaryBtn, { borderColor: colors.border, borderWidth: 1 }]} testID="coach-requests-more">
++          <Text style={[typography.body, { color: colors.textPrimary }]}>Show more requests</Text>
++        </TouchableOpacity>
++      ) : null}
++
++      <Text
++        style={[typography.h2, { color: colors.textPrimary, marginTop: spacing.xl }]}
++        accessibilityRole="header"
++      >
++        Upcoming sessions
++      </Text>
++      {agendaQ.isError ? (
++        <Text style={[typography.body, { color: colors.error, marginTop: spacing.md }]} testID="coach-agenda-error">
++          {calendarErrorMessage(agendaQ.error, 'load upcoming sessions', 'coach')}
++        </Text>
++      ) : confirmed.length === 0 ? (
++        <Text
++          style={[typography.body, { color: colors.textMuted, marginTop: spacing.md }]}
++          testID="coach-agenda-empty"
++        >
++          No confirmed sessions coming up.
++        </Text>
++      ) : (
++        confirmed.map((s) => (
++          <View
++            key={s.id}
++            style={[styles.card, { borderColor: colors.border }]}
++            testID={`coach-agenda-${s.id}`}
++          >
++            <Text style={[typography.body, { color: colors.textPrimary }]}>{s.title}</Text>
++            <Text style={[typography.bodySmall, { color: colors.textMuted }]}>
++              {formatRange(s.start_at, s.end_at)}
++            </Text>
++            <Text style={[typography.bodySmall, { color: colors.textMuted }]}>
++              {agendaLine(s)}
++            </Text>
++            <CoachSessionActions session={s} />
++          </View>
++        ))
++      )}
++      {agendaQ.hasNextPage ? (
++        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Show more upcoming sessions" disabled={agendaQ.isFetchingNextPage} onPress={() => void agendaQ.fetchNextPage()} style={[styles.primaryBtn, { borderColor: colors.border, borderWidth: 1 }]} testID="coach-agenda-more">
++          <Text style={[typography.body, { color: colors.textPrimary }]}>Show more upcoming sessions</Text>
++        </TouchableOpacity>
++      ) : null}
+     </ScrollView>
+   );
+ }
+ 
++/** Coach agenda status line; a missing call link is a clear next action. */
++export function agendaLine(s: CoachingSession): string {
++  const who = s.client_name ? ` with ${s.client_name}` : '';
++  const link = resolveCallLink(s.video_url);
++  if (s.meeting_link_status === 'pending' || (s.meeting_link_status === undefined && !link)) {
++    return `Confirmed${who}. No call link yet. Add a call link or phone number below so your client can join.`;
++  }
++  if (s.status === 'pending_provider') return `Confirmed${who}. Call link is being prepared.`;
++  if (link?.kind === 'phone') return `Confirmed${who}. Phone call on ${link.display}.`;
++  return `Confirmed${who}. Call link ready.`;
++}
++
+ function formatRange(startIso: string, endIso: string): string {
+   const s = new Date(startIso);
+   const e = new Date(endIso);
+@@ -162,6 +346,7 @@ function formatRange(startIso: string, endIso: string): string {
+ 
+ const styles = StyleSheet.create({
+   container: { padding: spacing.md, paddingBottom: spacing.xl },
++  linkInput: { borderWidth: 1, padding: spacing.md, marginTop: spacing.sm, ...typography.body },
+   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+   card: {
+     borderWidth: 1,
+diff --git a/src/screens/coach/CoachTimeOffScreen.tsx b/src/screens/coach/CoachTimeOffScreen.tsx
+new file mode 100644
+index 0000000..d74d1a1
+--- /dev/null
++++ b/src/screens/coach/CoachTimeOffScreen.tsx
+@@ -0,0 +1,204 @@
++/**
++ * CoachTimeOffScreen — S-SCHED time off (availability overrides).
++ *
++ * Add a full day off or a blocked stretch of hours on a date; remove it
++ * again. Dates and times are in the coach profile's time zone. Calendar
++ * refreshes open slots; the existing backend slot cache lasts up to 60 seconds.
++ */
++import React, { useEffect, useMemo, useRef, useState } from 'react';
++import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
++import type { AvailabilityOverride } from '../../api/schedulingApi';
++import {
++  useCreateAvailabilityOverride,
++  useDeleteAvailabilityOverride,
++  useMyAvailabilityOverrides,
++  useSchedulingTimezone,
++} from '../../hooks/useCalendar';
++import { spacing, typography } from '../../theme/tokens';
++import { useTheme } from '../../theme/ThemeProvider';
++import { calendarErrorMessage } from '../../calendar/schedulingErrors';
++import { calendarDateInZone } from '../../calendar/calendarTime';
++import { useCurrentUser } from '../../hooks/useCurrentUser';
++
++const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
++const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
++
++function hhmm(min: number | null): string {
++  if (min === null) return '';
++  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
++}
++
++export function describeOverride(o: AvailabilityOverride): string {
++  const date = o.date.slice(0, 10);
++  if (o.kind === 'extra') return `${date}, extra hours ${hhmm(o.start_minute)} to ${hhmm(o.end_minute)}`;
++  if (o.start_minute === null) return `${date}, full day off`;
++  return `${date}, off ${hhmm(o.start_minute)} to ${hhmm(o.end_minute)}`;
++}
++
++/** Returns an error message, or null when the entry can be saved. */
++export function validateTimeOff(date: string, fullDay: boolean, start: string, end: string, today: string): string | null {
++  if (!DATE_RE.test(date)) return 'Enter the date as YYYY-MM-DD.';
++  const parsed = new Date(`${date}T00:00:00.000Z`);
++  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) return 'That date does not exist. Choose a valid calendar date.';
++  if (date < today) return 'Pick today or a later date.';
++  if (fullDay) return null;
++  if (!TIME_RE.test(start) || !TIME_RE.test(end)) return 'Enter times as HH:MM, for example 13:00.';
++  if (start >= end) return 'The end time must be after the start time.';
++  return null;
++}
++
++export default function CoachTimeOffScreen() {
++  const { colors } = useTheme();
++  const me = useCurrentUser();
++  const timezone = useSchedulingTimezone(me?.id);
++  const today = timezone.data ? calendarDateInZone(new Date(), timezone.data) : '';
++  const until = useMemo(() => {
++    if (!today) return '';
++    const d = new Date(`${today}T00:00:00Z`);
++    d.setUTCDate(d.getUTCDate() + 180);
++    return d.toISOString().slice(0, 10);
++  }, [today]);
++  const create = useCreateAvailabilityOverride();
++  const remove = useDeleteAvailabilityOverride();
++  const [date, setDate] = useState('');
++  useEffect(() => { if (today) setDate((current) => current || today); }, [today]);
++  const [fullDay, setFullDay] = useState(true);
++  const [start, setStart] = useState('09:00');
++  const [end, setEnd] = useState('12:00');
++  const [note, setNote] = useState('');
++  const [error, setError] = useState<string | null>(null);
++  const saving = useRef(false);
++  const q = useMyAvailabilityOverrides(today, DATE_RE.test(date) && date > until ? date : until);
++
++  const add = () => {
++    if (saving.current || !timezone.data) return;
++    const problem = validateTimeOff(date.trim(), fullDay, start.trim(), end.trim(), today);
++    if (problem) {
++      setError(problem);
++      return;
++    }
++    saving.current = true;
++    setError(null);
++    create.mutate(
++      {
++        date: date.trim(),
++        kind: fullDay ? 'holiday' : 'block',
++        ...(fullDay ? {} : { start_time: start.trim(), end_time: end.trim() }),
++        ...(note.trim() ? { note: note.trim() } : {}),
++      },
++      {
++        onSuccess: () => setNote(''),
++        onError: (err) => setError(calendarErrorMessage(err, 'save time off', 'coach')),
++        onSettled: () => {
++          saving.current = false;
++        },
++      },
++    );
++  };
++
++  const confirmRemove = (o: AvailabilityOverride) => {
++    Alert.alert('Remove this time off?', describeOverride(o), [
++      { text: 'Keep', style: 'cancel' },
++      { text: 'Remove', style: 'destructive', onPress: () => {
++        if (saving.current || remove.isPending) return;
++        saving.current = true;
++        remove.mutate({ id: o.id }, {
++          onError: (err) => setError(calendarErrorMessage(err, 'remove time off', 'coach')),
++          onSettled: () => { saving.current = false; },
++        });
++      } },
++    ]);
++  };
++
++  const rows = q.data ?? [];
++
++  return (
++    <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container} testID="coach-time-off">
++      <Text style={[typography.h2, { color: colors.textPrimary }]} accessibilityRole="header">
++        Time off
++      </Text>
++      <Text style={[typography.bodySmall, { color: colors.textMuted, marginTop: spacing.sm }]}>
++        Time off removes open times in Calendar. Existing bookings are not cancelled. Dates and times use your coach profile time zone, which may differ from this device.
++      </Text>
++      <Text style={[typography.bodySmall, { color: colors.textMuted }]}>
++        {timezone.data ? `Coach calendar time zone: ${timezone.data.replace(/_/g, ' ')}.` : 'Loading the coach calendar time zone.'}
++      </Text>
++      {timezone.isError ? (
++        <View>
++          <Text style={[typography.bodySmall, { color: colors.error }]}>{calendarErrorMessage(timezone.error, 'load the calendar time zone', 'coach')}</Text>
++          <Pressable onPress={() => void timezone.refetch()} accessibilityRole="button" accessibilityLabel="Refresh calendar time zone" style={styles.primary}>
++            <Text style={[typography.body, { color: colors.textPrimary }]}>Refresh calendar time zone</Text>
++          </Pressable>
++        </View>
++      ) : null}
++
++      <Text style={[styles.label, { color: colors.textMuted }]}>Date (YYYY-MM-DD)</Text>
++      <TextInput value={date} onChangeText={setDate} maxLength={10} autoCorrect={false} accessibilityLabel="Date" style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]} testID="time-off-date" />
++      <View style={styles.switchRow}>
++        <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>Full day</Text>
++        <Switch value={fullDay} onValueChange={setFullDay} accessibilityLabel="Full day" testID="time-off-full-day" />
++      </View>
++      {!fullDay ? (
++        <View style={styles.timeRow}>
++          <View style={styles.timeCol}>
++            <Text style={[styles.label, { color: colors.textMuted }]}>From (HH:MM)</Text>
++            <TextInput value={start} onChangeText={setStart} maxLength={5} accessibilityLabel="From" style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]} testID="time-off-start" />
++          </View>
++          <View style={styles.timeCol}>
++            <Text style={[styles.label, { color: colors.textMuted }]}>To (HH:MM)</Text>
++            <TextInput value={end} onChangeText={setEnd} maxLength={5} accessibilityLabel="To" style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]} testID="time-off-end" />
++          </View>
++        </View>
++      ) : null}
++      <Text style={[styles.label, { color: colors.textMuted }]}>Note for yourself (optional)</Text>
++      <TextInput value={note} onChangeText={setNote} maxLength={200} accessibilityLabel="Note" style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]} />
++      {error ? (
++        <Text style={[typography.bodySmall, { color: colors.error, marginTop: spacing.md }]} testID="time-off-error" accessibilityLiveRegion="polite">
++          {error}
++        </Text>
++      ) : null}
++      <Pressable onPress={add} disabled={create.isPending || !timezone.data} accessibilityRole="button" accessibilityLabel="Add time off" accessibilityState={{ disabled: create.isPending || !timezone.data, busy: create.isPending }} style={[styles.primary, { backgroundColor: colors.textPrimary, opacity: create.isPending || !timezone.data ? 0.6 : 1 }]} testID="time-off-add">
++        <Text style={[typography.bodyMd, { color: colors.background }]}>Add time off</Text>
++      </Pressable>
++
++      <Text style={[typography.h3, { color: colors.textPrimary, marginTop: spacing.xl }]} accessibilityRole="header">
++        Coming up
++      </Text>
++      {q.isLoading ? <Text style={[typography.body, { color: colors.textMuted }]}>Loading.</Text> : null}
++      {q.isError ? (
++        <View>
++          <Text style={[typography.body, { color: colors.textMuted }]}>{calendarErrorMessage(q.error, 'load time off', 'coach')}</Text>
++          <Pressable onPress={() => void q.refetch()} accessibilityRole="button" accessibilityLabel="Refresh time off" style={[styles.secondary, { borderColor: colors.border }]}>
++            <Text style={[typography.body, { color: colors.textPrimary }]}>Refresh time off</Text>
++          </Pressable>
++        </View>
++      ) : null}
++      {timezone.data && !q.isLoading && !q.isError && rows.length === 0 ? (
++        <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.md }]} testID="time-off-empty">
++          No time off planned.
++        </Text>
++      ) : null}
++      {rows.map((o) => (
++        <View key={o.id} style={[styles.card, { borderColor: colors.border }]} testID={`time-off-${o.id}`}>
++          <Text style={[typography.body, { color: colors.textPrimary }]}>{describeOverride(o)}</Text>
++          {o.note ? <Text style={[typography.bodySmall, { color: colors.textMuted }]}>{o.note}</Text> : null}
++          <Pressable onPress={() => confirmRemove(o)} disabled={remove.isPending || create.isPending} accessibilityRole="button" accessibilityLabel={`Remove ${describeOverride(o)}`} style={[styles.secondary, { borderColor: colors.textPrimary }]} testID={`time-off-remove-${o.id}`}>
++            <Text style={[typography.body, { color: colors.textPrimary }]}>Remove</Text>
++          </Pressable>
++        </View>
++      ))}
++    </ScrollView>
++  );
++}
++
++const styles = StyleSheet.create({
++  container: { padding: spacing.lg, paddingBottom: spacing['3xl'] },
++  label: { ...typography.caption, marginTop: spacing.lg, marginBottom: spacing.xs },
++  input: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 2, padding: spacing.md, ...typography.body },
++  switchRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg },
++  timeRow: { flexDirection: 'row', gap: spacing.md },
++  timeCol: { flex: 1 },
++  primary: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg },
++  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 4, padding: spacing.md, marginTop: spacing.md },
++  secondary: { minHeight: 44, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginTop: spacing.sm },
++});
+diff --git a/src/screens/coach/SettingsScreen.tsx b/src/screens/coach/SettingsScreen.tsx
+index 681d832..1423287 100644
+--- a/src/screens/coach/SettingsScreen.tsx
++++ b/src/screens/coach/SettingsScreen.tsx
+@@ -537,6 +537,40 @@ export default function SettingsScreen() {
+           <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+         </TouchableOpacity>
+         <View style={styles.divider} />
++        {/* S-SCHED — appointment types clients book from, and time off. */}
++        <TouchableOpacity
++          style={styles.row}
++          onPress={() => {
++            mediumTap();
++            navigation.navigate('ClientsStack', {
++              screen: 'CoachAppointmentTypes',
++              params: currentUser?.id ? { coachId: currentUser.id } : undefined,
++            });
++          }}
++          accessibilityRole="button"
++          accessibilityLabel="Open appointment types"
++          testID="settings-appointment-types"
++        >
++          <Ionicons name="list-outline" size={20} color={colors.textSecondary} />
++          <Text style={styles.rowLabel}>Appointment Types</Text>
++          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
++        </TouchableOpacity>
++        <View style={styles.divider} />
++        <TouchableOpacity
++          style={styles.row}
++          onPress={() => {
++            mediumTap();
++            navigation.navigate('ClientsStack', { screen: 'CoachTimeOff' });
++          }}
++          accessibilityRole="button"
++          accessibilityLabel="Open time off"
++          testID="settings-time-off"
++        >
++          <Ionicons name="airplane-outline" size={20} color={colors.textSecondary} />
++          <Text style={styles.rowLabel}>Time Off</Text>
++          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
++        </TouchableOpacity>
++        <View style={styles.divider} />
+         {/* Legacy single-invite generator. The new email-pipeline Bulk
+             invite + Invites & email rows live under Client Management. */}
+         <TouchableOpacity
+diff --git a/src/screens/coach/__tests__/coachSchedulingFixRound.test.tsx b/src/screens/coach/__tests__/coachSchedulingFixRound.test.tsx
+new file mode 100644
+index 0000000..7ff9974
+--- /dev/null
++++ b/src/screens/coach/__tests__/coachSchedulingFixRound.test.tsx
+@@ -0,0 +1,258 @@
++/**
++ * S-SCHED-3 (mobile #325 fix round), coach side:
++ *  - B-325-2: every coach scheduling screen shows coach-worded errors, not
++ *    the client's "message your coach" copy (one test per screen).
++ *  - B-634-1 pair: Confirm/Decline send the start time on the card; a request
++ *    the client moved meanwhile reads SESSION_MOVED copy and the inbox
++ *    refreshes.
++ *  - C-325-3: requests and the agenda come from the server status filter,
++ *    paged on (start_at, id).
++ *  - B-325-1: the coach can save a phone number as the call link.
++ */
++import React from 'react';
++import { cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++import type { CoachingSession, SessionType } from '../../../api/schedulingApi';
++
++jest.mock('../../../services/sentry', () => ({ captureError: jest.fn() }));
++
++jest.mock('../../../api/schedulingApi', () => {
++  const actual = jest.requireActual('../../../api/schedulingApi');
++  return {
++    ...actual,
++    schedulingApi: {
++      listSessionTypes: jest.fn(),
++      createSessionType: jest.fn(),
++      updateSessionType: jest.fn(),
++      listMyAvailabilityOverrides: jest.fn(),
++      createAvailabilityOverride: jest.fn(),
++      deleteAvailabilityOverride: jest.fn(),
++      getOpenSlots: jest.fn(),
++      listMySessions: jest.fn(),
++      approveSession: jest.fn(),
++      declineSession: jest.fn(),
++      attachManualVideoLink: jest.fn(),
++      cancelSession: jest.fn(),
++      getAvailability: jest.fn(),
++      setAvailability: jest.fn(),
++    },
++  };
++});
++jest.mock('../../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'coach-1', email: 'c@x', role: 'coach' }),
++}));
++
++import { schedulingApi } from '../../../api/schedulingApi';
++import { COACH_CODE_MESSAGES } from '../../../calendar/schedulingErrors';
++import CoachAppointmentTypesScreen from '../CoachAppointmentTypesScreen';
++import CoachTimeOffScreen from '../CoachTimeOffScreen';
++import CoachBookingInboxScreen from '../CoachBookingInboxScreen';
++import CoachAvailabilityEditorScreen from '../CoachAvailabilityEditorScreen';
++
++const api = schedulingApi as jest.Mocked<typeof schedulingApi>;
++
++const T: SessionType = {
++  id: 'st-1', coach_id: 'coach-1', name: 'Quick Q/A Call', description: null, duration_minutes: 20,
++  auto_approve: false, default_video_provider: 'manual', archived_at: null, created_at: '', updated_at: '',
++};
++
++function session(over: Partial<CoachingSession> = {}): CoachingSession {
++  return {
++    id: 'rq-1', coach_id: 'coach-1', client_id: 'client-1', session_type_id: 'st-1',
++    status: 'requested', start_at: '2030-10-06T17:00:00.000Z', end_at: '2030-10-06T17:20:00.000Z',
++    title: 'Quick Q/A Call', coach_notes_md: null, client_recap_md: null,
++    video_provider: 'manual', video_url: null, video_meeting_id: null,
++    calendar_provider: 'stub', calendar_event_id: null, approved_at: null,
++    ended_at: null, end_reason: null, created_at: '', updated_at: '',
++    ...over,
++  };
++}
++
++const coded = (status: number, code: string) => ({ response: { status, data: { code, message: 'server text' } } });
++const CLIENT_ONLY = /message your coach|assigned coach|choose an available time|Refresh Calendar/i;
++
++const clients: QueryClient[] = [];
++afterEach(async () => {
++  await cleanup();
++  for (const client of clients.splice(0)) client.clear();
++});
++function renderQ(node: React.ReactElement) {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } });
++  clients.push(qc);
++  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
++}
++
++/** listMySessions answers by the status filter the screen asks for. */
++function serveByStatus(rows: CoachingSession[]) {
++  api.listMySessions.mockImplementation(async (_limit, opts) => {
++    const wanted = opts?.status;
++    return wanted ? rows.filter((r) => wanted.includes(r.status)) : rows;
++  });
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  api.listSessionTypes.mockResolvedValue([T]);
++  api.listMyAvailabilityOverrides.mockResolvedValue([]);
++  api.getOpenSlots.mockResolvedValue({ coach_id: 'coach-1', timezone: 'America/Los_Angeles', generated_at: '', slots: [] });
++  api.getAvailability.mockResolvedValue([]);
++  serveByStatus([]);
++});
++
++describe('CoachBookingInboxScreen (S-SCHED-3)', () => {
++  it('asks the server for requests and confirmed sessions separately, then confirms with the start time on the card', async () => {
++    serveByStatus([session(), session({ id: 'ok-1', status: 'scheduled', start_at: '2030-10-06T18:00:00.000Z', end_at: '2030-10-06T18:20:00.000Z' })]);
++    api.approveSession.mockResolvedValue(session({ status: 'scheduled' }));
++    const r = await renderQ(<CoachBookingInboxScreen />);
++    await waitFor(() => expect(r.getByLabelText('Confirm session Quick Q/A Call')).toBeTruthy());
++    expect(api.listMySessions).toHaveBeenCalledWith(50, { status: ['requested'], after: undefined, afterId: undefined });
++    expect(api.listMySessions).toHaveBeenCalledWith(50, { status: ['scheduled', 'pending_provider'], after: undefined, afterId: undefined });
++    expect(r.getByTestId('coach-agenda-ok-1')).toBeTruthy();
++    await fireEvent.press(r.getByLabelText('Confirm session Quick Q/A Call'));
++    await waitFor(() =>
++      expect(api.approveSession).toHaveBeenCalledWith('rq-1', { expected_start_at: '2030-10-06T17:00:00.000Z' }),
++    );
++  });
++
++  it('a request the client moved meanwhile reads coach copy and the inbox refreshes', async () => {
++    serveByStatus([session()]);
++    api.declineSession.mockRejectedValue(coded(409, 'SESSION_MOVED'));
++    const r = await renderQ(<CoachBookingInboxScreen />);
++    await waitFor(() => expect(r.getByLabelText('Decline session Quick Q/A Call')).toBeTruthy());
++    const before = api.listMySessions.mock.calls.length;
++    await fireEvent.press(r.getByLabelText('Decline session Quick Q/A Call'));
++    await waitFor(() => expect(r.getByText(COACH_CODE_MESSAGES.SESSION_MOVED)).toBeTruthy());
++    expect(api.declineSession).toHaveBeenCalledWith('rq-1', { expected_start_at: '2030-10-06T17:00:00.000Z' });
++    expect(COACH_CODE_MESSAGES.SESSION_MOVED).not.toMatch(CLIENT_ONLY);
++    await waitFor(() => expect(api.listMySessions.mock.calls.length).toBeGreaterThan(before));
++  });
++
++  it('a full page of requests offers Show more, which pages with after + after_id', async () => {
++    const page = Array.from({ length: 50 }, (_, i) =>
++      session({ id: `rq-${String(i).padStart(2, '0')}`, start_at: '2030-10-06T17:00:00.000Z' }),
++    );
++    api.listMySessions.mockImplementation(async (_l, opts) => {
++      if (!opts?.status?.includes('requested')) return [];
++      return opts.afterId ? [session({ id: 'rq-last', start_at: '2030-10-07T17:00:00.000Z', end_at: '2030-10-07T17:20:00.000Z', title: 'Last request' })] : page;
++    });
++    const r = await renderQ(<CoachBookingInboxScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-requests-more')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('coach-requests-more'));
++    await waitFor(() => expect(r.getByText('Last request')).toBeTruthy());
++    expect(api.listMySessions).toHaveBeenCalledWith(50, {
++      status: ['requested'],
++      after: '2030-10-06T17:00:00.000Z',
++      afterId: 'rq-49',
++    });
++  });
++
++  it('a coach can save a phone number as the call link; other schemes are refused with a next step', async () => {
++    const confirmed = session({ id: 's1', status: 'scheduled' });
++    serveByStatus([confirmed]);
++    api.attachManualVideoLink.mockResolvedValue({ ...confirmed, video_url: 'tel:+14255550100' });
++    const r = await renderQ(<CoachBookingInboxScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-call-link-s1')).toBeTruthy());
++    await fireEvent.changeText(r.getByTestId('coach-call-link-s1'), 'sms:+14255550100');
++    await fireEvent.press(r.getByTestId('coach-save-link-s1'));
++    expect(api.attachManualVideoLink).not.toHaveBeenCalled();
++    expect(r.getByText(/or a phone number such as \+1 425 555 0100, then tap Save call link\./)).toBeTruthy();
++    await fireEvent.changeText(r.getByTestId('coach-call-link-s1'), '+1 425 555 0100');
++    await fireEvent.press(r.getByTestId('coach-save-link-s1'));
++    await waitFor(() => expect(api.attachManualVideoLink).toHaveBeenCalledWith('s1', { video_url: 'tel:+14255550100' }));
++    await waitFor(() => expect(r.getByText('Phone number saved. Your client can call it from their session.')).toBeTruthy());
++  });
++
++  it('the agenda reads a saved phone number as ready', async () => {
++    serveByStatus([session({ id: 's2', status: 'scheduled', video_url: 'tel:+1 425 555 0100', meeting_link_status: 'ready', client_name: 'Jamie' })]);
++    const r = await renderQ(<CoachBookingInboxScreen />);
++    await waitFor(() => expect(r.getByText('Confirmed with Jamie. Phone call on +1 425 555 0100.')).toBeTruthy());
++  });
++});
++
++describe('B-325-2: coach-worded errors on every coach scheduling screen', () => {
++  it('CoachAppointmentTypesScreen: an archive that lost a race reads coach copy', async () => {
++    api.updateSessionType.mockRejectedValue(coded(409, 'SESSION_STATE_CHANGED'));
++    const r = await renderQ(<CoachAppointmentTypesScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-type-archive-st-1')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('coach-type-archive-st-1'));
++    await waitFor(() => expect(r.getByText(COACH_CODE_MESSAGES.SESSION_STATE_CHANGED)).toBeTruthy());
++    expect(r.queryByText(/Refresh Calendar/)).toBeNull();
++  });
++
++  it('CoachAppointmentTypesScreen: an unavailable type tells the coach where to restore it', async () => {
++    api.updateSessionType.mockRejectedValue(coded(404, 'SESSION_TYPE_UNAVAILABLE'));
++    const r = await renderQ(<CoachAppointmentTypesScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-type-archive-st-1')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('coach-type-archive-st-1'));
++    await waitFor(() => expect(r.getByText(/Open Appointment types to restore it/)).toBeTruthy());
++  });
++
++  it('CoachTimeOffScreen: a load failure gives a coach next step', async () => {
++    api.listMyAvailabilityOverrides.mockRejectedValue({ response: { status: 403, data: {} } });
++    const r = await renderQ(<CoachTimeOffScreen />);
++    await waitFor(() => expect(r.getAllByText(/Refresh your schedule, or contact support\./).length).toBeGreaterThan(0));
++    expect(r.queryAllByText(CLIENT_ONLY)).toHaveLength(0);
++  });
++
++  it('CoachAvailabilityEditorScreen: a load failure gives a coach next step', async () => {
++    api.getAvailability.mockRejectedValue({ response: { status: 403, data: {} } });
++    const r = await renderQ(
++      <CoachAvailabilityEditorScreen route={{ key: 'a', name: 'CoachAvailabilityEditor', params: { coachId: 'coach-1' } }} />,
++    );
++    await waitFor(() => expect(r.getAllByText(/Refresh your schedule, or contact support\./).length).toBeGreaterThan(0));
++    expect(r.queryAllByText(CLIENT_ONLY)).toHaveLength(0);
++  });
++
++  it('the generic coach SESSION_STARTED copy offers only a step that exists (refresh), never complete / no-show', () => {
++    expect(COACH_CODE_MESSAGES.SESSION_STARTED).not.toMatch(/complete|no-show/i);
++    expect(COACH_CODE_MESSAGES.SESSION_STARTED).toMatch(/Refresh the inbox/);
++    expect(COACH_CODE_MESSAGES.SESSION_STARTED).not.toMatch(CLIENT_ONLY);
++  });
++});
++
++describe('S-SCHED-4 B-325-2: an expired request gets the action the card actually offers', () => {
++  // The backend's real refusal (approvalTooLate): requested + start_at passed.
++  const tooLate = {
++    response: {
++      status: 409,
++      data: {
++        code: 'SESSION_STARTED',
++        message: 'The requested time has already passed. Decline it so the client can pick a new time.',
++      },
++    },
++  };
++  // Started 10 minutes ago, ends in 10: still "upcoming" (end_at > now), so
++  // the refreshed inbox still shows it with Confirm / Decline.
++  const expired = () =>
++    session({
++      id: 'rq-late',
++      start_at: new Date(Date.now() - 10 * 60_000).toISOString(),
++      end_at: new Date(Date.now() + 10 * 60_000).toISOString(),
++    });
++
++  it('Confirm on an expired request says the time passed and to tap Decline; Decline then works', async () => {
++    const row = expired();
++    serveByStatus([row]);
++    api.approveSession.mockRejectedValue(tooLate);
++    api.declineSession.mockResolvedValue({ ...row, status: 'declined' });
++    const r = await renderQ(<CoachBookingInboxScreen />);
++    await waitFor(() => expect(r.getByLabelText('Confirm session Quick Q/A Call')).toBeTruthy());
++    await fireEvent.press(r.getByLabelText('Confirm session Quick Q/A Call'));
++    await waitFor(() =>
++      expect(
++        r.getByText(
++          'The requested time has already passed, so it can no longer be confirmed. Tap Decline on this request so your client can choose another time.',
++        ),
++      ).toBeTruthy(),
++    );
++    // The proposed next step exists on the card after the refresh; the
++    // impossible ones (complete / no-show on a request) are neither offered
++    // as controls nor suggested.
++    expect(r.queryByText(/complete|no-show/i)).toBeNull();
++    const declineBtn = await waitFor(() => r.getByLabelText('Decline session Quick Q/A Call'));
++    await fireEvent.press(declineBtn);
++    await waitFor(() =>
++      expect(api.declineSession).toHaveBeenCalledWith('rq-late', { expected_start_at: row.start_at }),
++    );
++  });
++});
+diff --git a/src/screens/coach/__tests__/coachSchedulingSettings.test.tsx b/src/screens/coach/__tests__/coachSchedulingSettings.test.tsx
+new file mode 100644
+index 0000000..a223bcc
+--- /dev/null
++++ b/src/screens/coach/__tests__/coachSchedulingSettings.test.tsx
+@@ -0,0 +1,264 @@
++/**
++ * S-SCHED coach settings: create/edit appointment types (S-SCHED-2 welcome
++ * marker + default call link), archive/restore from the server list
++ * (include_archived), agenda call-link entry and status, server-zone weekly
++ * hours, and time off (blocked hours, date validation, confirmed removal).
++ */
++import React from 'react';
++import { Alert } from 'react-native';
++import { cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++import type { SessionType } from '../../../api/schedulingApi';
++
++jest.mock('../../../services/sentry', () => ({ captureError: jest.fn() }));
++
++jest.mock('../../../api/schedulingApi', () => {
++  const actual = jest.requireActual('../../../api/schedulingApi');
++  return {
++    ...actual,
++    schedulingApi: {
++      listSessionTypes: jest.fn(),
++      createSessionType: jest.fn(),
++      updateSessionType: jest.fn(),
++      listMyAvailabilityOverrides: jest.fn(),
++      createAvailabilityOverride: jest.fn(),
++      deleteAvailabilityOverride: jest.fn(),
++      getOpenSlots: jest.fn(),
++      listMySessions: jest.fn(),
++      approveSession: jest.fn(),
++      declineSession: jest.fn(),
++      attachManualVideoLink: jest.fn(),
++      cancelSession: jest.fn(),
++      getAvailability: jest.fn(),
++      setAvailability: jest.fn(),
++    },
++  };
++});
++jest.mock('../../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'coach-1', email: 'c@x', role: 'coach' }),
++}));
++
++import { schedulingApi } from '../../../api/schedulingApi';
++import CoachAppointmentTypesScreen, { validateDraft, emptyDraft, isHttpsLink } from '../CoachAppointmentTypesScreen';
++import CoachTimeOffScreen, { describeOverride, validateTimeOff } from '../CoachTimeOffScreen';
++import CoachBookingInboxScreen from '../CoachBookingInboxScreen';
++import CoachAvailabilityEditorScreen from '../CoachAvailabilityEditorScreen';
++import type { CoachingSession } from '../../../api/schedulingApi';
++
++const api = schedulingApi as jest.Mocked<typeof schedulingApi>;
++
++const T: SessionType = {
++  id: 'st-1',
++  coach_id: 'coach-1',
++  name: 'Quick Q/A Call',
++  description: null,
++  duration_minutes: 20,
++  auto_approve: true,
++  default_video_provider: 'manual',
++  archived_at: null,
++  created_at: '',
++  updated_at: '',
++};
++
++const clients: QueryClient[] = [];
++afterEach(async () => {
++  await cleanup();
++  for (const client of clients.splice(0)) client.clear();
++});
++
++function renderQ(node: React.ReactElement) {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } });
++  clients.push(qc);
++  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  api.listSessionTypes.mockResolvedValue([T]);
++  api.createSessionType.mockImplementation(async (i) => ({ ...T, ...i, id: 'st-new' }) as SessionType);
++  api.updateSessionType.mockImplementation(async (id, input) => ({ ...T, ...input, id, archived_at: input.archived ? '2026-10-01T00:00:00Z' : null }));
++  api.listMyAvailabilityOverrides.mockResolvedValue([]);
++  api.getOpenSlots.mockResolvedValue({ coach_id: 'coach-1', timezone: 'America/Los_Angeles', generated_at: '', slots: [] });
++  api.getAvailability.mockResolvedValue([]);
++});
++
++describe('Coach native scheduling agenda', () => {
++  const scheduled: CoachingSession = {
++    id: 's1', coach_id: 'coach-1', client_id: 'client-1', session_type_id: 'st-1',
++    status: 'scheduled', start_at: '2030-10-05T16:00:00Z', end_at: '2030-10-05T16:20:00Z',
++    title: 'Quick Q/A Call', coach_notes_md: null, client_recap_md: null,
++    video_provider: 'manual', video_url: null, video_meeting_id: null,
++    calendar_provider: 'stub', calendar_event_id: null, approved_at: null,
++    ended_at: null, end_reason: null, created_at: '', updated_at: '',
++  };
++
++  it('gives the coach a real call-link entry point and rejects invalid links', async () => {
++    api.listMySessions.mockResolvedValue([scheduled]);
++    api.attachManualVideoLink.mockResolvedValue({ ...scheduled, video_url: 'https://meet.example/room' });
++    const r = await renderQ(<CoachBookingInboxScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-call-link-s1')).toBeTruthy());
++    await fireEvent.changeText(r.getByTestId('coach-call-link-s1'), 'http://unsafe.example');
++    await fireEvent.press(r.getByTestId('coach-save-link-s1'));
++    expect(api.attachManualVideoLink).not.toHaveBeenCalled();
++    expect(r.getByText(/Enter a complete https/)).toBeTruthy();
++    await fireEvent.changeText(r.getByTestId('coach-call-link-s1'), 'https://meet.example/room');
++    await fireEvent.press(r.getByTestId('coach-save-link-s1'));
++    await waitFor(() => expect(api.attachManualVideoLink).toHaveBeenCalledWith('s1', { video_url: 'https://meet.example/room' }));
++    await waitFor(() => expect(r.getByText(/Call link saved/)).toBeTruthy());
++  });
++
++  it('uses the server scheduling time zone in the weekly editor', async () => {
++    const r = await renderQ(<CoachAvailabilityEditorScreen route={{ key: 'a', name: 'CoachAvailabilityEditor', params: { coachId: 'coach-1' } }} />);
++    await waitFor(() => expect(r.getByText(/coach calendar time zone: America/)).toBeTruthy());
++    expect(api.getOpenSlots).toHaveBeenCalledWith('coach-1', expect.objectContaining({ durationMinutes: 60 }));
++  });
++});
++
++describe('CoachAppointmentTypesScreen', () => {
++  it('lists every type of the coach, archived ones included, for restore', async () => {
++    api.listSessionTypes.mockResolvedValue([T, { ...T, id: 'st-old', name: 'Old call', archived_at: '2026-09-01T00:00:00Z' }]);
++    const r = await renderQ(<CoachAppointmentTypesScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-type-st-1')).toBeTruthy());
++    expect(api.listSessionTypes).toHaveBeenCalledWith('coach-1', { includeArchived: true });
++    expect(r.getByText('Old call (archived)')).toBeTruthy();
++    expect(r.getByText(/Archived types stay here so you can restore them/)).toBeTruthy();
++  });
++
++  it('marks a type as the welcome call and sets a default call link; empty clears it', async () => {
++    api.listSessionTypes.mockResolvedValue([{ ...T, default_meeting_url: 'https://meet.example/old' }]);
++    const r = await renderQ(<CoachAppointmentTypesScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-type-edit-st-1')).toBeTruthy());
++    expect(r.getByText('Default call link set.')).toBeTruthy();
++    await fireEvent.press(r.getByTestId('coach-type-edit-st-1'));
++    await fireEvent(r.getByTestId('coach-type-welcome'), 'valueChange', true);
++    expect(r.getByText(/Only one type can be the welcome call/)).toBeTruthy();
++    await fireEvent.changeText(r.getByTestId('coach-type-link'), 'http://unsafe.example');
++    await fireEvent.press(r.getByTestId('coach-type-save'));
++    expect(api.updateSessionType).not.toHaveBeenCalled();
++    expect(r.getByText(/Enter a complete https call link without a password, or leave the call link empty/)).toBeTruthy();
++    await fireEvent.changeText(r.getByTestId('coach-type-link'), '');
++    await fireEvent.press(r.getByTestId('coach-type-save'));
++    await waitFor(() =>
++      expect(api.updateSessionType).toHaveBeenCalledWith('st-1', expect.objectContaining({ is_welcome: true, default_meeting_url: null })),
++    );
++  });
++
++  it('an unchanged edit does not send the welcome or link fields', async () => {
++    const r = await renderQ(<CoachAppointmentTypesScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-type-edit-st-1')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('coach-type-edit-st-1'));
++    await fireEvent.press(r.getByTestId('coach-type-save'));
++    await waitFor(() => expect(api.updateSessionType).toHaveBeenCalledTimes(1));
++    const input = api.updateSessionType.mock.calls[0][1];
++    expect(input).not.toHaveProperty('is_welcome');
++    expect(input).not.toHaveProperty('default_meeting_url');
++  });
++
++  it('validates the default call link', () => {
++    expect(isHttpsLink('https://meet.example/room')).toBe(true);
++    expect(isHttpsLink('http://meet.example/room')).toBe(false);
++    expect(isHttpsLink('https://user:pw@meet.example/room')).toBe(false);
++    expect(isHttpsLink('not a link')).toBe(false);
++    expect(validateDraft({ ...emptyDraft(), name: 'A', defaultLink: '' })).toBeNull();
++    expect(validateDraft({ ...emptyDraft(), name: 'A', defaultLink: 'https://meet.example/a' })).toBeNull();
++  });
++
++  it('creates an editable appointment with manual video on the existing DTO', async () => {
++    const r = await renderQ(<CoachAppointmentTypesScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-types-add')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('coach-types-add'));
++    await fireEvent.changeText(r.getByTestId('coach-type-name'), 'Quick initialization');
++    await fireEvent.changeText(r.getByTestId('coach-type-duration'), '15');
++    await fireEvent(r.getByTestId('coach-type-auto'), 'valueChange', true);
++    await fireEvent.press(r.getByTestId('coach-type-save'));
++    await waitFor(() => expect(api.createSessionType).toHaveBeenCalledTimes(1));
++    expect(api.createSessionType.mock.calls[0][0]).toEqual({
++      name: 'Quick initialization',
++      description: '',
++      duration_minutes: 15,
++      auto_approve: true,
++      default_video_provider: 'manual',
++    });
++  });
++
++  it('editing saves settings; archive and restore toggle against the server list', async () => {
++    let rows: SessionType[] = [T];
++    api.listSessionTypes.mockImplementation(async () => rows);
++    api.updateSessionType.mockImplementation(async (id, input) => {
++      const saved = { ...T, ...input, id, archived_at: input.archived ? '2026-10-01T00:00:00Z' : null };
++      rows = rows.map((row) => (row.id === id ? saved : row));
++      return saved;
++    });
++    const r = await renderQ(<CoachAppointmentTypesScreen />);
++    await waitFor(() => expect(r.getByTestId('coach-type-edit-st-1')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('coach-type-edit-st-1'));
++    await fireEvent.changeText(r.getByTestId('coach-type-name'), 'Edited call');
++    await fireEvent.press(r.getByTestId('coach-type-save'));
++    await waitFor(() =>
++      expect(api.updateSessionType).toHaveBeenCalledWith('st-1', expect.objectContaining({ name: 'Edited call' })),
++    );
++    await fireEvent.press(r.getByTestId('coach-type-archive-st-1'));
++    await waitFor(() => expect(api.updateSessionType).toHaveBeenCalledWith('st-1', { archived: true }));
++    await waitFor(() => expect(r.getByText('Quick Q/A Call (archived)')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('coach-type-archive-st-1'));
++    await waitFor(() => expect(api.updateSessionType).toHaveBeenCalledWith('st-1', { archived: false }));
++  });
++
++  it('validates name, length and description', () => {
++    expect(validateDraft({ ...emptyDraft(), name: '' })).toMatch(/name/);
++    expect(validateDraft({ ...emptyDraft(), name: 'A', duration: '2' })).toMatch(/between 5 and 480/);
++    expect(validateDraft({ ...emptyDraft(), name: 'A', description: 'x'.repeat(2001) })).toMatch(/2000/);
++    expect(validateDraft({ ...emptyDraft(), name: 'A' })).toBeNull();
++  });
++});
++
++describe('CoachTimeOffScreen', () => {
++  it('adds a blocked stretch of hours and lists existing time off', async () => {
++    api.listMyAvailabilityOverrides.mockResolvedValue([
++      { id: 'ov-1', coach_id: 'coach-1', date: '2030-12-24T00:00:00.000Z', start_minute: null, end_minute: null, kind: 'holiday', note: null },
++    ]);
++    api.createAvailabilityOverride.mockResolvedValue({
++      id: 'ov-2', coach_id: 'coach-1', date: '2030-12-26', start_minute: 780, end_minute: 900, kind: 'block', note: null,
++    });
++    const r = await renderQ(<CoachTimeOffScreen />);
++    await waitFor(() => expect(r.getByText('2030-12-24, full day off')).toBeTruthy());
++    await fireEvent.changeText(r.getByTestId('time-off-date'), '2030-12-26');
++    await fireEvent(r.getByTestId('time-off-full-day'), 'valueChange', false);
++    await fireEvent.changeText(r.getByTestId('time-off-start'), '13:00');
++    await fireEvent.changeText(r.getByTestId('time-off-end'), '15:00');
++    await fireEvent.press(r.getByTestId('time-off-add'));
++    await waitFor(() =>
++      expect(api.createAvailabilityOverride).toHaveBeenCalledWith({
++        date: '2030-12-26',
++        kind: 'block',
++        start_time: '13:00',
++        end_time: '15:00',
++      }),
++    );
++  });
++
++  it('removes time off after a confirm', async () => {
++    api.listMyAvailabilityOverrides.mockResolvedValue([
++      { id: 'ov-1', coach_id: 'coach-1', date: '2030-12-24T00:00:00.000Z', start_minute: null, end_minute: null, kind: 'holiday', note: null },
++    ]);
++    api.deleteAvailabilityOverride.mockResolvedValue(undefined);
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, b) => b?.find((x) => x.style === 'destructive')?.onPress?.());
++    const r = await renderQ(<CoachTimeOffScreen />);
++    await waitFor(() => expect(r.getByTestId('time-off-remove-ov-1')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('time-off-remove-ov-1'));
++    await waitFor(() => expect(api.deleteAvailabilityOverride).toHaveBeenCalledWith('ov-1'));
++    alert.mockRestore();
++  });
++
++  it('validates date and times', () => {
++    expect(validateTimeOff('12/26/2030', true, '', '', '2030-01-01')).toMatch(/YYYY-MM-DD/);
++    expect(validateTimeOff('2029-01-01', true, '', '', '2030-01-01')).toMatch(/today or a later/);
++    expect(validateTimeOff('2030-12-26', false, '15:00', '13:00', '2030-01-01')).toMatch(/after the start/);
++    expect(validateTimeOff('2030-12-26', false, '9:00', '13:00', '2030-01-01')).toMatch(/HH:MM/);
++    expect(validateTimeOff('2030-12-26', true, '', '', '2030-01-01')).toBeNull();
++    expect(validateTimeOff('2030-02-30', true, '', '', '2030-01-01')).toMatch(/does not exist/);
++    expect(describeOverride({ id: 'x', coach_id: 'c', date: '2030-12-26', start_minute: 780, end_minute: 900, kind: 'block', note: null })).toBe(
++      '2030-12-26, off 13:00 to 15:00',
++    );
++  });
++});
+diff --git a/src/screens/notifications/NotificationCenterScreen.tsx b/src/screens/notifications/NotificationCenterScreen.tsx
+index b165c3f..e2d86df 100644
+--- a/src/screens/notifications/NotificationCenterScreen.tsx
++++ b/src/screens/notifications/NotificationCenterScreen.tsx
+@@ -23,7 +23,7 @@ import {
+   StyleSheet,
+ } from 'react-native';
+ import { SkeletonList } from '../../ui/skeletons/Skeleton';
+-import { useNavigation } from '@react-navigation/native';
++import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
+ import { Ionicons } from '@expo/vector-icons';
+ import { useTheme } from '../../theme/ThemeProvider';
+ import NotificationRow from '../../components/NotificationRow';
+@@ -35,20 +35,27 @@ import {
+   markNotificationRead,
+   markAllNotificationsRead,
+ } from '../../services/notificationsApi';
++import { routeInAppNotification } from '../../services/pushTapRouter';
+ import type { IoniconName } from '../../types/common';
+ 
+ // ─── Deep-link routing table ──────────────────────────────────────────────────
+ // Maps notification.actionScreen to a navigate() call. Keep in sync with
+ // README.md#deep-link-routing-table.
++//
++// S-SCHED-2: rows route through the push router's role-aware, allow-listed
++// table first (a client booking row opens Calendar > session, a coach row
++// opens the booking inbox, flag-off destinations land here). Only when the
++// app navigator is not ready does the screen fall back to a direct navigate.
+ 
+-type NavWithNavigate = { navigate: (screen: string, params?: Record<string, string>) => void };
++type NavWithNavigate = Pick<NavigationProp<ParamListBase>, 'navigate'>;
+ 
+-function routeNotification(
++export function routeNotification(
+   notification: AppNotification,
+   nav: NavWithNavigate,
+ ): void {
+   const screen = notification.actionScreen;
+   if (!screen) return;
++  if (routeInAppNotification(screen, notification.actionParams)) return;
+   // Param types are enforced by the navigator param lists. actionScreen values
+   // come from a constrained server enum, not user input.
+   nav.navigate(screen, notification.actionParams);
+@@ -144,7 +151,7 @@ const INITIAL_STATE: State = {
+ export default function NotificationCenterScreen() {
+   const { colors } = useTheme();
+   const styles = React.useMemo(() => makeStyles(colors), [colors]);
+-  const navigation = useNavigation();
++  const navigation = useNavigation<NavigationProp<ParamListBase>>();
+   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
+   const loadingMoreRef = useRef(false);
+ 
+@@ -206,12 +213,9 @@ export default function NotificationCenterScreen() {
+           // Revert is omitted — the optimistic update is acceptable here.
+         }
+       }
+-      routeNotification(
+-        notification,
+-        navigation as unknown as NavWithNavigate,
+-      );
++      routeNotification(notification, navigation);
+     },
+-    [navigation.navigate],
++    [navigation],
+   );
+ 
+   // Mark all read
+diff --git a/src/tutorial/README.md b/src/tutorial/README.md
+index 1d1def4..1fe2970 100644
+--- a/src/tutorial/README.md
++++ b/src/tutorial/README.md
+@@ -10,6 +10,7 @@ The approach is Duolingo mechanics inside Quiet Luxury visuals: a progress indic
+ |---|---|---|---|---|
+ | `clientTutorial` | `EXPO_PUBLIC_FF_CLIENT_TUTORIAL` | OFF | **ON** | This tour, the pinned macro and plan cards, the Home "Message your coach" row, the "Health and sleep" and "Connected devices" rows in Profile and more, and Settings > Tutorial. Turning it OFF rolls all of it back. |
+ | `communityTab` | `EXPO_PUBLIC_FF_COMMUNITY_TAB` | OFF | **ON (required)** | The community step needs the Community tab. If it is OFF, that step is recorded as `unavailable` and the tour skips it. |
++| `clientCalendar` | `EXPO_PUBLIC_FF_CLIENT_CALENDAR` | OFF | **ON (after S-SCHED audits)** | The client Calendar tab. Adds two steps: the Calendar intro (after coach_messages) and the closing welcome call (before complete). OFF removes both from the step list entirely, so the tour, its "Step N of 8" count and persisted step indexes are exactly as before. |
+ | `communityHall` | `EXPO_PUBLIC_FF_COMMUNITY_HALL` | OFF | **ON (required)** | The space for every clinic client lives here. |
+ | `communityCohorts` | `EXPO_PUBLIC_FF_COMMUNITY_COHORTS` | OFF | **ON (required)** | The three per-plan spaces are cohort spaces. |
+ | `communityDm` | `EXPO_PUBLIC_FF_COMMUNITY_DM` | OFF | OFF (not required) | Messaging the coach uses the existing coach thread (`POST /messages`, HomeStack `Messages`), not community DMs. Leave it OFF unless the owner wants client-to-client DMs. |
+@@ -48,6 +49,15 @@ startClientTutorial(completeResponse.data); // body of POST /me/onboarding/compl
+ | 8 | first_message (teach-back) | open the coach thread, then send | `message_sent`: `POST /messages` 2xx (send or reply) |
+ | 9 | complete | Done | button |
+ 
++With `clientCalendar` ON (S-SCHED, owner decisions 2026-10-01):
++
++| After | Step | Gates | Detected by |
++|---|---|---|---|
++| coach_messages | calendar | focus Calendar, then Continue | route `CalendarHome` |
++| first_message | welcome_call | "Book your welcome call with {coach}" opens booking, preselecting the day-1 seeded Quick initialization offering; renamed offerings can be selected explicitly; book, **or tap Later** | `welcome_call_booked` from `CalendarBookScreen` on a successful booking, or DEFER |
++
++The welcome call never blocks finishing. With no preselected welcome type the client can choose an active appointment type; with no open times the screen offers refresh, Calendar and "Message your coach". Phone calendar exports are user-controlled copies and do not auto-sync.
++
+ The two teach-back steps have no button and no "Later". The client can skip the whole tour (with a confirm), which pauses it. Progress is kept. Resume from the quiet line on Home or from Settings > Tutorial (owner decision T-5).
+ 
+ ## Files
+@@ -57,7 +67,7 @@ The two teach-back steps have no button and no "Later". The client can skip the
+ - `tutorialMachine.ts`: the pure reducer (gating, pending/unavailable, defer, pause/resume, persistence parsing).
+ - `tutorialStore.ts`: a zustand store. Holds `startClientTutorial()`, hydration, haptics, done lines and spotlight targets.
+ - `tutorialStorage.ts`: AsyncStorage key `tgp.clientTutorial.v1:<userId>`, one per user (owner decision T-2: no server persistence in v1).
+-- `tutorialEvents.ts`: a dependency-free signal bus. Emit points: `services/api.ts` (`logApi.logFood`, `messagesApi.send`), `api/messagesApi.ts` (`sendReply`), `services/foodLogQueue.ts` (`enqueue`), `screens/client/wearables/ConnectProviderSheet.tsx`, and the two explanation cards.
++- `tutorialEvents.ts`: a dependency-free signal bus. Emit points: `services/api.ts` (`logApi.logFood`, `messagesApi.send`), `api/messagesApi.ts` (`sendReply`), `services/foodLogQueue.ts` (`enqueue`), `screens/client/wearables/ConnectProviderSheet.tsx`, the two explanation cards, and `screens/client/calendar/CalendarBookScreen.tsx` (`welcome_call_booked`).
+ - `navigationFocus.ts`: the focused route path from the tab navigator's `state` event.
+ - `onboardingPayload.ts`: defensive parsing of the complete payload and `/me/macros/current`.
+ 
+diff --git a/src/tutorial/__tests__/consultationWelcomeHandoff.test.ts b/src/tutorial/__tests__/consultationWelcomeHandoff.test.ts
+new file mode 100644
+index 0000000..9e24624
+--- /dev/null
++++ b/src/tutorial/__tests__/consultationWelcomeHandoff.test.ts
+@@ -0,0 +1,57 @@
++/**
++ * S-SCHED-4: the #310 consultation hand-off and the S-SCHED tour agree.
++ * ConsultationFlow.finish calls startClientTutorial(result) with the
++ * POST /me/onboarding/complete body; with clientCalendar on, that tour walks
++ * Calendar after messaging the coach and ends with "Book your welcome call
++ * with <coach>", which opens booking with the welcome type preselected. The
++ * coach name comes from the consultation result.
++ */
++jest.mock('../../config/featureFlags', () => {
++  const actual = jest.requireActual('../../config/featureFlags');
++  return {
++    ...actual,
++    featureFlags: { ...actual.featureFlags, clientCalendar: true, clientTutorial: true },
++  };
++});
++
++import type { CompleteOnboardingResponse } from '../../api/consultationApi';
++import { TUTORIAL_STEPS, type SignalGate } from '../tutorialSteps';
++import {
++  __resetTutorialStoreForTests,
++  buildCopyContext,
++  startClientTutorial,
++  useTutorialStore,
++} from '../tutorialStore';
++
++const RESULT: CompleteOnboardingResponse = {
++  macros: { calories: 2100, protein_g: 150, carbs_g: 220, fat_g: 70, method: 'mifflin', floor_applied: false },
++  program: { id: 'p1', name: 'Gentle start', days_per_week: 3, weeks: 4, why: [] },
++  spaces: [],
++  coach: { id: 'coach-1', display_name: 'Coach Kim' },
++};
++
++afterEach(() => __resetTutorialStoreForTests());
++
++describe('consultation (#310) -> tour -> welcome call', () => {
++  it('the tour has Calendar after coach_messages and ends with the welcome call before complete', () => {
++    const ids = TUTORIAL_STEPS.map((s) => s.id);
++    expect(ids.indexOf('calendar')).toBe(ids.indexOf('coach_messages') + 1);
++    expect(ids.slice(-2)).toEqual(['welcome_call', 'complete']);
++  });
++
++  it('startClientTutorial(result) names the consultation coach in the welcome call action, which opens welcome booking', () => {
++    expect(startClientTutorial(RESULT)).toBe(true);
++    const ctx = buildCopyContext(useTutorialStore.getState(), 'full');
++    expect(ctx.coachName).toBe('Coach Kim');
++    const step = TUTORIAL_STEPS.find((s) => s.id === 'welcome_call');
++    const gate = step?.gates[0] as SignalGate | undefined;
++    expect(gate?.kind).toBe('signal');
++    expect(gate?.allowDefer).toBe(true);
++    expect(gate?.action?.label(ctx)).toBe('Book your welcome call with Coach Kim');
++    expect(gate?.action?.target).toEqual({
++      tab: 'CalendarTab',
++      screen: 'CalendarBook',
++      params: { welcome: true },
++    });
++  });
++});
+diff --git a/src/tutorial/__tests__/tutorialCalendarFlag.test.ts b/src/tutorial/__tests__/tutorialCalendarFlag.test.ts
+new file mode 100644
+index 0000000..edf9bd6
+--- /dev/null
++++ b/src/tutorial/__tests__/tutorialCalendarFlag.test.ts
+@@ -0,0 +1,98 @@
++/**
++ * S-SCHED: with featureFlags.clientCalendar ON, the tour walks the Calendar
++ * intro after messaging the coach and ends with the welcome call, which
++ * can be booked (signal) or skipped (Later) and never blocks completion.
++ */
++jest.mock('../../config/featureFlags', () => {
++  const actual = jest.requireActual('../../config/featureFlags');
++  return { ...actual, featureFlags: { ...actual.featureFlags, clientCalendar: true } };
++});
++
++import { currentStep, initialTutorialState, progressOf, tutorialReducer, type MachineEnv, type TutorialAction } from '../tutorialMachine';
++import type { TutorialState } from '../types';
++
++const env = (over: Partial<MachineEnv> = {}): MachineEnv => ({
++  hasProgram: true,
++  hasMacros: true,
++  communityAvailable: true,
++  calendarAvailable: true,
++  currentPath: ['Home', 'HomeMain'],
++  now: '2026-10-01T00:00:00.000Z',
++  ...over,
++});
++
++function run(actions: Array<TutorialAction | { route: string[] }>, over: Partial<MachineEnv> = {}): TutorialState {
++  let e = env(over);
++  let s = initialTutorialState();
++  for (const a of actions) {
++    if ('route' in a) {
++      e = { ...e, currentPath: a.route };
++      s = tutorialReducer(s, { type: 'ROUTE' }, e);
++    } else {
++      s = tutorialReducer(s, a, e);
++    }
++  }
++  return s;
++}
++
++const TO_CALENDAR: Array<TutorialAction | { route: string[] }> = [
++  { type: 'START' },
++  { type: 'ACK' },
++  { route: ['WorkoutTab', 'WorkoutMain'] },
++  { type: 'SIGNAL', signal: 'plan_card_opened' },
++  { route: ['Home', 'HomeMain'] },
++  { type: 'SIGNAL', signal: 'macro_card_opened' },
++  { route: ['CommunityTab', 'CommunityTab'] },
++  { type: 'ACK' },
++  { route: ['Home', 'Messages'] },
++  { type: 'ACK' },
++];
++const TO_WELCOME: Array<TutorialAction | { route: string[] }> = [
++  ...TO_CALENDAR,
++  { route: ['CalendarTab', 'CalendarHome'] },
++  { type: 'ACK' },
++  { route: ['MoreTab', 'Connections'] },
++  { type: 'SIGNAL', signal: 'wearable_connected' },
++  { route: ['MoreTab', 'Health'] },
++  { type: 'ACK' },
++  { route: ['Log'] },
++  { type: 'SIGNAL', signal: 'meal_logged' },
++  { route: ['Home', 'Messages'] },
++  { type: 'SIGNAL', signal: 'message_sent' },
++];
++
++describe('tutorial with the Calendar flag on', () => {
++  it('the Calendar step follows messaging the coach and needs a real tap on Calendar', () => {
++    const s = run(TO_CALENDAR);
++    expect(currentStep(s)?.id).toBe('calendar');
++    expect(currentStep(run([...TO_CALENDAR, { type: 'ACK' }]))?.id).toBe('calendar');
++    expect(currentStep(run([...TO_CALENDAR, { route: ['CalendarTab', 'CalendarHome'] }, { type: 'ACK' }]))?.id).toBe('wearables');
++    expect(progressOf(s).total).toBe(10);
++  });
++
++  it('ends with the welcome call: booking it finishes the tour', () => {
++    const s = run(TO_WELCOME);
++    expect(currentStep(s)?.id).toBe('welcome_call');
++    const booked = run([...TO_WELCOME, { type: 'SIGNAL', signal: 'welcome_call_booked' }]);
++    expect(currentStep(booked)?.id).toBe('complete');
++    expect(booked.outcomes.welcome_call).toBe('done');
++  });
++
++  it('the welcome call is skippable and never blocks finishing', () => {
++    const skipped = run([...TO_WELCOME, { type: 'DEFER' }]);
++    expect(currentStep(skipped)?.id).toBe('complete');
++    expect(skipped.outcomes.welcome_call).toBe('deferred');
++    const done = run([...TO_WELCOME, { type: 'DEFER' }, { type: 'ACK' }]);
++    expect(done.status).toBe('completed');
++  });
++
++  it('a wrong signal does not advance the welcome call', () => {
++    expect(currentStep(run([...TO_WELCOME, { type: 'SIGNAL', signal: 'meal_logged' }]))?.id).toBe('welcome_call');
++  });
++
++  it('the machine still skips both steps if the env says Calendar is unavailable', () => {
++    const s = run(TO_CALENDAR, { calendarAvailable: false });
++    expect(currentStep(s)?.id).toBe('wearables');
++    expect(s.outcomes.calendar).toBe('unavailable');
++  });
++});
+diff --git a/src/tutorial/__tests__/tutorialCopy.test.ts b/src/tutorial/__tests__/tutorialCopy.test.ts
+index bad576d..1200504 100644
+--- a/src/tutorial/__tests__/tutorialCopy.test.ts
++++ b/src/tutorial/__tests__/tutorialCopy.test.ts
+@@ -3,7 +3,7 @@
+  * (AI_BUTLER_ROMAN_IDENTITY_SPEC §1) and the Quiet Luxury doctrine §4, and
+  * every number it speaks is the real one from the payload.
+  */
+-import { TUTORIAL_STEPS, wearableName, type CopyContext } from '../tutorialSteps';
++import { buildTutorialSteps, TUTORIAL_STEPS, wearableName, type CopyContext } from '../tutorialSteps';
+ 
+ const CTX: CopyContext = {
+   firstName: 'Maya',
+@@ -30,7 +30,8 @@ const SIMPLE: CopyContext = { ...CTX, macroMode: 'simple' };
+ 
+ function allLines(ctx: CopyContext): string[] {
+   const out: string[] = [];
+-  for (const s of TUTORIAL_STEPS) {
++  // Every line in the build, including the flag-gated Calendar steps.
++  for (const s of buildTutorialSteps(true)) {
+     for (const g of s.gates) out.push(g.line(ctx));
+     if (s.doneLine) out.push(s.doneLine(ctx));
+     if (s.pendingLine) out.push(s.pendingLine(ctx));
+@@ -151,3 +152,38 @@ describe('lighter start: the macro step in the simple view', () => {
+     expect(step.gates[1].line({ ...CTX, macroMode: 'full' })).toBe(full);
+   });
+ });
++
++describe('S-SCHED Calendar steps', () => {
++  const steps = buildTutorialSteps(true);
++  it('the Calendar intro comes right after messaging your coach', () => {
++    const ids = steps.map((s) => s.id);
++    expect(ids.indexOf('calendar')).toBe(ids.indexOf('coach_messages') + 1);
++  });
++
++  it('the tour ends with the welcome call, skippable, then the completion', () => {
++    const ids = steps.map((s) => s.id);
++    expect(ids.slice(-2)).toEqual(['welcome_call', 'complete']);
++    const gate = steps.find((s) => s.id === 'welcome_call')!.gates[0];
++    expect(gate.kind).toBe('signal');
++    if (gate.kind !== 'signal') return;
++    expect(gate.allowDefer).toBe(true);
++    expect(gate.signal).toBe('welcome_call_booked');
++    expect(gate.action?.label(CTX)).toBe('Book your welcome call with Bradley');
++    expect(gate.action?.label(SPARSE)).toBe('Book your welcome call with your coach');
++    expect(gate.action?.target).toEqual({ tab: 'CalendarTab', screen: 'CalendarBook', params: { welcome: true } });
++  });
++
++  it('uses the assigned coach name, never a hardcoded one', () => {
++    const lines = steps
++      .filter((s) => s.requires === 'calendar')
++      .flatMap((s) => s.gates.map((g) => g.line({ ...CTX, coachName: 'Ana' })))
++      .join(' ');
++    expect(lines).toContain('Ana');
++    expect(lines).not.toContain('Bradley');
++  });
++
++  it('flag off: the default build has neither Calendar step', () => {
++    expect(TUTORIAL_STEPS.some((s) => s.requires === 'calendar')).toBe(false);
++    expect(buildTutorialSteps(false).map((s) => s.id)).toEqual(TUTORIAL_STEPS.map((s) => s.id));
++  });
++});
+diff --git a/src/tutorial/navigationFocus.ts b/src/tutorial/navigationFocus.ts
+index 41eaf76..0502ba8 100644
+--- a/src/tutorial/navigationFocus.ts
++++ b/src/tutorial/navigationFocus.ts
+@@ -29,6 +29,8 @@ const INITIAL_LEAF: Record<string, string> = {
+   Home: 'HomeMain',
+   WorkoutTab: 'WorkoutMain',
+   MoreTab: 'MoreIndex',
++  // S-SCHED Calendar tab (featureFlags.clientCalendar).
++  CalendarTab: 'CalendarHome',
+ };
+ 
+ export function withInitialLeaf(path: string[]): string[] {
+diff --git a/src/tutorial/tutorialMachine.ts b/src/tutorial/tutorialMachine.ts
+index 888685e..d3b2df9 100644
+--- a/src/tutorial/tutorialMachine.ts
++++ b/src/tutorial/tutorialMachine.ts
+@@ -77,6 +77,8 @@ function requirementOutcome(
+       return env.hasMacros ? null : 'pending';
+     case 'community':
+       return env.communityAvailable ? null : 'unavailable';
++    case 'calendar':
++      return env.calendarAvailable ? null : 'unavailable';
+     default:
+       return null;
+   }
+diff --git a/src/tutorial/tutorialSteps.ts b/src/tutorial/tutorialSteps.ts
+index 6cd4e9c..b115264 100644
+--- a/src/tutorial/tutorialSteps.ts
++++ b/src/tutorial/tutorialSteps.ts
+@@ -14,6 +14,7 @@
+  * the onboarding complete payload or the live macro endpoint; nothing is
+  * invented. `tutorialCopy.test.ts` enforces the voice rules.
+  */
++import { featureFlags } from '../config/featureFlags';
+ import type { MacroDisplayMode } from '../macros/macroDisplay';
+ import type {
+   OnboardingMacros,
+@@ -29,6 +30,7 @@ export type TutorialTargetId =
+   | 'tab:Log'
+   | 'tab:MoreTab'
+   | 'tab:CommunityTab'
++  | 'tab:CalendarTab'
+   | 'plan-card'
+   | 'macro-card'
+   | 'home-message-coach'
+@@ -37,8 +39,9 @@ export type TutorialTargetId =
+ 
+ /** A cross-tab destination the overlay may offer as "Take me there". */
+ export interface TutorialNavTarget {
+-  tab: 'Home' | 'WorkoutTab' | 'Log' | 'MoreTab' | 'CommunityTab';
++  tab: 'Home' | 'WorkoutTab' | 'Log' | 'MoreTab' | 'CommunityTab' | 'CalendarTab';
+   screen?: string;
++  params?: Record<string, unknown>;
+ }
+ 
+ export interface CopyContext {
+@@ -80,11 +83,18 @@ export interface SignalGate extends GateBase {
+   kind: 'signal';
+   signal: TutorialSignal;
+   allowDefer?: boolean;
++  /** Spoken hint on the Later button (defaults to the wearable wording). */
++  deferHint?: string;
++  /**
++   * Optional primary action that opens the screen where the signal can
++   * happen (e.g. the welcome call booking). Never required to finish.
++   */
++  action?: { label: Line; target: TutorialNavTarget };
+ }
+ 
+ export type TutorialGate = AckGate | RouteGate | SignalGate;
+ 
+-export type StepRequirement = 'program' | 'macros' | 'community';
++export type StepRequirement = 'program' | 'macros' | 'community' | 'calendar';
+ 
+ export interface TutorialStepDef {
+   id: TutorialStepId;
+@@ -134,7 +144,7 @@ function planSummary(c: CopyContext): string {
+   return parts.length ? `${p.name}: ${parts.join(', ')}.` : `${p.name}.`;
+ }
+ 
+-export const TUTORIAL_STEPS: readonly TutorialStepDef[] = [
++const ALL_STEPS: readonly TutorialStepDef[] = [
+   {
+     id: 'welcome',
+     title: 'Welcome',
+@@ -236,6 +246,28 @@ export const TUTORIAL_STEPS: readonly TutorialStepDef[] = [
+     ],
+     doneLine: () => 'Noted.',
+   },
++  {
++    // S-SCHED: only when featureFlags.clientCalendar is on.
++    id: 'calendar',
++    title: 'Your calendar',
++    requires: 'calendar',
++    gates: [
++      {
++        kind: 'route',
++        routes: ['CalendarHome'],
++        target: 'tab:CalendarTab',
++        line: (c) =>
++          `This is Calendar. It shows ${c.coachName}'s open times and your upcoming sessions. Tap Calendar.`,
++      },
++      {
++        kind: 'ack',
++        cta: 'Continue',
++        line: (c) =>
++          `Choose a type of call, then a time that suits you. Times are shown in your own time zone. Some calls are confirmed straight away, and others wait for ${c.coachName} to confirm. You can copy a confirmed session to your phone's calendar. If it changes, update the copy in your calendar app.`,
++      },
++    ],
++    doneLine: () => 'That is where your sessions live.',
++  },
+   {
+     id: 'wearables',
+     title: 'Wearables, health and sleep',
+@@ -311,6 +343,28 @@ export const TUTORIAL_STEPS: readonly TutorialStepDef[] = [
+     ],
+     doneLine: (c) => `Sent. ${c.coachName} will see it in your conversation.`,
+   },
++  {
++    // S-SCHED owner decision 2026-10-01: the tour ends with the welcome call.
++    // Skippable (Later), never blocks finishing. Only with clientCalendar on.
++    id: 'welcome_call',
++    title: 'Your welcome call',
++    requires: 'calendar',
++    gates: [
++      {
++        kind: 'signal',
++        signal: 'welcome_call_booked',
++        allowDefer: true,
++        deferHint: 'Book the welcome call another time from Calendar',
++        action: {
++          label: (c) => `Book your welcome call with ${c.coachName}`,
++          target: { tab: 'CalendarTab', screen: 'CalendarBook', params: { welcome: true } },
++        },
++        line: (c) =>
++          `One more thing. Book your welcome call with ${c.coachName}. Pick a time that suits you and it is set. If now is not a good moment, tap Later and book it from Calendar.`,
++      },
++    ],
++    doneLine: () => 'Done. You will find it in Calendar.',
++  },
+   {
+     id: 'complete',
+     title: 'Complete',
+@@ -326,6 +380,18 @@ export const TUTORIAL_STEPS: readonly TutorialStepDef[] = [
+   },
+ ];
+ 
++/**
++ * The tour for this build. The two Calendar steps (S-SCHED) exist only when
++ * featureFlags.clientCalendar is on, so with the flag off the step list,
++ * the progress count ("Step 1 of 8") and persisted step indexes are
++ * exactly what they were before.
++ */
++export function buildTutorialSteps(calendar: boolean): readonly TutorialStepDef[] {
++  return calendar ? ALL_STEPS : ALL_STEPS.filter((s) => s.requires !== 'calendar');
++}
++
++export const TUTORIAL_STEPS: readonly TutorialStepDef[] = buildTutorialSteps(featureFlags.clientCalendar);
++
+ /** Steps shown in the progress indicator (the completion moment is not one). */
+ export const COUNTED_STEPS = TUTORIAL_STEPS.filter((s) => s.id !== 'complete');
+ 
+diff --git a/src/tutorial/tutorialStore.ts b/src/tutorial/tutorialStore.ts
+index 6dda831..2d5522f 100644
+--- a/src/tutorial/tutorialStore.ts
++++ b/src/tutorial/tutorialStore.ts
+@@ -88,6 +88,7 @@ function envOf(s: TutorialStoreState): MachineEnv {
+     hasProgram: !!s.payload?.program?.name,
+     hasMacros: !!resolveMacros(s),
+     communityAvailable: featureFlags.communityTab,
++    calendarAvailable: featureFlags.clientCalendar,
+     currentPath: s.currentPath,
+     now: new Date().toISOString(),
+   };
+diff --git a/src/tutorial/types.ts b/src/tutorial/types.ts
+index 53bb81b..3a4f7eb 100644
+--- a/src/tutorial/types.ts
++++ b/src/tutorial/types.ts
+@@ -51,9 +51,11 @@ export type TutorialStepId =
+   | 'macros'
+   | 'community'
+   | 'coach_messages'
++  | 'calendar'
+   | 'wearables'
+   | 'first_meal'
+   | 'first_message'
++  | 'welcome_call'
+   | 'complete';
+ 
+ /**
+@@ -85,11 +87,14 @@ export type TutorialSignal =
+   | 'macro_card_opened'
+   | 'meal_logged'
+   | 'message_sent'
+-  | 'wearable_connected';
++  | 'wearable_connected'
++  | 'welcome_call_booked';
+ 
+ /** What the step machine knows about the world when it enters a step. */
+ export interface TutorialContext {
+   hasProgram: boolean;
+   hasMacros: boolean;
+   communityAvailable: boolean;
++  /** S-SCHED: featureFlags.clientCalendar. Absent means off. */
++  calendarAvailable?: boolean;
+ }

@@ -1,0 +1,1376 @@
+diff --git a/.github/fly-env-desired-state.json b/.github/fly-env-desired-state.json
+index 01519fc1..28fbea11 100644
+--- a/.github/fly-env-desired-state.json
++++ b/.github/fly-env-desired-state.json
+@@ -32,0 +33 @@
++    "FEATURE_COACHLESS_HOME": "unset",
+@@ -91,0 +93 @@
++    "FEATURE_COACHLESS_HOME": "A1-COACHLESS (annex): coachless Home banner, coach-code sheet and scripted Roman card. Stay unset (off) until both audit lenses approve the backend and mobile PRs, the owner has saved the featured-coach offer through PUT /admin/featured-coach, and a device pass is done; then flip to true. Kill: unset (off).",
+diff --git a/docs/runbooks/launch-flags.md b/docs/runbooks/launch-flags.md
+index d13144f9..ab88531e 100644
+--- a/docs/runbooks/launch-flags.md
++++ b/docs/runbooks/launch-flags.md
+@@ -121,0 +122 @@ SIGNUP_ROLE_CHOICE_ENABLED | on | fly secrets set -a backend-spring-lake-3890 SI
++FEATURE_COACHLESS_HOME | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACHLESS_HOME | "FEATURE_COACHLESS_HOME": "unset"
+diff --git a/src/coachless/coach-code-lookup.service.ts b/src/coachless/coach-code-lookup.service.ts
+new file mode 100644
+index 00000000..1b61010f
+--- /dev/null
++++ b/src/coachless/coach-code-lookup.service.ts
+@@ -0,0 +1,157 @@
++import { Injectable } from '@nestjs/common';
++import { PrismaService } from '../prisma.service';
++import { isWellFormedInviteCode } from '../invite-codes/invite-codes.service';
++import { COACHLESS_ERROR, type CoachlessErrorCode } from './coachless.errors';
++
++/** A code resolved to its coach WITHOUT applying lifecycle rules. */
++export type ResolvedCoachCode =
++  | { kind: 'profile'; code: string; coachId: string; coachRole: string | null }
++  | {
++      kind: 'row';
++      code: string;
++      coachId: string;
++      coachRole: string | null;
++      revoked: boolean;
++      expiresAt: Date | null;
++      maxUses: number | null;
++      usedCount: number;
++    };
++
++/** Subscription states that let a coach take new clients (mirrors InviteCodesService). */
++export const ACCEPTING_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
++  'active',
++  'trialing',
++  'grandfathered',
++]);
++
++/**
++ * A1-COACHLESS — read-only code lookup shared by the featured-coach config
++ * and the redemption route. It never writes and never attaches: the ONE
++ * canonical writer stays InviteCodesService.attachUserToCoachByCode.
++ *
++ * Case: generated codes are upper-case (GP-XXXXXX). The lookup tries the
++ * trimmed input exactly first, then its upper-case form, so a client that
++ * typed "gp-bradley" resolves to the stored "GP-BRADLEY" while a legacy
++ * mixed-case code still resolves exactly.
++ */
++@Injectable()
++export class CoachCodeLookupService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  async resolve(raw: string): Promise<ResolvedCoachCode | null> {
++    const trimmed = typeof raw === 'string' ? raw.trim() : '';
++    if (!isWellFormedInviteCode(trimmed)) return null;
++    const exact = await this.resolveExact(trimmed);
++    if (exact) return exact;
++    const upper = trimmed.toUpperCase();
++    return upper === trimmed ? null : this.resolveExact(upper);
++  }
++
++  private async resolveExact(code: string): Promise<ResolvedCoachCode | null> {
++    const profile = await this.prisma.coachProfile.findUnique({
++      where: { invite_code: code },
++      select: { user: { select: { id: true, role: true } } },
++    });
++    if (profile?.user) {
++      return {
++        kind: 'profile',
++        code,
++        coachId: profile.user.id,
++        coachRole: profile.user.role ?? null,
++      };
++    }
++    const row = await this.prisma.inviteCode.findUnique({
++      where: { code },
++      select: {
++        coach_id: true,
++        revoked: true,
++        expires_at: true,
++        max_uses: true,
++        used_count: true,
++        coach: { select: { role: true } },
++      },
++    });
++    if (!row) return null;
++    return {
++      kind: 'row',
++      code,
++      coachId: row.coach_id,
++      coachRole: row.coach?.role ?? null,
++      revoked: row.revoked,
++      expiresAt: row.expires_at,
++      maxUses: row.max_uses,
++      usedCount: row.used_count,
++    };
++  }
++
++  /**
++   * Why a NEW redemption of this code would be refused, or null when the code
++   * is redeemable as far as the code itself goes. Order: unknown/non-coach ->
++   * revoked -> expired -> exhausted -> coach subscription.
++   */
++  async refusalFor(
++    resolved: ResolvedCoachCode | null,
++    now = new Date(),
++  ): Promise<CoachlessErrorCode | null> {
++    if (!resolved || resolved.coachRole !== 'coach') return COACHLESS_ERROR.CODE_INVALID;
++    if (resolved.kind === 'row') {
++      if (resolved.revoked) return COACHLESS_ERROR.CODE_REVOKED;
++      if (resolved.expiresAt && resolved.expiresAt.getTime() <= now.getTime())
++        return COACHLESS_ERROR.CODE_EXPIRED;
++      if (resolved.maxUses !== null && resolved.usedCount >= resolved.maxUses)
++        return COACHLESS_ERROR.CODE_EXHAUSTED;
++    }
++    if (!(await this.coachCanAcceptClients(resolved.coachId)))
++      return COACHLESS_ERROR.COACH_NOT_ACCEPTING;
++    return null;
++  }
++
++  /** CoachSubscription is authoritative (CoachProfile.subscription_status is a stale mirror). */
++  async coachCanAcceptClients(coachId: string): Promise<boolean> {
++    const sub = await this.prisma.coachSubscription.findUnique({
++      where: { coach_id: coachId },
++      select: { status: true },
++    });
++    return !!sub && ACCEPTING_SUBSCRIPTION_STATUSES.has(sub.status);
++  }
++
++  /** Public-safe coach card for the attach moment and the banner. */
++  async coachCard(coachId: string): Promise<CoachCard | null> {
++    const coach = await this.prisma.user.findUnique({
++      where: { id: coachId },
++      select: {
++        id: true,
++        name: true,
++        role: true,
++        profile: { select: { avatar_url: true } },
++        coach_profile: { select: { business_name: true, bio: true } },
++      },
++    });
++    if (!coach || coach.role !== 'coach') return null;
++    return {
++      id: coach.id,
++      name: coach.name,
++      photo_url: coach.profile?.avatar_url ?? null,
++      business_name: coach.coach_profile?.business_name ?? null,
++      bio: coach.coach_profile?.bio ?? null,
++    };
++  }
++}
++
++export interface CoachCard {
++  id: string;
++  name: string;
++  photo_url: string | null;
++  business_name: string | null;
++  bio: string | null;
++}
++
++/** Unique-constraint violation (Prisma P2002), duck-typed so test doubles qualify. */
++export function isUniqueViolation(err: unknown): boolean {
++  return (
++    !!err &&
++    typeof err === 'object' &&
++    'code' in err &&
++    (err as { code?: unknown }).code === 'P2002'
++  );
++}
+diff --git a/src/coachless/coachless-feature.guard.ts b/src/coachless/coachless-feature.guard.ts
+new file mode 100644
+index 00000000..b08062cf
+--- /dev/null
++++ b/src/coachless/coachless-feature.guard.ts
+@@ -0,0 +1,19 @@
++import { CanActivate, Injectable } from '@nestjs/common';
++import { COACHLESS_ERROR, CoachlessError } from './coachless.errors';
++
++/** Kill switch name. Defaults OFF: only the literal 'true' enables the coachless surfaces. */
++export const COACHLESS_FLAG_ENV = 'FEATURE_COACHLESS_HOME';
++
++/** Read per request (never boot-cached) so a runtime kill takes effect without a redeploy. */
++export function coachlessHomeEnabled(): boolean {
++  return process.env.FEATURE_COACHLESS_HOME === 'true';
++}
++
++/** Every client-facing /coachless/* route answers 404 coachless_disabled while the flag is off. */
++@Injectable()
++export class CoachlessFeatureGuard implements CanActivate {
++  canActivate(): boolean {
++    if (!coachlessHomeEnabled()) throw new CoachlessError(COACHLESS_ERROR.COACHLESS_DISABLED);
++    return true;
++  }
++}
+diff --git a/src/coachless/coachless-home.service.ts b/src/coachless/coachless-home.service.ts
+new file mode 100644
+index 00000000..a9cefade
+--- /dev/null
++++ b/src/coachless/coachless-home.service.ts
+@@ -0,0 +1,89 @@
++import { Injectable } from '@nestjs/common';
++import { FeaturedCoachService, type FeaturedPackage } from './featured-coach.service';
++import {
++  CoachlessPromptService,
++  decideRomanCard,
++  type RomanCardHiddenReason,
++} from './coachless-prompt.service';
++import type { CoachCard } from './coach-code-lookup.service';
++
++export interface CoachlessHomeResponse {
++  /** True only for a student with no coach: the coachless surfaces apply. */
++  eligible: boolean;
++  coach_attached: boolean;
++  banner: {
++    title: string;
++    /** The owner's offer line; null while the featured coach is not accepting clients. */
++    offer_text: string | null;
++    /** The featured code to prefill the sheet; null while not accepting. */
++    code: string | null;
++  } | null;
++  roman_card: {
++    text: string;
++    code: string;
++  } | null;
++  roman_card_hidden_reason: RomanCardHiddenReason | null;
++  featured_coach:
++    | (Pick<CoachCard, 'name' | 'photo_url' | 'business_name'> & {
++        package: FeaturedPackage | null;
++      })
++    | null;
++}
++
++/**
++ * A1-COACHLESS — what the coachless Home shows. A coachless client is a
++ * complete state: the banner is a quiet entry point (always available while
++ * coachless), the offer line and the Roman card appear only while the
++ * featured coach is accepting clients, and both disappear once a coach is
++ * attached.
++ */
++@Injectable()
++export class CoachlessHomeService {
++  constructor(
++    private readonly featured: FeaturedCoachService,
++    private readonly prompts: CoachlessPromptService,
++  ) {}
++
++  async home(
++    user: { id: string; role: string; coach_id: string | null },
++    now = new Date(),
++  ): Promise<CoachlessHomeResponse> {
++    const attached = !!user.coach_id;
++    if (user.role !== 'student' || attached) {
++      return {
++        eligible: false,
++        coach_attached: attached,
++        banner: null,
++        roman_card: null,
++        roman_card_hidden_reason: null,
++        featured_coach: null,
++      };
++    }
++    const offer = await this.featured.get();
++    const accepting = offer.accepting_clients;
++    const decision = decideRomanCard(offer, await this.prompts.getState(user.id), now);
++    return {
++      eligible: true,
++      coach_attached: false,
++      banner: {
++        title: offer.banner_title,
++        offer_text: accepting ? offer.offer_text : null,
++        code: accepting ? offer.code : null,
++      },
++      roman_card:
++        decision.show && offer.roman_pitch_text && offer.code
++          ? { text: offer.roman_pitch_text, code: offer.code }
++          : null,
++      roman_card_hidden_reason: decision.show ? null : decision.reason,
++      featured_coach:
++        accepting && offer.coach
++          ? {
++              name: offer.coach.name,
++              photo_url: offer.coach.photo_url,
++              business_name: offer.coach.business_name,
++              package: offer.package,
++            }
++          : null,
++    };
++  }
++}
+diff --git a/src/coachless/coachless-prompt.service.ts b/src/coachless/coachless-prompt.service.ts
+new file mode 100644
+index 00000000..cb441c49
+--- /dev/null
++++ b/src/coachless/coachless-prompt.service.ts
+@@ -0,0 +1,146 @@
++import { Injectable } from '@nestjs/common';
++import type { CoachlessPromptState } from '@prisma/client';
++import { isUniqueViolation } from './coach-code-lookup.service';
++import { PrismaService } from '../prisma.service';
++import type { ResolvedFeaturedCoach, RomanCaps } from './featured-coach.service';
++
++const HOUR_MS = 3_600_000;
++const DAY_MS = 24 * HOUR_MS;
++const WEEK_MS = 7 * DAY_MS;
++/** Two "Not now" taps inside this window count once (double tap, retry). */
++export const NOT_NOW_DEBOUNCE_MS = 60_000;
++
++export type RomanCardHiddenReason =
++  'offer_off' | 'not_accepting' | 'not_now_final' | 'snoozed' | 'weekly_cap';
++
++export type RomanCardDecision = { show: true } | { show: false; reason: RomanCardHiddenReason };
++
++/**
++ * Frequency rules for the scripted coachless Roman card (no AI call, no
++ * consent dependency — the copy is the owner's config text).
++ *
++ * An "impression" is a window of `min_hours_between` hours that starts the
++ * first time the card is seen; the card stays visible for the rest of that
++ * window (no flicker between Home visits), and at most `max_per_week`
++ * impressions start in any rolling 7-day window. "Not now" hides the card
++ * for `snooze_days`; after `max_not_now` taps it never returns.
++ */
++export function decideRomanCard(
++  offer: Pick<
++    ResolvedFeaturedCoach,
++    'roman_enabled' | 'roman_pitch_text' | 'code' | 'accepting_clients'
++  > & {
++    roman_caps: RomanCaps;
++  },
++  state: Pick<
++    CoachlessPromptState,
++    | 'roman_seen_count'
++    | 'roman_window_started_at'
++    | 'roman_last_seen_at'
++    | 'roman_not_now_count'
++    | 'roman_not_now_at'
++  > | null,
++  now: Date,
++): RomanCardDecision {
++  if (!offer.roman_enabled || !offer.roman_pitch_text || !offer.code)
++    return { show: false, reason: 'offer_off' };
++  if (!offer.accepting_clients) return { show: false, reason: 'not_accepting' };
++  const caps = offer.roman_caps;
++  const t = now.getTime();
++  if (state) {
++    if (state.roman_not_now_count >= caps.max_not_now)
++      return { show: false, reason: 'not_now_final' };
++    if (
++      state.roman_not_now_at &&
++      t - state.roman_not_now_at.getTime() < caps.snooze_days * DAY_MS
++    ) {
++      return { show: false, reason: 'snoozed' };
++    }
++    const inImpression =
++      !!state.roman_last_seen_at &&
++      t - state.roman_last_seen_at.getTime() < caps.min_hours_between * HOUR_MS;
++    if (inImpression) return { show: true };
++    const windowOpen =
++      !!state.roman_window_started_at && t - state.roman_window_started_at.getTime() < WEEK_MS;
++    if (windowOpen && state.roman_seen_count >= caps.max_per_week)
++      return { show: false, reason: 'weekly_cap' };
++  }
++  return { show: true };
++}
++
++@Injectable()
++export class CoachlessPromptService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  async getState(userId: string): Promise<CoachlessPromptState | null> {
++    return this.prisma.coachlessPromptState.findUnique({ where: { user_id: userId } });
++  }
++
++  /**
++   * Record that the card was rendered. Starts a new impression only when the
++   * previous one has ended (conditional update, so concurrent calls from two
++   * screens count once) and resets the weekly window when it has expired.
++   */
++  async recordSeen(
++    userId: string,
++    caps: RomanCaps,
++    now = new Date(),
++  ): Promise<CoachlessPromptState> {
++    await this.ensureRow(userId);
++    const impressionCutoff = new Date(now.getTime() - caps.min_hours_between * HOUR_MS);
++    const windowCutoff = new Date(now.getTime() - WEEK_MS);
++    // New weekly window: the old one expired (or never started).
++    const reset = await this.prisma.coachlessPromptState.updateMany({
++      where: {
++        user_id: userId,
++        OR: [{ roman_window_started_at: null }, { roman_window_started_at: { lte: windowCutoff } }],
++      },
++      data: { roman_window_started_at: now, roman_seen_count: 1, roman_last_seen_at: now },
++    });
++    if (reset.count === 0) {
++      await this.prisma.coachlessPromptState.updateMany({
++        where: {
++          user_id: userId,
++          OR: [{ roman_last_seen_at: null }, { roman_last_seen_at: { lte: impressionCutoff } }],
++        },
++        data: { roman_seen_count: { increment: 1 }, roman_last_seen_at: now },
++      });
++    }
++    return this.read(userId);
++  }
++
++  /** Persist "Not now". A second tap within NOT_NOW_DEBOUNCE_MS is the same decision. */
++  async recordNotNow(userId: string, now = new Date()): Promise<CoachlessPromptState> {
++    await this.ensureRow(userId);
++    await this.prisma.coachlessPromptState.updateMany({
++      where: {
++        user_id: userId,
++        OR: [
++          { roman_not_now_at: null },
++          { roman_not_now_at: { lte: new Date(now.getTime() - NOT_NOW_DEBOUNCE_MS) } },
++        ],
++      },
++      data: { roman_not_now_count: { increment: 1 }, roman_not_now_at: now },
++    });
++    return this.read(userId);
++  }
++
++  private async read(userId: string): Promise<CoachlessPromptState> {
++    const row = await this.prisma.coachlessPromptState.findUnique({ where: { user_id: userId } });
++    if (!row) throw new Error('CoachlessPromptState row missing right after upsert');
++    return row;
++  }
++
++  private async ensureRow(userId: string): Promise<void> {
++    try {
++      await this.prisma.coachlessPromptState.upsert({
++        where: { user_id: userId },
++        create: { user_id: userId },
++        update: {},
++      });
++    } catch (err) {
++      // Two first-ever calls racing the insert: the row now exists.
++      if (!isUniqueViolation(err)) throw err;
++    }
++  }
++}
+diff --git a/src/coachless/coachless.errors.ts b/src/coachless/coachless.errors.ts
+new file mode 100644
+index 00000000..a40b90f5
+--- /dev/null
++++ b/src/coachless/coachless.errors.ts
+@@ -0,0 +1,121 @@
++import { HttpException, HttpStatus } from '@nestjs/common';
++
++/**
++ * A1-COACHLESS — stable machine codes for every coachless-Home failure.
++ *
++ * Every refusal is `{ code, message }` (the ErrorEnvelope convention). Mobile
++ * maps `code` to specific copy (what happened + what to do next); `message`
++ * is a plain fallback for logs and API consumers and never echoes the code
++ * string, a coach id or an email.
++ */
++export const COACHLESS_ERROR = {
++  /** Unknown code, malformed code, or a code whose owner is not a coach. */
++  CODE_INVALID: 'code_invalid',
++  /** A per-row code past its expires_at. */
++  CODE_EXPIRED: 'code_expired',
++  /** A per-row code the coach revoked. */
++  CODE_REVOKED: 'code_revoked',
++  /** A per-row code with every seat used. */
++  CODE_EXHAUSTED: 'code_exhausted',
++  /** A single-recipient code redeemed from a different email. */
++  CODE_EMAIL_MISMATCH: 'code_email_mismatch',
++  /** The coach cannot take new clients (subscription, or the owner paused the featured offer). */
++  COACH_NOT_ACCEPTING: 'coach_not_accepting',
++  /** The caller already has a different coach (no re-parenting by code). */
++  ALREADY_ATTACHED: 'already_attached',
++  /** Coach, sub-coach and owner accounts are never attached to a coach. */
++  ROLE_CANNOT_REDEEM: 'role_cannot_redeem',
++  /** The caller's account row no longer exists. */
++  ACCOUNT_NOT_FOUND: 'account_not_found',
++  /** Missing or non-UUID Idempotency-Key header. */
++  IDEMPOTENCY_KEY_REQUIRED: 'idempotency_key_required',
++  /** The same Idempotency-Key was sent with a different code. */
++  IDEMPOTENCY_KEY_REUSED: 'idempotency_key_reused',
++  /** A request with this Idempotency-Key is still running. */
++  REDEMPTION_IN_PROGRESS: 'redemption_in_progress',
++  /** Unexpected server failure; the response carries the request reference. */
++  REDEMPTION_FAILED: 'redemption_failed',
++  /** FEATURE_COACHLESS_HOME is off. */
++  COACHLESS_DISABLED: 'coachless_disabled',
++  /** Owner config: the code belongs to a coach other than the featured coach. */
++  FEATURED_CODE_OTHER_COACH: 'featured_code_other_coach',
++  /** Owner config: the featured coach id is not a coach account. */
++  FEATURED_COACH_INVALID: 'featured_coach_invalid',
++  /** Owner config: the package is not an active package of the featured coach. */
++  FEATURED_PACKAGE_INVALID: 'featured_package_invalid',
++  /** Owner config: the code does not resolve and creation was not requested. */
++  FEATURED_CODE_UNKNOWN: 'featured_code_unknown',
++} as const;
++
++export type CoachlessErrorCode = (typeof COACHLESS_ERROR)[keyof typeof COACHLESS_ERROR];
++
++/** Default human message per code (never shown verbatim by mobile; logs/API only). */
++export const COACHLESS_ERROR_MESSAGE: Record<CoachlessErrorCode, string> = {
++  code_invalid:
++    'That code does not match a coach. Check the spelling or ask your coach to resend it.',
++  code_expired: 'That code has expired. Ask your coach for a new one.',
++  code_revoked: 'That code is no longer active. Ask your coach for a current code.',
++  code_exhausted:
++    'That code has been used the maximum number of times. Ask your coach for a new one.',
++  code_email_mismatch:
++    'That code was sent to a different email address. Sign in with that email or ask your coach for your own code.',
++  coach_not_accepting:
++    'This coach is not taking new clients right now. Try again later or use another coach code.',
++  already_attached: 'Your account already has a coach. Contact support to change coaches.',
++  role_cannot_redeem: 'Coach and owner accounts cannot join a coach with a client code.',
++  account_not_found: 'Your account could not be found. Sign out and sign in again.',
++  idempotency_key_required: 'Idempotency-Key header is required and must be a UUID.',
++  idempotency_key_reused:
++    'This Idempotency-Key was already used with a different code. Send a new key.',
++  redemption_in_progress:
++    'This code is still being applied. Wait a moment, then retry with the same key.',
++  redemption_failed:
++    'The code could not be applied because of a server problem. Retry, or contact support with the reference.',
++  coachless_disabled: 'Not found.',
++  featured_code_other_coach: 'That code belongs to a different coach.',
++  featured_coach_invalid: 'The featured coach must be an existing coach account.',
++  featured_package_invalid: 'The featured package must be an active package of the featured coach.',
++  featured_code_unknown:
++    'That code does not exist yet. Set create_code_if_missing to create it for the featured coach.',
++};
++
++export const COACHLESS_ERROR_STATUS: Record<CoachlessErrorCode, number> = {
++  code_invalid: HttpStatus.NOT_FOUND,
++  code_expired: HttpStatus.GONE,
++  code_revoked: HttpStatus.GONE,
++  code_exhausted: HttpStatus.GONE,
++  code_email_mismatch: HttpStatus.FORBIDDEN,
++  coach_not_accepting: HttpStatus.CONFLICT,
++  already_attached: HttpStatus.CONFLICT,
++  role_cannot_redeem: HttpStatus.FORBIDDEN,
++  account_not_found: HttpStatus.NOT_FOUND,
++  idempotency_key_required: HttpStatus.BAD_REQUEST,
++  idempotency_key_reused: HttpStatus.UNPROCESSABLE_ENTITY,
++  redemption_in_progress: HttpStatus.CONFLICT,
++  redemption_failed: HttpStatus.INTERNAL_SERVER_ERROR,
++  coachless_disabled: HttpStatus.NOT_FOUND,
++  featured_code_other_coach: HttpStatus.CONFLICT,
++  featured_coach_invalid: HttpStatus.BAD_REQUEST,
++  featured_package_invalid: HttpStatus.BAD_REQUEST,
++  featured_code_unknown: HttpStatus.BAD_REQUEST,
++};
++
++export interface CoachlessErrorBody {
++  code: CoachlessErrorCode;
++  message: string;
++  request_id?: string;
++}
++
++export class CoachlessError extends HttpException {
++  constructor(
++    readonly coachlessCode: CoachlessErrorCode,
++    extra: { request_id?: string } = {},
++  ) {
++    const body: CoachlessErrorBody = {
++      code: coachlessCode,
++      message: COACHLESS_ERROR_MESSAGE[coachlessCode],
++      ...(extra.request_id ? { request_id: extra.request_id } : {}),
++    };
++    super(body, COACHLESS_ERROR_STATUS[coachlessCode]);
++  }
++}
+diff --git a/src/coachless/featured-coach.service.ts b/src/coachless/featured-coach.service.ts
+new file mode 100644
+index 00000000..c74c0f34
+--- /dev/null
++++ b/src/coachless/featured-coach.service.ts
+@@ -0,0 +1,306 @@
++import { Injectable, Logger } from '@nestjs/common';
++import type { FeaturedCoachConfig } from '@prisma/client';
++import { PrismaService } from '../prisma.service';
++import { AuditService } from '../audit/audit.service';
++import {
++  CoachCodeLookupService,
++  isUniqueViolation,
++  type CoachCard,
++} from './coach-code-lookup.service';
++import { CoachlessError, COACHLESS_ERROR } from './coachless.errors';
++
++/** Server default for the banner title when the owner has not set one. */
++export const DEFAULT_COACHLESS_BANNER_TITLE = 'Enter coach code for coaching and programs';
++
++/** Resolved config is cached per process; the owner PUT invalidates it locally. */
++export const FEATURED_COACH_CACHE_TTL_MS = 30_000;
++
++export const FEATURED_COACH_CONFIG_ID = 'default';
++
++export interface FeaturedPackage {
++  id: string;
++  name: string;
++  description: string | null;
++  amount_cents: number;
++  currency: string;
++  billing_type: string;
++  interval: string | null;
++  interval_count: number;
++}
++
++export interface RomanCaps {
++  min_hours_between: number;
++  max_per_week: number;
++  snooze_days: number;
++  max_not_now: number;
++}
++
++/** The featured-coach offer as clients may see it (no audit fields). */
++export interface ResolvedFeaturedCoach {
++  configured: boolean;
++  banner_title: string;
++  offer_text: string | null;
++  roman_pitch_text: string | null;
++  code: string | null;
++  /** Owner switch AND the code resolves to this coach AND the coach can take clients. */
++  accepting_clients: boolean;
++  roman_enabled: boolean;
++  roman_caps: RomanCaps;
++  coach: CoachCard | null;
++  package: FeaturedPackage | null;
++}
++
++export interface FeaturedCoachConfigInput {
++  coach_user_id: string | null;
++  code: string | null;
++  package_id: string | null;
++  banner_title: string | null;
++  offer_text: string | null;
++  roman_pitch_text: string | null;
++  accepting_clients: boolean;
++  roman_enabled: boolean;
++  roman_min_hours_between?: number;
++  roman_max_per_week?: number;
++  roman_snooze_days?: number;
++  roman_max_not_now?: number;
++  create_code_if_missing?: boolean;
++}
++
++const DEFAULT_CAPS: RomanCaps = {
++  min_hours_between: 24,
++  max_per_week: 3,
++  snooze_days: 14,
++  max_not_now: 2,
++};
++
++/**
++ * A1-COACHLESS — the featured-coach offer for coachless clients.
++ *
++ * Source of truth: the FeaturedCoachConfig singleton row (owner-edited via
++ * PUT /admin/featured-coach, audited). Nothing about the offer — code, price
++ * wording, Roman copy — is hard-coded; only the neutral banner title has a
++ * server default. Resolution is cached for FEATURED_COACH_CACHE_TTL_MS with a
++ * single in-flight load (no stampede); other instances converge within the TTL.
++ */
++@Injectable()
++export class FeaturedCoachService {
++  private readonly logger = new Logger(FeaturedCoachService.name);
++  private cache: { value: ResolvedFeaturedCoach; expiresAt: number } | null = null;
++  private inflight: Promise<ResolvedFeaturedCoach> | null = null;
++
++  constructor(
++    private readonly prisma: PrismaService,
++    private readonly lookup: CoachCodeLookupService,
++    private readonly audit: AuditService,
++  ) {}
++
++  /** Test/ops hook and the owner PUT: drop this instance's cached resolution. */
++  invalidate(): void {
++    this.cache = null;
++    this.inflight = null;
++  }
++
++  async get(now: number = Date.now()): Promise<ResolvedFeaturedCoach> {
++    if (this.cache && this.cache.expiresAt > now) return this.cache.value;
++    if (this.inflight) return this.inflight;
++    const load = this.load()
++      .then((value) => {
++        if (this.inflight === load) {
++          this.cache = { value, expiresAt: Date.now() + FEATURED_COACH_CACHE_TTL_MS };
++          this.inflight = null;
++        }
++        return value;
++      })
++      .catch((err: unknown) => {
++        if (this.inflight === load) this.inflight = null;
++        throw err;
++      });
++    this.inflight = load;
++    return load;
++  }
++
++  private async load(): Promise<ResolvedFeaturedCoach> {
++    const row = await this.prisma.featuredCoachConfig.findUnique({
++      where: { id: FEATURED_COACH_CONFIG_ID },
++    });
++    return this.resolveRow(row);
++  }
++
++  /** Pure-ish projection of a config row; exported through get() only. */
++  async resolveRow(row: FeaturedCoachConfig | null): Promise<ResolvedFeaturedCoach> {
++    if (!row) {
++      return {
++        configured: false,
++        banner_title: DEFAULT_COACHLESS_BANNER_TITLE,
++        offer_text: null,
++        roman_pitch_text: null,
++        code: null,
++        accepting_clients: false,
++        roman_enabled: false,
++        roman_caps: DEFAULT_CAPS,
++        coach: null,
++        package: null,
++      };
++    }
++    const coach = row.coach_user_id ? await this.lookup.coachCard(row.coach_user_id) : null;
++    let accepting = false;
++    if (row.accepting_clients && coach && row.code) {
++      const resolved = await this.lookup.resolve(row.code);
++      accepting =
++        !!resolved &&
++        resolved.coachId === coach.id &&
++        (await this.lookup.refusalFor(resolved)) === null;
++    }
++    const pkg =
++      row.package_id && coach ? await this.activePackageOf(row.package_id, coach.id) : null;
++    return {
++      configured: true,
++      banner_title: row.banner_title,
++      offer_text: row.offer_text,
++      roman_pitch_text: row.roman_pitch_text,
++      code: row.code,
++      accepting_clients: accepting,
++      roman_enabled: row.roman_enabled,
++      roman_caps: {
++        min_hours_between: row.roman_min_hours_between,
++        max_per_week: row.roman_max_per_week,
++        snooze_days: row.roman_snooze_days,
++        max_not_now: row.roman_max_not_now,
++      },
++      coach,
++      package: pkg,
++    };
++  }
++
++  /** An ACTIVE package owned by `coachId`, or null (never another coach's package). */
++  async activePackageOf(packageId: string, coachId: string): Promise<FeaturedPackage | null> {
++    const p = await this.prisma.coachPackage.findFirst({
++      where: { id: packageId, coach_id: coachId, is_active: true, archived_at: null },
++      select: {
++        id: true,
++        name: true,
++        description: true,
++        amount_cents: true,
++        currency: true,
++        billing_type: true,
++        interval: true,
++        interval_count: true,
++      },
++    });
++    return p ?? null;
++  }
++
++  /** Owner view: the raw row (or null) plus the resolved projection. */
++  async getForOwner(): Promise<{
++    config: FeaturedCoachConfig | null;
++    resolved: ResolvedFeaturedCoach;
++  }> {
++    const row = await this.prisma.featuredCoachConfig.findUnique({
++      where: { id: FEATURED_COACH_CONFIG_ID },
++    });
++    return { config: row, resolved: await this.resolveRow(row) };
++  }
++
++  /**
++   * Owner PUT. Validates every reference server-side: the coach is a coach
++   * account, the code resolves to THAT coach (or is created for it when
++   * create_code_if_missing), and the package is an active package of that
++   * coach. Writes the row and its audit entry in one transaction.
++   */
++  async update(
++    owner: { id: string; email?: string | null },
++    input: FeaturedCoachConfigInput,
++  ): Promise<{
++    config: FeaturedCoachConfig;
++    resolved: ResolvedFeaturedCoach;
++    code_created: boolean;
++  }> {
++    const coachId = input.coach_user_id;
++    if (coachId) {
++      const coach = await this.prisma.user.findUnique({
++        where: { id: coachId },
++        select: { role: true },
++      });
++      if (!coach || coach.role !== 'coach')
++        throw new CoachlessError(COACHLESS_ERROR.FEATURED_COACH_INVALID);
++    }
++    let code = input.code ? input.code.trim() : null;
++    let createCode = false;
++    if (code) {
++      if (!coachId) throw new CoachlessError(COACHLESS_ERROR.FEATURED_COACH_INVALID);
++      const resolved = await this.lookup.resolve(code);
++      if (resolved) {
++        if (resolved.coachId !== coachId)
++          throw new CoachlessError(COACHLESS_ERROR.FEATURED_CODE_OTHER_COACH);
++        code = resolved.code; // store the canonical stored form
++      } else if (input.create_code_if_missing) {
++        createCode = true;
++      } else {
++        throw new CoachlessError(COACHLESS_ERROR.FEATURED_CODE_UNKNOWN);
++      }
++    }
++    if (input.package_id) {
++      if (!coachId || !(await this.activePackageOf(input.package_id, coachId))) {
++        throw new CoachlessError(COACHLESS_ERROR.FEATURED_PACKAGE_INVALID);
++      }
++    }
++    const data = {
++      coach_user_id: coachId,
++      code,
++      package_id: input.package_id,
++      banner_title: input.banner_title?.trim() || DEFAULT_COACHLESS_BANNER_TITLE,
++      offer_text: input.offer_text?.trim() || null,
++      roman_pitch_text: input.roman_pitch_text?.trim() || null,
++      accepting_clients: input.accepting_clients,
++      roman_enabled: input.roman_enabled,
++      roman_min_hours_between: input.roman_min_hours_between ?? DEFAULT_CAPS.min_hours_between,
++      roman_max_per_week: input.roman_max_per_week ?? DEFAULT_CAPS.max_per_week,
++      roman_snooze_days: input.roman_snooze_days ?? DEFAULT_CAPS.snooze_days,
++      roman_max_not_now: input.roman_max_not_now ?? DEFAULT_CAPS.max_not_now,
++      updated_by_user_id: owner.id,
++    };
++    let config: FeaturedCoachConfig;
++    try {
++      config = await this.prisma.$transaction(async (tx) => {
++        if (createCode && code && coachId) {
++          // A permanent, unlimited code for the featured coach (owner action).
++          await tx.inviteCode.create({ data: { code, coach_id: coachId } });
++        }
++        const saved = await tx.featuredCoachConfig.upsert({
++          where: { id: FEATURED_COACH_CONFIG_ID },
++          create: { id: FEATURED_COACH_CONFIG_ID, ...data },
++          update: data,
++        });
++        await this.audit.writeTx(tx, {
++          action: 'featured_coach_config.updated',
++          actorId: owner.id,
++          actorRole: 'owner',
++          actorEmail: owner.email ?? null,
++          targetType: 'FeaturedCoachConfig',
++          targetId: FEATURED_COACH_CONFIG_ID,
++          tenantCoachId: coachId,
++          metadata: {
++            coach_user_id: coachId,
++            code,
++            code_created: createCode,
++            package_id: input.package_id,
++            accepting_clients: input.accepting_clients,
++            roman_enabled: input.roman_enabled,
++          },
++        });
++        return saved;
++      });
++    } catch (err) {
++      // A code minted concurrently by someone else: report it as taken.
++      if (isUniqueViolation(err)) {
++        throw new CoachlessError(COACHLESS_ERROR.FEATURED_CODE_OTHER_COACH);
++      }
++      throw err;
++    }
++    this.invalidate();
++    this.logger.log(
++      `featured coach config updated by owner=${owner.id} coach=${coachId ?? 'none'}`,
++    );
++    return { config, resolved: await this.resolveRow(config), code_created: createCode };
++  }
++}
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index 4b12a0f6..efb6f0d7 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -2057,0 +2058,9 @@ export const ENV_RULES: EnvRule[] = [
++  {
++    name: 'FEATURE_COACHLESS_HOME',
++    values: ['true', 'false'],
++    unsetIs: 'off',
++    tier: 'optional',
++    default: 'unset → off (only "true")',
++    reason:
++      'A1-COACHLESS kill switch for the coachless Home surfaces: GET /coachless/home, the coach-code check/redeem routes and the scripted Roman card routes (404 coachless_disabled while off), and the coachless_home key of GET /me/feature-flags. The owner-only /admin/featured-coach config is not gated so the offer can be set up before the flip.',
++  },
+diff --git a/src/feature-flags/__tests__/feature-flags.controller.spec.ts b/src/feature-flags/__tests__/feature-flags.controller.spec.ts
+index 1f3e85ab..6d18e082 100644
+--- a/src/feature-flags/__tests__/feature-flags.controller.spec.ts
++++ b/src/feature-flags/__tests__/feature-flags.controller.spec.ts
+@@ -35,0 +36 @@ describe('FeatureFlagsController', () => {
++    coachless_home: true,
+diff --git a/src/feature-flags/__tests__/feature-flags.service.spec.ts b/src/feature-flags/__tests__/feature-flags.service.spec.ts
+index 4ee88c12..211661a9 100644
+--- a/src/feature-flags/__tests__/feature-flags.service.spec.ts
++++ b/src/feature-flags/__tests__/feature-flags.service.spec.ts
+@@ -18,0 +19 @@ const FLAG_ENVS = [
++  'FEATURE_COACHLESS_HOME',
+@@ -56,0 +58 @@ describe('FeatureFlagsService', () => {
++      coachless_home: false,
+@@ -59,0 +62,11 @@ describe('FeatureFlagsService', () => {
++  // A1-COACHLESS — client-only kill switch, independent of the community gate.
++  it('coachless_home is ON only for a student when FEATURE_COACHLESS_HOME is exactly "true"', () => {
++    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(false);
++    process.env.FEATURE_COACHLESS_HOME = 'TRUE';
++    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(false);
++    process.env.FEATURE_COACHLESS_HOME = 'true';
++    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(true);
++    expect(service.evaluate({ userId: 'c1', role: 'coach' }).coachless_home).toBe(false);
++    expect(service.evaluate({ userId: 'o1', role: 'owner' }).coachless_home).toBe(false);
++  });
++
+diff --git a/src/feature-flags/feature-flags.dto.ts b/src/feature-flags/feature-flags.dto.ts
+index 3d16d31f..56a97968 100644
+--- a/src/feature-flags/feature-flags.dto.ts
++++ b/src/feature-flags/feature-flags.dto.ts
+@@ -36,0 +37 @@ export const FEATURE_FLAG_KEYS = [
++  'coachless_home',
+diff --git a/src/feature-flags/feature-flags.service.ts b/src/feature-flags/feature-flags.service.ts
+index 6a4028a7..248fc0f3 100644
+--- a/src/feature-flags/feature-flags.service.ts
++++ b/src/feature-flags/feature-flags.service.ts
+@@ -68,0 +69,3 @@ export class FeatureFlagsService {
++      // A1-COACHLESS — a client-only surface (coachless Home banner, code
++      // sheet, Roman card). Coaches and owners always read it as OFF.
++      coachless_home: ctx.role === 'student' && envOn('FEATURE_COACHLESS_HOME'),
+diff --git a/test/coachless/coachless-fixture.ts b/test/coachless/coachless-fixture.ts
+new file mode 100644
+index 00000000..3027b2c5
+--- /dev/null
++++ b/test/coachless/coachless-fixture.ts
+@@ -0,0 +1,120 @@
++// A1-COACHLESS — stateful fixture: the REAL canonical attach writer
++// (InviteCodesService via attachServices) plus the real coachless services,
++// all over one StatefulPrisma, so tests assert on persisted rows.
++import {
++  COACH_A,
++  COACH_B,
++  attachServices,
++  buildAttachDb,
++  fakeAudit,
++  type AuditDouble,
++} from '../support/attach-fixture';
++import { StatefulPrisma } from '../support/stateful-prisma';
++import type { PrismaService } from '../../src/prisma.service';
++import type { AuditService } from '../../src/audit/audit.service';
++import { CoachCodeLookupService } from '../../src/coachless/coach-code-lookup.service';
++import { CoachlessHomeService } from '../../src/coachless/coachless-home.service';
++import { CoachlessPromptService } from '../../src/coachless/coachless-prompt.service';
++import { FeaturedCoachService } from '../../src/coachless/featured-coach.service';
++
++export { COACH_A, COACH_B };
++
++export const PKG_B = 'pkg-b-monthly';
++export const PKG_A = 'pkg-a-monthly';
++
++/** The StatefulPrisma double stands in for PrismaService (same model surface). */
++function asPrisma(db: StatefulPrisma): PrismaService {
++  const svc: PrismaService = Object.assign(Object.create(null), db);
++  return svc;
++}
++
++function asAudit(a: AuditDouble): AuditService {
++  const svc: AuditService = Object.assign(Object.create(null), a);
++  return svc;
++}
++
++export async function buildCoachless() {
++  const db = buildAttachDb();
++  db.model('userProfile', [['id'], ['user_id']]);
++  db.model('coachPackage', [['id']]);
++  db.model('featuredCoachConfig', [['id']]);
++  db.model('coachCodeRedemption', [['id'], ['user_id', 'idempotency_key']]);
++  db.model('coachlessPromptState', [['id'], ['user_id']], () => ({
++    roman_seen_count: 0,
++    roman_window_started_at: null,
++    roman_last_seen_at: null,
++    roman_not_now_count: 0,
++    roman_not_now_at: null,
++  }));
++  db.relations.profile = (row) => db.state.userProfile.find((p) => p.user_id === row.id) ?? null;
++  db.relations.coach_profile = (row) =>
++    db.state.coachProfile.find((p) => p.user_id === row.id) ?? null;
++
++  db.state.userProfile.push({
++    id: 'up-b',
++    user_id: COACH_B,
++    avatar_url: 'https://cdn.example.test/b.jpg',
++  });
++  const b = db.state.coachProfile.find((p) => p.user_id === COACH_B);
++  if (b)
++    Object.assign(b, {
++      business_name: 'B Training',
++      bio: 'Strength coach',
++      invite_code_package_id: null,
++    });
++  const a = db.state.coachProfile.find((p) => p.user_id === COACH_A);
++  if (a) Object.assign(a, { business_name: null, bio: null, invite_code_package_id: null });
++  db.state.coachPackage.push(pkg(PKG_B, COACH_B, 4900), pkg(PKG_A, COACH_A, 9900));
++
++  const audit = fakeAudit();
++  const { invites, analytics } = await attachServices(db, { audit });
++  const prisma = asPrisma(db);
++  const lookup = new CoachCodeLookupService(prisma);
++  const featured = new FeaturedCoachService(prisma, lookup, asAudit(audit));
++  const prompts = new CoachlessPromptService(prisma);
++  const home = new CoachlessHomeService(featured, prompts);
++  return { db, invites, analytics, audit, lookup, featured, prompts, home };
++}
++
++export function pkg(id: string, coach_id: string, amount_cents: number) {
++  return {
++    id,
++    coach_id,
++    name: 'Monthly coaching',
++    description: 'Programs, check-ins and messaging',
++    amount_cents,
++    currency: 'usd',
++    billing_type: 'recurring',
++    interval: 'month',
++    interval_count: 1,
++    is_active: true,
++    archived_at: null,
++  };
++}
++
++/** Owner's featured offer for COACH_B (accepting, Roman on). */
++export function featuredRow(over: Record<string, unknown> = {}) {
++  return {
++    id: 'default',
++    coach_user_id: COACH_B,
++    code: 'GP-BBBBBB',
++    package_id: PKG_B,
++    banner_title: 'Enter coach code for coaching and programs',
++    offer_text: '$49/mo with our top coach; use code GP-BBBBBB',
++    roman_pitch_text:
++      'Sir/Ma’am, just so you’re aware, the top coach has available slots. Interested?',
++    accepting_clients: true,
++    roman_enabled: true,
++    roman_min_hours_between: 24,
++    roman_max_per_week: 3,
++    roman_snooze_days: 14,
++    roman_max_not_now: 2,
++    updated_by_user_id: 'owner-1',
++    created_at: new Date(),
++    updated_at: new Date(),
++    ...over,
++  };
++}
++
++export const KEY1 = '11111111-1111-4111-8111-111111111111';
++export const KEY2 = '22222222-2222-4222-8222-222222222222';
+diff --git a/test/coachless/coachless-home.spec.ts b/test/coachless/coachless-home.spec.ts
+new file mode 100644
+index 00000000..042e18a5
+--- /dev/null
++++ b/test/coachless/coachless-home.spec.ts
+@@ -0,0 +1,302 @@
++// A1-COACHLESS — coachless Home (banner + featured offer), the scripted Roman
++// card rules (accepting-only, frequency cap, persisted "Not now"), the owner
++// featured-coach config (server-validated references, audited) and the
++// FEATURE_COACHLESS_HOME kill switch.
++import 'reflect-metadata';
++import { addRowCode, addUser } from '../support/attach-fixture';
++import { CoachlessFeatureGuard } from '../../src/coachless/coachless-feature.guard';
++import { decideRomanCard, NOT_NOW_DEBOUNCE_MS } from '../../src/coachless/coachless-prompt.service';
++import { DEFAULT_COACHLESS_BANNER_TITLE } from '../../src/coachless/featured-coach.service';
++import { COACH_A, COACH_B, PKG_A, PKG_B, buildCoachless, featuredRow } from './coachless-fixture';
++
++const STUDENT = { id: 'stu', role: 'student', coach_id: null };
++const HOUR = 3_600_000;
++const DAY = 24 * HOUR;
++
++async function withOffer(over: Record<string, unknown> = {}) {
++  const ctx = await buildCoachless();
++  ctx.db.state.featuredCoachConfig.push(featuredRow(over));
++  addUser(ctx.db, { id: 'stu' });
++  return ctx;
++}
++
++describe('GET /coachless/home', () => {
++  it('no owner config: neutral banner title only, no offer, no Roman card (coachless is still complete)', async () => {
++    const { home, db } = await buildCoachless();
++    addUser(db, { id: 'stu' });
++    expect(await home.home(STUDENT)).toEqual({
++      eligible: true,
++      coach_attached: false,
++      banner: { title: DEFAULT_COACHLESS_BANNER_TITLE, offer_text: null, code: null },
++      roman_card: null,
++      roman_card_hidden_reason: 'offer_off',
++      featured_coach: null,
++    });
++  });
++
++  it('featured coach accepting: banner carries the server offer text and code; Roman card shows the server copy', async () => {
++    const { home } = await withOffer();
++    const r = await home.home(STUDENT);
++    expect(r.banner).toEqual({
++      title: 'Enter coach code for coaching and programs',
++      offer_text: '$49/mo with our top coach; use code GP-BBBBBB',
++      code: 'GP-BBBBBB',
++    });
++    expect(r.roman_card).toEqual({ text: featuredRow().roman_pitch_text, code: 'GP-BBBBBB' });
++    expect(r.featured_coach).toMatchObject({
++      name: 'Coach B',
++      photo_url: 'https://cdn.example.test/b.jpg',
++      package: { id: PKG_B },
++    });
++  });
++
++  it('the banner disappears once a coach is attached; coaches and owners never see it', async () => {
++    const { home } = await withOffer();
++    for (const u of [
++      { id: 'stu', role: 'student', coach_id: COACH_A },
++      { id: 'c', role: 'coach', coach_id: null },
++      { id: 'o', role: 'owner', coach_id: null },
++    ]) {
++      const r = await home.home(u);
++      expect(r).toMatchObject({
++        eligible: false,
++        banner: null,
++        roman_card: null,
++        featured_coach: null,
++      });
++    }
++  });
++
++  it.each([
++    [
++      'owner paused the offer',
++      (db: any) => (db.state.featuredCoachConfig[0].accepting_clients = false),
++    ],
++    [
++      'coach subscription canceled',
++      (db: any) =>
++        (db.state.coachSubscription.find((s: any) => s.coach_id === COACH_B).status = 'canceled'),
++    ],
++    [
++      'code belongs to another coach',
++      (db: any) => (db.state.featuredCoachConfig[0].code = 'GP-AAAAAA'),
++    ],
++    [
++      'code revoked',
++      (db: any) => {
++        db.state.featuredCoachConfig[0].code = 'GP-ROWB99';
++        addRowCode(db, { code: 'GP-ROWB99', coach_id: COACH_B, revoked: true });
++      },
++    ],
++  ])(
++    'not accepting (%s): offer line, code and Roman card are hidden; the code-entry banner stays',
++    async (_l, mutate) => {
++      const { home, db, featured } = await withOffer();
++      mutate(db);
++      featured.invalidate();
++      const r = await home.home(STUDENT);
++      expect(r.banner).toEqual({
++        title: 'Enter coach code for coaching and programs',
++        offer_text: null,
++        code: null,
++      });
++      expect(r.roman_card).toBeNull();
++      expect(r.roman_card_hidden_reason).toBe('not_accepting');
++      expect(r.featured_coach).toBeNull();
++    },
++  );
++
++  it('a package of another coach is never offered as the featured package', async () => {
++    const { home } = await withOffer({ package_id: PKG_A });
++    expect((await home.home(STUDENT)).featured_coach).toMatchObject({ package: null });
++  });
++});
++
++describe('Roman card frequency rules', () => {
++  const offer = {
++    roman_enabled: true,
++    roman_pitch_text: 'pitch',
++    code: 'GP-BBBBBB',
++    accepting_clients: true,
++    roman_caps: { min_hours_between: 24, max_per_week: 3, snooze_days: 14, max_not_now: 2 },
++  };
++  const now = new Date('2026-10-05T12:00:00Z');
++  const state = (o: Record<string, unknown> = {}) => ({
++    roman_seen_count: 0,
++    roman_window_started_at: null,
++    roman_last_seen_at: null,
++    roman_not_now_count: 0,
++    roman_not_now_at: null,
++    ...o,
++  });
++
++  it('shows on first visit and stays for the rest of the impression window', () => {
++    expect(decideRomanCard(offer, null, now)).toEqual({ show: true });
++    const seen = state({
++      roman_seen_count: 3,
++      roman_window_started_at: new Date(now.getTime() - 2 * DAY),
++      roman_last_seen_at: new Date(now.getTime() - HOUR),
++    });
++    expect(decideRomanCard(offer, seen, now)).toEqual({ show: true });
++  });
++
++  it('weekly cap: no new impression after max_per_week in a rolling 7 days; resets after', () => {
++    const capped = state({
++      roman_seen_count: 3,
++      roman_window_started_at: new Date(now.getTime() - 3 * DAY),
++      roman_last_seen_at: new Date(now.getTime() - 25 * HOUR),
++    });
++    expect(decideRomanCard(offer, capped, now)).toEqual({ show: false, reason: 'weekly_cap' });
++    const later = new Date(now.getTime() + 5 * DAY);
++    expect(decideRomanCard(offer, capped, later)).toEqual({ show: true });
++  });
++
++  it('"Not now" snoozes for snooze_days, then the card may return; max_not_now hides it for good', () => {
++    const once = state({ roman_not_now_count: 1, roman_not_now_at: new Date(now.getTime() - DAY) });
++    expect(decideRomanCard(offer, once, now)).toEqual({ show: false, reason: 'snoozed' });
++    expect(decideRomanCard(offer, once, new Date(now.getTime() + 14 * DAY))).toEqual({
++      show: true,
++    });
++    const twice = state({
++      roman_not_now_count: 2,
++      roman_not_now_at: new Date(now.getTime() - 100 * DAY),
++    });
++    expect(decideRomanCard(offer, twice, now)).toEqual({ show: false, reason: 'not_now_final' });
++  });
++
++  it('never shows while the featured coach is not accepting or the owner switched Roman off', () => {
++    expect(decideRomanCard({ ...offer, accepting_clients: false }, null, now)).toEqual({
++      show: false,
++      reason: 'not_accepting',
++    });
++    expect(decideRomanCard({ ...offer, roman_enabled: false }, null, now)).toEqual({
++      show: false,
++      reason: 'offer_off',
++    });
++    expect(decideRomanCard({ ...offer, roman_pitch_text: null }, null, now)).toEqual({
++      show: false,
++      reason: 'offer_off',
++    });
++  });
++
++  it('recordSeen counts one impression per window even when called repeatedly', async () => {
++    const { prompts, db } = await withOffer();
++    const t0 = new Date('2026-10-05T08:00:00Z');
++    await prompts.recordSeen('stu', offer.roman_caps, t0);
++    await prompts.recordSeen('stu', offer.roman_caps, new Date(t0.getTime() + HOUR));
++    expect(db.state.coachlessPromptState[0]).toMatchObject({ roman_seen_count: 1 });
++    await prompts.recordSeen('stu', offer.roman_caps, new Date(t0.getTime() + 25 * HOUR));
++    expect(db.state.coachlessPromptState[0]).toMatchObject({ roman_seen_count: 2 });
++    await prompts.recordSeen('stu', offer.roman_caps, new Date(t0.getTime() + 8 * DAY));
++    expect(db.state.coachlessPromptState[0]).toMatchObject({ roman_seen_count: 1 });
++  });
++
++  it('"Not now" persists server-side, a double tap counts once, and Home then hides the card', async () => {
++    const { prompts, home, db } = await withOffer();
++    const t0 = new Date();
++    await prompts.recordNotNow('stu', t0);
++    await prompts.recordNotNow('stu', new Date(t0.getTime() + NOT_NOW_DEBOUNCE_MS / 2));
++    expect(db.state.coachlessPromptState[0]).toMatchObject({ roman_not_now_count: 1 });
++    const r = await home.home(STUDENT);
++    expect(r.roman_card).toBeNull();
++    expect(r.roman_card_hidden_reason).toBe('snoozed');
++    expect(r.banner?.offer_text).toBeTruthy(); // the banner itself is not nagging; it stays
++  });
++});
++
++describe('featured-coach config (owner)', () => {
++  const owner = { id: 'owner-1', email: 'owner@example.test' };
++  const base = {
++    coach_user_id: COACH_B,
++    code: 'GP-BBBBBB',
++    package_id: PKG_B,
++    banner_title: null,
++    offer_text: '$49/mo with our top coach; use code GP-BBBBBB',
++    roman_pitch_text: 'pitch',
++    accepting_clients: true,
++    roman_enabled: true,
++  };
++
++  it('saves, audits in the same transaction and invalidates the cache', async () => {
++    const { featured, audit, db } = await buildCoachless();
++    expect((await featured.get()).configured).toBe(false); // cached "not configured"
++    const r = await featured.update(owner, base);
++    expect(r.resolved).toMatchObject({
++      configured: true,
++      accepting_clients: true,
++      banner_title: DEFAULT_COACHLESS_BANNER_TITLE,
++    });
++    expect(audit.writeTx).toHaveBeenCalledWith(
++      db,
++      expect.objectContaining({ action: 'featured_coach_config.updated', actorId: 'owner-1' }),
++    );
++    expect((await featured.get()).configured).toBe(true);
++  });
++
++  it('refuses a code of another coach, a non-coach, and a package the coach does not own', async () => {
++    const { featured } = await buildCoachless();
++    await expect(featured.update(owner, { ...base, code: 'GP-AAAAAA' })).rejects.toMatchObject({
++      response: { code: 'featured_code_other_coach' },
++    });
++    await expect(
++      featured.update(owner, { ...base, coach_user_id: 'nobody' }),
++    ).rejects.toMatchObject({ response: { code: 'featured_coach_invalid' } });
++    await expect(featured.update(owner, { ...base, package_id: PKG_A })).rejects.toMatchObject({
++      response: { code: 'featured_package_invalid' },
++    });
++  });
++
++  it('an unknown vanity code needs create_code_if_missing, which mints it for the featured coach', async () => {
++    const { featured, db } = await buildCoachless();
++    await expect(featured.update(owner, { ...base, code: 'GP-VANITY' })).rejects.toMatchObject({
++      response: { code: 'featured_code_unknown' },
++    });
++    const r = await featured.update(owner, {
++      ...base,
++      code: 'GP-VANITY',
++      create_code_if_missing: true,
++    });
++    expect(r.code_created).toBe(true);
++    expect(db.state.inviteCode.find((c) => c.code === 'GP-VANITY')).toMatchObject({
++      coach_id: COACH_B,
++    });
++    expect(r.resolved.accepting_clients).toBe(true);
++  });
++
++  it('caches the resolution: two reads inside the TTL hit the database once', async () => {
++    const { featured, db } = await withOffer();
++    const before = db.calls.filter((c) => c.model === 'featuredCoachConfig').length;
++    await Promise.all([featured.get(), featured.get()]);
++    await featured.get();
++    expect(db.calls.filter((c) => c.model === 'featuredCoachConfig').length - before).toBe(1);
++  });
++});
++
++describe('FEATURE_COACHLESS_HOME kill switch', () => {
++  const saved = process.env.FEATURE_COACHLESS_HOME;
++  afterEach(() => {
++    if (saved === undefined) delete process.env.FEATURE_COACHLESS_HOME;
++    else process.env.FEATURE_COACHLESS_HOME = saved;
++  });
++
++  it('defaults OFF: every client route answers 404 coachless_disabled unless the value is exactly "true"', () => {
++    const guard = new CoachlessFeatureGuard();
++    for (const v of [undefined, 'false', 'TRUE', '1', 'on']) {
++      if (v === undefined) delete process.env.FEATURE_COACHLESS_HOME;
++      else process.env.FEATURE_COACHLESS_HOME = v;
++      let caught: any;
++      try {
++        guard.canActivate();
++      } catch (e) {
++        caught = e;
++      }
++      expect([v, caught?.getStatus?.(), caught?.getResponse?.().code]).toEqual([
++        v,
++        404,
++        'coachless_disabled',
++      ]);
++    }
++    process.env.FEATURE_COACHLESS_HOME = 'true';
++    expect(guard.canActivate()).toBe(true);
++  });
++});

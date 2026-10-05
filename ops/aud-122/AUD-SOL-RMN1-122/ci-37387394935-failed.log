@@ -1,0 +1,66 @@
+targeted	Targeted jest	﻿2026-10-05T23:18:13.2769815Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T23:18:13.2770025Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T23:18:13.2770240Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T23:18:13.2770500Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T23:18:13.2770693Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:18:13.2770853Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T23:18:13.2825193Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T23:18:13.2825397Z env:
+targeted	Targeted jest	2026-10-05T23:18:13.2825527Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-05T23:18:13.2825747Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-05T23:18:13.2825927Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T23:18:13.2910851Z specs: test/roman/audit-sol-rmn122-normal-use.spec.ts test/roman/roman-guardrails-rb121.spec.ts
+targeted	Targeted jest	2026-10-05T23:18:20.0164242Z PASS test/roman/roman-guardrails-rb121.spec.ts (6.053 s)
+targeted	Targeted jest	2026-10-05T23:18:21.1090300Z FAIL test/roman/audit-sol-rmn122-normal-use.spec.ts
+targeted	Targeted jest	2026-10-05T23:18:21.1156503Z   ● Console
+targeted	Targeted jest	2026-10-05T23:18:21.1156642Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1156727Z     console.info
+targeted	Targeted jest	2026-10-05T23:18:21.1157910Z       {"probe":"insulin-directive","route":{"class":"medical_scope","matched":"\\bdiabet(es|ic)\\b|\\binsulin\\b|\\bblood sugar\\b|\\ba1c\\b","short_circuit":false},"checked":{"text":"Skip insulin before training. Keep today as a lighter day and message your coach. For the medical side of it, please check with your physician.","guardrails_applied":[],"rewritten":false}}
+targeted	Targeted jest	2026-10-05T23:18:21.1158858Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1159046Z       at Object.<anonymous> (test/roman/audit-sol-rmn122-normal-use.spec.ts:120:13)
+targeted	Targeted jest	2026-10-05T23:18:21.1159538Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1159591Z     console.info
+targeted	Targeted jest	2026-10-05T23:18:21.1160071Z       {"probe":"sequential-pool-debit","outcomes":["answered","answered"],"providerCalls":2,"beforeUsed":3999,"afterUsed":3999,"recorded":[{"recorded":false,"budgetId":"audit-budget"},{"recorded":false,"budgetId":"audit-budget"}]}
+targeted	Targeted jest	2026-10-05T23:18:21.1160471Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1160615Z       at Object.<anonymous> (test/roman/audit-sol-rmn122-normal-use.spec.ts:166:13)
+targeted	Targeted jest	2026-10-05T23:18:21.1160777Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1161148Z   ● AUD-SOL-RMN1-122 changed safety predicate — ordinary insulin instruction › skip insulin remains forbidden even without the possessive word
+targeted	Targeted jest	2026-10-05T23:18:21.1161417Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1161527Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-05T23:18:21.1161652Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1161705Z     Expected: true
+targeted	Targeted jest	2026-10-05T23:18:21.1161928Z     Received: false
+targeted	Targeted jest	2026-10-05T23:18:21.1161998Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1162391Z     ^[[0m ^[[90m 120 |^[[39m     console^[[33m.^[[39minfo(^[[33mJSON^[[39m^[[33m.^[[39mstringify({ probe^[[33m:^[[39m ^[[32m'insulin-directive'^[[39m^[[33m,^[[39m route^[[33m,^[[39m checked }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1163067Z      ^[[90m 121 |^[[39m     expect(route^[[33m.^[[39m^[[36mclass^[[39m)^[[33m.^[[39mtoBe(^[[32m'medical_scope'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1163494Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 122 |^[[39m     expect(checked^[[33m.^[[39mrewritten)^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1163819Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1164181Z      ^[[90m 123 |^[[39m     expect(checked^[[33m.^[[39mtext)^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'Skip insulin'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1164471Z      ^[[90m 124 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1164630Z      ^[[90m 125 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:21.1164709Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1164851Z       at Object.<anonymous> (test/roman/audit-sol-rmn122-normal-use.spec.ts:122:31)
+targeted	Targeted jest	2026-10-05T23:18:21.1165018Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1165360Z   ● AUD-SOL-RMN1-122 prior B-668-1 — sequential ordinary paid turns debit the pool › one cent left cannot finance two full replies without any recorded debit
+targeted	Targeted jest	2026-10-05T23:18:21.1165638Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1165731Z     expect(received).toBeGreaterThanOrEqual(expected)
+targeted	Targeted jest	2026-10-05T23:18:21.1165854Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1166107Z     Expected: >= 6
+targeted	Targeted jest	2026-10-05T23:18:21.1166332Z     Received:    0
+targeted	Targeted jest	2026-10-05T23:18:21.1166399Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1166493Z     ^[[0m ^[[90m 169 |^[[39m     }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1166812Z      ^[[90m 170 |^[[39m     ^[[90m// A pre-call refusal is fine; paid replies must consume their real cost.^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1167357Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 171 |^[[39m     expect(row^[[33m.^[[39mactual_used_cents ^[[33m-^[[39m ^[[35m3999^[[39m)^[[33m.^[[39mtoBeGreaterThanOrEqual(calls ^[[33m*^[[39m ^[[35m3^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1167774Z      ^[[90m     |^[[39m                                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1167986Z      ^[[90m 172 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1168154Z      ^[[90m 173 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T23:18:21.1168307Z      ^[[90m 174 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T23:18:21.1168386Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1168523Z       at Object.<anonymous> (test/roman/audit-sol-rmn122-normal-use.spec.ts:171:42)
+targeted	Targeted jest	2026-10-05T23:18:21.1168690Z 
+targeted	Targeted jest	2026-10-05T23:18:21.1178335Z Test Suites: 1 failed, 1 passed, 2 total
+targeted	Targeted jest	2026-10-05T23:18:21.1178639Z Tests:       2 failed, 83 passed, 85 total
+targeted	Targeted jest	2026-10-05T23:18:21.1178911Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T23:18:21.1179135Z Time:        7.307 s
+targeted	Targeted jest	2026-10-05T23:18:21.1179531Z Ran all test suites matching test/roman/audit-sol-rmn122-normal-use.spec.ts|test/roman/roman-guardrails-rb121.spec.ts.
+targeted	Targeted jest	2026-10-05T23:18:21.3577344Z ##[error]Process completed with exit code 1.

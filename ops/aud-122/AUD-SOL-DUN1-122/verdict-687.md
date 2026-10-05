@@ -1,11 +1,9 @@
-AUDIT GPT-6.1 Sol — growth-project-backend#687 @ d86b31a67e1d89352c3e92dde674cb4d45a25a1a — VERDICT: APPROVE
+AUDIT GPT-6.1 Sol — growth-project-backend#687 @ c140575c8b857023ce69ae28a1dcf6e8ab925335 — VERDICT: APPROVE
 
 A/B/C = 0/0/3
 
-BASELINE DRAFT ONLY — DO NOT POST. Builder READY's main-merge conflict and new exact head must be reviewed first.
+AUD-SOL-DUN1-122, agent 122. Own prior approval at `f3c7fd37` plus the complete subsequent inquiry-copy/test delta and main-merge conflict: emitter keeps per-channel selection/results and restricted diagnostics, while device push uses main's single quiet-copy sender. Detailed client text stays in the inbox; sendPush ignores that text for lock-screen rendering. Read the full remerge diff and matching foundation-test updates; this is a real conflict review, not Rule-12 carryover. [Reviewed foundation PR](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687).
 
-AUD-SOL-DUN1-122, agent 122. Own prior approval at `f3c7fd37` plus the complete subsequent copy/test delta: inquiry/dispute notices and their email subject no longer claim a bank reversal. [Reviewed delta](https://github.com/BradleyGleavePortfolio/growth-project-backend/compare/f3c7fd37777ef1cde75ec5fb984edf5cb973f864...d86b31a67e1d89352c3e92dde674cb4d45a25a1a).
+No normal-use B in this delta. Carried Cs only: C-687-8 payment-notice wording; C-687-9 dispute lockout-screen alias; C-687-10 dispute CTA route. [Own prior disposition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5999796451).
 
-No normal-use B in this baseline. Carried Cs only: C-687-8 payment-notice wording; C-687-9 dispute lockout-screen alias; C-687-10 dispute CTA route. [Own prior disposition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5999796451).
-
-No independent execution in this round; CI and head must be rechecked before publication. Land the entire approved train as one; no other lens's current-round notes/comment read.
+CI at the checked head: all 11 main-required checks green; deploy-readiness-gate is skipped, not passed. No independent execution in this round. Land-as-one approval is conditional on every owning slice being approved, including resolution of D4's B-690-S1; no other lens's current-round notes/comment read. [Exact-head build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37384292483/job/112013637709).
