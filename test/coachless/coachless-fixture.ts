@@ -13,6 +13,7 @@ import { StatefulPrisma } from '../support/stateful-prisma';
 import type { PrismaService } from '../../src/prisma.service';
 import type { AuditService } from '../../src/audit/audit.service';
 import { CoachCodeLookupService } from '../../src/coachless/coach-code-lookup.service';
+import { CoachCodeRedemptionService } from '../../src/coachless/coach-code-redemption.service';
 import { CoachlessHomeService } from '../../src/coachless/coachless-home.service';
 import { CoachlessPromptService } from '../../src/coachless/coachless-prompt.service';
 import { FeaturedCoachService } from '../../src/coachless/featured-coach.service';
@@ -73,7 +74,14 @@ export async function buildCoachless() {
   const featured = new FeaturedCoachService(prisma, lookup, asAudit(audit));
   const prompts = new CoachlessPromptService(prisma);
   const home = new CoachlessHomeService(featured, prompts);
-  return { db, invites, analytics, audit, lookup, featured, prompts, home };
+  const redemption = new CoachCodeRedemptionService(
+    prisma,
+    invites,
+    lookup,
+    featured,
+    asAudit(audit),
+  );
+  return { db, invites, analytics, audit, lookup, featured, prompts, home, redemption };
 }
 
 export function pkg(id: string, coach_id: string, amount_cents: number) {
