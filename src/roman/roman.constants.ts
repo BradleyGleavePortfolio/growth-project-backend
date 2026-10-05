@@ -106,15 +106,21 @@ export const ROMAN_CURSOR_INVALID_MESSAGE =
 // ─── OR-113-2: live chat launch hardening ───────────────────────────────────
 
 /**
- * Daily spend cap for all Roman turns together (UTC day), in US dollars.
- * Env ROMAN_DAILY_COST_CAP_USD (registered in ENV_RULES); default 25. A turn
+ * Platform-wide daily spend ceiling for all Roman turns together (UTC day),
+ * in US dollars: a runaway breaker, not a per-client limit (the per-client
+ * limit is the 429 ROMAN_RATE_LIMIT turn cap above; the per-coach money
+ * bound is the coach's monthly AI credit pool). Env ROMAN_DAILY_COST_CAP_USD
+ * (registered in ENV_RULES); default 100, sized to launch volume (operator
+ * 121, 13:33): about 2,000 to 3,000 ordinary turns a day at $0.03 to $0.05
+ * each, or 23 clients each at the full 50-turn limit at the worst-case
+ * reservation, so ordinary launch use never meets it. A turn
  * RESERVES its worst-case cost in the content-free ledger (AiRequestAudit,
  * capability `roman.chat`) before the provider call and settles the actual
  * tokens after it, so concurrent turns see each other. Fail closed: when
  * today's spend cannot be read, no paid call is made.
  */
 export const ROMAN_DAILY_COST_CAP_USD_ENV = 'ROMAN_DAILY_COST_CAP_USD';
-export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 25;
+export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 100;
 /** claude-sonnet-4-6 list price per million tokens (input / output), USD. */
 export const ROMAN_PRICE_PER_MTOK = { input: 3, output: 15 } as const;
 /** The content-free ledger capability for one Roman turn. */
@@ -172,6 +178,14 @@ export const ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH =
 export const ROMAN_NOT_CONFIGURED_MESSAGE_COACH =
   `Roman is not set up on this server yet, and the support team has been told. ${ROMAN_COACH_NEXT_STEP}`;
 export const ROMAN_SWITCHED_OFF_MESSAGE_COACH = `Roman is switched off at the moment. ${ROMAN_COACH_NEXT_STEP}`;
+
+/**
+ * 402 COACH_AI_BUDGET_EXHAUSTED (B-668-1): the coach's monthly AI credit pool
+ * is used up. The client copy never shows the coach's credit figures.
+ */
+export const ROMAN_COACH_POOL_EMPTY_MESSAGE =
+  "Your coach's AI credits for this month are used up, so Roman cannot answer right now. Your coach is in Messages any time, and your plan and logs work as usual.";
+export const ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH = `The AI credits on your coaching account are used up for this month, so Roman cannot answer right now. Add a credit pack to keep using Roman. ${ROMAN_COACH_NEXT_STEP}`;
 
 /** The failure copy for one machine code, written for the caller's audience. */
 export function romanFailureMessage(
