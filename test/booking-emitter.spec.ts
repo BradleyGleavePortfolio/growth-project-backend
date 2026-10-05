@@ -124,10 +124,11 @@ describe('BookingEmitter delivery', () => {
       sessionTypeName: 'Quick Q/A Call',
     });
     expect(fake.pushToUser).toHaveBeenCalledTimes(1);
+    // B-714-1: the push carries the fixed lock-screen line, never row.body.
     expect(fake.pushes[0]).toEqual({
       userId: 'coach-1',
-      title: 'New session request',
-      body: row.body,
+      title: 'Session request',
+      body: 'There is a new session request. Open the app to see it.',
       data: {
         kind: 'booking_requested',
         category: 'COACH_DIRECT',
@@ -282,8 +283,8 @@ describe('BookingEmitter delivery', () => {
       'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 10:00 AM PDT. Your coach will add the call link before it starts.',
     ]);
     expect(fake.pushes.map((p) => [p.title, p.data.actionScreen])).toEqual([
-      ['Session tomorrow', 'CoachBookingInbox'],
-      ['Session tomorrow', 'CalendarSession'],
+      ['Session reminder', 'CoachBookingInbox'],
+      ['Session reminder', 'CalendarSession'],
     ]);
   });
 
@@ -602,7 +603,14 @@ describe('BookingEmitter zone provenance (main merge)', () => {
       'Your session with Coach Kim starts in about an hour.',
     ]);
     for (const b of bodies) expect(b).not.toMatch(/UTC|AM|PM|\d:\d{2}/);
-    expect(fake.pushes.map((p) => p.body)).toEqual(bodies);
+    // B-714-1: lock-screen lines, no name and no clock time without a zone.
+    expect(fake.pushes.map((p) => p.body)).toEqual([
+      'Your session is confirmed. Open the app to see the details.',
+      'A session was cancelled. Open the app to see the details.',
+      'A session has a new time. Open the app to see it.',
+      'You have a session in about 24 hours. Open the app to see the details.',
+      'Your session starts in about an hour. Open the app to see the details.',
+    ]);
     for (const r of fake.rows) expect(r.payload).toMatchObject({ timeZone: null });
   });
 

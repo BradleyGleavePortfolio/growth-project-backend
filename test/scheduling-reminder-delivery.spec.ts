@@ -149,9 +149,10 @@ describe('24h reminder', () => {
     addSession(db, 's1', 24 * 60);
     await sweep24h(job);
     const byUser = Object.fromEntries(fake.pushes.map((p) => [p.userId, p]));
+    // B-714-1: the lock screen keeps the time and drops the name and type.
     expect(byUser['client-1']).toMatchObject({
-      title: 'Session tomorrow',
-      body: 'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 8:00 AM PDT.',
+      title: 'Session reminder',
+      body: 'Your session is on Tue, Oct 6, 8:00 AM PDT.',
       data: {
         kind: NotificationKind.BOOKING_REMINDER_24H,
         actionScreen: 'CalendarSession',
@@ -159,7 +160,7 @@ describe('24h reminder', () => {
       },
     });
     expect(byUser['coach-1']).toMatchObject({
-      body: 'Your Quick Q/A Call with Jamie is on Tue, Oct 6, 8:00 AM PDT.',
+      body: 'Your session is on Tue, Oct 6, 8:00 AM PDT.',
       data: { actionScreen: 'CoachBookingInbox', actionParams: { sessionId: 's1' } },
     });
     expect(fake.rows.map((r) => r.channel)).toEqual(['inapp', 'inapp']);
@@ -169,8 +170,9 @@ describe('24h reminder', () => {
     const { db, fake, job } = build();
     addSession(db, 's1', 24 * 60, 'pending_provider', null);
     await sweep24h(job);
-    const coach = fake.pushes.find((p) => p.userId === 'coach-1');
-    const client = fake.pushes.find((p) => p.userId === 'client-1');
+    // The call-link detail lives in the inbox row (B-714-1: not on the lock screen).
+    const coach = fake.rows.find((r) => r.user_id === 'coach-1');
+    const client = fake.rows.find((r) => r.user_id === 'client-1');
     expect(coach?.body).toContain('It has no call link yet. Add one so they can join.');
     expect(client?.body).toContain('Your coach will add the call link before it starts.');
   });
