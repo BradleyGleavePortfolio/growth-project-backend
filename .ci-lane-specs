@@ -1,0 +1,9 @@
+test/roman/aud-sol-ra121-667-core.spec.ts
+test/roman/aud-sol-ra121-665-service.spec.ts
+test/roman/audit-opus-ra121.probe.spec.ts
+test/roman/roman-context-core.spec.ts
+test/roman/roman-context-a2-fixes.spec.ts
+test/roman/roman-client-context.spec.ts
+test/roman/roman-context-round2.spec.ts
+test/dunning-v2-lockout-allowlist-route-table.spec.ts
+test/dunning-v2-lockout-guard.spec.ts
