@@ -1,0 +1,73 @@
+﻿2026-10-05T16:32:35.1452357Z ##[group]Checking docker version
+2026-10-05T16:32:35.1465630Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-05T16:32:35.2632124Z '1.48'
+2026-10-05T16:32:35.2642912Z Docker daemon API version: '1.48'
+2026-10-05T16:32:35.2643749Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-05T16:32:35.2820272Z '1.48'
+2026-10-05T16:32:35.2834447Z Docker client API version: '1.48'
+2026-10-05T16:32:35.2840577Z ##[endgroup]
+2026-10-05T16:32:35.2843744Z ##[group]Clean up resources from previous jobs
+2026-10-05T16:32:35.2849447Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=fbd5e1"
+2026-10-05T16:32:35.2995942Z ##[command]/usr/bin/docker network prune --force --filter "label=fbd5e1"
+2026-10-05T16:32:35.3131524Z ##[endgroup]
+2026-10-05T16:32:35.3132106Z ##[group]Create local container network
+2026-10-05T16:32:35.3142834Z ##[command]/usr/bin/docker network create --label fbd5e1 github_network_d0887b9e05554413be303b884371df55
+2026-10-05T16:32:35.3674911Z 2b88685c9d53e8fae89bfd6f7a7bd34bda29e8f2c85124b41b7a55e976e3ea4b
+2026-10-05T16:32:35.3695704Z ##[endgroup]
+2026-10-05T16:32:35.3720901Z ##[group]Starting redis service container
+2026-10-05T16:32:35.3743683Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-05T16:32:35.9673216Z 7-alpine: Pulling from library/redis
+2026-10-05T16:32:36.1255815Z 16333ee0c00f: Pulling fs layer
+2026-10-05T16:32:36.1256815Z 83234986c742: Pulling fs layer
+2026-10-05T16:32:36.1257523Z 7eb50503c2b0: Pulling fs layer
+2026-10-05T16:32:36.1258433Z 1522f9c6f453: Pulling fs layer
+2026-10-05T16:32:36.1259201Z 9928009b15c8: Pulling fs layer
+2026-10-05T16:32:36.1260418Z 4f4fb700ef54: Pulling fs layer
+2026-10-05T16:32:36.1261401Z 4eb14bae0e1d: Pulling fs layer
+2026-10-05T16:32:36.1262090Z 9928009b15c8: Waiting
+2026-10-05T16:32:36.1263037Z 4f4fb700ef54: Waiting
+2026-10-05T16:32:36.1263816Z 4eb14bae0e1d: Waiting
+2026-10-05T16:32:36.1264317Z 1522f9c6f453: Waiting
+2026-10-05T16:32:36.2504082Z 83234986c742: Verifying Checksum
+2026-10-05T16:32:36.2505767Z 83234986c742: Download complete
+2026-10-05T16:32:36.2887702Z 7eb50503c2b0: Download complete
+2026-10-05T16:32:36.3315210Z 16333ee0c00f: Verifying Checksum
+2026-10-05T16:32:36.3322005Z 16333ee0c00f: Download complete
+2026-10-05T16:32:36.4141972Z 9928009b15c8: Verifying Checksum
+2026-10-05T16:32:36.4143831Z 9928009b15c8: Download complete
+2026-10-05T16:32:36.4436471Z 16333ee0c00f: Pull complete
+2026-10-05T16:32:36.4976450Z 4f4fb700ef54: Verifying Checksum
+2026-10-05T16:32:36.4997106Z 4f4fb700ef54: Download complete
+2026-10-05T16:32:36.5025066Z 1522f9c6f453: Verifying Checksum
+2026-10-05T16:32:36.5026495Z 1522f9c6f453: Download complete
+2026-10-05T16:32:36.5375672Z 4eb14bae0e1d: Download complete
+2026-10-05T16:32:39.1773464Z 83234986c742: Pull complete
+2026-10-05T16:32:39.3207057Z 7eb50503c2b0: Pull complete
+2026-10-05T16:32:39.5100697Z 1522f9c6f453: Pull complete
+2026-10-05T16:32:39.5213184Z 9928009b15c8: Pull complete
+2026-10-05T16:32:39.5324336Z 4f4fb700ef54: Pull complete
+2026-10-05T16:32:39.5420252Z 4eb14bae0e1d: Pull complete
+2026-10-05T16:32:39.5459947Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-05T16:32:39.5474716Z Status: Downloaded newer image for redis:7-alpine
+2026-10-05T16:32:39.5485683Z docker.io/library/redis:7-alpine
+2026-10-05T16:32:39.5520048Z ##[command]/usr/bin/docker create --name 003a3258dd8642999b3cf26edfe7d680_redis7alpine_f0ae78 --label fbd5e1 --network github_network_d0887b9e05554413be303b884371df55 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-05T16:32:39.5806011Z 92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d
+2026-10-05T16:32:39.5832352Z ##[command]/usr/bin/docker start 92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d
+2026-10-05T16:32:39.8290469Z 92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d
+2026-10-05T16:32:39.8300596Z ##[command]/usr/bin/docker ps --all --filter id=92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T16:32:39.8440694Z 92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d Up Less than a second (health: starting)
+2026-10-05T16:32:39.8460997Z ##[command]/usr/bin/docker port 92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d
+2026-10-05T16:32:39.8582677Z 6379/tcp -> 0.0.0.0:6379
+2026-10-05T16:32:39.8583663Z 6379/tcp -> [::]:6379
+2026-10-05T16:32:39.8631068Z ##[endgroup]
+2026-10-05T16:32:39.8639433Z ##[group]Waiting for all services to be ready
+2026-10-05T16:32:39.8653388Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d
+2026-10-05T16:32:39.8769304Z starting
+2026-10-05T16:32:39.8790020Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-05T16:32:41.8795863Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d
+2026-10-05T16:32:41.8921349Z starting
+2026-10-05T16:32:41.8933680Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-05T16:32:46.1137156Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 92f66a2b0e73ee324b2f3dc7670b0674e8502b126ba34801f6dd4b6b2a71db5d
+2026-10-05T16:32:46.1266816Z healthy
+2026-10-05T16:32:46.1284658Z redis service is healthy.
+2026-10-05T16:32:46.1285169Z ##[endgroup]

@@ -1,0 +1,495 @@
+﻿2026-10-05T16:41:51.0327892Z Current runner version: '2.337.0'
+2026-10-05T16:41:51.0347229Z ##[group]Runner Image Provisioner
+2026-10-05T16:41:51.0347793Z Hosted Compute Agent
+2026-10-05T16:41:51.0348196Z Version: 20260901.588
+2026-10-05T16:41:51.0348573Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:41:51.0349097Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:41:51.0349556Z Worker ID: {e52f5ab2-b6d7-4012-9ae4-7f2e70e0253f}
+2026-10-05T16:41:51.0349957Z Azure Region: westus3
+2026-10-05T16:41:51.0350340Z ##[endgroup]
+2026-10-05T16:41:51.0351199Z ##[group]Operating System
+2026-10-05T16:41:51.0351547Z Ubuntu
+2026-10-05T16:41:51.0351920Z 24.04.5
+2026-10-05T16:41:51.0352248Z LTS
+2026-10-05T16:41:51.0352566Z ##[endgroup]
+2026-10-05T16:41:51.0352892Z ##[group]Runner Image
+2026-10-05T16:41:51.0353233Z Image: ubuntu-24.04
+2026-10-05T16:41:51.0353653Z Version: 20260927.320.1
+2026-10-05T16:41:51.0354413Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:41:51.0355282Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:41:51.0355795Z ##[endgroup]
+2026-10-05T16:41:51.0356773Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:41:51.0358137Z Contents: read
+2026-10-05T16:41:51.0358571Z Metadata: read
+2026-10-05T16:41:51.0359025Z Packages: read
+2026-10-05T16:41:51.0359435Z ##[endgroup]
+2026-10-05T16:41:51.0360858Z Secret source: Actions
+2026-10-05T16:41:51.0361439Z Cache mode: write
+2026-10-05T16:41:51.0362021Z Prepare workflow directory
+2026-10-05T16:41:51.0887067Z Prepare all required actions
+2026-10-05T16:41:51.0929326Z Getting action download info
+2026-10-05T16:41:51.4072145Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:41:51.6390943Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:41:52.0689608Z Complete job name: targeted
+2026-10-05T16:41:52.1128585Z ##[group]Run actions/checkout@v6
+2026-10-05T16:41:52.1129214Z with:
+2026-10-05T16:41:52.1129534Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:41:52.1131753Z   token: ***
+2026-10-05T16:41:52.1131998Z   ssh-strict: true
+2026-10-05T16:41:52.1132252Z   ssh-user: git
+2026-10-05T16:41:52.1132510Z   persist-credentials: true
+2026-10-05T16:41:52.1132788Z   clean: true
+2026-10-05T16:41:52.1133049Z   sparse-checkout-cone-mode: true
+2026-10-05T16:41:52.1133349Z   fetch-depth: 1
+2026-10-05T16:41:52.1133595Z   fetch-tags: false
+2026-10-05T16:41:52.1133848Z   show-progress: true
+2026-10-05T16:41:52.1134102Z   lfs: false
+2026-10-05T16:41:52.1134355Z   submodules: false
+2026-10-05T16:41:52.1134621Z   set-safe-directory: true
+2026-10-05T16:41:52.1134911Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:41:52.1135278Z ##[endgroup]
+2026-10-05T16:41:52.1759379Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:41:52.1760612Z ##[group]Getting Git version info
+2026-10-05T16:41:52.1761117Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:41:52.1761761Z [command]/usr/bin/git version
+2026-10-05T16:41:52.1824145Z git version 2.55.0
+2026-10-05T16:41:52.1838403Z ##[endgroup]
+2026-10-05T16:41:52.1846802Z Temporarily overriding HOME='/home/runner/work/_temp/d3b37479-02d3-4604-9a30-a30298a7b831' before making global git config changes
+2026-10-05T16:41:52.1847559Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:41:52.1849771Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:41:52.2512620Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:41:52.2515328Z ##[group]Determining repository object format
+2026-10-05T16:41:52.2516688Z ##[endgroup]
+2026-10-05T16:41:52.2517356Z ##[group]Initializing the repository
+2026-10-05T16:41:52.2519401Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:41:52.3026255Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:41:52.3026958Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:41:52.3027851Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:41:52.3028288Z hint: call:
+2026-10-05T16:41:52.3028531Z hint:
+2026-10-05T16:41:52.3028868Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:41:52.3029412Z hint:
+2026-10-05T16:41:52.3029770Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:41:52.3030318Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:41:52.3030750Z hint:
+2026-10-05T16:41:52.3031002Z hint: 	git branch -m <name>
+2026-10-05T16:41:52.3031294Z hint:
+2026-10-05T16:41:52.3031718Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:41:52.3205367Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T16:41:52.3214823Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:41:52.3512671Z ##[endgroup]
+2026-10-05T16:41:52.3513750Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:41:52.3514896Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:41:52.4008802Z ##[endgroup]
+2026-10-05T16:41:52.4009640Z ##[group]Setting up auth
+2026-10-05T16:41:52.4010158Z Removing SSH command configuration
+2026-10-05T16:41:52.4014407Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:41:52.4039655Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:41:52.4333758Z Removing HTTP extra header
+2026-10-05T16:41:52.4337889Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:41:52.4363749Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:41:52.4552663Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:41:52.4553565Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:41:52.4578216Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:41:52.4770889Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:41:52.5197526Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:41:52.5803414Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:41:52.7094402Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:41:52.8205158Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:41:52.9403303Z ##[endgroup]
+2026-10-05T16:41:52.9405351Z ##[group]Fetching the repository
+2026-10-05T16:41:52.9408244Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +e98cdf5360eb1336e8c890557bcd984d7fb124d3:refs/remotes/origin/ci/B-LOCK2-120-1
+2026-10-05T16:41:54.5683338Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:41:54.5683860Z  * [new ref]         e98cdf5360eb1336e8c890557bcd984d7fb124d3 -> origin/ci/B-LOCK2-120-1
+2026-10-05T16:41:54.5692271Z [command]/usr/bin/git branch --list --remote origin/ci/B-LOCK2-120-1
+2026-10-05T16:41:54.5714590Z   origin/ci/B-LOCK2-120-1
+2026-10-05T16:41:54.5720917Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-LOCK2-120-1
+2026-10-05T16:41:54.5740096Z e98cdf5360eb1336e8c890557bcd984d7fb124d3
+2026-10-05T16:41:54.5743089Z ##[endgroup]
+2026-10-05T16:41:54.5743392Z ##[group]Determining the checkout info
+2026-10-05T16:41:54.5744005Z ##[endgroup]
+2026-10-05T16:41:54.5746704Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:41:54.5789196Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:41:54.5811564Z ##[group]Checking out the ref
+2026-10-05T16:41:54.5814117Z [command]/usr/bin/git checkout --progress --force -B ci/B-LOCK2-120-1 refs/remotes/origin/ci/B-LOCK2-120-1
+2026-10-05T16:41:54.6584793Z Switched to a new branch 'ci/B-LOCK2-120-1'
+2026-10-05T16:41:54.6587775Z branch 'ci/B-LOCK2-120-1' set up to track 'origin/ci/B-LOCK2-120-1'.
+2026-10-05T16:41:54.6595048Z ##[endgroup]
+2026-10-05T16:41:54.6630690Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:41:54.6649260Z e98cdf5360eb1336e8c890557bcd984d7fb124d3
+2026-10-05T16:41:54.6837963Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:41:54.6838171Z with:
+2026-10-05T16:41:54.6838318Z   node-version: 22.13
+2026-10-05T16:41:54.6838469Z   cache: npm
+2026-10-05T16:41:54.6838609Z   check-latest: false
+2026-10-05T16:41:54.6840130Z   token: ***
+2026-10-05T16:41:54.6840281Z   package-manager-cache: true
+2026-10-05T16:41:54.6840458Z ##[endgroup]
+2026-10-05T16:41:54.7714834Z Attempting to download 22.13...
+2026-10-05T16:41:55.7766019Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:41:56.3124029Z Extracting ...
+2026-10-05T16:41:56.3203576Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/7daf87ef-fc8b-4f61-8a89-c48815277683 -f /home/runner/work/_temp/afda8024-1ac9-4200-82bd-fcd9113534b7
+2026-10-05T16:41:57.1501121Z Adding to the cache ...
+2026-10-05T16:41:59.1600873Z ##[group]Environment details
+2026-10-05T16:41:59.4119876Z node: v22.13.1
+2026-10-05T16:41:59.4120107Z npm: 10.9.2
+2026-10-05T16:41:59.4129400Z yarn: 1.22.22
+2026-10-05T16:41:59.4129736Z ##[endgroup]
+2026-10-05T16:41:59.4136143Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:41:59.4718236Z /home/runner/.npm
+2026-10-05T16:41:59.6853600Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:42:00.9020540Z Received 50331648 of 241027159 (20.9%), 47.9 MBs/sec
+2026-10-05T16:42:01.8946860Z Received 241027159 of 241027159 (100.0%), 115.2 MBs/sec
+2026-10-05T16:42:01.8947373Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:42:01.8966520Z [command]/usr/bin/tar -xf /home/runner/work/_temp/308de182-9b02-43c0-8ff0-7b40d3fe3d5b/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:42:02.6023564Z Cache restored successfully
+2026-10-05T16:42:02.6120184Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:42:02.6324968Z ##[group]Run npm ci
+2026-10-05T16:42:02.6325151Z npm ci
+2026-10-05T16:42:02.6803774Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:42:02.6803958Z ##[endgroup]
+2026-10-05T16:42:05.8063685Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:42:05.9827601Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T16:42:05.9887033Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T16:42:05.9911379Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T16:42:06.0025039Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T16:42:06.0770270Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T16:42:06.0785606Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:06.0839071Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:06.0840484Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:06.0853633Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:06.0855158Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:06.1022997Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:06.1362196Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T16:42:06.4411946Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T16:42:06.7435385Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T16:42:09.0965369Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T16:42:41.4056188Z 
+2026-10-05T16:42:41.4058754Z added 1108 packages, and audited 1109 packages in 39s
+2026-10-05T16:42:41.4059161Z 
+2026-10-05T16:42:41.4060395Z 187 packages are looking for funding
+2026-10-05T16:42:41.4060671Z   run `npm fund` for details
+2026-10-05T16:42:41.6220681Z 
+2026-10-05T16:42:41.6221539Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T16:42:41.6221712Z 
+2026-10-05T16:42:41.6221830Z To address issues that do not require attention, run:
+2026-10-05T16:42:41.6222512Z   npm audit fix
+2026-10-05T16:42:41.6222597Z 
+2026-10-05T16:42:41.6222715Z To address all issues (including breaking changes), run:
+2026-10-05T16:42:41.6222911Z   npm audit fix --force
+2026-10-05T16:42:41.6222993Z 
+2026-10-05T16:42:41.6223059Z Run `npm audit` for details.
+2026-10-05T16:42:41.7866360Z ##[group]Run set -euo pipefail
+2026-10-05T16:42:41.7866563Z set -euo pipefail
+2026-10-05T16:42:41.7866786Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-05T16:42:41.7867219Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-05T16:42:41.7867419Z echo "specs: ${SPECS[*]}"
+2026-10-05T16:42:41.7867578Z npx jest --ci "${SPECS[@]}"
+2026-10-05T16:42:41.7922631Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:42:41.7922830Z ##[endgroup]
+2026-10-05T16:42:41.8344708Z specs: src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+2026-10-05T16:42:44.2723365Z FAIL src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+2026-10-05T16:42:44.2725449Z   today's production backend (no native card routes)
+2026-10-05T16:42:44.2727629Z     ✓ a missing card route says the in-app update is not available yet, nothing was charged, and is not reported (2 ms)
+2026-10-05T16:42:44.2728684Z     ✓ a bare 503 on a money call (reason phrase, no code) is "not confirmed", never "nothing changed" (4 ms)
+2026-10-05T16:42:44.2729421Z     ✓ a 404 that carries a machine code keeps its specific copy
+2026-10-05T16:42:44.2729897Z   B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE
+2026-10-05T16:42:44.2730600Z     ✕ a dispute-only Save card: nothing charged, access ended, billing paused, the coach decides; no future payment (2 ms)
+2026-10-05T16:42:44.2731404Z     ✕ mixed paid + disputed (partial): the paid amount stays, access news is scoped to the paid plan only (1 ms)
+2026-10-05T16:42:44.2732155Z     ✕ mixed restored / processing / in progress: no outcome promises the disputed plan comes back
+2026-10-05T16:42:44.2732837Z     ✕ two disputed plans in two currencies: per-currency amounts, each coach decides (5 ms)
+2026-10-05T16:42:44.2733468Z     ✕ when the answer reports no plans, the quote read before the card form supplies the disputes
+2026-10-05T16:42:44.2734194Z     ✕ ending a disputed plan: access had already ended, billing paused, only the coach restarts; no support fix
+2026-10-05T16:42:44.2734732Z   R-DISPUTE-PAUSE status contract (backend D2c #705) and older envelopes
+2026-10-05T16:42:44.2735266Z     ✕ a D2c dispute pause reads as a dispute with its reason and no lock date (2 ms)
+2026-10-05T16:42:44.2735862Z     ✕ an older envelope's dispute grace date is dropped; a failed payment keeps its lock date (1 ms)
+2026-10-05T16:42:44.2736361Z   B-353-2: a retired screen starts no further native or payment step
+2026-10-05T16:42:44.2736872Z     ✓ retired while the SetupIntent is created: no card form, no confirm (1 ms)
+2026-10-05T16:42:44.2737398Z     ✓ retired while the card form is open: the late native return sends no confirm
+2026-10-05T16:42:44.2737846Z     ✓ retired during the bank step: no re-confirm (1 ms)
+2026-10-05T16:42:44.2738422Z     ✕ B-352-3: retired while initStripe awaits: the shared sheet is never initialized or presented (1 ms)
+2026-10-05T16:42:44.2739311Z     ✕ B-352-3: account A resuming late never replaces account B's sheet; B presents its own customer (3 ms)
+2026-10-05T16:42:44.2739926Z     ✕ B-352-3: a newer update supersedes an older live one before it touches the sheet
+2026-10-05T16:42:44.2740363Z     ✓ CONTROL: a current screen completes the paid flow
+2026-10-05T16:42:44.2740548Z 
+2026-10-05T16:42:44.2741223Z   ● B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE › a dispute-only Save card: nothing charged, access ended, billing paused, the coach decides; no future payment
+2026-10-05T16:42:44.2741761Z 
+2026-10-05T16:42:44.2741916Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:42:44.2742112Z 
+2026-10-05T16:42:44.2742654Z     Expected substring: "Your bank reversed a payment of $150.00 to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it."
+2026-10-05T16:42:44.2744341Z     Received string:    "Your card is saved. There was no open invoice to pay, so nothing was charged. Your bank reversed an earlier payment of $150.00. Saving a card does not settle that. Email Bradleyapple1031@gmail.com to sort it out."
+2026-10-05T16:42:44.2745161Z 
+2026-10-05T16:42:44.2745496Z       140 |     const c = cardUpdateOutcomeCopy(r);
+2026-10-05T16:42:44.2746443Z       141 |     expect(c.body).toContain('There was no open invoice to pay, so nothing was charged.');
+2026-10-05T16:42:44.2747137Z     > 142 |     expect(c.body).toContain(
+2026-10-05T16:42:44.2747567Z           |                    ^
+2026-10-05T16:42:44.2748479Z       143 |       'Your bank reversed a payment of $150.00 to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it.',
+2026-10-05T16:42:44.2749387Z       144 |     );
+2026-10-05T16:42:44.2749793Z       145 |     expectDisputePause(c.body);
+2026-10-05T16:42:44.2750040Z 
+2026-10-05T16:42:44.2750327Z       at Object.toContain (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:142:20)
+2026-10-05T16:42:44.2750647Z 
+2026-10-05T16:42:44.2751268Z   ● B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE › mixed paid + disputed (partial): the paid amount stays, access news is scoped to the paid plan only
+2026-10-05T16:42:44.2751810Z 
+2026-10-05T16:42:44.2751961Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:42:44.2752152Z 
+2026-10-05T16:42:44.2752435Z     Expected substring: "$150.00 went through. The plan you paid for updates within a few minutes."
+2026-10-05T16:42:44.2753539Z     Received string:    "Your card is saved and $150.00 went through. Your plan updates within a few minutes. Pull down to refresh. Your bank reversed an earlier payment. Saving a card does not settle that. Email Bradleyapple1031@gmail.com to sort it out."
+2026-10-05T16:42:44.2754287Z 
+2026-10-05T16:42:44.2754466Z       159 |     });
+2026-10-05T16:42:44.2754916Z       160 |     const c = cardUpdateOutcomeCopy(r);
+2026-10-05T16:42:44.2755792Z     > 161 |     expect(c.body).toContain('$150.00 went through. The plan you paid for updates within a few minutes.');
+2026-10-05T16:42:44.2756469Z           |                    ^
+2026-10-05T16:42:44.2757119Z       162 |     expect(c.body).not.toMatch(/Your plan updates within a few minutes/);
+2026-10-05T16:42:44.2757928Z       163 |     expect(c.title).toBe('Payment received');
+2026-10-05T16:42:44.2758473Z       164 |     expectDisputePause(c.body);
+2026-10-05T16:42:44.2758683Z 
+2026-10-05T16:42:44.2759229Z       at Object.toContain (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:161:20)
+2026-10-05T16:42:44.2759529Z 
+2026-10-05T16:42:44.2760148Z   ● B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE › mixed restored / processing / in progress: no outcome promises the disputed plan comes back
+2026-10-05T16:42:44.2760636Z 
+2026-10-05T16:42:44.2760784Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:42:44.2760971Z 
+2026-10-05T16:42:44.2761153Z     Expected substring: "The plan you paid for is active again."
+2026-10-05T16:42:44.2761984Z     Received string:    "Your card is saved and $150.00 went through. Your plan is active again. Your bank reversed an earlier payment. Saving a card does not settle that. Email Bradleyapple1031@gmail.com to sort it out."
+2026-10-05T16:42:44.2762489Z 
+2026-10-05T16:42:44.2763105Z       168 |     const plans = [{ purchase_id: 'p1' }, { purchase_id: 'p2', dispute_open: true }];
+2026-10-05T16:42:44.2763764Z       169 |     const restored = cardUpdateOutcomeCopy(normalizeCardUpdate({ ...PAID, plans }));
+2026-10-05T16:42:44.2764491Z     > 170 |     expect(restored.body).toContain('The plan you paid for is active again.');
+2026-10-05T16:42:44.2764871Z           |                           ^
+2026-10-05T16:42:44.2765268Z       171 |     expect(restored.body).not.toContain('Your plan is active again');
+2026-10-05T16:42:44.2765665Z       172 |     const processing = cardUpdateOutcomeCopy(
+2026-10-05T16:42:44.2765938Z       173 |       normalizeCardUpdate({
+2026-10-05T16:42:44.2766053Z 
+2026-10-05T16:42:44.2766229Z       at Object.toContain (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:170:27)
+2026-10-05T16:42:44.2766421Z 
+2026-10-05T16:42:44.2766741Z   ● B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE › two disputed plans in two currencies: per-currency amounts, each coach decides
+2026-10-05T16:42:44.2767014Z 
+2026-10-05T16:42:44.2767113Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:42:44.2767240Z 
+2026-10-05T16:42:44.2767638Z     Expected: "Your bank reversed payments of $150.00 and 80.00 EUR. For those plans, access has ended and billing is paused. Each coach decides whether to restart them. They do not restart on their own or with a new card."
+2026-10-05T16:42:44.2768293Z     Received: "Your bank reversed an earlier payment of $150.00 and 80.00 EUR. Saving a card does not settle that. Email Bradleyapple1031@gmail.com to sort it out."
+2026-10-05T16:42:44.2768575Z 
+2026-10-05T16:42:44.2769239Z       194 |       { purchase_id: 'p2', coach_name: 'Blake', currency: 'eur', amount_cents: 8000 },
+2026-10-05T16:42:44.2769668Z       195 |     ]);
+2026-10-05T16:42:44.2769990Z     > 196 |     expect(line).toBe(
+2026-10-05T16:42:44.2770316Z           |                  ^
+2026-10-05T16:42:44.2770974Z       197 |       'Your bank reversed payments of $150.00 and 80.00 EUR. For those plans, access has ended and billing is paused. Each coach decides whether to restart them. They do not restart on their own or with a new card.',
+2026-10-05T16:42:44.2771471Z       198 |     );
+2026-10-05T16:42:44.2771800Z       199 |     expect(disputePauseFacts(null, 'account')).toBe(
+2026-10-05T16:42:44.2772005Z 
+2026-10-05T16:42:44.2772163Z       at Object.toBe (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:196:18)
+2026-10-05T16:42:44.2772347Z 
+2026-10-05T16:42:44.2772692Z   ● B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE › when the answer reports no plans, the quote read before the card form supplies the disputes
+2026-10-05T16:42:44.2772982Z 
+2026-10-05T16:42:44.2773068Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:42:44.2773187Z 
+2026-10-05T16:42:44.2773361Z     Expected substring: "Your bank reversed a payment of 80.00 EUR. For that plan, access has ended"
+2026-10-05T16:42:44.2773971Z     Received string:    "Your card is saved. There was no open invoice to pay, so nothing was charged. Your bank reversed an earlier payment of 80.00 EUR. Saving a card does not settle that. Email Bradleyapple1031@gmail.com to sort it out."
+2026-10-05T16:42:44.2774369Z 
+2026-10-05T16:42:44.2774459Z       213 |     });
+2026-10-05T16:42:44.2774950Z       214 |     const body = cardUpdateOutcomeCopy(r, quote.disputes).body;
+2026-10-05T16:42:44.2775728Z     > 215 |     expect(body).toContain('Your bank reversed a payment of 80.00 EUR. For that plan, access has ended');
+2026-10-05T16:42:44.2776207Z           |                  ^
+2026-10-05T16:42:44.2776441Z       216 |     expectDisputePause(body);
+2026-10-05T16:42:44.2776870Z       217 |     expect(cardUpdateOutcomeCopy(r).body).toContain('Your next payment will use it');
+2026-10-05T16:42:44.2777200Z       218 |   });
+2026-10-05T16:42:44.2777297Z 
+2026-10-05T16:42:44.2777467Z       at Object.toContain (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:215:18)
+2026-10-05T16:42:44.2777659Z 
+2026-10-05T16:42:44.2778039Z   ● B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE › ending a disputed plan: access had already ended, billing paused, only the coach restarts; no support fix
+2026-10-05T16:42:44.2778352Z 
+2026-10-05T16:42:44.2778438Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:42:44.2778558Z 
+2026-10-05T16:42:44.2778757Z     Expected substring: "its access had already ended and its billing was paused. Only your coach can restart it."
+2026-10-05T16:42:44.2779492Z     Received string:    "You will not be charged again. Your data stays in your account until you delete it. Ending the plan does not settle the payment your bank reversed. Email Bradleyapple1031@gmail.com to sort it out."
+2026-10-05T16:42:44.2779870Z 
+2026-10-05T16:42:44.2779961Z       230 |     };
+2026-10-05T16:42:44.2780363Z       231 |     const body = cancelOutcomeCopy(ended, { dispute: true }).body;
+2026-10-05T16:42:44.2780986Z     > 232 |     expect(body).toContain('its access had already ended and its billing was paused. Only your coach can restart it.');
+2026-10-05T16:42:44.2781405Z           |                  ^
+2026-10-05T16:42:44.2781752Z       233 |     expect(body).not.toMatch(/sort it out|settle|Email /i);
+2026-10-05T16:42:44.2782226Z       234 |     expect(cancelOutcomeCopy(ended).body).not.toContain('reversed');
+2026-10-05T16:42:44.2782643Z       235 |     expect(disputeNotSettledLine([])).toBeNull();
+2026-10-05T16:42:44.2782815Z 
+2026-10-05T16:42:44.2782977Z       at Object.toContain (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:232:18)
+2026-10-05T16:42:44.2783165Z 
+2026-10-05T16:42:44.2783488Z   ● R-DISPUTE-PAUSE status contract (backend D2c #705) and older envelopes › a D2c dispute pause reads as a dispute with its reason and no lock date
+2026-10-05T16:42:44.2783761Z 
+2026-10-05T16:42:44.2783842Z     expect(received).toMatchObject(expected)
+2026-10-05T16:42:44.2783954Z 
+2026-10-05T16:42:44.2784019Z     - Expected  - 1
+2026-10-05T16:42:44.2784167Z     + Received  + 0
+2026-10-05T16:42:44.2784237Z 
+2026-10-05T16:42:44.2784286Z       Object {
+2026-10-05T16:42:44.2784415Z         "kind": "dispute",
+2026-10-05T16:42:44.2784551Z         "lockout_at": null,
+2026-10-05T16:42:44.2784702Z     -   "reason": "dispute_paused",
+2026-10-05T16:42:44.2784849Z         "state": "locked",
+2026-10-05T16:42:44.2784976Z       }
+2026-10-05T16:42:44.2785034Z 
+2026-10-05T16:42:44.2785312Z       264 |   it('a D2c dispute pause reads as a dispute with its reason and no lock date', () => {
+2026-10-05T16:42:44.2785739Z       265 |     const s = normalizeDunningStatus(D2C);
+2026-10-05T16:42:44.2786559Z     > 266 |     expect(s).toMatchObject({ state: 'locked', kind: 'dispute', reason: 'dispute_paused', lockout_at: null });
+2026-10-05T16:42:44.2787080Z           |               ^
+2026-10-05T16:42:44.2787649Z       267 |     expect(normalizeDunningStatus({ ...D2C, kind: null }).kind).toBe('dispute');
+2026-10-05T16:42:44.2788033Z       268 |   });
+2026-10-05T16:42:44.2788194Z       269 |
+2026-10-05T16:42:44.2788272Z 
+2026-10-05T16:42:44.2788450Z       at Object.toMatchObject (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:266:15)
+2026-10-05T16:42:44.2788648Z 
+2026-10-05T16:42:44.2789121Z   ● R-DISPUTE-PAUSE status contract (backend D2c #705) and older envelopes › an older envelope's dispute grace date is dropped; a failed payment keeps its lock date
+2026-10-05T16:42:44.2789417Z 
+2026-10-05T16:42:44.2789497Z     expect(received).toMatchObject(expected)
+2026-10-05T16:42:44.2789610Z 
+2026-10-05T16:42:44.2789661Z     - Expected  - 2
+2026-10-05T16:42:44.2789783Z     + Received  + 1
+2026-10-05T16:42:44.2789853Z 
+2026-10-05T16:42:44.2789905Z       Object {
+2026-10-05T16:42:44.2790025Z         "kind": "dispute",
+2026-10-05T16:42:44.2790162Z     -   "lockout_at": null,
+2026-10-05T16:42:44.2790299Z     -   "reason": null,
+2026-10-05T16:42:44.2790451Z     +   "lockout_at": "2030-10-11T15:00:00.000Z",
+2026-10-05T16:42:44.2790601Z       }
+2026-10-05T16:42:44.2790662Z 
+2026-10-05T16:42:44.2790977Z       270 |   it("an older envelope's dispute grace date is dropped; a failed payment keeps its lock date", () => {
+2026-10-05T16:42:44.2791729Z       271 |     const legacy = { ...D2C, state: 'past_due', reason: undefined, lockout_at: '2030-10-11T15:00:00.000Z' };
+2026-10-05T16:42:44.2792591Z     > 272 |     expect(normalizeDunningStatus(legacy)).toMatchObject({ kind: 'dispute', reason: null, lockout_at: null });
+2026-10-05T16:42:44.2793112Z           |                                            ^
+2026-10-05T16:42:44.2793608Z       273 |     const payment = { ...legacy, kind: 'payment', reason: 'payment_failed' };
+2026-10-05T16:42:44.2794075Z       274 |     expect(normalizeDunningStatus(payment)).toMatchObject({
+2026-10-05T16:42:44.2794384Z       275 |       kind: 'payment',
+2026-10-05T16:42:44.2794519Z 
+2026-10-05T16:42:44.2794694Z       at Object.toMatchObject (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:272:44)
+2026-10-05T16:42:44.2794891Z 
+2026-10-05T16:42:44.2795237Z   ● B-353-2: a retired screen starts no further native or payment step › B-352-3: retired while initStripe awaits: the shared sheet is never initialized or presented
+2026-10-05T16:42:44.2795525Z 
+2026-10-05T16:42:44.2795609Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-05T16:42:44.2795715Z 
+2026-10-05T16:42:44.2795784Z     Expected number of calls: 0
+2026-10-05T16:42:44.2795938Z     Received number of calls: 1
+2026-10-05T16:42:44.2796028Z 
+2026-10-05T16:42:44.2798236Z     1: {"allowsDelayedPaymentMethods": false, "appearance": {"colors": {"dark": {"background": "#121110", "componentBackground": "#1C1A18", "componentBorder": "#2D2A26", "componentDivider": "#2D2A26", "componentText": "#EBE6DE", "error": "#E07373", "icon": "#A09B94", "placeholderText": "#A09B94", "primary": "#B43C3C", "primaryText": "#EBE6DE", "secondaryText": "#A09B94"}, "light": {"background": "#F5EFE4", "componentBackground": "#FFFDF8", "componentBorder": "#DCD5CC", "componentDivider": "#DCD5CC", "componentText": "#1A1A18", "error": "#B91C1C", "icon": "#6B675F", "placeholderText": "#6B675F", "primary": "#4A0404", "primaryText": "#1A1A18", "secondaryText": "#6B675F"}}, "primaryButton": {"colors": {"dark": {"background": "#B43C3C", "border": "#B43C3C", "text": "#FBF7F0"}, "light": {"background": "#4A0404", "border": "#4A0404", "text": "#FBF7F0"}}, "shapes": {"borderRadius": 0, "borderWidth": 0}}, "shapes": {"borderRadius": 2, "borderWidth": 1}}, "customerEphemeralKeySecret": "ek_1", "customerId": "cus_1", "merchantDisplayName": "The Growth Project", "primaryButtonLabel": "Save card and pay $150.00", "returnURL": "tgp://stripe-redirect", "setupIntentClientSecret": "seti_1_secret", "style": "alwaysLight"}
+2026-10-05T16:42:44.2800343Z 
+2026-10-05T16:42:44.2800479Z       357 |     stripe.resolve();
+2026-10-05T16:42:44.2800845Z       358 |     expect(await run).toEqual({ kind: 'retired' });
+2026-10-05T16:42:44.2801319Z     > 359 |     expect(sdk.initPaymentSheet).not.toHaveBeenCalled();
+2026-10-05T16:42:44.2801673Z           |                                      ^
+2026-10-05T16:42:44.2802038Z       360 |     expect(sdk.presentPaymentSheet).not.toHaveBeenCalled();
+2026-10-05T16:42:44.2802333Z       361 |   });
+2026-10-05T16:42:44.2802491Z       362 |
+2026-10-05T16:42:44.2802573Z 
+2026-10-05T16:42:44.2802759Z       at Object.toHaveBeenCalled (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:359:38)
+2026-10-05T16:42:44.2803118Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:44.2803443Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:44.2803597Z 
+2026-10-05T16:42:44.2803948Z   ● B-353-2: a retired screen starts no further native or payment step › B-352-3: account A resuming late never replaces account B's sheet; B presents its own customer
+2026-10-05T16:42:44.2804238Z 
+2026-10-05T16:42:44.2804332Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:42:44.2804454Z 
+2026-10-05T16:42:44.2804509Z     - Expected  - 1
+2026-10-05T16:42:44.2804631Z     + Received  + 1
+2026-10-05T16:42:44.2804700Z 
+2026-10-05T16:42:44.2804749Z       Array [
+2026-10-05T16:42:44.2804861Z     -   "cus_B",
+2026-10-05T16:42:44.2804972Z     +   "cus_1",
+2026-10-05T16:42:44.2805081Z       ]
+2026-10-05T16:42:44.2805141Z 
+2026-10-05T16:42:44.2805272Z       392 |     bSheet.resolve({});
+2026-10-05T16:42:44.2805608Z       393 |     expect((await b).kind).toBe('done');
+2026-10-05T16:42:44.2805990Z     > 394 |     expect(shown).toEqual(['cus_B']);
+2026-10-05T16:42:44.2806275Z           |                   ^
+2026-10-05T16:42:44.2806622Z       395 |     expect(sdk.initPaymentSheet).toHaveBeenCalledTimes(1);
+2026-10-05T16:42:44.2806915Z       396 |   });
+2026-10-05T16:42:44.2807073Z       397 |
+2026-10-05T16:42:44.2807152Z 
+2026-10-05T16:42:44.2807314Z       at Object.toEqual (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:394:19)
+2026-10-05T16:42:44.2807659Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:44.2807958Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:44.2808113Z 
+2026-10-05T16:42:44.2808428Z   ● B-353-2: a retired screen starts no further native or payment step › B-352-3: a newer update supersedes an older live one before it touches the sheet
+2026-10-05T16:42:44.2808691Z 
+2026-10-05T16:42:44.2808785Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:42:44.2809086Z 
+2026-10-05T16:42:44.2809235Z     - Expected  -  1
+2026-10-05T16:42:44.2809363Z     + Received  + 24
+2026-10-05T16:42:44.2809433Z 
+2026-10-05T16:42:44.2809483Z       Object {
+2026-10-05T16:42:44.2809599Z     -   "kind": "retired",
+2026-10-05T16:42:44.2809897Z     +   "kind": "done",
+2026-10-05T16:42:44.2810028Z     +   "response": Object {
+2026-10-05T16:42:44.2810177Z     +     "access_restored": true,
+2026-10-05T16:42:44.2810334Z     +     "access_state": "restored",
+2026-10-05T16:42:44.2810489Z     +     "amount_due_cents": 0,
+2026-10-05T16:42:44.2810639Z     +     "amount_paid_cents": 15000,
+2026-10-05T16:42:44.2810785Z     +     "card_brand": null,
+2026-10-05T16:42:44.2810922Z     +     "card_last4": null,
+2026-10-05T16:42:44.2811057Z     +     "currency": "usd",
+2026-10-05T16:42:44.2811198Z     +     "decline_code": null,
+2026-10-05T16:42:44.2811340Z     +     "disputes": null,
+2026-10-05T16:42:44.2811485Z     +     "due_totals": Array [],
+2026-10-05T16:42:44.2811625Z     +     "message": null,
+2026-10-05T16:42:44.2811760Z     +     "outcome": "paid",
+2026-10-05T16:42:44.2811906Z     +     "paid_totals": Array [
+2026-10-05T16:42:44.2812039Z     +       Object {
+2026-10-05T16:42:44.2812170Z     +         "amount_cents": 15000,
+2026-10-05T16:42:44.2812325Z     +         "currency": "usd",
+2026-10-05T16:42:44.2812454Z     +       },
+2026-10-05T16:42:44.2812563Z     +     ],
+2026-10-05T16:42:44.2812706Z     +     "payment_intent_client_secret": null,
+2026-10-05T16:42:44.2812864Z     +     "quote": null,
+2026-10-05T16:42:44.2812985Z     +   },
+2026-10-05T16:42:44.2813136Z     +   "setupIntentId": "seti_1",
+2026-10-05T16:42:44.2813273Z       }
+2026-10-05T16:42:44.2813331Z 
+2026-10-05T16:42:44.2813745Z       404 |     const newer = await runNativeCardUpdate({ ...base, sdk, isCurrent: () => true });
+2026-10-05T16:42:44.2814181Z       405 |     first.resolve();
+2026-10-05T16:42:44.2814574Z     > 406 |     expect(await older).toEqual({ kind: 'retired' });
+2026-10-05T16:42:44.2814911Z           |                         ^
+2026-10-05T16:42:44.2815209Z       407 |     expect(newer.kind).toBe('done');
+2026-10-05T16:42:44.2815613Z       408 |     expect(sdk.initPaymentSheet).toHaveBeenCalledTimes(1);
+2026-10-05T16:42:44.2816071Z       409 |     expect(sdk.presentPaymentSheet).toHaveBeenCalledTimes(1);
+2026-10-05T16:42:44.2816292Z 
+2026-10-05T16:42:44.2816453Z       at Object.toEqual (src/entitlements/dunning/__tests__/dunningL1Contract.test.ts:406:25)
+2026-10-05T16:42:44.2816786Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:44.2817086Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:44.2817240Z 
+2026-10-05T16:42:44.2817356Z Test Suites: 1 failed, 1 total
+2026-10-05T16:42:44.2817531Z Tests:       11 failed, 7 passed, 18 total
+2026-10-05T16:42:44.2817692Z Snapshots:   0 total
+2026-10-05T16:42:44.2817823Z Time:        1.682 s
+2026-10-05T16:42:44.2818087Z Ran all test suites matching /src\/entitlements\/dunning\/__tests__\/dunningL1Contract.test.ts/i.
+2026-10-05T16:42:44.4023590Z ##[error]Process completed with exit code 1.
+2026-10-05T16:42:44.4130030Z Post job cleanup.
+2026-10-05T16:42:44.4667807Z [command]/usr/bin/git version
+2026-10-05T16:42:44.4695751Z git version 2.55.0
+2026-10-05T16:42:44.4719774Z Temporarily overriding HOME='/home/runner/work/_temp/a7d610e0-f7b3-4dc2-909f-dfc53b2ed3c9' before making global git config changes
+2026-10-05T16:42:44.4720572Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:42:44.4723559Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:42:44.4750185Z Removing SSH command configuration
+2026-10-05T16:42:44.4754311Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:42:44.4781758Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:42:44.4955688Z Removing HTTP extra header
+2026-10-05T16:42:44.4960462Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:42:44.4986835Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:42:44.5158553Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:42:44.5164755Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:42:44.5190383Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:42:44.5190874Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:42:44.5191198Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:42:44.5191438Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:42:44.5197902Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:42:44.5216180Z /home/runner/work/_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:42:44.5225102Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:42:44.5252617Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:42:44.5269492Z /home/runner/work/_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:42:44.5275709Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:42:44.5302392Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:42:44.5320017Z /github/runner_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:42:44.5325024Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:42:44.5349500Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:42:44.5365820Z /github/runner_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:42:44.5372223Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config
+2026-10-05T16:42:44.5399276Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:42:44.5568131Z Removing credentials config '/home/runner/work/_temp/git-credentials-2ede5876-7c03-42df-b092-9186237dd445.config'
+2026-10-05T16:42:44.5720414Z Cleaning up orphan processes

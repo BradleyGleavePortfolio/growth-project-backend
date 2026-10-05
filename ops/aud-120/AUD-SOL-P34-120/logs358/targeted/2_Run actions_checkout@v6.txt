@@ -1,0 +1,86 @@
+﻿2026-10-05T16:32:38.5107353Z ##[group]Run actions/checkout@v6
+2026-10-05T16:32:38.5108260Z with:
+2026-10-05T16:32:38.5108828Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:32:38.5113048Z   token: ***
+2026-10-05T16:32:38.5113511Z   ssh-strict: true
+2026-10-05T16:32:38.5113971Z   ssh-user: git
+2026-10-05T16:32:38.5114421Z   persist-credentials: true
+2026-10-05T16:32:38.5114911Z   clean: true
+2026-10-05T16:32:38.5115363Z   sparse-checkout-cone-mode: true
+2026-10-05T16:32:38.5115880Z   fetch-depth: 1
+2026-10-05T16:32:38.5116306Z   fetch-tags: false
+2026-10-05T16:32:38.5116747Z   show-progress: true
+2026-10-05T16:32:38.5117189Z   lfs: false
+2026-10-05T16:32:38.5117595Z   submodules: false
+2026-10-05T16:32:38.5118042Z   set-safe-directory: true
+2026-10-05T16:32:38.5118536Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:32:38.5119321Z ##[endgroup]
+2026-10-05T16:32:38.6094960Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:32:38.6097221Z ##[group]Getting Git version info
+2026-10-05T16:32:38.6098220Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:32:38.6099391Z [command]/usr/bin/git version
+2026-10-05T16:32:38.6188793Z git version 2.55.0
+2026-10-05T16:32:38.6211669Z ##[endgroup]
+2026-10-05T16:32:38.6226474Z Temporarily overriding HOME='/home/runner/work/_temp/ae7581eb-1681-4607-a36c-092e1cee7c09' before making global git config changes
+2026-10-05T16:32:38.6228789Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:32:38.6231963Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:32:38.6279995Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:32:38.6284736Z ##[group]Determining repository object format
+2026-10-05T16:32:38.6287240Z ##[endgroup]
+2026-10-05T16:32:38.6288092Z ##[group]Initializing the repository
+2026-10-05T16:32:38.6291744Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:32:38.6374389Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:32:38.6376154Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:32:38.6377290Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:32:38.6378031Z hint: call:
+2026-10-05T16:32:38.6378423Z hint:
+2026-10-05T16:32:38.6378950Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:32:38.6379669Z hint:
+2026-10-05T16:32:38.6380253Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:32:38.6381345Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:32:38.6382415Z hint:
+2026-10-05T16:32:38.6383143Z hint: 	git branch -m <name>
+2026-10-05T16:32:38.6384016Z hint:
+2026-10-05T16:32:38.6385135Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:32:38.6387239Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T16:32:38.6397694Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:32:38.6440820Z ##[endgroup]
+2026-10-05T16:32:38.6441603Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:32:38.6444856Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:32:38.6476134Z ##[endgroup]
+2026-10-05T16:32:38.6476950Z ##[group]Setting up auth
+2026-10-05T16:32:38.6477818Z Removing SSH command configuration
+2026-10-05T16:32:38.6483962Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:32:38.6515287Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:32:38.6842726Z Removing HTTP extra header
+2026-10-05T16:32:38.6848437Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:32:38.6880140Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:32:38.7090508Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:32:38.7096151Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:32:38.7126015Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:32:38.7344936Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:32:38.7380736Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:32:38.7412201Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:32:38.7447304Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:32:38.7477339Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:32:38.7539937Z ##[endgroup]
+2026-10-05T16:32:38.7540699Z ##[group]Fetching the repository
+2026-10-05T16:32:38.7548632Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ceb71abea1c97eb919717bc7315fdad0ff5bf36b:refs/remotes/origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2105555Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:32:40.2108450Z  * [new ref]         ceb71abea1c97eb919717bc7315fdad0ff5bf36b -> origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2127378Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2143862Z   origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2154263Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2177523Z ceb71abea1c97eb919717bc7315fdad0ff5bf36b
+2026-10-05T16:32:40.2185786Z ##[endgroup]
+2026-10-05T16:32:40.2187055Z ##[group]Determining the checkout info
+2026-10-05T16:32:40.2188510Z ##[endgroup]
+2026-10-05T16:32:40.2189451Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:32:40.2242421Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:32:40.2273078Z ##[group]Checking out the ref
+2026-10-05T16:32:40.2278711Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-P34-120/358-boundaries-1 refs/remotes/origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.3347844Z Switched to a new branch 'audit/AUD-SOL-P34-120/358-boundaries-1'
+2026-10-05T16:32:40.3352427Z branch 'audit/AUD-SOL-P34-120/358-boundaries-1' set up to track 'origin/audit/AUD-SOL-P34-120/358-boundaries-1'.
+2026-10-05T16:32:40.3361368Z ##[endgroup]
+2026-10-05T16:32:40.3404181Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:32:40.3428505Z ceb71abea1c97eb919717bc7315fdad0ff5bf36b

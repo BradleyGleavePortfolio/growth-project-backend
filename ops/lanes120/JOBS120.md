@@ -111,3 +111,111 @@ change in this job: if one is needed, stop and tell the operator), tests include
 Do not change #359-#369. If H7 lenses force a FIX ROUND on #369 while you work, merge #369's new head into your branch (merge-only).
 Open the PR as draft, post FIX ROUND 1 (OPENING, B-HC10-120, agent 120) with probes and READY FOR AUDIT. Wait for
 /home/user/workspace/deps/mobile/READY before running anything.
+
+## B-WIZ3-120 — mobile wizard W2 #346 FIX ROUND 3 (+ #347 merge-only restack) (T3/T4: publishes priced offers, stack lock: wizard)
+Heads: #346 26cf23b7987c866615ab9a4b2f95a10e6e318f40 (base = #345's branch), #347 8437fb94. #345 ed29833c: Sol APPROVE 0/0/0
+(5998775552). #346: Sol REQUEST CHANGES 0/1/2 (5998775024): B-346-3 remains — an early tap while the $49 defaults are displayed
+publishes a later-hydrated $990 offer, or publishes/binds an unseen Free offer, without fresh confirmation (Sol W2 lane
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37341467340: 2 failing challenges). Fix rule (Sol): a
+publish needs a fresh tap AFTER hydration, on the exact price/offer the coach sees; any hydration that changes price or offer type
+invalidates a pending tap. Also fix every A/B in the Opus W12D-120 verdict on #345/#346 (read it first; if Opus found an A/B on #345,
+fix it there too). C-346-1 / C-346-4 stay follow-ups. Replay both lenses' probes (ops/aud-120/AUD-SOL-W12D-120/, ops/aud-120/AUD-OPUS-
+W12D-120/, plus prior ops/aud-119/*W12*). Then merge-only restack #347. One comment per PR, READY FOR AUDIT. Size: #346 2,873 of
+3,000 (grandfathered): 127 lines of headroom; if tests do not fit, put them in #347 and say so.
+
+## B-PROG2-120 — mobile programs P1 #355 + P2 #356 FIX ROUND (+ merge-only restack #357 -> #358) (stack lock: programs)
+Heads: #355 902c64a64156255ce9ce54147db896ac2142a954 (base main, BEHIND), #356 40ee678adf7a70bdfa18c49cafdbd64a2dc589a5.
+Sol REQUEST CHANGES: #355 0/1/0 (5998781633): assignable roster silently stops at 20 clients (paginate to completion or say plainly
+that the list is partial; never a silent cap). #356 0/2/2 (5998828937): Undo races an explicit Save, allowing a stale full replacement
+after restoration; HTTP 408 wrongly reopens editing as a definite refusal (408 = unknown outcome: re-read before allowing edits).
+Sol probes: ops/aud-120/AUD-SOL-P12-120/ (P1 lane run 37341534822: 1 failing; P2 lane run 37341985729: 4 failing). Also fix every A/B
+in the Opus P12-120 verdicts (read them first). Cs (false Undo confirmation from another session's revision; post-unmount history
+refetch) stay follow-ups. You own ONLY the #355/#356 branches: B-PROG4-120 owns #357/#358 in parallel and merges your #356 head when you
+write ops/lanes120/notify/programs.txt ("programs P2: #356 @ <full sha> (B-PROG2-120, <time>)"). Merge main into #355 (newest main). Replay both lenses' probes, one comment per PR,
+READY FOR AUDIT. Sizes: #355 1,716, #356 1,501 (grandfathered 3,000).
+
+## B-PROG4-120 — mobile programs P3 #357 + P4 #358 FIX ROUND (stack lock: programs-p34; parallel with B-PROG2-120)
+Heads: #357 b364b9eaaedfb6d297f55a40e4b6a15ac4d2a381 (base = #356's branch), #358 4dcf0aff2644ff54fc5fe4de2c97751d7ac7cf94.
+Sol REQUEST CHANGES: #357 0/4/1 (5998892359), #358 0/4/0 (5998829473): eight behavioural counterexamples proven in CI (P3 lane
+37342607062: 4 failing; P4 lane 37342003294: 4 failing). Sol probes: ops/aud-120/AUD-SOL-P34-120/. Also fix every A/B in the Opus
+P34-120 verdicts (read them first). C-357-1 (paginated/searchable asset selection, truthful partial-library empty states) stays a
+follow-up. You own ONLY the #357/#358 branches. B-PROG2-120 fixes #355/#356 in parallel; when ops/lanes120/notify/programs.txt shows
+its #356 head, merge it into #357 (merge-only; resolve nothing silently: if it conflicts, resolve, say so), then #357 into #358. Replay
+both lenses' probes, one comment per PR, READY FOR AUDIT only after the #356 merge is in. Sizes: #357 2,421, #358 1,323 (grandfathered).
+
+## AUD-OPUS-PUSH-120 / AUD-SOL-PUSH-120 — backend push notifications P1 #692 + P2 #693 (first review; T4: PII, consent, migration)
+Owner 09:43 PDT 10-05: "we need app notifs" — push is now day-1 scope. Heads: #692 27156167037d5c1be687c597ad349e5a151f5228 (base main,
+BEHIND, 815 lines: migration 20270307000000 + schema, quiet hours and preference rules, lock-screen copy, Expo push client, deletion
+manifest entries; inert), #693 13417e7be58b96b6fccf203f71ec3b1f1ac8bb20 (base #692's branch, 2,382 lines: delivery, send-time quiet
+hours, emitter wiring). Split of #648 (Sol RC 0/1/0 at ab607b34: read it; prior verdicts do not carry). Operator verified 09:48:
+migration 20270307000000 is absent from production _prisma_migrations (in-place edits are safe). Full review of both. Check: lock-screen
+copy never shows health/PII; quiet hours in the client's zone; preferences honoured at send time; outbox idempotency and retry;
+Expo receipts and DeviceNotRegistered token cleanup; account deletion erases tokens and outbox rows; works with no FCM key configured
+(Android delivery fails gracefully). Grandfathered sizes (3,000 ceiling).
+
+## B-SPLIT-SCHED-120 — split backend #634 S-SCHED-2 (10,664 lines) into pieces UNDER 1,500 lines each (T4, stack lock: sched)
+Owner 09:45 PDT 10-05, verbatim: "the 10k LOC PR- SPLIT IT DOWN TO 1500>LOC/CHUNK! (less than 1500)". Head e18e8055454b04856d2c5ab5568d0a7127b74939
+(branch agent110/s-sched-lifecycle, base main, DIRTY vs main; 30 files, +9,378/-1,286; 5,789 test lines). Stacked on it: #653
+17b2be25 (S-SCHED-5 request auto-expiry, 1,434, branch agent113/s-sched-request-expiry). Dual APPROVE exists at an earlier #634 head
+(read the verdicts; evidence reuse is each lens's decision for byte-identical code only).
+Do: (1) build a split plan: N stacked pieces, each strictly under 1,500 changed lines (additions + deletions; tests count; lockfiles,
+generated files and snapshots excluded), each compiling and passing its own tests, inert pieces first (schema/migration + types, then
+services, then controllers/routes, tests with the code they cover; the ci.yml live-spec line goes with the live spec), the composed
+top tree equal to #634's content merged with current main; (2) merge main into the content first and resolve conflicts once (state
+every resolved hunk); (3) open each piece as a draft PR (branches agent120/sched-split-<k>-<name>), bottom on main, each on the previous;
+title prefix "S-SCHED-2 split <k>/<N>"; body: tier header, contents, tree-equality proof for the top, prior verdict links; (4) restack
+#653 onto the top piece (merge-only) and note it; (5) post FIX ROUND 1 (OPENING, B-SPLIT-SCHED-120, agent 120) + READY FOR AUDIT on each
+piece; (6) comment on #634 that it is superseded by the pieces (do NOT close it; the operator closes it after the pieces land).
+This is more than two PRs because the owner ordered the split; no behaviour change is allowed beyond the main-merge resolution.
+Check sizes before every push. CI for every piece runs on GitHub; local work only via heavy.sh.
+
+## Annex day-1 jobs (owner 09:46 PDT 10-05, verbatim: "coachless/featured coach, invite codes, broadcasts, and messaging inbox -> ALL DAY 1 NECESSARY!")
+Common to the four annex jobs below: backend PRs from 10-03 (branches annex/*, feat/a3-*). New split pieces are new PRs: each strictly
+UNDER 1,500 changed lines (tests count). Merge main into the content first, resolve conflicts once and list every resolved hunk. Every
+piece compiles and passes its own tests; inert pieces first (migration/schema/types), then services, then controllers/routes; tests
+travel with the code they cover. Open pieces as drafts on branches agent120/<feature>-split-<k>-<name>, bottom on main, each on the
+previous; title prefix "<FEATURE> split <k>/<N>"; body: tier header, contents, top-tree equality proof against the original merged with
+main (plus listed A/B fixes, if your entry has them), prior verdict links. Post FIX ROUND 1 (OPENING, <JOB>, agent 120) + READY FOR AUDIT
+on each piece; comment on the original PR that it is superseded (do NOT close it). Also report, without building it: which mobile
+screens on mobile main (cc4ceeed or newer) already use this backend feature and what mobile work is missing for day 1 (file paths).
+Feature flags stay as they are; flag flips are a separate PR by the operator after the features land (b#650 community core flags).
+
+## B-SPLIT-MSG-120 — split backend #660 messaging inbox (3,041 lines; one inbox, read-up-to, edit/delete, reply, pins, mute) (T4: PII, access)
+Head 6055648506036c4b649cc7958c50ff86c132e997 (branch feat/a3-msg-core-inbox, base main, DIRTY vs main; 25 files +3,002/-39). Never reviewed.
+Split only (no behaviour change beyond the main-merge resolution). Stack lock: msg.
+
+## B-SPLIT-COACHLESS-120 — split backend #657 coachless / featured coach / coach-code redemption (3,184 lines) (T4: auth, money-adjacent)
+Head c25960a8b82ed4dd6bea0b7da9f1d77ce783078d (branch annex/a1-coachless-be, base main, DIRTY; 27 files +3,184). Never reviewed.
+Split only. Open-signup / coachless accounts were approved by the owner 10-01 (DECISION_LOG). Stack lock: coachless.
+
+## B-SPLIT-BCAST-120 — split backend #659 broadcasts (3,929 lines; segmented, scheduled, recurring) AND fix its A/B findings (T4)
+Head fa9a7cbd33c5f1c1d5108f3a3d57ea70f3177faf (branch annex/a4-broadcasts-be, base main, BEHIND; 31 files +3,928/-1). Opus REQUEST CHANGES
+(5964501283), Sol BLOCK (5964574829) at this head (10-03). Read both in full. Split, and fix every A/B in the piece that owns the code
+(say per piece which lines differ from the original and why). Cs to follow-ups. Stack lock: bcast.
+
+## B-INV2-120 — backend #658 invite-code tools FIX ROUND (create, rotate, revoke, QR) (2,565 lines, grandfathered 3,000) (T4: auth)
+Head 08534e17c686602415f0836abc66db0182aeea3f (branch annex/a2-coach-code-tools-be, base main, BEHIND; 26 files +2,522/-43). Opus REQUEST
+CHANGES (5964473420), Sol REQUEST CHANGES (5964522757) at this head (10-03). Fix every A/B in place (stay at or under 3,000; if a fix
+would cross 3,000, split the PR into pieces under 1,500 per the annex common rules instead), merge main, replay both lenses' probes
+(write failing-before probes for each B if none exist), FIX ROUND comment, READY FOR AUDIT. Check overlap with #657 (coach-code
+redemption) and with mobile invite flows; report the mobile gaps. Stack lock: inv.
+
+## B-661R2-120 — backend #661 FIX ROUND (B-661-14) with regressions in #702 (T4: secrets at rest, stack lock: secrets)
+Heads: #661 bc399edd5911c9c1e83e4bb1051fde05bfeda64d, #702 9ddda117d89f72c8d4a7a5b58a2c7ba6173053a2. Sol: #661 REQUEST CHANGES 0/1/1
+(5998892091), #702 APPROVE 0/0/0 (5998892592, stack-provisional). B-661-14: recurring invoice/subscription activation keeps spent
+PaymentIntent/SetupIntent client secrets and ephemeral keys at rest; Sol proved it with four real-PostgreSQL acceptance cases (lanes
+37341623338, 37342234566; probes in ops/aud-120/AUD-SOL-661D-120/). Fix rule (Sol): bounded, atomic credential clearing on every
+recurring activation path (same transaction as the state change), preserving payable native trials; regressions go in #702 (owner
+decision 3 default: #661 tests live in #702). Also fix every A/B in the Opus 661D-120 verdict (read it first). C-661-13 ticketed,
+C-661-10 additive follow-up, historic cleanup approval-only, C-656-1 stays the trials release prerequisite. Replay both lenses' probes;
+FIX ROUND comment on #661, RESTACK/FIX ROUND on #702; READY FOR AUDIT. #661 is at 2,849 of 3,000: code only in #661, tests in #702
+(#702 is under the 1,500 rule: 513 now).
+
+## B-HC11-120 — mobile Health Connect H7 #369 FIX ROUND 2 (B-369-2) (T4: health consent, stack lock: hc)
+Head #369 3252ec79cd9ab1f28165a1913d8ae3096b590d4a (1,205 lines, 1,500 rule: 295 headroom). Sol REQUEST CHANGES 0/1/2 (5998888199):
+B-369-1 closed; new B-369-2: an in-flight Connect can recreate durable consent during an interrupted sign-out (Sol lanes 37341997614,
+37342514128; probes ops/aud-120/AUD-SOL-H7-120/). Fix rule: sign-out first fences/invalidates in-flight Connect (generation/epoch
+check before any durable consent write), so no consent survives or is recreated after sign-out starts, including after an app kill.
+Also fix every A/B in the Opus H7-120 verdict (read it first). #362: Sol conditional APPROVE (5998888651) in the H1-H7 composition.
+C-369-2/3, C-362-5 follow-ups. B-HC10-120 has an H8 PR stacked on #369: write ops/lanes120/notify/hc.txt ("hc H7: #369 @ <sha>
+(B-HC11-120, <time>)") so it can merge your head. Replay probes, FIX ROUND comment, READY FOR AUDIT.

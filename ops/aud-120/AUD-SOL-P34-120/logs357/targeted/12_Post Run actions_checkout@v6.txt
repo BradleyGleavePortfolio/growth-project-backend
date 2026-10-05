@@ -1,0 +1,32 @@
+﻿2026-10-05T16:34:17.3139946Z Post job cleanup.
+2026-10-05T16:34:17.4000123Z [command]/usr/bin/git version
+2026-10-05T16:34:17.4036670Z git version 2.55.0
+2026-10-05T16:34:17.4074661Z Temporarily overriding HOME='/home/runner/work/_temp/9dd35db9-e0bb-4356-8e57-e960d4b6b33f' before making global git config changes
+2026-10-05T16:34:17.4076394Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:34:17.4080819Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:34:17.4112053Z Removing SSH command configuration
+2026-10-05T16:34:17.4118429Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:34:17.4156110Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:34:17.4391748Z Removing HTTP extra header
+2026-10-05T16:34:17.4396888Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:34:17.4430718Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:34:17.4663503Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:34:17.4669933Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:34:17.4697261Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:34:17.4698197Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:34:17.4698855Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:34:17.4699347Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:34:17.4706520Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:34:17.4729163Z /home/runner/work/_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config
+2026-10-05T16:34:17.4740562Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config
+2026-10-05T16:34:17.4776690Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:34:17.4799349Z /home/runner/work/_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config
+2026-10-05T16:34:17.4808909Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config
+2026-10-05T16:34:17.4842529Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:34:17.4864536Z /github/runner_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config
+2026-10-05T16:34:17.4872189Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config
+2026-10-05T16:34:17.4904304Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:34:17.4926348Z /github/runner_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config
+2026-10-05T16:34:17.4935841Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config
+2026-10-05T16:34:17.4969742Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:34:17.5223506Z Removing credentials config '/home/runner/work/_temp/git-credentials-f00baefb-f1f0-4197-890f-5f24f3704c24.config'

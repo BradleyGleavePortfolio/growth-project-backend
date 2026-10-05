@@ -1,0 +1,35 @@
+﻿2026-10-05T16:35:43.1637438Z ##[group]Run npm ci
+2026-10-05T16:35:43.1637904Z [36;1mnpm ci[0m
+2026-10-05T16:35:43.1894818Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:35:43.1895265Z ##[endgroup]
+2026-10-05T16:35:48.2804351Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:35:48.4994386Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T16:35:48.5147577Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T16:35:48.5223853Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T16:35:48.5525787Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T16:35:48.7090964Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T16:35:48.7143890Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:48.7153245Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:48.7176041Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:48.7183103Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:48.7209383Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:48.7549749Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:48.8183162Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T16:35:49.3768132Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T16:35:50.0196734Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T16:35:53.6638302Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T16:36:44.9011655Z 
+2026-10-05T16:36:44.9016278Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-05T16:36:44.9016675Z 
+2026-10-05T16:36:44.9016904Z 187 packages are looking for funding
+2026-10-05T16:36:44.9017309Z   run `npm fund` for details
+2026-10-05T16:36:45.2724714Z 
+2026-10-05T16:36:45.2725705Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T16:36:45.2726228Z 
+2026-10-05T16:36:45.2726661Z To address issues that do not require attention, run:
+2026-10-05T16:36:45.2727263Z   npm audit fix
+2026-10-05T16:36:45.2728039Z 
+2026-10-05T16:36:45.2728504Z To address all issues (including breaking changes), run:
+2026-10-05T16:36:45.2729476Z   npm audit fix --force
+2026-10-05T16:36:45.2729760Z 
+2026-10-05T16:36:45.2729993Z Run `npm audit` for details.

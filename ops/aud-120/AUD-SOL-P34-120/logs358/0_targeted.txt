@@ -1,0 +1,664 @@
+﻿2026-10-05T16:32:37.8129805Z Current runner version: '2.337.0'
+2026-10-05T16:32:37.8154747Z ##[group]Runner Image Provisioner
+2026-10-05T16:32:37.8155663Z Hosted Compute Agent
+2026-10-05T16:32:37.8156374Z Version: 20260901.588
+2026-10-05T16:32:37.8157044Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:32:37.8157775Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:32:37.8158523Z Worker ID: {06928e1e-9225-4ab6-bc44-629699a1cba7}
+2026-10-05T16:32:37.8159248Z Azure Region: westcentralus
+2026-10-05T16:32:37.8159879Z ##[endgroup]
+2026-10-05T16:32:37.8161495Z ##[group]Operating System
+2026-10-05T16:32:37.8162153Z Ubuntu
+2026-10-05T16:32:37.8163003Z 24.04.5
+2026-10-05T16:32:37.8163740Z LTS
+2026-10-05T16:32:37.8164369Z ##[endgroup]
+2026-10-05T16:32:37.8164965Z ##[group]Runner Image
+2026-10-05T16:32:37.8165570Z Image: ubuntu-24.04
+2026-10-05T16:32:37.8166186Z Version: 20260927.320.1
+2026-10-05T16:32:37.8167447Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:32:37.8169111Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:32:37.8170105Z ##[endgroup]
+2026-10-05T16:32:37.8171367Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:32:37.8173693Z Contents: read
+2026-10-05T16:32:37.8174730Z Metadata: read
+2026-10-05T16:32:37.8175312Z Packages: read
+2026-10-05T16:32:37.8175851Z ##[endgroup]
+2026-10-05T16:32:37.8177989Z Secret source: Actions
+2026-10-05T16:32:37.8179110Z Cache mode: write
+2026-10-05T16:32:37.8180102Z Prepare workflow directory
+2026-10-05T16:32:37.8521200Z Prepare all required actions
+2026-10-05T16:32:37.8568504Z Getting action download info
+2026-10-05T16:32:38.1641923Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:32:38.2524575Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:32:38.4358503Z Complete job name: targeted
+2026-10-05T16:32:38.5107378Z ##[group]Run actions/checkout@v6
+2026-10-05T16:32:38.5108269Z with:
+2026-10-05T16:32:38.5108833Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:32:38.5113055Z   token: ***
+2026-10-05T16:32:38.5113514Z   ssh-strict: true
+2026-10-05T16:32:38.5113974Z   ssh-user: git
+2026-10-05T16:32:38.5114424Z   persist-credentials: true
+2026-10-05T16:32:38.5114914Z   clean: true
+2026-10-05T16:32:38.5115366Z   sparse-checkout-cone-mode: true
+2026-10-05T16:32:38.5115883Z   fetch-depth: 1
+2026-10-05T16:32:38.5116309Z   fetch-tags: false
+2026-10-05T16:32:38.5116750Z   show-progress: true
+2026-10-05T16:32:38.5117192Z   lfs: false
+2026-10-05T16:32:38.5117598Z   submodules: false
+2026-10-05T16:32:38.5118045Z   set-safe-directory: true
+2026-10-05T16:32:38.5118539Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:32:38.5119328Z ##[endgroup]
+2026-10-05T16:32:38.6095009Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:32:38.6097310Z ##[group]Getting Git version info
+2026-10-05T16:32:38.6098225Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:32:38.6099396Z [command]/usr/bin/git version
+2026-10-05T16:32:38.6188819Z git version 2.55.0
+2026-10-05T16:32:38.6211688Z ##[endgroup]
+2026-10-05T16:32:38.6226498Z Temporarily overriding HOME='/home/runner/work/_temp/ae7581eb-1681-4607-a36c-092e1cee7c09' before making global git config changes
+2026-10-05T16:32:38.6228796Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:32:38.6231978Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:32:38.6280020Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:32:38.6284748Z ##[group]Determining repository object format
+2026-10-05T16:32:38.6287251Z ##[endgroup]
+2026-10-05T16:32:38.6288098Z ##[group]Initializing the repository
+2026-10-05T16:32:38.6291783Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:32:38.6374415Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:32:38.6376166Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:32:38.6377295Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:32:38.6378035Z hint: call:
+2026-10-05T16:32:38.6378427Z hint:
+2026-10-05T16:32:38.6378954Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:32:38.6379673Z hint:
+2026-10-05T16:32:38.6380256Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:32:38.6381351Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:32:38.6382419Z hint:
+2026-10-05T16:32:38.6383153Z hint: 	git branch -m <name>
+2026-10-05T16:32:38.6384028Z hint:
+2026-10-05T16:32:38.6385174Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:32:38.6387250Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T16:32:38.6397716Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:32:38.6440839Z ##[endgroup]
+2026-10-05T16:32:38.6441607Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:32:38.6444872Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:32:38.6476152Z ##[endgroup]
+2026-10-05T16:32:38.6476958Z ##[group]Setting up auth
+2026-10-05T16:32:38.6477825Z Removing SSH command configuration
+2026-10-05T16:32:38.6483983Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:32:38.6515314Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:32:38.6843297Z Removing HTTP extra header
+2026-10-05T16:32:38.6848461Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:32:38.6880167Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:32:38.7090534Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:32:38.7096169Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:32:38.7126037Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:32:38.7344963Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:32:38.7380791Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:32:38.7412231Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:32:38.7447334Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:32:38.7477362Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:32:38.7539959Z ##[endgroup]
+2026-10-05T16:32:38.7540703Z ##[group]Fetching the repository
+2026-10-05T16:32:38.7548679Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ceb71abea1c97eb919717bc7315fdad0ff5bf36b:refs/remotes/origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2105657Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:32:40.2108482Z  * [new ref]         ceb71abea1c97eb919717bc7315fdad0ff5bf36b -> origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2127412Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2143892Z   origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2154301Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.2177558Z ceb71abea1c97eb919717bc7315fdad0ff5bf36b
+2026-10-05T16:32:40.2185812Z ##[endgroup]
+2026-10-05T16:32:40.2187069Z ##[group]Determining the checkout info
+2026-10-05T16:32:40.2188532Z ##[endgroup]
+2026-10-05T16:32:40.2189464Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:32:40.2242519Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:32:40.2273103Z ##[group]Checking out the ref
+2026-10-05T16:32:40.2278735Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-P34-120/358-boundaries-1 refs/remotes/origin/audit/AUD-SOL-P34-120/358-boundaries-1
+2026-10-05T16:32:40.3347932Z Switched to a new branch 'audit/AUD-SOL-P34-120/358-boundaries-1'
+2026-10-05T16:32:40.3352485Z branch 'audit/AUD-SOL-P34-120/358-boundaries-1' set up to track 'origin/audit/AUD-SOL-P34-120/358-boundaries-1'.
+2026-10-05T16:32:40.3361403Z ##[endgroup]
+2026-10-05T16:32:40.3404217Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:32:40.3428546Z ceb71abea1c97eb919717bc7315fdad0ff5bf36b
+2026-10-05T16:32:40.3801807Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:32:40.3803374Z with:
+2026-10-05T16:32:40.3804348Z   node-version: 22.13
+2026-10-05T16:32:40.3805397Z   cache: npm
+2026-10-05T16:32:40.3806361Z   check-latest: false
+2026-10-05T16:32:40.3815602Z   token: ***
+2026-10-05T16:32:40.3816630Z   package-manager-cache: true
+2026-10-05T16:32:40.3817798Z ##[endgroup]
+2026-10-05T16:32:40.5193819Z Attempting to download 22.13...
+2026-10-05T16:32:41.5463495Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:32:42.2748634Z Extracting ...
+2026-10-05T16:32:42.2887709Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/07b2ce9f-90c5-4d32-af56-f434d76b1947 -f /home/runner/work/_temp/c9bfa369-26ef-4897-9d86-6841ea506393
+2026-10-05T16:32:43.4639210Z Adding to the cache ...
+2026-10-05T16:32:45.6132511Z ##[group]Environment details
+2026-10-05T16:32:45.8279890Z node: v22.13.1
+2026-10-05T16:32:45.8280437Z npm: 10.9.2
+2026-10-05T16:32:45.8280836Z yarn: 1.22.22
+2026-10-05T16:32:45.8281576Z ##[endgroup]
+2026-10-05T16:32:45.8301315Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:32:45.9250414Z /home/runner/.npm
+2026-10-05T16:32:46.1220924Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:32:47.3524865Z Received 29360128 of 241027159 (12.2%), 28.0 MBs/sec
+2026-10-05T16:32:48.3523151Z Received 201326592 of 241027159 (83.5%), 96.0 MBs/sec
+2026-10-05T16:32:48.5545595Z Received 241027159 of 241027159 (100.0%), 104.3 MBs/sec
+2026-10-05T16:32:48.5546851Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:32:48.5655427Z [command]/usr/bin/tar -xf /home/runner/work/_temp/efade95f-b4d5-4e56-9dcc-aae2ae0afb42/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:32:49.2758606Z Cache restored successfully
+2026-10-05T16:32:49.3196589Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:32:49.3383571Z ##[group]Run npm ci
+2026-10-05T16:32:49.3383967Z [36;1mnpm ci[0m
+2026-10-05T16:32:49.3650524Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:32:49.3650825Z ##[endgroup]
+2026-10-05T16:32:54.8268937Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:32:55.0402625Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T16:32:55.0573714Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T16:32:55.0625645Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T16:32:55.0828571Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T16:32:55.2194171Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T16:32:55.2235337Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:55.2238356Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:55.2256986Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:55.2275658Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:55.2287942Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:55.2644623Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:55.3054122Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T16:32:55.7752310Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T16:32:56.3905506Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T16:33:00.1550536Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T16:33:50.2895297Z 
+2026-10-05T16:33:50.2896207Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-05T16:33:50.2896580Z 
+2026-10-05T16:33:50.2896792Z 187 packages are looking for funding
+2026-10-05T16:33:50.2897186Z   run `npm fund` for details
+2026-10-05T16:33:50.6642928Z 
+2026-10-05T16:33:50.6644178Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T16:33:50.6644696Z 
+2026-10-05T16:33:50.6645150Z To address issues that do not require attention, run:
+2026-10-05T16:33:50.6646405Z   npm audit fix
+2026-10-05T16:33:50.6646840Z 
+2026-10-05T16:33:50.6647315Z To address all issues (including breaking changes), run:
+2026-10-05T16:33:50.6647978Z   npm audit fix --force
+2026-10-05T16:33:50.6648633Z 
+2026-10-05T16:33:50.6648895Z Run `npm audit` for details.
+2026-10-05T16:33:50.8536178Z ##[group]Run set -euo pipefail
+2026-10-05T16:33:50.8536524Z [36;1mset -euo pipefail[0m
+2026-10-05T16:33:50.8536926Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:33:50.8537437Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:33:50.8537810Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:33:50.8538085Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T16:33:50.8604291Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:33:50.8604649Z ##[endgroup]
+2026-10-05T16:33:50.8703173Z specs: src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx src/screens/coach/programs/__tests__/programsFixRound.test.tsx
+2026-10-05T16:33:59.1913164Z PASS src/screens/coach/programs/__tests__/programsFixRound.test.tsx (6.138 s)
+2026-10-05T16:33:59.7535384Z FAIL src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx (7.069 s)
+2026-10-05T16:33:59.7537254Z   ● P4 lifecycle: retiring the assign screen during chunk one must prevent a later chunk request
+2026-10-05T16:33:59.7537946Z 
+2026-10-05T16:33:59.7538293Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-05T16:33:59.7538722Z 
+2026-10-05T16:33:59.7539008Z     Expected number of calls: 1
+2026-10-05T16:33:59.7539517Z     Received number of calls: 2
+2026-10-05T16:33:59.7539816Z 
+2026-10-05T16:33:59.7541461Z     [0m [90m 84 |[39m     pending[33m.[39mresolve({ results[33m:[39m roster([35m50[39m)[33m.[39mmap((c) [33m=>[39m ({ client_id[33m:[39m c[33m.[39mid[33m,[39m status[33m:[39m [32m"assigned"[39m })) })[33m;[39m
+2026-10-05T16:33:59.7543288Z      [90m 85 |[39m   })[33m;[39m
+2026-10-05T16:33:59.7544427Z     [31m[1m>[22m[39m[90m 86 |[39m   expect(mockAssign)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-05T16:33:59.7545639Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-05T16:33:59.7546366Z      [90m 87 |[39m })[33m;[39m
+2026-10-05T16:33:59.7546902Z      [90m 88 |[39m
+2026-10-05T16:33:59.7548493Z      [90m 89 |[39m it([32m"P4 completeness: a whole-program refusal must account for and recover all 51 selected clients"[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-05T16:33:59.7549681Z 
+2026-10-05T16:33:59.7550513Z       at Object.toHaveBeenCalledTimes (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:86:22)
+2026-10-05T16:33:59.7552144Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:59.7553572Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:59.7554171Z 
+2026-10-05T16:33:59.7555042Z   ● P4 completeness: a whole-program refusal must account for and recover all 51 selected clients
+2026-10-05T16:33:59.7555772Z 
+2026-10-05T16:33:59.7556219Z     Found multiple elements with text: /This program is archived/
+2026-10-05T16:33:59.7556745Z 
+2026-10-05T16:33:59.7557022Z     [36m<RCTScrollView>[39m
+2026-10-05T16:33:59.7557599Z       [36m<View>[39m
+2026-10-05T16:33:59.7558127Z         [36m<View>[39m
+2026-10-05T16:33:59.7558858Z           [36m<View>[39m
+2026-10-05T16:33:59.7559546Z             [36m<Text[39m
+2026-10-05T16:33:59.7560272Z               [33maccessibilityRole[39m=[32m"header"[39m
+2026-10-05T16:33:59.7560924Z             [36m>[39m
+2026-10-05T16:33:59.7561445Z               [0mStart date[0m
+2026-10-05T16:33:59.7562159Z             [36m</Text>[39m
+2026-10-05T16:33:59.7562692Z             [36m<View>[39m
+2026-10-05T16:33:59.7563552Z               [36m<View[39m
+2026-10-05T16:33:59.7564213Z                 [33maccessibilityLabel[39m=[32m"Today"[39m
+2026-10-05T16:33:59.7565465Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7566284Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7566861Z                   {
+2026-10-05T16:33:59.7567767Z                     "selected": false,
+2026-10-05T16:33:59.7568297Z                   }
+2026-10-05T16:33:59.7569201Z                 }[39m
+2026-10-05T16:33:59.7569971Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7570608Z               [36m>[39m
+2026-10-05T16:33:59.7571185Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7571818Z                   [0mToday[0m
+2026-10-05T16:33:59.7572388Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7573268Z               [36m</View>[39m
+2026-10-05T16:33:59.7573929Z               [36m<View[39m
+2026-10-05T16:33:59.7574817Z                 [33maccessibilityLabel[39m=[32m"Tomorrow"[39m
+2026-10-05T16:33:59.7575885Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7576826Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7577431Z                   {
+2026-10-05T16:33:59.7577998Z                     "selected": false,
+2026-10-05T16:33:59.7578542Z                   }
+2026-10-05T16:33:59.7579065Z                 }[39m
+2026-10-05T16:33:59.7579757Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7580452Z               [36m>[39m
+2026-10-05T16:33:59.7581074Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7581721Z                   [0mTomorrow[0m
+2026-10-05T16:33:59.7582385Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7583248Z               [36m</View>[39m
+2026-10-05T16:33:59.7583784Z               [36m<View[39m
+2026-10-05T16:33:59.7584512Z                 [33maccessibilityLabel[39m=[32m"Next Monday"[39m
+2026-10-05T16:33:59.7585430Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7586303Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7586959Z                   {
+2026-10-05T16:33:59.7587473Z                     "selected": true,
+2026-10-05T16:33:59.7588093Z                   }
+2026-10-05T16:33:59.7588730Z                 }[39m
+2026-10-05T16:33:59.7589497Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7590257Z               [36m>[39m
+2026-10-05T16:33:59.7590962Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7591774Z                   [0mNext Monday[0m
+2026-10-05T16:33:59.7592528Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7593528Z               [36m</View>[39m
+2026-10-05T16:33:59.7594192Z             [36m</View>[39m
+2026-10-05T16:33:59.7594900Z             [36m<TextInput[39m
+2026-10-05T16:33:59.7595992Z               [33maccessibilityLabel[39m=[32m"Start date, year month day"[39m
+2026-10-05T16:33:59.7597097Z               [33meditable[39m=[32m{true}[39m
+2026-10-05T16:33:59.7598074Z               [33mplaceholder[39m=[32m"YYYY-MM-DD"[39m
+2026-10-05T16:33:59.7598966Z               [33mvalue[39m=[32m"2026-10-12"[39m
+2026-10-05T16:33:59.7599684Z             [36m/>[39m
+2026-10-05T16:33:59.7600343Z             [36m<Text>[39m
+2026-10-05T16:33:59.7601092Z               [0mWeek 1, Day 1 lands on [0m
+2026-10-05T16:33:59.7601834Z               [0m2026-10-12[0m
+2026-10-05T16:33:59.7602650Z               [0m. Each client gets their own copy.[0m
+2026-10-05T16:33:59.7603651Z             [36m</Text>[39m
+2026-10-05T16:33:59.7604295Z             [36m<View>[39m
+2026-10-05T16:33:59.7604923Z               [36m<RCTSwitch[39m
+2026-10-05T16:33:59.7606048Z                 [33maccessibilityLabel[39m=[32m"Assign again to clients already on this program"[39m
+2026-10-05T16:33:59.7607218Z                 [33maccessibilityRole[39m=[32m"switch"[39m
+2026-10-05T16:33:59.7607961Z                 [33mvalue[39m=[32m{false}[39m
+2026-10-05T16:33:59.7608567Z               [36m/>[39m
+2026-10-05T16:33:59.7609147Z               [36m<Text>[39m
+2026-10-05T16:33:59.7610001Z                 [0mAssign again to clients already on this program (a second run)[0m
+2026-10-05T16:33:59.7610988Z               [36m</Text>[39m
+2026-10-05T16:33:59.7611556Z             [36m</View>[39m
+2026-10-05T16:33:59.7612133Z             [36m<Text[39m
+2026-10-05T16:33:59.7613883Z               [33maccessibilityRole[39m=[32m"header"[39m
+2026-10-05T16:33:59.7614557Z             [36m>[39m
+2026-10-05T16:33:59.7615151Z               [0mClients (51 selected)[0m
+2026-10-05T16:33:59.7615781Z             [36m</Text>[39m
+2026-10-05T16:33:59.7616355Z             [36m<TextInput[39m
+2026-10-05T16:33:59.7617322Z               [33maccessibilityLabel[39m=[32m"Search clients by name or email"[39m
+2026-10-05T16:33:59.7618442Z               [33mplaceholder[39m=[32m"Search clients"[39m
+2026-10-05T16:33:59.7619250Z               [33mvalue[39m=[32m""[39m
+2026-10-05T16:33:59.7619860Z             [36m/>[39m
+2026-10-05T16:33:59.7620418Z             [36m<View>[39m
+2026-10-05T16:33:59.7620945Z               [36m<View[39m
+2026-10-05T16:33:59.7621777Z                 [33maccessibilityLabel[39m=[32m"Clear shown"[39m
+2026-10-05T16:33:59.7622978Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7623867Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7624511Z                   {
+2026-10-05T16:33:59.7624971Z                     "disabled": false,
+2026-10-05T16:33:59.7625494Z                   }
+2026-10-05T16:33:59.7626049Z                 }[39m
+2026-10-05T16:33:59.7626760Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7627442Z               [36m>[39m
+2026-10-05T16:33:59.7628078Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7628804Z                   [0mClear shown[0m
+2026-10-05T16:33:59.7629555Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7630235Z               [36m</View>[39m
+2026-10-05T16:33:59.7630845Z             [36m</View>[39m
+2026-10-05T16:33:59.7631446Z             [36m<View[39m
+2026-10-05T16:33:59.7632360Z               [33maccessibilityRole[39m=[32m"alert"[39m
+2026-10-05T16:33:59.7633544Z             [36m>[39m
+2026-10-05T16:33:59.7634209Z               [36m<View>[39m
+2026-10-05T16:33:59.7634914Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7636040Z                   [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7637099Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7637791Z                 [36m<View />[39m
+2026-10-05T16:33:59.7638156Z               [36m</View>[39m
+2026-10-05T16:33:59.7638471Z             [36m</View>[39m
+2026-10-05T16:33:59.7638793Z             [36m<Text>[39m
+2026-10-05T16:33:59.7639232Z               [0m0 assigned · 0 already on it · 50 failed[0m
+2026-10-05T16:33:59.7639628Z             [36m</Text>[39m
+2026-10-05T16:33:59.7639944Z             [36m<View>[39m
+2026-10-05T16:33:59.7640246Z               [36m<View[39m
+2026-10-05T16:33:59.7640739Z                 [33maccessibilityLabel[39m=[32m"Assign to 51 clients"[39m
+2026-10-05T16:33:59.7641307Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7641765Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7642096Z                   {
+2026-10-05T16:33:59.7642405Z                     "disabled": false,
+2026-10-05T16:33:59.7642716Z                   }
+2026-10-05T16:33:59.7643323Z                 }[39m
+2026-10-05T16:33:59.7643710Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7644084Z               [36m>[39m
+2026-10-05T16:33:59.7644416Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7644775Z                   [0mAssign to 51 clients[0m
+2026-10-05T16:33:59.7645162Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7645500Z               [36m</View>[39m
+2026-10-05T16:33:59.7645800Z               [36m<View[39m
+2026-10-05T16:33:59.7646492Z                 [33maccessibilityHint[39m=[32m"Retries only the clients that failed, with the same request key"[39m
+2026-10-05T16:33:59.7647255Z                 [33maccessibilityLabel[39m=[32m"Retry 50 failed"[39m
+2026-10-05T16:33:59.7647791Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7648256Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7648838Z                   {
+2026-10-05T16:33:59.7649243Z                     "disabled": false,
+2026-10-05T16:33:59.7649561Z                   }
+2026-10-05T16:33:59.7649846Z                 }[39m
+2026-10-05T16:33:59.7650207Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7650569Z               [36m>[39m
+2026-10-05T16:33:59.7650879Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7651238Z                   [0mRetry 50 failed[0m
+2026-10-05T16:33:59.7651586Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7651933Z               [36m</View>[39m
+2026-10-05T16:33:59.7652235Z             [36m</View>[39m
+2026-10-05T16:33:59.7652552Z           [36m</View>[39m
+2026-10-05T16:33:59.7653161Z         [36m</View>[39m
+2026-10-05T16:33:59.7653631Z         [36m<View>[39m
+2026-10-05T16:33:59.7654026Z           [36m<View[39m
+2026-10-05T16:33:59.7654802Z             [33maccessibilityLabel[39m=[32m"Client 0, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7655555Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7656010Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7656339Z               {
+2026-10-05T16:33:59.7656616Z                 "checked": true,
+2026-10-05T16:33:59.7656899Z               }
+2026-10-05T16:33:59.7657137Z             }[39m
+2026-10-05T16:33:59.7657525Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7657883Z           [36m>[39m
+2026-10-05T16:33:59.7658164Z             [36m<View>[39m
+2026-10-05T16:33:59.7658502Z               [36m<Text>[39m
+2026-10-05T16:33:59.7658827Z                 [0mClient 0[0m
+2026-10-05T16:33:59.7659171Z               [36m</Text>[39m
+2026-10-05T16:33:59.7659508Z               [36m<Text>[39m
+2026-10-05T16:33:59.7660060Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7660568Z               [36m</Text>[39m
+2026-10-05T16:33:59.7660880Z             [36m</View>[39m
+2026-10-05T16:33:59.7661198Z           [36m</View>[39m
+2026-10-05T16:33:59.7661484Z         [36m</View>[39m
+2026-10-05T16:33:59.7661769Z         [36m<View>[39m
+2026-10-05T16:33:59.7662063Z           [36m<View[39m
+2026-10-05T16:33:59.7663247Z             [33maccessibilityLabel[39m=[32m"Client 1, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7664202Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7664659Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7664976Z               {
+2026-10-05T16:33:59.7665238Z                 "checked": true,
+2026-10-05T16:33:59.7665518Z               }
+2026-10-05T16:33:59.7665763Z             }[39m
+2026-10-05T16:33:59.7666092Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7666449Z           [36m>[39m
+2026-10-05T16:33:59.7666749Z             [36m<View>[39m
+2026-10-05T16:33:59.7667093Z               [36m<Text>[39m
+2026-10-05T16:33:59.7667439Z                 [0mClient 1[0m
+2026-10-05T16:33:59.7667761Z               [36m</Text>[39m
+2026-10-05T16:33:59.7668099Z               [36m<Text>[39m
+2026-10-05T16:33:59.7668650Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7669170Z               [36m</Text>[39m
+2026-10-05T16:33:59.7669475Z             [36m</View>[39m
+2026-10-05T16:33:59.7669770Z           [36m</View>[39m
+2026-10-05T16:33:59.7670077Z         [36m</View>[39m
+2026-10-05T16:33:59.7670363Z         [36m<View>[39m
+2026-10-05T16:33:59.7670669Z           [36m<View[39m
+2026-10-05T16:33:59.7671398Z             [33maccessibilityLabel[39m=[32m"Client 2, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7672134Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7672585Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7673376Z               {
+2026-10-05T16:33:59.7673768Z                 "checked": true,
+2026-10-05T16:33:59.7674061Z               }
+2026-10-05T16:33:59.7674357Z             }[39m
+2026-10-05T16:33:59.7674711Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7675068Z           [36m>[39m
+2026-10-05T16:33:59.7675326Z             [36m<View>[39m
+2026-10-05T16:33:59.7675654Z               [36m<Text>[39m
+2026-10-05T16:33:59.7676000Z                 [0mClient 2[0m
+2026-10-05T16:33:59.7676327Z               [36m</Text>[39m
+2026-10-05T16:33:59.7676641Z               [36m<Text>[39m
+2026-10-05T16:33:59.7677193Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7677704Z               [36m</Text>[39m
+2026-10-05T16:33:59.7678023Z             [36m</View>[39m
+2026-10-05T16:33:59.7678340Z           [36m</View>[39m
+2026-10-05T16:33:59.7678642Z         [36m</View>[39m
+2026-10-05T16:33:59.7678902Z         [36m<View>[39m
+2026-10-05T16:33:59.7679199Z           [36m<View[39m
+2026-10-05T16:33:59.7679918Z             [33maccessibilityLabel[39m=[32m"Client 3, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7680675Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7681137Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7681468Z               {
+2026-10-05T16:33:59.7681730Z                 "checked": true,
+2026-10-05T16:33:59.7682004Z               }
+2026-10-05T16:33:59.7682267Z             }[39m
+2026-10-05T16:33:59.7682600Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7683538Z           [36m>[39m
+2026-10-05T16:33:59.7684028Z             [36m<View>[39m
+2026-10-05T16:33:59.7684373Z               [36m<Text>[39m
+2026-10-05T16:33:59.7684716Z                 [0mClient 3[0m
+2026-10-05T16:33:59.7685046Z               [36m</Text>[39m
+2026-10-05T16:33:59.7685371Z               [36m<Text>[39m
+2026-10-05T16:33:59.7685944Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7686453Z               [36m</Text>[39m
+2026-10-05T16:33:59.7686766Z             [36m</View>[39m
+2026-10-05T16:33:59.7687062Z           [36m</View>[39m
+2026-10-05T16:33:59.7687371Z         [36m</View>[39m
+2026-10-05T16:33:59.7687665Z         [36m<View>[39m
+2026-10-05T16:33:59.7687943Z           [36m<View[39m
+2026-10-05T16:33:59.7688658Z             [33maccessibilityLabel[39m=[32m"Client 4, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7689429Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7689885Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7690215Z               {
+2026-10-05T16:33:59.7690485Z                 "checked": true,
+2026-10-05T16:33:59.7690747Z               }
+2026-10-05T16:33:59.7691000Z             }[39m
+2026-10-05T16:33:59.7691354Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7691696Z           [36m>[39m
+2026-10-05T16:33:59.7691988Z             [36m<View>[39m
+2026-10-05T16:33:59.7692331Z               [36m<Text>[39m
+2026-10-05T16:33:59.7692646Z                 [0mClient 4[0m
+2026-10-05T16:33:59.7693243Z               [36m</Text>[39m
+2026-10-05T16:33:59.7693554Z               [36m<Text>[39m
+2026-10-05T16:33:59.7694115Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7694618Z               [36m</Text>[39m
+2026-10-05T16:33:59.7694937Z             [36m</View>[39m
+2026-10-05T16:33:59.7695230Z           [36m</View>[39m
+2026-10-05T16:33:59.7695536Z         [36m</View>[39m
+2026-10-05T16:33:59.7695818Z         [36m<View>[39m
+2026-10-05T16:33:59.7696118Z           [36m<View[39m
+2026-10-05T16:33:59.7696831Z             [33maccessibilityLabel[39m=[32m"Client 5, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7697826Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7698418Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7698739Z               {
+2026-10-05T16:33:59.7699011Z                 "checked": true,
+2026-10-05T16:33:59.7699281Z               }
+2026-10-05T16:33:59.7699531Z             }[39m
+2026-10-05T16:33:59.7699879Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7700235Z           [36m>[39m
+2026-10-05T16:33:59.7700520Z             [36m<View>[39m
+2026-10-05T16:33:59.7700832Z               [36m<Text>[39m
+2026-10-05T16:33:59.7701171Z                 [0mClient 5[0m
+2026-10-05T16:33:59.7701484Z               [36m</Text>[39m
+2026-10-05T16:33:59.7701812Z               [36m<Text>[39m
+2026-10-05T16:33:59.7702333Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7703111Z               [36m</Text>[39m
+2026-10-05T16:33:59.7703422Z             [36m</View>[39m
+2026-10-05T16:33:59.7703874Z           [36m</View>[39m
+2026-10-05T16:33:59.7704155Z         [36m</View>[39m
+2026-10-05T16:33:59.7704439Z         [36m<View>[39m
+2026-10-05T16:33:59.7704731Z           [36m<View[39m
+2026-10-05T16:33:59.7705467Z             [33maccessibilityLabel[39m=[32m"Client 6, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7706205Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7706654Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7706949Z               {
+2026-10-05T16:33:59.7707201Z                 "checked": true,
+2026-10-05T16:33:59.7707465Z               }
+2026-10-05T16:33:59.7707699Z             }[39m
+2026-10-05T16:33:59.7708023Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7708360Z           [36m>[39m
+2026-10-05T16:33:59.7708638Z             [36m<View>[39m
+2026-10-05T16:33:59.7732258Z               [36m<Text>[39m
+2026-10-05T16:33:59.7733182Z                 [0mClient 6[0m
+2026-10-05T16:33:59.7733829Z               [36m</Text>[39m
+2026-10-05T16:33:59.7734202Z               [36m<Text>[39m
+2026-10-05T16:33:59.7734754Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7735306Z               [36m</Text>[39m
+2026-10-05T16:33:59.7735636Z             [36m</View>[39m
+2026-10-05T16:33:59.7735936Z           [36m</View>[39m
+2026-10-05T16:33:59.7736238Z         [36m</View>[39m
+2026-10-05T16:33:59.7736539Z         [36m<View>[39m
+2026-10-05T16:33:59.7736836Z           [36m<View[39m
+2026-10-05T16:33:59.7737578Z             [33maccessibilityLabel[39m=[32m"Client 7, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7738342Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7738809Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7739142Z               {
+2026-10-05T16:33:59.7739407Z                 "checked": true,
+2026-10-05T16:33:59.7739691Z               }
+2026-10-05T16:33:59.7739958Z             }[39m
+2026-10-05T16:33:59.7740309Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7740667Z           [36m>[39m
+2026-10-05T16:33:59.7740959Z             [36m<View>[39m
+2026-10-05T16:33:59.7741294Z               [36m<Text>[39m
+2026-10-05T16:33:59.7741618Z                 [0mClient 7[0m
+2026-10-05T16:33:59.7741952Z               [36m</Text>[39m
+2026-10-05T16:33:59.7742271Z               [36m<Text>[39m
+2026-10-05T16:33:59.7743056Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7743580Z               [36m</Text>[39m
+2026-10-05T16:33:59.7744032Z             [36m</View>[39m
+2026-10-05T16:33:59.7744334Z           [36m</View>[39m
+2026-10-05T16:33:59.7744618Z         [36m</View>[39m
+2026-10-05T16:33:59.7744904Z         [36m<View>[39m
+2026-10-05T16:33:59.7745203Z           [36m<View[39m
+2026-10-05T16:33:59.7746341Z             [33maccessibilityLabel[39m=[32m"Client 8, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7747103Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7747561Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7747870Z               {
+2026-10-05T16:33:59.7748127Z                 "checked": true,
+2026-10-05T16:33:59.7748405Z               }
+2026-10-05T16:33:59.7748659Z             }[39m
+2026-10-05T16:33:59.7748983Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7749347Z           [36m>[39m
+2026-10-05T16:33:59.7749639Z             [36m<View>[39m
+2026-10-05T16:33:59.7749970Z               [36m<Text>[39m
+2026-10-05T16:33:59.7750306Z                 [0mClient 8[0m
+2026-10-05T16:33:59.7750624Z               [36m</Text>[39m
+2026-10-05T16:33:59.7750933Z               [36m<Text>[39m
+2026-10-05T16:33:59.7751514Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7752043Z               [36m</Text>[39m
+2026-10-05T16:33:59.7752359Z             [36m</View>[39m
+2026-10-05T16:33:59.7752673Z           [36m</View>[39m
+2026-10-05T16:33:59.7753233Z         [36m</View>[39m
+2026-10-05T16:33:59.7753546Z         [36m<View>[39m
+2026-10-05T16:33:59.7753851Z           [36m<View[39m
+2026-10-05T16:33:59.7754555Z             [33maccessibilityLabel[39m=[32m"Client 9, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7755276Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7755714Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7756012Z               {
+2026-10-05T16:33:59.7756239Z                 "checked": true,
+2026-10-05T16:33:59.7756501Z               }
+2026-10-05T16:33:59.7756752Z             }[39m
+2026-10-05T16:33:59.7757095Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7757434Z           [36m>[39m
+2026-10-05T16:33:59.7757730Z             [36m<View>[39m
+2026-10-05T16:33:59.7758046Z               [36m<Text>[39m
+2026-10-05T16:33:59.7758378Z                 [0mClient 9[0m
+2026-10-05T16:33:59.7758720Z               [36m</Text>[39m
+2026-10-05T16:33:59.7759043Z               [36m<Text>[39m
+2026-10-05T16:33:59.7759581Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7760101Z               [36m</Text>[39m
+2026-10-05T16:33:59.7760395Z             [36m</View>[39m
+2026-10-05T16:33:59.7760703Z           [36m</View>[39m
+2026-10-05T16:33:59.7761002Z         [36m</View>[39m
+2026-10-05T16:33:59.7761288Z         [36m<View />[39m
+2026-10-05T16:33:59.7761569Z       [36m</View>[39m
+2026-10-05T16:33:59.7761885Z     [36m</RCTScrollView>[39m
+2026-10-05T16:33:59.7762067Z 
+2026-10-05T16:33:59.7762700Z     [0m [90m 94 |[39m   [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByLabelText([32m"Select all shown (51)"[39m))[33m;[39m
+2026-10-05T16:33:59.7764110Z      [90m 95 |[39m   [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByLabelText([32m"Assign to 51 clients"[39m))[33m;[39m
+2026-10-05T16:33:59.7765177Z     [31m[1m>[22m[39m[90m 96 |[39m   [36mawait[39m screen[33m.[39mfindByText([35m/This program is archived/[39m)[33m;[39m
+2026-10-05T16:33:59.7765870Z      [90m    |[39m                [31m[1m^[22m[39m
+2026-10-05T16:33:59.7766506Z      [90m 97 |[39m   expect(mockAssign)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-05T16:33:59.7767346Z      [90m 98 |[39m   [90m// No implicit success/omission for c50. All selected clients need a visible[39m
+2026-10-05T16:33:59.7768264Z      [90m 99 |[39m   [90m// refused/not-attempted outcome and a recovery path; current UI offers only 50.[39m[0m
+2026-10-05T16:33:59.7768729Z 
+2026-10-05T16:33:59.7769147Z       at Object.findByText (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:96:16)
+2026-10-05T16:33:59.7770251Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:59.7770932Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:59.7771260Z 
+2026-10-05T16:33:59.7771751Z   ● P4 privacy: a failed removal must not forward a client name through telemetry action metadata
+2026-10-05T16:33:59.7772161Z 
+2026-10-05T16:33:59.7772369Z     expect(received).not.toContain(expected) // indexOf
+2026-10-05T16:33:59.7772649Z 
+2026-10-05T16:33:59.7773078Z     Expected substring: not "Synthetic PersonPrivate"
+2026-10-05T16:33:59.7774143Z     Received string:        "{\"extra\":{\"area\":\"programs\",\"action\":\"remove Synthetic PersonPrivate from the program\",\"status\":null,\"code\":null,\"reference\":\"f8c514f9-9a15-495e-a28f-318764e4aa2b\"}}"
+2026-10-05T16:33:59.7774880Z 
+2026-10-05T16:33:59.7775426Z     [0m [90m 110 |[39m   [36mawait[39m waitFor(() [33m=>[39m expect(mockCapture)[33m.[39mtoHaveBeenCalled())[33m;[39m
+2026-10-05T16:33:59.7776733Z      [90m 111 |[39m   [36mconst[39m event [33m=[39m scrubCredentials(scrubEvent({ extra[33m:[39m mockCapture[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m] }))[33m;[39m
+2026-10-05T16:33:59.7778086Z     [31m[1m>[22m[39m[90m 112 |[39m   expect([33mJSON[39m[33m.[39mstringify(event))[33m.[39mnot[33m.[39mtoContain(assignee[33m.[39mclient_name)[33m;[39m
+2026-10-05T16:33:59.7778977Z      [90m     |[39m                                     [31m[1m^[22m[39m
+2026-10-05T16:33:59.7779417Z      [90m 113 |[39m })[33m;[39m
+2026-10-05T16:33:59.7779743Z      [90m 114 |[39m
+2026-10-05T16:33:59.7780687Z      [90m 115 |[39m it([32m"P4 destructive copy: a remove confirmation cannot claim only one run's count while deleting all runs"[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-05T16:33:59.7781373Z 
+2026-10-05T16:33:59.7781770Z       at Object.toContain (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:112:37)
+2026-10-05T16:33:59.7782563Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:59.7783505Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:59.7783858Z 
+2026-10-05T16:33:59.7784354Z   ● P4 destructive copy: a remove confirmation cannot claim only one run's count while deleting all runs
+2026-10-05T16:33:59.7784813Z 
+2026-10-05T16:33:59.7784984Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:33:59.7785250Z 
+2026-10-05T16:33:59.7785421Z     Expected substring: "7 upcoming workouts"
+2026-10-05T16:33:59.7786082Z     Received string:    "2 upcoming workouts are removed from their plan. 0 finished workouts stay in their history."
+2026-10-05T16:33:59.7786558Z 
+2026-10-05T16:33:59.7787384Z     [0m [90m 121 |[39m   [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mProgramHistoryScreen[39m {[33m...[39mhistoryProps()} [33m/[39m[33m>[39m)[33m;[39m
+2026-10-05T16:33:59.7788679Z      [90m 122 |[39m   [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetAllByLabelText([32m"Remove"[39m)[[35m0[39m])[33m;[39m
+2026-10-05T16:33:59.7789948Z     [31m[1m>[22m[39m[90m 123 |[39m   expect(alert[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m])[33m.[39mtoContain([32m"7 upcoming workouts"[39m)[33m;[39m
+2026-10-05T16:33:59.7790824Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-05T16:33:59.7791265Z      [90m 124 |[39m })[33m;[39m
+2026-10-05T16:33:59.7791576Z      [90m 125 |[39m[0m
+2026-10-05T16:33:59.7791751Z 
+2026-10-05T16:33:59.7792154Z       at Object.toContain (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:123:34)
+2026-10-05T16:33:59.7793184Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:59.7793844Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:59.7794377Z 
+2026-10-05T16:33:59.8104437Z Test Suites: 1 failed, 1 passed, 2 total
+2026-10-05T16:33:59.8105779Z Tests:       4 failed, 7 passed, 11 total
+2026-10-05T16:33:59.8106554Z Snapshots:   0 total
+2026-10-05T16:33:59.8107103Z Time:        7.773 s
+2026-10-05T16:33:59.8108388Z Ran all test suites matching /src\/screens\/coach\/programs\/__tests__\/audSolP34P4Boundaries.test.tsx|src\/screens\/coach\/programs\/__tests__\/programsFixRound.test.tsx/i.
+2026-10-05T16:33:59.8682317Z ##[error]Process completed with exit code 1.
+2026-10-05T16:33:59.8828977Z Post job cleanup.
+2026-10-05T16:33:59.9663310Z [command]/usr/bin/git version
+2026-10-05T16:33:59.9699814Z git version 2.55.0
+2026-10-05T16:33:59.9739438Z Temporarily overriding HOME='/home/runner/work/_temp/640b565a-4c2a-4e0c-a564-b2254b91fa2f' before making global git config changes
+2026-10-05T16:33:59.9741122Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:33:59.9744774Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:33:59.9775486Z Removing SSH command configuration
+2026-10-05T16:33:59.9782151Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:33:59.9818252Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:34:00.0040835Z Removing HTTP extra header
+2026-10-05T16:34:00.0045564Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:34:00.0078474Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:34:00.0302135Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:34:00.0309239Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:34:00.0336630Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:34:00.0337665Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:34:00.0338476Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:34:00.0338943Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:34:00.0346921Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:34:00.0369244Z /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:34:00.0381247Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:34:00.0416828Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:34:00.0437926Z /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:34:00.0447508Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:34:00.0479096Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:34:00.0499561Z /github/runner_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:34:00.0507016Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:34:00.0538209Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:34:00.0559892Z /github/runner_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:34:00.0568947Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config
+2026-10-05T16:34:00.0603499Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:34:00.0820911Z Removing credentials config '/home/runner/work/_temp/git-credentials-67ca1605-1747-4f4e-83e0-7cb1b84c7182.config'
+2026-10-05T16:34:00.0969890Z Cleaning up orphan processes

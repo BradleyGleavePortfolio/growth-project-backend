@@ -1,0 +1,12 @@
+﻿2026-10-05T16:38:00.4843572Z ##[group]Run npx prisma generate
+2026-10-05T16:38:00.4843773Z [36;1mnpx prisma generate[0m
+2026-10-05T16:38:00.4894571Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:38:00.4894723Z ##[endgroup]
+2026-10-05T16:38:01.1853115Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T16:38:03.4382191Z 
+2026-10-05T16:38:03.4383393Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.20s
+2026-10-05T16:38:03.4383715Z 
+2026-10-05T16:38:03.4384009Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T16:38:03.4384271Z 
+2026-10-05T16:38:03.4384664Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-05T16:38:03.4385019Z 

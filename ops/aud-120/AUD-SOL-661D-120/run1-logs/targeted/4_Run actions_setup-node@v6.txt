@@ -1,0 +1,27 @@
+﻿2026-10-05T16:32:48.5084726Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:32:48.5085039Z with:
+2026-10-05T16:32:48.5085232Z   node-version: 20
+2026-10-05T16:32:48.5085435Z   cache: npm
+2026-10-05T16:32:48.5085625Z   check-latest: false
+2026-10-05T16:32:48.5087892Z   token: ***
+2026-10-05T16:32:48.5088114Z   package-manager-cache: true
+2026-10-05T16:32:48.5088370Z ##[endgroup]
+2026-10-05T16:32:48.6565679Z Attempting to download 20...
+2026-10-05T16:32:49.4348533Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-05T16:32:49.9249029Z Extracting ...
+2026-10-05T16:32:49.9376442Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ae2b6594-0f71-4107-a47c-e3de29dbbab1 -f /home/runner/work/_temp/629468ba-2cd2-4e12-a23e-0b422985bea7
+2026-10-05T16:32:50.9448634Z Adding to the cache ...
+2026-10-05T16:32:52.7806307Z ##[group]Environment details
+2026-10-05T16:32:53.0065574Z node: v20.20.2
+2026-10-05T16:32:53.0066087Z npm: 10.8.2
+2026-10-05T16:32:53.0066274Z yarn: 1.22.22
+2026-10-05T16:32:53.0066716Z ##[endgroup]
+2026-10-05T16:32:53.0087511Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-05T16:32:53.1155721Z /home/runner/.npm
+2026-10-05T16:32:53.2717709Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T16:32:54.4209079Z Received 71303168 of 86828135 (82.1%), 68.0 MBs/sec
+2026-10-05T16:32:54.7127512Z Received 86828135 of 86828135 (100.0%), 64.1 MBs/sec
+2026-10-05T16:32:54.7128192Z Cache Size: ~83 MB (86828135 B)
+2026-10-05T16:32:54.7241765Z [command]/usr/bin/tar -xf /home/runner/work/_temp/0976d6a6-94e6-4c12-bd6f-a9fa3c409735/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-05T16:32:54.8974684Z Cache restored successfully
+2026-10-05T16:32:54.9026662Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12

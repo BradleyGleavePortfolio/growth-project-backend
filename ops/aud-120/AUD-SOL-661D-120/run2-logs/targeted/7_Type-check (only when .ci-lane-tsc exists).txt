@@ -1,0 +1,6 @@
+﻿2026-10-05T16:38:03.5346165Z ##[group]Run npx tsc --noEmit
+2026-10-05T16:38:03.5346369Z [36;1mnpx tsc --noEmit[0m
+2026-10-05T16:38:03.5396978Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:38:03.5397132Z env:
+2026-10-05T16:38:03.5397259Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T16:38:03.5397418Z ##[endgroup]

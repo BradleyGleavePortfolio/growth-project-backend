@@ -1,0 +1,33 @@
+﻿2026-10-05T16:32:37.8129145Z Current runner version: '2.337.0'
+2026-10-05T16:32:37.8154723Z ##[group]Runner Image Provisioner
+2026-10-05T16:32:37.8155658Z Hosted Compute Agent
+2026-10-05T16:32:37.8156370Z Version: 20260901.588
+2026-10-05T16:32:37.8157040Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:32:37.8157771Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:32:37.8158519Z Worker ID: {06928e1e-9225-4ab6-bc44-629699a1cba7}
+2026-10-05T16:32:37.8159245Z Azure Region: westcentralus
+2026-10-05T16:32:37.8159876Z ##[endgroup]
+2026-10-05T16:32:37.8161480Z ##[group]Operating System
+2026-10-05T16:32:37.8162149Z Ubuntu
+2026-10-05T16:32:37.8162993Z 24.04.5
+2026-10-05T16:32:37.8163734Z LTS
+2026-10-05T16:32:37.8164366Z ##[endgroup]
+2026-10-05T16:32:37.8164961Z ##[group]Runner Image
+2026-10-05T16:32:37.8165567Z Image: ubuntu-24.04
+2026-10-05T16:32:37.8166182Z Version: 20260927.320.1
+2026-10-05T16:32:37.8167258Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:32:37.8169106Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:32:37.8170101Z ##[endgroup]
+2026-10-05T16:32:37.8171362Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:32:37.8173674Z Contents: read
+2026-10-05T16:32:37.8174724Z Metadata: read
+2026-10-05T16:32:37.8175309Z Packages: read
+2026-10-05T16:32:37.8175847Z ##[endgroup]
+2026-10-05T16:32:37.8177932Z Secret source: Actions
+2026-10-05T16:32:37.8179106Z Cache mode: write
+2026-10-05T16:32:37.8180097Z Prepare workflow directory
+2026-10-05T16:32:37.8521172Z Prepare all required actions
+2026-10-05T16:32:37.8568477Z Getting action download info
+2026-10-05T16:32:38.1641887Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:32:38.2524549Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:32:38.4358480Z Complete job name: targeted

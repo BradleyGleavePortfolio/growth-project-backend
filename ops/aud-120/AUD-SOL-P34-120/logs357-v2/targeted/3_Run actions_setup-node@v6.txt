@@ -1,0 +1,29 @@
+﻿2026-10-05T16:35:32.3186059Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:35:32.3186792Z with:
+2026-10-05T16:35:32.3187231Z   node-version: 22.13
+2026-10-05T16:35:32.3187737Z   cache: npm
+2026-10-05T16:35:32.3188215Z   check-latest: false
+2026-10-05T16:35:32.3196335Z   token: ***
+2026-10-05T16:35:32.3196876Z   package-manager-cache: true
+2026-10-05T16:35:32.3197515Z ##[endgroup]
+2026-10-05T16:35:32.4625673Z Attempting to download 22.13...
+2026-10-05T16:35:33.2576998Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:35:33.8600565Z Extracting ...
+2026-10-05T16:35:33.8729452Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/87971f5a-353e-4276-ae97-1e9c90fbe74b -f /home/runner/work/_temp/27f9ca71-9da6-432c-b2a4-3fbf464d50a6
+2026-10-05T16:35:35.0356918Z Adding to the cache ...
+2026-10-05T16:35:37.8654070Z ##[group]Environment details
+2026-10-05T16:35:38.0950796Z node: v22.13.1
+2026-10-05T16:35:38.0951392Z npm: 10.9.2
+2026-10-05T16:35:38.0951620Z yarn: 1.22.22
+2026-10-05T16:35:38.0952072Z ##[endgroup]
+2026-10-05T16:35:38.0975685Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:35:38.1899840Z /home/runner/.npm
+2026-10-05T16:35:38.3523588Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:35:39.5163661Z Received 58720256 of 241027159 (24.4%), 55.9 MBs/sec
+2026-10-05T16:35:40.5178769Z Received 130023424 of 241027159 (53.9%), 61.9 MBs/sec
+2026-10-05T16:35:41.5183365Z Received 134217728 of 241027159 (55.7%), 42.6 MBs/sec
+2026-10-05T16:35:42.4411109Z Received 241027159 of 241027159 (100.0%), 58.6 MBs/sec
+2026-10-05T16:35:42.4413439Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:35:42.4477124Z [command]/usr/bin/tar -xf /home/runner/work/_temp/417a6fa7-53fd-45b6-9eac-c32d58719e3b/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:35:43.1321615Z Cache restored successfully
+2026-10-05T16:35:43.1435341Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06

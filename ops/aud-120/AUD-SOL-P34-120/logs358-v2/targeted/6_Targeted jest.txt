@@ -1,0 +1,92 @@
+﻿2026-10-05T16:36:45.8739679Z ##[group]Run set -euo pipefail
+2026-10-05T16:36:45.8740041Z [36;1mset -euo pipefail[0m
+2026-10-05T16:36:45.8740447Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:36:45.8741183Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:36:45.8741603Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:36:45.8741875Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T16:36:45.8814096Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:36:45.8814490Z ##[endgroup]
+2026-10-05T16:36:45.8925347Z specs: src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx src/screens/coach/programs/__tests__/programsFixRound.test.tsx
+2026-10-05T16:36:54.0159526Z FAIL src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx (5.884 s)
+2026-10-05T16:36:54.0161323Z   ● P4 lifecycle: retiring the assign screen during chunk one must prevent a later chunk request
+2026-10-05T16:36:54.0161975Z 
+2026-10-05T16:36:54.0162278Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-05T16:36:54.0162729Z 
+2026-10-05T16:36:54.0162936Z     Expected number of calls: 1
+2026-10-05T16:36:54.0163375Z     Received number of calls: 2
+2026-10-05T16:36:54.0163684Z 
+2026-10-05T16:36:54.0164912Z     [0m [90m 84 |[39m     pending[33m.[39mresolve({ results[33m:[39m roster([35m50[39m)[33m.[39mmap((c) [33m=>[39m ({ client_id[33m:[39m c[33m.[39mid[33m,[39m status[33m:[39m [32m"assigned"[39m })) })[33m;[39m
+2026-10-05T16:36:54.0165923Z      [90m 85 |[39m   })[33m;[39m
+2026-10-05T16:36:54.0166848Z     [31m[1m>[22m[39m[90m 86 |[39m   expect(mockAssign)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-05T16:36:54.0167857Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-05T16:36:54.0168462Z      [90m 87 |[39m })[33m;[39m
+2026-10-05T16:36:54.0168925Z      [90m 88 |[39m
+2026-10-05T16:36:54.0170154Z      [90m 89 |[39m it([32m"P4 completeness: a whole-program refusal must account for and recover all 51 selected clients"[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-05T16:36:54.0171279Z 
+2026-10-05T16:36:54.0172393Z       at Object.toHaveBeenCalledTimes (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:86:22)
+2026-10-05T16:36:54.0173514Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:54.0174471Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:54.0174917Z 
+2026-10-05T16:36:54.0175600Z   ● P4 completeness: a whole-program refusal must account for and recover all 51 selected clients
+2026-10-05T16:36:54.0176209Z 
+2026-10-05T16:36:54.0176416Z     expect(received).not.toBeNull()
+2026-10-05T16:36:54.0176732Z 
+2026-10-05T16:36:54.0176873Z     Received: null
+2026-10-05T16:36:54.0177072Z 
+2026-10-05T16:36:54.0177792Z     [0m [90m  98 |[39m   [90m// No implicit success/omission for c50. All selected clients need a visible[39m
+2026-10-05T16:36:54.0179122Z      [90m  99 |[39m   [90m// refused/not-attempted outcome and a recovery path; current UI offers only 50.[39m
+2026-10-05T16:36:54.0180768Z     [31m[1m>[22m[39m[90m 100 |[39m   expect(screen[33m.[39mqueryByLabelText([32m"Retry 51 failed"[39m))[33m.[39mnot[33m.[39mtoBeNull()[33m;[39m
+2026-10-05T16:36:54.0182467Z      [90m     |[39m                                                          [31m[1m^[22m[39m
+2026-10-05T16:36:54.0183133Z      [90m 101 |[39m })[33m;[39m
+2026-10-05T16:36:54.0183547Z      [90m 102 |[39m
+2026-10-05T16:36:54.0184820Z      [90m 103 |[39m it([32m"P4 privacy: a failed removal must not forward a client name through telemetry action metadata"[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-05T16:36:54.0185837Z 
+2026-10-05T16:36:54.0186470Z       at Object.toBeNull (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:100:58)
+2026-10-05T16:36:54.0188294Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:54.0189569Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:54.0190105Z 
+2026-10-05T16:36:54.0190830Z   ● P4 privacy: a failed removal must not forward a client name through telemetry action metadata
+2026-10-05T16:36:54.0191581Z 
+2026-10-05T16:36:54.0191839Z     expect(received).not.toContain(expected) // indexOf
+2026-10-05T16:36:54.0192181Z 
+2026-10-05T16:36:54.0192446Z     Expected substring: not "Synthetic PersonPrivate"
+2026-10-05T16:36:54.0193951Z     Received string:        "{\"extra\":{\"area\":\"programs\",\"action\":\"remove Synthetic PersonPrivate from the program\",\"status\":null,\"code\":null,\"reference\":\"b3e7b3cd-91d2-4b03-abf0-aae77e531379\"}}"
+2026-10-05T16:36:54.0195050Z 
+2026-10-05T16:36:54.0195974Z     [0m [90m 110 |[39m   [36mawait[39m waitFor(() [33m=>[39m expect(mockCapture)[33m.[39mtoHaveBeenCalled())[33m;[39m
+2026-10-05T16:36:54.0198013Z      [90m 111 |[39m   [36mconst[39m event [33m=[39m scrubCredentials(scrubEvent({ extra[33m:[39m mockCapture[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m] }))[33m;[39m
+2026-10-05T16:36:54.0200236Z     [31m[1m>[22m[39m[90m 112 |[39m   expect([33mJSON[39m[33m.[39mstringify(event))[33m.[39mnot[33m.[39mtoContain(assignee[33m.[39mclient_name)[33m;[39m
+2026-10-05T16:36:54.0202164Z      [90m     |[39m                                     [31m[1m^[22m[39m
+2026-10-05T16:36:54.0202900Z      [90m 113 |[39m })[33m;[39m
+2026-10-05T16:36:54.0203537Z      [90m 114 |[39m
+2026-10-05T16:36:54.0205126Z      [90m 115 |[39m it([32m"P4 destructive copy: a remove confirmation cannot claim only one run's count while deleting all runs"[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-05T16:36:54.0206273Z 
+2026-10-05T16:36:54.0206952Z       at Object.toContain (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:112:37)
+2026-10-05T16:36:54.0208297Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:54.0209389Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:54.0209936Z 
+2026-10-05T16:36:54.0210814Z   ● P4 destructive copy: a remove confirmation cannot claim only one run's count while deleting all runs
+2026-10-05T16:36:54.0211863Z 
+2026-10-05T16:36:54.0212168Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:36:54.0212562Z 
+2026-10-05T16:36:54.0212824Z     Expected substring: "7 upcoming workouts"
+2026-10-05T16:36:54.0213921Z     Received string:    "2 upcoming workouts are removed from their plan. 0 finished workouts stay in their history."
+2026-10-05T16:36:54.0214670Z 
+2026-10-05T16:36:54.0216166Z     [0m [90m 121 |[39m   [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mProgramHistoryScreen[39m {[33m...[39mhistoryProps()} [33m/[39m[33m>[39m)[33m;[39m
+2026-10-05T16:36:54.0218272Z      [90m 122 |[39m   [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetAllByLabelText([32m"Remove"[39m)[[35m0[39m])[33m;[39m
+2026-10-05T16:36:54.0220426Z     [31m[1m>[22m[39m[90m 123 |[39m   expect(alert[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m])[33m.[39mtoContain([32m"7 upcoming workouts"[39m)[33m;[39m
+2026-10-05T16:36:54.0222031Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-05T16:36:54.0222748Z      [90m 124 |[39m })[33m;[39m
+2026-10-05T16:36:54.0223283Z      [90m 125 |[39m[0m
+2026-10-05T16:36:54.0223570Z 
+2026-10-05T16:36:54.0224241Z       at Object.toContain (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:123:34)
+2026-10-05T16:36:54.0225592Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:54.0226733Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:54.0227547Z 
+2026-10-05T16:36:54.0228140Z PASS src/screens/coach/programs/__tests__/programsFixRound.test.tsx (5.961 s)
+2026-10-05T16:36:54.0608124Z 
+2026-10-05T16:36:54.0614041Z Test Suites: 1 failed, 1 passed, 2 total
+2026-10-05T16:36:54.0614615Z Tests:       4 failed, 7 passed, 11 total
+2026-10-05T16:36:54.0614954Z Snapshots:   0 total
+2026-10-05T16:36:54.0615209Z Time:        7.022 s
+2026-10-05T16:36:54.0616074Z Ran all test suites matching /src\/screens\/coach\/programs\/__tests__\/audSolP34P4Boundaries.test.tsx|src\/screens\/coach\/programs\/__tests__\/programsFixRound.test.tsx/i.
+2026-10-05T16:36:54.1346725Z ##[error]Process completed with exit code 1.

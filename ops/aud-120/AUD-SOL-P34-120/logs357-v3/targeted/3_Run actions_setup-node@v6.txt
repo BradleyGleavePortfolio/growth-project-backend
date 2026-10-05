@@ -1,0 +1,28 @@
+﻿2026-10-05T16:38:10.8602007Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:38:10.8602221Z with:
+2026-10-05T16:38:10.8602372Z   node-version: 22.13
+2026-10-05T16:38:10.8602531Z   cache: npm
+2026-10-05T16:38:10.8602680Z   check-latest: false
+2026-10-05T16:38:10.8604035Z   token: ***
+2026-10-05T16:38:10.8604199Z   package-manager-cache: true
+2026-10-05T16:38:10.8604399Z ##[endgroup]
+2026-10-05T16:38:10.9483408Z Attempting to download 22.13...
+2026-10-05T16:38:11.9411954Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:38:12.4741607Z Extracting ...
+2026-10-05T16:38:12.4830241Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/a7b0991f-305e-49e0-b10c-d3532976972c -f /home/runner/work/_temp/07a19ef9-2093-4c01-b333-63e7fcac0083
+2026-10-05T16:38:13.3447770Z Adding to the cache ...
+2026-10-05T16:38:15.3418705Z ##[group]Environment details
+2026-10-05T16:38:15.4822038Z node: v22.13.1
+2026-10-05T16:38:15.4822440Z npm: 10.9.2
+2026-10-05T16:38:15.4822612Z yarn: 1.22.22
+2026-10-05T16:38:15.4823208Z ##[endgroup]
+2026-10-05T16:38:15.4835227Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:38:15.5421257Z /home/runner/.npm
+2026-10-05T16:38:15.7608111Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:38:16.9823278Z Received 46137344 of 241027159 (19.1%), 44.0 MBs/sec
+2026-10-05T16:38:17.9868403Z Received 228444247 of 241027159 (94.8%), 108.9 MBs/sec
+2026-10-05T16:38:18.1119495Z Received 241027159 of 241027159 (100.0%), 108.0 MBs/sec
+2026-10-05T16:38:18.1120820Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:38:18.1140393Z [command]/usr/bin/tar -xf /home/runner/work/_temp/a001c565-2b4b-4812-a43d-ad3b3e6a1480/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:38:19.0486732Z Cache restored successfully
+2026-10-05T16:38:19.0587734Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06

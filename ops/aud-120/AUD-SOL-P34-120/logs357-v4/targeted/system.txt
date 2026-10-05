@@ -1,0 +1,8 @@
+2026-10-05T16:40:16.8830000Z Evaluating targeted.if
+2026-10-05T16:40:16.8830000Z Evaluating: success()
+2026-10-05T16:40:16.8830000Z Result: true
+2026-10-05T16:40:16.8920000Z Requested labels: ubuntu-latest
+2026-10-05T16:40:16.8920000Z Job defined at: BradleyGleavePortfolio/growth-project-mobile/.github/workflows/ci-lane.yml@refs/heads/audit/AUD-SOL-P34-120/357-ownership-4
+2026-10-05T16:40:16.8920000Z Waiting for a runner to pick up this job...
+2026-10-05T16:40:17.8000000Z Job is waiting for a hosted runner to come online.
+2026-10-05T16:40:17.8010000Z Job is about to start running on the hosted runner: GitHub Actions 1000028088

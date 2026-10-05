@@ -1,0 +1,1006 @@
+﻿2026-10-05T16:40:30.3354084Z Current runner version: '2.337.0'
+2026-10-05T16:40:30.3379689Z ##[group]Runner Image Provisioner
+2026-10-05T16:40:30.3380715Z Hosted Compute Agent
+2026-10-05T16:40:30.3381335Z Version: 20260901.588
+2026-10-05T16:40:30.3381978Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:40:30.3382835Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:40:30.3383609Z Worker ID: {939cb3d6-c5c9-4aaa-bb2b-8bb3e2aa3076}
+2026-10-05T16:40:30.3384411Z Azure Region: northcentralus
+2026-10-05T16:40:30.3385069Z ##[endgroup]
+2026-10-05T16:40:30.3387688Z ##[group]Operating System
+2026-10-05T16:40:30.3388460Z Ubuntu
+2026-10-05T16:40:30.3389058Z 24.04.5
+2026-10-05T16:40:30.3389683Z LTS
+2026-10-05T16:40:30.3390247Z ##[endgroup]
+2026-10-05T16:40:30.3390825Z ##[group]Runner Image
+2026-10-05T16:40:30.3391532Z Image: ubuntu-24.04
+2026-10-05T16:40:30.3392189Z Version: 20260927.320.1
+2026-10-05T16:40:30.3393553Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:40:30.3395154Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:40:30.3396381Z ##[endgroup]
+2026-10-05T16:40:30.3397667Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:40:30.3400273Z Contents: read
+2026-10-05T16:40:30.3400902Z Metadata: read
+2026-10-05T16:40:30.3401472Z Packages: read
+2026-10-05T16:40:30.3402167Z ##[endgroup]
+2026-10-05T16:40:30.3404254Z Secret source: Actions
+2026-10-05T16:40:30.3405337Z Cache mode: write
+2026-10-05T16:40:30.3406558Z Prepare workflow directory
+2026-10-05T16:40:30.3733345Z Prepare all required actions
+2026-10-05T16:40:30.3780066Z Getting action download info
+2026-10-05T16:40:30.6623599Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:40:30.7930120Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:40:31.0313012Z Complete job name: targeted
+2026-10-05T16:40:31.1039848Z ##[group]Run actions/checkout@v6
+2026-10-05T16:40:31.1040693Z with:
+2026-10-05T16:40:31.1041270Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:40:31.1045579Z   token: ***
+2026-10-05T16:40:31.1046196Z   ssh-strict: true
+2026-10-05T16:40:31.1046663Z   ssh-user: git
+2026-10-05T16:40:31.1047118Z   persist-credentials: true
+2026-10-05T16:40:31.1047614Z   clean: true
+2026-10-05T16:40:31.1048068Z   sparse-checkout-cone-mode: true
+2026-10-05T16:40:31.1048589Z   fetch-depth: 1
+2026-10-05T16:40:31.1049024Z   fetch-tags: false
+2026-10-05T16:40:31.1049475Z   show-progress: true
+2026-10-05T16:40:31.1049931Z   lfs: false
+2026-10-05T16:40:31.1050345Z   submodules: false
+2026-10-05T16:40:31.1050795Z   set-safe-directory: true
+2026-10-05T16:40:31.1051301Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:40:31.1052008Z ##[endgroup]
+2026-10-05T16:40:31.2071652Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:40:31.2073783Z ##[group]Getting Git version info
+2026-10-05T16:40:31.2074772Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:40:31.2075938Z [command]/usr/bin/git version
+2026-10-05T16:40:31.2124627Z git version 2.55.0
+2026-10-05T16:40:31.2146782Z ##[endgroup]
+2026-10-05T16:40:31.2162004Z Temporarily overriding HOME='/home/runner/work/_temp/30f3e7a8-c788-4833-be15-73bcaf8a5852' before making global git config changes
+2026-10-05T16:40:31.2164224Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:40:31.2167487Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:40:31.2217198Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:40:31.2221315Z ##[group]Determining repository object format
+2026-10-05T16:40:31.2223490Z ##[endgroup]
+2026-10-05T16:40:31.2224367Z ##[group]Initializing the repository
+2026-10-05T16:40:31.2228075Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:40:31.2348899Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:40:31.2350066Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:40:31.2351404Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:40:31.2352371Z hint: call:
+2026-10-05T16:40:31.2352829Z hint:
+2026-10-05T16:40:31.2353559Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:40:31.2354559Z hint:
+2026-10-05T16:40:31.2355504Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:40:31.2357205Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:40:31.2358417Z hint:
+2026-10-05T16:40:31.2359113Z hint: 	git branch -m <name>
+2026-10-05T16:40:31.2359882Z hint:
+2026-10-05T16:40:31.2360915Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:40:31.2362785Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T16:40:31.2366219Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:40:31.2408769Z ##[endgroup]
+2026-10-05T16:40:31.2410011Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:40:31.2413232Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:40:31.2443174Z ##[endgroup]
+2026-10-05T16:40:31.2444316Z ##[group]Setting up auth
+2026-10-05T16:40:31.2445171Z Removing SSH command configuration
+2026-10-05T16:40:31.2450894Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:40:31.2482791Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:40:31.2814699Z Removing HTTP extra header
+2026-10-05T16:40:31.2821676Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:40:31.2854505Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:40:31.3083578Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:40:31.3090679Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:40:31.3124272Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:40:31.3355112Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:40:31.3391148Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:40:31.3422072Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:40:31.3457223Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:40:31.3500244Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:40:31.3530357Z ##[endgroup]
+2026-10-05T16:40:31.3531134Z ##[group]Fetching the repository
+2026-10-05T16:40:31.3541810Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +7ada2c883c0beb9682a86c577a26d9a2038c360e:refs/remotes/origin/audit/AUD-OPUS-W12D-120/347-probe-1
+2026-10-05T16:40:32.3147873Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:40:32.3168473Z  * [new ref]         7ada2c883c0beb9682a86c577a26d9a2038c360e -> origin/audit/AUD-OPUS-W12D-120/347-probe-1
+2026-10-05T16:40:32.3172479Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-W12D-120/347-probe-1
+2026-10-05T16:40:32.3186450Z   origin/audit/AUD-OPUS-W12D-120/347-probe-1
+2026-10-05T16:40:32.3199115Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-W12D-120/347-probe-1
+2026-10-05T16:40:32.3223663Z 7ada2c883c0beb9682a86c577a26d9a2038c360e
+2026-10-05T16:40:32.3229787Z ##[endgroup]
+2026-10-05T16:40:32.3231000Z ##[group]Determining the checkout info
+2026-10-05T16:40:32.3232330Z ##[endgroup]
+2026-10-05T16:40:32.3234885Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:40:32.3284060Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:40:32.3313269Z ##[group]Checking out the ref
+2026-10-05T16:40:32.3318612Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-W12D-120/347-probe-1 refs/remotes/origin/audit/AUD-OPUS-W12D-120/347-probe-1
+2026-10-05T16:40:32.4394274Z Switched to a new branch 'audit/AUD-OPUS-W12D-120/347-probe-1'
+2026-10-05T16:40:32.4402635Z branch 'audit/AUD-OPUS-W12D-120/347-probe-1' set up to track 'origin/audit/AUD-OPUS-W12D-120/347-probe-1'.
+2026-10-05T16:40:32.4408083Z ##[endgroup]
+2026-10-05T16:40:32.4451975Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:40:32.4476389Z 7ada2c883c0beb9682a86c577a26d9a2038c360e
+2026-10-05T16:40:32.4843606Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:40:32.4844782Z with:
+2026-10-05T16:40:32.4845645Z   node-version: 22.13
+2026-10-05T16:40:32.4846866Z   cache: npm
+2026-10-05T16:40:32.4847764Z   check-latest: false
+2026-10-05T16:40:32.4858765Z   token: ***
+2026-10-05T16:40:32.4859723Z   package-manager-cache: true
+2026-10-05T16:40:32.4860847Z ##[endgroup]
+2026-10-05T16:40:32.6293664Z Attempting to download 22.13...
+2026-10-05T16:40:33.4256129Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:40:33.7937460Z Extracting ...
+2026-10-05T16:40:33.8048718Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/7eadef84-e1b1-4b9a-9153-c0fc439b6a91 -f /home/runner/work/_temp/55115a83-2797-41d1-81b2-f9e8264f3441
+2026-10-05T16:40:35.0488327Z Adding to the cache ...
+2026-10-05T16:40:36.7545322Z ##[group]Environment details
+2026-10-05T16:40:36.9674731Z node: v22.13.1
+2026-10-05T16:40:36.9675240Z npm: 10.9.2
+2026-10-05T16:40:36.9675562Z yarn: 1.22.22
+2026-10-05T16:40:36.9676521Z ##[endgroup]
+2026-10-05T16:40:36.9701894Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:40:37.0644064Z /home/runner/.npm
+2026-10-05T16:40:37.2416829Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:40:38.3820746Z Received 130023424 of 241027159 (53.9%), 124.1 MBs/sec
+2026-10-05T16:40:39.3822516Z Received 130023424 of 241027159 (53.9%), 62.0 MBs/sec
+2026-10-05T16:40:40.3876347Z Received 232638551 of 241027159 (96.5%), 74.0 MBs/sec
+2026-10-05T16:40:40.8594833Z Received 241027159 of 241027159 (100.0%), 66.1 MBs/sec
+2026-10-05T16:40:40.8595844Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:40:40.8627406Z [command]/usr/bin/tar -xf /home/runner/work/_temp/20dc9cc6-036e-4ffd-8ca2-9ff4775afe29/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:40:41.5006431Z Cache restored successfully
+2026-10-05T16:40:41.5124751Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:40:41.5354833Z ##[group]Run npm ci
+2026-10-05T16:40:41.5355187Z npm ci
+2026-10-05T16:40:41.5607977Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:40:41.5608606Z ##[endgroup]
+2026-10-05T16:40:46.4208669Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:40:46.6063834Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T16:40:46.6218445Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T16:40:46.6264576Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T16:40:46.6484339Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T16:40:46.7753240Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T16:40:46.7793506Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:40:46.7796735Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:40:46.7809206Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:40:46.7813487Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:40:46.7845801Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:40:46.8109899Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:40:46.8487614Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T16:40:47.2495595Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T16:40:47.7012254Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T16:40:50.8201875Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T16:41:42.9244281Z 
+2026-10-05T16:41:42.9247212Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-05T16:41:42.9247879Z 
+2026-10-05T16:41:42.9248393Z 187 packages are looking for funding
+2026-10-05T16:41:42.9248882Z   run `npm fund` for details
+2026-10-05T16:41:43.2954066Z 
+2026-10-05T16:41:43.2955009Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T16:41:43.2955471Z 
+2026-10-05T16:41:43.2955857Z To address issues that do not require attention, run:
+2026-10-05T16:41:43.2957551Z   npm audit fix
+2026-10-05T16:41:43.2957787Z 
+2026-10-05T16:41:43.2958182Z To address all issues (including breaking changes), run:
+2026-10-05T16:41:43.2959031Z   npm audit fix --force
+2026-10-05T16:41:43.2959263Z 
+2026-10-05T16:41:43.2959472Z Run `npm audit` for details.
+2026-10-05T16:41:43.5026425Z ##[group]Run set -euo pipefail
+2026-10-05T16:41:43.5026795Z set -euo pipefail
+2026-10-05T16:41:43.5027192Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-05T16:41:43.5027693Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-05T16:41:43.5028069Z echo "specs: ${SPECS[*]}"
+2026-10-05T16:41:43.5028351Z npx jest --ci "${SPECS[@]}"
+2026-10-05T16:41:43.5100765Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:41:43.5101133Z ##[endgroup]
+2026-10-05T16:41:43.5208561Z specs: src/lib/coachSetup src/components/coach/setup src/__tests__/CoachPackageContentsScreen.test.tsx src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+2026-10-05T16:41:56.1241987Z PASS src/components/coach/setup/__tests__/w2FixRound118.test.tsx (10.47 s)
+2026-10-05T16:41:56.2049025Z   ● Console
+2026-10-05T16:41:56.2058532Z 
+2026-10-05T16:41:56.2059115Z     console.error
+2026-10-05T16:41:56.2060255Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.2061062Z       
+2026-10-05T16:41:56.2061923Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.2062783Z       
+2026-10-05T16:41:56.2063239Z       act(() => {
+2026-10-05T16:41:56.2063810Z         /* fire events that update state */
+2026-10-05T16:41:56.2064420Z       });
+2026-10-05T16:41:56.2065010Z       /* assert on the output */
+2026-10-05T16:41:56.2065561Z       
+2026-10-05T16:41:56.2066934Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.2067979Z 
+2026-10-05T16:41:56.2068936Z       89 |       if (!mounted.current) return;
+2026-10-05T16:41:56.2070230Z       90 |       // Nothing from the earlier account stays on screen.
+2026-10-05T16:41:56.2071358Z     > 91 |       setView(null);
+2026-10-05T16:41:56.2072262Z          |       ^
+2026-10-05T16:41:56.2073117Z       92 |       setStale(null);
+2026-10-05T16:41:56.2074011Z       93 |       setError(null);
+2026-10-05T16:41:56.2074905Z       94 |       setFailed(null);
+2026-10-05T16:41:56.2075441Z 
+2026-10-05T16:41:56.2076253Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.2077612Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.2079221Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.2080859Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.2082393Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.2083852Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.2085003Z       at setView (src/components/coach/setup/GetPaidPanel.tsx:91:7)
+2026-10-05T16:41:56.2085827Z       at fn (src/utils/authEvents.ts:27:31)
+2026-10-05T16:41:56.2086696Z           at Array.forEach (<anonymous>)
+2026-10-05T16:41:56.2087504Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+2026-10-05T16:41:56.2088571Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+2026-10-05T16:41:56.2089832Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.2090990Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.2092041Z 
+2026-10-05T16:41:56.2092368Z     console.error
+2026-10-05T16:41:56.2093439Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.2094196Z       
+2026-10-05T16:41:56.2094993Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.2095827Z       
+2026-10-05T16:41:56.2096463Z       act(() => {
+2026-10-05T16:41:56.2097039Z         /* fire events that update state */
+2026-10-05T16:41:56.2097656Z       });
+2026-10-05T16:41:56.2098164Z       /* assert on the output */
+2026-10-05T16:41:56.2098706Z       
+2026-10-05T16:41:56.2099852Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.2100857Z 
+2026-10-05T16:41:56.2101652Z       90 |       // Nothing from the earlier account stays on screen.
+2026-10-05T16:41:56.2102711Z       91 |       setView(null);
+2026-10-05T16:41:56.2103691Z     > 92 |       setStale(null);
+2026-10-05T16:41:56.2104577Z          |       ^
+2026-10-05T16:41:56.2105388Z       93 |       setError(null);
+2026-10-05T16:41:56.2106417Z       94 |       setFailed(null);
+2026-10-05T16:41:56.2107304Z       95 |       setOpening(false);
+2026-10-05T16:41:56.2107856Z 
+2026-10-05T16:41:56.2108479Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.2109885Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.2111472Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.2113090Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.2114629Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.2116273Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.2117468Z       at setStale (src/components/coach/setup/GetPaidPanel.tsx:92:7)
+2026-10-05T16:41:56.2118300Z       at fn (src/utils/authEvents.ts:27:31)
+2026-10-05T16:41:56.2118969Z           at Array.forEach (<anonymous>)
+2026-10-05T16:41:56.2119748Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+2026-10-05T16:41:56.2120813Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+2026-10-05T16:41:56.2122056Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.2123319Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.2123975Z 
+2026-10-05T16:41:56.2124276Z     console.error
+2026-10-05T16:41:56.2125086Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.2126172Z       
+2026-10-05T16:41:56.2126988Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.2127834Z       
+2026-10-05T16:41:56.2128300Z       act(() => {
+2026-10-05T16:41:56.2128886Z         /* fire events that update state */
+2026-10-05T16:41:56.2129476Z       });
+2026-10-05T16:41:56.2129980Z       /* assert on the output */
+2026-10-05T16:41:56.2130517Z       
+2026-10-05T16:41:56.2131679Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.2132684Z 
+2026-10-05T16:41:56.2133285Z       91 |       setView(null);
+2026-10-05T16:41:56.2134181Z       92 |       setStale(null);
+2026-10-05T16:41:56.2135439Z     > 93 |       setError(null);
+2026-10-05T16:41:56.2136718Z          |       ^
+2026-10-05T16:41:56.2137576Z       94 |       setFailed(null);
+2026-10-05T16:41:56.2138496Z       95 |       setOpening(false);
+2026-10-05T16:41:56.2139434Z       96 |       setChecking(false);
+2026-10-05T16:41:56.2139996Z 
+2026-10-05T16:41:56.2140636Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.2141980Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.2143583Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.2145183Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.2146904Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.2148484Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.2149693Z       at setError (src/components/coach/setup/GetPaidPanel.tsx:93:7)
+2026-10-05T16:41:56.2150527Z       at fn (src/utils/authEvents.ts:27:31)
+2026-10-05T16:41:56.2151208Z           at Array.forEach (<anonymous>)
+2026-10-05T16:41:56.2152006Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+2026-10-05T16:41:56.2153079Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+2026-10-05T16:41:56.2154301Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.2155431Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.2156288Z 
+2026-10-05T16:41:56.2156600Z     console.error
+2026-10-05T16:41:56.2157347Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.2158113Z       
+2026-10-05T16:41:56.2158926Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.2159767Z       
+2026-10-05T16:41:56.2160213Z       act(() => {
+2026-10-05T16:41:56.2160780Z         /* fire events that update state */
+2026-10-05T16:41:56.2161385Z       });
+2026-10-05T16:41:56.2161896Z       /* assert on the output */
+2026-10-05T16:41:56.2162436Z       
+2026-10-05T16:41:56.2163586Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.2164624Z 
+2026-10-05T16:41:56.2165222Z       92 |       setStale(null);
+2026-10-05T16:41:56.2166301Z       93 |       setError(null);
+2026-10-05T16:41:56.2167304Z     > 94 |       setFailed(null);
+2026-10-05T16:41:56.2168252Z          |       ^
+2026-10-05T16:41:56.2169155Z       95 |       setOpening(false);
+2026-10-05T16:41:56.2170059Z       96 |       setChecking(false);
+2026-10-05T16:41:56.2170964Z       97 |       setLoading(false);
+2026-10-05T16:41:56.2171522Z 
+2026-10-05T16:41:56.2172147Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.2173441Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.2175029Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.2176808Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.2178316Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.2180166Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.2181311Z       at setFailed (src/components/coach/setup/GetPaidPanel.tsx:94:7)
+2026-10-05T16:41:56.2182137Z       at fn (src/utils/authEvents.ts:27:31)
+2026-10-05T16:41:56.2182799Z           at Array.forEach (<anonymous>)
+2026-10-05T16:41:56.2183562Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+2026-10-05T16:41:56.2184618Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+2026-10-05T16:41:56.2185879Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.2187264Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.2187900Z 
+2026-10-05T16:41:56.2188280Z     console.error
+2026-10-05T16:41:56.2189032Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.2189823Z       
+2026-10-05T16:41:56.2190633Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.2191476Z       
+2026-10-05T16:41:56.2191939Z       act(() => {
+2026-10-05T16:41:56.2192506Z         /* fire events that update state */
+2026-10-05T16:41:56.2193095Z       });
+2026-10-05T16:41:56.2193597Z       /* assert on the output */
+2026-10-05T16:41:56.2194127Z       
+2026-10-05T16:41:56.2195259Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.2196437Z 
+2026-10-05T16:41:56.2197024Z       93 |       setError(null);
+2026-10-05T16:41:56.2197928Z       94 |       setFailed(null);
+2026-10-05T16:41:56.2198956Z     > 95 |       setOpening(false);
+2026-10-05T16:41:56.2199894Z          |       ^
+2026-10-05T16:41:56.2200766Z       96 |       setChecking(false);
+2026-10-05T16:41:56.2201682Z       97 |       setLoading(false);
+2026-10-05T16:41:56.2202465Z       98 |     });
+2026-10-05T16:41:56.2202967Z 
+2026-10-05T16:41:56.2203623Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.2204945Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.2206676Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.2208245Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.2209843Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.2211324Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.2212500Z       at setOpening (src/components/coach/setup/GetPaidPanel.tsx:95:7)
+2026-10-05T16:41:56.2213334Z       at fn (src/utils/authEvents.ts:27:31)
+2026-10-05T16:41:56.2214004Z           at Array.forEach (<anonymous>)
+2026-10-05T16:41:56.2214786Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+2026-10-05T16:41:56.2215848Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+2026-10-05T16:41:56.2217260Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.2218408Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.2219062Z 
+2026-10-05T16:41:56.2219355Z     console.error
+2026-10-05T16:41:56.2220100Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.2221103Z       
+2026-10-05T16:41:56.2221903Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.2222891Z       
+2026-10-05T16:41:56.2223334Z       act(() => {
+2026-10-05T16:41:56.2223889Z         /* fire events that update state */
+2026-10-05T16:41:56.2224481Z       });
+2026-10-05T16:41:56.2224993Z       /* assert on the output */
+2026-10-05T16:41:56.2225532Z       
+2026-10-05T16:41:56.2226849Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.2227863Z 
+2026-10-05T16:41:56.2228466Z       94 |       setFailed(null);
+2026-10-05T16:41:56.2229399Z       95 |       setOpening(false);
+2026-10-05T16:41:56.2230402Z     > 96 |       setChecking(false);
+2026-10-05T16:41:56.2231289Z          |       ^
+2026-10-05T16:41:56.2232117Z       97 |       setLoading(false);
+2026-10-05T16:41:56.2232901Z       98 |     });
+2026-10-05T16:41:56.2233681Z       99 |     return () => {
+2026-10-05T16:41:56.2234216Z 
+2026-10-05T16:41:56.2234859Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.2236376Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.2238050Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.2239705Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.2241291Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.2242682Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.2243892Z       at setChecking (src/components/coach/setup/GetPaidPanel.tsx:96:7)
+2026-10-05T16:41:56.2244762Z       at fn (src/utils/authEvents.ts:27:31)
+2026-10-05T16:41:56.2245448Z           at Array.forEach (<anonymous>)
+2026-10-05T16:41:56.2246383Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+2026-10-05T16:41:56.2247434Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+2026-10-05T16:41:56.2248636Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.2249778Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.2250409Z 
+2026-10-05T16:41:56.2250704Z     console.error
+2026-10-05T16:41:56.2251443Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.2252186Z       
+2026-10-05T16:41:56.2253056Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.2253901Z       
+2026-10-05T16:41:56.2254381Z       act(() => {
+2026-10-05T16:41:56.2254953Z         /* fire events that update state */
+2026-10-05T16:41:56.2255545Z       });
+2026-10-05T16:41:56.2256227Z       /* assert on the output */
+2026-10-05T16:41:56.2256778Z       
+2026-10-05T16:41:56.2257918Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.2258924Z 
+2026-10-05T16:41:56.2259533Z        95 |       setOpening(false);
+2026-10-05T16:41:56.2260458Z        96 |       setChecking(false);
+2026-10-05T16:41:56.2261462Z     >  97 |       setLoading(false);
+2026-10-05T16:41:56.2262340Z           |       ^
+2026-10-05T16:41:56.2263049Z        98 |     });
+2026-10-05T16:41:56.2264064Z        99 |     return () => {
+2026-10-05T16:41:56.2265284Z       100 |       mounted.current = false;
+2026-10-05T16:41:56.2265964Z 
+2026-10-05T16:41:56.2266759Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.2268092Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.2269662Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.2271272Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.2272787Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.2274246Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.2275443Z       at setLoading (src/components/coach/setup/GetPaidPanel.tsx:97:7)
+2026-10-05T16:41:56.2276499Z       at fn (src/utils/authEvents.ts:27:31)
+2026-10-05T16:41:56.2277189Z           at Array.forEach (<anonymous>)
+2026-10-05T16:41:56.2277981Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+2026-10-05T16:41:56.2279038Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+2026-10-05T16:41:56.2280270Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.2281409Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.2282051Z 
+2026-10-05T16:41:56.2282348Z     console.warn
+2026-10-05T16:41:56.2283954Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T16:41:56.2285324Z 
+2026-10-05T16:41:56.2286795Z       25 |   const section = route.params?.section ?? "get_paid";
+2026-10-05T16:41:56.2288126Z       26 |   return (
+2026-10-05T16:41:56.2289416Z     > 27 |     <SafeAreaView style={styles.container}>
+2026-10-05T16:41:56.2290549Z          |      ^
+2026-10-05T16:41:56.2291816Z       28 |       <ScrollView contentContainerStyle={styles.inner}>
+2026-10-05T16:41:56.2293047Z       29 |         <TouchableOpacity
+2026-10-05T16:41:56.2294138Z       30 |           onPress={() => navigation.goBack()}
+2026-10-05T16:41:56.2294815Z 
+2026-10-05T16:41:56.2295393Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T16:41:56.2296668Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T16:41:56.2297750Z       at SafeAreaView (src/screens/coach/setup/CoachSetupScreen.tsx:27:6)
+2026-10-05T16:41:56.2299101Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T16:41:56.2300592Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T16:41:56.2302064Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T16:41:56.2303461Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T16:41:56.2304807Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.2306399Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T16:41:56.2308040Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T16:41:56.2309640Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T16:41:56.2311051Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T16:41:56.2312676Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T16:41:56.2314053Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T16:41:56.2315091Z       at node_modules/react/cjs/react.development.js:847:21
+2026-10-05T16:41:56.2315631Z 
+2026-10-05T16:41:56.2667645Z PASS src/__tests__/CoachPackageContentsScreen.test.tsx (10.788 s)
+2026-10-05T16:41:56.3137436Z   ● Console
+2026-10-05T16:41:56.3147077Z 
+2026-10-05T16:41:56.3147483Z     console.error
+2026-10-05T16:41:56.3148442Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3149322Z       
+2026-10-05T16:41:56.3150163Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3151009Z       
+2026-10-05T16:41:56.3151456Z       act(() => {
+2026-10-05T16:41:56.3152016Z         /* fire events that update state */
+2026-10-05T16:41:56.3152611Z       });
+2026-10-05T16:41:56.3153113Z       /* assert on the output */
+2026-10-05T16:41:56.3153643Z       
+2026-10-05T16:41:56.3154744Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3155679Z 
+2026-10-05T16:41:56.3156707Z       367 |       // NEXT push intent can proceed once this one finishes.
+2026-10-05T16:41:56.3158107Z       368 |       previewInFlightRef.current = false;
+2026-10-05T16:41:56.3159483Z     > 369 |       setAudienceCount(res.data.count);
+2026-10-05T16:41:56.3160573Z           |       ^
+2026-10-05T16:41:56.3161437Z       370 |       setBuyerNotify(true);
+2026-10-05T16:41:56.3162375Z       371 |       setFireAt(null);
+2026-10-05T16:41:56.3163355Z       372 |       setPushSubmitting(false);
+2026-10-05T16:41:56.3163953Z 
+2026-10-05T16:41:56.3164571Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3165904Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3167676Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3169233Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3170754Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3172177Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3173492Z       at setAudienceCount (src/screens/coach/payments/CoachPackageContentsScreen.tsx:369:7)
+2026-10-05T16:41:56.3174735Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3175889Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3176738Z 
+2026-10-05T16:41:56.3177035Z     console.error
+2026-10-05T16:41:56.3177877Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3178722Z       
+2026-10-05T16:41:56.3179520Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3180330Z       
+2026-10-05T16:41:56.3181159Z       act(() => {
+2026-10-05T16:41:56.3181721Z         /* fire events that update state */
+2026-10-05T16:41:56.3182312Z       });
+2026-10-05T16:41:56.3183044Z       /* assert on the output */
+2026-10-05T16:41:56.3183578Z       
+2026-10-05T16:41:56.3184649Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3185666Z 
+2026-10-05T16:41:56.3186769Z       368 |       previewInFlightRef.current = false;
+2026-10-05T16:41:56.3188227Z       369 |       setAudienceCount(res.data.count);
+2026-10-05T16:41:56.3189513Z     > 370 |       setBuyerNotify(true);
+2026-10-05T16:41:56.3190541Z           |       ^
+2026-10-05T16:41:56.3191389Z       371 |       setFireAt(null);
+2026-10-05T16:41:56.3192423Z       372 |       setPushSubmitting(false);
+2026-10-05T16:41:56.3193861Z       373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+2026-10-05T16:41:56.3194681Z 
+2026-10-05T16:41:56.3195298Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3196740Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3198223Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3199781Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3201476Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3264057Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3265508Z       at setBuyerNotify (src/screens/coach/payments/CoachPackageContentsScreen.tsx:370:7)
+2026-10-05T16:41:56.3267082Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3268326Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3269045Z 
+2026-10-05T16:41:56.3269373Z     console.error
+2026-10-05T16:41:56.3270285Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3271216Z       
+2026-10-05T16:41:56.3272054Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3273054Z       
+2026-10-05T16:41:56.3273539Z       act(() => {
+2026-10-05T16:41:56.3274138Z         /* fire events that update state */
+2026-10-05T16:41:56.3274802Z       });
+2026-10-05T16:41:56.3275344Z       /* assert on the output */
+2026-10-05T16:41:56.3275895Z       
+2026-10-05T16:41:56.3277290Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3278371Z 
+2026-10-05T16:41:56.3279246Z       369 |       setAudienceCount(res.data.count);
+2026-10-05T16:41:56.3280492Z       370 |       setBuyerNotify(true);
+2026-10-05T16:41:56.3281634Z     > 371 |       setFireAt(null);
+2026-10-05T16:41:56.3282619Z           |       ^
+2026-10-05T16:41:56.3283588Z       372 |       setPushSubmitting(false);
+2026-10-05T16:41:56.3284926Z       373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+2026-10-05T16:41:56.3286720Z       374 |       // reuse it for the push call and any retry of this same intent. Both the
+2026-10-05T16:41:56.3299596Z 
+2026-10-05T16:41:56.3300768Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3302441Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3304121Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3305759Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3307544Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3309040Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3310436Z       at setFireAt (src/screens/coach/payments/CoachPackageContentsScreen.tsx:371:7)
+2026-10-05T16:41:56.3311696Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3312876Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3313538Z 
+2026-10-05T16:41:56.3313857Z     console.error
+2026-10-05T16:41:56.3314726Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3315621Z       
+2026-10-05T16:41:56.3316647Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3317544Z       
+2026-10-05T16:41:56.3318041Z       act(() => {
+2026-10-05T16:41:56.3318632Z         /* fire events that update state */
+2026-10-05T16:41:56.3319264Z       });
+2026-10-05T16:41:56.3319795Z       /* assert on the output */
+2026-10-05T16:41:56.3320372Z       
+2026-10-05T16:41:56.3321533Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3322624Z 
+2026-10-05T16:41:56.3323319Z       370 |       setBuyerNotify(true);
+2026-10-05T16:41:56.3324384Z       371 |       setFireAt(null);
+2026-10-05T16:41:56.3325536Z     > 372 |       setPushSubmitting(false);
+2026-10-05T16:41:56.3326819Z           |       ^
+2026-10-05T16:41:56.3328055Z       373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+2026-10-05T16:41:56.3329615Z       374 |       // reuse it for the push call and any retry of this same intent. Both the
+2026-10-05T16:41:56.3331213Z       375 |       // ref (synchronous source of truth) and state (debug/inspection) carry it.
+2026-10-05T16:41:56.3332089Z 
+2026-10-05T16:41:56.3332756Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3334098Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3335694Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3337487Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3339009Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3340477Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3341806Z       at setPushSubmitting (src/screens/coach/payments/CoachPackageContentsScreen.tsx:372:7)
+2026-10-05T16:41:56.3343126Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3344520Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3345176Z 
+2026-10-05T16:41:56.3345476Z     console.error
+2026-10-05T16:41:56.3346485Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3347644Z       
+2026-10-05T16:41:56.3348669Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3349524Z       
+2026-10-05T16:41:56.3349992Z       act(() => {
+2026-10-05T16:41:56.3350589Z         /* fire events that update state */
+2026-10-05T16:41:56.3351207Z       });
+2026-10-05T16:41:56.3351742Z       /* assert on the output */
+2026-10-05T16:41:56.3352301Z       
+2026-10-05T16:41:56.3353551Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3354555Z 
+2026-10-05T16:41:56.3355396Z       377 |       pushIdemKeyRef.current = intentKey;
+2026-10-05T16:41:56.3356984Z       378 |       submitInFlightRef.current = false;
+2026-10-05T16:41:56.3358289Z     > 379 |       setPreviewLoading(false);
+2026-10-05T16:41:56.3359280Z           |       ^
+2026-10-05T16:41:56.3360187Z       380 |       setConfirmVisible(true);
+2026-10-05T16:41:56.3361072Z       381 |     } catch (err) {
+2026-10-05T16:41:56.3362253Z       382 |       // Only the CURRENT intent surfaces an error / resets state. A stale
+2026-10-05T16:41:56.3363015Z 
+2026-10-05T16:41:56.3363654Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3364971Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3366783Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3368423Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3369981Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3371458Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3372838Z       at setPreviewLoading (src/screens/coach/payments/CoachPackageContentsScreen.tsx:379:7)
+2026-10-05T16:41:56.3374069Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3375199Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3375841Z 
+2026-10-05T16:41:56.3376317Z     console.error
+2026-10-05T16:41:56.3377183Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3378047Z       
+2026-10-05T16:41:56.3378828Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3379671Z       
+2026-10-05T16:41:56.3380121Z       act(() => {
+2026-10-05T16:41:56.3380681Z         /* fire events that update state */
+2026-10-05T16:41:56.3381284Z       });
+2026-10-05T16:41:56.3381791Z       /* assert on the output */
+2026-10-05T16:41:56.3382326Z       
+2026-10-05T16:41:56.3383436Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3384447Z 
+2026-10-05T16:41:56.3385298Z       378 |       submitInFlightRef.current = false;
+2026-10-05T16:41:56.3386673Z       379 |       setPreviewLoading(false);
+2026-10-05T16:41:56.3387776Z     > 380 |       setConfirmVisible(true);
+2026-10-05T16:41:56.3388719Z           |       ^
+2026-10-05T16:41:56.3389497Z       381 |     } catch (err) {
+2026-10-05T16:41:56.3390642Z       382 |       // Only the CURRENT intent surfaces an error / resets state. A stale
+2026-10-05T16:41:56.3392474Z       383 |       // failed preview is ignored so it cannot disturb an in-flight push.
+2026-10-05T16:41:56.3393263Z 
+2026-10-05T16:41:56.3393894Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3395198Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3396995Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3398624Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3400169Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3401657Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3403038Z       at setConfirmVisible (src/screens/coach/payments/CoachPackageContentsScreen.tsx:380:7)
+2026-10-05T16:41:56.3404351Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3405515Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3406346Z 
+2026-10-05T16:41:56.3406654Z     console.error
+2026-10-05T16:41:56.3407543Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3408418Z       
+2026-10-05T16:41:56.3409241Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3410153Z       
+2026-10-05T16:41:56.3410618Z       act(() => {
+2026-10-05T16:41:56.3411200Z         /* fire events that update state */
+2026-10-05T16:41:56.3411821Z       });
+2026-10-05T16:41:56.3412344Z       /* assert on the output */
+2026-10-05T16:41:56.3412905Z       
+2026-10-05T16:41:56.3414009Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3415039Z 
+2026-10-05T16:41:56.3415846Z       367 |       // NEXT push intent can proceed once this one finishes.
+2026-10-05T16:41:56.3417466Z       368 |       previewInFlightRef.current = false;
+2026-10-05T16:41:56.3418895Z     > 369 |       setAudienceCount(res.data.count);
+2026-10-05T16:41:56.3419949Z           |       ^
+2026-10-05T16:41:56.3420838Z       370 |       setBuyerNotify(true);
+2026-10-05T16:41:56.3421775Z       371 |       setFireAt(null);
+2026-10-05T16:41:56.3422777Z       372 |       setPushSubmitting(false);
+2026-10-05T16:41:56.3423384Z 
+2026-10-05T16:41:56.3424033Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3425373Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3427112Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3428720Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3430254Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3431726Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3433070Z       at setAudienceCount (src/screens/coach/payments/CoachPackageContentsScreen.tsx:369:7)
+2026-10-05T16:41:56.3434337Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3435810Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3436671Z 
+2026-10-05T16:41:56.3437171Z     console.error
+2026-10-05T16:41:56.3438033Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3438873Z       
+2026-10-05T16:41:56.3439654Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3440490Z       
+2026-10-05T16:41:56.3440934Z       act(() => {
+2026-10-05T16:41:56.3441490Z         /* fire events that update state */
+2026-10-05T16:41:56.3442096Z       });
+2026-10-05T16:41:56.3442599Z       /* assert on the output */
+2026-10-05T16:41:56.3443146Z       
+2026-10-05T16:41:56.3444303Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3445327Z 
+2026-10-05T16:41:56.3446730Z       368 |       previewInFlightRef.current = false;
+2026-10-05T16:41:56.3448086Z       369 |       setAudienceCount(res.data.count);
+2026-10-05T16:41:56.3449258Z     > 370 |       setBuyerNotify(true);
+2026-10-05T16:41:56.3451041Z           |       ^
+2026-10-05T16:41:56.3451951Z       371 |       setFireAt(null);
+2026-10-05T16:41:56.3452908Z       372 |       setPushSubmitting(false);
+2026-10-05T16:41:56.3454197Z       373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+2026-10-05T16:41:56.3454969Z 
+2026-10-05T16:41:56.3455588Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3457096Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3458717Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3460329Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3461879Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3463356Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3464706Z       at setBuyerNotify (src/screens/coach/payments/CoachPackageContentsScreen.tsx:370:7)
+2026-10-05T16:41:56.3466141Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3467313Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3467972Z 
+2026-10-05T16:41:56.3468280Z     console.error
+2026-10-05T16:41:56.3469131Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3469994Z       
+2026-10-05T16:41:56.3470811Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3471657Z       
+2026-10-05T16:41:56.3472121Z       act(() => {
+2026-10-05T16:41:56.3472700Z         /* fire events that update state */
+2026-10-05T16:41:56.3473303Z       });
+2026-10-05T16:41:56.3473827Z       /* assert on the output */
+2026-10-05T16:41:56.3474378Z       
+2026-10-05T16:41:56.3475531Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3476701Z 
+2026-10-05T16:41:56.3477486Z       369 |       setAudienceCount(res.data.count);
+2026-10-05T16:41:56.3478578Z       370 |       setBuyerNotify(true);
+2026-10-05T16:41:56.3479624Z     > 371 |       setFireAt(null);
+2026-10-05T16:41:56.3480767Z           |       ^
+2026-10-05T16:41:56.3481875Z       372 |       setPushSubmitting(false);
+2026-10-05T16:41:56.3483163Z       373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+2026-10-05T16:41:56.3484641Z       374 |       // reuse it for the push call and any retry of this same intent. Both the
+2026-10-05T16:41:56.3485441Z 
+2026-10-05T16:41:56.3486261Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3487597Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3489162Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3490781Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3492300Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3493762Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3495054Z       at setFireAt (src/screens/coach/payments/CoachPackageContentsScreen.tsx:371:7)
+2026-10-05T16:41:56.3496476Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3497633Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3498279Z 
+2026-10-05T16:41:56.3498561Z     console.error
+2026-10-05T16:41:56.3499426Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3500319Z       
+2026-10-05T16:41:56.3501120Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3501968Z       
+2026-10-05T16:41:56.3502432Z       act(() => {
+2026-10-05T16:41:56.3502992Z         /* fire events that update state */
+2026-10-05T16:41:56.3503593Z       });
+2026-10-05T16:41:56.3504097Z       /* assert on the output */
+2026-10-05T16:41:56.3504632Z       
+2026-10-05T16:41:56.3505785Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3506956Z 
+2026-10-05T16:41:56.3507636Z       370 |       setBuyerNotify(true);
+2026-10-05T16:41:56.3508479Z       371 |       setFireAt(null);
+2026-10-05T16:41:56.3509508Z     > 372 |       setPushSubmitting(false);
+2026-10-05T16:41:56.3510549Z           |       ^
+2026-10-05T16:41:56.3511723Z       373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+2026-10-05T16:41:56.3513097Z       374 |       // reuse it for the push call and any retry of this same intent. Both the
+2026-10-05T16:41:56.3514633Z       375 |       // ref (synchronous source of truth) and state (debug/inspection) carry it.
+2026-10-05T16:41:56.3515481Z 
+2026-10-05T16:41:56.3516341Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3517749Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3519384Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3521070Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3522691Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3524224Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3526444Z       at setPushSubmitting (src/screens/coach/payments/CoachPackageContentsScreen.tsx:372:7)
+2026-10-05T16:41:56.3527861Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3529074Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3529742Z 
+2026-10-05T16:41:56.3530058Z     console.error
+2026-10-05T16:41:56.3530949Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3531858Z       
+2026-10-05T16:41:56.3532674Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3533567Z       
+2026-10-05T16:41:56.3534053Z       act(() => {
+2026-10-05T16:41:56.3534648Z         /* fire events that update state */
+2026-10-05T16:41:56.3535268Z       });
+2026-10-05T16:41:56.3535814Z       /* assert on the output */
+2026-10-05T16:41:56.3536627Z       
+2026-10-05T16:41:56.3537805Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3538867Z 
+2026-10-05T16:41:56.3539721Z       377 |       pushIdemKeyRef.current = intentKey;
+2026-10-05T16:41:56.3541195Z       378 |       submitInFlightRef.current = false;
+2026-10-05T16:41:56.3542559Z     > 379 |       setPreviewLoading(false);
+2026-10-05T16:41:56.3543606Z           |       ^
+2026-10-05T16:41:56.3544576Z       380 |       setConfirmVisible(true);
+2026-10-05T16:41:56.3545566Z       381 |     } catch (err) {
+2026-10-05T16:41:56.3547114Z       382 |       // Only the CURRENT intent surfaces an error / resets state. A stale
+2026-10-05T16:41:56.3547936Z 
+2026-10-05T16:41:56.3548570Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3549880Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3551430Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3553008Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3554570Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3556317Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3557663Z       at setPreviewLoading (src/screens/coach/payments/CoachPackageContentsScreen.tsx:379:7)
+2026-10-05T16:41:56.3559005Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3560154Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3560793Z 
+2026-10-05T16:41:56.3561079Z     console.error
+2026-10-05T16:41:56.3561965Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+2026-10-05T16:41:56.3562859Z       
+2026-10-05T16:41:56.3563662Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:41:56.3564500Z       
+2026-10-05T16:41:56.3564950Z       act(() => {
+2026-10-05T16:41:56.3565506Z         /* fire events that update state */
+2026-10-05T16:41:56.3566340Z       });
+2026-10-05T16:41:56.3566867Z       /* assert on the output */
+2026-10-05T16:41:56.3567425Z       
+2026-10-05T16:41:56.3568570Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:41:56.3569626Z 
+2026-10-05T16:41:56.3570550Z       378 |       submitInFlightRef.current = false;
+2026-10-05T16:41:56.3572373Z       379 |       setPreviewLoading(false);
+2026-10-05T16:41:56.3573624Z     > 380 |       setConfirmVisible(true);
+2026-10-05T16:41:56.3574605Z           |       ^
+2026-10-05T16:41:56.3575386Z       381 |     } catch (err) {
+2026-10-05T16:41:56.3576723Z       382 |       // Only the CURRENT intent surfaces an error / resets state. A stale
+2026-10-05T16:41:56.3578203Z       383 |       // failed preview is ignored so it cannot disturb an in-flight push.
+2026-10-05T16:41:56.3578973Z 
+2026-10-05T16:41:56.3579568Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:41:56.3580896Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:56.3582562Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:41:56.3584213Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:41:56.3585786Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:41:56.3587507Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:41:56.3588926Z       at setConfirmVisible (src/screens/coach/payments/CoachPackageContentsScreen.tsx:380:7)
+2026-10-05T16:41:56.3590290Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:56.3591488Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:56.3592171Z 
+2026-10-05T16:41:56.5321865Z PASS src/lib/coachSetup/__tests__/w1FixRound118.test.ts
+2026-10-05T16:41:56.9965474Z PASS src/components/coach/setup/__tests__/audOpusW12_119_346.test.tsx
+2026-10-05T16:41:57.5519462Z PASS src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
+2026-10-05T16:41:57.8522985Z PASS src/components/coach/setup/__tests__/coachSetup.test.tsx
+2026-10-05T16:41:57.9387632Z PASS src/components/coach/setup/__tests__/audOpusW12D_120_346.test.tsx
+2026-10-05T16:41:58.0707070Z PASS src/components/coach/setup/__tests__/coachSetupRound2.test.tsx (12.675 s)
+2026-10-05T16:41:58.0787811Z   ● Console
+2026-10-05T16:41:58.0788235Z 
+2026-10-05T16:41:58.0788539Z     console.warn
+2026-10-05T16:41:58.0790252Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T16:41:58.0791666Z 
+2026-10-05T16:41:58.0792048Z       175 |
+2026-10-05T16:41:58.0792750Z       176 |   return (
+2026-10-05T16:41:58.0794103Z     > 177 |     <SafeAreaView style={styles.container}>
+2026-10-05T16:41:58.0795293Z           |      ^
+2026-10-05T16:41:58.0796421Z       178 |       <ScrollView
+2026-10-05T16:41:58.0797488Z       179 |         contentContainerStyle={styles.inner}
+2026-10-05T16:41:58.0798696Z       180 |         keyboardShouldPersistTaps="handled"
+2026-10-05T16:41:58.0799364Z 
+2026-10-05T16:41:58.0799955Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T16:41:58.0801082Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T16:41:58.0802146Z       at SafeAreaView (src/navigation/CoachWizardNavigator.tsx:177:6)
+2026-10-05T16:41:58.0803460Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T16:41:58.0812777Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T16:41:58.0814833Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T16:41:58.0816354Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T16:41:58.0817554Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:41:58.0818792Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T16:41:58.0820042Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T16:41:58.0821262Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T16:41:58.0822489Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T16:41:58.0823883Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T16:41:58.0825029Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T16:41:58.0826210Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+2026-10-05T16:41:58.0827237Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+2026-10-05T16:41:58.0827764Z 
+2026-10-05T16:41:58.0943204Z PASS src/lib/coachSetup/__tests__/audOpusW12_119_345.test.ts
+2026-10-05T16:41:58.2717640Z PASS src/lib/coachSetup/__tests__/audOpusW12D_120_345.test.ts
+2026-10-05T16:41:58.5727554Z PASS src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+2026-10-05T16:41:58.7297528Z PASS src/lib/coachSetup/__tests__/w1FixRound119.test.ts
+2026-10-05T16:41:58.7700141Z PASS src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx
+2026-10-05T16:41:58.8662224Z PASS src/components/coach/setup/__tests__/connectCopyStates.test.ts
+2026-10-05T16:42:00.7436959Z PASS src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+2026-10-05T16:42:00.7680425Z   ● Console
+2026-10-05T16:42:00.7680715Z 
+2026-10-05T16:42:00.7680862Z     console.warn
+2026-10-05T16:42:00.7681720Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T16:42:00.7682351Z 
+2026-10-05T16:42:00.7683088Z       296 |         // CommonActions.reset equivalent via dispatch with a single route.
+2026-10-05T16:42:00.7684053Z       297 |         navigation.dispatch(
+2026-10-05T16:42:00.7684966Z     > 298 |           CommonActions.navigate({
+2026-10-05T16:42:00.7685759Z           |                         ^
+2026-10-05T16:42:00.7686711Z       299 |             name: "CoachPackageEdit",
+2026-10-05T16:42:00.7688269Z       300 |             params: { packageId: res.data.id, initialPackage: res.data },
+2026-10-05T16:42:00.7689319Z       301 |           }),
+2026-10-05T16:42:00.7689603Z 
+2026-10-05T16:42:00.7690126Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T16:42:00.7691126Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:298:25)
+2026-10-05T16:42:00.7692133Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:00.7693005Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:00.7693426Z 
+2026-10-05T16:42:00.7693586Z     console.warn
+2026-10-05T16:42:00.7694414Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T16:42:00.7695471Z 
+2026-10-05T16:42:00.7696540Z       296 |         // CommonActions.reset equivalent via dispatch with a single route.
+2026-10-05T16:42:00.7697466Z       297 |         navigation.dispatch(
+2026-10-05T16:42:00.7698342Z     > 298 |           CommonActions.navigate({
+2026-10-05T16:42:00.7699127Z           |                         ^
+2026-10-05T16:42:00.7699959Z       299 |             name: "CoachPackageEdit",
+2026-10-05T16:42:00.7701544Z       300 |             params: { packageId: res.data.id, initialPackage: res.data },
+2026-10-05T16:42:00.7702789Z       301 |           }),
+2026-10-05T16:42:00.7703140Z 
+2026-10-05T16:42:00.7703762Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T16:42:00.7704931Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:298:25)
+2026-10-05T16:42:00.7705944Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:00.7707056Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:00.7707514Z 
+2026-10-05T16:42:00.7707649Z     console.warn
+2026-10-05T16:42:00.7708437Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T16:42:00.7709115Z 
+2026-10-05T16:42:00.7709846Z       296 |         // CommonActions.reset equivalent via dispatch with a single route.
+2026-10-05T16:42:00.7710822Z       297 |         navigation.dispatch(
+2026-10-05T16:42:00.7711726Z     > 298 |           CommonActions.navigate({
+2026-10-05T16:42:00.7712587Z           |                         ^
+2026-10-05T16:42:00.7713455Z       299 |             name: "CoachPackageEdit",
+2026-10-05T16:42:00.7714931Z       300 |             params: { packageId: res.data.id, initialPackage: res.data },
+2026-10-05T16:42:00.7716131Z       301 |           }),
+2026-10-05T16:42:00.7716465Z 
+2026-10-05T16:42:00.7717083Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T16:42:00.7718156Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:298:25)
+2026-10-05T16:42:00.7719192Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:00.7720168Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:00.7720647Z 
+2026-10-05T16:42:00.7720806Z     console.warn
+2026-10-05T16:42:00.7721660Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T16:42:00.7722374Z 
+2026-10-05T16:42:00.7723150Z       296 |         // CommonActions.reset equivalent via dispatch with a single route.
+2026-10-05T16:42:00.7724144Z       297 |         navigation.dispatch(
+2026-10-05T16:42:00.7725038Z     > 298 |           CommonActions.navigate({
+2026-10-05T16:42:00.7725904Z           |                         ^
+2026-10-05T16:42:00.7757344Z       299 |             name: "CoachPackageEdit",
+2026-10-05T16:42:00.7759024Z       300 |             params: { packageId: res.data.id, initialPackage: res.data },
+2026-10-05T16:42:00.7760268Z       301 |           }),
+2026-10-05T16:42:00.7760989Z 
+2026-10-05T16:42:00.7761835Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T16:42:00.7763036Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:298:25)
+2026-10-05T16:42:00.7764166Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:00.7765243Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:00.7765762Z 
+2026-10-05T16:42:00.7765955Z     console.warn
+2026-10-05T16:42:00.7766993Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T16:42:00.7767787Z 
+2026-10-05T16:42:00.7768598Z       296 |         // CommonActions.reset equivalent via dispatch with a single route.
+2026-10-05T16:42:00.7769694Z       297 |         navigation.dispatch(
+2026-10-05T16:42:00.7770807Z     > 298 |           CommonActions.navigate({
+2026-10-05T16:42:00.7771777Z           |                         ^
+2026-10-05T16:42:00.7772729Z       299 |             name: "CoachPackageEdit",
+2026-10-05T16:42:00.7774380Z       300 |             params: { packageId: res.data.id, initialPackage: res.data },
+2026-10-05T16:42:00.7775612Z       301 |           }),
+2026-10-05T16:42:00.7776514Z 
+2026-10-05T16:42:00.7777130Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T16:42:00.7778250Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:298:25)
+2026-10-05T16:42:00.7779300Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:00.7780314Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:00.7780809Z 
+2026-10-05T16:42:00.7780950Z     console.warn
+2026-10-05T16:42:00.7781829Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T16:42:00.7782543Z 
+2026-10-05T16:42:00.7783299Z       296 |         // CommonActions.reset equivalent via dispatch with a single route.
+2026-10-05T16:42:00.7784311Z       297 |         navigation.dispatch(
+2026-10-05T16:42:00.7785280Z     > 298 |           CommonActions.navigate({
+2026-10-05T16:42:00.7786288Z           |                         ^
+2026-10-05T16:42:00.7787153Z       299 |             name: "CoachPackageEdit",
+2026-10-05T16:42:00.7788730Z       300 |             params: { packageId: res.data.id, initialPackage: res.data },
+2026-10-05T16:42:00.7789958Z       301 |           }),
+2026-10-05T16:42:00.7790304Z 
+2026-10-05T16:42:00.7790921Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T16:42:00.7792044Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:298:25)
+2026-10-05T16:42:00.7793080Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:42:00.7794156Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:42:00.7794668Z 
+2026-10-05T16:42:01.3080770Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+2026-10-05T16:42:01.3100158Z 
+2026-10-05T16:42:01.3105288Z Test Suites: 15 passed, 15 total
+2026-10-05T16:42:01.3105827Z Tests:       148 passed, 148 total
+2026-10-05T16:42:01.3116906Z Snapshots:   0 total
+2026-10-05T16:42:01.3117202Z Time:        16.648 s
+2026-10-05T16:42:01.3118248Z Ran all test suites matching /src\/lib\/coachSetup|src\/components\/coach\/setup|src\/__tests__\/CoachPackageContentsScreen.test.tsx|src\/__tests__\/CoachPackageEditScreen.idempotency.test.tsx/i.
+2026-10-05T16:42:01.3356490Z Post job cleanup.
+2026-10-05T16:42:01.4495157Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06, not saving cache.
+2026-10-05T16:42:01.4653886Z Post job cleanup.
+2026-10-05T16:42:01.5481978Z [command]/usr/bin/git version
+2026-10-05T16:42:01.5518236Z git version 2.55.0
+2026-10-05T16:42:01.5554729Z Temporarily overriding HOME='/home/runner/work/_temp/394b9ede-8bb3-40ea-8aff-64a484874905' before making global git config changes
+2026-10-05T16:42:01.5556407Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:42:01.5561326Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:42:01.5591546Z Removing SSH command configuration
+2026-10-05T16:42:01.5597961Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:42:01.5631615Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:42:01.5865016Z Removing HTTP extra header
+2026-10-05T16:42:01.5869806Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:42:01.5903933Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:42:01.6132438Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:42:01.6138889Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:42:01.6167966Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:42:01.6168833Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:42:01.6169434Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:42:01.6169876Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:42:01.6176292Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:42:01.6200889Z /home/runner/work/_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:42:01.6210891Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:42:01.6247589Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:42:01.6270318Z /home/runner/work/_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:42:01.6282114Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:42:01.6322083Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:42:01.6345209Z /github/runner_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:42:01.6355029Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:42:01.6391166Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:42:01.6414609Z /github/runner_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:42:01.6424716Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config
+2026-10-05T16:42:01.6463616Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:42:01.6718030Z Removing credentials config '/home/runner/work/_temp/git-credentials-669e2a83-ce7a-4e44-ac53-075e5315e42a.config'
+2026-10-05T16:42:01.6869299Z Cleaning up orphan processes

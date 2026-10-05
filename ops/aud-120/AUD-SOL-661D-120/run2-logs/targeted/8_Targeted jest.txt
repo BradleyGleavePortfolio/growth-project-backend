@@ -1,0 +1,133 @@
+﻿2026-10-05T16:38:37.4521959Z ##[group]Run set -euo pipefail
+2026-10-05T16:38:37.4522270Z [36;1mset -euo pipefail[0m
+2026-10-05T16:38:37.4522587Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:38:37.4523010Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:38:37.4523305Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:38:37.4523557Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-05T16:38:37.4576579Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:38:37.4576769Z env:
+2026-10-05T16:38:37.4576895Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T16:38:37.4577095Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-05T16:38:37.4577262Z ##[endgroup]
+2026-10-05T16:38:37.4651636Z specs: --globalSetup=./test/zz-aud-sol120-pg.global.js test/aud-sol-661d-120-composition.live.spec.ts src/regimes/__tests__/partial-refund-decision.service.spec.ts src/notifications/__tests__/first-payment-webhook.integration.spec.ts
+2026-10-05T16:38:41.3499418Z ALTER ROLE
+2026-10-05T16:38:41.3792809Z NOTICE:  database "l661" does not exist, skipping
+2026-10-05T16:38:41.3793175Z DROP DATABASE
+2026-10-05T16:38:42.1983154Z CREATE DATABASE
+2026-10-05T16:38:42.2590865Z PostgreSQL 16.15 (Ubuntu 16.15-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+2026-10-05T16:38:43.6008107Z PASS src/notifications/__tests__/first-payment-webhook.integration.spec.ts (117 MB heap size)
+2026-10-05T16:38:43.7441418Z PASS src/regimes/__tests__/partial-refund-decision.service.spec.ts (140 MB heap size)
+2026-10-05T16:38:44.0429609Z [32m[Nest] 2954  - [39m10/05/2026, 4:38:43 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32monPartialRefund: pending decision created for purchase=cp-1 refund=re_123[39m
+2026-10-05T16:38:44.0430870Z [32m[Nest] 2954  - [39m10/05/2026, 4:38:43 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32monPartialRefund: pending decision created for purchase=cp-1 refund=re_123[39m
+2026-10-05T16:38:44.0431775Z [32m[Nest] 2954  - [39m10/05/2026, 4:38:43 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32monPartialRefund: pending decision created for purchase=cp-1 refund=re_race[39m
+2026-10-05T16:38:44.0432877Z [32m[Nest] 2954  - [39m10/05/2026, 4:38:43 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32monPartialRefund: concurrent insert collapsed (P2002) for purchase=cp-1 refund=re_race[39m
+2026-10-05T16:38:44.0433648Z [32m[Nest] 2954  - [39m10/05/2026, 4:38:43 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32mdecide: refund=re_123 decision=keep_drops drops_canceled=0 by coach=coach-1[39m
+2026-10-05T16:38:44.0434431Z [32m[Nest] 2954  - [39m10/05/2026, 4:38:43 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32mdecide: refund=re_123 decision=unassign_drops drops_canceled=4 by coach=coach-1[39m
+2026-10-05T16:38:46.2716734Z [95m[Nest] 2954  - [39m10/05/2026, 4:38:46 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=sol120-pkg has no contents — purchase=paid-invoice-paid[39m
+2026-10-05T16:38:46.2718602Z [95m[Nest] 2954  - [39m10/05/2026, 4:38:46 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=sol120-pkg has no contents — purchase=paid-customer-subscription-updated[39m
+2026-10-05T16:38:46.2720302Z [95m[Nest] 2954  - [39m10/05/2026, 4:38:46 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=sol120-pkg has no contents — purchase=trial-invoice-paid[39m
+2026-10-05T16:38:46.2739591Z [95m[Nest] 2954  - [39m10/05/2026, 4:38:46 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=sol120-pkg has no contents — purchase=trial-customer-subscription-updated[39m
+2026-10-05T16:38:46.2741593Z [95m[Nest] 2954  - [39m10/05/2026, 4:38:46 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mcancelPendingForPurchase: no pending/due drops for purchase=end-active (replay or never-entitled) reason=subscription_canceled[39m
+2026-10-05T16:38:46.2895469Z FAIL test/aud-sol-661d-120-composition.live.spec.ts (180 MB heap size)
+2026-10-05T16:38:46.2896521Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › invoice.paid grants the paid plan and atomically erases both consumed sheet credentials
+2026-10-05T16:38:46.2897062Z 
+2026-10-05T16:38:46.2897204Z     expect(received).toMatchObject(expected)
+2026-10-05T16:38:46.2897382Z 
+2026-10-05T16:38:46.2897468Z     - Expected  - 2
+2026-10-05T16:38:46.2897663Z     + Received  + 2
+2026-10-05T16:38:46.2897773Z 
+2026-10-05T16:38:46.2897848Z       Object {
+2026-10-05T16:38:46.2898180Z     -   "stripe_client_secret": null,
+2026-10-05T16:38:46.2898430Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:38:46.2898763Z     +   "stripe_client_secret": "pi_paid-invoice-paid_secret_canary",
+2026-10-05T16:38:46.2899146Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:38:46.2899409Z       }
+2026-10-05T16:38:46.2899502Z 
+2026-10-05T16:38:46.2900182Z     [0m [90m  97 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'active'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:38:46.2901876Z      [90m  98 |[39m       expect([36mawait[39m prisma[33m.[39mpurchaseFanout[33m.[39mcount({ where[33m:[39m { purchase_id[33m:[39m id } }))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-05T16:38:46.2903126Z     [31m[1m>[22m[39m[90m  99 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:38:46.2903958Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:38:46.2904301Z      [90m 100 |[39m     }[33m,[39m
+2026-10-05T16:38:46.2904583Z      [90m 101 |[39m   )[33m;[39m
+2026-10-05T16:38:46.2904840Z      [90m 102 |[39m[0m
+2026-10-05T16:38:46.2904983Z 
+2026-10-05T16:38:46.2905167Z       at test/aud-sol-661d-120-composition.live.spec.ts:99:35
+2026-10-05T16:38:46.2905387Z 
+2026-10-05T16:38:46.2906141Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › customer.subscription.updated grants the paid plan and atomically erases both consumed sheet credentials
+2026-10-05T16:38:46.2906760Z 
+2026-10-05T16:38:46.2906890Z     expect(received).toMatchObject(expected)
+2026-10-05T16:38:46.2907070Z 
+2026-10-05T16:38:46.2907157Z     - Expected  - 2
+2026-10-05T16:38:46.2907351Z     + Received  + 2
+2026-10-05T16:38:46.2907465Z 
+2026-10-05T16:38:46.2907542Z       Object {
+2026-10-05T16:38:46.2907800Z     -   "stripe_client_secret": null,
+2026-10-05T16:38:46.2908072Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:38:46.2908472Z     +   "stripe_client_secret": "pi_paid-customer-subscription-updated_secret_canary",
+2026-10-05T16:38:46.2908894Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:38:46.2909154Z       }
+2026-10-05T16:38:46.2909246Z 
+2026-10-05T16:38:46.2909896Z     [0m [90m  97 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'active'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:38:46.2911055Z      [90m  98 |[39m       expect([36mawait[39m prisma[33m.[39mpurchaseFanout[33m.[39mcount({ where[33m:[39m { purchase_id[33m:[39m id } }))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-05T16:38:46.2912007Z     [31m[1m>[22m[39m[90m  99 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:38:46.2912497Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:38:46.2912707Z      [90m 100 |[39m     }[33m,[39m
+2026-10-05T16:38:46.2912884Z      [90m 101 |[39m   )[33m;[39m
+2026-10-05T16:38:46.2913225Z      [90m 102 |[39m[0m
+2026-10-05T16:38:46.2913305Z 
+2026-10-05T16:38:46.2913418Z       at test/aud-sol-661d-120-composition.live.spec.ts:99:35
+2026-10-05T16:38:46.2913561Z 
+2026-10-05T16:38:46.2913963Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › invoice.paid starts the card-confirmed trial and erases the spent SetupIntent credentials
+2026-10-05T16:38:46.2914293Z 
+2026-10-05T16:38:46.2914373Z     expect(received).toMatchObject(expected)
+2026-10-05T16:38:46.2914482Z 
+2026-10-05T16:38:46.2914536Z     - Expected  - 2
+2026-10-05T16:38:46.2914652Z     + Received  + 2
+2026-10-05T16:38:46.2914722Z 
+2026-10-05T16:38:46.2914767Z       Object {
+2026-10-05T16:38:46.2914895Z     -   "stripe_client_secret": null,
+2026-10-05T16:38:46.2915056Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:38:46.2915260Z     +   "stripe_client_secret": "seti_trial-invoice-paid_secret_canary",
+2026-10-05T16:38:46.2915491Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:38:46.2915659Z       }
+2026-10-05T16:38:46.2915717Z 
+2026-10-05T16:38:46.2916110Z     [0m [90m 117 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'trialing'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:38:46.2916796Z      [90m 118 |[39m       expect(([36mawait[39m persisted(id))[33m.[39mtrial_started_at)[33m.[39mtoBeInstanceOf([33mDate[39m)[33m;[39m
+2026-10-05T16:38:46.2917710Z     [31m[1m>[22m[39m[90m 119 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:38:46.2918457Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:38:46.2918773Z      [90m 120 |[39m     }[33m,[39m
+2026-10-05T16:38:46.2919033Z      [90m 121 |[39m   )[33m;[39m
+2026-10-05T16:38:46.2919270Z      [90m 122 |[39m[0m
+2026-10-05T16:38:46.2919387Z 
+2026-10-05T16:38:46.2919555Z       at test/aud-sol-661d-120-composition.live.spec.ts:119:35
+2026-10-05T16:38:46.2919761Z 
+2026-10-05T16:38:46.2920411Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › customer.subscription.updated starts the card-confirmed trial and erases the spent SetupIntent credentials
+2026-10-05T16:38:46.2920772Z 
+2026-10-05T16:38:46.2920849Z     expect(received).toMatchObject(expected)
+2026-10-05T16:38:46.2920953Z 
+2026-10-05T16:38:46.2921003Z     - Expected  - 2
+2026-10-05T16:38:46.2921120Z     + Received  + 2
+2026-10-05T16:38:46.2921189Z 
+2026-10-05T16:38:46.2921344Z       Object {
+2026-10-05T16:38:46.2921566Z     -   "stripe_client_secret": null,
+2026-10-05T16:38:46.2921726Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:38:46.2921971Z     +   "stripe_client_secret": "seti_trial-customer-subscription-updated_secret_canary",
+2026-10-05T16:38:46.2922234Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:38:46.2922401Z       }
+2026-10-05T16:38:46.2922456Z 
+2026-10-05T16:38:46.2922844Z     [0m [90m 117 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'trialing'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:38:46.2923430Z      [90m 118 |[39m       expect(([36mawait[39m persisted(id))[33m.[39mtrial_started_at)[33m.[39mtoBeInstanceOf([33mDate[39m)[33m;[39m
+2026-10-05T16:38:46.2924087Z     [31m[1m>[22m[39m[90m 119 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:38:46.2924917Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:38:46.2925235Z      [90m 120 |[39m     }[33m,[39m
+2026-10-05T16:38:46.2925496Z      [90m 121 |[39m   )[33m;[39m
+2026-10-05T16:38:46.2925873Z      [90m 122 |[39m[0m
+2026-10-05T16:38:46.2925995Z 
+2026-10-05T16:38:46.2926166Z       at test/aud-sol-661d-120-composition.live.spec.ts:119:35
+2026-10-05T16:38:46.2926385Z 
+2026-10-05T16:38:46.2926538Z Test Suites: 1 failed, 2 passed, 3 total
+2026-10-05T16:38:46.2926839Z Tests:       4 failed, 22 passed, 26 total
+2026-10-05T16:38:46.2927085Z Snapshots:   0 total
+2026-10-05T16:38:46.2927281Z Time:        4.026 s
+2026-10-05T16:38:46.2928173Z Ran all test suites matching test/aud-sol-661d-120-composition.live.spec.ts|src/regimes/__tests__/partial-refund-decision.service.spec.ts|src/notifications/__tests__/first-payment-webhook.integration.spec.ts.
+2026-10-05T16:38:46.4246658Z ##[error]Process completed with exit code 1.

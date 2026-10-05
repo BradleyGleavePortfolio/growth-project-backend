@@ -1,0 +1,8 @@
+ .../authActions.healthDrainFinally.test.ts         | 163 ++++++++++
+ .../authActions.storageOutage.sol119g.test.ts      | 339 +++++++++++++++++++++
+ src/services/authActions.ts                        |  17 +-
+ .../__tests__/onDeviceState.authorityStore.test.ts | 264 ++++++++++++++++
+ .../onDeviceState.failedGrantChain.sol119f.test.ts |  49 +++
+ .../__tests__/onDeviceState.signOutDurable.test.ts | 234 ++++++++++++++
+ src/services/health/onDeviceState.ts               | 139 ++++++++-
+ 7 files changed, 1191 insertions(+), 14 deletions(-)

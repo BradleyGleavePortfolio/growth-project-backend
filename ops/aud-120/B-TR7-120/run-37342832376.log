@@ -1,0 +1,1523 @@
+﻿2026-10-05T16:42:08.1613590Z Current runner version: '2.337.0'
+2026-10-05T16:42:08.1653367Z ##[group]Runner Image Provisioner
+2026-10-05T16:42:08.1654723Z Hosted Compute Agent
+2026-10-05T16:42:08.1655785Z Version: 20260901.588
+2026-10-05T16:42:08.1657058Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:42:08.1658356Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:42:08.1659944Z Worker ID: {b6e6a62d-6200-46c4-b1ff-cbfed9854ebe}
+2026-10-05T16:42:08.1661440Z Azure Region: eastus
+2026-10-05T16:42:08.1662579Z ##[endgroup]
+2026-10-05T16:42:08.1665389Z ##[group]Operating System
+2026-10-05T16:42:08.1666567Z Ubuntu
+2026-10-05T16:42:08.1667496Z 24.04.5
+2026-10-05T16:42:08.1668591Z LTS
+2026-10-05T16:42:08.1669831Z ##[endgroup]
+2026-10-05T16:42:08.1670860Z ##[group]Runner Image
+2026-10-05T16:42:08.1671905Z Image: ubuntu-24.04
+2026-10-05T16:42:08.1672839Z Version: 20260927.320.1
+2026-10-05T16:42:08.1675102Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:42:08.1678066Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:42:08.1680130Z ##[endgroup]
+2026-10-05T16:42:08.1682321Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:42:08.1685208Z Contents: read
+2026-10-05T16:42:08.1686363Z Metadata: read
+2026-10-05T16:42:08.1687298Z Packages: read
+2026-10-05T16:42:08.1688311Z ##[endgroup]
+2026-10-05T16:42:08.1691679Z Secret source: Actions
+2026-10-05T16:42:08.1693455Z Cache mode: write
+2026-10-05T16:42:08.1694618Z Prepare workflow directory
+2026-10-05T16:42:08.2330277Z Prepare all required actions
+2026-10-05T16:42:08.2403651Z Getting action download info
+2026-10-05T16:42:08.4096498Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:42:08.4990430Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:42:08.6868593Z Complete job name: targeted
+2026-10-05T16:42:08.7384934Z ##[group]Checking docker version
+2026-10-05T16:42:08.7398372Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-05T16:42:08.8431355Z '1.48'
+2026-10-05T16:42:08.8447311Z Docker daemon API version: '1.48'
+2026-10-05T16:42:08.8448108Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-05T16:42:08.8600981Z '1.48'
+2026-10-05T16:42:08.8614279Z Docker client API version: '1.48'
+2026-10-05T16:42:08.8618955Z ##[endgroup]
+2026-10-05T16:42:08.8621975Z ##[group]Clean up resources from previous jobs
+2026-10-05T16:42:08.8627979Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=8b3f39"
+2026-10-05T16:42:08.8772539Z ##[command]/usr/bin/docker network prune --force --filter "label=8b3f39"
+2026-10-05T16:42:08.8897191Z ##[endgroup]
+2026-10-05T16:42:08.8897738Z ##[group]Create local container network
+2026-10-05T16:42:08.8907655Z ##[command]/usr/bin/docker network create --label 8b3f39 github_network_386647a61065411ea910df7cf6552f01
+2026-10-05T16:42:08.9375964Z a6be9b0dd101fa0cda2a5c47367338eec5335bb5a096ca61e32fcdad4cfc7808
+2026-10-05T16:42:08.9395108Z ##[endgroup]
+2026-10-05T16:42:08.9420685Z ##[group]Starting redis service container
+2026-10-05T16:42:08.9442303Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-05T16:42:09.1909342Z 7-alpine: Pulling from library/redis
+2026-10-05T16:42:09.2628075Z 16333ee0c00f: Pulling fs layer
+2026-10-05T16:42:09.2629379Z 83234986c742: Pulling fs layer
+2026-10-05T16:42:09.2630275Z 7eb50503c2b0: Pulling fs layer
+2026-10-05T16:42:09.2631134Z 1522f9c6f453: Pulling fs layer
+2026-10-05T16:42:09.2631959Z 9928009b15c8: Pulling fs layer
+2026-10-05T16:42:09.2632782Z 4f4fb700ef54: Pulling fs layer
+2026-10-05T16:42:09.2633701Z 4eb14bae0e1d: Pulling fs layer
+2026-10-05T16:42:09.2634657Z 9928009b15c8: Waiting
+2026-10-05T16:42:09.2635162Z 4eb14bae0e1d: Waiting
+2026-10-05T16:42:09.2635621Z 4f4fb700ef54: Waiting
+2026-10-05T16:42:09.3152894Z 83234986c742: Verifying Checksum
+2026-10-05T16:42:09.3153977Z 83234986c742: Download complete
+2026-10-05T16:42:09.3192885Z 7eb50503c2b0: Verifying Checksum
+2026-10-05T16:42:09.3193889Z 7eb50503c2b0: Download complete
+2026-10-05T16:42:09.3407891Z 16333ee0c00f: Verifying Checksum
+2026-10-05T16:42:09.3409058Z 16333ee0c00f: Download complete
+2026-10-05T16:42:09.3491573Z 9928009b15c8: Verifying Checksum
+2026-10-05T16:42:09.3497357Z 9928009b15c8: Download complete
+2026-10-05T16:42:09.3677273Z 4f4fb700ef54: Verifying Checksum
+2026-10-05T16:42:09.3678205Z 4f4fb700ef54: Download complete
+2026-10-05T16:42:09.3776110Z 4eb14bae0e1d: Verifying Checksum
+2026-10-05T16:42:09.3777266Z 4eb14bae0e1d: Download complete
+2026-10-05T16:42:09.4058169Z 1522f9c6f453: Verifying Checksum
+2026-10-05T16:42:09.4059294Z 1522f9c6f453: Download complete
+2026-10-05T16:42:09.4601699Z 16333ee0c00f: Pull complete
+2026-10-05T16:42:12.0465693Z 83234986c742: Pull complete
+2026-10-05T16:42:12.1838355Z 7eb50503c2b0: Pull complete
+2026-10-05T16:42:12.3733753Z 1522f9c6f453: Pull complete
+2026-10-05T16:42:12.3836806Z 9928009b15c8: Pull complete
+2026-10-05T16:42:12.3910324Z 4f4fb700ef54: Pull complete
+2026-10-05T16:42:12.3998109Z 4eb14bae0e1d: Pull complete
+2026-10-05T16:42:12.4035651Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-05T16:42:12.4046963Z Status: Downloaded newer image for redis:7-alpine
+2026-10-05T16:42:12.4054538Z docker.io/library/redis:7-alpine
+2026-10-05T16:42:12.4087539Z ##[command]/usr/bin/docker create --name 5c2e6a8be6e44f878c49ebbcd280dd4c_redis7alpine_ca38d7 --label 8b3f39 --network github_network_386647a61065411ea910df7cf6552f01 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-05T16:42:12.4326647Z 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:42:12.4346911Z ##[command]/usr/bin/docker start 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:42:12.6413589Z 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:42:12.6440909Z ##[command]/usr/bin/docker ps --all --filter id=5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T16:42:12.6564508Z 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50 Up Less than a second (health: starting)
+2026-10-05T16:42:12.6583639Z ##[command]/usr/bin/docker port 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:42:12.6701928Z 6379/tcp -> 0.0.0.0:6379
+2026-10-05T16:42:12.6702760Z 6379/tcp -> [::]:6379
+2026-10-05T16:42:12.6745806Z ##[endgroup]
+2026-10-05T16:42:12.6754185Z ##[group]Waiting for all services to be ready
+2026-10-05T16:42:12.6767743Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:42:12.6885451Z starting
+2026-10-05T16:42:12.6906013Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-05T16:42:14.6907499Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:42:14.7025501Z starting
+2026-10-05T16:42:14.7038545Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-05T16:42:18.9136443Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:42:18.9277545Z healthy
+2026-10-05T16:42:18.9296939Z redis service is healthy.
+2026-10-05T16:42:18.9297950Z ##[endgroup]
+2026-10-05T16:42:18.9591373Z ##[group]Run actions/checkout@v6
+2026-10-05T16:42:18.9591956Z with:
+2026-10-05T16:42:18.9592268Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T16:42:18.9595294Z   token: ***
+2026-10-05T16:42:18.9595508Z   ssh-strict: true
+2026-10-05T16:42:18.9595713Z   ssh-user: git
+2026-10-05T16:42:18.9596165Z   persist-credentials: true
+2026-10-05T16:42:18.9596417Z   clean: true
+2026-10-05T16:42:18.9596661Z   sparse-checkout-cone-mode: true
+2026-10-05T16:42:18.9596918Z   fetch-depth: 1
+2026-10-05T16:42:18.9597119Z   fetch-tags: false
+2026-10-05T16:42:18.9597339Z   show-progress: true
+2026-10-05T16:42:18.9597548Z   lfs: false
+2026-10-05T16:42:18.9597737Z   submodules: false
+2026-10-05T16:42:18.9597946Z   set-safe-directory: true
+2026-10-05T16:42:18.9598189Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:42:18.9598920Z ##[endgroup]
+2026-10-05T16:42:19.0675398Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T16:42:19.0677865Z ##[group]Getting Git version info
+2026-10-05T16:42:19.0679020Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T16:42:19.0680274Z [command]/usr/bin/git version
+2026-10-05T16:42:19.0680769Z git version 2.55.0
+2026-10-05T16:42:19.0682526Z ##[endgroup]
+2026-10-05T16:42:19.0691801Z Temporarily overriding HOME='/home/runner/work/_temp/f45f5379-82bc-45ff-b86c-b11259a6a65a' before making global git config changes
+2026-10-05T16:42:19.0693272Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:42:19.0698074Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T16:42:19.0745845Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T16:42:19.0750417Z ##[group]Determining repository object format
+2026-10-05T16:42:19.0753488Z ##[endgroup]
+2026-10-05T16:42:19.0754247Z ##[group]Initializing the repository
+2026-10-05T16:42:19.0758814Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T16:42:19.0845243Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:42:19.0846244Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:42:19.0847155Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:42:19.0847841Z hint: call:
+2026-10-05T16:42:19.0848168Z hint:
+2026-10-05T16:42:19.0848872Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:42:19.0849376Z hint:
+2026-10-05T16:42:19.0849776Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:42:19.0850745Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:42:19.0851423Z hint:
+2026-10-05T16:42:19.0851769Z hint: 	git branch -m <name>
+2026-10-05T16:42:19.0852166Z hint:
+2026-10-05T16:42:19.0852737Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:42:19.0853906Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-05T16:42:19.0860572Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T16:42:19.0912917Z ##[endgroup]
+2026-10-05T16:42:19.0913382Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:42:19.0918265Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:42:19.0947563Z ##[endgroup]
+2026-10-05T16:42:19.0948418Z ##[group]Setting up auth
+2026-10-05T16:42:19.0949282Z Removing SSH command configuration
+2026-10-05T16:42:19.0955697Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:42:19.0986033Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:42:19.1301426Z Removing HTTP extra header
+2026-10-05T16:42:19.1306011Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:42:19.1336025Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:42:19.1545581Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:42:19.1551541Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:42:19.1581552Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:42:19.1801784Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:42:19.1838343Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:42:19.1869807Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:42:19.1901906Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:42:19.1938185Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:42:19.1964565Z ##[endgroup]
+2026-10-05T16:42:19.1965219Z ##[group]Fetching the repository
+2026-10-05T16:42:19.1972777Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +7a19d2ee27ce5bc60c6cd2f46693589783cec93b:refs/remotes/origin/ci/B-TR7-120-707-before-1
+2026-10-05T16:42:20.2403458Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T16:42:20.2404414Z  * [new ref]         7a19d2ee27ce5bc60c6cd2f46693589783cec93b -> origin/ci/B-TR7-120-707-before-1
+2026-10-05T16:42:20.2414640Z [command]/usr/bin/git branch --list --remote origin/ci/B-TR7-120-707-before-1
+2026-10-05T16:42:20.2439788Z   origin/ci/B-TR7-120-707-before-1
+2026-10-05T16:42:20.2449276Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-TR7-120-707-before-1
+2026-10-05T16:42:20.2473382Z 7a19d2ee27ce5bc60c6cd2f46693589783cec93b
+2026-10-05T16:42:20.2477785Z ##[endgroup]
+2026-10-05T16:42:20.2478430Z ##[group]Determining the checkout info
+2026-10-05T16:42:20.2479388Z ##[endgroup]
+2026-10-05T16:42:20.2489683Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:42:20.2534666Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:42:20.2561646Z ##[group]Checking out the ref
+2026-10-05T16:42:20.2565521Z [command]/usr/bin/git checkout --progress --force -B ci/B-TR7-120-707-before-1 refs/remotes/origin/ci/B-TR7-120-707-before-1
+2026-10-05T16:42:20.4747865Z Switched to a new branch 'ci/B-TR7-120-707-before-1'
+2026-10-05T16:42:20.4754065Z branch 'ci/B-TR7-120-707-before-1' set up to track 'origin/ci/B-TR7-120-707-before-1'.
+2026-10-05T16:42:20.4763841Z ##[endgroup]
+2026-10-05T16:42:20.4839967Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:42:20.4840654Z 7a19d2ee27ce5bc60c6cd2f46693589783cec93b
+2026-10-05T16:42:20.5092119Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:42:20.5092438Z with:
+2026-10-05T16:42:20.5092630Z   node-version: 20
+2026-10-05T16:42:20.5092833Z   cache: npm
+2026-10-05T16:42:20.5093030Z   check-latest: false
+2026-10-05T16:42:20.5095904Z   token: ***
+2026-10-05T16:42:20.5096119Z   package-manager-cache: true
+2026-10-05T16:42:20.5096375Z ##[endgroup]
+2026-10-05T16:42:20.6762556Z Attempting to download 20...
+2026-10-05T16:42:21.2406395Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-05T16:42:21.5495512Z Extracting ...
+2026-10-05T16:42:21.5670293Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/a3efbdbe-68d3-4496-975f-d83d87d617cd -f /home/runner/work/_temp/10b39fdf-7845-4f21-84cb-280f0900b120
+2026-10-05T16:42:22.6031220Z Adding to the cache ...
+2026-10-05T16:42:24.5007193Z ##[group]Environment details
+2026-10-05T16:42:24.7159562Z node: v20.20.2
+2026-10-05T16:42:24.7159970Z npm: 10.8.2
+2026-10-05T16:42:24.7160184Z yarn: 1.22.22
+2026-10-05T16:42:24.7160882Z ##[endgroup]
+2026-10-05T16:42:24.7180951Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-05T16:42:24.8199420Z /home/runner/.npm
+2026-10-05T16:42:24.8975653Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T16:42:25.4415323Z Received 86828135 of 86828135 (100.0%), 174.3 MBs/sec
+2026-10-05T16:42:25.4416140Z Cache Size: ~83 MB (86828135 B)
+2026-10-05T16:42:25.4449784Z [command]/usr/bin/tar -xf /home/runner/work/_temp/bc68c842-5f6e-4c72-9380-461d4477003c/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-05T16:42:25.6273672Z Cache restored successfully
+2026-10-05T16:42:25.6321426Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T16:42:25.6625786Z ##[group]Run npm ci
+2026-10-05T16:42:25.6626078Z npm ci
+2026-10-05T16:42:25.6832907Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:42:25.6833211Z ##[endgroup]
+2026-10-05T16:42:31.4629447Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:42:32.3970484Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-05T16:42:33.4648872Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:34.7099548Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:34.7453672Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:34.8037832Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:42:47.8176374Z 
+2026-10-05T16:42:47.8179235Z > growth-project-backend@1.0.0 postinstall
+2026-10-05T16:42:47.8179681Z > prisma generate
+2026-10-05T16:42:47.8179825Z 
+2026-10-05T16:42:48.7729392Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T16:42:52.5253473Z ┌─────────────────────────────────────────────────────────┐
+2026-10-05T16:42:52.5254721Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+2026-10-05T16:42:52.5255499Z │                                                         │
+2026-10-05T16:42:52.5256273Z │  This is a major update - please follow the guide at    │
+2026-10-05T16:42:52.5257218Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-05T16:42:52.5257749Z │                                                         │
+2026-10-05T16:42:52.5258226Z │  Run the following to update                            │
+2026-10-05T16:42:52.5259100Z │    npm i --save-dev prisma@latest                       │
+2026-10-05T16:42:52.5260017Z │    npm i @prisma/client@latest                          │
+2026-10-05T16:42:52.5260518Z └─────────────────────────────────────────────────────────┘
+2026-10-05T16:42:52.5260794Z 
+2026-10-05T16:42:52.5261220Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.05s
+2026-10-05T16:42:52.5261549Z 
+2026-10-05T16:42:52.5261919Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T16:42:52.5262264Z 
+2026-10-05T16:42:52.5262762Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-05T16:42:52.5263215Z 
+2026-10-05T16:42:52.5822554Z 
+2026-10-05T16:42:52.5823324Z > growth-project-backend@1.0.0 prepare
+2026-10-05T16:42:52.5824006Z > lefthook install
+2026-10-05T16:42:52.5824480Z 
+2026-10-05T16:42:52.6320115Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-05T16:42:52.6503109Z 
+2026-10-05T16:42:52.6503801Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-05T16:42:52.6504339Z 
+2026-10-05T16:42:52.6504554Z 202 packages are looking for funding
+2026-10-05T16:42:52.6504907Z   run `npm fund` for details
+2026-10-05T16:42:52.6537223Z 
+2026-10-05T16:42:52.6537471Z 3 high severity vulnerabilities
+2026-10-05T16:42:52.6538212Z 
+2026-10-05T16:42:52.6538970Z To address all issues (including breaking changes), run:
+2026-10-05T16:42:52.6539678Z   npm audit fix --force
+2026-10-05T16:42:52.6539942Z 
+2026-10-05T16:42:52.6540153Z Run `npm audit` for details.
+2026-10-05T16:42:52.7159921Z ##[group]Run npx prisma generate
+2026-10-05T16:42:52.7160262Z npx prisma generate
+2026-10-05T16:42:52.7222574Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:42:52.7222836Z ##[endgroup]
+2026-10-05T16:42:54.0276081Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T16:42:57.9865129Z 
+2026-10-05T16:42:57.9866699Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.06s
+2026-10-05T16:42:57.9867315Z 
+2026-10-05T16:42:57.9867926Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T16:42:57.9868543Z 
+2026-10-05T16:42:57.9869631Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-05T16:42:57.9870388Z 
+2026-10-05T16:42:58.1111475Z ##[group]Run set -euo pipefail
+2026-10-05T16:42:58.1111819Z set -euo pipefail
+2026-10-05T16:42:58.1112210Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-05T16:42:58.1112699Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-05T16:42:58.1113058Z echo "specs: ${SPECS[*]}"
+2026-10-05T16:42:58.1113349Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-05T16:42:58.1176761Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:42:58.1177107Z env:
+2026-10-05T16:42:58.1177333Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T16:42:58.1177689Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-05T16:42:58.1178008Z ##[endgroup]
+2026-10-05T16:42:58.1273633Z specs: test/b-trials-7-draft-fence.spec.ts test/b-trials-6-payable-domain.spec.ts test/b-trials-5-fix-round.spec.ts test/b-trials-4-fix-round.spec.ts test/b-trials-3-fix-round.spec.ts test/audit-sol-t5-draft-race.spec.ts test/audit-opus-t5-119-707-draft.spec.ts
+2026-10-05T16:43:02.0161989Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0242061Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0280966Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.0340678Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0391720Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0522653Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0571343Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0631320Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0635128Z [Nest] 3076  - 10/05/2026, 4:43:22 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=timeout (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.0660806Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0664899Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.0669692Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.0674218Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.0678001Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=4 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.0693624Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=5 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.0733572Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0743044Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:02.0765282Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.0783526Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.1297903Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.1301551Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.1304935Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.1308287Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.1310897Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialNoticeService] trial notice push outcome dropped (lease lost) notice=row_1
+2026-10-05T16:43:02.1312431Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialNoticeService] trial notice email outcome dropped (lease lost) notice=row_1
+2026-10-05T16:43:02.1313857Z [Nest] 3076  - 10/05/2026, 4:43:37 PM    WARN [TrialNoticeService] trial notice push still running after abort notice=row_1; lease held
+2026-10-05T16:43:02.4999987Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.5003663Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.5007333Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.5009971Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.5015482Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:02.5024790Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.5027661Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.5030252Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.5032608Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.5035242Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:02.5352790Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.5358001Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:02.5367311Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.5370640Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.5373953Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=state_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:02.5380655Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.5389741Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.5405327Z [Nest] 3076  - 10/05/2026, 4:43:02 PM   ERROR [TrialUsageService] trial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)
+2026-10-05T16:43:02.5516839Z PASS test/b-trials-3-fix-round.spec.ts (125 MB heap size)
+2026-10-05T16:43:03.1422539Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T16:43:03.1424346Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialNoticeService] trial notice delivery deferred notice=row_1 code=card_state_unknown
+2026-10-05T16:43:03.1425907Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialNoticeService] trial notice card lookup failed: Error
+2026-10-05T16:43:03.1427730Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1430005Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1432199Z [Nest] 3076  - 10/05/2026, 4:43:02 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1434132Z [Nest] 3076  - 10/09/2026, 5:00:09 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-0 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1436320Z [Nest] 3076  - 10/09/2026, 5:00:18 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1438438Z [Nest] 3076  - 10/09/2026, 5:00:27 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-2 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1440145Z [Nest] 3076  - 10/09/2026, 5:00:36 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-3 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1441578Z [Nest] 3076  - 10/09/2026, 5:00:45 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-4 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1443002Z [Nest] 3076  - 10/09/2026, 5:00:54 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-5 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1444418Z [Nest] 3076  - 10/09/2026, 5:01:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-6 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1445842Z [Nest] 3076  - 10/09/2026, 5:01:08 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase p-7 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.1505904Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.1591841Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.1635872Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.1671132Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2016968Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:03.2036229Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2072090Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2097864Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2124503Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2149819Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2177486Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2199613Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2216793Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2239663Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2261797Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2283184Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2303858Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2321316Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_too_many (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2377366Z [Nest] 3076  - 10/05/2026, 4:43:48 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=lease_exhausted (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2562945Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.2837924Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.2839274Z FAIL test/b-trials-6-payable-domain.spec.ts (178 MB heap size)
+2026-10-05T16:43:03.2840497Z   ● B-673-1 (T5) — the payable domain is open AND uncollectible, read before the paid list › past_due never billed: draft, open, uncollectible, paid lists, both confirmed void, recheck, one DELETE
+2026-10-05T16:43:03.2841211Z 
+2026-10-05T16:43:03.2841437Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:43:03.2841690Z 
+2026-10-05T16:43:03.2841792Z     - Expected  - 5
+2026-10-05T16:43:03.2842022Z     + Received  + 0
+2026-10-05T16:43:03.2842156Z 
+2026-10-05T16:43:03.2842241Z       Array [
+2026-10-05T16:43:03.2842487Z         "GET /subscriptions/sub_1",
+2026-10-05T16:43:03.2842918Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.2843388Z         "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.2843876Z         "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.2844351Z         "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.2844723Z         "POST /invoices/in_open/void",
+2026-10-05T16:43:03.2845335Z         "POST /invoices/in_unc/void",
+2026-10-05T16:43:03.2845721Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.2846174Z     -   "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.2846652Z     -   "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.2847124Z     -   "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.2847490Z         "DELETE /subscriptions/sub_1",
+2026-10-05T16:43:03.2847754Z       ]
+2026-10-05T16:43:03.2847866Z 
+2026-10-05T16:43:03.2848053Z       319 |       });
+2026-10-05T16:43:03.2849208Z       320 |       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+2026-10-05T16:43:03.2850119Z     > 321 |       expect(w.calls).toEqual([
+2026-10-05T16:43:03.2850652Z           |                       ^
+2026-10-05T16:43:03.2851136Z       322 |         'GET /subscriptions/sub_1',
+2026-10-05T16:43:03.2851630Z       323 |         DRAFT_LIST,
+2026-10-05T16:43:03.2852063Z       324 |         OPEN_LIST,
+2026-10-05T16:43:03.2852293Z 
+2026-10-05T16:43:03.2852478Z       at test/b-trials-6-payable-domain.spec.ts:321:23
+2026-10-05T16:43:03.2852718Z 
+2026-10-05T16:43:03.2853544Z   ● B-673-1 (T5) — the payable domain is open AND uncollectible, read before the paid list › unpaid never billed: draft, open, uncollectible, paid lists, both confirmed void, recheck, one DELETE
+2026-10-05T16:43:03.2854224Z 
+2026-10-05T16:43:03.2854405Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:43:03.2854643Z 
+2026-10-05T16:43:03.2854741Z     - Expected  - 5
+2026-10-05T16:43:03.2855041Z     + Received  + 0
+2026-10-05T16:43:03.2855199Z 
+2026-10-05T16:43:03.2855296Z       Array [
+2026-10-05T16:43:03.2855542Z         "GET /subscriptions/sub_1",
+2026-10-05T16:43:03.2855922Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.2856539Z         "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.2857018Z         "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.2857487Z         "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.2857864Z         "POST /invoices/in_open/void",
+2026-10-05T16:43:03.2858167Z         "POST /invoices/in_unc/void",
+2026-10-05T16:43:03.2858537Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.2859293Z     -   "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.2859769Z     -   "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.2860253Z     -   "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.2860632Z         "DELETE /subscriptions/sub_1",
+2026-10-05T16:43:03.2860889Z       ]
+2026-10-05T16:43:03.2861017Z 
+2026-10-05T16:43:03.2861208Z       319 |       });
+2026-10-05T16:43:03.2862071Z       320 |       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+2026-10-05T16:43:03.2862927Z     > 321 |       expect(w.calls).toEqual([
+2026-10-05T16:43:03.2863435Z           |                       ^
+2026-10-05T16:43:03.2863910Z       322 |         'GET /subscriptions/sub_1',
+2026-10-05T16:43:03.2864377Z       323 |         DRAFT_LIST,
+2026-10-05T16:43:03.2864805Z       324 |         OPEN_LIST,
+2026-10-05T16:43:03.2865030Z 
+2026-10-05T16:43:03.2865213Z       at test/b-trials-6-payable-domain.spec.ts:321:23
+2026-10-05T16:43:03.2865615Z 
+2026-10-05T16:43:03.2866529Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.2868018Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.2869780Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.2871344Z [Nest] 3076  - 10/05/2026, 4:44:23 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.2872804Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.2874368Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.2875897Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.8614873Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.8692140Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.8992251Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9003834Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:03.9058841Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9069954Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:03.9114661Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9137323Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9162290Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9186529Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9206966Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9227335Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9243996Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9260460Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9276142Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9291262Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9304536Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9319184Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9364980Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9375760Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9390809Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9402716Z [Nest] 3076  - 10/05/2026, 4:43:03 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=4 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:03.9819091Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.9820121Z FAIL test/b-trials-5-fix-round.spec.ts (223 MB heap size)
+2026-10-05T16:43:03.9821239Z   ● B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids every open invoice first › past_due never billed: open list, paid list, confirmed void, one DELETE, in that order
+2026-10-05T16:43:03.9821899Z 
+2026-10-05T16:43:03.9822097Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:43:03.9822664Z 
+2026-10-05T16:43:03.9822772Z     - Expected  - 5
+2026-10-05T16:43:03.9823001Z     + Received  + 0
+2026-10-05T16:43:03.9823129Z 
+2026-10-05T16:43:03.9823217Z       Array [
+2026-10-05T16:43:03.9823474Z         "GET /subscriptions/sub_1",
+2026-10-05T16:43:03.9823868Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.9824320Z         "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.9824793Z         "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.9825261Z         "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.9825641Z         "POST /invoices/in_renewal/void",
+2026-10-05T16:43:03.9826027Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.9826463Z     -   "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.9826941Z     -   "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.9827421Z     -   "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.9827789Z         "DELETE /subscriptions/sub_1",
+2026-10-05T16:43:03.9828057Z       ]
+2026-10-05T16:43:03.9828164Z 
+2026-10-05T16:43:03.9828364Z       301 |       });
+2026-10-05T16:43:03.9829549Z       302 |       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+2026-10-05T16:43:03.9830423Z     > 303 |       expect(w.calls).toEqual([
+2026-10-05T16:43:03.9830936Z           |                       ^
+2026-10-05T16:43:03.9831412Z       304 |         'GET /subscriptions/sub_1',
+2026-10-05T16:43:03.9831890Z       305 |         DRAFT_LIST,
+2026-10-05T16:43:03.9832324Z       306 |         OPEN_LIST,
+2026-10-05T16:43:03.9832556Z 
+2026-10-05T16:43:03.9832718Z       at test/b-trials-5-fix-round.spec.ts:303:23
+2026-10-05T16:43:03.9832937Z 
+2026-10-05T16:43:03.9833887Z   ● B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids every open invoice first › unpaid never billed: open list, paid list, confirmed void, one DELETE, in that order
+2026-10-05T16:43:03.9834534Z 
+2026-10-05T16:43:03.9834716Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:43:03.9834953Z 
+2026-10-05T16:43:03.9835052Z     - Expected  - 5
+2026-10-05T16:43:03.9835269Z     + Received  + 0
+2026-10-05T16:43:03.9835398Z 
+2026-10-05T16:43:03.9835478Z       Array [
+2026-10-05T16:43:03.9835723Z         "GET /subscriptions/sub_1",
+2026-10-05T16:43:03.9836103Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.9836546Z         "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.9837013Z         "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.9837485Z         "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.9837849Z         "POST /invoices/in_renewal/void",
+2026-10-05T16:43:03.9838244Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.9838957Z     -   "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.9839795Z     -   "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.9840303Z     -   "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.9840683Z         "DELETE /subscriptions/sub_1",
+2026-10-05T16:43:03.9840945Z       ]
+2026-10-05T16:43:03.9841055Z 
+2026-10-05T16:43:03.9841265Z       301 |       });
+2026-10-05T16:43:03.9842119Z       302 |       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+2026-10-05T16:43:03.9842976Z     > 303 |       expect(w.calls).toEqual([
+2026-10-05T16:43:03.9843667Z           |                       ^
+2026-10-05T16:43:03.9844145Z       304 |         'GET /subscriptions/sub_1',
+2026-10-05T16:43:03.9844625Z       305 |         DRAFT_LIST,
+2026-10-05T16:43:03.9845054Z       306 |         OPEN_LIST,
+2026-10-05T16:43:03.9845277Z 
+2026-10-05T16:43:03.9845440Z       at test/b-trials-5-fix-round.spec.ts:303:23
+2026-10-05T16:43:03.9845662Z 
+2026-10-05T16:43:03.9846434Z   ● B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids every open invoice first › lease renewed per void: two open invoices are both confirmed void, then one DELETE
+2026-10-05T16:43:03.9847076Z 
+2026-10-05T16:43:03.9847261Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:43:03.9847498Z 
+2026-10-05T16:43:03.9847595Z     - Expected  - 3
+2026-10-05T16:43:03.9847819Z     + Received  + 3
+2026-10-05T16:43:03.9847948Z 
+2026-10-05T16:43:03.9848027Z       Array [
+2026-10-05T16:43:03.9848290Z     -   "POST /invoices/in_a/void",
+2026-10-05T16:43:03.9848590Z     -   "POST /invoices/in_b/void",
+2026-10-05T16:43:03.9849140Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:03.9849523Z     +   "GET /subscriptions/sub_1",
+2026-10-05T16:43:03.9849879Z         "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:03.9850342Z         "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:03.9850817Z         "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:03.9851172Z     +   "POST /invoices/in_a/void",
+2026-10-05T16:43:03.9851453Z     +   "POST /invoices/in_b/void",
+2026-10-05T16:43:03.9851748Z         "DELETE /subscriptions/sub_1",
+2026-10-05T16:43:03.9852007Z       ]
+2026-10-05T16:43:03.9852115Z 
+2026-10-05T16:43:03.9852283Z       417 |     });
+2026-10-05T16:43:03.9853142Z       418 |     expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+2026-10-05T16:43:03.9854281Z     > 419 |     expect(w.calls.slice(-7)).toEqual([
+2026-10-05T16:43:03.9854937Z           |                               ^
+2026-10-05T16:43:03.9855423Z       420 |       'POST /invoices/in_a/void',
+2026-10-05T16:43:03.9855925Z       421 |       'POST /invoices/in_b/void',
+2026-10-05T16:43:03.9856390Z       422 |       DRAFT_LIST,
+2026-10-05T16:43:03.9856614Z 
+2026-10-05T16:43:03.9856868Z       at Object.<anonymous> (test/b-trials-5-fix-round.spec.ts:419:31)
+2026-10-05T16:43:03.9857148Z 
+2026-10-05T16:43:03.9858052Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.9859809Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.9861417Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.9863042Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.9864579Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:03.9866196Z [Nest] 3076  - 10/05/2026, 4:43:03 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.4479288Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:04.4517145Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)
+2026-10-05T16:43:04.4643780Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.4661398Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.4679527Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.4700216Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.4726496Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.4752955Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.4766979Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=2 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.4780043Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=3 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.4794579Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=4 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.5129641Z PASS test/b-trials-4-fix-round.spec.ts (248 MB heap size)
+2026-10-05T16:43:04.8850287Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.8852747Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.8854539Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.8856271Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.8858354Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.8860151Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.8861753Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.8863261Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9604944Z [Nest] 3076  - 10/05/2026, 4:43:04 PM   ERROR [TrialConflictService] trial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)
+2026-10-05T16:43:04.9898111Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9899830Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9902325Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9905092Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9907329Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9910121Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9912780Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9914507Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9916017Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9917477Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9919211Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9920668Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9922099Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9923744Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9925180Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9926594Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9928019Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9929612Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9931051Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9932483Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9933952Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9935427Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9937010Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9938464Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9940048Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9941487Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9942933Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9944392Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9945830Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:04.9947266Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1443306Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1445948Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1447762Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1449713Z [Nest] 3076  - 10/05/2026, 4:43:04 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1451437Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1453140Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1454861Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1456575Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1458114Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1459745Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1461216Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1463302Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1464941Z FAIL test/b-trials-7-draft-fence.spec.ts (286 MB heap size)
+2026-10-05T16:43:05.1466276Z [Nest] 3076  - 10/05/2026, 4:43:05 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:05.1468313Z   ● B-707-1 — the lenses' race: a renewal draft finalizes and pays inside the window › past_due, draft absent from the first draft page, paid during the open void (Opus D1): the paid recheck supersedes, billed alert, no DELETE
+2026-10-05T16:43:05.1470147Z 
+2026-10-05T16:43:05.1470508Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1470797Z 
+2026-10-05T16:43:05.1470915Z     Expected: "superseded"
+2026-10-05T16:43:05.1471176Z     Received: "cancelled"
+2026-10-05T16:43:05.1471328Z 
+2026-10-05T16:43:05.1471551Z       153 |         },
+2026-10-05T16:43:05.1471914Z       154 |       });
+2026-10-05T16:43:05.1472853Z     > 155 |       expect(await w.service.settle('pur-1', NOW)).toBe('superseded');
+2026-10-05T16:43:05.1473729Z           |                                                    ^
+2026-10-05T16:43:05.1474291Z       156 |       expect(paidCents).toBe(4900);
+2026-10-05T16:43:05.1474924Z       157 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1475956Z       158 |       expect(w.row()).toMatchObject({ status: 'superseded', last_error: 'billing_started' });
+2026-10-05T16:43:05.1476746Z 
+2026-10-05T16:43:05.1476932Z       at test/b-trials-7-draft-fence.spec.ts:155:52
+2026-10-05T16:43:05.1477158Z 
+2026-10-05T16:43:05.1478106Z   ● B-707-1 — the lenses' race: a renewal draft finalizes and pays inside the window › unpaid, draft absent from the first draft page, paid during the open void (Opus D1): the paid recheck supersedes, billed alert, no DELETE
+2026-10-05T16:43:05.1479354Z 
+2026-10-05T16:43:05.1479691Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1480126Z 
+2026-10-05T16:43:05.1480308Z     Expected: "superseded"
+2026-10-05T16:43:05.1480746Z     Received: "cancelled"
+2026-10-05T16:43:05.1481004Z 
+2026-10-05T16:43:05.1481335Z       153 |         },
+2026-10-05T16:43:05.1481939Z       154 |       });
+2026-10-05T16:43:05.1483585Z     > 155 |       expect(await w.service.settle('pur-1', NOW)).toBe('superseded');
+2026-10-05T16:43:05.1484919Z           |                                                    ^
+2026-10-05T16:43:05.1485480Z       156 |       expect(paidCents).toBe(4900);
+2026-10-05T16:43:05.1486090Z       157 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1487130Z       158 |       expect(w.row()).toMatchObject({ status: 'superseded', last_error: 'billing_started' });
+2026-10-05T16:43:05.1487732Z 
+2026-10-05T16:43:05.1487901Z       at test/b-trials-7-draft-fence.spec.ts:155:52
+2026-10-05T16:43:05.1488130Z 
+2026-10-05T16:43:05.1489228Z   ● B-707-1 — the lenses' race: a renewal draft finalizes and pays inside the window › past_due, listed draft finalized and paid after the paid read (Sol): its finalize is refused, no void, no DELETE; the next read supersedes
+2026-10-05T16:43:05.1490012Z 
+2026-10-05T16:43:05.1490360Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1490617Z 
+2026-10-05T16:43:05.1490717Z     Expected: "retry"
+2026-10-05T16:43:05.1490958Z     Received: "cancelled"
+2026-10-05T16:43:05.1491108Z 
+2026-10-05T16:43:05.1491429Z       180 |         finalize: () => notDraft,
+2026-10-05T16:43:05.1491886Z       181 |       });
+2026-10-05T16:43:05.1492781Z     > 182 |       expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1493626Z           |                                                    ^
+2026-10-05T16:43:05.1494372Z       183 |       expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1495126Z       184 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1495729Z       185 |       expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1496013Z 
+2026-10-05T16:43:05.1496185Z       at test/b-trials-7-draft-fence.spec.ts:182:52
+2026-10-05T16:43:05.1496409Z 
+2026-10-05T16:43:05.1497339Z   ● B-707-1 — the lenses' race: a renewal draft finalizes and pays inside the window › unpaid, listed draft finalized and paid after the paid read (Sol): its finalize is refused, no void, no DELETE; the next read supersedes
+2026-10-05T16:43:05.1498106Z 
+2026-10-05T16:43:05.1498296Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1498536Z 
+2026-10-05T16:43:05.1498754Z     Expected: "retry"
+2026-10-05T16:43:05.1498996Z     Received: "cancelled"
+2026-10-05T16:43:05.1499138Z 
+2026-10-05T16:43:05.1499591Z       180 |         finalize: () => notDraft,
+2026-10-05T16:43:05.1500033Z       181 |       });
+2026-10-05T16:43:05.1500938Z     > 182 |       expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1501808Z           |                                                    ^
+2026-10-05T16:43:05.1502552Z       183 |       expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1503295Z       184 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1503877Z       185 |       expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1504161Z 
+2026-10-05T16:43:05.1504331Z       at test/b-trials-7-draft-fence.spec.ts:182:52
+2026-10-05T16:43:05.1504553Z 
+2026-10-05T16:43:05.1505228Z   ● B-707-1 — the draft fence › past_due never billed: draft read first, finalized without collection and voided before the open void, full recheck, one DELETE
+2026-10-05T16:43:05.1505808Z 
+2026-10-05T16:43:05.1505990Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:43:05.1506216Z 
+2026-10-05T16:43:05.1506319Z     - Expected  - 7
+2026-10-05T16:43:05.1506536Z     + Received  + 0
+2026-10-05T16:43:05.1506662Z 
+2026-10-05T16:43:05.1506759Z       Array [
+2026-10-05T16:43:05.1506998Z         "GET /subscriptions/sub_1",
+2026-10-05T16:43:05.1507378Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:05.1507829Z         "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:05.1508292Z         "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:05.1508898Z         "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:05.1509298Z     -   "POST /invoices/in_draft/finalize",
+2026-10-05T16:43:05.1509625Z     -   "POST /invoices/in_draft/void",
+2026-10-05T16:43:05.1509970Z         "POST /invoices/in_open/void",
+2026-10-05T16:43:05.1510472Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:05.1510917Z     -   "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:05.1511376Z     -   "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:05.1511839Z     -   "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:05.1512202Z         "DELETE /subscriptions/sub_1",
+2026-10-05T16:43:05.1512461Z       ]
+2026-10-05T16:43:05.1512569Z 
+2026-10-05T16:43:05.1512965Z       201 |       const w = await world(base(status));
+2026-10-05T16:43:05.1513969Z       202 |       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+2026-10-05T16:43:05.1514828Z     > 203 |       expect(w.calls).toEqual([
+2026-10-05T16:43:05.1515349Z           |                       ^
+2026-10-05T16:43:05.1515825Z       204 |         'GET /subscriptions/sub_1',
+2026-10-05T16:43:05.1516327Z       205 |         LIST('draft'),
+2026-10-05T16:43:05.1516819Z       206 |         LIST('open'),
+2026-10-05T16:43:05.1517068Z 
+2026-10-05T16:43:05.1517235Z       at test/b-trials-7-draft-fence.spec.ts:203:23
+2026-10-05T16:43:05.1517462Z 
+2026-10-05T16:43:05.1518133Z   ● B-707-1 — the draft fence › unpaid never billed: draft read first, finalized without collection and voided before the open void, full recheck, one DELETE
+2026-10-05T16:43:05.1518859Z 
+2026-10-05T16:43:05.1519045Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:43:05.1519410Z 
+2026-10-05T16:43:05.1519503Z     - Expected  - 7
+2026-10-05T16:43:05.1519723Z     + Received  + 0
+2026-10-05T16:43:05.1519842Z 
+2026-10-05T16:43:05.1519929Z       Array [
+2026-10-05T16:43:05.1520175Z         "GET /subscriptions/sub_1",
+2026-10-05T16:43:05.1520568Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:05.1521014Z         "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:05.1521478Z         "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:05.1521954Z         "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:05.1522331Z     -   "POST /invoices/in_draft/finalize",
+2026-10-05T16:43:05.1522652Z     -   "POST /invoices/in_draft/void",
+2026-10-05T16:43:05.1522964Z         "POST /invoices/in_open/void",
+2026-10-05T16:43:05.1523332Z     -   "GET /invoices?subscription=sub_1&status=draft&limit=100",
+2026-10-05T16:43:05.1523764Z     -   "GET /invoices?subscription=sub_1&status=open&limit=100",
+2026-10-05T16:43:05.1524239Z     -   "GET /invoices?subscription=sub_1&status=uncollectible&limit=100",
+2026-10-05T16:43:05.1524703Z     -   "GET /invoices?subscription=sub_1&status=paid&limit=100",
+2026-10-05T16:43:05.1525074Z         "DELETE /subscriptions/sub_1",
+2026-10-05T16:43:05.1525334Z       ]
+2026-10-05T16:43:05.1525435Z 
+2026-10-05T16:43:05.1525830Z       201 |       const w = await world(base(status));
+2026-10-05T16:43:05.1526837Z       202 |       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+2026-10-05T16:43:05.1527695Z     > 203 |       expect(w.calls).toEqual([
+2026-10-05T16:43:05.1528210Z           |                       ^
+2026-10-05T16:43:05.1528859Z       204 |         'GET /subscriptions/sub_1',
+2026-10-05T16:43:05.1529374Z       205 |         LIST('draft'),
+2026-10-05T16:43:05.1529866Z       206 |         LIST('open'),
+2026-10-05T16:43:05.1530278Z 
+2026-10-05T16:43:05.1530457Z       at test/b-trials-7-draft-fence.spec.ts:203:23
+2026-10-05T16:43:05.1530693Z 
+2026-10-05T16:43:05.1531108Z   ● B-707-1 — the draft fence › draft page unknown (500): no finalize, no void, no DELETE, stays owed
+2026-10-05T16:43:05.1531482Z 
+2026-10-05T16:43:05.1531672Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1531910Z 
+2026-10-05T16:43:05.1532007Z     Expected: "retry"
+2026-10-05T16:43:05.1532237Z     Received: "cancelled"
+2026-10-05T16:43:05.1532387Z 
+2026-10-05T16:43:05.1533050Z       229 |   ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
+2026-10-05T16:43:05.1534047Z       230 |     const w = await world({ ...base(), draft });
+2026-10-05T16:43:05.1535171Z     > 231 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1536017Z           |                                                  ^
+2026-10-05T16:43:05.1536568Z       232 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1537180Z       233 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1537761Z       234 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1538040Z 
+2026-10-05T16:43:05.1538203Z       at test/b-trials-7-draft-fence.spec.ts:231:50
+2026-10-05T16:43:05.1538430Z 
+2026-10-05T16:43:05.1538965Z   ● B-707-1 — the draft fence › draft page unknown (404): no finalize, no void, no DELETE, stays owed
+2026-10-05T16:43:05.1539496Z 
+2026-10-05T16:43:05.1539689Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1539932Z 
+2026-10-05T16:43:05.1540027Z     Expected: "retry"
+2026-10-05T16:43:05.1540258Z     Received: "cancelled"
+2026-10-05T16:43:05.1540398Z 
+2026-10-05T16:43:05.1541063Z       229 |   ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
+2026-10-05T16:43:05.1542047Z       230 |     const w = await world({ ...base(), draft });
+2026-10-05T16:43:05.1543150Z     > 231 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1543989Z           |                                                  ^
+2026-10-05T16:43:05.1544555Z       232 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1545157Z       233 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1545731Z       234 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1546009Z 
+2026-10-05T16:43:05.1546180Z       at test/b-trials-7-draft-fence.spec.ts:231:50
+2026-10-05T16:43:05.1546400Z 
+2026-10-05T16:43:05.1546823Z   ● B-707-1 — the draft fence › draft page unknown (has_more): no finalize, no void, no DELETE, stays owed
+2026-10-05T16:43:05.1547211Z 
+2026-10-05T16:43:05.1547393Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1547626Z 
+2026-10-05T16:43:05.1547718Z     Expected: "retry"
+2026-10-05T16:43:05.1547944Z     Received: "cancelled"
+2026-10-05T16:43:05.1548088Z 
+2026-10-05T16:43:05.1548873Z       229 |   ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
+2026-10-05T16:43:05.1550001Z       230 |     const w = await world({ ...base(), draft });
+2026-10-05T16:43:05.1551125Z     > 231 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1551976Z           |                                                  ^
+2026-10-05T16:43:05.1552523Z       232 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1553130Z       233 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1553716Z       234 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1553996Z 
+2026-10-05T16:43:05.1554166Z       at test/b-trials-7-draft-fence.spec.ts:231:50
+2026-10-05T16:43:05.1554393Z 
+2026-10-05T16:43:05.1554859Z   ● B-707-1 — the draft fence › draft page unknown (has_more missing): no finalize, no void, no DELETE, stays owed
+2026-10-05T16:43:05.1555280Z 
+2026-10-05T16:43:05.1555462Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1555704Z 
+2026-10-05T16:43:05.1555800Z     Expected: "retry"
+2026-10-05T16:43:05.1556027Z     Received: "cancelled"
+2026-10-05T16:43:05.1556175Z 
+2026-10-05T16:43:05.1556821Z       229 |   ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
+2026-10-05T16:43:05.1557812Z       230 |     const w = await world({ ...base(), draft });
+2026-10-05T16:43:05.1559036Z     > 231 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1560028Z           |                                                  ^
+2026-10-05T16:43:05.1560582Z       232 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1561189Z       233 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1561770Z       234 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1562044Z 
+2026-10-05T16:43:05.1562210Z       at test/b-trials-7-draft-fence.spec.ts:231:50
+2026-10-05T16:43:05.1562432Z 
+2026-10-05T16:43:05.1562890Z   ● B-707-1 — the draft fence › draft page unknown (data not a list): no finalize, no void, no DELETE, stays owed
+2026-10-05T16:43:05.1563300Z 
+2026-10-05T16:43:05.1563487Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1563723Z 
+2026-10-05T16:43:05.1563820Z     Expected: "retry"
+2026-10-05T16:43:05.1564055Z     Received: "cancelled"
+2026-10-05T16:43:05.1564196Z 
+2026-10-05T16:43:05.1564855Z       229 |   ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
+2026-10-05T16:43:05.1565842Z       230 |     const w = await world({ ...base(), draft });
+2026-10-05T16:43:05.1566963Z     > 231 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1567794Z           |                                                  ^
+2026-10-05T16:43:05.1568338Z       232 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1569117Z       233 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1569720Z       234 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1570001Z 
+2026-10-05T16:43:05.1570333Z       at test/b-trials-7-draft-fence.spec.ts:231:50
+2026-10-05T16:43:05.1570573Z 
+2026-10-05T16:43:05.1571012Z   ● B-707-1 — the draft fence › draft page unknown (null entry): no finalize, no void, no DELETE, stays owed
+2026-10-05T16:43:05.1571407Z 
+2026-10-05T16:43:05.1571595Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1571831Z 
+2026-10-05T16:43:05.1571926Z     Expected: "retry"
+2026-10-05T16:43:05.1572155Z     Received: "cancelled"
+2026-10-05T16:43:05.1572302Z 
+2026-10-05T16:43:05.1572954Z       229 |   ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
+2026-10-05T16:43:05.1573934Z       230 |     const w = await world({ ...base(), draft });
+2026-10-05T16:43:05.1575046Z     > 231 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1575879Z           |                                                  ^
+2026-10-05T16:43:05.1576420Z       232 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1577020Z       233 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1577595Z       234 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1577872Z 
+2026-10-05T16:43:05.1578038Z       at test/b-trials-7-draft-fence.spec.ts:231:50
+2026-10-05T16:43:05.1578253Z 
+2026-10-05T16:43:05.1578812Z   ● B-707-1 — the draft fence › draft page unknown (numeric id): no finalize, no void, no DELETE, stays owed
+2026-10-05T16:43:05.1579352Z 
+2026-10-05T16:43:05.1579541Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1579782Z 
+2026-10-05T16:43:05.1579877Z     Expected: "retry"
+2026-10-05T16:43:05.1580114Z     Received: "cancelled"
+2026-10-05T16:43:05.1580262Z 
+2026-10-05T16:43:05.1580916Z       229 |   ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
+2026-10-05T16:43:05.1581905Z       230 |     const w = await world({ ...base(), draft });
+2026-10-05T16:43:05.1583000Z     > 231 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1583839Z           |                                                  ^
+2026-10-05T16:43:05.1584382Z       232 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1584983Z       233 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1585566Z       234 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1585841Z 
+2026-10-05T16:43:05.1586004Z       at test/b-trials-7-draft-fence.spec.ts:231:50
+2026-10-05T16:43:05.1586227Z 
+2026-10-05T16:43:05.1586655Z   ● B-707-1 — the draft fence › draft page unknown (empty id): no finalize, no void, no DELETE, stays owed
+2026-10-05T16:43:05.1587037Z 
+2026-10-05T16:43:05.1587224Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1587463Z 
+2026-10-05T16:43:05.1587556Z     Expected: "retry"
+2026-10-05T16:43:05.1587789Z     Received: "cancelled"
+2026-10-05T16:43:05.1587932Z 
+2026-10-05T16:43:05.1588587Z       229 |   ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
+2026-10-05T16:43:05.1589729Z       230 |     const w = await world({ ...base(), draft });
+2026-10-05T16:43:05.1590945Z     > 231 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1591793Z           |                                                  ^
+2026-10-05T16:43:05.1602041Z       232 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1602839Z       233 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1603454Z       234 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1603746Z 
+2026-10-05T16:43:05.1603928Z       at test/b-trials-7-draft-fence.spec.ts:231:50
+2026-10-05T16:43:05.1604170Z 
+2026-10-05T16:43:05.1604663Z   ● B-707-1 — the draft fence › finalize not confirmed (already finalized (400)): no void of it, no DELETE, retried
+2026-10-05T16:43:05.1605102Z 
+2026-10-05T16:43:05.1605308Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1605549Z 
+2026-10-05T16:43:05.1605649Z     Expected: "retry"
+2026-10-05T16:43:05.1605889Z     Received: "cancelled"
+2026-10-05T16:43:05.1606048Z 
+2026-10-05T16:43:05.1606686Z       247 |   ])('finalize not confirmed (%s): no void of it, no DELETE, retried', async (_n, res) => {
+2026-10-05T16:43:05.1607773Z       248 |     const w = await world({ ...base(), finalize: () => res });
+2026-10-05T16:43:05.1609122Z     > 249 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1610211Z           |                                                  ^
+2026-10-05T16:43:05.1610952Z       250 |     expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1611701Z       251 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1612281Z       252 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1612559Z 
+2026-10-05T16:43:05.1612735Z       at test/b-trials-7-draft-fence.spec.ts:249:50
+2026-10-05T16:43:05.1612967Z 
+2026-10-05T16:43:05.1613353Z   ● B-707-1 — the draft fence › finalize not confirmed (500): no void of it, no DELETE, retried
+2026-10-05T16:43:05.1613705Z 
+2026-10-05T16:43:05.1613895Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1614139Z 
+2026-10-05T16:43:05.1614237Z     Expected: "retry"
+2026-10-05T16:43:05.1614481Z     Received: "cancelled"
+2026-10-05T16:43:05.1614634Z 
+2026-10-05T16:43:05.1615267Z       247 |   ])('finalize not confirmed (%s): no void of it, no DELETE, retried', async (_n, res) => {
+2026-10-05T16:43:05.1616356Z       248 |     const w = await world({ ...base(), finalize: () => res });
+2026-10-05T16:43:05.1617524Z     > 249 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1618371Z           |                                                  ^
+2026-10-05T16:43:05.1619249Z       250 |     expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1619999Z       251 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1620603Z       252 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1620883Z 
+2026-10-05T16:43:05.1621172Z       at test/b-trials-7-draft-fence.spec.ts:249:50
+2026-10-05T16:43:05.1621409Z 
+2026-10-05T16:43:05.1621922Z   ● B-707-1 — the draft fence › finalize not confirmed (200 but paid ($0 or credit-funded)): no void of it, no DELETE, retried
+2026-10-05T16:43:05.1622377Z 
+2026-10-05T16:43:05.1622559Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1622802Z 
+2026-10-05T16:43:05.1622905Z     Expected: "retry"
+2026-10-05T16:43:05.1623134Z     Received: "cancelled"
+2026-10-05T16:43:05.1623280Z 
+2026-10-05T16:43:05.1623890Z       247 |   ])('finalize not confirmed (%s): no void of it, no DELETE, retried', async (_n, res) => {
+2026-10-05T16:43:05.1624970Z       248 |     const w = await world({ ...base(), finalize: () => res });
+2026-10-05T16:43:05.1626154Z     > 249 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1626991Z           |                                                  ^
+2026-10-05T16:43:05.1627721Z       250 |     expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1628452Z       251 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1629203Z       252 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1629493Z 
+2026-10-05T16:43:05.1629663Z       at test/b-trials-7-draft-fence.spec.ts:249:50
+2026-10-05T16:43:05.1630021Z 
+2026-10-05T16:43:05.1630482Z   ● B-707-1 — the draft fence › finalize not confirmed (200 but still draft): no void of it, no DELETE, retried
+2026-10-05T16:43:05.1630886Z 
+2026-10-05T16:43:05.1631081Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1631323Z 
+2026-10-05T16:43:05.1631414Z     Expected: "retry"
+2026-10-05T16:43:05.1631653Z     Received: "cancelled"
+2026-10-05T16:43:05.1631799Z 
+2026-10-05T16:43:05.1632418Z       247 |   ])('finalize not confirmed (%s): no void of it, no DELETE, retried', async (_n, res) => {
+2026-10-05T16:43:05.1633503Z       248 |     const w = await world({ ...base(), finalize: () => res });
+2026-10-05T16:43:05.1634688Z     > 249 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1635536Z           |                                                  ^
+2026-10-05T16:43:05.1636279Z       250 |     expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1637014Z       251 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1637605Z       252 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1637877Z 
+2026-10-05T16:43:05.1638043Z       at test/b-trials-7-draft-fence.spec.ts:249:50
+2026-10-05T16:43:05.1638268Z 
+2026-10-05T16:43:05.1638863Z   ● B-707-1 — the draft fence › finalize not confirmed (200 for another invoice): no void of it, no DELETE, retried
+2026-10-05T16:43:05.1639290Z 
+2026-10-05T16:43:05.1639480Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1639721Z 
+2026-10-05T16:43:05.1639811Z     Expected: "retry"
+2026-10-05T16:43:05.1640049Z     Received: "cancelled"
+2026-10-05T16:43:05.1640197Z 
+2026-10-05T16:43:05.1640941Z       247 |   ])('finalize not confirmed (%s): no void of it, no DELETE, retried', async (_n, res) => {
+2026-10-05T16:43:05.1642026Z       248 |     const w = await world({ ...base(), finalize: () => res });
+2026-10-05T16:43:05.1643201Z     > 249 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1644029Z           |                                                  ^
+2026-10-05T16:43:05.1644756Z       250 |     expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1645485Z       251 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1646064Z       252 |     expect(w.row()).toMatchObject({
+2026-10-05T16:43:05.1646337Z 
+2026-10-05T16:43:05.1646509Z       at test/b-trials-7-draft-fence.spec.ts:249:50
+2026-10-05T16:43:05.1646727Z 
+2026-10-05T16:43:05.1647215Z   ● B-707-1 — the draft fence › a payment wins the finalized draft before its void: no DELETE; the next read supersedes
+2026-10-05T16:43:05.1647651Z 
+2026-10-05T16:43:05.1647830Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:43:05.1648057Z 
+2026-10-05T16:43:05.1648157Z     - Expected  - 2
+2026-10-05T16:43:05.1648374Z     + Received  + 1
+2026-10-05T16:43:05.1648499Z 
+2026-10-05T16:43:05.1648590Z       Array [
+2026-10-05T16:43:05.1649037Z     -   "POST /invoices/in_draft/finalize",
+2026-10-05T16:43:05.1649362Z     -   "POST /invoices/in_draft/void",
+2026-10-05T16:43:05.1649679Z     +   "POST /invoices/in_open/void",
+2026-10-05T16:43:05.1650077Z       ]
+2026-10-05T16:43:05.1650188Z 
+2026-10-05T16:43:05.1650360Z       271 |     });
+2026-10-05T16:43:05.1651188Z       272 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1652449Z     > 273 |     expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize', 'POST /invoices/in_draft/void']);
+2026-10-05T16:43:05.1653264Z           |                       ^
+2026-10-05T16:43:05.1653804Z       274 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1654793Z       275 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: 'invoice_not_voided' });
+2026-10-05T16:43:05.1655741Z       276 |     w.row().next_attempt_at = NOW;
+2026-10-05T16:43:05.1656088Z 
+2026-10-05T16:43:05.1656328Z       at Object.<anonymous> (test/b-trials-7-draft-fence.spec.ts:273:23)
+2026-10-05T16:43:05.1656618Z 
+2026-10-05T16:43:05.1657096Z   ● B-707-1 — the draft fence › drafts count toward TRIAL_CONFLICT_MAX_VOIDS: 1 open + 10 drafts is retried untouched
+2026-10-05T16:43:05.1657516Z 
+2026-10-05T16:43:05.1657704Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1657942Z 
+2026-10-05T16:43:05.1658034Z     Expected: "retry"
+2026-10-05T16:43:05.1658268Z     Received: "cancelled"
+2026-10-05T16:43:05.1658410Z 
+2026-10-05T16:43:05.1659432Z       282 |     const drafts = Array.from({ length: 10 }, (_, i) => ({ id: `in_d${i}` }));
+2026-10-05T16:43:05.1660645Z       283 |     const w = await world({ ...base(), draft: page(drafts) });
+2026-10-05T16:43:05.1661937Z     > 284 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1662791Z           |                                                  ^
+2026-10-05T16:43:05.1663351Z       285 |     expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1663955Z       286 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1664959Z       287 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: 'invoices_too_many' });
+2026-10-05T16:43:05.1665529Z 
+2026-10-05T16:43:05.1665772Z       at Object.<anonymous> (test/b-trials-7-draft-fence.spec.ts:284:50)
+2026-10-05T16:43:05.1666066Z 
+2026-10-05T16:43:05.1666370Z   ● B-707-1 — the recheck before the DELETE › a new draft: no DELETE, retried
+2026-10-05T16:43:05.1666668Z 
+2026-10-05T16:43:05.1666866Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1667115Z 
+2026-10-05T16:43:05.1667206Z     Expected: "retry"
+2026-10-05T16:43:05.1667436Z     Received: "cancelled"
+2026-10-05T16:43:05.1667584Z 
+2026-10-05T16:43:05.1668116Z       304 |   ])('%s: no DELETE, retried', async (_n, recheck, code) => {
+2026-10-05T16:43:05.1669559Z       305 |     const w = await world({ ...base(), recheck: { draft: page([]), open: page([]), ...recheck } });
+2026-10-05T16:43:05.1670938Z     > 306 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1671903Z           |                                                  ^
+2026-10-05T16:43:05.1672523Z       307 |     expect(w.posts()).toHaveLength(3);
+2026-10-05T16:43:05.1673169Z       308 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1674264Z       309 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: code, lease_token: null });
+2026-10-05T16:43:05.1674904Z 
+2026-10-05T16:43:05.1675076Z       at test/b-trials-7-draft-fence.spec.ts:306:50
+2026-10-05T16:43:05.1675300Z 
+2026-10-05T16:43:05.1675625Z   ● B-707-1 — the recheck before the DELETE › a new open invoice: no DELETE, retried
+2026-10-05T16:43:05.1675941Z 
+2026-10-05T16:43:05.1676129Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1676363Z 
+2026-10-05T16:43:05.1676459Z     Expected: "retry"
+2026-10-05T16:43:05.1676688Z     Received: "cancelled"
+2026-10-05T16:43:05.1676834Z 
+2026-10-05T16:43:05.1677363Z       304 |   ])('%s: no DELETE, retried', async (_n, recheck, code) => {
+2026-10-05T16:43:05.1678784Z       305 |     const w = await world({ ...base(), recheck: { draft: page([]), open: page([]), ...recheck } });
+2026-10-05T16:43:05.1680175Z     > 306 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1681012Z           |                                                  ^
+2026-10-05T16:43:05.1681631Z       307 |     expect(w.posts()).toHaveLength(3);
+2026-10-05T16:43:05.1682394Z       308 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1683499Z       309 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: code, lease_token: null });
+2026-10-05T16:43:05.1684143Z 
+2026-10-05T16:43:05.1684315Z       at test/b-trials-7-draft-fence.spec.ts:306:50
+2026-10-05T16:43:05.1684547Z 
+2026-10-05T16:43:05.1684964Z   ● B-707-1 — the recheck before the DELETE › a new uncollectible invoice: no DELETE, retried
+2026-10-05T16:43:05.1685315Z 
+2026-10-05T16:43:05.1685501Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1685735Z 
+2026-10-05T16:43:05.1685835Z     Expected: "retry"
+2026-10-05T16:43:05.1686065Z     Received: "cancelled"
+2026-10-05T16:43:05.1686221Z 
+2026-10-05T16:43:05.1686755Z       304 |   ])('%s: no DELETE, retried', async (_n, recheck, code) => {
+2026-10-05T16:43:05.1688048Z       305 |     const w = await world({ ...base(), recheck: { draft: page([]), open: page([]), ...recheck } });
+2026-10-05T16:43:05.1689613Z     > 306 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1690450Z           |                                                  ^
+2026-10-05T16:43:05.1691066Z       307 |     expect(w.posts()).toHaveLength(3);
+2026-10-05T16:43:05.1691713Z       308 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1692937Z       309 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: code, lease_token: null });
+2026-10-05T16:43:05.1693579Z 
+2026-10-05T16:43:05.1693752Z       at test/b-trials-7-draft-fence.spec.ts:306:50
+2026-10-05T16:43:05.1693975Z 
+2026-10-05T16:43:05.1694324Z   ● B-707-1 — the recheck before the DELETE › the draft page unknown: no DELETE, retried
+2026-10-05T16:43:05.1694655Z 
+2026-10-05T16:43:05.1694841Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1695075Z 
+2026-10-05T16:43:05.1695173Z     Expected: "retry"
+2026-10-05T16:43:05.1695402Z     Received: "cancelled"
+2026-10-05T16:43:05.1695548Z 
+2026-10-05T16:43:05.1696076Z       304 |   ])('%s: no DELETE, retried', async (_n, recheck, code) => {
+2026-10-05T16:43:05.1697373Z       305 |     const w = await world({ ...base(), recheck: { draft: page([]), open: page([]), ...recheck } });
+2026-10-05T16:43:05.1698904Z     > 306 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1699755Z           |                                                  ^
+2026-10-05T16:43:05.1700355Z       307 |     expect(w.posts()).toHaveLength(3);
+2026-10-05T16:43:05.1701002Z       308 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1702105Z       309 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: code, lease_token: null });
+2026-10-05T16:43:05.1702751Z 
+2026-10-05T16:43:05.1702914Z       at test/b-trials-7-draft-fence.spec.ts:306:50
+2026-10-05T16:43:05.1703141Z 
+2026-10-05T16:43:05.1703623Z   ● B-707-1 — the recheck before the DELETE › the open page incomplete: no DELETE, retried
+2026-10-05T16:43:05.1703964Z 
+2026-10-05T16:43:05.1704157Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1704399Z 
+2026-10-05T16:43:05.1704488Z     Expected: "retry"
+2026-10-05T16:43:05.1704725Z     Received: "cancelled"
+2026-10-05T16:43:05.1704866Z 
+2026-10-05T16:43:05.1705393Z       304 |   ])('%s: no DELETE, retried', async (_n, recheck, code) => {
+2026-10-05T16:43:05.1706684Z       305 |     const w = await world({ ...base(), recheck: { draft: page([]), open: page([]), ...recheck } });
+2026-10-05T16:43:05.1708064Z     > 306 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1709044Z           |                                                  ^
+2026-10-05T16:43:05.1709645Z       307 |     expect(w.posts()).toHaveLength(3);
+2026-10-05T16:43:05.1710323Z       308 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1711412Z       309 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: code, lease_token: null });
+2026-10-05T16:43:05.1712048Z 
+2026-10-05T16:43:05.1712209Z       at test/b-trials-7-draft-fence.spec.ts:306:50
+2026-10-05T16:43:05.1712560Z 
+2026-10-05T16:43:05.1712946Z   ● B-707-1 — the recheck before the DELETE › the uncollectible page unknown: no DELETE, retried
+2026-10-05T16:43:05.1713300Z 
+2026-10-05T16:43:05.1713492Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1713731Z 
+2026-10-05T16:43:05.1713819Z     Expected: "retry"
+2026-10-05T16:43:05.1714049Z     Received: "cancelled"
+2026-10-05T16:43:05.1714189Z 
+2026-10-05T16:43:05.1714709Z       304 |   ])('%s: no DELETE, retried', async (_n, recheck, code) => {
+2026-10-05T16:43:05.1715992Z       305 |     const w = await world({ ...base(), recheck: { draft: page([]), open: page([]), ...recheck } });
+2026-10-05T16:43:05.1717350Z     > 306 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1718181Z           |                                                  ^
+2026-10-05T16:43:05.1718935Z       307 |     expect(w.posts()).toHaveLength(3);
+2026-10-05T16:43:05.1719640Z       308 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1720735Z       309 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: code, lease_token: null });
+2026-10-05T16:43:05.1721370Z 
+2026-10-05T16:43:05.1721541Z       at test/b-trials-7-draft-fence.spec.ts:306:50
+2026-10-05T16:43:05.1721768Z 
+2026-10-05T16:43:05.1722116Z   ● B-707-1 — the recheck before the DELETE › the paid page unknown: no DELETE, retried
+2026-10-05T16:43:05.1722441Z 
+2026-10-05T16:43:05.1722631Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1722874Z 
+2026-10-05T16:43:05.1722963Z     Expected: "retry"
+2026-10-05T16:43:05.1723197Z     Received: "cancelled"
+2026-10-05T16:43:05.1723339Z 
+2026-10-05T16:43:05.1723981Z       304 |   ])('%s: no DELETE, retried', async (_n, recheck, code) => {
+2026-10-05T16:43:05.1725274Z       305 |     const w = await world({ ...base(), recheck: { draft: page([]), open: page([]), ...recheck } });
+2026-10-05T16:43:05.1726647Z     > 306 |     expect(await w.service.settle('pur-1', NOW)).toBe('retry');
+2026-10-05T16:43:05.1727477Z           |                                                  ^
+2026-10-05T16:43:05.1728085Z       307 |     expect(w.posts()).toHaveLength(3);
+2026-10-05T16:43:05.1728850Z       308 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1729950Z       309 |     expect(w.row()).toMatchObject({ status: 'owed', last_error: code, lease_token: null });
+2026-10-05T16:43:05.1730582Z 
+2026-10-05T16:43:05.1730750Z       at test/b-trials-7-draft-fence.spec.ts:306:50
+2026-10-05T16:43:05.1731002Z 
+2026-10-05T16:43:05.1731430Z   ● B-707-1 — ownership across every added await › a supersession during the draft read: stale, no DELETE
+2026-10-05T16:43:05.1731826Z 
+2026-10-05T16:43:05.1732010Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1732247Z 
+2026-10-05T16:43:05.1732335Z     Expected: "stale"
+2026-10-05T16:43:05.1732570Z     Received: "cancelled"
+2026-10-05T16:43:05.1732866Z 
+2026-10-05T16:43:05.1733581Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1734532Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1735586Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1736429Z           |                                                    ^
+2026-10-05T16:43:05.1737019Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1737826Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1739127Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1739705Z 
+2026-10-05T16:43:05.1739875Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1740097Z 
+2026-10-05T16:43:05.1740612Z   ● B-707-1 — ownership across every added await › a subscription-deleted webhook during the draft read: stale, no DELETE
+2026-10-05T16:43:05.1741063Z 
+2026-10-05T16:43:05.1741248Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1741482Z 
+2026-10-05T16:43:05.1741578Z     Expected: "stale"
+2026-10-05T16:43:05.1741806Z     Received: "cancelled"
+2026-10-05T16:43:05.1741951Z 
+2026-10-05T16:43:05.1742639Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1743576Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1744786Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1745642Z           |                                                    ^
+2026-10-05T16:43:05.1746221Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1747030Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1748151Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1748880Z 
+2026-10-05T16:43:05.1749052Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1749272Z 
+2026-10-05T16:43:05.1749786Z   ● B-707-1 — ownership across every added await › another worker taking the lease during the draft read: stale, no DELETE
+2026-10-05T16:43:05.1750232Z 
+2026-10-05T16:43:05.1750416Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1750651Z 
+2026-10-05T16:43:05.1750745Z     Expected: "stale"
+2026-10-05T16:43:05.1750970Z     Received: "cancelled"
+2026-10-05T16:43:05.1751116Z 
+2026-10-05T16:43:05.1751798Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1752728Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1753774Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1754750Z           |                                                    ^
+2026-10-05T16:43:05.1755327Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1756132Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1757377Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1757948Z 
+2026-10-05T16:43:05.1758115Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1758334Z 
+2026-10-05T16:43:05.1758881Z   ● B-707-1 — ownership across every added await › a supersession during the finalize: stale, no DELETE
+2026-10-05T16:43:05.1759501Z 
+2026-10-05T16:43:05.1759692Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1759931Z 
+2026-10-05T16:43:05.1760027Z     Expected: "stale"
+2026-10-05T16:43:05.1760261Z     Received: "cancelled"
+2026-10-05T16:43:05.1760409Z 
+2026-10-05T16:43:05.1761118Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1762056Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1763102Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1763946Z           |                                                    ^
+2026-10-05T16:43:05.1764531Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1765482Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1766609Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1767176Z 
+2026-10-05T16:43:05.1767345Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1767562Z 
+2026-10-05T16:43:05.1768064Z   ● B-707-1 — ownership across every added await › a subscription-deleted webhook during the finalize: stale, no DELETE
+2026-10-05T16:43:05.1768507Z 
+2026-10-05T16:43:05.1768887Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1769134Z 
+2026-10-05T16:43:05.1769230Z     Expected: "stale"
+2026-10-05T16:43:05.1769463Z     Received: "cancelled"
+2026-10-05T16:43:05.1769610Z 
+2026-10-05T16:43:05.1770298Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1771243Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1772293Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1773133Z           |                                                    ^
+2026-10-05T16:43:05.1773711Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1774515Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1775776Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1776359Z 
+2026-10-05T16:43:05.1776524Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1776747Z 
+2026-10-05T16:43:05.1777245Z   ● B-707-1 — ownership across every added await › another worker taking the lease during the finalize: stale, no DELETE
+2026-10-05T16:43:05.1777686Z 
+2026-10-05T16:43:05.1777864Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1778098Z 
+2026-10-05T16:43:05.1778192Z     Expected: "stale"
+2026-10-05T16:43:05.1778441Z     Received: "cancelled"
+2026-10-05T16:43:05.1778588Z 
+2026-10-05T16:43:05.1779445Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1780407Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1781470Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1782314Z           |                                                    ^
+2026-10-05T16:43:05.1782897Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1783702Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1784820Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1785392Z 
+2026-10-05T16:43:05.1785554Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1785777Z 
+2026-10-05T16:43:05.1786333Z   ● B-707-1 — ownership across every added await › a supersession during the draft void: stale, no DELETE
+2026-10-05T16:43:05.1786723Z 
+2026-10-05T16:43:05.1786908Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1787148Z 
+2026-10-05T16:43:05.1787239Z     Expected: "stale"
+2026-10-05T16:43:05.1787469Z     Received: "cancelled"
+2026-10-05T16:43:05.1787610Z 
+2026-10-05T16:43:05.1788297Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1789402Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1790444Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1791291Z           |                                                    ^
+2026-10-05T16:43:05.1791878Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1792686Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1793802Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1794364Z 
+2026-10-05T16:43:05.1794532Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1794754Z 
+2026-10-05T16:43:05.1795260Z   ● B-707-1 — ownership across every added await › a subscription-deleted webhook during the draft void: stale, no DELETE
+2026-10-05T16:43:05.1795835Z 
+2026-10-05T16:43:05.1796021Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1796257Z 
+2026-10-05T16:43:05.1796351Z     Expected: "stale"
+2026-10-05T16:43:05.1796589Z     Received: "cancelled"
+2026-10-05T16:43:05.1796729Z 
+2026-10-05T16:43:05.1797411Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1798329Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1799710Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1800563Z           |                                                    ^
+2026-10-05T16:43:05.1801152Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1801960Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1803073Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1803635Z 
+2026-10-05T16:43:05.1803803Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1804023Z 
+2026-10-05T16:43:05.1804521Z   ● B-707-1 — ownership across every added await › another worker taking the lease during the draft void: stale, no DELETE
+2026-10-05T16:43:05.1804964Z 
+2026-10-05T16:43:05.1805146Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1805384Z 
+2026-10-05T16:43:05.1805473Z     Expected: "stale"
+2026-10-05T16:43:05.1805712Z     Received: "cancelled"
+2026-10-05T16:43:05.1805853Z 
+2026-10-05T16:43:05.1806671Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1807609Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1808799Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1809646Z           |                                                    ^
+2026-10-05T16:43:05.1810264Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1811068Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1812190Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1812756Z 
+2026-10-05T16:43:05.1812922Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1813147Z 
+2026-10-05T16:43:05.1813558Z   ● B-707-1 — ownership across every added await › a supersession during the recheck: stale, no DELETE
+2026-10-05T16:43:05.1813941Z 
+2026-10-05T16:43:05.1814122Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1814353Z 
+2026-10-05T16:43:05.1814447Z     Expected: "stale"
+2026-10-05T16:43:05.1814672Z     Received: "cancelled"
+2026-10-05T16:43:05.1814826Z 
+2026-10-05T16:43:05.1815511Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1816569Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1817629Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1818467Z           |                                                    ^
+2026-10-05T16:43:05.1819186Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1819994Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1821108Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1821681Z 
+2026-10-05T16:43:05.1821854Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1822071Z 
+2026-10-05T16:43:05.1822576Z   ● B-707-1 — ownership across every added await › a subscription-deleted webhook during the recheck: stale, no DELETE
+2026-10-05T16:43:05.1823019Z 
+2026-10-05T16:43:05.1823203Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1823436Z 
+2026-10-05T16:43:05.1823531Z     Expected: "stale"
+2026-10-05T16:43:05.1823755Z     Received: "cancelled"
+2026-10-05T16:43:05.1823900Z 
+2026-10-05T16:43:05.1824579Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1825512Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1826554Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1827520Z           |                                                    ^
+2026-10-05T16:43:05.1828104Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1829066Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1830211Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1830792Z 
+2026-10-05T16:43:05.1830966Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1831187Z 
+2026-10-05T16:43:05.1831685Z   ● B-707-1 — ownership across every added await › another worker taking the lease during the recheck: stale, no DELETE
+2026-10-05T16:43:05.1832134Z 
+2026-10-05T16:43:05.1832314Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:05.1832557Z 
+2026-10-05T16:43:05.1832658Z     Expected: "stale"
+2026-10-05T16:43:05.1832901Z     Received: "cancelled"
+2026-10-05T16:43:05.1833049Z 
+2026-10-05T16:43:05.1833745Z       363 |     it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
+2026-10-05T16:43:05.1834692Z       364 |       const w = await at(when, change);
+2026-10-05T16:43:05.1835743Z     > 365 |       expect(await w.service.settle('pur-1', NOW)).toBe('stale');
+2026-10-05T16:43:05.1836593Z           |                                                    ^
+2026-10-05T16:43:05.1837302Z       366 |       expect(w.deletes()).toBe(0);
+2026-10-05T16:43:05.1838122Z       367 |       if (when === 'draft read') expect(w.posts()).toEqual([]);
+2026-10-05T16:43:05.1839633Z       368 |       if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
+2026-10-05T16:43:05.1840218Z 
+2026-10-05T16:43:05.1840390Z       at test/b-trials-7-draft-fence.spec.ts:365:52
+2026-10-05T16:43:05.1840624Z 
+2026-10-05T16:43:05.7019461Z FAIL test/audit-sol-t5-draft-race.spec.ts (324 MB heap size)
+2026-10-05T16:43:05.7117397Z   ● Console
+2026-10-05T16:43:05.7118219Z 
+2026-10-05T16:43:05.7118427Z     console.info
+2026-10-05T16:43:05.7119296Z       AUD-SOL-T5-119 DRAFT_FINALIZATION_RACE {
+2026-10-05T16:43:05.7119778Z         status: 'past_due',
+2026-10-05T16:43:05.7120135Z         payingStatus: 'draft',
+2026-10-05T16:43:05.7120460Z         draftState: 'paid',
+2026-10-05T16:43:05.7120812Z         voidedIds: [ 'in-new-open' ],
+2026-10-05T16:43:05.7121162Z         calls: [
+2026-10-05T16:43:05.7121496Z           'GET /subscriptions/sub-payment',
+2026-10-05T16:43:05.7122053Z           'GET /invoices?subscription=sub-payment&status=open&limit=100',
+2026-10-05T16:43:05.7122760Z           'GET /invoices?subscription=sub-payment&status=uncollectible&limit=100',
+2026-10-05T16:43:05.7123426Z           'GET /invoices?subscription=sub-payment&status=paid&limit=100',
+2026-10-05T16:43:05.7123929Z           'POST /invoices/in-new-open/void',
+2026-10-05T16:43:05.7124342Z           'DELETE /subscriptions/sub-payment'
+2026-10-05T16:43:05.7124699Z         ],
+2026-10-05T16:43:05.7124947Z         paidCents: 4900,
+2026-10-05T16:43:05.7125290Z         accessBeforeDeleted: true,
+2026-10-05T16:43:05.7125660Z         accessAfterDeleted: false,
+2026-10-05T16:43:05.7125994Z         outcome: 'stale',
+2026-10-05T16:43:05.7126320Z         conflict: 'superseded',
+2026-10-05T16:43:05.7126640Z         deletes: 1
+2026-10-05T16:43:05.7126901Z       }
+2026-10-05T16:43:05.7127029Z 
+2026-10-05T16:43:05.7127522Z       at test/audit-sol-t5-draft-race.spec.ts:142:17
+2026-10-05T16:43:05.7127772Z 
+2026-10-05T16:43:05.7127858Z     console.info
+2026-10-05T16:43:05.7128133Z       AUD-SOL-T5-119 DRAFT_FINALIZATION_RACE {
+2026-10-05T16:43:05.7128427Z         status: 'unpaid',
+2026-10-05T16:43:05.7128983Z         payingStatus: 'draft',
+2026-10-05T16:43:05.7129452Z         draftState: 'paid',
+2026-10-05T16:43:05.7129935Z         voidedIds: [ 'in-new-open' ],
+2026-10-05T16:43:05.7130227Z         calls: [
+2026-10-05T16:43:05.7130488Z           'GET /subscriptions/sub-payment',
+2026-10-05T16:43:05.7130913Z           'GET /invoices?subscription=sub-payment&status=open&limit=100',
+2026-10-05T16:43:05.7131439Z           'GET /invoices?subscription=sub-payment&status=uncollectible&limit=100',
+2026-10-05T16:43:05.7131976Z           'GET /invoices?subscription=sub-payment&status=paid&limit=100',
+2026-10-05T16:43:05.7132378Z           'POST /invoices/in-new-open/void',
+2026-10-05T16:43:05.7132715Z           'DELETE /subscriptions/sub-payment'
+2026-10-05T16:43:05.7132995Z         ],
+2026-10-05T16:43:05.7133195Z         paidCents: 4900,
+2026-10-05T16:43:05.7133463Z         accessBeforeDeleted: true,
+2026-10-05T16:43:05.7133759Z         accessAfterDeleted: false,
+2026-10-05T16:43:05.7134022Z         outcome: 'stale',
+2026-10-05T16:43:05.7134281Z         conflict: 'superseded',
+2026-10-05T16:43:05.7134529Z         deletes: 1
+2026-10-05T16:43:05.7134736Z       }
+2026-10-05T16:43:05.7134839Z 
+2026-10-05T16:43:05.7135014Z       at test/audit-sol-t5-draft-race.spec.ts:142:17
+2026-10-05T16:43:05.7135242Z 
+2026-10-05T16:43:05.7135936Z   ● AUD-SOL-T5-119 — a draft finalizes and pays outside the void domain › past_due / draft: preserve a paid plan while the active webhook is delayed
+2026-10-05T16:43:05.7136662Z 
+2026-10-05T16:43:05.7136810Z     expect(received).toMatchObject(expected)
+2026-10-05T16:43:05.7137018Z 
+2026-10-05T16:43:05.7137116Z     - Expected  - 1
+2026-10-05T16:43:05.7137349Z     + Received  + 3
+2026-10-05T16:43:05.7137470Z 
+2026-10-05T16:43:05.7137566Z       Object {
+2026-10-05T16:43:05.7137779Z     -   "deleted": Array [],
+2026-10-05T16:43:05.7138022Z     +   "deleted": Array [
+2026-10-05T16:43:05.7138317Z     +     "DELETE /subscriptions/sub-payment",
+2026-10-05T16:43:05.7138595Z     +   ],
+2026-10-05T16:43:05.7138965Z       }
+2026-10-05T16:43:05.7139072Z 
+2026-10-05T16:43:05.7139654Z       148 |           deleted, outcome, conflict: table.rows[0].status,
+2026-10-05T16:43:05.7140491Z       149 |           entitlement: purchase.entitlement_active,
+2026-10-05T16:43:05.7141228Z     > 150 |         }).toMatchObject({ deleted: [] });
+2026-10-05T16:43:05.7141767Z           |            ^
+2026-10-05T16:43:05.7142208Z       151 |         await activeEvent();
+2026-10-05T16:43:05.7142896Z       152 |         expect(purchase.entitlement_active).toBe(true);
+2026-10-05T16:43:05.7143467Z       153 |       } finally {
+2026-10-05T16:43:05.7143673Z 
+2026-10-05T16:43:05.7143842Z       at test/audit-sol-t5-draft-race.spec.ts:150:12
+2026-10-05T16:43:05.7144070Z 
+2026-10-05T16:43:05.7144686Z   ● AUD-SOL-T5-119 — a draft finalizes and pays outside the void domain › unpaid / draft: preserve a paid plan while the active webhook is delayed
+2026-10-05T16:43:05.7145212Z 
+2026-10-05T16:43:05.7145360Z     expect(received).toMatchObject(expected)
+2026-10-05T16:43:05.7145565Z 
+2026-10-05T16:43:05.7145661Z     - Expected  - 1
+2026-10-05T16:43:05.7145874Z     + Received  + 3
+2026-10-05T16:43:05.7146003Z 
+2026-10-05T16:43:05.7146092Z       Object {
+2026-10-05T16:43:05.7146305Z     -   "deleted": Array [],
+2026-10-05T16:43:05.7146551Z     +   "deleted": Array [
+2026-10-05T16:43:05.7146839Z     +     "DELETE /subscriptions/sub-payment",
+2026-10-05T16:43:05.7147245Z     +   ],
+2026-10-05T16:43:05.7147443Z       }
+2026-10-05T16:43:05.7147545Z 
+2026-10-05T16:43:05.7148117Z       148 |           deleted, outcome, conflict: table.rows[0].status,
+2026-10-05T16:43:05.7149105Z       149 |           entitlement: purchase.entitlement_active,
+2026-10-05T16:43:05.7149849Z     > 150 |         }).toMatchObject({ deleted: [] });
+2026-10-05T16:43:05.7150371Z           |            ^
+2026-10-05T16:43:05.7150811Z       151 |         await activeEvent();
+2026-10-05T16:43:05.7151479Z       152 |         expect(purchase.entitlement_active).toBe(true);
+2026-10-05T16:43:05.7152064Z       153 |       } finally {
+2026-10-05T16:43:05.7152271Z 
+2026-10-05T16:43:05.7152450Z       at test/audit-sol-t5-draft-race.spec.ts:150:12
+2026-10-05T16:43:05.7152672Z 
+2026-10-05T16:43:06.0882231Z FAIL test/audit-opus-t5-119-707-draft.spec.ts (348 MB heap size)
+2026-10-05T16:43:06.0884079Z   ● AUD-OPUS-T5-119 #707 draft race (B-707-1) › D1 (expected red): a renewal draft finalized and paid after the reads must not be followed by a DELETE
+2026-10-05T16:43:06.0884801Z 
+2026-10-05T16:43:06.0885033Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:43:06.0885338Z 
+2026-10-05T16:43:06.0885454Z     Expected: 0
+2026-10-05T16:43:06.0885707Z     Received: 1
+2026-10-05T16:43:06.0885853Z 
+2026-10-05T16:43:06.0886511Z       111 |     await w.service.settle('pur-1', NOW);
+2026-10-05T16:43:06.0887863Z       112 |     expect(state.paidCents).toBe(4900);
+2026-10-05T16:43:06.0889115Z     > 113 |     expect(w.deletes()).toBe(0);
+2026-10-05T16:43:06.0889844Z           |                         ^
+2026-10-05T16:43:06.0890295Z       114 |   });
+2026-10-05T16:43:06.0890630Z       115 |
+2026-10-05T16:43:06.0891679Z       116 |   it('D2 (green, consequence): the worker records cancelled and no billed or failing alert exists', async () => {
+2026-10-05T16:43:06.0892415Z 
+2026-10-05T16:43:06.0892734Z       at Object.<anonymous> (test/audit-opus-t5-119-707-draft.spec.ts:113:25)
+2026-10-05T16:43:06.0893119Z 
+2026-10-05T16:43:06.0918001Z Test Suites: 5 failed, 2 passed, 7 total
+2026-10-05T16:43:06.0918416Z Tests:       48 failed, 145 passed, 193 total
+2026-10-05T16:43:06.0918904Z Snapshots:   0 total
+2026-10-05T16:43:06.0919143Z Time:        7.141 s
+2026-10-05T16:43:06.0920562Z Ran all test suites matching test/b-trials-7-draft-fence.spec.ts|test/b-trials-6-payable-domain.spec.ts|test/b-trials-5-fix-round.spec.ts|test/b-trials-4-fix-round.spec.ts|test/b-trials-3-fix-round.spec.ts|test/audit-sol-t5-draft-race.spec.ts|test/audit-opus-t5-119-707-draft.spec.ts.
+2026-10-05T16:43:06.1680666Z [Nest] 3076  - 10/05/2026, 4:43:06 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:06.1682988Z [Nest] 3076  - 10/05/2026, 4:43:06 PM    WARN [TrialConflictService] trial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)
+2026-10-05T16:43:06.2649414Z ##[error]Process completed with exit code 1.
+2026-10-05T16:43:06.2765321Z Post job cleanup.
+2026-10-05T16:43:06.3599259Z [command]/usr/bin/git version
+2026-10-05T16:43:06.3635344Z git version 2.55.0
+2026-10-05T16:43:06.3675665Z Temporarily overriding HOME='/home/runner/work/_temp/ae0a9571-cc5d-4d72-b862-66065c3bd681' before making global git config changes
+2026-10-05T16:43:06.3676701Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:43:06.3681507Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T16:43:06.3712263Z Removing SSH command configuration
+2026-10-05T16:43:06.3718454Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:43:06.3753704Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:43:06.3985206Z Removing HTTP extra header
+2026-10-05T16:43:06.3992471Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:43:06.4086779Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:43:06.4255615Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:43:06.4262411Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:43:06.4288513Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T16:43:06.4290409Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T16:43:06.4291618Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:43:06.4292469Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:43:06.4299079Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T16:43:06.4319652Z /home/runner/work/_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:43:06.4330204Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:43:06.4363469Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T16:43:06.4384933Z /home/runner/work/_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:43:06.4394008Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:43:06.4426610Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:43:06.4447863Z /github/runner_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:43:06.4455264Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:43:06.4485798Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:43:06.4505637Z /github/runner_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:43:06.4513251Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config
+2026-10-05T16:43:06.4546553Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:43:06.4760991Z Removing credentials config '/home/runner/work/_temp/git-credentials-afe1fc0a-2278-491a-b505-4e9b3a8db959.config'
+2026-10-05T16:43:06.4877925Z Print service container logs: 5c2e6a8be6e44f878c49ebbcd280dd4c_redis7alpine_ca38d7
+2026-10-05T16:43:06.4883593Z ##[command]/usr/bin/docker logs --details 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:43:06.5009352Z  1:C 05 Oct 2026 16:42:12.648 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-05T16:43:06.5011082Z  1:C 05 Oct 2026 16:42:12.648 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-05T16:43:06.5011635Z  1:C 05 Oct 2026 16:42:12.648 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-05T16:43:06.5012559Z  1:C 05 Oct 2026 16:42:12.648 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-05T16:43:06.5013289Z  1:M 05 Oct 2026 16:42:12.648 * monotonic clock: POSIX clock_gettime
+2026-10-05T16:43:06.5013709Z  1:M 05 Oct 2026 16:42:12.648 * Running mode=standalone, port=6379.
+2026-10-05T16:43:06.5014091Z  1:M 05 Oct 2026 16:42:12.649 * Server initialized
+2026-10-05T16:43:06.5014439Z  1:M 05 Oct 2026 16:42:12.649 * Ready to accept connections tcp
+2026-10-05T16:43:06.5030959Z Stop and remove container: 5c2e6a8be6e44f878c49ebbcd280dd4c_redis7alpine_ca38d7
+2026-10-05T16:43:06.5035600Z ##[command]/usr/bin/docker rm --force 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:43:06.6484409Z 5e5f57228a38a9826c3c200521951e6f79be17dea1764404be27b62ffa2c9d50
+2026-10-05T16:43:06.6512029Z Remove container network: github_network_386647a61065411ea910df7cf6552f01
+2026-10-05T16:43:06.6517026Z ##[command]/usr/bin/docker network rm github_network_386647a61065411ea910df7cf6552f01
+2026-10-05T16:43:06.7642793Z github_network_386647a61065411ea910df7cf6552f01
+2026-10-05T16:43:06.7721310Z Cleaning up orphan processes

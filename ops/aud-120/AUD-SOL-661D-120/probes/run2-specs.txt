@@ -1,0 +1,4 @@
+--globalSetup=./test/zz-aud-sol120-pg.global.js
+test/aud-sol-661d-120-composition.live.spec.ts
+src/regimes/__tests__/partial-refund-decision.service.spec.ts
+src/notifications/__tests__/first-payment-webhook.integration.spec.ts

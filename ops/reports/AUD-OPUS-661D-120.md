@@ -11,5 +11,9 @@ Status: IN PROGRESS (started 09:29 PDT 10-05).
 ## Progress
 - 09:29 read _COMMON_120/119/118/116, AGENT_RULES, JOBS120 entry, AUD-OPUS-661-118 report and verdicts.
 
+- by 09:38 (date) conflict hunks of 010f9b57 read (remerge diff saved: ops/aud-120/AUD-OPUS-661D-120/remerge-010f9b57.diff). #661's net patch vs main is identical to f80f0088's except (a) endSubscriptionPurchase erases unconditionally (recurring's unpaid-only erase removed), (b) `purchase &&` guard on the recurring PI-succeeded early return. #702 files blob-identical to 20d2eb4f.
+- by 09:38 (date) candidate B: native first grant (invoice.paid / customer.subscription.updated) never clears PaymentSheet credentials on the composed tree (C-661-3 obligation, #661 lands second).
+- INDEPENDENCE NOTE (honest record): shortly before 09:38 (date) an `rg 'C-661-3|CLEARED_PAYMENT_SECRETS|first grant' reports/*120*.md` over ops/reports unintentionally printed ONE line (line 18) of the Sol lens's report for this round (AUD-SOL-661D-120.md), which names a Sol finding B-661-14 on the same grant-path credential issue. This lens had already identified the issue from the code before that line printed (entry above). No other Sol content was read; later greps exclude AUD-SOL-*. Disclosed in the verdict.
+
 ## HANDOFF
 - Nothing posted yet. Next: verify heads, read operator RESTACK note, audit conflict hunks of 010f9b57.

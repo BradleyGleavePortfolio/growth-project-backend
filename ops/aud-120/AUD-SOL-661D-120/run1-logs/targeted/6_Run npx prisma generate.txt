@@ -1,0 +1,12 @@
+﻿2026-10-05T16:33:23.9601227Z ##[group]Run npx prisma generate
+2026-10-05T16:33:23.9601587Z [36;1mnpx prisma generate[0m
+2026-10-05T16:33:23.9670210Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:33:23.9670500Z ##[endgroup]
+2026-10-05T16:33:25.2612381Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T16:33:29.2602045Z 
+2026-10-05T16:33:29.2603655Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.19s
+2026-10-05T16:33:29.2604631Z 
+2026-10-05T16:33:29.2605578Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T16:33:29.2606659Z 
+2026-10-05T16:33:29.2608084Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-05T16:33:29.2609962Z 

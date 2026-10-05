@@ -1,0 +1,101 @@
+﻿2026-10-05T16:41:35.9521235Z ##[group]Run set -euo pipefail
+2026-10-05T16:41:35.9521679Z [36;1mset -euo pipefail[0m
+2026-10-05T16:41:35.9522180Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:41:35.9522774Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:41:35.9523241Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:41:35.9523604Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T16:41:35.9570512Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:41:35.9571082Z ##[endgroup]
+2026-10-05T16:41:35.9656943Z specs: src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx src/screens/coach/programs/__tests__/programsScreens.test.tsx src/api/__tests__/programsApi.test.ts src/utils/__tests__/programErrors.test.ts
+2026-10-05T16:41:40.7499076Z PASS src/utils/__tests__/programErrors.test.ts
+2026-10-05T16:41:40.9668239Z PASS src/api/__tests__/programsApi.test.ts
+2026-10-05T16:41:43.3698614Z PASS src/screens/coach/programs/__tests__/programsScreens.test.tsx (5.823 s)
+2026-10-05T16:41:43.4677028Z FAIL src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx (5.849 s)
+2026-10-05T16:41:43.4679076Z   ● P3 conflict: a second unrelated server revision must not discard an unresolved name conflict
+2026-10-05T16:41:43.4679811Z 
+2026-10-05T16:41:43.4680165Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:41:43.4680629Z 
+2026-10-05T16:41:43.4680854Z     Expected: true
+2026-10-05T16:41:43.4681355Z     Received: false
+2026-10-05T16:41:43.4681601Z 
+2026-10-05T16:41:43.4682730Z     [0m [90m 102 |[39m   expect(screen[33m.[39mgetByLabelText([32m"Program name"[39m)[33m.[39mprops[33m.[39mvalue)[33m.[39mtoBe([32m"My name"[39m)[33m;[39m
+2026-10-05T16:41:43.4685045Z      [90m 103 |[39m   expect(screen[33m.[39mgetByLabelText([32m"Goal tag"[39m)[33m.[39mprops[33m.[39mvalue)[33m.[39mtoBe([32m"Strength"[39m)[33m;[39m
+2026-10-05T16:41:43.4687682Z     [31m[1m>[22m[39m[90m 104 |[39m   expect(screen[33m.[39mgetByLabelText([32m"Save details"[39m)[33m.[39mprops[33m.[39maccessibilityState[33m.[39mdisabled)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-05T16:41:43.4689561Z      [90m     |[39m                                                                                   [31m[1m^[22m[39m
+2026-10-05T16:41:43.4691227Z      [90m 105 |[39m   expect(screen[33m.[39mqueryByText([35m/Name also changed on another device/[39m))[33m.[39mnot[33m.[39mtoBeNull()[33m;[39m
+2026-10-05T16:41:43.4692895Z      [90m 106 |[39m   qc[33m.[39mclear()[33m;[39m
+2026-10-05T16:41:43.4693829Z      [90m 107 |[39m })[33m;[39m[0m
+2026-10-05T16:41:43.4694296Z 
+2026-10-05T16:41:43.4694974Z       at Object.toBe (src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx:104:83)
+2026-10-05T16:41:43.4696436Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:43.4697839Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:43.4698659Z 
+2026-10-05T16:41:43.4699454Z   ● P3 day picker: an unresolved Saved A intent cannot silently reuse its key for Saved B
+2026-10-05T16:41:43.4700178Z 
+2026-10-05T16:41:43.4700695Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-05T16:41:43.4701222Z 
+2026-10-05T16:41:43.4701500Z     Expected number of calls: 1
+2026-10-05T16:41:43.4702313Z     Received number of calls: 2
+2026-10-05T16:41:43.4702698Z 
+2026-10-05T16:41:43.4704237Z     [0m [90m 122 |[39m     expect(mockSetDay[33m.[39mmock[33m.[39mcalls[[35m1[39m][[35m4[39m])[33m.[39mtoBe(mockSetDay[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m4[39m])[33m;[39m
+2026-10-05T16:41:43.4705746Z      [90m 123 |[39m   }
+2026-10-05T16:41:43.4707464Z     [31m[1m>[22m[39m[90m 124 |[39m   expect(mockSetDay)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-05T16:41:43.4709368Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-05T16:41:43.4710511Z      [90m 125 |[39m   qc[33m.[39mclear()[33m;[39m
+2026-10-05T16:41:43.4711776Z      [90m 126 |[39m })[33m;[39m
+2026-10-05T16:41:43.4712522Z      [90m 127 |[39m[0m
+2026-10-05T16:41:43.4712905Z 
+2026-10-05T16:41:43.4713847Z       at Object.toHaveBeenCalledTimes (src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx:124:22)
+2026-10-05T16:41:43.4715485Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:43.4717240Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:43.4717958Z 
+2026-10-05T16:41:43.4718823Z   ● P3 duplicate: the copy must never replace the original program's cached identity
+2026-10-05T16:41:43.4719551Z 
+2026-10-05T16:41:43.4719880Z     expect(received).toMatchObject(expected)
+2026-10-05T16:41:43.4720421Z 
+2026-10-05T16:41:43.4720745Z     - Expected  - 2
+2026-10-05T16:41:43.4721433Z     + Received  + 2
+2026-10-05T16:41:43.4721853Z 
+2026-10-05T16:41:43.4722109Z       Object {
+2026-10-05T16:41:43.4722753Z     -   "id": "p1",
+2026-10-05T16:41:43.4723486Z     -   "name": "Original name",
+2026-10-05T16:41:43.4724188Z     +   "id": "copy",
+2026-10-05T16:41:43.4725024Z     +   "name": "Copied program",
+2026-10-05T16:41:43.4725683Z       }
+2026-10-05T16:41:43.4726018Z 
+2026-10-05T16:41:43.4727169Z     [0m [90m 136 |[39m   [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByLabelText([32m"Duplicate"[39m))[33m;[39m
+2026-10-05T16:41:43.4729798Z      [90m 137 |[39m   [36mawait[39m waitFor(() [33m=>[39m expect(mockNavigation[33m.[39mpush)[33m.[39mtoHaveBeenCalledWith([32m"ProgramEditor"[39m[33m,[39m { programId[33m:[39m [32m"copy"[39m }))[33m;[39m
+2026-10-05T16:41:43.4732910Z     [31m[1m>[22m[39m[90m 138 |[39m   expect(qc[33m.[39mgetQueryData(programKeys[33m.[39mdetail([32m"p1"[39m)))[33m.[39mtoMatchObject({ id[33m:[39m [32m"p1"[39m[33m,[39m name[33m:[39m [32m"Original name"[39m })[33m;[39m
+2026-10-05T16:41:43.4735005Z      [90m     |[39m                                                     [31m[1m^[22m[39m
+2026-10-05T16:41:43.4737003Z      [90m 139 |[39m   expect(qc[33m.[39mgetQueryData(programKeys[33m.[39mdetail([32m"copy"[39m)))[33m.[39mtoMatchObject({ id[33m:[39m [32m"copy"[39m })[33m;[39m
+2026-10-05T16:41:43.4738711Z      [90m 140 |[39m   qc[33m.[39mclear()[33m;[39m
+2026-10-05T16:41:43.4739637Z      [90m 141 |[39m })[33m;[39m[0m
+2026-10-05T16:41:43.4740100Z 
+2026-10-05T16:41:43.4740904Z       at Object.toMatchObject (src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx:138:53)
+2026-10-05T16:41:43.4742527Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:43.4743854Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:43.4744512Z 
+2026-10-05T16:41:43.4745431Z   ● P3 ownership: a held create cannot repopulate a cleared global cache or navigate after unmount
+2026-10-05T16:41:43.4746270Z 
+2026-10-05T16:41:43.4746741Z     expect(received).toBeUndefined()
+2026-10-05T16:41:43.4747262Z 
+2026-10-05T16:41:43.4748995Z     Received: {"archived_at": null, "assigned_count": 0, "can_edit": true, "days": [], "days_per_week": 3, "description": "", "filled_days": 1, "goal_tag": "", "id": "p1", "name": "Old owner's private program", "package_count": 0, "packages": [], "version": 3, "weeks": 4}
+2026-10-05T16:41:43.4750714Z 
+2026-10-05T16:41:43.4752434Z     [0m [90m 155 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m { pending[33m.[39mresolve({ [33m...[39mdetail[33m,[39m name[33m:[39m [32m"Old owner's private program"[39m })[33m;[39m })[33m;[39m
+2026-10-05T16:41:43.4754237Z      [90m 156 |[39m   [36mawait[39m pendingPress[33m;[39m
+2026-10-05T16:41:43.4756231Z     [31m[1m>[22m[39m[90m 157 |[39m   expect(qc[33m.[39mgetQueryData(programKeys[33m.[39mdetail([32m"p1"[39m)))[33m.[39mtoBeUndefined()[33m;[39m
+2026-10-05T16:41:43.4758386Z      [90m     |[39m                                                     [31m[1m^[22m[39m
+2026-10-05T16:41:43.4760201Z      [90m 158 |[39m   expect(mockNavigation[33m.[39mreplace)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-05T16:41:43.4761554Z      [90m 159 |[39m   qc[33m.[39mclear()[33m;[39m
+2026-10-05T16:41:43.4762531Z      [90m 160 |[39m })[33m;[39m[0m
+2026-10-05T16:41:43.4763055Z 
+2026-10-05T16:41:43.4763952Z       at Object.toBeUndefined (src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx:157:53)
+2026-10-05T16:41:43.4765601Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:41:43.4767092Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:41:43.4767785Z 
+2026-10-05T16:41:43.5077732Z Test Suites: 1 failed, 3 passed, 4 total
+2026-10-05T16:41:43.5078719Z Tests:       4 failed, 32 passed, 36 total
+2026-10-05T16:41:43.5079197Z Snapshots:   0 total
+2026-10-05T16:41:43.5079589Z Time:        6.586 s
+2026-10-05T16:41:43.5081016Z Ran all test suites matching /src\/screens\/coach\/programs\/__tests__\/audSolP34P3Boundaries.test.tsx|src\/screens\/coach\/programs\/__tests__\/programsScreens.test.tsx|src\/api\/__tests__\/programsApi.test.ts|src\/utils\/__tests__\/programErrors.test.ts/i.
+2026-10-05T16:41:43.5861656Z ##[error]Process completed with exit code 1.

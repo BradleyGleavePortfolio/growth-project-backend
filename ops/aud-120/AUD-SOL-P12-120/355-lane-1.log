@@ -1,0 +1,1060 @@
+﻿2026-10-05T16:31:53.1478044Z Current runner version: '2.337.0'
+2026-10-05T16:31:53.1504952Z ##[group]Runner Image Provisioner
+2026-10-05T16:31:53.1505933Z Hosted Compute Agent
+2026-10-05T16:31:53.1506533Z Version: 20260901.588
+2026-10-05T16:31:53.1507199Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:31:53.1508004Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:31:53.1508682Z Worker ID: {1e891499-08c8-40e1-8513-1a53d18c6dbf}
+2026-10-05T16:31:53.1509518Z Azure Region: northcentralus
+2026-10-05T16:31:53.1510132Z ##[endgroup]
+2026-10-05T16:31:53.1511719Z ##[group]Operating System
+2026-10-05T16:31:53.1512458Z Ubuntu
+2026-10-05T16:31:53.1513356Z 24.04.5
+2026-10-05T16:31:53.1513991Z LTS
+2026-10-05T16:31:53.1514545Z ##[endgroup]
+2026-10-05T16:31:53.1515134Z ##[group]Runner Image
+2026-10-05T16:31:53.1515809Z Image: ubuntu-24.04
+2026-10-05T16:31:53.1516411Z Version: 20260927.320.1
+2026-10-05T16:31:53.1517811Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:31:53.1519407Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:31:53.1520443Z ##[endgroup]
+2026-10-05T16:31:53.1522013Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:31:53.1525087Z Contents: read
+2026-10-05T16:31:53.1525771Z Metadata: read
+2026-10-05T16:31:53.1526461Z Packages: read
+2026-10-05T16:31:53.1527051Z ##[endgroup]
+2026-10-05T16:31:53.1529317Z Secret source: Actions
+2026-10-05T16:31:53.1530326Z Cache mode: write
+2026-10-05T16:31:53.1531287Z Prepare workflow directory
+2026-10-05T16:31:53.1904062Z Prepare all required actions
+2026-10-05T16:31:53.1954952Z Getting action download info
+2026-10-05T16:31:53.4688653Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:31:53.6069906Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:31:53.8131978Z Complete job name: targeted
+2026-10-05T16:31:53.9054613Z ##[group]Run actions/checkout@v6
+2026-10-05T16:31:53.9055556Z with:
+2026-10-05T16:31:53.9056129Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:31:53.9060498Z   token: ***
+2026-10-05T16:31:53.9060940Z   ssh-strict: true
+2026-10-05T16:31:53.9061674Z   ssh-user: git
+2026-10-05T16:31:53.9062461Z   persist-credentials: true
+2026-10-05T16:31:53.9063546Z   clean: true
+2026-10-05T16:31:53.9064406Z   sparse-checkout-cone-mode: true
+2026-10-05T16:31:53.9065394Z   fetch-depth: 1
+2026-10-05T16:31:53.9066181Z   fetch-tags: false
+2026-10-05T16:31:53.9066637Z   show-progress: true
+2026-10-05T16:31:53.9067098Z   lfs: false
+2026-10-05T16:31:53.9067508Z   submodules: false
+2026-10-05T16:31:53.9067961Z   set-safe-directory: true
+2026-10-05T16:31:53.9068475Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:31:53.9069723Z ##[endgroup]
+2026-10-05T16:31:54.0147200Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:31:54.0149589Z ##[group]Getting Git version info
+2026-10-05T16:31:54.0150551Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:31:54.0151792Z [command]/usr/bin/git version
+2026-10-05T16:31:54.0235909Z git version 2.55.0
+2026-10-05T16:31:54.0259941Z ##[endgroup]
+2026-10-05T16:31:54.0276476Z Temporarily overriding HOME='/home/runner/work/_temp/60038337-8933-47f9-a9e9-16de70b93fdd' before making global git config changes
+2026-10-05T16:31:54.0278169Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:31:54.0283249Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:31:54.0364060Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:31:54.0371114Z ##[group]Determining repository object format
+2026-10-05T16:31:54.0373764Z ##[endgroup]
+2026-10-05T16:31:54.0374850Z ##[group]Initializing the repository
+2026-10-05T16:31:54.0380447Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:31:54.0529238Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:31:54.0530574Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:31:54.0532033Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:31:54.0533314Z hint: call:
+2026-10-05T16:31:54.0533993Z hint:
+2026-10-05T16:31:54.0534918Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:31:54.0535871Z hint:
+2026-10-05T16:31:54.0536558Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:31:54.0537650Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:31:54.0538513Z hint:
+2026-10-05T16:31:54.0539117Z hint: 	git branch -m <name>
+2026-10-05T16:31:54.0539727Z hint:
+2026-10-05T16:31:54.0540695Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:31:54.0542134Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T16:31:54.0544690Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:31:54.0601130Z ##[endgroup]
+2026-10-05T16:31:54.0601995Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:31:54.0605902Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:31:54.0640317Z ##[endgroup]
+2026-10-05T16:31:54.0641253Z ##[group]Setting up auth
+2026-10-05T16:31:54.0642171Z Removing SSH command configuration
+2026-10-05T16:31:54.0649352Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:31:54.0684519Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:31:54.1059861Z Removing HTTP extra header
+2026-10-05T16:31:54.1066952Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:31:54.1105528Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:31:54.1358491Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:31:54.1365731Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:31:54.1401395Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:31:54.1657788Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:31:54.1710479Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:31:54.1752802Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:31:54.1794658Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:31:54.1831604Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:31:54.1875416Z ##[endgroup]
+2026-10-05T16:31:54.1877160Z ##[group]Fetching the repository
+2026-10-05T16:31:54.1885698Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c9bb5adbaf9814ff6b236b34b028b68cdfb48bdf:refs/remotes/origin/audit/AUD-SOL-P12-120/355-roster-1
+2026-10-05T16:31:55.1489255Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:31:55.1499446Z  * [new ref]         c9bb5adbaf9814ff6b236b34b028b68cdfb48bdf -> origin/audit/AUD-SOL-P12-120/355-roster-1
+2026-10-05T16:31:55.1505430Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-P12-120/355-roster-1
+2026-10-05T16:31:55.1528610Z   origin/audit/AUD-SOL-P12-120/355-roster-1
+2026-10-05T16:31:55.1552356Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-P12-120/355-roster-1
+2026-10-05T16:31:55.1569189Z c9bb5adbaf9814ff6b236b34b028b68cdfb48bdf
+2026-10-05T16:31:55.1574466Z ##[endgroup]
+2026-10-05T16:31:55.1576575Z ##[group]Determining the checkout info
+2026-10-05T16:31:55.1578338Z ##[endgroup]
+2026-10-05T16:31:55.1582200Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:31:55.1647158Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:31:55.1679446Z ##[group]Checking out the ref
+2026-10-05T16:31:55.1684493Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-P12-120/355-roster-1 refs/remotes/origin/audit/AUD-SOL-P12-120/355-roster-1
+2026-10-05T16:31:55.2759306Z Switched to a new branch 'audit/AUD-SOL-P12-120/355-roster-1'
+2026-10-05T16:31:55.2764623Z branch 'audit/AUD-SOL-P12-120/355-roster-1' set up to track 'origin/audit/AUD-SOL-P12-120/355-roster-1'.
+2026-10-05T16:31:55.2773787Z ##[endgroup]
+2026-10-05T16:31:55.2820517Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:31:55.2846550Z c9bb5adbaf9814ff6b236b34b028b68cdfb48bdf
+2026-10-05T16:31:55.3176380Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:31:55.3177107Z with:
+2026-10-05T16:31:55.3177559Z   node-version: 22.13
+2026-10-05T16:31:55.3178059Z   cache: npm
+2026-10-05T16:31:55.3178510Z   check-latest: false
+2026-10-05T16:31:55.3184030Z   token: ***
+2026-10-05T16:31:55.3184531Z   package-manager-cache: true
+2026-10-05T16:31:55.3185156Z ##[endgroup]
+2026-10-05T16:31:55.4676222Z Attempting to download 22.13...
+2026-10-05T16:31:56.1438905Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:31:56.6249266Z Extracting ...
+2026-10-05T16:31:56.6394848Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/22f42239-5e89-496d-8d15-c3efed2865a4 -f /home/runner/work/_temp/8006f049-cca4-489b-ad33-433b7d481b9c
+2026-10-05T16:31:57.8561385Z Adding to the cache ...
+2026-10-05T16:32:00.0926212Z ##[group]Environment details
+2026-10-05T16:32:00.3251820Z node: v22.13.1
+2026-10-05T16:32:00.3252696Z npm: 10.9.2
+2026-10-05T16:32:00.3253631Z yarn: 1.22.22
+2026-10-05T16:32:00.3254599Z ##[endgroup]
+2026-10-05T16:32:00.3279311Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:32:00.4293435Z /home/runner/.npm
+2026-10-05T16:32:00.5654455Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:32:01.7436400Z Received 134217728 of 241027159 (55.7%), 125.4 MBs/sec
+2026-10-05T16:32:02.2022320Z Received 241027159 of 241027159 (100.0%), 155.4 MBs/sec
+2026-10-05T16:32:02.2024271Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:32:02.2106080Z [command]/usr/bin/tar -xf /home/runner/work/_temp/83e0e19d-b09b-42b6-9699-ece3de3c7b27/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:32:02.9520101Z Cache restored successfully
+2026-10-05T16:32:02.9641355Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:32:02.9863960Z ##[group]Run npm ci
+2026-10-05T16:32:02.9864403Z [36;1mnpm ci[0m
+2026-10-05T16:32:03.0174002Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:32:03.0174472Z ##[endgroup]
+2026-10-05T16:32:08.4974747Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:32:08.7331363Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T16:32:08.7521378Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T16:32:08.7578742Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T16:32:08.7845010Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T16:32:08.9545667Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T16:32:08.9617430Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:08.9629962Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:08.9658774Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:08.9664096Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:08.9698400Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:09.0133684Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:32:09.0699667Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T16:32:09.5643761Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T16:32:10.1760644Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T16:32:14.7451392Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T16:33:09.1420968Z 
+2026-10-05T16:33:09.1422242Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-05T16:33:09.1423105Z 
+2026-10-05T16:33:09.1423530Z 187 packages are looking for funding
+2026-10-05T16:33:09.1424150Z   run `npm fund` for details
+2026-10-05T16:33:09.5554558Z 
+2026-10-05T16:33:09.5556000Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T16:33:09.5556538Z 
+2026-10-05T16:33:09.5557143Z To address issues that do not require attention, run:
+2026-10-05T16:33:09.5558489Z   npm audit fix
+2026-10-05T16:33:09.5558798Z 
+2026-10-05T16:33:09.5559314Z To address all issues (including breaking changes), run:
+2026-10-05T16:33:09.5559992Z   npm audit fix --force
+2026-10-05T16:33:09.5560276Z 
+2026-10-05T16:33:09.5560497Z Run `npm audit` for details.
+2026-10-05T16:33:09.7655747Z ##[group]Run set -euo pipefail
+2026-10-05T16:33:09.7656170Z [36;1mset -euo pipefail[0m
+2026-10-05T16:33:09.7656680Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:33:09.7657328Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:33:09.7657812Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:33:09.7658172Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T16:33:09.7728362Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:33:09.7728870Z ##[endgroup]
+2026-10-05T16:33:09.7851703Z specs: src/api/__tests__/audSolP12120.roster.test.ts src/api/__tests__/programsApi.test.ts src/api/__tests__/workoutAutosaveApi.test.ts src/utils/__tests__/programErrors.test.ts src/hooks/__tests__/useAutosave.test.tsx src/__tests__/workoutBuilderAccess.test.tsx
+2026-10-05T16:33:15.6525437Z PASS src/hooks/__tests__/useAutosave.test.tsx
+2026-10-05T16:33:15.8041443Z   ● Console
+2026-10-05T16:33:15.8042115Z 
+2026-10-05T16:33:15.8042702Z     console.warn
+2026-10-05T16:33:15.8044445Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 0 }
+2026-10-05T16:33:15.8045745Z 
+2026-10-05T16:33:15.8047312Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8054237Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8056003Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8064133Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8065264Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8066384Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8067444Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8067934Z 
+2026-10-05T16:33:15.8068361Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8069188Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8070165Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8071086Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8072251Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8073993Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8074769Z 
+2026-10-05T16:33:15.8075122Z     console.warn
+2026-10-05T16:33:15.8076436Z       [[useAutosave] bootstrap stale-lock - syncing + rebasing local ops] { planId: 'p1', head: 9, error: 'autosave_lock_stale', attempt: 0 }
+2026-10-05T16:33:15.8077469Z 
+2026-10-05T16:33:15.8078819Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8080601Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8081751Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8083144Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8083741Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8084622Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8085493Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8085795Z 
+2026-10-05T16:33:15.8086003Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8086400Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8086782Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8087119Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8088018Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8089768Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8090615Z 
+2026-10-05T16:33:15.8090802Z     console.warn
+2026-10-05T16:33:15.8091895Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_lock_stale', attempt: 0 }
+2026-10-05T16:33:15.8093066Z 
+2026-10-05T16:33:15.8094371Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8095731Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8096904Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8097984Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8098610Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8099521Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8100349Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8100618Z 
+2026-10-05T16:33:15.8100866Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8101554Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8102304Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8103399Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8104930Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8106084Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8106713Z 
+2026-10-05T16:33:15.8106900Z     console.warn
+2026-10-05T16:33:15.8108023Z       [[useAutosave] bootstrap stale-lock - syncing + rebasing local ops] { planId: 'p1', head: 5, error: 'autosave_lock_stale', attempt: 0 }
+2026-10-05T16:33:15.8108951Z 
+2026-10-05T16:33:15.8110267Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8111655Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8113142Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8114221Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8114848Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8115755Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8116585Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8116853Z 
+2026-10-05T16:33:15.8117099Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8117745Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8118428Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8119052Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8119990Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8121085Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8121613Z 
+2026-10-05T16:33:15.8121780Z     console.warn
+2026-10-05T16:33:15.8123136Z       [[useAutosave] bootstrap stale-lock - syncing + rebasing local ops] { planId: 'p1', head: 6, error: 'autosave_lock_stale', attempt: 0 }
+2026-10-05T16:33:15.8124059Z 
+2026-10-05T16:33:15.8125341Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8126648Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8127867Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8129078Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8130087Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8131201Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8132057Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8132345Z 
+2026-10-05T16:33:15.8132598Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8133662Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8134384Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8135042Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8135964Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8136659Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8136987Z 
+2026-10-05T16:33:15.8137084Z     console.warn
+2026-10-05T16:33:15.8137553Z       [[useAutosave] flush deferred (offline/server)] { planId: 'p1', kind: 'network', attempt: 0 }
+2026-10-05T16:33:15.8137940Z 
+2026-10-05T16:33:15.8138660Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8139391Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8140721Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8141839Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8142359Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8143151Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8143952Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8144211Z 
+2026-10-05T16:33:15.8144389Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8144768Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8145157Z       at warn (src/hooks/useAutosave.ts:976:18)
+2026-10-05T16:33:15.8145514Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8146022Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8146635Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8146942Z 
+2026-10-05T16:33:15.8147046Z     console.warn
+2026-10-05T16:33:15.8147664Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 0 }
+2026-10-05T16:33:15.8148171Z 
+2026-10-05T16:33:15.8148823Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8149529Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8150187Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8150784Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8151120Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8151597Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8152034Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8152186Z 
+2026-10-05T16:33:15.8152314Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8152677Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8153220Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8153568Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8154070Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8154656Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8154958Z 
+2026-10-05T16:33:15.8155049Z     console.error
+2026-10-05T16:33:15.8155374Z       [[useAutosave] mirror write failed (durability degraded)] {
+2026-10-05T16:33:15.8156141Z         planId: 'p1',
+2026-10-05T16:33:15.8156468Z         err: Error: mirror write failed (storage unavailable)
+2026-10-05T16:33:15.8157172Z             at /home/runner/work/growth-project-mobile/growth-project-mobile/src/hooks/__tests__/useAutosave.test.tsx:876:13
+2026-10-05T16:33:15.8157776Z             at Generator.next (<anonymous>)
+2026-10-05T16:33:15.8158551Z             at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8159666Z             at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8160682Z             at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T16:33:15.8161326Z             at new Promise (<anonymous>)
+2026-10-05T16:33:15.8162002Z             at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T16:33:15.8163073Z             at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-mock/build/index.js:397:39
+2026-10-05T16:33:15.8164187Z             at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-mock/build/index.js:404:13
+2026-10-05T16:33:15.8165135Z             at mockConstructor (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-mock/build/index.js:148:19)
+2026-10-05T16:33:15.8166147Z             at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/src/hooks/useAutosave.ts:1038:34)
+2026-10-05T16:33:15.8166771Z             at Generator.next (<anonymous>)
+2026-10-05T16:33:15.8167841Z             at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8169880Z             at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8171144Z             at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T16:33:15.8171810Z             at new Promise (<anonymous>)
+2026-10-05T16:33:15.8172585Z             at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+2026-10-05T16:33:15.8173862Z             at Object.apply [as current] (/home/runner/work/growth-project-mobile/growth-project-mobile/src/hooks/useAutosave.ts:1053:6)
+2026-10-05T16:33:15.8174778Z             at current (/home/runner/work/growth-project-mobile/growth-project-mobile/src/hooks/useAutosave.ts:942:56)
+2026-10-05T16:33:15.8175357Z             at Generator.next (<anonymous>)
+2026-10-05T16:33:15.8176146Z             at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8177257Z             at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8177877Z       }
+2026-10-05T16:33:15.8177992Z 
+2026-10-05T16:33:15.8178781Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8180256Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8181369Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8181991Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8182332Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8183187Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8183789Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8183952Z 
+2026-10-05T16:33:15.8184084Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8184455Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:33:15.8184856Z       at Object.error (src/hooks/useAutosave.ts:1047:16)
+2026-10-05T16:33:15.8185215Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8185716Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8186320Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8186641Z 
+2026-10-05T16:33:15.8186731Z     console.warn
+2026-10-05T16:33:15.8187194Z       [[useAutosave] flush deferred (offline/server)] { planId: 'p1', kind: 'network', attempt: 0 }
+2026-10-05T16:33:15.8187568Z 
+2026-10-05T16:33:15.8188222Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8188944Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8189583Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8190165Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8190500Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8191064Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8191671Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8191830Z 
+2026-10-05T16:33:15.8191972Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8192335Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8192708Z       at warn (src/hooks/useAutosave.ts:976:18)
+2026-10-05T16:33:15.8193208Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8193707Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8194310Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8194612Z 
+2026-10-05T16:33:15.8194710Z     console.warn
+2026-10-05T16:33:15.8195163Z       [[useAutosave] flush deferred (offline/server)] { planId: 'p1', kind: 'network', attempt: 0 }
+2026-10-05T16:33:15.8195540Z 
+2026-10-05T16:33:15.8196179Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8196888Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8197516Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8198100Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8198427Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8198893Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8199337Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8199483Z 
+2026-10-05T16:33:15.8199619Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8199965Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8200334Z       at warn (src/hooks/useAutosave.ts:976:18)
+2026-10-05T16:33:15.8200661Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8201142Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8201734Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8202030Z 
+2026-10-05T16:33:15.8202122Z     console.warn
+2026-10-05T16:33:15.8202722Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 0 }
+2026-10-05T16:33:15.8203532Z 
+2026-10-05T16:33:15.8204378Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8205249Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8205915Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8206560Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8206898Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8207373Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8207809Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8207956Z 
+2026-10-05T16:33:15.8208084Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8208454Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8208829Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8209169Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8209674Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8210265Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8210570Z 
+2026-10-05T16:33:15.8210656Z     console.warn
+2026-10-05T16:33:15.8211262Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 0 }
+2026-10-05T16:33:15.8211802Z 
+2026-10-05T16:33:15.8212441Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8213304Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8213942Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8214528Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8214861Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8215319Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8215757Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8215901Z 
+2026-10-05T16:33:15.8216035Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8216389Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8216771Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8217111Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8217601Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8218199Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8218510Z 
+2026-10-05T16:33:15.8218603Z     console.error
+2026-10-05T16:33:15.8219006Z       [[useAutosave] server-truth adoption failed on conflict - manual recovery] {
+2026-10-05T16:33:15.8219431Z         planId: 'p1',
+2026-10-05T16:33:15.8219694Z         err: Error: refetch failed
+2026-10-05T16:33:15.8220396Z             at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/src/hooks/__tests__/useAutosave.test.tsx:1151:13)
+2026-10-05T16:33:15.8221066Z             at Generator.next (<anonymous>)
+2026-10-05T16:33:15.8221840Z             at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8223069Z             at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8224128Z       }
+2026-10-05T16:33:15.8224320Z 
+2026-10-05T16:33:15.8225394Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8226864Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8228142Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8229100Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8229630Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8230397Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8231131Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8231355Z 
+2026-10-05T16:33:15.8231569Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8232159Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:33:15.8232762Z       at error (src/hooks/useAutosave.ts:901:20)
+2026-10-05T16:33:15.8233595Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8234446Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8235441Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8235945Z 
+2026-10-05T16:33:15.8236097Z     console.warn
+2026-10-05T16:33:15.8237134Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 0 }
+2026-10-05T16:33:15.8237946Z 
+2026-10-05T16:33:15.8239051Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8240260Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8241346Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8242367Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8243179Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8244029Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8244785Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8245042Z 
+2026-10-05T16:33:15.8245262Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8245897Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8246551Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8247148Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8248005Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8249057Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8249586Z 
+2026-10-05T16:33:15.8249736Z     console.warn
+2026-10-05T16:33:15.8250807Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 1 }
+2026-10-05T16:33:15.8251662Z 
+2026-10-05T16:33:15.8252711Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8254201Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8255354Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8256519Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8257193Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8258178Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8259069Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8259361Z 
+2026-10-05T16:33:15.8259622Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8260299Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8261043Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8261699Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8263597Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8265042Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8265657Z 
+2026-10-05T16:33:15.8265851Z     console.warn
+2026-10-05T16:33:15.8267023Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 2 }
+2026-10-05T16:33:15.8268004Z 
+2026-10-05T16:33:15.8269371Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8270812Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8272079Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8273726Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8274438Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8275389Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8276289Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8276926Z 
+2026-10-05T16:33:15.8277206Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8277923Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8278656Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8279303Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8280258Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8281443Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8282007Z 
+2026-10-05T16:33:15.8282186Z     console.warn
+2026-10-05T16:33:15.8283595Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 3 }
+2026-10-05T16:33:15.8284521Z 
+2026-10-05T16:33:15.8343538Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8345348Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8346538Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8347595Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8348185Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8349055Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8349812Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8350068Z 
+2026-10-05T16:33:15.8350294Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8350916Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8351565Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8352182Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8357002Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8358141Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8358699Z 
+2026-10-05T16:33:15.8358845Z     console.warn
+2026-10-05T16:33:15.8359902Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 4 }
+2026-10-05T16:33:15.8360753Z 
+2026-10-05T16:33:15.8361961Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8363534Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8364673Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8366241Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8367072Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8367921Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8368698Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8368966Z 
+2026-10-05T16:33:15.8369208Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8369839Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8370485Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8371049Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8371900Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8373223Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8373764Z 
+2026-10-05T16:33:15.8373948Z     console.warn
+2026-10-05T16:33:15.8374876Z       [[useAutosave] conflict budget exhausted - manual recovery (no auto-retry)] { planId: 'p1', attempts: 5 }
+2026-10-05T16:33:15.8375697Z 
+2026-10-05T16:33:15.8377016Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8378405Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8379611Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8380779Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8381458Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8382367Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8401733Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8402057Z 
+2026-10-05T16:33:15.8402331Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8403317Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8404117Z       at warn (src/hooks/useAutosave.ts:837:20)
+2026-10-05T16:33:15.8404777Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8405744Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8407004Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8407581Z 
+2026-10-05T16:33:15.8407781Z     console.warn
+2026-10-05T16:33:15.8408752Z       [[useAutosave] conflict budget exhausted - manual recovery (no auto-retry)] { planId: 'p1', attempts: 5 }
+2026-10-05T16:33:15.8409565Z 
+2026-10-05T16:33:15.8410864Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8412256Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8413778Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8414880Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8415549Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8416413Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8417247Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8417536Z 
+2026-10-05T16:33:15.8417782Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8418460Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8419157Z       at warn (src/hooks/useAutosave.ts:837:20)
+2026-10-05T16:33:15.8419782Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8420729Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8421842Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8422400Z 
+2026-10-05T16:33:15.8422567Z     console.error
+2026-10-05T16:33:15.8424306Z       [[useAutosave] malformed conflict body — manual recovery (no auto-retry)] { planId: 'p1' }
+2026-10-05T16:33:15.8425209Z 
+2026-10-05T16:33:15.8426448Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8427858Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8429076Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8430199Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8430816Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8431720Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8432595Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8433165Z 
+2026-10-05T16:33:15.8433436Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8434143Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:33:15.8434877Z       at error (src/hooks/useAutosave.ts:793:20)
+2026-10-05T16:33:15.8435562Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8436474Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8437576Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8438113Z 
+2026-10-05T16:33:15.8438279Z     console.warn
+2026-10-05T16:33:15.8439377Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 0 }
+2026-10-05T16:33:15.8440308Z 
+2026-10-05T16:33:15.8441601Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8443273Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8444530Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8445706Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8446370Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8447291Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8448187Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8448470Z 
+2026-10-05T16:33:15.8448739Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8449418Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8450168Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8450809Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8451739Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8453144Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8453720Z 
+2026-10-05T16:33:15.8453915Z     console.warn
+2026-10-05T16:33:15.8455016Z       [[useAutosave] bootstrap stale-lock - syncing + rebasing local ops] { planId: 'p1', head: 9, error: 'autosave_lock_stale', attempt: 0 }
+2026-10-05T16:33:15.8455933Z 
+2026-10-05T16:33:15.8457186Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8458350Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8459505Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8460567Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8461149Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8462004Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8462785Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8463589Z 
+2026-10-05T16:33:15.8464002Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8464653Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8465321Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8465961Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8466911Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8468064Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8468666Z 
+2026-10-05T16:33:15.8468828Z     console.error
+2026-10-05T16:33:15.8469550Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-05T16:33:15.8470212Z       
+2026-10-05T16:33:15.8470916Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:33:15.8471645Z       
+2026-10-05T16:33:15.8471993Z       act(() => {
+2026-10-05T16:33:15.8472497Z         /* fire events that update state */
+2026-10-05T16:33:15.8473344Z       });
+2026-10-05T16:33:15.8473775Z       /* assert on the output */
+2026-10-05T16:33:15.8474229Z       
+2026-10-05T16:33:15.8475360Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:33:15.8476346Z 
+2026-10-05T16:33:15.8476940Z     [0m [90m 524 |[39m   [36mconst[39m safeSet [33m=[39m useCallback(
+2026-10-05T16:33:15.8478743Z      [90m 525 |[39m     [33m<[39m[33mT[39m[33m,[39m[33m>[39m(setter[33m:[39m (v[33m:[39m [33mT[39m) [33m=>[39m [36mvoid[39m[33m,[39m v[33m:[39m [33mT[39m) [33m=>[39m {
+2026-10-05T16:33:15.8480500Z     [31m[1m>[22m[39m[90m 526 |[39m       [36mif[39m (mountedRef[33m.[39mcurrent) setter(v)[33m;[39m
+2026-10-05T16:33:15.8481599Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:33:15.8482350Z      [90m 527 |[39m     }[33m,[39m
+2026-10-05T16:33:15.8483269Z      [90m 528 |[39m     [][33m,[39m
+2026-10-05T16:33:15.8483915Z      [90m 529 |[39m   )[33m;[39m[0m
+2026-10-05T16:33:15.8484258Z 
+2026-10-05T16:33:15.8484811Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:33:15.8486134Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:33:15.8487747Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:33:15.8489458Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:33:15.8490973Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:33:15.8492476Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:33:15.8493800Z       at setter (src/hooks/useAutosave.ts:526:31)
+2026-10-05T16:33:15.8494509Z       at safeSet (src/hooks/useAutosave.ts:691:7)
+2026-10-05T16:33:15.8495500Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8496640Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8497606Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T16:33:15.8498541Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T16:33:15.8499349Z       at apply (src/hooks/useAutosave.ts:1005:6)
+2026-10-05T16:33:15.8500169Z       at Object.sendBatch [as current] (src/hooks/useAutosave.ts:1069:10)
+2026-10-05T16:33:15.8500958Z       at current (src/hooks/useAutosave.ts:956:21)
+2026-10-05T16:33:15.8501932Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8503273Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8503845Z 
+2026-10-05T16:33:15.8504337Z     console.error
+2026-10-05T16:33:15.8505240Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-05T16:33:15.8505926Z       
+2026-10-05T16:33:15.8506744Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:33:15.8507525Z       
+2026-10-05T16:33:15.8507874Z       act(() => {
+2026-10-05T16:33:15.8508347Z         /* fire events that update state */
+2026-10-05T16:33:15.8508858Z       });
+2026-10-05T16:33:15.8509275Z       /* assert on the output */
+2026-10-05T16:33:15.8509734Z       
+2026-10-05T16:33:15.8510807Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:33:15.8511734Z 
+2026-10-05T16:33:15.8512350Z     [0m [90m 524 |[39m   [36mconst[39m safeSet [33m=[39m useCallback(
+2026-10-05T16:33:15.8514413Z      [90m 525 |[39m     [33m<[39m[33mT[39m[33m,[39m[33m>[39m(setter[33m:[39m (v[33m:[39m [33mT[39m) [33m=>[39m [36mvoid[39m[33m,[39m v[33m:[39m [33mT[39m) [33m=>[39m {
+2026-10-05T16:33:15.8516184Z     [31m[1m>[22m[39m[90m 526 |[39m       [36mif[39m (mountedRef[33m.[39mcurrent) setter(v)[33m;[39m
+2026-10-05T16:33:15.8517303Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:33:15.8518047Z      [90m 527 |[39m     }[33m,[39m
+2026-10-05T16:33:15.8518665Z      [90m 528 |[39m     [][33m,[39m
+2026-10-05T16:33:15.8519301Z      [90m 529 |[39m   )[33m;[39m[0m
+2026-10-05T16:33:15.8519591Z 
+2026-10-05T16:33:15.8520109Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:33:15.8521404Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:33:15.8523262Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:33:15.8524899Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:33:15.8526463Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:33:15.8527925Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:33:15.8528942Z       at setter (src/hooks/useAutosave.ts:526:31)
+2026-10-05T16:33:15.8529613Z       at safeSet (src/hooks/useAutosave.ts:581:7)
+2026-10-05T16:33:15.8530276Z       at setDirty (src/hooks/useAutosave.ts:745:9)
+2026-10-05T16:33:15.8531245Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8532371Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8533161Z 
+2026-10-05T16:33:15.8533355Z     console.error
+2026-10-05T16:33:15.8534036Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-05T16:33:15.8534748Z       
+2026-10-05T16:33:15.8535495Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:33:15.8536262Z       
+2026-10-05T16:33:15.8536626Z       act(() => {
+2026-10-05T16:33:15.8537094Z         /* fire events that update state */
+2026-10-05T16:33:15.8537661Z       });
+2026-10-05T16:33:15.8538078Z       /* assert on the output */
+2026-10-05T16:33:15.8538535Z       
+2026-10-05T16:33:15.8539645Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:33:15.8540562Z 
+2026-10-05T16:33:15.8541135Z     [0m [90m 524 |[39m   [36mconst[39m safeSet [33m=[39m useCallback(
+2026-10-05T16:33:15.8543247Z      [90m 525 |[39m     [33m<[39m[33mT[39m[33m,[39m[33m>[39m(setter[33m:[39m (v[33m:[39m [33mT[39m) [33m=>[39m [36mvoid[39m[33m,[39m v[33m:[39m [33mT[39m) [33m=>[39m {
+2026-10-05T16:33:15.8545417Z     [31m[1m>[22m[39m[90m 526 |[39m       [36mif[39m (mountedRef[33m.[39mcurrent) setter(v)[33m;[39m
+2026-10-05T16:33:15.8546800Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:33:15.8547542Z      [90m 527 |[39m     }[33m,[39m
+2026-10-05T16:33:15.8548163Z      [90m 528 |[39m     [][33m,[39m
+2026-10-05T16:33:15.8548780Z      [90m 529 |[39m   )[33m;[39m[0m
+2026-10-05T16:33:15.8549108Z 
+2026-10-05T16:33:15.8549656Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:33:15.8550957Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:33:15.8552467Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:33:15.8554321Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:33:15.8555881Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:33:15.8557368Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:33:15.8558213Z       at setter (src/hooks/useAutosave.ts:526:31)
+2026-10-05T16:33:15.8558828Z       at safeSet (src/hooks/useAutosave.ts:747:9)
+2026-10-05T16:33:15.8559769Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8560893Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8561468Z 
+2026-10-05T16:33:15.8561651Z     console.error
+2026-10-05T16:33:15.8562299Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-05T16:33:15.8563137Z       
+2026-10-05T16:33:15.8563808Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:33:15.8564493Z       
+2026-10-05T16:33:15.8564814Z       act(() => {
+2026-10-05T16:33:15.8565273Z         /* fire events that update state */
+2026-10-05T16:33:15.8565768Z       });
+2026-10-05T16:33:15.8566177Z       /* assert on the output */
+2026-10-05T16:33:15.8566628Z       
+2026-10-05T16:33:15.8567766Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:33:15.8568729Z 
+2026-10-05T16:33:15.8569336Z     [0m [90m 524 |[39m   [36mconst[39m safeSet [33m=[39m useCallback(
+2026-10-05T16:33:15.8571162Z      [90m 525 |[39m     [33m<[39m[33mT[39m[33m,[39m[33m>[39m(setter[33m:[39m (v[33m:[39m [33mT[39m) [33m=>[39m [36mvoid[39m[33m,[39m v[33m:[39m [33mT[39m) [33m=>[39m {
+2026-10-05T16:33:15.8573257Z     [31m[1m>[22m[39m[90m 526 |[39m       [36mif[39m (mountedRef[33m.[39mcurrent) setter(v)[33m;[39m
+2026-10-05T16:33:15.8574290Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:33:15.8574988Z      [90m 527 |[39m     }[33m,[39m
+2026-10-05T16:33:15.8575569Z      [90m 528 |[39m     [][33m,[39m
+2026-10-05T16:33:15.8576148Z      [90m 529 |[39m   )[33m;[39m[0m
+2026-10-05T16:33:15.8576468Z 
+2026-10-05T16:33:15.8576972Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:33:15.8578175Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:33:15.8579666Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:33:15.8581177Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:33:15.8582624Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:33:15.8584245Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:33:15.8585517Z       at setter (src/hooks/useAutosave.ts:526:31)
+2026-10-05T16:33:15.8586337Z       at safeSet (src/hooks/useAutosave.ts:748:9)
+2026-10-05T16:33:15.8587242Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8588290Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8588820Z 
+2026-10-05T16:33:15.8588985Z     console.error
+2026-10-05T16:33:15.8589628Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-05T16:33:15.8590252Z       
+2026-10-05T16:33:15.8590948Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:33:15.8591681Z       
+2026-10-05T16:33:15.8592040Z       act(() => {
+2026-10-05T16:33:15.8592532Z         /* fire events that update state */
+2026-10-05T16:33:15.8593411Z       });
+2026-10-05T16:33:15.8593858Z       /* assert on the output */
+2026-10-05T16:33:15.8594336Z       
+2026-10-05T16:33:15.8595489Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:33:15.8596470Z 
+2026-10-05T16:33:15.8597065Z     [0m [90m 524 |[39m   [36mconst[39m safeSet [33m=[39m useCallback(
+2026-10-05T16:33:15.8598875Z      [90m 525 |[39m     [33m<[39m[33mT[39m[33m,[39m[33m>[39m(setter[33m:[39m (v[33m:[39m [33mT[39m) [33m=>[39m [36mvoid[39m[33m,[39m v[33m:[39m [33mT[39m) [33m=>[39m {
+2026-10-05T16:33:15.8600692Z     [31m[1m>[22m[39m[90m 526 |[39m       [36mif[39m (mountedRef[33m.[39mcurrent) setter(v)[33m;[39m
+2026-10-05T16:33:15.8601840Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:33:15.8602619Z      [90m 527 |[39m     }[33m,[39m
+2026-10-05T16:33:15.8603525Z      [90m 528 |[39m     [][33m,[39m
+2026-10-05T16:33:15.8604163Z      [90m 529 |[39m   )[33m;[39m[0m
+2026-10-05T16:33:15.8604506Z 
+2026-10-05T16:33:15.8605057Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:33:15.8606495Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:33:15.8608115Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:33:15.8609756Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:33:15.8611321Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:33:15.8612799Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:33:15.8614059Z       at setter (src/hooks/useAutosave.ts:526:31)
+2026-10-05T16:33:15.8614701Z       at safeSet (src/hooks/useAutosave.ts:749:9)
+2026-10-05T16:33:15.8615613Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8616690Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8617227Z 
+2026-10-05T16:33:15.8617405Z     console.error
+2026-10-05T16:33:15.8618081Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-05T16:33:15.8618745Z       
+2026-10-05T16:33:15.8619423Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:33:15.8620149Z       
+2026-10-05T16:33:15.8620473Z       act(() => {
+2026-10-05T16:33:15.8620931Z         /* fire events that update state */
+2026-10-05T16:33:15.8621399Z       });
+2026-10-05T16:33:15.8621778Z       /* assert on the output */
+2026-10-05T16:33:15.8622195Z       
+2026-10-05T16:33:15.8623520Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:33:15.8624450Z 
+2026-10-05T16:33:15.8625333Z     [0m [90m 524 |[39m   [36mconst[39m safeSet [33m=[39m useCallback(
+2026-10-05T16:33:15.8627239Z      [90m 525 |[39m     [33m<[39m[33mT[39m[33m,[39m[33m>[39m(setter[33m:[39m (v[33m:[39m [33mT[39m) [33m=>[39m [36mvoid[39m[33m,[39m v[33m:[39m [33mT[39m) [33m=>[39m {
+2026-10-05T16:33:15.8628894Z     [31m[1m>[22m[39m[90m 526 |[39m       [36mif[39m (mountedRef[33m.[39mcurrent) setter(v)[33m;[39m
+2026-10-05T16:33:15.8629931Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:33:15.8630633Z      [90m 527 |[39m     }[33m,[39m
+2026-10-05T16:33:15.8631213Z      [90m 528 |[39m     [][33m,[39m
+2026-10-05T16:33:15.8631785Z      [90m 529 |[39m   )[33m;[39m[0m
+2026-10-05T16:33:15.8632084Z 
+2026-10-05T16:33:15.8632601Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:33:15.8634129Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:33:15.8635645Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:33:15.8637170Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:33:15.8638653Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:33:15.8640070Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:33:15.8641048Z       at setter (src/hooks/useAutosave.ts:526:31)
+2026-10-05T16:33:15.8641706Z       at safeSet (src/hooks/useAutosave.ts:750:9)
+2026-10-05T16:33:15.8642616Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8644043Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8644605Z 
+2026-10-05T16:33:15.8644783Z     console.error
+2026-10-05T16:33:15.8645449Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-05T16:33:15.8646156Z       
+2026-10-05T16:33:15.8646910Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:33:15.8647693Z       
+2026-10-05T16:33:15.8648066Z       act(() => {
+2026-10-05T16:33:15.8648556Z         /* fire events that update state */
+2026-10-05T16:33:15.8649104Z       });
+2026-10-05T16:33:15.8649612Z       /* assert on the output */
+2026-10-05T16:33:15.8650175Z       
+2026-10-05T16:33:15.8651322Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:33:15.8652326Z 
+2026-10-05T16:33:15.8653448Z     [0m [90m 524 |[39m   [36mconst[39m safeSet [33m=[39m useCallback(
+2026-10-05T16:33:15.8655299Z      [90m 525 |[39m     [33m<[39m[33mT[39m[33m,[39m[33m>[39m(setter[33m:[39m (v[33m:[39m [33mT[39m) [33m=>[39m [36mvoid[39m[33m,[39m v[33m:[39m [33mT[39m) [33m=>[39m {
+2026-10-05T16:33:15.8657145Z     [31m[1m>[22m[39m[90m 526 |[39m       [36mif[39m (mountedRef[33m.[39mcurrent) setter(v)[33m;[39m
+2026-10-05T16:33:15.8658254Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:33:15.8659026Z      [90m 527 |[39m     }[33m,[39m
+2026-10-05T16:33:15.8659658Z      [90m 528 |[39m     [][33m,[39m
+2026-10-05T16:33:15.8660309Z      [90m 529 |[39m   )[33m;[39m[0m
+2026-10-05T16:33:15.8660655Z 
+2026-10-05T16:33:15.8661185Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:33:15.8662537Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:33:15.8680967Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:33:15.8682633Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:33:15.8684904Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:33:15.8686658Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:33:15.8687685Z       at setter (src/hooks/useAutosave.ts:526:31)
+2026-10-05T16:33:15.8688312Z       at safeSet (src/hooks/useAutosave.ts:751:9)
+2026-10-05T16:33:15.8689198Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8690314Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8690879Z 
+2026-10-05T16:33:15.8691073Z     console.error
+2026-10-05T16:33:15.8691771Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-05T16:33:15.8692468Z       
+2026-10-05T16:33:15.8693509Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T16:33:15.8694290Z       
+2026-10-05T16:33:15.8694710Z       act(() => {
+2026-10-05T16:33:15.8695212Z         /* fire events that update state */
+2026-10-05T16:33:15.8695764Z       });
+2026-10-05T16:33:15.8696165Z       /* assert on the output */
+2026-10-05T16:33:15.8696630Z       
+2026-10-05T16:33:15.8697757Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T16:33:15.8698715Z 
+2026-10-05T16:33:15.8699441Z     [0m [90m 524 |[39m   [36mconst[39m safeSet [33m=[39m useCallback(
+2026-10-05T16:33:15.8701254Z      [90m 525 |[39m     [33m<[39m[33mT[39m[33m,[39m[33m>[39m(setter[33m:[39m (v[33m:[39m [33mT[39m) [33m=>[39m [36mvoid[39m[33m,[39m v[33m:[39m [33mT[39m) [33m=>[39m {
+2026-10-05T16:33:15.8703477Z     [31m[1m>[22m[39m[90m 526 |[39m       [36mif[39m (mountedRef[33m.[39mcurrent) setter(v)[33m;[39m
+2026-10-05T16:33:15.8704648Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:33:15.8705428Z      [90m 527 |[39m     }[33m,[39m
+2026-10-05T16:33:15.8706062Z      [90m 528 |[39m     [][33m,[39m
+2026-10-05T16:33:15.8706776Z      [90m 529 |[39m   )[33m;[39m[0m
+2026-10-05T16:33:15.8707092Z 
+2026-10-05T16:33:15.8707637Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T16:33:15.8708940Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:33:15.8710548Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T16:33:15.8712176Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:33:15.8713997Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:33:15.8715505Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:33:15.8716546Z       at setter (src/hooks/useAutosave.ts:526:31)
+2026-10-05T16:33:15.8717258Z       at safeSet (src/hooks/useAutosave.ts:757:9)
+2026-10-05T16:33:15.8718235Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8719363Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8719925Z 
+2026-10-05T16:33:15.8720099Z     console.warn
+2026-10-05T16:33:15.8721198Z       [[useAutosave] conflict - awaiting server truth then rebasing] { planId: 'p1', head: 9, error: 'autosave_conflict_retry', attempt: 0 }
+2026-10-05T16:33:15.8722109Z 
+2026-10-05T16:33:15.8723685Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8725105Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8726715Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8728105Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8728746Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8729626Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8730504Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8730776Z 
+2026-10-05T16:33:15.8731035Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8731715Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8732430Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:33:15.8733447Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8734385Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8735553Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8736118Z 
+2026-10-05T16:33:15.8736319Z     console.error
+2026-10-05T16:33:15.8737019Z       [[useAutosave] flush rejected] { planId: 'p1', kind: 'forbidden' }
+2026-10-05T16:33:15.8737559Z 
+2026-10-05T16:33:15.8738864Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8740254Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8741458Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8742616Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8743552Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8744477Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8745400Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8745702Z 
+2026-10-05T16:33:15.8745942Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8746627Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:33:15.8747362Z       at error (src/hooks/useAutosave.ts:1001:16)
+2026-10-05T16:33:15.8748005Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8748973Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8750097Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8750669Z 
+2026-10-05T16:33:15.8750845Z     console.error
+2026-10-05T16:33:15.8751515Z       [[useAutosave] flush rejected] { planId: 'p1', kind: 'unknown' }
+2026-10-05T16:33:15.8752026Z 
+2026-10-05T16:33:15.8753594Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8754987Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8756171Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8757331Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8757991Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8758921Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8759735Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8760012Z 
+2026-10-05T16:33:15.8760262Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8760947Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:33:15.8761656Z       at error (src/hooks/useAutosave.ts:1001:16)
+2026-10-05T16:33:15.8762623Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8764063Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8764593Z 
+2026-10-05T16:33:15.8764750Z     console.warn
+2026-10-05T16:33:15.8765873Z       [[useAutosave] flush deferred (offline/server)] { planId: 'p1', kind: 'network', attempt: 0 }
+2026-10-05T16:33:15.8766727Z 
+2026-10-05T16:33:15.8767975Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8769266Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8770389Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8771404Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8771986Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8772803Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8773890Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8774173Z 
+2026-10-05T16:33:15.8774420Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8775081Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:33:15.8775779Z       at warn (src/hooks/useAutosave.ts:976:18)
+2026-10-05T16:33:15.8776393Z           at Generator.throw (<anonymous>)
+2026-10-05T16:33:15.8777297Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8778384Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:33:15.8778944Z 
+2026-10-05T16:33:15.8779114Z     console.error
+2026-10-05T16:33:15.8779751Z       [[useAutosave] flush rejected] { planId: 'p1', kind: 'unknown' }
+2026-10-05T16:33:15.8780270Z 
+2026-10-05T16:33:15.8781533Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:33:15.8783143Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:33:15.8784341Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:33:15.8785418Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:33:15.8786019Z      [90m 19 |[39m   }
+2026-10-05T16:33:15.8786863Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:33:15.8787664Z      [90m 21 |[39m }[0m
+2026-10-05T16:33:15.8787932Z 
+2026-10-05T16:33:15.8788178Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:33:15.8788843Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:33:15.8789561Z       at error (src/hooks/useAutosave.ts:1001:16)
+2026-10-05T16:33:15.8790506Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:15.8791614Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:15.8792187Z 
+2026-10-05T16:33:15.8792564Z PASS src/utils/__tests__/programErrors.test.ts
+2026-10-05T16:33:15.8793802Z PASS src/api/__tests__/workoutAutosaveApi.test.ts
+2026-10-05T16:33:16.1963353Z PASS src/api/__tests__/programsApi.test.ts
+2026-10-05T16:33:16.3066306Z FAIL src/api/__tests__/audSolP12120.roster.test.ts
+2026-10-05T16:33:16.3094495Z   ● AUD-SOL-P12-120: complete assignable roster › does not treat the backend's first 20 clients as the whole roster
+2026-10-05T16:33:16.3095654Z 
+2026-10-05T16:33:16.3096180Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:33:16.3096791Z 
+2026-10-05T16:33:16.3097138Z     - Expected  - 5
+2026-10-05T16:33:16.3097760Z     + Received  + 0
+2026-10-05T16:33:16.3098163Z 
+2026-10-05T16:33:16.3098510Z     @@ -17,11 +17,6 @@
+2026-10-05T16:33:16.3098951Z         "client-15",
+2026-10-05T16:33:16.3099312Z         "client-16",
+2026-10-05T16:33:16.3099647Z         "client-17",
+2026-10-05T16:33:16.3099976Z         "client-18",
+2026-10-05T16:33:16.3100308Z         "client-19",
+2026-10-05T16:33:16.3100642Z     -   "client-20",
+2026-10-05T16:33:16.3100976Z     -   "client-21",
+2026-10-05T16:33:16.3101306Z     -   "client-22",
+2026-10-05T16:33:16.3102058Z     -   "client-23",
+2026-10-05T16:33:16.3102589Z     -   "client-24",
+2026-10-05T16:33:16.3103400Z       ]
+2026-10-05T16:33:16.3103716Z 
+2026-10-05T16:33:16.3104862Z     [0m [90m 213 |[39m     mockGetClients[33m.[39mmockResolvedValueOnce({ data[33m:[39m rows[33m.[39mslice([35m20[39m) })[33m;[39m
+2026-10-05T16:33:16.3105896Z      [90m 214 |[39m     [36mconst[39m actual [33m=[39m [36mawait[39m programsApi[33m.[39massignableClients()[33m;[39m
+2026-10-05T16:33:16.3107170Z     [31m[1m>[22m[39m[90m 215 |[39m     expect(actual[33m.[39mmap((r) [33m=>[39m r[33m.[39mid)[33m.[39msort())[33m.[39mtoEqual(rows[33m.[39mmap((r) [33m=>[39m r[33m.[39mid)[33m.[39msort())[33m;[39m
+2026-10-05T16:33:16.3108098Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-05T16:33:16.3108506Z      [90m 216 |[39m   })[33m;[39m
+2026-10-05T16:33:16.3108830Z      [90m 217 |[39m })[33m;[39m
+2026-10-05T16:33:16.3109121Z      [90m 218 |[39m[0m
+2026-10-05T16:33:16.3109298Z 
+2026-10-05T16:33:16.3109570Z       at Object.toEqual (src/api/__tests__/audSolP12120.roster.test.ts:215:44)
+2026-10-05T16:33:16.3110185Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:16.3110771Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:16.3111069Z 
+2026-10-05T16:33:18.9022436Z PASS src/__tests__/workoutBuilderAccess.test.tsx
+2026-10-05T16:33:18.9550079Z 
+2026-10-05T16:33:18.9558359Z Test Suites: 1 failed, 5 passed, 6 total
+2026-10-05T16:33:18.9559015Z Tests:       1 failed, 96 passed, 97 total
+2026-10-05T16:33:18.9559469Z Snapshots:   0 total
+2026-10-05T16:33:18.9559824Z Time:        7.92 s
+2026-10-05T16:33:18.9561973Z Ran all test suites matching /src\/api\/__tests__\/audSolP12120.roster.test.ts|src\/api\/__tests__\/programsApi.test.ts|src\/api\/__tests__\/workoutAutosaveApi.test.ts|src\/utils\/__tests__\/programErrors.test.ts|src\/hooks\/__tests__\/useAutosave.test.tsx|src\/__tests__\/workoutBuilderAccess.test.tsx/i.
+2026-10-05T16:33:19.0150751Z ##[error]Process completed with exit code 1.
+2026-10-05T16:33:19.0308387Z Post job cleanup.
+2026-10-05T16:33:19.1238591Z [command]/usr/bin/git version
+2026-10-05T16:33:19.1279084Z git version 2.55.0
+2026-10-05T16:33:19.1323202Z Temporarily overriding HOME='/home/runner/work/_temp/48eec077-81fe-4b04-9289-ea92493a344c' before making global git config changes
+2026-10-05T16:33:19.1325438Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:33:19.1329387Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:33:19.1367789Z Removing SSH command configuration
+2026-10-05T16:33:19.1376093Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:33:19.1422532Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:33:19.1709355Z Removing HTTP extra header
+2026-10-05T16:33:19.1716536Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:33:19.1757154Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:33:19.1994410Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:33:19.2002188Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:33:19.2034362Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:33:19.2035913Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:33:19.2036695Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:33:19.2038038Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:33:19.2045277Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:33:19.2069687Z /home/runner/work/_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:33:19.2082184Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:33:19.2120575Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:33:19.2144303Z /home/runner/work/_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:33:19.2155537Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:33:19.2191657Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:33:19.2216128Z /github/runner_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:33:19.2225280Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:33:19.2260535Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:33:19.2283598Z /github/runner_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:33:19.2293528Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config
+2026-10-05T16:33:19.2331818Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:33:19.2567606Z Removing credentials config '/home/runner/work/_temp/git-credentials-eab4d0bd-1e78-4a8f-9e88-b3345b97a5a5.config'
+2026-10-05T16:33:19.2736232Z Cleaning up orphan processes

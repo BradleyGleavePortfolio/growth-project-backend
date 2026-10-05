@@ -1,0 +1,449 @@
+﻿2026-10-05T16:33:50.8536165Z ##[group]Run set -euo pipefail
+2026-10-05T16:33:50.8536521Z [36;1mset -euo pipefail[0m
+2026-10-05T16:33:50.8536922Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:33:50.8537434Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:33:50.8537808Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:33:50.8538075Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T16:33:50.8604284Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:33:50.8604647Z ##[endgroup]
+2026-10-05T16:33:50.8703158Z specs: src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx src/screens/coach/programs/__tests__/programsFixRound.test.tsx
+2026-10-05T16:33:59.1913118Z PASS src/screens/coach/programs/__tests__/programsFixRound.test.tsx (6.138 s)
+2026-10-05T16:33:59.7535337Z FAIL src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx (7.069 s)
+2026-10-05T16:33:59.7537178Z   ● P4 lifecycle: retiring the assign screen during chunk one must prevent a later chunk request
+2026-10-05T16:33:59.7537941Z 
+2026-10-05T16:33:59.7538288Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-05T16:33:59.7538719Z 
+2026-10-05T16:33:59.7538996Z     Expected number of calls: 1
+2026-10-05T16:33:59.7539514Z     Received number of calls: 2
+2026-10-05T16:33:59.7539812Z 
+2026-10-05T16:33:59.7541453Z     [0m [90m 84 |[39m     pending[33m.[39mresolve({ results[33m:[39m roster([35m50[39m)[33m.[39mmap((c) [33m=>[39m ({ client_id[33m:[39m c[33m.[39mid[33m,[39m status[33m:[39m [32m"assigned"[39m })) })[33m;[39m
+2026-10-05T16:33:59.7543277Z      [90m 85 |[39m   })[33m;[39m
+2026-10-05T16:33:59.7544418Z     [31m[1m>[22m[39m[90m 86 |[39m   expect(mockAssign)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-05T16:33:59.7545631Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-05T16:33:59.7546359Z      [90m 87 |[39m })[33m;[39m
+2026-10-05T16:33:59.7546881Z      [90m 88 |[39m
+2026-10-05T16:33:59.7548478Z      [90m 89 |[39m it([32m"P4 completeness: a whole-program refusal must account for and recover all 51 selected clients"[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-05T16:33:59.7549670Z 
+2026-10-05T16:33:59.7550503Z       at Object.toHaveBeenCalledTimes (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:86:22)
+2026-10-05T16:33:59.7552133Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:59.7553563Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:59.7554129Z 
+2026-10-05T16:33:59.7555035Z   ● P4 completeness: a whole-program refusal must account for and recover all 51 selected clients
+2026-10-05T16:33:59.7555768Z 
+2026-10-05T16:33:59.7556214Z     Found multiple elements with text: /This program is archived/
+2026-10-05T16:33:59.7556741Z 
+2026-10-05T16:33:59.7557018Z     [36m<RCTScrollView>[39m
+2026-10-05T16:33:59.7557578Z       [36m<View>[39m
+2026-10-05T16:33:59.7558120Z         [36m<View>[39m
+2026-10-05T16:33:59.7558849Z           [36m<View>[39m
+2026-10-05T16:33:59.7559538Z             [36m<Text[39m
+2026-10-05T16:33:59.7560263Z               [33maccessibilityRole[39m=[32m"header"[39m
+2026-10-05T16:33:59.7560919Z             [36m>[39m
+2026-10-05T16:33:59.7561437Z               [0mStart date[0m
+2026-10-05T16:33:59.7562153Z             [36m</Text>[39m
+2026-10-05T16:33:59.7562687Z             [36m<View>[39m
+2026-10-05T16:33:59.7563546Z               [36m<View[39m
+2026-10-05T16:33:59.7564209Z                 [33maccessibilityLabel[39m=[32m"Today"[39m
+2026-10-05T16:33:59.7565457Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7566278Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7566856Z                   {
+2026-10-05T16:33:59.7567753Z                     "selected": false,
+2026-10-05T16:33:59.7568292Z                   }
+2026-10-05T16:33:59.7568791Z                 }[39m
+2026-10-05T16:33:59.7569964Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7570601Z               [36m>[39m
+2026-10-05T16:33:59.7571180Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7571811Z                   [0mToday[0m
+2026-10-05T16:33:59.7572383Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7573259Z               [36m</View>[39m
+2026-10-05T16:33:59.7573918Z               [36m<View[39m
+2026-10-05T16:33:59.7574807Z                 [33maccessibilityLabel[39m=[32m"Tomorrow"[39m
+2026-10-05T16:33:59.7575873Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7576815Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7577423Z                   {
+2026-10-05T16:33:59.7577990Z                     "selected": false,
+2026-10-05T16:33:59.7578510Z                   }
+2026-10-05T16:33:59.7579059Z                 }[39m
+2026-10-05T16:33:59.7579739Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7580446Z               [36m>[39m
+2026-10-05T16:33:59.7581067Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7581715Z                   [0mTomorrow[0m
+2026-10-05T16:33:59.7582379Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7583242Z               [36m</View>[39m
+2026-10-05T16:33:59.7583780Z               [36m<View[39m
+2026-10-05T16:33:59.7584507Z                 [33maccessibilityLabel[39m=[32m"Next Monday"[39m
+2026-10-05T16:33:59.7585423Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7586297Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7586952Z                   {
+2026-10-05T16:33:59.7587468Z                     "selected": true,
+2026-10-05T16:33:59.7588088Z                   }
+2026-10-05T16:33:59.7588721Z                 }[39m
+2026-10-05T16:33:59.7589488Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7590246Z               [36m>[39m
+2026-10-05T16:33:59.7590943Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7591766Z                   [0mNext Monday[0m
+2026-10-05T16:33:59.7592521Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7593518Z               [36m</View>[39m
+2026-10-05T16:33:59.7594183Z             [36m</View>[39m
+2026-10-05T16:33:59.7594892Z             [36m<TextInput[39m
+2026-10-05T16:33:59.7595980Z               [33maccessibilityLabel[39m=[32m"Start date, year month day"[39m
+2026-10-05T16:33:59.7597087Z               [33meditable[39m=[32m{true}[39m
+2026-10-05T16:33:59.7598064Z               [33mplaceholder[39m=[32m"YYYY-MM-DD"[39m
+2026-10-05T16:33:59.7598958Z               [33mvalue[39m=[32m"2026-10-12"[39m
+2026-10-05T16:33:59.7599677Z             [36m/>[39m
+2026-10-05T16:33:59.7600336Z             [36m<Text>[39m
+2026-10-05T16:33:59.7601084Z               [0mWeek 1, Day 1 lands on [0m
+2026-10-05T16:33:59.7601827Z               [0m2026-10-12[0m
+2026-10-05T16:33:59.7602625Z               [0m. Each client gets their own copy.[0m
+2026-10-05T16:33:59.7603641Z             [36m</Text>[39m
+2026-10-05T16:33:59.7604288Z             [36m<View>[39m
+2026-10-05T16:33:59.7604917Z               [36m<RCTSwitch[39m
+2026-10-05T16:33:59.7606043Z                 [33maccessibilityLabel[39m=[32m"Assign again to clients already on this program"[39m
+2026-10-05T16:33:59.7607213Z                 [33maccessibilityRole[39m=[32m"switch"[39m
+2026-10-05T16:33:59.7607956Z                 [33mvalue[39m=[32m{false}[39m
+2026-10-05T16:33:59.7608562Z               [36m/>[39m
+2026-10-05T16:33:59.7609143Z               [36m<Text>[39m
+2026-10-05T16:33:59.7609995Z                 [0mAssign again to clients already on this program (a second run)[0m
+2026-10-05T16:33:59.7610982Z               [36m</Text>[39m
+2026-10-05T16:33:59.7611549Z             [36m</View>[39m
+2026-10-05T16:33:59.7612127Z             [36m<Text[39m
+2026-10-05T16:33:59.7613607Z               [33maccessibilityRole[39m=[32m"header"[39m
+2026-10-05T16:33:59.7614552Z             [36m>[39m
+2026-10-05T16:33:59.7615147Z               [0mClients (51 selected)[0m
+2026-10-05T16:33:59.7615776Z             [36m</Text>[39m
+2026-10-05T16:33:59.7616351Z             [36m<TextInput[39m
+2026-10-05T16:33:59.7617317Z               [33maccessibilityLabel[39m=[32m"Search clients by name or email"[39m
+2026-10-05T16:33:59.7618436Z               [33mplaceholder[39m=[32m"Search clients"[39m
+2026-10-05T16:33:59.7619244Z               [33mvalue[39m=[32m""[39m
+2026-10-05T16:33:59.7619853Z             [36m/>[39m
+2026-10-05T16:33:59.7620411Z             [36m<View>[39m
+2026-10-05T16:33:59.7620939Z               [36m<View[39m
+2026-10-05T16:33:59.7621769Z                 [33maccessibilityLabel[39m=[32m"Clear shown"[39m
+2026-10-05T16:33:59.7622729Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7623861Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7624506Z                   {
+2026-10-05T16:33:59.7624957Z                     "disabled": false,
+2026-10-05T16:33:59.7625489Z                   }
+2026-10-05T16:33:59.7626043Z                 }[39m
+2026-10-05T16:33:59.7626754Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7627436Z               [36m>[39m
+2026-10-05T16:33:59.7628073Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7628797Z                   [0mClear shown[0m
+2026-10-05T16:33:59.7629549Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7630229Z               [36m</View>[39m
+2026-10-05T16:33:59.7630838Z             [36m</View>[39m
+2026-10-05T16:33:59.7631433Z             [36m<View[39m
+2026-10-05T16:33:59.7632349Z               [33maccessibilityRole[39m=[32m"alert"[39m
+2026-10-05T16:33:59.7633533Z             [36m>[39m
+2026-10-05T16:33:59.7634200Z               [36m<View>[39m
+2026-10-05T16:33:59.7634904Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7636018Z                   [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7637089Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7637787Z                 [36m<View />[39m
+2026-10-05T16:33:59.7638153Z               [36m</View>[39m
+2026-10-05T16:33:59.7638468Z             [36m</View>[39m
+2026-10-05T16:33:59.7638791Z             [36m<Text>[39m
+2026-10-05T16:33:59.7639229Z               [0m0 assigned · 0 already on it · 50 failed[0m
+2026-10-05T16:33:59.7639626Z             [36m</Text>[39m
+2026-10-05T16:33:59.7639941Z             [36m<View>[39m
+2026-10-05T16:33:59.7640244Z               [36m<View[39m
+2026-10-05T16:33:59.7640736Z                 [33maccessibilityLabel[39m=[32m"Assign to 51 clients"[39m
+2026-10-05T16:33:59.7641303Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7641763Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7642093Z                   {
+2026-10-05T16:33:59.7642402Z                     "disabled": false,
+2026-10-05T16:33:59.7642706Z                   }
+2026-10-05T16:33:59.7643319Z                 }[39m
+2026-10-05T16:33:59.7643706Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7644081Z               [36m>[39m
+2026-10-05T16:33:59.7644413Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7644772Z                   [0mAssign to 51 clients[0m
+2026-10-05T16:33:59.7645159Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7645497Z               [36m</View>[39m
+2026-10-05T16:33:59.7645798Z               [36m<View[39m
+2026-10-05T16:33:59.7646489Z                 [33maccessibilityHint[39m=[32m"Retries only the clients that failed, with the same request key"[39m
+2026-10-05T16:33:59.7647252Z                 [33maccessibilityLabel[39m=[32m"Retry 50 failed"[39m
+2026-10-05T16:33:59.7647788Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-05T16:33:59.7648253Z                 [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7648834Z                   {
+2026-10-05T16:33:59.7649120Z                     "disabled": false,
+2026-10-05T16:33:59.7649559Z                   }
+2026-10-05T16:33:59.7649843Z                 }[39m
+2026-10-05T16:33:59.7650204Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7650550Z               [36m>[39m
+2026-10-05T16:33:59.7650877Z                 [36m<Text>[39m
+2026-10-05T16:33:59.7651235Z                   [0mRetry 50 failed[0m
+2026-10-05T16:33:59.7651583Z                 [36m</Text>[39m
+2026-10-05T16:33:59.7651931Z               [36m</View>[39m
+2026-10-05T16:33:59.7652233Z             [36m</View>[39m
+2026-10-05T16:33:59.7652550Z           [36m</View>[39m
+2026-10-05T16:33:59.7653156Z         [36m</View>[39m
+2026-10-05T16:33:59.7653627Z         [36m<View>[39m
+2026-10-05T16:33:59.7654023Z           [36m<View[39m
+2026-10-05T16:33:59.7654798Z             [33maccessibilityLabel[39m=[32m"Client 0, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7655530Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7656007Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7656336Z               {
+2026-10-05T16:33:59.7656613Z                 "checked": true,
+2026-10-05T16:33:59.7656897Z               }
+2026-10-05T16:33:59.7657135Z             }[39m
+2026-10-05T16:33:59.7657523Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7657881Z           [36m>[39m
+2026-10-05T16:33:59.7658161Z             [36m<View>[39m
+2026-10-05T16:33:59.7658499Z               [36m<Text>[39m
+2026-10-05T16:33:59.7658825Z                 [0mClient 0[0m
+2026-10-05T16:33:59.7659168Z               [36m</Text>[39m
+2026-10-05T16:33:59.7659506Z               [36m<Text>[39m
+2026-10-05T16:33:59.7660057Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7660565Z               [36m</Text>[39m
+2026-10-05T16:33:59.7660878Z             [36m</View>[39m
+2026-10-05T16:33:59.7661190Z           [36m</View>[39m
+2026-10-05T16:33:59.7661481Z         [36m</View>[39m
+2026-10-05T16:33:59.7661767Z         [36m<View>[39m
+2026-10-05T16:33:59.7662061Z           [36m<View[39m
+2026-10-05T16:33:59.7663238Z             [33maccessibilityLabel[39m=[32m"Client 1, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7664198Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7664656Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7664973Z               {
+2026-10-05T16:33:59.7665235Z                 "checked": true,
+2026-10-05T16:33:59.7665515Z               }
+2026-10-05T16:33:59.7665761Z             }[39m
+2026-10-05T16:33:59.7666090Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7666446Z           [36m>[39m
+2026-10-05T16:33:59.7666747Z             [36m<View>[39m
+2026-10-05T16:33:59.7667091Z               [36m<Text>[39m
+2026-10-05T16:33:59.7667430Z                 [0mClient 1[0m
+2026-10-05T16:33:59.7667758Z               [36m</Text>[39m
+2026-10-05T16:33:59.7668097Z               [36m<Text>[39m
+2026-10-05T16:33:59.7668647Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7669167Z               [36m</Text>[39m
+2026-10-05T16:33:59.7669473Z             [36m</View>[39m
+2026-10-05T16:33:59.7669767Z           [36m</View>[39m
+2026-10-05T16:33:59.7670074Z         [36m</View>[39m
+2026-10-05T16:33:59.7670361Z         [36m<View>[39m
+2026-10-05T16:33:59.7670667Z           [36m<View[39m
+2026-10-05T16:33:59.7671395Z             [33maccessibilityLabel[39m=[32m"Client 2, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7672131Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7672582Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7673373Z               {
+2026-10-05T16:33:59.7673650Z                 "checked": true,
+2026-10-05T16:33:59.7674059Z               }
+2026-10-05T16:33:59.7674354Z             }[39m
+2026-10-05T16:33:59.7674708Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7675066Z           [36m>[39m
+2026-10-05T16:33:59.7675323Z             [36m<View>[39m
+2026-10-05T16:33:59.7675652Z               [36m<Text>[39m
+2026-10-05T16:33:59.7675997Z                 [0mClient 2[0m
+2026-10-05T16:33:59.7676325Z               [36m</Text>[39m
+2026-10-05T16:33:59.7676638Z               [36m<Text>[39m
+2026-10-05T16:33:59.7677190Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7677701Z               [36m</Text>[39m
+2026-10-05T16:33:59.7678020Z             [36m</View>[39m
+2026-10-05T16:33:59.7678337Z           [36m</View>[39m
+2026-10-05T16:33:59.7678640Z         [36m</View>[39m
+2026-10-05T16:33:59.7678900Z         [36m<View>[39m
+2026-10-05T16:33:59.7679197Z           [36m<View[39m
+2026-10-05T16:33:59.7679909Z             [33maccessibilityLabel[39m=[32m"Client 3, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7680672Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7681134Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7681466Z               {
+2026-10-05T16:33:59.7681728Z                 "checked": true,
+2026-10-05T16:33:59.7682001Z               }
+2026-10-05T16:33:59.7682265Z             }[39m
+2026-10-05T16:33:59.7682598Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7683528Z           [36m>[39m
+2026-10-05T16:33:59.7684024Z             [36m<View>[39m
+2026-10-05T16:33:59.7684371Z               [36m<Text>[39m
+2026-10-05T16:33:59.7684713Z                 [0mClient 3[0m
+2026-10-05T16:33:59.7685043Z               [36m</Text>[39m
+2026-10-05T16:33:59.7685369Z               [36m<Text>[39m
+2026-10-05T16:33:59.7685935Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7686450Z               [36m</Text>[39m
+2026-10-05T16:33:59.7686763Z             [36m</View>[39m
+2026-10-05T16:33:59.7687059Z           [36m</View>[39m
+2026-10-05T16:33:59.7687368Z         [36m</View>[39m
+2026-10-05T16:33:59.7687663Z         [36m<View>[39m
+2026-10-05T16:33:59.7687940Z           [36m<View[39m
+2026-10-05T16:33:59.7688649Z             [33maccessibilityLabel[39m=[32m"Client 4, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7689426Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7689883Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7690207Z               {
+2026-10-05T16:33:59.7690482Z                 "checked": true,
+2026-10-05T16:33:59.7690743Z               }
+2026-10-05T16:33:59.7690998Z             }[39m
+2026-10-05T16:33:59.7691352Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7691688Z           [36m>[39m
+2026-10-05T16:33:59.7691985Z             [36m<View>[39m
+2026-10-05T16:33:59.7692328Z               [36m<Text>[39m
+2026-10-05T16:33:59.7692643Z                 [0mClient 4[0m
+2026-10-05T16:33:59.7693239Z               [36m</Text>[39m
+2026-10-05T16:33:59.7693552Z               [36m<Text>[39m
+2026-10-05T16:33:59.7694111Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7694615Z               [36m</Text>[39m
+2026-10-05T16:33:59.7694935Z             [36m</View>[39m
+2026-10-05T16:33:59.7695226Z           [36m</View>[39m
+2026-10-05T16:33:59.7695533Z         [36m</View>[39m
+2026-10-05T16:33:59.7695816Z         [36m<View>[39m
+2026-10-05T16:33:59.7696115Z           [36m<View[39m
+2026-10-05T16:33:59.7696828Z             [33maccessibilityLabel[39m=[32m"Client 5, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7697821Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7698283Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7698737Z               {
+2026-10-05T16:33:59.7699009Z                 "checked": true,
+2026-10-05T16:33:59.7699278Z               }
+2026-10-05T16:33:59.7699528Z             }[39m
+2026-10-05T16:33:59.7699876Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7700233Z           [36m>[39m
+2026-10-05T16:33:59.7700517Z             [36m<View>[39m
+2026-10-05T16:33:59.7700829Z               [36m<Text>[39m
+2026-10-05T16:33:59.7701163Z                 [0mClient 5[0m
+2026-10-05T16:33:59.7701482Z               [36m</Text>[39m
+2026-10-05T16:33:59.7701809Z               [36m<Text>[39m
+2026-10-05T16:33:59.7702330Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7703106Z               [36m</Text>[39m
+2026-10-05T16:33:59.7703402Z             [36m</View>[39m
+2026-10-05T16:33:59.7703870Z           [36m</View>[39m
+2026-10-05T16:33:59.7704147Z         [36m</View>[39m
+2026-10-05T16:33:59.7704436Z         [36m<View>[39m
+2026-10-05T16:33:59.7704728Z           [36m<View[39m
+2026-10-05T16:33:59.7705463Z             [33maccessibilityLabel[39m=[32m"Client 6, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7706202Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7706651Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7706947Z               {
+2026-10-05T16:33:59.7707199Z                 "checked": true,
+2026-10-05T16:33:59.7707463Z               }
+2026-10-05T16:33:59.7707697Z             }[39m
+2026-10-05T16:33:59.7708021Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7708357Z           [36m>[39m
+2026-10-05T16:33:59.7708635Z             [36m<View>[39m
+2026-10-05T16:33:59.7732242Z               [36m<Text>[39m
+2026-10-05T16:33:59.7733171Z                 [0mClient 6[0m
+2026-10-05T16:33:59.7733811Z               [36m</Text>[39m
+2026-10-05T16:33:59.7734199Z               [36m<Text>[39m
+2026-10-05T16:33:59.7734750Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7735304Z               [36m</Text>[39m
+2026-10-05T16:33:59.7735633Z             [36m</View>[39m
+2026-10-05T16:33:59.7735934Z           [36m</View>[39m
+2026-10-05T16:33:59.7736235Z         [36m</View>[39m
+2026-10-05T16:33:59.7736537Z         [36m<View>[39m
+2026-10-05T16:33:59.7736833Z           [36m<View[39m
+2026-10-05T16:33:59.7737574Z             [33maccessibilityLabel[39m=[32m"Client 7, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7738339Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7738806Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7739139Z               {
+2026-10-05T16:33:59.7739404Z                 "checked": true,
+2026-10-05T16:33:59.7739689Z               }
+2026-10-05T16:33:59.7739951Z             }[39m
+2026-10-05T16:33:59.7740306Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7740664Z           [36m>[39m
+2026-10-05T16:33:59.7740950Z             [36m<View>[39m
+2026-10-05T16:33:59.7741292Z               [36m<Text>[39m
+2026-10-05T16:33:59.7741616Z                 [0mClient 7[0m
+2026-10-05T16:33:59.7741950Z               [36m</Text>[39m
+2026-10-05T16:33:59.7742269Z               [36m<Text>[39m
+2026-10-05T16:33:59.7743051Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7743578Z               [36m</Text>[39m
+2026-10-05T16:33:59.7744027Z             [36m</View>[39m
+2026-10-05T16:33:59.7744331Z           [36m</View>[39m
+2026-10-05T16:33:59.7744615Z         [36m</View>[39m
+2026-10-05T16:33:59.7744901Z         [36m<View>[39m
+2026-10-05T16:33:59.7745200Z           [36m<View[39m
+2026-10-05T16:33:59.7746220Z             [33maccessibilityLabel[39m=[32m"Client 8, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7747100Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7747558Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7747867Z               {
+2026-10-05T16:33:59.7748124Z                 "checked": true,
+2026-10-05T16:33:59.7748403Z               }
+2026-10-05T16:33:59.7748656Z             }[39m
+2026-10-05T16:33:59.7748981Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7749345Z           [36m>[39m
+2026-10-05T16:33:59.7749637Z             [36m<View>[39m
+2026-10-05T16:33:59.7749968Z               [36m<Text>[39m
+2026-10-05T16:33:59.7750303Z                 [0mClient 8[0m
+2026-10-05T16:33:59.7750622Z               [36m</Text>[39m
+2026-10-05T16:33:59.7750930Z               [36m<Text>[39m
+2026-10-05T16:33:59.7751511Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7752035Z               [36m</Text>[39m
+2026-10-05T16:33:59.7752356Z             [36m</View>[39m
+2026-10-05T16:33:59.7752670Z           [36m</View>[39m
+2026-10-05T16:33:59.7753229Z         [36m</View>[39m
+2026-10-05T16:33:59.7753543Z         [36m<View>[39m
+2026-10-05T16:33:59.7753842Z           [36m<View[39m
+2026-10-05T16:33:59.7754552Z             [33maccessibilityLabel[39m=[32m"Client 9, This program is archived. Restore it first, then edit or assign it."[39m
+2026-10-05T16:33:59.7755273Z             [33maccessibilityRole[39m=[32m"checkbox"[39m
+2026-10-05T16:33:59.7755711Z             [33maccessibilityState[39m=[32m{
+2026-10-05T16:33:59.7756009Z               {
+2026-10-05T16:33:59.7756237Z                 "checked": true,
+2026-10-05T16:33:59.7756498Z               }
+2026-10-05T16:33:59.7756750Z             }[39m
+2026-10-05T16:33:59.7757093Z             [33maccessible[39m=[32m{true}[39m
+2026-10-05T16:33:59.7757432Z           [36m>[39m
+2026-10-05T16:33:59.7757727Z             [36m<View>[39m
+2026-10-05T16:33:59.7758038Z               [36m<Text>[39m
+2026-10-05T16:33:59.7758375Z                 [0mClient 9[0m
+2026-10-05T16:33:59.7758718Z               [36m</Text>[39m
+2026-10-05T16:33:59.7759041Z               [36m<Text>[39m
+2026-10-05T16:33:59.7759578Z                 [0mThis program is archived. Restore it first, then edit or assign it.[0m
+2026-10-05T16:33:59.7760098Z               [36m</Text>[39m
+2026-10-05T16:33:59.7760393Z             [36m</View>[39m
+2026-10-05T16:33:59.7760700Z           [36m</View>[39m
+2026-10-05T16:33:59.7761000Z         [36m</View>[39m
+2026-10-05T16:33:59.7761286Z         [36m<View />[39m
+2026-10-05T16:33:59.7761567Z       [36m</View>[39m
+2026-10-05T16:33:59.7761883Z     [36m</RCTScrollView>[39m
+2026-10-05T16:33:59.7762064Z 
+2026-10-05T16:33:59.7762697Z     [0m [90m 94 |[39m   [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByLabelText([32m"Select all shown (51)"[39m))[33m;[39m
+2026-10-05T16:33:59.7764100Z      [90m 95 |[39m   [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByLabelText([32m"Assign to 51 clients"[39m))[33m;[39m
+2026-10-05T16:33:59.7765174Z     [31m[1m>[22m[39m[90m 96 |[39m   [36mawait[39m screen[33m.[39mfindByText([35m/This program is archived/[39m)[33m;[39m
+2026-10-05T16:33:59.7765867Z      [90m    |[39m                [31m[1m^[22m[39m
+2026-10-05T16:33:59.7766503Z      [90m 97 |[39m   expect(mockAssign)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-05T16:33:59.7767343Z      [90m 98 |[39m   [90m// No implicit success/omission for c50. All selected clients need a visible[39m
+2026-10-05T16:33:59.7768260Z      [90m 99 |[39m   [90m// refused/not-attempted outcome and a recovery path; current UI offers only 50.[39m[0m
+2026-10-05T16:33:59.7768725Z 
+2026-10-05T16:33:59.7769144Z       at Object.findByText (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:96:16)
+2026-10-05T16:33:59.7770135Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:59.7770928Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:59.7771258Z 
+2026-10-05T16:33:59.7771746Z   ● P4 privacy: a failed removal must not forward a client name through telemetry action metadata
+2026-10-05T16:33:59.7772159Z 
+2026-10-05T16:33:59.7772367Z     expect(received).not.toContain(expected) // indexOf
+2026-10-05T16:33:59.7772646Z 
+2026-10-05T16:33:59.7773067Z     Expected substring: not "Synthetic PersonPrivate"
+2026-10-05T16:33:59.7774124Z     Received string:        "{\"extra\":{\"area\":\"programs\",\"action\":\"remove Synthetic PersonPrivate from the program\",\"status\":null,\"code\":null,\"reference\":\"f8c514f9-9a15-495e-a28f-318764e4aa2b\"}}"
+2026-10-05T16:33:59.7774877Z 
+2026-10-05T16:33:59.7775423Z     [0m [90m 110 |[39m   [36mawait[39m waitFor(() [33m=>[39m expect(mockCapture)[33m.[39mtoHaveBeenCalled())[33m;[39m
+2026-10-05T16:33:59.7776723Z      [90m 111 |[39m   [36mconst[39m event [33m=[39m scrubCredentials(scrubEvent({ extra[33m:[39m mockCapture[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m] }))[33m;[39m
+2026-10-05T16:33:59.7778083Z     [31m[1m>[22m[39m[90m 112 |[39m   expect([33mJSON[39m[33m.[39mstringify(event))[33m.[39mnot[33m.[39mtoContain(assignee[33m.[39mclient_name)[33m;[39m
+2026-10-05T16:33:59.7778974Z      [90m     |[39m                                     [31m[1m^[22m[39m
+2026-10-05T16:33:59.7779414Z      [90m 113 |[39m })[33m;[39m
+2026-10-05T16:33:59.7779740Z      [90m 114 |[39m
+2026-10-05T16:33:59.7780684Z      [90m 115 |[39m it([32m"P4 destructive copy: a remove confirmation cannot claim only one run's count while deleting all runs"[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-05T16:33:59.7781362Z 
+2026-10-05T16:33:59.7781767Z       at Object.toContain (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:112:37)
+2026-10-05T16:33:59.7782555Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:59.7783500Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:59.7783855Z 
+2026-10-05T16:33:59.7784351Z   ● P4 destructive copy: a remove confirmation cannot claim only one run's count while deleting all runs
+2026-10-05T16:33:59.7784811Z 
+2026-10-05T16:33:59.7784982Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:33:59.7785248Z 
+2026-10-05T16:33:59.7785418Z     Expected substring: "7 upcoming workouts"
+2026-10-05T16:33:59.7786073Z     Received string:    "2 upcoming workouts are removed from their plan. 0 finished workouts stay in their history."
+2026-10-05T16:33:59.7786556Z 
+2026-10-05T16:33:59.7787380Z     [0m [90m 121 |[39m   [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mProgramHistoryScreen[39m {[33m...[39mhistoryProps()} [33m/[39m[33m>[39m)[33m;[39m
+2026-10-05T16:33:59.7788669Z      [90m 122 |[39m   [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetAllByLabelText([32m"Remove"[39m)[[35m0[39m])[33m;[39m
+2026-10-05T16:33:59.7789945Z     [31m[1m>[22m[39m[90m 123 |[39m   expect(alert[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m])[33m.[39mtoContain([32m"7 upcoming workouts"[39m)[33m;[39m
+2026-10-05T16:33:59.7790821Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-05T16:33:59.7791262Z      [90m 124 |[39m })[33m;[39m
+2026-10-05T16:33:59.7791573Z      [90m 125 |[39m[0m
+2026-10-05T16:33:59.7791748Z 
+2026-10-05T16:33:59.7792151Z       at Object.toContain (src/screens/coach/programs/__tests__/audSolP34P4Boundaries.test.tsx:123:34)
+2026-10-05T16:33:59.7793180Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:33:59.7793841Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:33:59.7794373Z 
+2026-10-05T16:33:59.8104414Z Test Suites: 1 failed, 1 passed, 2 total
+2026-10-05T16:33:59.8105401Z Tests:       4 failed, 7 passed, 11 total
+2026-10-05T16:33:59.8106548Z Snapshots:   0 total
+2026-10-05T16:33:59.8107085Z Time:        7.773 s
+2026-10-05T16:33:59.8108384Z Ran all test suites matching /src\/screens\/coach\/programs\/__tests__\/audSolP34P4Boundaries.test.tsx|src\/screens\/coach\/programs\/__tests__\/programsFixRound.test.tsx/i.
+2026-10-05T16:33:59.8682296Z ##[error]Process completed with exit code 1.

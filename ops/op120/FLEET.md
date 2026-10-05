@@ -19,7 +19,26 @@ Wave 1 launched 09:28 (15 agents; routing: T4 builders Claude Opus 5.5; lens pai
 | AUD-SOL-P34-120 | gpt_6_1_sol | lens_sol_programs_p3_p4_muvgrocs | m#357, m#358 | running |
 | B-HC10-120 | claude_opus_5_5 | builder_health_connect_h8_muvgrod0 | new m PR H8 on #369 | running |
 
+Wave 1 results so far (PDT)
+- AUD-SOL-W12D-120 DONE: #345 APPROVE 0/0/0 (5998775552); #346 RC 0/1/2 B-346-3 (5998775024); #347 restack APPROVE (5998774888).
+- AUD-SOL-P12-120 DONE: #355 RC 0/1/0 (5998781633); #356 RC 0/2/2 (5998828937).
+- AUD-SOL-P34-120 DONE: #357 RC 0/4/1 (5998892359); #358 RC 0/4/0 (5998829473).
+- AUD-SOL-661D-120 DONE: #661 RC 0/1/1 B-661-14 (5998892091); #702 APPROVE 0/0/0 (5998892592).
+- AUD-SOL-H7-120 DONE: #369 RC 0/1/2 B-369-2 (5998888199); #362 conditional APPROVE 0/0/1 in H1-H7 (5998888651).
+
+Wave 2 launched 09:48-09:50
+| AUD-OPUS-PUSH-120 | claude_opus_5_5 | lens_opus_push_p1_p2_muvhei8j | b#692 27156167, b#693 13417e7b | running |
+| AUD-SOL-PUSH-120 | gpt_6_1_sol | lens_sol_push_p1_p2_muvhei8s | b#692, b#693 | running |
+| B-SPLIT-SCHED-120 | claude_opus_5_5 | split_scheduling_pr_634_muvhei8z | b#634 e18e8055 -> pieces < 1,500 | running |
+| B-SPLIT-MSG-120 | claude_opus_5_5 | split_messaging_pr_660_muvhfn22 | b#660 60556485 -> pieces < 1,500 | running |
+| B-INV2-120 | claude_opus_5_5 | fix_invite_codes_pr_658_muvhfn2b | b#658 08534e17 | running |
+
+Waiting for a slot (entries ready in JOBS120.md): B-WIZ3-120 and B-PROG2-120 and B-PROG4-120 (after the Opus verdicts), B-661R2-120,
+B-HC11-120, B-SPLIT-COACHLESS-120, B-SPLIT-BCAST-120.
+
 Operator actions
+- 09:44 deleted 37 leftover ci/* branches from agents up to 119 (owner decision 4); kept ci/fly-deploy-fail-loud-on-missing-token
+  (1 unmerged commit from April) and every -120 lane.
 - 09:27 RESTACK NOTE posted on b#661 (5998643247) and b#702 (5998643507).
 - 09:29 deploy dispatched: backend main ee55f814 (recurring R1-R5) with -f migrations=apply-migrations, fly-deploy run 37341231516;
   09:33 DEPLOYED (success; /health ok; /readyz db up; migrations 20270225000000 + 20270311000000 applied 09:32:52).

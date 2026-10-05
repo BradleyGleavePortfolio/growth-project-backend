@@ -1,0 +1,33 @@
+﻿2026-10-05T16:37:19.5424786Z Current runner version: '2.337.0'
+2026-10-05T16:37:19.5442373Z ##[group]Runner Image Provisioner
+2026-10-05T16:37:19.5442912Z Hosted Compute Agent
+2026-10-05T16:37:19.5443333Z Version: 20260901.588
+2026-10-05T16:37:19.5443696Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:37:19.5444200Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:37:19.5444601Z Worker ID: {46ea9d08-3144-40ba-90e7-6dad12968bc4}
+2026-10-05T16:37:19.5445000Z Azure Region: westus3
+2026-10-05T16:37:19.5445363Z ##[endgroup]
+2026-10-05T16:37:19.5446073Z ##[group]Operating System
+2026-10-05T16:37:19.5446434Z Ubuntu
+2026-10-05T16:37:19.5446782Z 24.04.5
+2026-10-05T16:37:19.5447082Z LTS
+2026-10-05T16:37:19.5447740Z ##[endgroup]
+2026-10-05T16:37:19.5448074Z ##[group]Runner Image
+2026-10-05T16:37:19.5448471Z Image: ubuntu-24.04
+2026-10-05T16:37:19.5448839Z Version: 20260927.320.1
+2026-10-05T16:37:19.5449426Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:37:19.5450430Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:37:19.5450976Z ##[endgroup]
+2026-10-05T16:37:19.5451862Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:37:19.5453030Z Contents: read
+2026-10-05T16:37:19.5453423Z Metadata: read
+2026-10-05T16:37:19.5453775Z Packages: read
+2026-10-05T16:37:19.5454114Z ##[endgroup]
+2026-10-05T16:37:19.5455373Z Secret source: Actions
+2026-10-05T16:37:19.5455950Z Cache mode: write
+2026-10-05T16:37:19.5456388Z Prepare workflow directory
+2026-10-05T16:37:19.5704649Z Prepare all required actions
+2026-10-05T16:37:19.5734131Z Getting action download info
+2026-10-05T16:37:19.8907669Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:37:19.9810749Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:37:20.4397977Z Complete job name: targeted

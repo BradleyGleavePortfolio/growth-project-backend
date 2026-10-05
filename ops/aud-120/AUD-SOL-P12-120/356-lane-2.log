@@ -1,0 +1,459 @@
+﻿2026-10-05T16:35:23.9639630Z Current runner version: '2.337.0'
+2026-10-05T16:35:23.9666483Z ##[group]Runner Image Provisioner
+2026-10-05T16:35:23.9667898Z Hosted Compute Agent
+2026-10-05T16:35:23.9669008Z Version: 20260901.588
+2026-10-05T16:35:23.9670198Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:35:23.9671937Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:35:23.9673356Z Worker ID: {e499fb3e-f042-4ee5-b5f6-4d0ce78045b6}
+2026-10-05T16:35:23.9674675Z Azure Region: centralus
+2026-10-05T16:35:23.9675969Z ##[endgroup]
+2026-10-05T16:35:23.9678444Z ##[group]Operating System
+2026-10-05T16:35:23.9679554Z Ubuntu
+2026-10-05T16:35:23.9680645Z 24.04.5
+2026-10-05T16:35:23.9681989Z LTS
+2026-10-05T16:35:23.9683033Z ##[endgroup]
+2026-10-05T16:35:23.9684081Z ##[group]Runner Image
+2026-10-05T16:35:23.9685131Z Image: ubuntu-24.04
+2026-10-05T16:35:23.9686272Z Version: 20260927.320.1
+2026-10-05T16:35:23.9688505Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:35:23.9691765Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:35:23.9693498Z ##[endgroup]
+2026-10-05T16:35:23.9695682Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:35:23.9699073Z Contents: read
+2026-10-05T16:35:23.9700149Z Metadata: read
+2026-10-05T16:35:23.9701348Z Packages: read
+2026-10-05T16:35:23.9702466Z ##[endgroup]
+2026-10-05T16:35:23.9705278Z Secret source: Actions
+2026-10-05T16:35:23.9706938Z Cache mode: write
+2026-10-05T16:35:23.9708904Z Prepare workflow directory
+2026-10-05T16:35:24.0076413Z Prepare all required actions
+2026-10-05T16:35:24.0123641Z Getting action download info
+2026-10-05T16:35:24.3033670Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:35:24.4106788Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:35:24.5952300Z Complete job name: targeted
+2026-10-05T16:35:24.6690349Z ##[group]Run actions/checkout@v6
+2026-10-05T16:35:24.6691462Z with:
+2026-10-05T16:35:24.6692026Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:35:24.6695973Z   token: ***
+2026-10-05T16:35:24.6696400Z   ssh-strict: true
+2026-10-05T16:35:24.6696827Z   ssh-user: git
+2026-10-05T16:35:24.6697268Z   persist-credentials: true
+2026-10-05T16:35:24.6697759Z   clean: true
+2026-10-05T16:35:24.6698196Z   sparse-checkout-cone-mode: true
+2026-10-05T16:35:24.6698713Z   fetch-depth: 1
+2026-10-05T16:35:24.6699130Z   fetch-tags: false
+2026-10-05T16:35:24.6699563Z   show-progress: true
+2026-10-05T16:35:24.6700009Z   lfs: false
+2026-10-05T16:35:24.6700415Z   submodules: false
+2026-10-05T16:35:24.6700855Z   set-safe-directory: true
+2026-10-05T16:35:24.6701567Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:35:24.6702362Z ##[endgroup]
+2026-10-05T16:35:24.7691819Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:35:24.7693766Z ##[group]Getting Git version info
+2026-10-05T16:35:24.7694670Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:35:24.7696060Z [command]/usr/bin/git version
+2026-10-05T16:35:24.7774191Z git version 2.55.0
+2026-10-05T16:35:24.7796398Z ##[endgroup]
+2026-10-05T16:35:24.7810590Z Temporarily overriding HOME='/home/runner/work/_temp/44071671-a9de-47aa-9a9b-282cd5cc8b72' before making global git config changes
+2026-10-05T16:35:24.7815452Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:35:24.7816769Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:35:24.7866038Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:35:24.7870521Z ##[group]Determining repository object format
+2026-10-05T16:35:24.7873002Z ##[endgroup]
+2026-10-05T16:35:24.7873851Z ##[group]Initializing the repository
+2026-10-05T16:35:24.7877431Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:35:24.8008994Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:35:24.8010751Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:35:24.8012364Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:35:24.8013630Z hint: call:
+2026-10-05T16:35:24.8014213Z hint:
+2026-10-05T16:35:24.8014727Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:35:24.8015342Z hint:
+2026-10-05T16:35:24.8015918Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:35:24.8016843Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:35:24.8017659Z hint:
+2026-10-05T16:35:24.8018184Z hint: 	git branch -m <name>
+2026-10-05T16:35:24.8018783Z hint:
+2026-10-05T16:35:24.8019575Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:35:24.8020774Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T16:35:24.8025206Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:35:24.8073921Z ##[endgroup]
+2026-10-05T16:35:24.8075267Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:35:24.8078555Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:35:24.8109998Z ##[endgroup]
+2026-10-05T16:35:24.8110859Z ##[group]Setting up auth
+2026-10-05T16:35:24.8111976Z Removing SSH command configuration
+2026-10-05T16:35:24.8115863Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:35:24.8146953Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:35:24.8505810Z Removing HTTP extra header
+2026-10-05T16:35:24.8510671Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:35:24.8540070Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:35:24.8750986Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:35:24.8759735Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:35:24.8792042Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:35:24.9010731Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:35:24.9047823Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:35:24.9079085Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:35:24.9112639Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:35:24.9143306Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:35:24.9174759Z ##[endgroup]
+2026-10-05T16:35:24.9175501Z ##[group]Fetching the repository
+2026-10-05T16:35:24.9182911Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f963fd735a9f6c77460850d4e89f7958ef627ee7:refs/remotes/origin/audit/AUD-SOL-P12-120/356-history-2
+2026-10-05T16:35:26.2689058Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:35:26.2691949Z  * [new ref]         f963fd735a9f6c77460850d4e89f7958ef627ee7 -> origin/audit/AUD-SOL-P12-120/356-history-2
+2026-10-05T16:35:26.2704299Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-P12-120/356-history-2
+2026-10-05T16:35:26.2727407Z   origin/audit/AUD-SOL-P12-120/356-history-2
+2026-10-05T16:35:26.2737963Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-P12-120/356-history-2
+2026-10-05T16:35:26.2758934Z f963fd735a9f6c77460850d4e89f7958ef627ee7
+2026-10-05T16:35:26.2764396Z ##[endgroup]
+2026-10-05T16:35:26.2765840Z ##[group]Determining the checkout info
+2026-10-05T16:35:26.2767588Z ##[endgroup]
+2026-10-05T16:35:26.2768992Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:35:26.2818051Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:35:26.2845189Z ##[group]Checking out the ref
+2026-10-05T16:35:26.2848466Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-P12-120/356-history-2 refs/remotes/origin/audit/AUD-SOL-P12-120/356-history-2
+2026-10-05T16:35:26.3909855Z Switched to a new branch 'audit/AUD-SOL-P12-120/356-history-2'
+2026-10-05T16:35:26.3916810Z branch 'audit/AUD-SOL-P12-120/356-history-2' set up to track 'origin/audit/AUD-SOL-P12-120/356-history-2'.
+2026-10-05T16:35:26.3925472Z ##[endgroup]
+2026-10-05T16:35:26.3967607Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:35:26.3991295Z f963fd735a9f6c77460850d4e89f7958ef627ee7
+2026-10-05T16:35:26.4384749Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:35:26.4385999Z with:
+2026-10-05T16:35:26.4386889Z   node-version: 22.13
+2026-10-05T16:35:26.4387896Z   cache: npm
+2026-10-05T16:35:26.4388802Z   check-latest: false
+2026-10-05T16:35:26.4399256Z   token: ***
+2026-10-05T16:35:26.4400226Z   package-manager-cache: true
+2026-10-05T16:35:26.4401563Z ##[endgroup]
+2026-10-05T16:35:26.5820332Z Attempting to download 22.13...
+2026-10-05T16:35:27.3922906Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:35:27.9077583Z Extracting ...
+2026-10-05T16:35:27.9198218Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/e2592967-f818-415b-bca1-a6a394dd2fbf -f /home/runner/work/_temp/59ed0c47-0497-4069-90e2-34e9b6a3e0f9
+2026-10-05T16:35:29.0916707Z Adding to the cache ...
+2026-10-05T16:35:31.1932498Z ##[group]Environment details
+2026-10-05T16:35:31.4058662Z node: v22.13.1
+2026-10-05T16:35:31.4059234Z npm: 10.9.2
+2026-10-05T16:35:31.4059595Z yarn: 1.22.22
+2026-10-05T16:35:31.4060339Z ##[endgroup]
+2026-10-05T16:35:31.4082580Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:35:31.4996632Z /home/runner/.npm
+2026-10-05T16:35:31.6781516Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:35:32.8456539Z Received 54525952 of 241027159 (22.6%), 51.9 MBs/sec
+2026-10-05T16:35:33.7706449Z Received 241027159 of 241027159 (100.0%), 119.3 MBs/sec
+2026-10-05T16:35:33.7708425Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:35:33.7777669Z [command]/usr/bin/tar -xf /home/runner/work/_temp/591a90da-d930-4b6b-8633-86ae817bbb50/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:35:34.4515270Z Cache restored successfully
+2026-10-05T16:35:34.4625947Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:35:34.4840813Z ##[group]Run npm ci
+2026-10-05T16:35:34.4841658Z [36;1mnpm ci[0m
+2026-10-05T16:35:34.5139248Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:35:34.5139549Z ##[endgroup]
+2026-10-05T16:35:40.0212517Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:35:40.2174479Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T16:35:40.2268351Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T16:35:40.2270021Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T16:35:40.2521715Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T16:35:40.3997072Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T16:35:40.4036950Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:40.4047673Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:40.4089869Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:40.4097122Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:40.4102240Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:40.4347272Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:35:40.4777923Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T16:35:40.9235693Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T16:35:41.4881695Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T16:35:45.1633113Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T16:36:35.4082154Z 
+2026-10-05T16:36:35.4083387Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-05T16:36:35.4083945Z 
+2026-10-05T16:36:35.4084319Z 187 packages are looking for funding
+2026-10-05T16:36:35.4084945Z   run `npm fund` for details
+2026-10-05T16:36:35.7879336Z 
+2026-10-05T16:36:35.7880179Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T16:36:35.7880515Z 
+2026-10-05T16:36:35.7880790Z To address issues that do not require attention, run:
+2026-10-05T16:36:35.7881959Z   npm audit fix
+2026-10-05T16:36:35.7882108Z 
+2026-10-05T16:36:35.7882602Z To address all issues (including breaking changes), run:
+2026-10-05T16:36:35.7883159Z   npm audit fix --force
+2026-10-05T16:36:35.7883410Z 
+2026-10-05T16:36:35.7883619Z Run `npm audit` for details.
+2026-10-05T16:36:35.9857540Z ##[group]Run set -euo pipefail
+2026-10-05T16:36:35.9857887Z [36;1mset -euo pipefail[0m
+2026-10-05T16:36:35.9858279Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:36:35.9858798Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:36:35.9859170Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:36:35.9859444Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T16:36:35.9925736Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:36:35.9926094Z ##[endgroup]
+2026-10-05T16:36:36.0023589Z specs: src/__tests__/audSolP12120.historyBoundary.test.tsx src/__tests__/coachWorkoutBuilderUndo.test.tsx src/__tests__/coachWorkoutBuilderAutosave.test.tsx src/screens/coach/__tests__/workoutBuilderUndo.test.ts
+2026-10-05T16:36:51.7074569Z PASS src/__tests__/coachWorkoutBuilderAutosave.test.tsx (13.557 s)
+2026-10-05T16:36:51.7392684Z   ● Console
+2026-10-05T16:36:51.7421529Z 
+2026-10-05T16:36:51.7451921Z     console.warn
+2026-10-05T16:36:51.7482056Z       [[useAutosave] conflict - awaiting server truth then rebasing] {
+2026-10-05T16:36:51.7511738Z         planId: 'plan-1',
+2026-10-05T16:36:51.7541726Z         head: 7,
+2026-10-05T16:36:51.7571990Z         error: 'autosave_conflict_retry',
+2026-10-05T16:36:51.7601833Z         attempt: 0
+2026-10-05T16:36:51.7631767Z       }
+2026-10-05T16:36:51.7639659Z 
+2026-10-05T16:36:51.7641583Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:36:51.7643051Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:36:51.7645134Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:36:51.7646580Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:36:51.7647536Z      [90m 19 |[39m   }
+2026-10-05T16:36:51.7648700Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:36:51.7649718Z      [90m 21 |[39m }[0m
+2026-10-05T16:36:51.7650067Z 
+2026-10-05T16:36:51.7650755Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:36:51.7651733Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:36:51.7652467Z       at warn (src/hooks/useAutosave.ts:856:18)
+2026-10-05T16:36:51.7653111Z           at Generator.throw (<anonymous>)
+2026-10-05T16:36:51.7654245Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.7655844Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:36:51.7656919Z 
+2026-10-05T16:36:51.7657568Z     console.error
+2026-10-05T16:36:51.7658412Z       [[useAutosave] mirror write failed (durability degraded)] {
+2026-10-05T16:36:51.7659284Z         planId: 'plan-1',
+2026-10-05T16:36:51.7660070Z         err: Error: AsyncStorage quota exceeded
+2026-10-05T16:36:51.7662076Z             at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/src/__tests__/coachWorkoutBuilderAutosave.test.tsx:828:39)
+2026-10-05T16:36:51.7663751Z             at Generator.next (<anonymous>)
+2026-10-05T16:36:51.7665485Z             at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.7667918Z             at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:51.7670196Z             at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T16:36:51.7671943Z             at new Promise (<anonymous>)
+2026-10-05T16:36:51.7674056Z             at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+2026-10-05T16:36:51.7676598Z             at Promise.then.completed (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/utils.js:298:28)
+2026-10-05T16:36:51.7678060Z             at new Promise (<anonymous>)
+2026-10-05T16:36:51.7679557Z             at callAsyncCircusFn (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/utils.js:231:10)
+2026-10-05T16:36:51.7682038Z             at _callCircusTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:316:40)
+2026-10-05T16:36:51.7684164Z             at _runTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:252:3)
+2026-10-05T16:36:51.7686233Z             at _runTestsForDescribeBlock (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:126:9)
+2026-10-05T16:36:51.7688591Z             at _runTestsForDescribeBlock (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:121:9)
+2026-10-05T16:36:51.7690712Z             at run (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:71:3)
+2026-10-05T16:36:51.7693554Z             at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+2026-10-05T16:36:51.7696376Z             at jestAdapter (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+2026-10-05T16:36:51.7698830Z             at runTestInternal (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/runTest.js:367:16)
+2026-10-05T16:36:51.7701023Z             at runTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/runTest.js:444:34)
+2026-10-05T16:36:51.7703509Z             at Object.worker (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/testWorker.js:106:12)
+2026-10-05T16:36:51.7704896Z       }
+2026-10-05T16:36:51.7705313Z 
+2026-10-05T16:36:51.7706885Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:36:51.7708592Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:36:51.7710063Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:36:51.7711775Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:36:51.7712710Z      [90m 19 |[39m   }
+2026-10-05T16:36:51.7713901Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:36:51.7714980Z      [90m 21 |[39m }[0m
+2026-10-05T16:36:51.7715456Z 
+2026-10-05T16:36:51.7715874Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:36:51.7716731Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:36:51.7717704Z       at error (src/hooks/useAutosave.ts:1047:16)
+2026-10-05T16:36:51.7718590Z           at Generator.throw (<anonymous>)
+2026-10-05T16:36:51.7719776Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.7721477Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:36:51.7722299Z 
+2026-10-05T16:36:51.7722676Z     console.warn
+2026-10-05T16:36:51.7723809Z       [[useAutosave] flush deferred (offline/server)] { planId: 'plan-1', kind: 'network', attempt: 0 }
+2026-10-05T16:36:51.7724815Z 
+2026-10-05T16:36:51.7726305Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:36:51.7728293Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:36:51.7730036Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:36:51.7731755Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:36:51.7732764Z      [90m 19 |[39m   }
+2026-10-05T16:36:51.7733906Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:36:51.7734963Z      [90m 21 |[39m }[0m
+2026-10-05T16:36:51.7735453Z 
+2026-10-05T16:36:51.7735894Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:36:51.7736811Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T16:36:51.7737752Z       at warn (src/hooks/useAutosave.ts:976:18)
+2026-10-05T16:36:51.7738672Z           at Generator.throw (<anonymous>)
+2026-10-05T16:36:51.7739893Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.7741590Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:36:51.7742447Z 
+2026-10-05T16:36:51.7742836Z     console.error
+2026-10-05T16:36:51.7743775Z       [[useAutosave] flush rejected] { planId: 'plan-1', kind: 'forbidden' }
+2026-10-05T16:36:51.7744538Z 
+2026-10-05T16:36:51.7746017Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:36:51.7747708Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:36:51.7749198Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:36:51.7750580Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:36:51.7751732Z      [90m 19 |[39m   }
+2026-10-05T16:36:51.7752908Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:36:51.7754037Z      [90m 21 |[39m }[0m
+2026-10-05T16:36:51.7754499Z 
+2026-10-05T16:36:51.7754951Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:36:51.7755883Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:36:51.7756845Z       at error (src/hooks/useAutosave.ts:1001:16)
+2026-10-05T16:36:51.7757743Z           at Generator.throw (<anonymous>)
+2026-10-05T16:36:51.7758970Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.7760394Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:36:51.7761452Z 
+2026-10-05T16:36:51.7761842Z     console.error
+2026-10-05T16:36:51.7762705Z       [[useAutosave] mirror write failed (durability degraded)] {
+2026-10-05T16:36:51.7763634Z         planId: 'plan-1',
+2026-10-05T16:36:51.7764395Z         err: Error: AsyncStorage quota exceeded
+2026-10-05T16:36:51.7766087Z             at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/src/__tests__/coachWorkoutBuilderAutosave.test.tsx:926:30)
+2026-10-05T16:36:51.7767773Z             at Generator.next (<anonymous>)
+2026-10-05T16:36:51.7769460Z             at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.7772120Z             at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:51.7774389Z             at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T16:36:51.7775843Z             at new Promise (<anonymous>)
+2026-10-05T16:36:51.7777560Z             at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+2026-10-05T16:36:51.7780319Z             at Promise.then.completed (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/utils.js:298:28)
+2026-10-05T16:36:51.7782357Z             at new Promise (<anonymous>)
+2026-10-05T16:36:51.7784016Z             at callAsyncCircusFn (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/utils.js:231:10)
+2026-10-05T16:36:51.7786231Z             at _callCircusTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:316:40)
+2026-10-05T16:36:51.7788343Z             at _runTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:252:3)
+2026-10-05T16:36:51.7790543Z             at _runTestsForDescribeBlock (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:126:9)
+2026-10-05T16:36:51.7793212Z             at _runTestsForDescribeBlock (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:121:9)
+2026-10-05T16:36:51.7795396Z             at run (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:71:3)
+2026-10-05T16:36:51.7798026Z             at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+2026-10-05T16:36:51.7800885Z             at jestAdapter (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+2026-10-05T16:36:51.7810910Z             at runTestInternal (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/runTest.js:367:16)
+2026-10-05T16:36:51.7813467Z             at runTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/runTest.js:444:34)
+2026-10-05T16:36:51.7815799Z             at Object.worker (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/testWorker.js:106:12)
+2026-10-05T16:36:51.7817288Z       }
+2026-10-05T16:36:51.7817710Z 
+2026-10-05T16:36:51.7819249Z     [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+2026-10-05T16:36:51.7821267Z      [90m 17 |[39m   [36mif[39m (__DEV__) {
+2026-10-05T16:36:51.7822828Z     [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+2026-10-05T16:36:51.7824259Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-05T16:36:51.7825162Z      [90m 19 |[39m   }
+2026-10-05T16:36:51.7826333Z      [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+2026-10-05T16:36:51.7827461Z      [90m 21 |[39m }[0m
+2026-10-05T16:36:51.7827965Z 
+2026-10-05T16:36:51.7828418Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T16:36:51.7829371Z       at Object.log [as error] (src/utils/logger.ts:26:51)
+2026-10-05T16:36:51.7830352Z       at error (src/hooks/useAutosave.ts:1047:16)
+2026-10-05T16:36:51.7831518Z           at Generator.throw (<anonymous>)
+2026-10-05T16:36:51.7832764Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.7834186Z       at _throw (node_modules/@babel/runtime/helpers/asyncToGenerator.js:20:9)
+2026-10-05T16:36:51.7834999Z 
+2026-10-05T16:36:51.7835693Z PASS src/__tests__/coachWorkoutBuilderUndo.test.tsx (13.828 s)
+2026-10-05T16:36:51.9685134Z FAIL src/__tests__/audSolP12120.historyBoundary.test.tsx (14.059 s)
+2026-10-05T16:36:51.9686958Z   ● AUD-SOL-P12-120: untested history boundaries › serializes Undo with a full-replace Save already in flight
+2026-10-05T16:36:51.9687754Z 
+2026-10-05T16:36:51.9688107Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:36:51.9688558Z 
+2026-10-05T16:36:51.9688750Z     - Expected  - 2
+2026-10-05T16:36:51.9689185Z     + Received  + 2
+2026-10-05T16:36:51.9689432Z 
+2026-10-05T16:36:51.9689587Z       Object {
+2026-10-05T16:36:51.9690684Z     -   "requestsWhileSaveOwnedThePlan": 0,
+2026-10-05T16:36:51.9691679Z     -   "staleFullReplaceAfterUndo": false,
+2026-10-05T16:36:51.9692344Z     +   "requestsWhileSaveOwnedThePlan": 1,
+2026-10-05T16:36:51.9693044Z     +   "staleFullReplaceAfterUndo": true,
+2026-10-05T16:36:51.9693582Z       }
+2026-10-05T16:36:51.9693774Z 
+2026-10-05T16:36:51.9695285Z     [0m [90m 802 |[39m           ([args][33m:[39m [{ rows[33m:[39m { sets[33m:[39m number }[] }]) [33m=>[39m args[33m.[39mrows[[35m0[39m][33m?[39m[33m.[39msets [33m===[39m [35m8[39m[33m,[39m
+2026-10-05T16:36:51.9696716Z      [90m 803 |[39m         )[33m,[39m
+2026-10-05T16:36:51.9697510Z     [31m[1m>[22m[39m[90m 804 |[39m     })[33m.[39mtoEqual({
+2026-10-05T16:36:51.9698294Z      [90m     |[39m        [31m[1m^[22m[39m
+2026-10-05T16:36:51.9699335Z      [90m 805 |[39m       requestsWhileSaveOwnedThePlan[33m:[39m [35m0[39m[33m,[39m
+2026-10-05T16:36:51.9700632Z      [90m 806 |[39m       staleFullReplaceAfterUndo[33m:[39m [36mfalse[39m[33m,[39m
+2026-10-05T16:36:51.9701791Z      [90m 807 |[39m     })[33m;[39m[0m
+2026-10-05T16:36:51.9702160Z 
+2026-10-05T16:36:51.9702703Z       at Object.toEqual (src/__tests__/audSolP12120.historyBoundary.test.tsx:804:8)
+2026-10-05T16:36:51.9703927Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.9705107Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:51.9705700Z 
+2026-10-05T16:36:51.9706695Z   ● AUD-SOL-P12-120: untested history boundaries › keeps a timed-out HTTP 408 Undo behind the unknown-outcome barrier
+2026-10-05T16:36:51.9707577Z 
+2026-10-05T16:36:51.9707941Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:36:51.9708401Z 
+2026-10-05T16:36:51.9708587Z     Expected: false
+2026-10-05T16:36:51.9708982Z     Received: true
+2026-10-05T16:36:51.9709227Z 
+2026-10-05T16:36:51.9710381Z     [0m [90m 818 |[39m       [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByLabelText([32m"Undo last change"[39m))[33m;[39m
+2026-10-05T16:36:51.9711906Z      [90m 819 |[39m     })[33m;[39m
+2026-10-05T16:36:51.9713622Z     [31m[1m>[22m[39m[90m 820 |[39m     expect(screen[33m.[39mgetByLabelText([32m"Plan name"[39m)[33m.[39mprops[33m.[39meditable)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+2026-10-05T16:36:51.9715341Z      [90m     |[39m                                                               [31m[1m^[22m[39m
+2026-10-05T16:36:51.9716791Z      [90m 821 |[39m     expect(screen[33m.[39mgetByLabelText([32m"Check again"[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-05T16:36:51.9718496Z      [90m 822 |[39m     expect(screen[33m.[39mqueryByText([35m/nothing was undone/[39m))[33m.[39mtoBeNull()[33m;[39m
+2026-10-05T16:36:51.9719650Z      [90m 823 |[39m   })[33m;[39m[0m
+2026-10-05T16:36:51.9720016Z 
+2026-10-05T16:36:51.9720525Z       at Object.toBe (src/__tests__/audSolP12120.historyBoundary.test.tsx:820:63)
+2026-10-05T16:36:51.9721983Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.9723145Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:51.9723735Z 
+2026-10-05T16:36:51.9724780Z   ● AUD-SOL-P12-120: untested history boundaries › does not refetch a removed editor after its held Undo response arrives
+2026-10-05T16:36:51.9725654Z 
+2026-10-05T16:36:51.9726014Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:36:51.9726473Z 
+2026-10-05T16:36:51.9726631Z     Expected: 0
+2026-10-05T16:36:51.9727023Z     Received: 1
+2026-10-05T16:36:51.9727241Z 
+2026-10-05T16:36:51.9727826Z     [0m [90m 843 |[39m       [36mawait[39m heldUndo[33m.[39mpromise[33m;[39m
+2026-10-05T16:36:51.9728678Z      [90m 844 |[39m     })[33m;[39m
+2026-10-05T16:36:51.9730391Z     [31m[1m>[22m[39m[90m 845 |[39m     expect(mockRefetch[33m.[39mmock[33m.[39mcalls[33m.[39mlength)[33m.[39mtoBe(priorRefetches)[33m;[39m
+2026-10-05T16:36:51.9732283Z      [90m     |[39m                                           [31m[1m^[22m[39m
+2026-10-05T16:36:51.9733083Z      [90m 846 |[39m   })[33m;[39m
+2026-10-05T16:36:51.9733630Z      [90m 847 |[39m
+2026-10-05T16:36:51.9735024Z      [90m 848 |[39m   it([32m"does not call another session's one-step advance a confirmed Undo"[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-05T16:36:51.9735982Z 
+2026-10-05T16:36:51.9736496Z       at Object.toBe (src/__tests__/audSolP12120.historyBoundary.test.tsx:845:43)
+2026-10-05T16:36:51.9737686Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.9738850Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:51.9739435Z 
+2026-10-05T16:36:51.9740422Z   ● AUD-SOL-P12-120: untested history boundaries › does not call another session's one-step advance a confirmed Undo
+2026-10-05T16:36:51.9741533Z 
+2026-10-05T16:36:51.9741783Z     expect(received).toBeNull()
+2026-10-05T16:36:51.9742112Z 
+2026-10-05T16:36:51.9743849Z     Received: <Text accessibilityLiveRegion="polite" style={[{"fontFamily": "Inter_500Medium", "fontSize": 12, "fontWeight": "500", "letterSpacing": 0.96, "lineHeight": 18}, {"color": "#6B675F", "marginBottom": 4}]}>Undone. Redo puts the change back.</Text>
+2026-10-05T16:36:51.9745514Z 
+2026-10-05T16:36:51.9745912Z     [0m [90m 868 |[39m     })[33m;[39m
+2026-10-05T16:36:51.9747634Z      [90m 869 |[39m     expect(screen[33m.[39mgetByLabelText([32m"Plan name"[39m)[33m.[39mprops[33m.[39mvalue)[33m.[39mtoBe([32m"Other device's save"[39m)[33m;[39m
+2026-10-05T16:36:51.9749958Z     [31m[1m>[22m[39m[90m 870 |[39m     expect(screen[33m.[39mqueryByText([32m"Undone. Redo puts the change back."[39m))[33m.[39mtoBeNull()[33m;[39m
+2026-10-05T16:36:51.9751878Z      [90m     |[39m                                                                      [31m[1m^[22m[39m
+2026-10-05T16:36:51.9752792Z      [90m 871 |[39m   })[33m;[39m
+2026-10-05T16:36:51.9753357Z      [90m 872 |[39m })[33m;[39m
+2026-10-05T16:36:51.9753862Z      [90m 873 |[39m[0m
+2026-10-05T16:36:51.9754127Z 
+2026-10-05T16:36:51.9754668Z       at Object.toBeNull (src/__tests__/audSolP12120.historyBoundary.test.tsx:870:70)
+2026-10-05T16:36:51.9755874Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:36:51.9757005Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:36:51.9757557Z 
+2026-10-05T16:36:52.0422178Z PASS src/screens/coach/__tests__/workoutBuilderUndo.test.ts
+2026-10-05T16:36:52.2005199Z 
+2026-10-05T16:36:52.2007775Z Test Suites: 1 failed, 3 passed, 4 total
+2026-10-05T16:36:52.2008345Z Tests:       4 failed, 49 passed, 53 total
+2026-10-05T16:36:52.2008663Z Snapshots:   0 total
+2026-10-05T16:36:52.2008910Z Time:        15.056 s
+2026-10-05T16:36:52.2010135Z Ran all test suites matching /src\/__tests__\/audSolP12120.historyBoundary.test.tsx|src\/__tests__\/coachWorkoutBuilderUndo.test.tsx|src\/__tests__\/coachWorkoutBuilderAutosave.test.tsx|src\/screens\/coach\/__tests__\/workoutBuilderUndo.test.ts/i.
+2026-10-05T16:36:52.2734435Z ##[error]Process completed with exit code 1.
+2026-10-05T16:36:52.2899672Z Post job cleanup.
+2026-10-05T16:36:52.3712533Z [command]/usr/bin/git version
+2026-10-05T16:36:52.3749715Z git version 2.55.0
+2026-10-05T16:36:52.3789599Z Temporarily overriding HOME='/home/runner/work/_temp/a0521319-599c-4915-9fa5-c606c0bd6bcf' before making global git config changes
+2026-10-05T16:36:52.3791552Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:36:52.3796019Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:36:52.3826816Z Removing SSH command configuration
+2026-10-05T16:36:52.3833820Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:36:52.3867166Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:36:52.4087565Z Removing HTTP extra header
+2026-10-05T16:36:52.4092575Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:36:52.4125710Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:36:52.4343543Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:36:52.4349429Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:36:52.4377299Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:36:52.4378204Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:36:52.4378832Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:36:52.4379293Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:36:52.4385975Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:36:52.4407394Z /home/runner/work/_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:36:52.4418003Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:36:52.4452280Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:36:52.4473592Z /home/runner/work/_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:36:52.4484141Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:36:52.4514302Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:36:52.4534346Z /github/runner_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:36:52.4541909Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:36:52.4572850Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:36:52.4592921Z /github/runner_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:36:52.4601525Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config
+2026-10-05T16:36:52.4633756Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:36:52.4850656Z Removing credentials config '/home/runner/work/_temp/git-credentials-957ffa31-ed2a-4ecb-9073-2c2c7b7dc24c.config'
+2026-10-05T16:36:52.4994128Z Cleaning up orphan processes

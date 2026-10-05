@@ -1,0 +1,551 @@
+﻿2026-10-05T16:34:28.3300117Z ##[group]Run set -euo pipefail
+2026-10-05T16:34:28.3300478Z [36;1mset -euo pipefail[0m
+2026-10-05T16:34:28.3300876Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:34:28.3301367Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:34:28.3301757Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:34:28.3302049Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-05T16:34:28.3366930Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:34:28.3367313Z env:
+2026-10-05T16:34:28.3367548Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T16:34:28.3367932Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-05T16:34:28.3368261Z ##[endgroup]
+2026-10-05T16:34:28.3489911Z specs: --globalSetup=./test/zz-aud-sol120-pg.global.js test/aud-sol-661d-120-composition.live.spec.ts test/aud-sol-661r5-postgres.spec.ts test/aud-sol-661r6-selection.live.spec.ts test/aud-sol-118-owner-boundaries.live.spec.ts test/checkout-settlement.live.spec.ts test/checkout-settlement-round5.spec.ts test/checkout-hosted-activation-once.spec.ts test/checkout-webhook-handler.spec.ts test/checkout.service.spec.ts test/b-secrets-3-admin-credentials.spec.ts test/cancel-pending-on-refund.spec.ts test/purchase-fanout-hooks.spec.ts test/purchase-fanout-tx-plumbing.spec.ts test/checkout-webhook-fee-split.spec.ts test/partial-refund-decision.service.spec.ts test/invite-grant.spec.ts test/first-payment-webhook.integration.spec.ts test/billing-checkout-routing.spec.ts test/b-recur-subscription-webhooks.spec.ts test/b-recur-subscription-checkout.spec.ts test/b-recur-subscription-wire.spec.ts test/b-recur-fix-round-1.spec.ts test/b-recur-fix-round-1-checkout.spec.ts test/b-recur-fix-round-1-http.spec.ts test/b-recur-fix-round-1-trial-card.spec.ts test/b-recur-fix-round-1-trial-card-checkout.spec.ts test/b-recur-3-fix-round-2.spec.ts test/b-recur-3-fix-round-2-checkout.spec.ts test/b-recur-3-subscription-terms.spec.ts test/b-recur-116-fix-round-3.spec.ts test/b-recur3-117-webhook-order.spec.ts test/b-recur5a-117-fix-round-5.spec.ts test/b-recur5a-117-moved-fix-round-4.spec.ts test/b-recur5a-117-trial-end-form.spec.ts test/b-recur5b-117-authority.spec.ts test/b-recur6a-118-fix-round-6.spec.ts test/b-recur6a-118-r1.spec.ts test/b-recur6b-118-authority.spec.ts test/b-recur7a-119-r1.spec.ts test/b-recur7a-119-r2.spec.ts test/b-recur7b-119-authority.spec.ts
+2026-10-05T16:34:33.3960934Z ALTER ROLE
+2026-10-05T16:34:33.4433627Z NOTICE:  database "l661" does not exist, skipping
+2026-10-05T16:34:33.4434161Z DROP DATABASE
+2026-10-05T16:34:34.3270574Z CREATE DATABASE
+2026-10-05T16:34:34.3999366Z PostgreSQL 16.15 (Ubuntu 16.15-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+2026-10-05T16:34:37.0488009Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:37 PM [31m  ERROR[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[31mPaymentIntent pi_r3 cannot be read (stripe_404_resource_missing): its payment_intent.payment_failed is not applied[39m
+2026-10-05T16:34:37.0569919Z PASS test/checkout-webhook-handler.spec.ts (131 MB heap size)
+2026-10-05T16:34:37.0572923Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:37 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_r3 (Error): Stripe redelivers[39m
+2026-10-05T16:34:37.0575881Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:37 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_r3 (stripe_429_rate_limit): Stripe redelivers[39m
+2026-10-05T16:34:38.3813834Z PASS test/checkout.service.spec.ts (210 MB heap size)
+2026-10-05T16:34:39.0439023Z PASS test/invite-grant.spec.ts (261 MB heap size)
+2026-10-05T16:34:39.4612693Z PASS test/cancel-pending-on-refund.spec.ts (284 MB heap size)
+2026-10-05T16:34:39.9205549Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-05T16:34:39.9210060Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=dispute[39m
+2026-10-05T16:34:39.9213007Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mcancelPendingForPurchase: no pending/due drops for purchase=pur-1 (replay or never-entitled) reason=dispute[39m
+2026-10-05T16:34:39.9215633Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-05T16:34:39.9218507Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[PurchaseFanoutService] [39m[33mcancelPendingForPurchase: no scheduledDrop client available (purchase=pur-1, reason=refund) — skipping[39m
+2026-10-05T16:34:39.9221554Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-05T16:34:39.9224384Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=subscription_canceled[39m
+2026-10-05T16:34:39.9227534Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=subscription_canceled[39m
+2026-10-05T16:34:39.9238816Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=payment_failed[39m
+2026-10-05T16:34:39.9245193Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=dispute[39m
+2026-10-05T16:34:39.9247302Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-05T16:34:39.9250053Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-05T16:34:39.9252473Z [95m[Nest] 3338  - [39m10/04/2026, 5:00:00 AM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9254472Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9256554Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9258943Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed[39m
+2026-10-05T16:34:39.9261588Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9264015Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed[39m
+2026-10-05T16:34:39.9266454Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 2 drop(s) pending again for purchase=cp-r5[39m
+2026-10-05T16:34:39.9268974Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=cp-r5 recovered after a failed payment of pi_r5[39m
+2026-10-05T16:34:39.9271990Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9274363Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed[39m
+2026-10-05T16:34:39.9277167Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-r5 not activated again (activated before, status=payment_failed)[39m
+2026-10-05T16:34:39.9279849Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9282038Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9284491Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+2026-10-05T16:34:39.9287444Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+2026-10-05T16:34:39.9290403Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+2026-10-05T16:34:39.9293084Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+2026-10-05T16:34:39.9295769Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+2026-10-05T16:34:39.9298395Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+2026-10-05T16:34:39.9301290Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+2026-10-05T16:34:39.9303677Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9305856Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9308347Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_r5 (stripe_401_api_key_invalid): Stripe redelivers[39m
+2026-10-05T16:34:39.9310979Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9313515Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_r5 (stripe_403_api_key_invalid): Stripe redelivers[39m
+2026-10-05T16:34:39.9315859Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9318232Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+2026-10-05T16:34:39.9320872Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:39 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-r5 not activated again (status=refunded)[39m
+2026-10-05T16:34:39.9322451Z PASS test/checkout-settlement-round5.spec.ts (324 MB heap size)
+2026-10-05T16:34:43.8775229Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=v reason=payment_failed[39m
+2026-10-05T16:34:43.8777573Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=v not activated again (activated before, status=payment_failed)[39m
+2026-10-05T16:34:43.8780068Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=v[39m
+2026-10-05T16:34:43.8782535Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=v recovered after a failed payment of pi_v[39m
+2026-10-05T16:34:43.8784157Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=l661-pkg has no contents — purchase=t[39m
+2026-10-05T16:34:44.0421947Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-adopted[39m
+2026-10-05T16:34:44.0424408Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=owner-adopted recovered after a failed payment of pi_two_adopted[39m
+2026-10-05T16:34:44.0426770Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-owner[39m
+2026-10-05T16:34:44.0428993Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=owner-owner recovered after a failed payment of pi_two_owner[39m
+2026-10-05T16:34:44.0431608Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-unassign_drops reason=payment_failed[39m
+2026-10-05T16:34:44.0433871Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-unassign_drops reason=partial_refund_decision[39m
+2026-10-05T16:34:44.0436182Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32mdecide: refund=re_s-unassign_drops decision=unassign_drops drops_canceled=1 by coach=l661-coach[39m
+2026-10-05T16:34:44.0437828Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=s-unassign_drops[39m
+2026-10-05T16:34:44.0439657Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=s-unassign_drops recovered after a failed payment of pi_s-unassign_drops[39m
+2026-10-05T16:34:44.0441563Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:43 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-keep_drops reason=payment_failed[39m
+2026-10-05T16:34:44.0443638Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32mdecide: refund=re_s-keep_drops decision=keep_drops drops_canceled=0 by coach=l661-coach[39m
+2026-10-05T16:34:44.0445238Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=s-keep_drops[39m
+2026-10-05T16:34:44.0446900Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=s-keep_drops recovered after a failed payment of pi_s-keep_drops[39m
+2026-10-05T16:34:44.0448573Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-recovery reason=payment_failed[39m
+2026-10-05T16:34:44.0450271Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=race-recovery[39m
+2026-10-05T16:34:44.0451945Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=race-recovery recovered after a failed payment of pi_race-recovery[39m
+2026-10-05T16:34:44.1817499Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-recovery reason=partial_refund_decision[39m
+2026-10-05T16:34:44.1820257Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32mdecide: refund=re_race-recovery decision=unassign_drops drops_canceled=1 by coach=l661-coach[39m
+2026-10-05T16:34:44.1822809Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-decision reason=payment_failed[39m
+2026-10-05T16:34:44.1824626Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-decision reason=partial_refund_decision[39m
+2026-10-05T16:34:44.1826352Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32mdecide: refund=re_race-decision decision=unassign_drops drops_canceled=1 by coach=l661-coach[39m
+2026-10-05T16:34:44.1828215Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=race-decision[39m
+2026-10-05T16:34:44.1830146Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=race-decision recovered after a failed payment of pi_race-decision[39m
+2026-10-05T16:34:44.5664557Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=l661-pkg has no contents — purchase=owner-list-9[39m
+2026-10-05T16:34:44.5666749Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-9 reason=payment_failed[39m
+2026-10-05T16:34:44.5669739Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-9[39m
+2026-10-05T16:34:44.5672164Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=owner-list-9 recovered after a failed payment of pi_list_9[39m
+2026-10-05T16:34:44.8627169Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=l661-pkg has no contents — purchase=owner-list-10[39m
+2026-10-05T16:34:44.8630566Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-10 reason=payment_failed[39m
+2026-10-05T16:34:44.8633116Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-10[39m
+2026-10-05T16:34:44.8634839Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:44 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=owner-list-10 recovered after a failed payment of pi_list_10[39m
+2026-10-05T16:34:45.1710063Z PASS test/checkout-settlement.live.spec.ts (5.232 s, 191 MB heap size)
+2026-10-05T16:34:45.6610193Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:45 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=l661-pkg has no contents — purchase=owner-list-12[39m
+2026-10-05T16:34:45.6612437Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:45 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-12 reason=payment_failed[39m
+2026-10-05T16:34:45.6614839Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:45 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-12[39m
+2026-10-05T16:34:45.6617025Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:45 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=owner-list-12 recovered after a failed payment of pi_list_12[39m
+2026-10-05T16:34:45.8245252Z PASS test/b-recur-subscription-checkout.spec.ts (220 MB heap size)
+2026-10-05T16:34:46.0931128Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:46 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31msubscription send/bind failed purchase=00000000-0000-4000-8000-000000000001 error=Error[39m
+2026-10-05T16:34:46.0936986Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:45 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false[39m
+2026-10-05T16:34:46.0938845Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:46 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:46.0940813Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:46 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:46.0942480Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:46 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:46.0944115Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:46 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:51.1167445Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it[39m
+2026-10-05T16:34:51.1392622Z PASS test/b-recur-3-fix-round-2-checkout.spec.ts (5.31 s, 239 MB heap size)
+2026-10-05T16:34:51.6873299Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=true[39m
+2026-10-05T16:34:51.6875712Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=active[39m
+2026-10-05T16:34:51.6878087Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=active[39m
+2026-10-05T16:34:51.6880382Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete[39m
+2026-10-05T16:34:51.6885236Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete[39m
+2026-10-05T16:34:51.6888661Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete[39m
+2026-10-05T16:34:51.6892484Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete[39m
+2026-10-05T16:34:51.6895034Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:34:51.6896831Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:34:51.6898532Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:51.6901163Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:34:51.6904160Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:51 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcheckout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=Error[39m
+2026-10-05T16:34:52.1548822Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mcancelPendingForPurchase: no pending/due drops for purchase=purchase (replay or never-entitled) reason=payment_failed[39m
+2026-10-05T16:34:52.1552467Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=purchase reason=payment_failed[39m
+2026-10-05T16:34:52.1554920Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 2 drop(s) pending again for purchase=purchase[39m
+2026-10-05T16:34:52.1556814Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic[39m
+2026-10-05T16:34:52.1558410Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=purchase[39m
+2026-10-05T16:34:52.1560772Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic[39m
+2026-10-05T16:34:52.1564230Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=purchase reason=payment_failed[39m
+2026-10-05T16:34:52.1567323Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=purchase reason=partial_refund_decision[39m
+2026-10-05T16:34:52.2554441Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32mdecide: refund=re_synthetic decision=unassign_drops drops_canceled=1 by coach=coach[39m
+2026-10-05T16:34:52.2557193Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=purchase[39m
+2026-10-05T16:34:52.2560455Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic[39m
+2026-10-05T16:34:52.2563205Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=purchase reason=partial_refund_decision[39m
+2026-10-05T16:34:52.2565409Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PartialRefundDecisionService] [39m[32mdecide: refund=re_synthetic decision=unassign_drops drops_canceled=1 by coach=coach[39m
+2026-10-05T16:34:52.2567167Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mcancelPendingForPurchase: no pending/due drops for purchase=purchase (replay or never-entitled) reason=payment_failed[39m
+2026-10-05T16:34:52.2568840Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=purchase[39m
+2026-10-05T16:34:52.2571008Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic[39m
+2026-10-05T16:34:52.4344009Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg has no contents — purchase=purchase[39m
+2026-10-05T16:34:52.6139274Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg has no contents — purchase=purchase[39m
+2026-10-05T16:34:52.6142727Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=purchase not activated again (activated before, status=payment_failed)[39m
+2026-10-05T16:34:52.6146890Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_synthetic (stripe_401_api_key_invalid): Stripe redelivers[39m
+2026-10-05T16:34:52.6150526Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_synthetic (stripe_403_api_key_invalid): Stripe redelivers[39m
+2026-10-05T16:34:52.6152417Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_synthetic (stripe_429_api_key_invalid): Stripe redelivers[39m
+2026-10-05T16:34:52.6542302Z PASS test/aud-sol-661r5-postgres.spec.ts (279 MB heap size)
+2026-10-05T16:34:52.6626485Z   ● Console
+2026-10-05T16:34:52.6626799Z 
+2026-10-05T16:34:52.6626971Z     console.log
+2026-10-05T16:34:52.6627409Z       DISPOSABLE_POSTGRES {
+2026-10-05T16:34:52.6628408Z         db: 'aud_sol_661r5_disposable',
+2026-10-05T16:34:52.6628902Z         address: '127.0.0.1',
+2026-10-05T16:34:52.6630382Z         version: 'PostgreSQL 16.15 (Ubuntu 16.15-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit'
+2026-10-05T16:34:52.6631440Z       }
+2026-10-05T16:34:52.6631623Z 
+2026-10-05T16:34:52.6632047Z       at Object.<anonymous> (test/aud-sol-661r5-postgres.spec.ts:36:11)
+2026-10-05T16:34:52.6632562Z 
+2026-10-05T16:34:53.1015774Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_synthetic (stripe_500_api_key_invalid): Stripe redelivers[39m
+2026-10-05T16:34:53.1017747Z PASS test/b-recur3-117-webhook-order.spec.ts (316 MB heap size)
+2026-10-05T16:34:53.1020140Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=purchase[39m
+2026-10-05T16:34:53.1023119Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:52 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic[39m
+2026-10-05T16:34:53.1026433Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mprefetchForOuterTx: subscription read failed sub=sub_n error=Error[39m
+2026-10-05T16:34:53.1029138Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mprefetchForOuterTx: invoice read failed invoice=in_2 error=Error[39m
+2026-10-05T16:34:53.1031417Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[FirstPaymentEmitter] [39mObject(3) {
+2026-10-05T16:34:53.1032529Z   event: [32m'first_payment_notification_emitted'[39m,
+2026-10-05T16:34:53.1033205Z   coachId: [32m'coach'[39m,
+2026-10-05T16:34:53.1033810Z   category: [32m'COACH_DIRECT'[39m
+2026-10-05T16:34:53.1034291Z }
+2026-10-05T16:34:53.1035424Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[CoachFirstPaymentService] [39mObject(2) {
+2026-10-05T16:34:53.1036454Z   event: [32m'first_payment_emitted'[39m,
+2026-10-05T16:34:53.1037057Z   coachId: [32m'coach'[39m
+2026-10-05T16:34:53.1037463Z }
+2026-10-05T16:34:53.1038512Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[FirstPaymentEmitter] [39mObject(3) {
+2026-10-05T16:34:53.1039849Z   event: [32m'first_payment_notification_emitted'[39m,
+2026-10-05T16:34:53.1040500Z   coachId: [32m'coach'[39m,
+2026-10-05T16:34:53.1041052Z   category: [32m'COACH_DIRECT'[39m
+2026-10-05T16:34:53.1041486Z }
+2026-10-05T16:34:53.1042548Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[CoachFirstPaymentService] [39mObject(2) {
+2026-10-05T16:34:53.1043505Z   event: [32m'first_payment_emitted'[39m,
+2026-10-05T16:34:53.1044060Z   coachId: [32m'coach'[39m
+2026-10-05T16:34:53.1044468Z }
+2026-10-05T16:34:53.4993817Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it[39m
+2026-10-05T16:34:53.4999069Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it[39m
+2026-10-05T16:34:53.5596297Z PASS test/b-recur-116-fix-round-3.spec.ts (350 MB heap size)
+2026-10-05T16:34:53.9763873Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9767837Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9773598Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9777396Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9781303Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9784777Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mattempt subscription lookup failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_error:503:other[39m
+2026-10-05T16:34:53.9787735Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9801406Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9803471Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other[39m
+2026-10-05T16:34:53.9805156Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:34:53.9807581Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9809140Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other[39m
+2026-10-05T16:34:53.9811448Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:53.9813153Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:34:53.9814708Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other[39m
+2026-10-05T16:34:53.9816127Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other[39m
+2026-10-05T16:34:53.9817535Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other[39m
+2026-10-05T16:34:53.9819118Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:34:53.9821016Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=p1 not activated again (status=paid)[39m
+2026-10-05T16:34:53.9822783Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=p1 not activated again (status=paid)[39m
+2026-10-05T16:34:53.9824589Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-05T16:34:53.968Z","kind":"soft"}[39m
+2026-10-05T16:34:53.9826562Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-08T16:34:53.968Z","kind":"urgent"}[39m
+2026-10-05T16:34:53.9828481Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-12T16:34:53.968Z","kind":"final"}[39m
+2026-10-05T16:34:53.9830705Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-19T16:34:53.968Z","kind":"cancelled"}[39m
+2026-10-05T16:34:53.9832717Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"in_1","amount_cents":9900,"attempt_number":1}[39m
+2026-10-05T16:34:53.9834226Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:53 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d1"}[39m
+2026-10-05T16:34:53.9835109Z PASS test/checkout-webhook-fee-split.spec.ts (388 MB heap size)
+2026-10-05T16:34:54.2466675Z PASS test/b-recur-fix-round-1-checkout.spec.ts (402 MB heap size)
+2026-10-05T16:34:54.5121777Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it[39m
+2026-10-05T16:34:54.5295900Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled[39m
+2026-10-05T16:34:54.5298367Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error[39m
+2026-10-05T16:34:54.5300189Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error[39m
+2026-10-05T16:34:54.5301823Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=Error[39m
+2026-10-05T16:34:54.5304111Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=Error[39m
+2026-10-05T16:34:54.5306498Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.trial_attempt_released purchase=00000000-0000-4000-8000-000000000001[39m
+2026-10-05T16:34:54.5308091Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true[39m
+2026-10-05T16:34:54.5309869Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:54.5311868Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other[39m
+2026-10-05T16:34:54.5313574Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:setup_intent_unexpected_state[39m
+2026-10-05T16:34:54.5315291Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:54.5316318Z PASS test/b-recur5a-117-moved-fix-round-4.spec.ts (428 MB heap size)
+2026-10-05T16:34:54.9520811Z PASS test/b-recur6b-118-authority.spec.ts (459 MB heap size)
+2026-10-05T16:34:55.3111273Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=settled[39m
+2026-10-05T16:34:55.3135595Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed[39m
+2026-10-05T16:34:55.3185072Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mbilling.trial_card_attached purchase=cp_6b via=webhook[39m
+2026-10-05T16:34:55.3188171Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mbilling.trial_card_attached purchase=cp_6b via=webhook[39m
+2026-10-05T16:34:55.3190891Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33msetup_intent.succeeded customer mismatch purchase=cp_6b[39m
+2026-10-05T16:34:55.3192497Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33msetup_intent.succeeded lookup failed si=seti_AttemptOwn error=Error[39m
+2026-10-05T16:34:55.3194361Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":0,"scheduled_for":"2026-10-05T16:34:54.939Z","kind":"soft"}[39m
+2026-10-05T16:34:55.3196365Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":1,"scheduled_for":"2026-10-08T16:34:54.939Z","kind":"urgent"}[39m
+2026-10-05T16:34:55.3198326Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":2,"scheduled_for":"2026-10-12T16:34:54.939Z","kind":"final"}[39m
+2026-10-05T16:34:55.3200641Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":3,"scheduled_for":"2026-10-19T16:34:54.939Z","kind":"cancelled"}[39m
+2026-10-05T16:34:55.3202536Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:54 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.opened","purchase_id":"cp_6b","dunning_state_id":"ds_1","invoice_id":"in_6b","amount_cents":14800,"attempt_number":1}[39m
+2026-10-05T16:34:55.3204203Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3205794Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3208958Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3211974Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3213849Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3215474Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3217065Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3218923Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3220879Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3222461Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3224117Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled[39m
+2026-10-05T16:34:55.3225945Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mresume read-back failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3227674Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false[39m
+2026-10-05T16:34:55.3229302Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false[39m
+2026-10-05T16:34:55.3231209Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other[39m
+2026-10-05T16:34:55.3232837Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3234497Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:34:55.3235497Z PASS test/b-recur5a-117-fix-round-5.spec.ts (236 MB heap size)
+2026-10-05T16:34:55.7613800Z PASS test/b-recur5b-117-authority.spec.ts (267 MB heap size)
+2026-10-05T16:34:56.1824096Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33minvoice.paid resync failed for sub=sub_a error=Error[39m
+2026-10-05T16:34:56.1827468Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error[39m
+2026-10-05T16:34:56.1829407Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [32m    LOG[39m [38;5;3m[FirstPaymentEmitter] [39mObject(3) {
+2026-10-05T16:34:56.1830669Z   event: [32m'first_payment_notification_emitted'[39m,
+2026-10-05T16:34:56.1831259Z   coachId: [32m'coach'[39m,
+2026-10-05T16:34:56.1831760Z   category: [32m'COACH_DIRECT'[39m
+2026-10-05T16:34:56.1832169Z }
+2026-10-05T16:34:56.1833164Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [32m    LOG[39m [38;5;3m[CoachFirstPaymentService] [39mObject(2) {
+2026-10-05T16:34:56.1834074Z   event: [32m'first_payment_emitted'[39m,
+2026-10-05T16:34:56.1834513Z   coachId: [32m'coach'[39m
+2026-10-05T16:34:56.1834810Z }
+2026-10-05T16:34:56.1836115Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:55 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error[39m
+2026-10-05T16:34:56.1838007Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:56 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=undefined has no contents — purchase=cp-3[39m
+2026-10-05T16:34:56.1839328Z PASS test/purchase-fanout-tx-plumbing.spec.ts (295 MB heap size)
+2026-10-05T16:34:56.5812834Z PASS test/b-recur-subscription-webhooks.spec.ts (331 MB heap size)
+2026-10-05T16:34:57.3548691Z [31m[Nest] 3338  - [39m10/05/2026, 4:34:57 PM [31m  ERROR[39m [38;5;3m[BillingService] [39m[31mStripe event handler failed event=evt_boom type=customer.subscription.updated: checkout boom[39m
+2026-10-05T16:34:57.3753425Z PASS test/billing-checkout-routing.spec.ts (389 MB heap size)
+2026-10-05T16:34:58.2029372Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:57 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayment_intent.succeeded GuestCheckout fallback lookup failed for pi_saas: Cannot read properties of undefined (reading 'findUnique')[39m
+2026-10-05T16:34:58.2032060Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:57 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpreResolveReceiptUrl: lookup failed for pi=pi_guest: stripe down[39m
+2026-10-05T16:34:58.2033971Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:57 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpreResolveReceiptUrl: lookup failed for pi=pi_guest: stripe down[39m
+2026-10-05T16:34:58.3693889Z PASS test/b-recur-fix-round-1-http.spec.ts (447 MB heap size)
+2026-10-05T16:34:58.8113635Z PASS test/b-recur7b-119-authority.spec.ts (482 MB heap size)
+2026-10-05T16:34:59.0778903Z PASS test/b-recur-fix-round-1-trial-card-checkout.spec.ts (504 MB heap size)
+2026-10-05T16:34:59.4510129Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.trial_card_attached purchase=00000000-0000-4000-8000-000000000001 via=retire[39m
+2026-10-05T16:34:59.4512680Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled[39m
+2026-10-05T16:34:59.4515137Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error[39m
+2026-10-05T16:34:59.4517522Z [33m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mreplay secret check skipped purchase=00000000-0000-4000-8000-000000000001 error=Error[39m
+2026-10-05T16:34:59.4520227Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-h has no contents — purchase=cp-h[39m
+2026-10-05T16:34:59.4523650Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-h not activated again (status=paid)[39m
+2026-10-05T16:34:59.4527217Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-h has no contents — purchase=cp-A[39m
+2026-10-05T16:34:59.4529367Z [95m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-h has no contents — purchase=cp-ps[39m
+2026-10-05T16:34:59.4542561Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=paid)[39m
+2026-10-05T16:34:59.4545214Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=refunded)[39m
+2026-10-05T16:34:59.4547984Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=disputed)[39m
+2026-10-05T16:34:59.4550548Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=chargeback_lost)[39m
+2026-10-05T16:34:59.4552532Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=canceled)[39m
+2026-10-05T16:34:59.4554127Z [32m[Nest] 3338  - [39m10/05/2026, 4:34:59 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=expired)[39m
+2026-10-05T16:34:59.4562546Z PASS test/checkout-hosted-activation-once.spec.ts (532 MB heap size)
+2026-10-05T16:35:04.8101600Z [31m[Nest] 3338  - [39m10/05/2026, 4:35:04 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed[39m
+2026-10-05T16:35:04.8131002Z [31m[Nest] 3338  - [39m10/05/2026, 4:35:04 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=active end=settled[39m
+2026-10-05T16:35:04.8157317Z [31m[Nest] 3338  - [39m10/05/2026, 4:35:04 PM [31m  ERROR[39m [38;5;3m[SubscriptionCheckoutService] [39m[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed[39m
+2026-10-05T16:35:04.8343994Z PASS test/b-recur6a-118-fix-round-6.spec.ts (5.373 s, 288 MB heap size)
+2026-10-05T16:35:05.2337451Z [33m[Nest] 3338  - [39m10/05/2026, 4:35:04 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:35:05.2340932Z [33m[Nest] 3338  - [39m10/05/2026, 4:35:04 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:35:05.2343490Z [33m[Nest] 3338  - [39m10/05/2026, 4:35:04 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:35:05.2345983Z [33m[Nest] 3338  - [39m10/05/2026, 4:35:04 PM [33m   WARN[39m [38;5;3m[SubscriptionCheckoutService] [39m[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout[39m
+2026-10-05T16:35:09.1174961Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:09 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=solr6-pkg has no contents — purchase=owner-9[39m
+2026-10-05T16:35:09.1177353Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:09 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-9 reason=payment_failed[39m
+2026-10-05T16:35:09.1178938Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:09 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-9[39m
+2026-10-05T16:35:09.1181152Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:09 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=owner-9 recovered after a failed payment of pi_solr6_9[39m
+2026-10-05T16:35:09.2971956Z PASS test/aud-sol-661r6-selection.live.spec.ts (330 MB heap size)
+2026-10-05T16:35:09.6594719Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:09 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=solr6-pkg has no contents — purchase=owner-10[39m
+2026-10-05T16:35:09.6596585Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:09 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-10 reason=payment_failed[39m
+2026-10-05T16:35:09.6598946Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:09 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-10[39m
+2026-10-05T16:35:09.6601247Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:09 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=owner-10 recovered after a failed payment of pi_solr6_10[39m
+2026-10-05T16:35:13.3031644Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:13 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=sol120-pkg has no contents — purchase=paid-invoice-paid[39m
+2026-10-05T16:35:13.3034113Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:13 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=sol120-pkg has no contents — purchase=paid-customer-subscription-updated[39m
+2026-10-05T16:35:13.3036569Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:13 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=sol120-pkg has no contents — purchase=trial-invoice-paid[39m
+2026-10-05T16:35:13.3038303Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:13 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=sol120-pkg has no contents — purchase=trial-customer-subscription-updated[39m
+2026-10-05T16:35:13.3818270Z FAIL test/aud-sol-661d-120-composition.live.spec.ts (354 MB heap size)
+2026-10-05T16:35:13.3820778Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › invoice.paid grants the paid plan and atomically erases both consumed sheet credentials
+2026-10-05T16:35:13.3821976Z 
+2026-10-05T16:35:13.3822254Z     expect(received).toMatchObject(expected)
+2026-10-05T16:35:13.3822654Z 
+2026-10-05T16:35:13.3822832Z     - Expected  - 2
+2026-10-05T16:35:13.3823218Z     + Received  + 2
+2026-10-05T16:35:13.3823419Z 
+2026-10-05T16:35:13.3823558Z       Object {
+2026-10-05T16:35:13.3823982Z     -   "stripe_client_secret": null,
+2026-10-05T16:35:13.3824538Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:35:13.3825224Z     +   "stripe_client_secret": "pi_paid-invoice-paid_secret_canary",
+2026-10-05T16:35:13.3825974Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:35:13.3826468Z       }
+2026-10-05T16:35:13.3826653Z 
+2026-10-05T16:35:13.3828102Z     [0m [90m  97 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'active'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:35:13.3830846Z      [90m  98 |[39m       expect([36mawait[39m prisma[33m.[39mpurchaseFanout[33m.[39mcount({ where[33m:[39m { purchase_id[33m:[39m id } }))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-05T16:35:13.3833899Z     [31m[1m>[22m[39m[90m  99 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:35:13.3835628Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:35:13.3836476Z      [90m 100 |[39m     }[33m,[39m
+2026-10-05T16:35:13.3837068Z      [90m 101 |[39m   )[33m;[39m
+2026-10-05T16:35:13.3837580Z      [90m 102 |[39m[0m
+2026-10-05T16:35:13.3837842Z 
+2026-10-05T16:35:13.3838200Z       at test/aud-sol-661d-120-composition.live.spec.ts:99:35
+2026-10-05T16:35:13.3838659Z 
+2026-10-05T16:35:13.3841145Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › customer.subscription.updated grants the paid plan and atomically erases both consumed sheet credentials
+2026-10-05T16:35:13.3842480Z 
+2026-10-05T16:35:13.3842808Z     expect(received).toMatchObject(expected)
+2026-10-05T16:35:13.3843214Z 
+2026-10-05T16:35:13.3843386Z     - Expected  - 2
+2026-10-05T16:35:13.3843750Z     + Received  + 2
+2026-10-05T16:35:13.3843960Z 
+2026-10-05T16:35:13.3844098Z       Object {
+2026-10-05T16:35:13.3844503Z     -   "stripe_client_secret": null,
+2026-10-05T16:35:13.3845467Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:35:13.3846259Z     +   "stripe_client_secret": "pi_paid-customer-subscription-updated_secret_canary",
+2026-10-05T16:35:13.3847078Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:35:13.3847595Z       }
+2026-10-05T16:35:13.3847772Z 
+2026-10-05T16:35:13.3849190Z     [0m [90m  97 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'active'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:35:13.3851879Z      [90m  98 |[39m       expect([36mawait[39m prisma[33m.[39mpurchaseFanout[33m.[39mcount({ where[33m:[39m { purchase_id[33m:[39m id } }))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-05T16:35:13.3854523Z     [31m[1m>[22m[39m[90m  99 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:35:13.3856262Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:35:13.3856986Z      [90m 100 |[39m     }[33m,[39m
+2026-10-05T16:35:13.3857547Z      [90m 101 |[39m   )[33m;[39m
+2026-10-05T16:35:13.3858017Z      [90m 102 |[39m[0m
+2026-10-05T16:35:13.3858255Z 
+2026-10-05T16:35:13.3858612Z       at test/aud-sol-661d-120-composition.live.spec.ts:99:35
+2026-10-05T16:35:13.3859071Z 
+2026-10-05T16:35:13.3860695Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › invoice.paid starts the card-confirmed trial and erases the spent SetupIntent credentials
+2026-10-05T16:35:13.3861842Z 
+2026-10-05T16:35:13.3862122Z     expect(received).toMatchObject(expected)
+2026-10-05T16:35:13.3862491Z 
+2026-10-05T16:35:13.3862662Z     - Expected  - 2
+2026-10-05T16:35:13.3863025Z     + Received  + 2
+2026-10-05T16:35:13.3863248Z 
+2026-10-05T16:35:13.3863403Z       Object {
+2026-10-05T16:35:13.3863846Z     -   "stripe_client_secret": null,
+2026-10-05T16:35:13.3864422Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:35:13.3865154Z     +   "stripe_client_secret": "seti_trial-invoice-paid_secret_canary",
+2026-10-05T16:35:13.3865952Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:35:13.3866484Z       }
+2026-10-05T16:35:13.3866677Z 
+2026-10-05T16:35:13.3868180Z     [0m [90m 117 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'trialing'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:35:13.3870747Z      [90m 118 |[39m       expect(([36mawait[39m persisted(id))[33m.[39mtrial_started_at)[33m.[39mtoBeInstanceOf([33mDate[39m)[33m;[39m
+2026-10-05T16:35:13.3873591Z     [31m[1m>[22m[39m[90m 119 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:35:13.3875249Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:35:13.3875957Z      [90m 120 |[39m     }[33m,[39m
+2026-10-05T16:35:13.3876528Z      [90m 121 |[39m   )[33m;[39m
+2026-10-05T16:35:13.3877076Z      [90m 122 |[39m[0m
+2026-10-05T16:35:13.3877347Z 
+2026-10-05T16:35:13.3877730Z       at test/aud-sol-661d-120-composition.live.spec.ts:119:35
+2026-10-05T16:35:13.3878192Z 
+2026-10-05T16:35:13.3880129Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › customer.subscription.updated starts the card-confirmed trial and erases the spent SetupIntent credentials
+2026-10-05T16:35:13.3881467Z 
+2026-10-05T16:35:13.3881770Z     expect(received).toMatchObject(expected)
+2026-10-05T16:35:13.3882163Z 
+2026-10-05T16:35:13.3882336Z     - Expected  - 2
+2026-10-05T16:35:13.3882741Z     + Received  + 2
+2026-10-05T16:35:13.3882984Z 
+2026-10-05T16:35:13.3883139Z       Object {
+2026-10-05T16:35:13.3883607Z     -   "stripe_client_secret": null,
+2026-10-05T16:35:13.3884700Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:35:13.3885543Z     +   "stripe_client_secret": "seti_trial-customer-subscription-updated_secret_canary",
+2026-10-05T16:35:13.3886384Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:35:13.3886871Z       }
+2026-10-05T16:35:13.3887045Z 
+2026-10-05T16:35:13.3888471Z     [0m [90m 117 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'trialing'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:35:13.3890824Z      [90m 118 |[39m       expect(([36mawait[39m persisted(id))[33m.[39mtrial_started_at)[33m.[39mtoBeInstanceOf([33mDate[39m)[33m;[39m
+2026-10-05T16:35:13.3893273Z     [31m[1m>[22m[39m[90m 119 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:35:13.3894962Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:35:13.3895666Z      [90m 120 |[39m     }[33m,[39m
+2026-10-05T16:35:13.3896248Z      [90m 121 |[39m   )[33m;[39m
+2026-10-05T16:35:13.3896756Z      [90m 122 |[39m[0m
+2026-10-05T16:35:13.3897175Z 
+2026-10-05T16:35:13.3897693Z       at test/aud-sol-661d-120-composition.live.spec.ts:119:35
+2026-10-05T16:35:13.3898235Z 
+2026-10-05T16:35:13.6271958Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:13 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mcancelPendingForPurchase: no pending/due drops for purchase=end-active (replay or never-entitled) reason=subscription_canceled[39m
+2026-10-05T16:35:13.6274004Z PASS test/b-recur7a-119-r2.spec.ts (378 MB heap size)
+2026-10-05T16:35:13.6275898Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:13 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:35:13.6278351Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:13 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:35:13.6280958Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:13 PM [32m    LOG[39m [38;5;3m[SubscriptionCheckoutService] [39m[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed[39m
+2026-10-05T16:35:13.8315677Z PASS test/b-recur6a-118-r1.spec.ts (391 MB heap size)
+2026-10-05T16:35:14.4323085Z PASS test/b-secrets-3-admin-credentials.spec.ts (431 MB heap size)
+2026-10-05T16:35:14.6060081Z PASS test/b-recur7a-119-r1.spec.ts (442 MB heap size)
+2026-10-05T16:35:14.9846272Z PASS test/b-recur-fix-round-1-trial-card.spec.ts (472 MB heap size)
+2026-10-05T16:35:15.3193424Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:14 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mbilling.trial_card_attached purchase=cp_trial via=webhook[39m
+2026-10-05T16:35:15.3195077Z PASS test/purchase-fanout-hooks.spec.ts (493 MB heap size)
+2026-10-05T16:35:15.3197194Z [33m[Nest] 3338  - [39m10/05/2026, 4:35:14 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33msetup_intent.succeeded trial card attach failed purchase=cp_trial error=Error[39m
+2026-10-05T16:35:15.3200118Z [33m[Nest] 3338  - [39m10/05/2026, 4:35:14 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33msetup_intent.succeeded customer mismatch purchase=cp_trial[39m
+2026-10-05T16:35:15.3202653Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:15 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=cp-1 (no engine tables on tx)[39m
+2026-10-05T16:35:15.3205172Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:15 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=cp-2 (no engine tables on tx)[39m
+2026-10-05T16:35:15.3208107Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:15 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=cp-3 (no engine tables on tx)[39m
+2026-10-05T16:35:15.3210860Z [95m[Nest] 3338  - [39m10/05/2026, 4:35:15 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=cp-3 (no engine tables on tx)[39m
+2026-10-05T16:35:19.3224735Z PASS test/aud-sol-118-owner-boundaries.live.spec.ts (531 MB heap size)
+2026-10-05T16:35:19.6737799Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:19 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner[39m
+2026-10-05T16:35:19.6740452Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:19 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=owner recovered after a failed payment of pi_118_mixed[39m
+2026-10-05T16:35:19.6742670Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:19 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=rollback-owner[39m
+2026-10-05T16:35:19.6744984Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:19 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=rollback-owner recovered after a failed payment of pi_118_rollback[39m
+2026-10-05T16:35:19.6782121Z PASS test/b-recur-fix-round-1.spec.ts (557 MB heap size)
+2026-10-05T16:35:20.0627959Z PASS test/b-recur-3-fix-round-2.spec.ts (579 MB heap size)
+2026-10-05T16:35:20.3337930Z [33m[Nest] 3338  - [39m10/05/2026, 4:35:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33msetup_intent.succeeded lookup failed si=seti_T1 error=Error[39m
+2026-10-05T16:35:20.3340199Z [32m[Nest] 3338  - [39m10/05/2026, 4:35:20 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mbilling.trial_card_attached purchase=cp_trial via=webhook[39m
+2026-10-05T16:35:20.3368725Z PASS test/b-recur-subscription-wire.spec.ts (316 MB heap size)
+2026-10-05T16:35:20.4911155Z PASS test/b-recur-3-subscription-terms.spec.ts (320 MB heap size)
+2026-10-05T16:35:20.6403480Z PASS test/b-recur5a-117-trial-end-form.spec.ts (331 MB heap size)
+2026-10-05T16:35:20.6429114Z 
+2026-10-05T16:35:20.6431004Z Summary of all failing tests
+2026-10-05T16:35:20.6436031Z FAIL test/aud-sol-661d-120-composition.live.spec.ts (354 MB heap size)
+2026-10-05T16:35:20.6445968Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › invoice.paid grants the paid plan and atomically erases both consumed sheet credentials
+2026-10-05T16:35:20.6447163Z 
+2026-10-05T16:35:20.6447970Z     expect(received).toMatchObject(expected)
+2026-10-05T16:35:20.6448341Z 
+2026-10-05T16:35:20.6448512Z     - Expected  - 2
+2026-10-05T16:35:20.6449723Z     + Received  + 2
+2026-10-05T16:35:20.6449959Z 
+2026-10-05T16:35:20.6451227Z       Object {
+2026-10-05T16:35:20.6454018Z     -   "stripe_client_secret": null,
+2026-10-05T16:35:20.6456276Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:35:20.6461574Z     +   "stripe_client_secret": "pi_paid-invoice-paid_secret_canary",
+2026-10-05T16:35:20.6464193Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:35:20.6464826Z       }
+2026-10-05T16:35:20.6465058Z 
+2026-10-05T16:35:20.6477059Z     [0m [90m  97 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'active'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:35:20.6483142Z      [90m  98 |[39m       expect([36mawait[39m prisma[33m.[39mpurchaseFanout[33m.[39mcount({ where[33m:[39m { purchase_id[33m:[39m id } }))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-05T16:35:20.6492061Z     [31m[1m>[22m[39m[90m  99 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:35:20.6494418Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:35:20.6496069Z      [90m 100 |[39m     }[33m,[39m
+2026-10-05T16:35:20.6506855Z      [90m 101 |[39m   )[33m;[39m
+2026-10-05T16:35:20.6507421Z      [90m 102 |[39m[0m
+2026-10-05T16:35:20.6507690Z 
+2026-10-05T16:35:20.6508067Z       at test/aud-sol-661d-120-composition.live.spec.ts:99:35
+2026-10-05T16:35:20.6508537Z 
+2026-10-05T16:35:20.6541621Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › customer.subscription.updated grants the paid plan and atomically erases both consumed sheet credentials
+2026-10-05T16:35:20.6569901Z 
+2026-10-05T16:35:20.6596162Z     expect(received).toMatchObject(expected)
+2026-10-05T16:35:20.6596971Z 
+2026-10-05T16:35:20.6597373Z     - Expected  - 2
+2026-10-05T16:35:20.6597898Z     + Received  + 2
+2026-10-05T16:35:20.6598136Z 
+2026-10-05T16:35:20.6598284Z       Object {
+2026-10-05T16:35:20.6598742Z     -   "stripe_client_secret": null,
+2026-10-05T16:35:20.6599280Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:35:20.6600303Z     +   "stripe_client_secret": "pi_paid-customer-subscription-updated_secret_canary",
+2026-10-05T16:35:20.6601165Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:35:20.6601672Z       }
+2026-10-05T16:35:20.6601849Z 
+2026-10-05T16:35:20.6603367Z     [0m [90m  97 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'active'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:35:20.6605726Z      [90m  98 |[39m       expect([36mawait[39m prisma[33m.[39mpurchaseFanout[33m.[39mcount({ where[33m:[39m { purchase_id[33m:[39m id } }))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-05T16:35:20.6608276Z     [31m[1m>[22m[39m[90m  99 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:35:20.6610144Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:35:20.6610844Z      [90m 100 |[39m     }[33m,[39m
+2026-10-05T16:35:20.6611398Z      [90m 101 |[39m   )[33m;[39m
+2026-10-05T16:35:20.6611888Z      [90m 102 |[39m[0m
+2026-10-05T16:35:20.6612125Z 
+2026-10-05T16:35:20.6612474Z       at test/aud-sol-661d-120-composition.live.spec.ts:99:35
+2026-10-05T16:35:20.6612901Z 
+2026-10-05T16:35:20.6614331Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › invoice.paid starts the card-confirmed trial and erases the spent SetupIntent credentials
+2026-10-05T16:35:20.6615999Z 
+2026-10-05T16:35:20.6616267Z     expect(received).toMatchObject(expected)
+2026-10-05T16:35:20.6616618Z 
+2026-10-05T16:35:20.6616777Z     - Expected  - 2
+2026-10-05T16:35:20.6617149Z     + Received  + 2
+2026-10-05T16:35:20.6617355Z 
+2026-10-05T16:35:20.6617516Z       Object {
+2026-10-05T16:35:20.6617923Z     -   "stripe_client_secret": null,
+2026-10-05T16:35:20.6618446Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:35:20.6619130Z     +   "stripe_client_secret": "seti_trial-invoice-paid_secret_canary",
+2026-10-05T16:35:20.6620089Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:35:20.6620615Z       }
+2026-10-05T16:35:20.6620787Z 
+2026-10-05T16:35:20.6622214Z     [0m [90m 117 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'trialing'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:35:20.6624292Z      [90m 118 |[39m       expect(([36mawait[39m persisted(id))[33m.[39mtrial_started_at)[33m.[39mtoBeInstanceOf([33mDate[39m)[33m;[39m
+2026-10-05T16:35:20.6626684Z     [31m[1m>[22m[39m[90m 119 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:35:20.6628637Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:35:20.6629324Z      [90m 120 |[39m     }[33m,[39m
+2026-10-05T16:35:20.6630069Z      [90m 121 |[39m   )[33m;[39m
+2026-10-05T16:35:20.6630557Z      [90m 122 |[39m[0m
+2026-10-05T16:35:20.6630799Z 
+2026-10-05T16:35:20.6631146Z       at test/aud-sol-661d-120-composition.live.spec.ts:119:35
+2026-10-05T16:35:20.6631565Z 
+2026-10-05T16:35:20.6632643Z   ● AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership › customer.subscription.updated starts the card-confirmed trial and erases the spent SetupIntent credentials
+2026-10-05T16:35:20.6633413Z 
+2026-10-05T16:35:20.6633569Z     expect(received).toMatchObject(expected)
+2026-10-05T16:35:20.6633770Z 
+2026-10-05T16:35:20.6633867Z     - Expected  - 2
+2026-10-05T16:35:20.6634079Z     + Received  + 2
+2026-10-05T16:35:20.6634201Z 
+2026-10-05T16:35:20.6634295Z       Object {
+2026-10-05T16:35:20.6634540Z     -   "stripe_client_secret": null,
+2026-10-05T16:35:20.6634838Z     -   "stripe_ephemeral_key": null,
+2026-10-05T16:35:20.6635308Z     +   "stripe_client_secret": "seti_trial-customer-subscription-updated_secret_canary",
+2026-10-05T16:35:20.6635837Z     +   "stripe_ephemeral_key": "ek_test_sol120_canary",
+2026-10-05T16:35:20.6636131Z       }
+2026-10-05T16:35:20.6636239Z 
+2026-10-05T16:35:20.6637029Z     [0m [90m 117 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ status[33m:[39m [32m'trialing'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-05T16:35:20.6638210Z      [90m 118 |[39m       expect(([36mawait[39m persisted(id))[33m.[39mtrial_started_at)[33m.[39mtoBeInstanceOf([33mDate[39m)[33m;[39m
+2026-10-05T16:35:20.6639808Z     [31m[1m>[22m[39m[90m 119 |[39m       expect([36mawait[39m persisted(id))[33m.[39mtoMatchObject({ stripe_client_secret[33m:[39m [36mnull[39m[33m,[39m stripe_ephemeral_key[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-05T16:35:20.6640799Z      [90m     |[39m                                   [31m[1m^[22m[39m
+2026-10-05T16:35:20.6641208Z      [90m 120 |[39m     }[33m,[39m
+2026-10-05T16:35:20.6641534Z      [90m 121 |[39m   )[33m;[39m
+2026-10-05T16:35:20.6641811Z      [90m 122 |[39m[0m
+2026-10-05T16:35:20.6641955Z 
+2026-10-05T16:35:20.6642156Z       at test/aud-sol-661d-120-composition.live.spec.ts:119:35
+2026-10-05T16:35:20.6642417Z 
+2026-10-05T16:35:20.6642423Z 
+2026-10-05T16:35:20.6643551Z Test Suites: 1 failed, 38 passed, 39 total
+2026-10-05T16:35:20.6644281Z Tests:       4 failed, 545 passed, 549 total
+2026-10-05T16:35:20.6644609Z Snapshots:   0 total
+2026-10-05T16:35:20.6645059Z Time:        46.253 s
+2026-10-05T16:35:20.6652947Z Ran all test suites matching test/aud-sol-661d-120-composition.live.spec.ts|test/aud-sol-661r5-postgres.spec.ts|test/aud-sol-661r6-selection.live.spec.ts|test/aud-sol-118-owner-boundaries.live.spec.ts|test/checkout-settlement.live.spec.ts|test/checkout-settlement-round5.spec.ts|test/checkout-hosted-activation-once.spec.ts|test/checkout-webhook-handler.spec.ts|test/checkout.service.spec.ts|test/b-secrets-3-admin-credentials.spec.ts|test/cancel-pending-on-refund.spec.ts|test/purchase-fanout-hooks.spec.ts|test/purchase-fanout-tx-plumbing.spec.ts|test/checkout-webhook-fee-split.spec.ts|test/partial-refund-decision.service.spec.ts|test/invite-grant.spec.ts|test/first-payment-webhook.integration.spec.ts|test/billing-checkout-routing.spec.ts|test/b-recur-subscription-webhooks.spec.ts|test/b-recur-subscription-checkout.spec.ts|test/b-recur-subscription-wire.spec.ts|test/b-recur-fix-round-1.spec.ts|test/b-recur-fix-round-1-checkout.spec.ts|test/b-recur-fix-round-1-http.spec.ts|test/b-recur-fix-round-1-trial-card.spec.ts|test/b-recur-fix-round-1-trial-card-checkout.spec.ts|test/b-recur-3-fix-round-2.spec.ts|test/b-recur-3-fix-round-2-checkout.spec.ts|test/b-recur-3-subscription-terms.spec.ts|test/b-recur-116-fix-round-3.spec.ts|test/b-recur3-117-webhook-order.spec.ts|test/b-recur5a-117-fix-round-5.spec.ts|test/b-recur5a-117-moved-fix-round-4.spec.ts|test/b-recur5a-117-trial-end-form.spec.ts|test/b-recur5b-117-authority.spec.ts|test/b-recur6a-118-fix-round-6.spec.ts|test/b-recur6a-118-r1.spec.ts|test/b-recur6b-118-authority.spec.ts|test/b-recur7a-119-r1.spec.ts|test/b-recur7a-119-r2.spec.ts|test/b-recur7b-119-authority.spec.ts.
+2026-10-05T16:35:20.8516425Z ##[error]Process completed with exit code 1.

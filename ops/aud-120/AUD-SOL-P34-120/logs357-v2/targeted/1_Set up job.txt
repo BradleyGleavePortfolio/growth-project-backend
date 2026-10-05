@@ -1,0 +1,33 @@
+﻿2026-10-05T16:35:30.0848589Z Current runner version: '2.337.0'
+2026-10-05T16:35:30.0886314Z ##[group]Runner Image Provisioner
+2026-10-05T16:35:30.0887624Z Hosted Compute Agent
+2026-10-05T16:35:30.0888782Z Version: 20260901.588
+2026-10-05T16:35:30.0889973Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:35:30.0891382Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:35:30.0892905Z Worker ID: {eef1a660-aca8-4ac4-9046-e1e283226799}
+2026-10-05T16:35:30.0894293Z Azure Region: centralus
+2026-10-05T16:35:30.0895554Z ##[endgroup]
+2026-10-05T16:35:30.0898386Z ##[group]Operating System
+2026-10-05T16:35:30.0899558Z Ubuntu
+2026-10-05T16:35:30.0900554Z 24.04.5
+2026-10-05T16:35:30.0901507Z LTS
+2026-10-05T16:35:30.0902887Z ##[endgroup]
+2026-10-05T16:35:30.0903919Z ##[group]Runner Image
+2026-10-05T16:35:30.0904993Z Image: ubuntu-24.04
+2026-10-05T16:35:30.0906143Z Version: 20260927.320.1
+2026-10-05T16:35:30.0907936Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:35:30.0910324Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:35:30.0911297Z ##[endgroup]
+2026-10-05T16:35:30.0912944Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:35:30.0915428Z Contents: read
+2026-10-05T16:35:30.0916184Z Metadata: read
+2026-10-05T16:35:30.0916755Z Packages: read
+2026-10-05T16:35:30.0917392Z ##[endgroup]
+2026-10-05T16:35:30.0919480Z Secret source: Actions
+2026-10-05T16:35:30.0920472Z Cache mode: write
+2026-10-05T16:35:30.0921558Z Prepare workflow directory
+2026-10-05T16:35:30.1308591Z Prepare all required actions
+2026-10-05T16:35:30.1357015Z Getting action download info
+2026-10-05T16:35:30.4257987Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:35:30.5171799Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:35:30.7056257Z Complete job name: targeted

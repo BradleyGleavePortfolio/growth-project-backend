@@ -1,0 +1,37 @@
+﻿2026-10-05T16:39:00.0568051Z ##[group]Run set -euo pipefail
+2026-10-05T16:39:00.0568291Z [36;1mset -euo pipefail[0m
+2026-10-05T16:39:00.0568516Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T16:39:00.0568793Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T16:39:00.0569000Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T16:39:00.0569153Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T16:39:00.0625715Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:39:00.0625940Z ##[endgroup]
+2026-10-05T16:39:00.0717730Z specs: src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx --testNamePattern=ownership
+2026-10-05T16:39:04.9203017Z FAIL src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx
+2026-10-05T16:39:04.9205646Z   ✕ P3 ownership: a held create cannot repopulate a cleared global cache or navigate after unmount (1669 ms)
+2026-10-05T16:39:04.9206541Z   ○ skipped P3 conflict: a second unrelated server revision must not discard an unresolved name conflict
+2026-10-05T16:39:04.9207677Z   ○ skipped P3 day picker: an unresolved Saved A intent cannot silently reuse its key for Saved B
+2026-10-05T16:39:04.9208429Z   ○ skipped P3 duplicate: the copy must never replace the original program's cached identity
+2026-10-05T16:39:04.9208791Z 
+2026-10-05T16:39:04.9209280Z   ● P3 ownership: a held create cannot repopulate a cleared global cache or navigate after unmount
+2026-10-05T16:39:04.9209655Z 
+2026-10-05T16:39:04.9209949Z     TypeError: screen.UNSAFE_getAllByType is not a function
+2026-10-05T16:39:04.9210214Z 
+2026-10-05T16:39:04.9211097Z     [0m [90m 148 |[39m   [36mconst[39m screen [33m=[39m [36mawait[39m render(provider(qc[33m,[39m [33m<[39m[33mProgramFormScreen[39m {[33m...[39mformProps()} [33m/[39m[33m>[39m))[33m;[39m
+2026-10-05T16:39:04.9212498Z      [90m 149 |[39m   [36mawait[39m fireEvent[33m.[39mchangeText(screen[33m.[39mgetByLabelText([32m"Program name"[39m)[33m,[39m [32m"Old owner's private program"[39m)[33m;[39m
+2026-10-05T16:39:04.9214137Z     [31m[1m>[22m[39m[90m 150 |[39m   [36mconst[39m createButton [33m=[39m screen[33m.[39m[33mUNSAFE_getAllByType[39m([33mSmallButton[39m)[33m.[39mfind((button) [33m=>[39m button[33m.[39mprops[33m.[39mlabel [33m===[39m [32m"Create program"[39m)[33m![39m[33m;[39m
+2026-10-05T16:39:04.9215232Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-05T16:39:04.9216051Z      [90m 151 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m { [36mvoid[39m createButton[33m.[39mprops[33m.[39monPress()[33m;[39m })[33m;[39m
+2026-10-05T16:39:04.9216916Z      [90m 152 |[39m   expect(mockCreate)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-05T16:39:04.9225515Z      [90m 153 |[39m   [36mawait[39m screen[33m.[39munmount()[33m;[39m[0m
+2026-10-05T16:39:04.9225891Z 
+2026-10-05T16:39:04.9226437Z       at Object.UNSAFE_getAllByType (src/screens/coach/programs/__tests__/audSolP34P3Boundaries.test.tsx:150:31)
+2026-10-05T16:39:04.9227137Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:39:04.9227866Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:39:04.9228145Z 
+2026-10-05T16:39:04.9229578Z Test Suites: 1 failed, 1 total
+2026-10-05T16:39:04.9229777Z Tests:       1 failed, 3 skipped, 4 total
+2026-10-05T16:39:04.9229951Z Snapshots:   0 total
+2026-10-05T16:39:04.9230087Z Time:        4.072 s
+2026-10-05T16:39:04.9230464Z Ran all test suites matching /src\/screens\/coach\/programs\/__tests__\/audSolP34P3Boundaries.test.tsx/i with tests matching "ownership".
+2026-10-05T16:39:05.0616665Z ##[error]Process completed with exit code 1.
