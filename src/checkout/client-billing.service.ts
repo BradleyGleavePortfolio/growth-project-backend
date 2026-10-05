@@ -1442,7 +1442,7 @@ export class ClientBillingService {
       const known = disputes.map((p) => reversed.get(p.purchase_id) ?? null);
       const amounts = known.every((r) => r !== null) ? totalsByCurrency(known as ReversedAmount[]) : [];
       parts.push(
-        `Your bank reversed an earlier payment${amounts.length ? ` of ${formatTotals(amounts)}` : ''}. Saving a card does not settle that; contact support at ${SUPPORT_EMAIL} to sort it out.`,
+        `A payment dispute or inquiry is open with the bank${amounts.length ? ` for ${formatTotals(amounts)}` : ''}. Saving a card does not settle it; contact support at ${SUPPORT_EMAIL} to sort it out.`,
       );
     }
     return parts.join(' ');
@@ -1660,7 +1660,7 @@ export class ClientBillingService {
       }
       const ended = await this.endAccessNow(purchase, lease, opId, lines, voidedCount, voidedCents);
       if (dispute) {
-        ended.message += ` Ending the plan does not settle the payment your bank reversed; contact support at ${SUPPORT_EMAIL} to sort it out.`;
+        ended.message += ` Ending the plan does not settle the open payment dispute or inquiry with the bank; contact support at ${SUPPORT_EMAIL} to sort it out.`;
       }
       return ended;
     } finally {
