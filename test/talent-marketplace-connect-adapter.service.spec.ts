@@ -68,6 +68,17 @@ const STATUS: CoachConnectStatus = {
   account_id: 'acct_1',
   last_onboarded_at: '2026-06-17T00:00:00.000Z',
   requirements_due: ['individual.verification.document'],
+  state: 'active',
+  details_submitted: true,
+  disabled_reason: null,
+  action_required: false,
+  requirements: {
+    currently_due: [],
+    past_due: [],
+    eventually_due: ['individual.verification.document'],
+    pending_verification: [],
+    current_deadline: null,
+  },
 };
 
 describe('TalentConnectAdapter', () => {

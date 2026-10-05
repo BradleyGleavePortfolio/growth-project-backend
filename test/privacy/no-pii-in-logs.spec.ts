@@ -558,7 +558,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/community/voice/community-voice.service.ts': 1,
   'src/community/voice/voice-upload.provider.ts': 7,
   'src/connect/connect.module.ts': 2,
-  'src/connect/connect.service.ts': 1,
   'src/connect/fees/payout-readiness.service.ts': 4,
   'src/connect/fees/reconciliation.service.ts': 3,
   'src/consent/consent.service.ts': 1,

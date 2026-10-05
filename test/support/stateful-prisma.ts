@@ -291,6 +291,10 @@ export class StatefulPrisma {
     this.state[name] = this.state[name] ?? [];
     const m = new Model(this, name, uniques, defaults);
     this[name] = m;
+    // B-676-1: a ledger always carries its per-event reversal postings.
+    if (name === 'splitLedgerEntry' && !this.splitLedgerReversal) {
+      this.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
+    }
     return m;
   }
 
