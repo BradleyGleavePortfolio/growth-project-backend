@@ -20,10 +20,13 @@ const PRISMA_UNIQUE_VIOLATION = 'P2002';
  * Input for {@link CoachFirstPaymentService.tryEmitFirstPayment}.
  *
  * Every field is SERVER-TRUSTED: the caller (CheckoutWebhookHandlerService)
- * sources them from the persisted ClientPurchase row, never from the Stripe
- * webhook body. This is the 50-Failures #5 (IDOR) guard — a forged webhook
- * payload can never cause a notification to be attributed to the wrong coach
- * or carry an attacker-controlled amount.
+ * sources the coach and client from the persisted ClientPurchase row, never
+ * from the Stripe webhook body. This is the 50-Failures #5 (IDOR) guard — a
+ * forged webhook payload can never cause a notification to be attributed to
+ * the wrong coach. C-680-9 (B-RECUR5B-117) — the recurring path passes the
+ * amount and currency of the paid invoice from the signature-verified event
+ * (what Stripe collected; a combo first invoice is not the row's renewal
+ * amount); one-time paths pass the row's amount.
  */
 export interface TryEmitFirstPaymentInput {
   /**
@@ -40,9 +43,9 @@ export interface TryEmitFirstPaymentInput {
    * once-ever notification.
    */
   coachId: string;
-  /** Amount in cents (ClientPurchase.amount_cents). */
+  /** Amount in cents (ClientPurchase.amount_cents, or the paid invoice's amount_paid). */
   amount: number;
-  /** ISO currency code (ClientPurchase.currency). */
+  /** ISO currency code (ClientPurchase.currency, or the paid invoice's currency). */
   currency: string;
   /** The buying client's user id (ClientPurchase.client_user_id). */
   clientId: string;

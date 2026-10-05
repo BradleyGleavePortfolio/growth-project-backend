@@ -121,6 +121,7 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
   // Provided via `useValue`, so no full PrismaService shape is required.
   const prismaStub: {
     dunningState: { findFirst: (args: unknown) => Promise<unknown> };
+    clientPurchase: { findMany: () => Promise<unknown[]> };
   } = {
     dunningState: {
       findFirst: (args: unknown) => {
@@ -128,6 +129,8 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
         return Promise.resolve(lockedRow);
       },
     },
+    // D2d: the guard's lock-waiver read finds no other live access.
+    clientPurchase: { findMany: () => Promise.resolve([]) },
   };
 
   const prevFlag = process.env['FEATURE_DUNNING_V2'];

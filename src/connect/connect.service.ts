@@ -153,7 +153,7 @@ export class ConnectService {
     } catch (err) {
       if (err instanceof StripeConnectApiError) {
         this.logger.warn(
-          `syncFromStripe: Stripe rejected retrieve(${stripeAccountId}) — ${err.message}`,
+          `syncFromStripe: Stripe rejected retrieve(${stripeAccountId}) code=CONNECT_ACCOUNT_RETRIEVE_FAILED status=${Number(err.httpStatus) || 0}`,
         );
         return row;
       }

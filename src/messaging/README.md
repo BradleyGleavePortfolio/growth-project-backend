@@ -191,5 +191,46 @@ SDK; the rest of the messaging surface stays functional.
   `prisma/migrations/20260424120000_add_coach_messages`. If a future
   feature pages on a different field, add a covering index rather than
   relaxing the order.
-- This module deliberately does not implement edits or deletions. The
-  `read_at` column is the only mutation after insert.
+- Edits, deletes and pins are A3-MSG-CORE v2 surfaces behind
+  `FEATURE_MESSAGING_CORE_V2` (see below). With the flag OFF, `read_at` is the
+  only mutation after insert, exactly as before.
+
+## A3-MSG-CORE v2: one inbox, read state and message actions
+
+`FEATURE_MESSAGING_CORE_V2` (default OFF; ENV_RULES, launch manifest, and
+`GET /me/feature-flags` key `messaging_core_v2`). OFF: every route below
+answers 503 `messaging.feature_disabled`, and the thread read/send/read routes
+are byte-identical to the legacy behaviour.
+
+| Coach | Client | Behaviour |
+|---|---|---|
+| `GET /coach/messages/inbox?cursor=&limit=&filter=all\|unread` | `GET /messages/inbox` | The one inbox. Pinned first, then newest activity. Unread = the badge computation. `blocked_by_me` hides preview + unread. Coachless client: empty list. |
+| `PATCH /coach/clients/:client_id/messages/:id` | `PATCH /messages/:id` | Author edit, body only, 48 h window, conditional on not deleted, sets `edited_at`. |
+| `DELETE /coach/clients/:client_id/messages/:id` | `DELETE /messages/:id` | Author delete for everyone, 48 h window, idempotent. Tombstone: content erased, unpinned, voice object queued for durable erasure (community voice erasure ledger). |
+| `POST\|DELETE /coach/clients/:client_id/messages/:id/pin` | `POST\|DELETE /messages/:id/pin` | Thread-shared pins, max 10 per thread (advisory-locked cap). |
+| `GET /coach/clients/:client_id/messages/pins` | `GET /messages/pins` | Pins bar. |
+| `PUT /coach/clients/:client_id/messages/mute` | `PUT /messages/mute` | `{ duration: 1h\|8h\|1d\|7d\|forever\|off }`. Private to the caller; suppresses push for that thread (realtime ping still sent). |
+| `PUT /coach/clients/:client_id/messages/inbox-pin` | `PUT /messages/inbox-pin` | `{ pinned }`, max 5 per user. |
+| `POST .../messages/read { up_to_message_id? }` | `POST /messages/read { up_to_message_id? }` | Read up to a message; live read receipt ping. |
+
+Send additions: `client_message_id` (UUID; or the `Idempotency-Key` header)
+makes sends idempotent for the mobile offline queue (always on: a replay
+returns the original row with no side effects; UNIQUE (sender_id,
+client_message_id)). `reply_to_id` (v2) quotes a live message of the same
+thread; thread reads then carry `reply_to { id, sender_id, kind, preview }`
+and `deleted`.
+
+Realtime: non-message changes ping `messages:<userId>` with the distinct event
+`thread-updated` and an empty payload `{}` (the channel is public, so no ids),
+so edits and read receipts never trigger the new-message banner; the app
+refetches over the authenticated routes.
+
+Errors: every failure carries `{ code, error, message }` with a stable
+`messaging.*` code (see `messaging-errors.ts`). Blocking parity: edit and pin
+are refused when either side blocked the other (head coach or acting
+sub-coach versus the client), as send is; delete is always allowed.
+Audit: edit, delete, pin, unpin write AuditLog rows with lengths and ids only.
+
+RLS: `CoachThreadState` is ENABLE + FORCE, self-only plus owner staff, proven
+live by `test/messaging/rls/coach-thread-state-rls.live.spec.ts`
+(community-live-tests job).

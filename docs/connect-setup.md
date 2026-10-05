@@ -101,8 +101,8 @@ to:
 
 ```bash
 fly secrets set \
-  STRIPE_CONNECT_REFRESH_URL=growthproject://connect/onboarding/refresh \
-  STRIPE_CONNECT_RETURN_URL=growthproject://connect/onboarding/return
+  STRIPE_CONNECT_REFRESH_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh \
+  STRIPE_CONNECT_RETURN_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return
 ```
 
 (Use `https://` URLs in dev if you're hitting the backend from a

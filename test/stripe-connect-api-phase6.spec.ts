@@ -70,7 +70,20 @@ describe('StripeConnectApiService Phase 6 methods', () => {
     expect(svc.requests[0].url).toContain('type=charge');
   });
 
-  it('createRefund sets reverse_transfer + refund_application_fee by default', async () => {
+  it('createRefund sends no reverse_transfer / refund_application_fee unless asked (S-FEE)', async () => {
+    // S-FEE: separate charges and transfers have no charge.transfer or
+    // application fee; the coach leg is reversed by ChargeSettlementService.
+    const svc = new TestableStripeConnectApi();
+    svc.responder = async () =>
+      new Response(JSON.stringify({ id: 'rf_def', amount: 500, status: 'succeeded' }), {
+        status: 200,
+      });
+    await svc.createRefund({ charge_id: 'ch_sct', amount: 500, idempotencyKey: 'tgp-refund-sct' });
+    const body = svc.requests[0].init?.body as string;
+    expect(body).toBe('charge=ch_sct&amount=500');
+  });
+
+  it('createRefund sets reverse_transfer + refund_application_fee for legacy destination charges', async () => {
     const svc = new TestableStripeConnectApi();
     svc.responder = async () =>
       new Response(
@@ -80,6 +93,8 @@ describe('StripeConnectApiService Phase 6 methods', () => {
     await svc.createRefund({
       charge_id: 'ch_xyz',
       amount: 500,
+      reverse_transfer: true,
+      refund_application_fee: true,
       idempotencyKey: 'tgp-refund-test',
     });
     const body = svc.requests[0].init?.body as string;

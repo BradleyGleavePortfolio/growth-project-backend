@@ -24,16 +24,6 @@ import type {
 
 const APPLICATION_ROUTE_KEY = 'tm:admin:applications:review';
 
-// Truncate a note before it lands in a structured log line so a 2k-char note
-// cannot bloat the log/Sentry breadcrumb. The full note is still persisted to
-// the ledger row; only the logged copy is clipped. Defined locally rather than
-// imported from the TM-7a service so this half adds no edit to that audited file.
-const NOTE_LOG_MAX = 256;
-function truncateNote(note: string | null): string | null {
-  if (note === null) return null;
-  return note.length > NOTE_LOG_MAX ? `${note.slice(0, NOTE_LOG_MAX)}\u2026` : note;
-}
-
 // Decision → next enum state: approve→shortlisted / reject→rejected. The
 // reviewable (pre-decision) state is `submitted`; the status-guarded write
 // pins the mutation to it so a second decision matches zero rows and falls
@@ -147,7 +137,10 @@ export class AdminApplicationsService {
         owner_id: ownerId,
         application_id: applicationId,
         decision: result.decision,
-        note: truncateNote(result.note),
+        // C-611-17: the note is free text written by the owner. The full
+        // note is on the ledger row; the log line carries only its length
+        // (0 when there is none).
+        note_length: result.note?.length ?? 0,
         replayed: result.replayed,
         result_status: result.status,
         // Correlate the decision with the request/error/Sentry trail when the

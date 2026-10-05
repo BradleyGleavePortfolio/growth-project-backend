@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma.service';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 import { LOCKED_DUNNING_CODE } from './dunning-v2.cadence';
+import { hasOtherLiveAccess } from './dunning-effective-access';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 
 /**
@@ -166,7 +167,11 @@ export class DunningLockoutGuard implements CanActivate {
   /**
    * A client is locked out when ANY of their purchases has a DunningState with
    * `locked_out_at != null` and the purchase entitlement is off. We resolve via
-   * ClientPurchase.client_user_id → DunningState.purchase_id.
+   * ClientPurchase.client_user_id → DunningState.purchase_id. Other live
+   * access (another paid plan, a grant, a re-buy after a dispute pause)
+   * waives the lock: the same rule GET /v1/me/dunning-status reads
+   * (`hasOtherLiveAccess`, S-DUNNING-R3 B-628-7), so a client the status calls
+   * `lock_waived` is never refused here.
    */
   private async isClientLockedOut(userId: string): Promise<boolean> {
     const lockedRow = await this.prisma.dunningState.findFirst({
@@ -178,9 +183,10 @@ export class DunningLockoutGuard implements CanActivate {
           entitlement_active: false,
         },
       },
-      select: { id: true },
+      select: { id: true, purchase_id: true },
     });
-    return lockedRow != null;
+    if (lockedRow == null) return false;
+    return !(await hasOtherLiveAccess(this.prisma, userId, lockedRow.purchase_id));
   }
 }
 

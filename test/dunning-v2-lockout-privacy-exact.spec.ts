@@ -31,7 +31,14 @@ describe('DunningLockoutGuard — AI consent carve-out is exact METHOD + PATH (B
     const module = await Test.createTestingModule({
       providers: [
         DunningLockoutGuard,
-        { provide: PrismaService, useValue: { dunningState: { findFirst: lookup } } },
+        {
+          provide: PrismaService,
+          // D2d: the guard's lock-waiver read finds no other live access.
+          useValue: {
+            dunningState: { findFirst: lookup },
+            clientPurchase: { findMany: async () => [] },
+          },
+        },
       ],
     }).compile();
     return { guard: module.get(DunningLockoutGuard), lookup, close: () => module.close() };
