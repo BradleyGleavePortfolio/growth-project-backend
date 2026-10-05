@@ -10,6 +10,8 @@ import {
   CoachPurchasesController,
 } from './checkout.controller';
 import { CheckoutService } from './checkout.service';
+import { SubscriptionCheckoutController } from './subscription-checkout.controller';
+import { SubscriptionCheckoutService } from './subscription-checkout.service';
 import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Module } from './dunning-v2/dunning-v2.module';
@@ -78,12 +80,14 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
   controllers: [
     CheckoutController,
     CoachPurchasesController,
+    SubscriptionCheckoutController,
     AdminPaymentOpsController,
     AdminRefundReversalController,
     CoachPaymentOpsController,
   ],
   providers: [
     CheckoutService,
+    SubscriptionCheckoutService,
     CheckoutWebhookHandlerService,
     PurchaseSplitHandlerService,
     DunningService,

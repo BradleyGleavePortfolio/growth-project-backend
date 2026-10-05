@@ -1077,8 +1077,9 @@ export class TransferOrchestratorService {
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: args.transfer_row_id },
     });
-    const amount = Math.min(args.amount_cents, row.amount_cents);
-    if (!(amount > 0)) return { status: 'succeeded', transfer: row, op_id: null };
+    if (!(Math.min(args.amount_cents, row.amount_cents) > 0)) {
+      return { status: 'succeeded', transfer: row, op_id: null };
+    }
     let written: { transfer: ConnectTransfer; op_id: string } | null = null;
     try {
       written = await this.prisma.$transaction(async (tx) => {
@@ -1087,20 +1088,36 @@ export class TransferOrchestratorService {
           data: { reversal_seq: row.reversal_seq + 1 },
         });
         if (slot.count !== 1) return null;
+        // B-CM7-1 (as B-CM6-1 for startReversal): the slot row is locked now.
+        // The base is read here, not from the read above: an operation that
+        // started or finished after that read would otherwise be overwritten
+        // by this record's absolute total. While another operation on the
+        // transfer is still pending nothing is recorded (uncertain, retried).
+        const t = await tx.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+        const open = await tx.transferReversalOp.findMany({
+          where: { transfer_id: row.id, status: 'pending' },
+          take: 1,
+        });
+        if (open.length > 0) {
+          throw new ReversalUncertainError(
+            row.id,
+            args.idempotency_key,
+            'another reversal on this transfer is still pending',
+          );
+        }
         const op = await tx.transferReversalOp.create({
           data: {
             transfer_id: row.id,
             seq: row.reversal_seq + 1,
             idempotency_key: args.idempotency_key,
-            amount_cents: amount,
-            base_reversed_cents: row.reversed_amount_cents,
+            amount_cents: Math.min(args.amount_cents, t.amount_cents),
+            base_reversed_cents: t.reversed_amount_cents,
             purpose: 'legacy',
             status: 'succeeded',
             stripe_reversal_id: args.stripe_reversal_id,
             resolved_at: new Date(),
           },
         });
-        const t = await tx.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
         const reversed = Math.min(
           t.amount_cents,
           Math.max(t.reversed_amount_cents, op.base_reversed_cents + op.amount_cents),
