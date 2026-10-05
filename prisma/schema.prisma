@@ -509,6 +509,14 @@ model User {
   community_classroom_posts_authored CommunityClassroomPost[]          @relation("CommunityClassroomPostCoach")
   community_voice_notes_authored     CommunityVoiceNote[]              @relation("CommunityVoiceNoteAuthor")
   community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
+  // A4 broadcasts, saved replies and client tags (additive back-relations;
+  // migration 20270304000000_a4_broadcasts_cards_saved_replies).
+  coach_broadcasts_as_tenant         CoachBroadcast[]                  @relation("CoachBroadcastTenant")
+  coach_broadcasts_authored          CoachBroadcast[]                  @relation("CoachBroadcastAuthor")
+  coach_broadcasts_received          CoachBroadcastDelivery[]          @relation("CoachBroadcastDeliveryRecipient")
+  coach_saved_replies                CoachSavedReply[]                 @relation("CoachSavedReplyOwner")
+  coach_client_tags_as_coach         CoachClientTag[]                  @relation("CoachClientTagCoach")
+  coach_client_tags_as_client        CoachClientTag[]                  @relation("CoachClientTagClient")
 
   // Roman Phase 1 — Chat MVP. A user owns Roman chat sessions (one active
   // session per (userId, surface) day-key). Each session holds an ordered
@@ -1277,6 +1285,11 @@ model CoachMessage {
   // MessagingService.sendAsCoach returns the existing row with no side effects.
   // NULL for every other message.
   welcome_job_id String? @unique
+
+  // A4 — rich card attached to this message (workout, meal plan, booking,
+  // package, check-in) and, for broadcast copies, the delivery that wrote it.
+  card               CoachMessageCard?
+  broadcast_delivery CoachBroadcastDelivery?
 
   @@index([coach_id])
   @@index([client_id])
@@ -7770,4 +7783,180 @@ model AiProcessingConsentEvent {
   created_at      DateTime @default(now())
 
   @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
+}
+
+// ============================================================
+// A4-MSG-BROADCAST — segmented, scheduled and recurring coach broadcasts,
+// rich message cards, saved replies and coach-private client tags.
+// Migration 20270304000000_a4_broadcasts_cards_saved_replies.
+//
+// Every table is server-only: RLS enabled + forced, service_role all, anon
+// and authenticated denied (RESTRICTIVE). All reads and writes go through
+// the API, which scopes each row to the caller's coaching tenant.
+//
+// Member privacy: a broadcast is fanned out as one CoachMessage per
+// recipient in that recipient's own 1:1 thread. No client-facing route ever
+// reads CoachBroadcast or CoachBroadcastDelivery, so a client never learns
+// who else received it.
+// ============================================================
+
+// One broadcast definition. `segment` and `recurrence` are validated JSON
+// (src/broadcasts/segment.ts, src/broadcasts/recurrence.ts). `next_run_at`
+// is the next occurrence the dispatcher will claim; it is advanced with a
+// compare-and-set in the same transaction that inserts the run row.
+model CoachBroadcast {
+  id               String    @id @default(uuid())
+  // Tenant: the head coach whose roster the segment is drawn from.
+  coach_id         String
+  coach            User      @relation("CoachBroadcastTenant", fields: [coach_id], references: [id], onDelete: Cascade)
+  // Who wrote it (head coach or a sub-coach of the tenant).
+  author_user_id   String?
+  author           User?     @relation("CoachBroadcastAuthor", fields: [author_user_id], references: [id], onDelete: SetNull)
+  // draft | scheduled | sending | sent | paused | canceled | failed
+  status           String    @default("draft")
+  body             String
+  // Validated card spec { type, ref_id, snapshot } or null.
+  card             Json?
+  segment          Json
+  // IANA zone the schedule and recurrence are expressed in.
+  timezone         String
+  send_at          DateTime?
+  recurrence       Json?
+  next_run_at      DateTime?
+  // Urgent broadcasts bypass recipient quiet hours (OR-113-5).
+  urgent           Boolean   @default(false)
+  occurrences_sent Int       @default(0)
+  last_run_at      DateTime?
+  failure_code     String?
+  idempotency_key  String?
+  canceled_at      DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  runs CoachBroadcastRun[]
+
+  // A-659-6: the Idempotency-Key namespace is per author, so a key replays
+  // only the caller's own broadcast and never resolves another author's row.
+  @@unique([coach_id, author_user_id, idempotency_key])
+  @@index([status, next_run_at])
+  @@index([coach_id, created_at(sort: Desc)])
+  @@map("coach_broadcasts")
+}
+
+// One occurrence of a broadcast. (broadcast_id, run_key) is unique, so an
+// occurrence can be created once no matter how many dispatcher instances or
+// restarts race for it. lease_holder / lease_until is the CronLease-style
+// single-runner lease for the fan-out step.
+model CoachBroadcastRun {
+  id              String         @id @default(uuid())
+  broadcast_id    String
+  broadcast       CoachBroadcast @relation(fields: [broadcast_id], references: [id], onDelete: Cascade)
+  // ISO instant of the scheduled occurrence.
+  run_key         String
+  scheduled_for   DateTime
+  // pending | delivering | complete | failed
+  status          String         @default("pending")
+  lease_holder    String?
+  lease_until     DateTime?
+  recipient_count Int            @default(0)
+  failure_code    String?
+  fanned_out_at   DateTime?
+  completed_at    DateTime?
+  created_at      DateTime       @default(now())
+  // B-659-1: the occurrence payload, frozen in the transaction that claims
+  // the occurrence. Fan-out reads `segment`; delivery reads `body`, `card`
+  // and `urgent`. An edit to the broadcast never changes a claimed run.
+  body            String
+  card            Json?
+  segment         Json
+  urgent          Boolean        @default(false)
+
+  deliveries CoachBroadcastDelivery[]
+
+  @@unique([broadcast_id, run_key])
+  @@index([status, lease_until])
+  @@map("coach_broadcast_runs")
+}
+
+// Per-recipient delivery state. (run_id, recipient_id) is unique, so a
+// recipient appears once per occurrence; message_id is unique, so one
+// delivery can write at most one CoachMessage.
+model CoachBroadcastDelivery {
+  id            String            @id @default(uuid())
+  run_id        String
+  run           CoachBroadcastRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  broadcast_id  String
+  recipient_id  String
+  recipient     User              @relation("CoachBroadcastDeliveryRecipient", fields: [recipient_id], references: [id], onDelete: Cascade)
+  // pending | deferred | delivered | skipped_blocked | skipped_ineligible | failed
+  status        String            @default("pending")
+  deliver_after DateTime          @default(now())
+  defer_reason  String?
+  lease_holder  String?
+  lease_until   DateTime?
+  attempts      Int               @default(0)
+  message_id    String?           @unique
+  message       CoachMessage?     @relation(fields: [message_id], references: [id], onDelete: SetNull)
+  // sent | suppressed_muted | suppressed_pref | failed
+  push_status   String?
+  failure_code  String?
+  delivered_at  DateTime?
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
+
+  @@unique([run_id, recipient_id])
+  @@index([status, deliver_after])
+  @@index([broadcast_id, status])
+  @@index([recipient_id])
+  @@map("coach_broadcast_deliveries")
+}
+
+// A rich card on a CoachMessage. `ref_id` was validated against the sending
+// coach's tenant when the card was attached; `snapshot` is the display data
+// captured then, so a client never needs read access to the coach's library.
+model CoachMessageCard {
+  id         String       @id @default(uuid())
+  message_id String       @unique
+  message    CoachMessage @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  // workout | meal_plan | booking | package | check_in
+  card_type  String
+  ref_id     String?
+  snapshot   Json
+  created_at DateTime     @default(now())
+
+  @@index([card_type, ref_id])
+  @@map("coach_message_cards")
+}
+
+// Saved replies: reusable message text per coach user.
+model CoachSavedReply {
+  id            String    @id @default(uuid())
+  owner_user_id String
+  owner         User      @relation("CoachSavedReplyOwner", fields: [owner_user_id], references: [id], onDelete: Cascade)
+  title         String
+  body          String
+  use_count     Int       @default(0)
+  last_used_at  DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@unique([owner_user_id, title])
+  @@index([owner_user_id, updated_at(sort: Desc)])
+  @@map("coach_saved_replies")
+}
+
+// Coach-private tags on a client (segment input). Never shown to clients.
+model CoachClientTag {
+  id         String   @id @default(uuid())
+  coach_id   String
+  coach      User     @relation("CoachClientTagCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_id  String
+  client     User     @relation("CoachClientTagClient", fields: [client_id], references: [id], onDelete: Cascade)
+  tag        String
+  created_at DateTime @default(now())
+
+  @@unique([coach_id, client_id, tag])
+  @@index([coach_id, tag])
+  @@index([client_id])
+  @@map("coach_client_tags")
 }

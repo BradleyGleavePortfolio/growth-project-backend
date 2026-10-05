@@ -1937,6 +1937,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Dunning v2 flag.',
   },
   {
+    name: 'FEATURE_COACH_BROADCASTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A4 coach broadcasts (segmented, scheduled, recurring), rich message cards, saved replies and client tags, plus the per-minute broadcast dispatcher. Off: every A4 route answers 503 broadcasts.disabled and the dispatcher does nothing.',
+  },
+  {
     name: 'FEATURE_COMMUNITY_SCHEMA',
     values: ['true', 'false'],
     unsetIs: 'on',

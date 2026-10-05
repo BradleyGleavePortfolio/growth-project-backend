@@ -89,6 +89,17 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // service_role policy allows this DELETE. No policy or trigger is changed.
   { model: 'AiProcessingConsentEvent', field: 'user_id', action: del },
   { model: 'CoachMessage', field: 'coach_id', action: detach('coach_id') },
+  // A4 broadcasts (#659). Copies already sent are ordinary CoachMessage rows
+  // (handled above; their cards cascade with the message). A broadcast the
+  // user owns as tenant or wrote as author is deleted with its runs and
+  // deliveries, so a removed author never keeps sending (A-659-7). Deliveries
+  // addressed to the user, their saved replies and client tags go too.
+  { model: 'CoachBroadcast', field: 'author_user_id', action: del },
+  { model: 'CoachBroadcast', field: 'coach_id', action: del },
+  { model: 'CoachBroadcastDelivery', field: 'recipient_id', action: del },
+  { model: 'CoachSavedReply', field: 'owner_user_id', action: del },
+  { model: 'CoachClientTag', field: 'coach_id', action: del },
+  { model: 'CoachClientTag', field: 'client_id', action: del },
   { model: 'Message', field: 'sender_id', action: del },
   { model: 'Message', field: 'recipient_id', action: del },
   { model: 'MessageDraft', field: 'coach_id', action: del },
