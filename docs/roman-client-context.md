@@ -12,8 +12,8 @@ current coach for coach-owned rows; `author_id = caller` for posts).
 | Block | Source | Window / cap |
 |---|---|---|
 | `identity`, `profile` | `User` | first name, age, sex, tz, goals, injuries, preferences; no email/phone/DOB/ids |
-| `consultation` | `ROMAN_SAFETY_INTAKE_SOURCE` (C05, not yet landed → `completed:false`) | ≤30 Q/A, 80/200 chars |
-| `safety_intake` | same | `completed`, `clearance_recommended`, ≤12 screen Q/A (`flagged` marks the triggering ones) |
+| `consultation` | `ROMAN_SAFETY_INTAKE_SOURCE` (`RomanConsultationIntakeSource`: the client's own `ClientOnboardingIntake`) | ≤30 Q/A, 80/200 chars; the birth-date answer becomes the whole age only, never the date |
+| `safety_intake` | same | `completed` only when all seven screening questions are answered; `clearance_recommended` on any "yes", even on a partial screen; ≤12 screen Q/A (`flagged` marks the triggering ones) |
 | `targets`, `macro_method` | `MacroTarget` (current coach) → onboarding fallback | – |
 | `today` | `LoggedFoodEntry` | totals + remaining + ≤16 entries (meal, name, kcal, protein) |
 | `last_7_days` | `LoggedFoodEntry` | per-day totals + averages |
@@ -39,7 +39,14 @@ proxies those delegates and the suite fails if the builder touches them.
   `wearables.days` → `community_posts` → `today.entries` →
   `consultation.answers` → `logged_workouts` → `check_ins.notes` →
   `meal_plan.items` → `coach.recent_messages` → `last_7_days.days` →
-  `plan.recent_completions` → unflagged safety-screen answers → guidelines cut to 500 chars. Averages, totals, flagged screen answers and `clearance_recommended` are always kept.
+  `plan.recent_completions` → unflagged safety-screen answers → guidelines cut to 500 chars →
+  `profile.free_text` → `coach.guidelines` → `targets.notes` → `check_ins` →
+  `upcoming_sessions` → `meal_plan` → `plan.session_exercises` → `weight_trend.points` →
+  injuries cut to 60 chars → screen Q/A cut to 80 chars → flagged answers reduced to "Yes".
+  The cap is measured on the escaped, wrapped block. Averages, totals, the flagged
+  screen questions and `clearance_recommended` (with its instruction) are always kept.
+  If nothing fits, rendering throws `RomanContextBudgetError` and the turn runs in
+  degraded mode.
 - `data_quality.missing` names what the client has not provided
   (`targets`, `plan`, `today_logs`, `intake`, `consultation`, `coach`, `weight`,
   `wearables`), so Roman says so instead of guessing.
