@@ -406,9 +406,12 @@ describe('booking validation matrix (request)', () => {
     expect(notifications.kindsFor('coach-1')).toEqual([NotificationKind.BOOKING_REQUESTED]);
     const push = notifications.pushes.find((p) => p.userId === 'coach-1');
     expect(push).toBeDefined();
-    expect(push?.title).toBe('New session request');
-    expect(push?.body).toContain('Quick Q/A Call');
-    expect(push?.body).toContain('Tue, Oct 6, 10:00 AM PDT');
+    // B-714-1: the lock screen gets the fixed line; the inbox row has the detail.
+    expect(push?.title).toBe('Session request');
+    expect(push?.body).toBe('There is a new session request. Open the app to see it.');
+    const coachRow = notifications.rows.find((r) => r.user_id === 'coach-1');
+    expect(coachRow?.body).toContain('Quick Q/A Call');
+    expect(coachRow?.body).toContain('Tue, Oct 6, 10:00 AM PDT');
     expect(push?.data).toMatchObject({
       kind: 'booking_requested',
       actionScreen: 'CoachBookingInbox',
@@ -1138,8 +1141,9 @@ describe('S-SCHED-3 B-634-1: transitions are fenced on the booking revision, not
     // confirmation names that committed time.
     const ok = await svc.approveSession(COACH, s.id, { expectedStartAt: TUE_1100 });
     expect(ok.status).toBe('scheduled');
-    const confirm = notifications.pushes.find(
-      (p) => p.userId === 'client-1' && p.data.kind === NotificationKind.BOOKING_CONFIRMED,
+    // B-714-1: the time is in the inbox row; the lock screen has no detail.
+    const confirm = notifications.rows.find(
+      (r) => r.user_id === 'client-1' && r.kind === NotificationKind.BOOKING_CONFIRMED,
     );
     expect(confirm?.body).toContain('11:00 AM');
     expect(confirm?.body).not.toContain('10:00 AM');
@@ -1269,8 +1273,9 @@ describe('S-SCHED-3 B-634-3: provisioning never overwrites a newer change', () =
     expect(new Date(final.start_at).toISOString()).toBe(TUE_1100);
     const row = db.sessions.find((r) => r.id === created?.id);
     expect((row?.start_at as Date).toISOString()).toBe(TUE_1100);
-    const confirm = notifications.pushes.find(
-      (p) => p.userId === 'client-1' && p.data.kind === NotificationKind.BOOKING_CONFIRMED,
+    // B-714-1: the time is in the inbox row; the lock screen has no detail.
+    const confirm = notifications.rows.find(
+      (r) => r.user_id === 'client-1' && r.kind === NotificationKind.BOOKING_CONFIRMED,
     );
     expect(confirm?.body).toContain('11:00 AM');
   });

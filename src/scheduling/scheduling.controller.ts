@@ -422,6 +422,8 @@ const LISTABLE_STATUSES: readonly SessionStatus[] = [
   'canceled',
   'completed',
   'no_show',
+  // S-SCHED-5: requests closed at their clear time without an answer.
+  'expired',
 ];
 
 function parseStatusFilter(raw: string | undefined): SessionStatus[] | null {
