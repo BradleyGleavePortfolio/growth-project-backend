@@ -123,6 +123,8 @@ function makePrismaStub(lockedRow: any) {
     dunningState: {
       findFirst: jest.fn(async () => lockedRow),
     },
+    // D2d: the guard's lock-waiver read finds no other live access.
+    clientPurchase: { findMany: jest.fn(async () => []) },
   } as any;
 }
 

@@ -232,7 +232,10 @@ describe('R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once', ()
       const keys = h.stripe.pauseSubscriptionCollection.mock.calls.map(
         (c) => stub(c[0]).idempotencyKey,
       );
-      expect(keys[0]).toBe(keys[1]);
+      // D2d (Sol B-705-2): each attempt holds its own lease fence and key, so
+      // a re-assert is a real Stripe request, never a replay of the first.
+      expect(keys[0]).toContain('dispute_pause:p1:');
+      expect(keys[1]).not.toBe(keys[0]);
       expect(h.dispatcher.dispatchStepDetailed).toHaveBeenCalledTimes(1);
       expect(h.ds()?.reversal_count).toBe(1);
     });
