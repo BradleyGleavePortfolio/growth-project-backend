@@ -2,15 +2,21 @@
 // B-661-3, B-661-9 and C-661-11 in round 6, the B-661-3 list boundary in round 7). Real
 // handler, PurchaseFanoutService, PartialRefundDecisionService, CheckoutService and Prisma
 // on the full schema: xmin, row locks and P2025 are the database's own. Gated on
-// MWB3_TEST_DATABASE_URL (mwb-3-live-tests).
+// MWB3_TEST_DATABASE_URL (mwb-3-live-tests). B-661R2-120: the native first grant erases the
+// spent sheet credentials (B-661-14 / B-661-15, the AUD-SOL-661D-120 acceptance cases) and the
+// C-661-2 backfill (scripts/clear-spent-payment-credentials.ts) keeps every payable attempt.
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { CheckoutService } from '../src/checkout/checkout.service';
-import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
+import {
+  StripeConnectApiService,
+  type StripeSubscriptionCheckoutObject,
+} from '../src/connect/stripe-connect-api.service';
 import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 import { PrismaService } from '../src/prisma.service';
 import { PartialRefundDecisionService } from '../src/regimes/partial-refund-decision.service';
+import { clearSpentPaymentCredentials } from '../scripts/clear-spent-payment-credentials';
 import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
 import { resetPublicSchema } from './utils/reset-public-schema';
 
@@ -462,5 +468,146 @@ liveDescribe('#661 settlement on real PostgreSQL', () => {
       },
       90_000,
     );
+  });
+});
+
+class SubscriptionStripeStub extends StripeConnectApiService {
+  sub: StripeSubscriptionCheckoutObject = { id: 'sub_unused', status: 'active' };
+  retrieveSubscription = jest.fn(async () => this.sub);
+  retrieveSubscriptionForCheckout = jest.fn(async () => this.sub);
+}
+
+liveDescribe('#661 credentials at rest on real PostgreSQL (B-661-14 / B-661-15, C-661-2)', () => {
+  let prisma: PrismaService;
+  let handler: CheckoutWebhookHandlerService;
+  const stripe = new SubscriptionStripeStub();
+  const [CL, CO, RPKG] = ['r2-client', 'r2-coach', 'r2-pkg'];
+  const EK = 'ek_test_r2_canary';
+  async function deliver(e: Ev) {
+    const pre = await handler.prefetchForOuterTx(e);
+    return prisma.$transaction((tx) => handler.handle(e, tx, pre), { timeout: 30_000 });
+  }
+  const row = (id: string) => prisma.clientPurchase.findUniqueOrThrow({ where: { id } });
+  const fanouts = (id: string) => prisma.purchaseFanout.count({ where: { purchase_id: id } });
+  type Over = Partial<Prisma.ClientPurchaseUncheckedCreateInput>;
+  const seed = (id: string, o: Over = {}) =>
+    prisma.clientPurchase.create({ data: { id, client_user_id: CL, coach_user_id: CO,
+      package_id: RPKG, amount_cents: 4900, billing_type: 'recurring', idempotency_key: id,
+      stripe_checkout_session_id: `sub_${id}`, stripe_subscription_id: `sub_${id}`,
+      stripe_customer_id: 'cus_r2', stripe_client_secret: `pi_${id}_secret_canary`,
+      stripe_ephemeral_key: EK, ...o } });
+  const snapshot = (id: string, over: Partial<StripeSubscriptionCheckoutObject> = {}) => ({
+    id: `sub_${id}`, status: 'active', customer: 'cus_r2', default_payment_method: 'pm_saved',
+    cancel_at_period_end: false, current_period_end: Math.floor(Date.now() / 1000) + 86_400, ...over,
+  });
+  const grantEvent = (type: string, id: string, amount: number) =>
+    type === 'invoice.paid'
+      ? ev(type, `in_${id}_${seq}`, { subscription: `sub_${id}`, amount_paid: amount, currency: 'usd' })
+      : ev(type, `sub_${id}`, { ...stripe.sub });
+
+  beforeAll(async () => {
+    prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
+    await prisma.$connect();
+    await resetPublicSchema(prisma);
+    await bootstrapTestSchema(prisma);
+    for (const id of [CL, CO]) {
+      await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: id } });
+    }
+    await prisma.coachPackage.create({ data: { id: RPKG, coach_id: CO, name: 'Live plan',
+      amount_cents: 4900, billing_type: 'recurring' } });
+    const fanout = new PurchaseFanoutService(undefined, undefined, undefined, prisma);
+    handler = new CheckoutWebhookHandlerService(prisma, stripe, undefined, undefined, undefined, fanout);
+  }, 180_000);
+  afterAll(async () => {
+    if (prisma) await prisma.$disconnect();
+  });
+
+  it.each(['invoice.paid', 'customer.subscription.updated'])(
+    '(failed before) %s pays the first invoice: active, entitled, one fanout, both credentials erased in the grant',
+    async (type) => {
+      const id = `paid-${type.replaceAll('.', '-')}`;
+      await seed(id, { stripe_payment_intent_id: `pi_${id}` });
+      stripe.sub = snapshot(id);
+      expect((await deliver(grantEvent(type, id, 4900))).claimed).toBe(true);
+      expect(await row(id)).toMatchObject({ status: 'active', entitlement_active: true,
+        stripe_client_secret: null, stripe_ephemeral_key: null });
+      expect(await fanouts(id)).toBe(1);
+    },
+  );
+
+  it.each(['invoice.paid', 'customer.subscription.updated'])(
+    '(failed before) %s starts a trial whose own card was saved: trialing, trial used, SetupIntent credentials erased',
+    async (type) => {
+      const id = `trial-${type.replaceAll('.', '-')}`;
+      await seed(id, { trial_days: 7, stripe_client_secret: `seti_${id}_secret_canary` });
+      stripe.sub = snapshot(id, { status: 'trialing', trial_start: Math.floor(Date.now() / 1000) });
+      expect((await deliver(grantEvent(type, id, 0))).claimed).toBe(true);
+      const after = await row(id);
+      expect(after).toMatchObject({ status: 'trialing', entitlement_active: true,
+        stripe_client_secret: null, stripe_ephemeral_key: null });
+      expect(after.trial_started_at).toBeInstanceOf(Date);
+      expect(await fanouts(id)).toBe(1);
+    },
+  );
+
+  it.each(['invoice.paid', 'customer.subscription.updated'])(
+    '%s keeps the payable SetupIntent of a trial whose card is not saved (no default; default with the create-time end)',
+    async (type) => {
+      const id = `unsaved-${type.replaceAll('.', '-')}`;
+      const secret = `seti_${id}_secret_canary`;
+      await seed(id, { trial_days: 7, stripe_client_secret: secret });
+      for (const card of [null, 'pm_unconfirmed']) {
+        stripe.sub = snapshot(id, { status: 'trialing', default_payment_method: card,
+          cancel_at_period_end: true, trial_start: Math.floor(Date.now() / 1000) });
+        await deliver(grantEvent(type, id, 0));
+        expect(await row(id)).toMatchObject({ status: 'trialing', entitlement_active: false,
+          trial_started_at: null, stripe_client_secret: secret, stripe_ephemeral_key: EK });
+        expect(await fanouts(id)).toBe(0);
+      }
+    },
+  );
+
+  it('C-661-2 backfill: dry run writes nothing; --apply erases every spent credential in batches, keeps every payable attempt, is idempotent', async () => {
+    await prisma.$executeRaw`TRUNCATE "ClientPurchase" CASCADE`;
+    const started = new Date(Date.now() - 86_400_000);
+    const oneTime = (status: string, entitled = false): Over => ({ billing_type: 'one_time',
+      stripe_subscription_id: null, status, entitlement_active: entitled });
+    const plan = (status: string, entitled: boolean, trial?: Date): Over => ({ status,
+      entitlement_active: entitled, trial_started_at: trial ?? null });
+    const spent: Record<string, Over> = {
+      'ot-paid': oneTime('paid', true), 'ot-refunded': oneTime('refunded'),
+      'ot-expired': oneTime('expired'), 'ot-disputed': oneTime('disputed', true),
+      'ot-key-only': { ...oneTime('canceled'), stripe_client_secret: null },
+      'sub-active': plan('active', true), 'sub-trial-granted': plan('trialing', true, started),
+      'sub-past-due': plan('past_due', true), 'sub-locked-out': plan('past_due', false),
+      'sub-trial-revoked': plan('trialing', false, started), 'sub-canceled': plan('canceled', false),
+      'sub-incomplete-expired': plan('incomplete_expired', false), 'sub-disputed': plan('disputed', false),
+    };
+    const payable: Record<string, Over> = {
+      'ot-pending': oneTime('pending'), 'ot-failed': oneTime('payment_failed'),
+      'sub-pending': plan('pending', false), 'sub-incomplete': plan('incomplete', false),
+      'sub-first-declined': plan('payment_failed', false), 'sub-trial-unsaved': plan('trialing', false),
+    };
+    for (const [id, o] of Object.entries({ ...spent, ...payable })) await seed(id, o);
+    await seed('none-paid', { ...oneTime('paid', true), stripe_client_secret: null, stripe_ephemeral_key: null });
+    const before = await prisma.clientPurchase.findMany({ orderBy: { id: 'asc' } });
+
+    expect(await clearSpentPaymentCredentials(prisma, { apply: false })).toEqual({
+      matched: 13, cleared: 0, applied: false });
+    expect(await prisma.clientPurchase.findMany({ orderBy: { id: 'asc' } })).toEqual(before);
+
+    expect(await clearSpentPaymentCredentials(prisma, { apply: true, batchSize: 4 })).toEqual({
+      matched: 13, cleared: 13, applied: true });
+    const after = new Map((await prisma.clientPurchase.findMany()).map((p) => [p.id, p]));
+    for (const old of before) {
+      const now = after.get(old.id);
+      const keep = old.id in payable || old.id === 'none-paid';
+      expect([old.id, now?.stripe_client_secret, now?.stripe_ephemeral_key]).toEqual(
+        keep ? [old.id, old.stripe_client_secret, old.stripe_ephemeral_key] : [old.id, null, null]);
+      expect(now).toMatchObject({ status: old.status, entitlement_active: old.entitlement_active,
+        trial_started_at: old.trial_started_at, stripe_subscription_id: old.stripe_subscription_id });
+    }
+    expect(await clearSpentPaymentCredentials(prisma, { apply: true })).toEqual({
+      matched: 0, cleared: 0, applied: true });
   });
 });
