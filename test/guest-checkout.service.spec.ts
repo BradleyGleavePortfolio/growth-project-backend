@@ -364,10 +364,10 @@ describe('GuestCheckoutService', () => {
       expect(result.guest_checkout_id).toBe('gc-1');
       expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
       const call = stripe.createPaymentIntent.mock.calls[0][0];
-      // Audit #4 P1-4 — platform 2% + Stripe pass-through (2.9% + 30¢).
-      // 29700 × 0.02 = 594, 29700 × 0.029 = 861.3 → floor 861, plus 30¢
-      // gives 1485.
-      expect(call.applicationFeeAmount).toBe(1485);
+      // S-FEE — separate charges and transfers: no application fee and no
+      // fee estimate on the PaymentIntent. The coach's net (price - actual
+      // Stripe fee - 2%) is transferred once Stripe reports the real fee.
+      expect(call.applicationFeeAmount).toBeUndefined();
       expect(call.metadata.guest_checkout_idempotency_key).toBe(IDEMP_KEY);
       expect(call.metadata.guest_checkout_id).toBe('gc-1');
       expect(call.metadata.package_id).toBe('pkg-1');
@@ -376,22 +376,20 @@ describe('GuestCheckoutService', () => {
       // need them.
       expect(call.metadata.guest_email).toBeUndefined();
       expect(call.metadata.guest_name).toBeUndefined();
-      // Audit #3 P1-10 — destination-charge PaymentIntents carry
-      // on_behalf_of so the connected coach is the merchant of record.
+      // Audit #3 P1-10 — PaymentIntents carry on_behalf_of so the
+      // connected coach is the settlement merchant; S-FEE removed the
+      // destination (funds move by transfer after the charge).
       expect(call.onBehalfOf).toBe('acct_x');
-      expect(call.transferDestination).toBe('acct_x');
+      expect(call.transferDestination).toBeUndefined();
       // P2-3 — `customer` must not be sent as an empty string for guest
       // PaymentIntents; omit it entirely.
       expect(call.customer).toBeUndefined();
     });
 
-    it('clamps platform fee to Stripe minimum of 50¢ plus pass-through', async () => {
-      // Audit #4 P1-4 — 2% of $5 (500¢) = 10¢ (below 50¢ floor → 50¢),
-      // plus Stripe pass-through 500 × 0.029 = 14.5 → floor 14, plus 30¢.
-      // 50 + 14 + 30 = 94¢.
-      prisma.coachPackage.findUnique.mockResolvedValueOnce(
-        makePkg({ amount_cents: 500 }),
-      );
+    it('S-FEE: a small package carries no application fee either', async () => {
+      // The old 50¢ fee floor plus a 2.9% + 30¢ estimate is gone: the
+      // settlement uses Stripe's actual fee and exactly 2%.
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg({ amount_cents: 500 }));
       prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
       prisma.guestCheckout.create.mockResolvedValueOnce({ id: 'gc-2' });
       stripe.createPaymentIntent.mockResolvedValueOnce({
@@ -400,27 +398,17 @@ describe('GuestCheckoutService', () => {
       });
       prisma.guestCheckout.update.mockResolvedValueOnce({});
       await service.createIntent('tok123', baseDto);
-      expect(
-        stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount,
-      ).toBe(94);
+      expect(stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount).toBeUndefined();
     });
 
-    // Audit #4 P1-4/P1-5 — fee table for 2% + (2.9% + 30¢) pass-through,
-    // clamped at the gross. Below the $0.50 minimum charge the request
-    // is rejected up front; see the AMOUNT_BELOW_MIN test below.
-    //   $1.00 (100¢): max(2,50)=50 + floor(2.9)+30=32 → 82¢
-    //   $100  (10000): 200 + 290 + 30 = 520¢
-    //   $50   (5000):  100 + 145 + 30 = 275¢
-    it.each([
-      [100, 82],
-      [5000, 275],
-      [10000, 520],
-    ])(
-      'P1-4 fee table: amount=%i cents → fee=%i cents',
-      async (amount, expectedFee) => {
-        prisma.coachPackage.findUnique.mockResolvedValueOnce(
-          makePkg({ amount_cents: amount }),
-        );
+    // S-FEE — no amount carries an application fee on the PaymentIntent;
+    // the worked-example fee table lives in test/s-fee-charge-settlement.spec.ts.
+    // Below the $0.50 minimum charge the request is rejected up front; see
+    // the AMOUNT_BELOW_MIN test below.
+    it.each([[100], [5000], [10000]])(
+      'S-FEE: amount=%i cents → no application fee on the PaymentIntent',
+      async (amount) => {
+        prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg({ amount_cents: amount }));
         prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
         prisma.guestCheckout.create.mockResolvedValueOnce({
           id: `gc-${amount}`,
@@ -431,9 +419,8 @@ describe('GuestCheckoutService', () => {
         });
         prisma.guestCheckout.update.mockResolvedValueOnce({});
         await service.createIntent('tok123', baseDto);
-        const fee =
-          stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount;
-        expect(fee).toBe(expectedFee);
+        const fee = stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount;
+        expect(fee).toBeUndefined();
       },
     );
 
@@ -1116,11 +1103,11 @@ describe('GuestCheckoutService', () => {
       expect(persistAttempts).toHaveLength(0);
     });
 
-    // Regression — application_fee_amount (2% TGP platform fee plus the
-    // Stripe pass-through estimate) is unchanged by the receipt wiring.
-    // The PI create path runs at createIntent time; receipt resolution
-    // runs at payment_intent.succeeded time and must NOT touch the fee.
-    it('does not disturb the 2% application_fee_amount (regression)', async () => {
+    // Regression — the receipt wiring never adds an application fee (S-FEE
+    // settles the coach net by transfer after the charge). The PI create
+    // path runs at createIntent time; receipt resolution runs at
+    // payment_intent.succeeded time and must NOT touch the fee.
+    it('does not add an application_fee_amount (regression)', async () => {
       prisma.coachPackage.findUnique.mockResolvedValueOnce(makePkg());
       prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
       prisma.guestCheckout.create.mockResolvedValueOnce({
@@ -1133,10 +1120,7 @@ describe('GuestCheckoutService', () => {
       });
       prisma.guestCheckout.update.mockResolvedValueOnce({});
       await service.createIntent('tok123', baseDto);
-      // Same fee as the canonical PI-create test — 1485¢ for $297 package.
-      expect(
-        stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount,
-      ).toBe(1485);
+      expect(stripe.createPaymentIntent.mock.calls[0][0].applicationFeeAmount).toBeUndefined();
     });
   });
 

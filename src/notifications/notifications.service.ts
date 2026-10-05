@@ -1,4 +1,11 @@
-import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 // expo-server-sdk v6 is ESM-only and exports `Expo` as a NAMED export
@@ -9,18 +16,22 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
-import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
+import {
+  UpdateNotificationPreferencesDto,
+  GetNotificationsQueryDto,
+  TimeZoneSource,
+} from './notifications.dto';
+import { usableTimeZone } from './local-time';
 import { NotificationKindValue } from './notification-kind';
-import {
-  NotificationCategory,
-  DEFAULT_NOTIFICATION_CATEGORY,
-} from './notification-category.enum';
-import {
-  PushAbortedError,
-  PushDeliveryResult,
-} from './push-delivery.types';
+import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notification-category.enum';
+import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
+import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
+import { PushContext, lockScreenCopy } from './push/lock-screen-copy';
+import { resolveRecipientTimeZone } from './recipient-timezone';
+import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
+import { describeFailure } from '../observability/log-pii';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
 // passes through. It intentionally contains no PII — only the alert
@@ -48,15 +59,54 @@ export interface CreateNotificationInput {
   payload?: Record<string, unknown>;
   deep_link?: string;
   channel?: 'push' | 'email' | 'inapp';
+  /**
+   * S-FEE round 6 (#627 B-627-6 / C-627-7): narrows the per-process 60 s push
+   * limiter to one logical alert (for example a payout notice id), so two
+   * different alerts of the same kind to the same user are never collapsed.
+   * Unset keeps the default (one push per user per kind per minute).
+   */
+  throttle_key?: string;
+  /**
+   * B-648-7: true when this `push` row duplicates an `inapp` row the same
+   * writer stored for the same event. The row is kept (history) but hidden
+   * from the inbox and the unread counts, and only when that `inapp` row is
+   * found (see PUSH_TWIN_WINDOW_MS): a writer whose inapp write failed or was
+   * switched off keeps its push row visible.
+   */
+  push_twin?: boolean;
 }
+
+/** Whether a user receives a kind on a channel (createNotification's gate). */
+export type NotificationChannelGate = 'enabled' | 'muted' | 'off';
 
 // Rate-limit guard: at most 1 push per user per kind per minute.
 // Tracked in-process (per replica). At scale: move to Redis with a
 // sorted-set TTL key: `notif:rate:<userId>:<kind>`.
 const recentPushes = new Map<string, number>();
 
+/**
+ * Sol B-643-2 / B-648-7: one inbox item per notification. Several writers
+ * stored an `inapp` row plus a `push` twin with the same text. Only a
+ * PROVEN twin is hidden: `inbox_hidden` is set when the writer marks its
+ * `push` row as a twin (createNotification `push_twin`), and the
+ * 20270307000000 migration backfilled stored twins (a `push` row within 10 s
+ * of an `inapp` row for the same user, kind, deep link and text, never a
+ * coach-AI row). A sole `push` row of any kind (coach-AI,
+ * community, assignments) stays visible. Installed builds get this because
+ * only the API response changes.
+ */
+const INBOX_HIDES_PUSH_TWINS = { inbox_hidden: false };
+
+/**
+ * Sol B-648-7 (round 5): a declared twin is hidden only when its counterpart
+ * is proven: an `inapp` row for the same user, kind, deep link and text,
+ * stored in the last hour. Otherwise the push row is the only stored copy and
+ * stays visible.
+ */
+export const PUSH_TWIN_WINDOW_MS = 60 * 60_000;
+
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
   private readonly expo = new Expo();
 
@@ -70,7 +120,24 @@ export class NotificationsService {
     // that construct NotificationsService without DI keep working — when it is
     // absent the empty-state copy falls back to the pinned legacy string.
     @Optional() private voice?: VoicePolicyService,
+    // C-643-2: device delivery for inbox notifications. @Optional so thin
+    // unit tests without DI keep working (sendPush is then a no-op).
+    @Optional() private pushDelivery?: PushDeliveryService,
   ) {}
+
+  /**
+   * C-648-2: NotificationsModule provides PushDeliveryService. If that wiring
+   * is ever lost, every device push would silently stop, so a production
+   * boot fails here instead. (Thin unit tests construct the service without
+   * DI and never run this hook.)
+   */
+  onModuleInit(): void {
+    if (this.pushDelivery) return;
+    const notWired =
+      'NotificationsService started without PushDeliveryService: no inbox notification would reach a device.';
+    if (process.env.NODE_ENV === 'production') throw new Error(notWired);
+    this.logger.error(notWired);
+  }
 
   // ── Preferences ───────────────────────────────────────────────────────────
 
@@ -97,6 +164,10 @@ export class NotificationsService {
         quiet_hours_start: '22:00',
         quiet_hours_end: '06:00',
         timezone: 'America/Los_Angeles',
+        // B-NOTIF-4: no zone has been supplied yet (provenance unset), so
+        // notification copy does not trust the `timezone` default above.
+        timezone_source: null,
+        timezone_updated_at: null,
         // Phase 9 defaults
         muted: false,
         milestone_email: true,
@@ -129,6 +200,9 @@ export class NotificationsService {
         drip_released_email: false,
         drip_released_push: true,
         drip_released_inapp: true,
+        // C05 item 7 — workout reminders default ON (schema default).
+        workout_reminder_push: true,
+        workout_reminder_inapp: true,
         // PR-15A — COACH_NEW_PURCHASE defaults match the migration:
         // selling coach gets push + in-app on every new entitlement,
         // email off (no transactional channel today).
@@ -180,7 +254,9 @@ export class NotificationsService {
       new_client_alerts: data.new_client_alerts,
       quiet_hours_start: data.quiet_hours_start,
       quiet_hours_end: data.quiet_hours_end,
-      timezone: data.timezone,
+      timezone: undefined as string | undefined,
+      timezone_source: undefined as TimeZoneSource | undefined,
+      timezone_updated_at: undefined as Date | undefined,
       // Phase 9 fields
       muted: data.muted,
       milestone_email: data.milestone_email,
@@ -229,7 +305,21 @@ export class NotificationsService {
       nudge_inactive_email: data.nudge_inactive_email,
       nudge_inactive_push: data.nudge_inactive_push,
       nudge_inactive_inapp: data.nudge_inactive_inapp,
+      // C05 item 7 — workout reminders (Settings > Notifications toggle).
+      workout_reminder_push: data.workout_reminder_push,
+      workout_reminder_inapp: data.workout_reminder_inapp,
     };
+
+    // B-NOTIF-4: an explicit zone in a preferences PATCH is validated and
+    // stamped with provenance ('settings'), the same as PUT /timezone.
+    if (data.timezone !== undefined) {
+      const zone = this.validateTimeZone(data.timezone);
+      if (zone) {
+        fields.timezone = zone;
+        fields.timezone_source = 'settings';
+        fields.timezone_updated_at = new Date();
+      }
+    }
 
     // Strip undefined entries so Prisma does not try to set them to NULL.
     const definedFields = Object.fromEntries(
@@ -254,7 +344,9 @@ export class NotificationsService {
     // the keys that changed — not their new values, to avoid storing
     // potentially-sensitive preference data in the audit log.
     const changedKeys = (Object.keys(definedFields) as Array<keyof typeof fields>).filter(
-      (k) => existing == null || (existing as Record<string, unknown>)[k] !== (definedFields as Record<string, unknown>)[k],
+      (k) =>
+        existing == null ||
+        (existing as Record<string, unknown>)[k] !== (definedFields as Record<string, unknown>)[k],
     );
     void this.audit?.write({
       action: AuditAction.NOTIFICATION_PREF_CHANGE,
@@ -272,6 +364,80 @@ export class NotificationsService {
   }
 
   // ── Notification center ───────────────────────────────────────────────────
+
+  /**
+   * B-NOTIF-4: validate an IANA zone name. Returns the trimmed name, or null
+   * for a UTC alias (the mobile app reports 'UTC' when the device zone is
+   * unknown, so it is never stored over a real zone). Throws a 400 with the
+   * stable code TIMEZONE_INVALID for anything the runtime does not know.
+   */
+  private validateTimeZone(raw: string): string | null {
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    let known = false;
+    if (trimmed.length > 0 && trimmed.length <= 64) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: trimmed });
+        known = true;
+      } catch {
+        known = false;
+      }
+    }
+    if (!known) {
+      throw new BadRequestException({
+        code: 'TIMEZONE_INVALID',
+        message:
+          'That time zone is not recognised. Check the date and time settings on your phone, then open the app again.',
+      });
+    }
+    return usableTimeZone(trimmed);
+  }
+
+  /**
+   * B-NOTIF-4 (Opus B-647-1, Sol B-647-2): store the recipient's own zone
+   * with provenance. Idempotent: the same zone again only refreshes
+   * timezone_updated_at. A UTC alias is acknowledged but not stored
+   * (`stored: false`), so a device that cannot report its zone never
+   * overwrites a real one. Creates the preferences row when needed (the
+   * other columns take their schema defaults).
+   */
+  async setTimeZone(
+    userId: string,
+    timezone: string,
+    source: TimeZoneSource = 'device',
+  ): Promise<{
+    timezone: string | null;
+    timezone_source: string | null;
+    timezone_updated_at: Date | null;
+    stored: boolean;
+  }> {
+    const zone = this.validateTimeZone(timezone);
+    if (!zone) {
+      const current = await this.prisma.notificationPreferences.findUnique({
+        where: { user_id: userId },
+        select: { timezone: true, timezone_source: true, timezone_updated_at: true },
+      });
+      const trusted = current?.timezone_updated_at ? current : null;
+      return {
+        timezone: trusted?.timezone ?? null,
+        timezone_source: trusted?.timezone_source ?? null,
+        timezone_updated_at: trusted?.timezone_updated_at ?? null,
+        stored: false,
+      };
+    }
+    const now = new Date();
+    const row = await this.prisma.notificationPreferences.upsert({
+      where: { user_id: userId },
+      create: {
+        user_id: userId,
+        timezone: zone,
+        timezone_source: source,
+        timezone_updated_at: now,
+      },
+      update: { timezone: zone, timezone_source: source, timezone_updated_at: now },
+      select: { timezone: true, timezone_source: true, timezone_updated_at: true },
+    });
+    return { ...row, stored: true };
+  }
 
   /**
    * Write one notification row. Called by every emitter.
@@ -294,23 +460,39 @@ export class NotificationsService {
    * behaviour is unchanged (autocommit on `this.prisma`), so every existing
    * callsite keeps working.
    */
-  async createNotification(
-    input: CreateNotificationInput,
-    tx?: Prisma.TransactionClient,
-  ) {
+  /**
+   * The preference gate createNotification applies, without writing: lets a
+   * caller tell "the user turned this off" (done, nothing to retry) from a
+   * suppressed push (rate limit), which createNotification reports the same
+   * way (null).
+   */
+  async channelGate(
+    userId: string,
+    kind: NotificationKindValue,
+    channel: 'push' | 'email' | 'inapp',
+  ): Promise<NotificationChannelGate> {
+    return this.gateFrom(await this.getPreferences(userId), kind, channel);
+  }
+
+  private gateFrom(
+    prefs: Awaited<ReturnType<NotificationsService['getPreferences']>>,
+    kind: NotificationKindValue,
+    channel: 'push' | 'email' | 'inapp',
+  ): NotificationChannelGate {
+    // Global mute short-circuit.
+    if ((prefs as Record<string, unknown>).muted) return 'muted';
+    // Per-kind channel gate.
+    const enabledKey = `${this._kindToPrefsPrefix(kind)}_${channel}` as keyof typeof prefs;
+    return prefs[enabledKey] === false ? 'off' : 'enabled';
+  }
+
+  async createNotification(input: CreateNotificationInput, tx?: Prisma.TransactionClient) {
     const db = tx ?? this.prisma;
     const prefs = await this.getPreferences(input.user_id, tx);
     const channel = input.channel ?? 'inapp';
 
-    // Global mute short-circuit.
-    if ((prefs as Record<string, unknown>).muted) {
-      return null;
-    }
-
-    // Per-kind channel gate.
-    const enabledKey = `${this._kindToPrefsPrefix(input.kind)}_${channel}` as keyof typeof prefs;
-    const enabled = prefs[enabledKey];
-    if (enabled === false) {
+    // Global mute and per-kind channel gate (shared with channelGate).
+    if (this.gateFrom(prefs, input.kind, channel) !== 'enabled') {
       return null;
     }
 
@@ -329,28 +511,110 @@ export class NotificationsService {
     // so generic per-process push throttling is both unnecessary and unsafe —
     // its state cannot roll back with the transaction.
     if (channel === 'push' && !tx) {
-      const key = `${input.user_id}:${input.kind}`;
+      const key = input.throttle_key
+        ? `${input.user_id}:${input.kind}:${input.throttle_key}`
+        : `${input.user_id}:${input.kind}`;
       const last = recentPushes.get(key) ?? 0;
       const now = Date.now();
       if (now - last < 60_000) {
-        this.logger.debug(
-          `push rate-limited: user=${input.user_id} kind=${input.kind}`,
-        );
+        this.logger.debug(`push rate-limited: user=${input.user_id} kind=${input.kind}`);
         return null;
       }
       recentPushes.set(key, now);
     }
 
+    const body = input.body.slice(0, 160);
+    // B-648-7: a writer that stores a `push` twin next to the `inapp` row of
+    // the same event says so, and the twin stays out of the inbox and the
+    // unread counts once that `inapp` row is found. Nothing is hidden by kind.
+    const inboxHidden =
+      channel === 'push' &&
+      input.push_twin === true &&
+      (await this.inboxCounterpartExists(db, input, body));
+
     return db.notification.create({
       data: {
         user_id: input.user_id,
         kind: input.kind,
-        body: input.body.slice(0, 160),
+        body,
         payload: (input.payload ?? undefined) as Prisma.InputJsonValue | undefined,
         deep_link: input.deep_link,
         channel,
+        ...(inboxHidden ? { inbox_hidden: true } : {}),
       },
     });
+  }
+
+  /**
+   * Send an inbox notification to the recipient's phone (C-643-2).
+   *
+   * The inbox row is written separately with `createNotification({ channel:
+   * 'inapp' })`; this call writes NO inbox row, so each event is one inbox
+   * item. It queues one PushOutbox row (B-NOTIF-5) and returns at once: the
+   * request never waits on Expo (B-648-6). Gated by the same preferences as
+   * the row (`muted`, `<kind>_push`). Quiet hours (OR-113-5) are applied in
+   * the recipient's zone. The lock screen gets quiet copy
+   * (lock-screen-copy.ts: no health details, no message text); `data`
+   * carries only tap routing (the screen, the deep link and ids).
+   *
+   * `dedupe_key` makes an event exactly once (booking events); without it,
+   * repeats in the same conversation (same kind and deep link) collapse.
+   * With `tx` the push commits or rolls back with the caller's write.
+   * Never throws without `tx`; returns null when suppressed or unwired.
+   */
+  async sendPush(
+    input: {
+      user_id: string;
+      kind: NotificationKindValue;
+      body: string;
+      deep_link?: string;
+      context?: PushContext | null;
+      dedupe_key?: string | null;
+      urgent?: boolean;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<EnqueueResult | null> {
+    if (!this.pushDelivery) return null;
+    try {
+      const prefs = await this.getPreferences(input.user_id, tx);
+      // Same rule the push worker re-checks right before sending (B-648-9).
+      if (!pushAllowedByPreferences(prefs as Record<string, unknown>, input.kind)) return null;
+      const copy = lockScreenCopy(input.kind, input.body, input.context);
+      const timeZone =
+        input.context?.timeZone ??
+        (await resolveRecipientTimeZone(tx ?? this.prisma, input.user_id, input.context?.sessionId));
+      return await this.pushDelivery.enqueue(
+        {
+          userId: input.user_id,
+          kind: input.kind,
+          title: copy.title,
+          body: copy.body,
+          data: pushTapData(
+            input.kind,
+            input.deep_link,
+            input.context?.sessionId,
+            await this.bookingRole(
+              tx ?? this.prisma,
+              input.kind,
+              input.user_id,
+              input.context?.sessionId,
+            ),
+          ),
+          context: input.context ?? null,
+          dedupeKey: input.dedupe_key ?? null,
+          collapseKey: `${input.kind}:${input.deep_link ?? ''}`,
+          urgent: input.urgent,
+          timeZone,
+        },
+        tx,
+      );
+    } catch (err) {
+      if (tx) throw err;
+      this.logger.warn(
+        `sendPush skipped: user=${input.user_id} kind=${input.kind} error=${err instanceof Error ? err.name : 'unknown'}`,
+      );
+      return null;
+    }
   }
 
   /**
@@ -359,7 +623,7 @@ export class NotificationsService {
    */
   async listNotifications(userId: string, query: GetNotificationsQueryDto) {
     const limit = Math.min(query.limit ?? 20, 100);
-    const where: Record<string, unknown> = { user_id: userId };
+    const where: Record<string, unknown> = { user_id: userId, ...INBOX_HIDES_PUSH_TWINS };
 
     if (query.filter === 'unread') {
       where.read_at = null;
@@ -389,7 +653,7 @@ export class NotificationsService {
     const nextCursor = hasNextPage ? items[items.length - 1].id : null;
 
     const unreadCount = await this.prisma.notification.count({
-      where: { user_id: userId, read_at: null },
+      where: { user_id: userId, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
     });
 
     // Phase 2: when the panel is empty, attach the Roman empty-state copy +
@@ -459,7 +723,7 @@ export class NotificationsService {
    */
   async getUnreadCount(userId: string): Promise<number> {
     return this.prisma.notification.count({
-      where: { user_id: userId, read_at: null },
+      where: { user_id: userId, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
     });
   }
 
@@ -510,10 +774,7 @@ export class NotificationsService {
       await this.pollReceipts(tickets, coachId);
       return true;
     } catch (err) {
-      this.logger.error(
-        `pushToCoach failed for coach=${coachId}: ${(err as Error).message}`,
-        err,
-      );
+      this.logger.error(`pushToCoach failed for coach=${coachId}: ${describeFailure(err)}`);
       return false;
     }
   }
@@ -553,9 +814,7 @@ export class NotificationsService {
         // R17 / Hard Rule — no raw new Error. Throw a typed domain error
         // carrying a stable code so observability can branch on the
         // abort path without string-matching.
-        throw new PushAbortedError(
-          typeof reason === 'string' ? reason : undefined,
-        );
+        throw new PushAbortedError(typeof reason === 'string' ? reason : undefined);
       }
     };
     try {
@@ -592,16 +851,18 @@ export class NotificationsService {
       // the message and we must NOT report delivered=true.
       for (const ticket of tickets) {
         if (ticket.status === 'error') {
-          this.logger.error(
-            `pushToUser ticket error for user ${userId}: ${ticket.message}`,
-          );
+          // C-611-17: Expo's ticket message quotes the push token
+          // ("ExponentPushToken[...] is not a registered ..."); log and
+          // return its error code only.
+          const errorCode = ticket.details?.error ?? 'unknown';
+          this.logger.error(`pushToUser ticket error for user ${userId}: ${errorCode}`);
           // Poll receipts on a best-effort basis so stale tokens get
           // cleared even though we report failure to the caller.
           await this.pollReceipts(tickets, userId);
           return {
             delivered: false,
             code: 'ticket-error',
-            detail: ticket.message,
+            detail: errorCode,
           };
         }
       }
@@ -611,10 +872,11 @@ export class NotificationsService {
       await this.pollReceipts(tickets, userId);
       return { delivered: true, code: 'delivered' };
     } catch (err) {
-      // R17: log the raw err for ops, return a scrubbed typed result to
-      // the caller. The `detail` field carries only the Error.name so we
-      // never leak stack traces or query text.
-      this.logger.error(`Push notification failed for user ${userId}`, err);
+      // R17: return a scrubbed typed result to the caller. The `detail`
+      // field carries only the Error.name so we never leak stack traces or
+      // query text. B-700-1: the log line holds the class and code only
+      // (an Expo error message quotes the push token).
+      this.logger.error(`Push notification failed for user ${userId}: ${describeFailure(err)}`);
       if (err instanceof PushAbortedError) {
         return { delivered: false, code: 'aborted', detail: err.name };
       }
@@ -630,10 +892,7 @@ export class NotificationsService {
    * Poll Expo receipts for a batch of tickets and clear any tokens that
    * Expo reports as DeviceNotRegistered. Called after every pushToCoach send.
    */
-  private async pollReceipts(
-    tickets: ExpoPushTicket[],
-    userId: string,
-  ): Promise<void> {
+  private async pollReceipts(tickets: ExpoPushTicket[], userId: string): Promise<void> {
     const receiptIds: string[] = [];
     for (const ticket of tickets) {
       if ('id' in ticket) receiptIds.push(ticket.id);
@@ -652,12 +911,14 @@ export class NotificationsService {
                 data: { expo_push_token: null },
               });
             }
-            this.logger.error('Push receipt error:', receipt.message);
+            this.logger.error(
+              `Push receipt error for user ${userId}: ${receipt.details?.error ?? 'unknown'}`,
+            );
           }
         }
       }
     } catch (err) {
-      this.logger.warn('Failed to poll push receipts', err);
+      this.logger.warn(`Failed to poll push receipts: ${describeFailure(err)}`);
     }
   }
 
@@ -684,7 +945,7 @@ export class NotificationsService {
         // Unique constraint violation = window already claimed by another process.
         return false;
       }
-      this.logger.error('claimDigestWindow unexpected error', err);
+      this.logger.error(`claimDigestWindow unexpected error: ${describeFailure(err)}`);
       throw err;
     }
   }
@@ -733,56 +994,104 @@ export class NotificationsService {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  /** B-648-7: the `inapp` row a declared push twin duplicates. A failed read proves nothing. */
+  private async inboxCounterpartExists(
+    db: Pick<PrismaService, 'notification'> | Prisma.TransactionClient,
+    input: CreateNotificationInput,
+    body: string,
+  ): Promise<boolean> {
+    try {
+      const twin = await db.notification.findFirst({
+        where: {
+          user_id: input.user_id,
+          kind: input.kind,
+          channel: 'inapp',
+          deep_link: input.deep_link ?? null,
+          body,
+          created_at: { gte: new Date(Date.now() - PUSH_TWIN_WINDOW_MS) },
+        },
+        select: { id: true },
+      });
+      return twin !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * C-648-3: which side of a booking the recipient is on, so the tap opens
+   * that side's session screen. Null for non-booking kinds, a missing
+   * session or a failed read (the tap then opens the notification center).
+   */
+  private async bookingRole(
+    db: Pick<PrismaService, 'coachingSession'> | Prisma.TransactionClient,
+    kind: string,
+    userId: string,
+    sessionId: string | undefined,
+  ): Promise<'client' | 'coach' | null> {
+    if (!sessionId || notificationPrefsPrefix(kind) !== 'booking') return null;
+    try {
+      const session = await db.coachingSession.findUnique({
+        where: { id: sessionId },
+        select: { coach_id: true, client_id: true },
+      });
+      if (!session) return null;
+      if (session.coach_id === userId) return 'coach';
+      if (session.client_id === userId) return 'client';
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Maps a NotificationKind value to the base preferences key prefix.
    * E.g. 'milestone_reached' → 'milestone'
    */
   private _kindToPrefsPrefix(kind: string): string {
-    // NUDGE-V1 — most specific match wins. Nudge kinds are 'nudge_<trigger>'
-    // so the prefs prefix maps 1:1 (e.g. nudge_missed_checkin_inapp). Tested
-    // separately so a stray rename here fails the suite loudly.
-    if (kind === 'nudge_missed_checkin') return 'nudge_missed_checkin';
-    // Streak-broken kind maps to 'practice_paused' column prefix (doctrine).
-    if (kind === 'nudge_streak_broken') return 'nudge_practice_paused';
-    if (kind === 'nudge_onboarding_abandoned') return 'nudge_onboarding_abandoned';
-    if (kind === 'nudge_inactive') return 'nudge_inactive';
-    if (kind.startsWith('milestone')) return 'milestone';
-    if (kind.startsWith('message')) return 'message';
-    if (kind.startsWith('missed_checkin')) return 'missed_checkin';
-    if (kind.startsWith('weight_trend')) return 'weight_trend';
-    if (kind.startsWith('checkin_submitted')) return 'checkin_submitted';
-    if (kind.startsWith('build_week')) return 'build_week';
-    if (kind.startsWith('coach_alert')) return 'coach_alert';
-    if (kind.startsWith('booking')) return 'booking';
-    // PR-10 — DRIP_RELEASED (buyer content-unlocked alert). Routes to
-    // the `drip_released_*` prefs columns (migration
-    // 20261205000000_pr10_scheduled_drop_retry_lock); defaults are
-    // push+inapp ON, email OFF. Without this branch the kind fell
-    // through to the 'digest' safe-default whose _inapp + _push
-    // defaults are FALSE, silently short-circuiting every in-app row
-    // write — the PR-10 R1 P2 fix.
-    if (kind.startsWith('drip_released')) return 'drip_released';
-    // PR-15A — COACH_NEW_PURCHASE routes to the dedicated
-    // coach_new_purchase_* prefs columns (migration
-    // 20261208000000_pr15_coach_new_purchase_prefs); defaults push+inapp
-    // ON, email OFF. Without this branch the kind falls through to the
-    // 'digest' safe-default (push+inapp default FALSE), silently
-    // short-circuiting every COACH_NEW_PURCHASE row write — the exact
-    // PR-10 R1 P2 bug the brief calls out.
-    if (kind.startsWith('coach_new_purchase')) return 'coach_new_purchase';
-    // Roman P4 (Option C) — FIRST_PAYMENT. Code-level kind with NO
-    // NotificationPreferences migration (the first-payment celebration is a
-    // once-ever coach moment that is not opt-out-able), so this prefix has no
-    // matching `first_payment_*` prefs columns. Returning a dedicated prefix
-    // (rather than letting it fall through to the 'digest' safe-default, whose
-    // _push / _inapp defaults are FALSE) means the per-kind gate reads
-    // `prefs['first_payment_<channel>']` which is `undefined` — and the gate
-    // only blocks on an explicit `=== false`, so the row is written. Without
-    // this branch FIRST_PAYMENT would silently short-circuit on the 'digest'
-    // false defaults (the PR-10 R1 P2 silent-drop bug, 50-Failures #36).
-    if (kind.startsWith('first_payment')) return 'first_payment';
-    if (kind.startsWith('fasting')) return 'fasting';
-    if (kind.includes('digest')) return 'digest';
-    return 'digest'; // safe default — falls back to digest prefs
+    // B-NOTIF-6: one mapping shared with the push worker (push-preferences.ts).
+    return notificationPrefsPrefix(kind);
   }
+}
+
+/**
+ * The booking tap targets, the same contract as the S-SCHED booking
+ * emitter (#634) and the mobile push router (#325): a client opens the
+ * session in their calendar, a coach opens the booking inbox, both with
+ * `actionParams.sessionId`.
+ */
+export const BOOKING_PUSH_SCREEN = { client: 'CalendarSession', coach: 'CoachBookingInbox' } as const;
+
+/**
+ * Tap routing a device push carries (ids and enums only, never user text).
+ * C-648-3: a booking push opens that session (BOOKING_PUSH_SCREEN for the
+ * recipient's side, with `actionParams.sessionId`); a build without that
+ * route falls back to the notification center (the mobile tap router's
+ * unknown-screen rule). A message opens Messages; everything else opens the
+ * notification center. `deepLink` and the top-level `sessionId` stay for
+ * builds that read them.
+ */
+export function pushTapData(
+  kind: string,
+  deepLink: string | undefined,
+  sessionId: string | undefined,
+  bookingRole: 'client' | 'coach' | null = null,
+): Record<string, unknown> {
+  const prefix = notificationPrefsPrefix(kind);
+  const booking =
+    prefix === 'booking' &&
+    bookingRole !== null &&
+    typeof sessionId === 'string' &&
+    sessionId.length > 0;
+  const actionScreen = booking
+    ? BOOKING_PUSH_SCREEN[bookingRole]
+    : prefix === 'message'
+      ? 'Messages'
+      : 'NotificationCenter';
+  return {
+    actionScreen,
+    ...(booking ? { actionParams: { sessionId } } : {}),
+    ...(deepLink ? { deepLink } : {}),
+    ...(sessionId ? { sessionId } : {}),
+  };
 }

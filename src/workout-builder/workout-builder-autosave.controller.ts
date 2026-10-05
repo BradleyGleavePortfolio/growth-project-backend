@@ -75,7 +75,9 @@ export class WorkoutBuilderAutosaveController {
     status: 409,
     description:
       'autosave_lock_stale (stale lock_token) or autosave_conflict_retry ' +
-      '(stale base_revision_index / serialization conflict).',
+      '(stale base_revision_index / serialization conflict). Both carry code, ' +
+      'the current head_revision_index and a fresh lock_token, except a ' +
+      'serialization conflict (plain message, no head to report).',
   })
   autosaveBatch(
     @Req() req: AuthedRequest,
@@ -106,7 +108,10 @@ export class WorkoutBuilderAutosaveController {
   })
   @ApiResponse({
     status: 409,
-    description: 'autosave_conflict_retry — serialization conflict.',
+    description:
+      'autosave_conflict_retry — serialization conflict; undo_head_moved — the ' +
+      'optional expected_head_index no longer matches the head (body carries ' +
+      'the current head_revision_index and a fresh lock_token).',
   })
   undo(
     @Req() req: AuthedRequest,

@@ -16,6 +16,7 @@ const FLAG_ENVS = [
   'FEATURE_COMMUNITY_WEARABLE_PROMPTS',
   'FEATURE_COMMUNITY_CLASSROOM_POSTS',
   'FEATURE_COMMUNITY_EVENTS',
+  'FEATURE_COACHLESS_HOME',
 ] as const;
 
 describe('FeatureFlagsService', () => {
@@ -54,7 +55,20 @@ describe('FeatureFlagsService', () => {
       coach_community_wearable_prompts: false,
       community_classroom: false,
       community_events: false,
+      coachless_home: false,
+      messaging_core_v2: false,
     });
+  });
+
+  // A1-COACHLESS — client-only kill switch, independent of the community gate.
+  it('coachless_home is ON only for a student when FEATURE_COACHLESS_HOME is exactly "true"', () => {
+    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(false);
+    process.env.FEATURE_COACHLESS_HOME = 'TRUE';
+    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(false);
+    process.env.FEATURE_COACHLESS_HOME = 'true';
+    expect(service.evaluate({ userId: 'u1', role: 'student' }).coachless_home).toBe(true);
+    expect(service.evaluate({ userId: 'c1', role: 'coach' }).coachless_home).toBe(false);
+    expect(service.evaluate({ userId: 'o1', role: 'owner' }).coachless_home).toBe(false);
   });
 
   it('resolves per-flag env gates when the master gate is globally on', () => {

@@ -12,6 +12,7 @@ import { RolesGuard } from './auth/roles.guard';
 import { PilotCoachAllowlistGuard } from './common/feature-flag/pilot-coach-allowlist.guard';
 import { ProfileModule } from './profile/profile.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { EngagementModule } from './engagement/engagement.module';
 import { FoodModule } from './food/food.module';
 import { LogModule } from './log/log.module';
 import { WorkoutModule } from './workout/workout.module';
@@ -35,6 +36,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { KmsModule } from './common/kms/kms.module';
 import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
+import { CoachlessModule } from './coachless/coachless.module';
 import { InviteGrantModule } from './invite-grant/invite-grant.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { MessagesSafetyModule } from './messages-safety/messages-safety.module';
@@ -106,6 +108,7 @@ import { TeamModule } from './team/team.module';
 import { SubCoachesModule } from './sub-coaches/sub-coaches.module';
 import { TalentMarketplaceModule } from './talent-marketplace/talent-marketplace.module';
 import { CoachConnectModule } from './coach-connect/coach-connect.module';
+import { CoachMoneyModule } from './coach-money/coach-money.module';
 // Concierge scheduling (PR #142) — private 1:1 coach <-> client booking
 // with optional Google Calendar two-way sync. See
 // docs/rfcs/142-concierge-scheduling.md.
@@ -190,6 +193,7 @@ import { WearablesModule } from './wearables/wearables.module';
     ExtensionPairModule,
     ProfileModule,
     OnboardingModule,
+    EngagementModule,
     FoodModule,
     LogModule,
     WorkoutModule,
@@ -227,6 +231,8 @@ import { WearablesModule } from './wearables/wearables.module';
     WaterModule,
     HealthModule,
     InviteCodesModule,
+    // A1-COACHLESS — coachless Home, featured-coach config, coach-code redemption.
+    CoachlessModule,
     // Clinic C01 — invite-code → package grants, free-package claims, revoke.
     InviteGrantModule,
     MessagingModule,
@@ -366,6 +372,7 @@ import { WearablesModule } from './wearables/wearables.module';
     SubCoachesModule,
     TalentMarketplaceModule,
     CoachConnectModule,
+    CoachMoneyModule,
     // Concierge scheduling — private 1:1 coach<->client booking with
     // optional Google Calendar two-way sync. Stub adapters by default
     // so the module loads without Google OAuth credentials configured;

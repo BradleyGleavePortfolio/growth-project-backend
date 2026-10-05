@@ -10,6 +10,8 @@ import {
   CoachPurchasesController,
 } from './checkout.controller';
 import { CheckoutService } from './checkout.service';
+import { SubscriptionCheckoutController } from './subscription-checkout.controller';
+import { SubscriptionCheckoutService } from './subscription-checkout.service';
 import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Module } from './dunning-v2/dunning-v2.module';
@@ -18,7 +20,12 @@ import {
   CoachPaymentOpsController,
 } from './payment-ops.controller';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { AdminRefundReversalController } from './refund-reversal-admin.controller';
+import { RefundTransferReversalScheduler } from './refund-transfer-reversal.scheduler';
+import { CronLeaseService } from './cron-lease.service';
+import { SettlementSweepCron } from './settlement-sweep.cron';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+import { PayoutNoticeService } from './payout-notice.service';
 import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
 
 // CheckoutModule — Stripe Checkout session minting and ClientPurchase
@@ -73,16 +80,25 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
   controllers: [
     CheckoutController,
     CoachPurchasesController,
+    SubscriptionCheckoutController,
     AdminPaymentOpsController,
+    AdminRefundReversalController,
     CoachPaymentOpsController,
   ],
   providers: [
     CheckoutService,
+    SubscriptionCheckoutService,
     CheckoutWebhookHandlerService,
     PurchaseSplitHandlerService,
     DunningService,
     RefundDisputeHandlerService,
+    RefundTransferReversalScheduler,
     AdminAnalyticsService,
+    // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
+    CronLeaseService,
+    SettlementSweepCron,
+    // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
+    PayoutNoticeService,
   ],
   exports: [
     CheckoutService,

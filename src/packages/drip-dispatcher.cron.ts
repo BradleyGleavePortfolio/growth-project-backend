@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import type { ScheduledDrop } from '@prisma/client';
+import type { Prisma, ScheduledDrop } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AssignableAssetResolverRegistry } from './asset-resolvers/assignable-asset-resolver.registry';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -46,6 +46,9 @@ import { NotificationKind } from '../notifications/notification-kind';
 // whose materialised_ref is set (PR-7's at-least-once gate).
 
 const TICK_BATCH_SIZE = 250;
+// C-640-14: the most drops one content item takes from a tick while other
+// content is due (it gets the spare capacity back when nothing else waits).
+const PER_CONTENT_TICK_SHARE = 50;
 const MAX_ATTEMPTS = 5;
 const STALE_CLAIM_MS = 5 * 60 * 1000; // 5 minutes — crashed-worker recovery
 // Exponential backoff schedule (decision #10). attempt_count is incremented
@@ -180,45 +183,75 @@ export class DripDispatcherCron {
    * Ordered by fire_at ASC so the oldest-due drop drains first and a
    * backlog is processed FIFO.
    */
-  private findDue(now: Date): Promise<ScheduledDrop[]> {
-    const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS);
-    return this.prisma.scheduledDrop.findMany({
-      where: {
-        materialised_ref: null,
-        fire_at: { lte: now, not: null },
-        attempt_count: { lt: MAX_ATTEMPTS },
-        OR: [
-          {
-            // Normal claim path.
-            status: 'pending',
-            AND: [
-              {
-                OR: [
-                  { next_retry_at: null },
-                  { next_retry_at: { lte: now } },
-                ],
-              },
-              {
-                OR: [
-                  { locked_at: null },
-                  { locked_at: { lte: staleBefore } },
-                ],
-              },
-            ],
-          },
-          {
-            // Stranded-dispatching reclaim path. A 'dispatching' row
-            // whose claim is older than STALE_CLAIM_MS belongs to a
-            // worker that crashed and never finished the dispatch — we
-            // take it back so the buyer gets their content.
-            status: 'dispatching',
-            locked_at: { lte: staleBefore },
-          },
-        ],
-      },
+  private async findDue(now: Date): Promise<ScheduledDrop[]> {
+    const where = this.dueWhere(now);
+    const oldest = await this.prisma.scheduledDrop.findMany({
+      where,
       orderBy: { fire_at: 'asc' },
       take: TICK_BATCH_SIZE,
     });
+    // Everything due fits in this tick: nothing to share.
+    if (oldest.length < TICK_BATCH_SIZE) return oldest;
+    // S-MWB-3 C-640-14: one big push (a whole program to up to 2,000 buyers)
+    // must not hold every other coach's drops for many ticks. A content item
+    // with more than its fair share of this batch is capped at that share
+    // while other content is waiting; the spare capacity goes back to it.
+    const perContent = new Map<string, number>();
+    for (const d of oldest) perContent.set(d.content_id, (perContent.get(d.content_id) ?? 0) + 1);
+    const heavy = Array.from(perContent.entries())
+      .filter(([, n]) => n > PER_CONTENT_TICK_SHARE)
+      .map(([contentId]) => contentId);
+    if (heavy.length === 0) return oldest;
+    const others = await this.prisma.scheduledDrop.findMany({
+      where: { AND: [where, { content_id: { notIn: heavy } }] },
+      orderBy: { fire_at: 'asc' },
+      take: TICK_BATCH_SIZE,
+    });
+    return fairDueBatch(oldest, others, new Set(heavy));
+  }
+
+  /** The SQL gate for a due drop (see findDue). */
+  private dueWhere(now: Date): Prisma.ScheduledDropWhereInput {
+    const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS);
+    return {
+      materialised_ref: null,
+      fire_at: { lte: now, not: null },
+      attempt_count: { lt: MAX_ATTEMPTS },
+      // Account deletion (backend #608 B-608-5): never deliver to, or on
+      // behalf of, a deleted account even if a drop escaped cancellation.
+      client_purchase: {
+        client: { deleted_at: null },
+        coach: { deleted_at: null },
+      },
+      OR: [
+        {
+          // Normal claim path.
+          status: 'pending',
+          AND: [
+            {
+              OR: [
+                { next_retry_at: null },
+                { next_retry_at: { lte: now } },
+              ],
+            },
+            {
+              OR: [
+                { locked_at: null },
+                { locked_at: { lte: staleBefore } },
+              ],
+            },
+          ],
+        },
+        {
+          // Stranded-dispatching reclaim path. A 'dispatching' row
+          // whose claim is older than STALE_CLAIM_MS belongs to a
+          // worker that crashed and never finished the dispatch — we
+          // take it back so the buyer gets their content.
+          status: 'dispatching',
+          locked_at: { lte: staleBefore },
+        },
+      ],
+    };
   }
 
   /**
@@ -474,8 +507,10 @@ export class DripDispatcherCron {
       // call must not cascade and skip the other two — a transient
       // prisma.notification.create blip would otherwise silently drop
       // the push send + the second DB row write.
+      // B-648-7: the push row below is hidden only behind a stored inapp row.
+      let inappStored = false;
       try {
-        await this.notifications.createNotification({
+        const inapp = await this.notifications.createNotification({
           user_id: clientUserId,
           kind: NotificationKind.DRIP_RELEASED,
           body,
@@ -483,6 +518,7 @@ export class DripDispatcherCron {
           deep_link: 'tgp://client/library',
           channel: 'inapp',
         });
+        inappStored = inapp !== null;
       } catch (err) {
         this.logger.warn(
           `drip-dispatcher in-app notification failed drop=${drop.id} client=${clientUserId}: ${(err as Error).message}`,
@@ -507,6 +543,8 @@ export class DripDispatcherCron {
           payload,
           deep_link: 'tgp://client/library',
           channel: 'push',
+          // B-648-7: a twin only when the inapp row above was stored.
+          push_twin: inappStored,
         });
       } catch (err) {
         this.logger.warn(
@@ -633,7 +671,48 @@ export class DripDispatcherCron {
 // Constants exported for tests.
 export const __dripDispatcherConsts = {
   TICK_BATCH_SIZE,
+  PER_CONTENT_TICK_SHARE,
   MAX_ATTEMPTS,
   STALE_CLAIM_MS,
   BACKOFF_MS,
 };
+
+/**
+ * C-640-14: build one tick's batch from the oldest due drops (`oldest`) and
+ * the oldest due drops of every other content item (`others`, which excludes
+ * the `heavy` content ids). Each heavy content item gets at most
+ * PER_CONTENT_TICK_SHARE drops while other content waits; others fill the
+ * rest; any spare capacity goes back to the heavy items, oldest first. The
+ * result keeps the FIFO (fire_at ascending) order and never exceeds
+ * TICK_BATCH_SIZE.
+ */
+export function fairDueBatch(
+  oldest: ScheduledDrop[],
+  others: ScheduledDrop[],
+  heavy: ReadonlySet<string>,
+): ScheduledDrop[] {
+  const picked = new Map<string, ScheduledDrop>();
+  const taken = new Map<string, number>();
+  const overflow: ScheduledDrop[] = [];
+  for (const d of oldest) {
+    if (!heavy.has(d.content_id)) continue;
+    const n = taken.get(d.content_id) ?? 0;
+    if (n < PER_CONTENT_TICK_SHARE) {
+      picked.set(d.id, d);
+      taken.set(d.content_id, n + 1);
+    } else {
+      overflow.push(d);
+    }
+  }
+  for (const d of others) {
+    if (picked.size >= TICK_BATCH_SIZE) break;
+    if (heavy.has(d.content_id) || picked.has(d.id)) continue;
+    picked.set(d.id, d);
+  }
+  for (const d of overflow) {
+    if (picked.size >= TICK_BATCH_SIZE) break;
+    picked.set(d.id, d);
+  }
+  const at = (d: ScheduledDrop) => (d.fire_at ? d.fire_at.getTime() : Number.POSITIVE_INFINITY);
+  return Array.from(picked.values()).sort((a, b) => at(a) - at(b));
+}

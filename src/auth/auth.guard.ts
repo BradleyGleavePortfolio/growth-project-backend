@@ -11,6 +11,11 @@ import { JwksVerifierService } from './jwks.service';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { ALLOW_DELETION_SCHEDULED_KEY } from '../common/decorators/allow-deletion-scheduled.decorator';
 import { PtmService } from '../ptm/ptm.service';
+import {
+  ACCOUNT_DELETED_BODY,
+  findDeletionReceipt,
+  isReceiptLive,
+} from '../account-deletion/deletion-receipt';
 
 /**
  * JwtAuthGuard — Supabase ES256 token validation via JWKS.
@@ -107,7 +112,19 @@ export class JwtAuthGuard implements CanActivate {
     });
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      // B-608-10: a finalized account whose auth identity was removed keeps
+      // a keyed completion receipt for a limited time. The person's own
+      // token then gets the terminal 403 instead of a bare 401. Any other
+      // unknown subject stays a 401.
+      const receipt = await findDeletionReceipt(this.prisma, supabaseId);
+      if (receipt && isReceiptLive(receipt.deleted_at)) {
+        throw new ForbiddenException({ ...ACCOUNT_DELETED_BODY });
+      }
+      throw new UnauthorizedException({
+        statusCode: 401,
+        code: 'USER_NOT_FOUND',
+        message: 'User not found',
+      });
     }
 
     // GDPR lifecycle gate. A scrubbed account (deleted_at set) is fully
@@ -118,7 +135,9 @@ export class JwtAuthGuard implements CanActivate {
     // logged-in client can still cancel the schedule but cannot keep
     // mutating data during the grace window.
     if (user.deleted_at) {
-      throw new ForbiddenException('Account has been deleted');
+      // `code` is the terminal signal the mobile app keys on to finish its
+      // deletion flow and sign out (mobile #313 B-313-5).
+      throw new ForbiddenException({ ...ACCOUNT_DELETED_BODY });
     }
     if (user.deletion_scheduled_at) {
       const allowDuringDeletion = this.reflector.getAllAndOverride<boolean>(
@@ -165,9 +184,7 @@ export class JwtAuthGuard implements CanActivate {
 
     // Overflow guard: prune oldest 50% before inserting.
     if (appOpenDedup.size >= APP_OPEN_DEDUP_MAX_SIZE) {
-      const entries = Array.from(appOpenDedup.entries()).sort(
-        ([, a], [, b]) => a - b,
-      );
+      const entries = Array.from(appOpenDedup.entries()).sort(([, a], [, b]) => a - b);
       const pruneCount = Math.floor(entries.length / 2);
       for (let i = 0; i < pruneCount; i++) {
         appOpenDedup.delete(entries[i][0]);

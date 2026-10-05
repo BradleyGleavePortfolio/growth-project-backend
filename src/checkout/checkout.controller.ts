@@ -259,7 +259,8 @@ export class CheckoutController {
   // Response: `{ drops: BuyerDropView[] }` (envelope). The mobile unwrap
   // helper accepts envelope OR bare array but we always ship the envelope.
   //
-  // Filter applied at the SQL WHERE: status IN ('pending','due','fired').
+  // Filter applied at the SQL WHERE: status IN ('pending','due','dispatching',
+  // 'fired','delivered'), returned as pending / due / fired (S-MWB-3 B-640-12).
   // failed/canceled/skipped are master-plan §1 #10 "COACH_ALERT" rows;
   // never shown to the buyer.
   //

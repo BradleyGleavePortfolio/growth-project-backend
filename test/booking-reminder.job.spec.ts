@@ -28,9 +28,15 @@ interface FakeSession {
 }
 
 interface FakeLog {
+  id?: string;
   session_id: string;
   user_id: string;
   kind: string;
+  /** Claim key part (B-NOTIF-4): the session start the claim is for. */
+  start_at: Date;
+  status?: string;
+  attempts?: number;
+  claim_token?: string | null;
 }
 
 function buildPrismaFake(sessions: FakeSession[]) {
@@ -43,32 +49,115 @@ function buildPrismaFake(sessions: FakeSession[]) {
   return {
     _logs: logs,
     coachingSession: {
-      findMany: jest.fn(async (args: { where: { status: string; start_at: { gte: Date; lte: Date } } }) => {
-        const lower = args.where.start_at.gte;
-        const upper = args.where.start_at.lte;
-        return sessions.filter(
-          (s) =>
-            s.status === args.where.status &&
-            s.start_at >= lower &&
-            s.start_at <= upper,
-        );
-      }),
+      findMany: jest.fn(
+        async (args: {
+          where: {
+            id?: { in: string[] };
+            status?: string | { in: string[] };
+            start_at?: { gte: Date; lte: Date };
+          };
+        }) => {
+          // S-SCHED-4: the recovery pass loads sessions by id.
+          const ids = args.where.id?.in;
+          if (ids) return sessions.filter((s) => ids.includes(s.id));
+          if (!args.where.start_at || !args.where.status) return [];
+          const lower = args.where.start_at.gte;
+          const upper = args.where.start_at.lte;
+          const wanted = args.where.status;
+          // S-SCHED-2: the sweep asks for status IN (scheduled, pending_provider).
+          const statusOk = (status: string) =>
+            typeof wanted === 'string' ? status === wanted : wanted.in.includes(status);
+          return sessions.filter(
+            (s) => statusOk(s.status) && s.start_at >= lower && s.start_at <= upper,
+          );
+        },
+      ),
+      // S-SCHED-3: the sweep re-reads each session before sending (fence).
+      findUnique: jest.fn(
+        async (args: { where: { id: string } }) =>
+          sessions.find((s) => s.id === args.where.id) ?? null,
+      ),
     },
     notificationDeliveryLog: {
       create: jest.fn(async (args: { data: FakeLog }) => {
+        // Claim key (session_id, user_id, kind, start_at) (B-NOTIF-4).
         const dup = logs.find(
           (l) =>
             l.session_id === args.data.session_id &&
             l.user_id === args.data.user_id &&
-            l.kind === args.data.kind,
+            l.kind === args.data.kind &&
+            l.start_at.getTime() === args.data.start_at.getTime(),
         );
         if (dup) {
-          throw new Error('unique violation');
+          // Real Prisma reports the unique-key violation as P2002.
+          throw Object.assign(new Error('unique violation'), { code: 'P2002' });
         }
-        logs.push(args.data);
-        return { id: `log-${logs.length}` };
+        const row = { id: `log-${logs.length + 1}`, ...args.data };
+        logs.push(row);
+        return row;
+      }),
+      // S-SCHED-4: the recovery pass reads unfinished rows ('retry', or
+      // 'sending' with an expired lease) of the sweep's kind.
+      findMany: jest.fn(async (args: { where: { kind: string } }) =>
+        logs.filter((l) => {
+          if (l.kind !== args.where.kind) return false;
+          if (l.status === 'retry') return true;
+          const lease = (l as { lease_until?: Date | null }).lease_until ?? null;
+          return l.status === 'sending' && (lease === null || lease.getTime() <= Date.now());
+        }),
+      ),
+      findFirst: jest.fn(
+        async (args: {
+          where: { session_id: string; user_id: string; kind: string; start_at: Date };
+        }) =>
+          logs.find(
+            (l) =>
+              l.session_id === args.where.session_id &&
+              l.user_id === args.where.user_id &&
+              l.kind === args.where.kind &&
+              l.start_at.getTime() === args.where.start_at.getTime(),
+          ) ?? null,
+      ),
+      updateMany: jest.fn(async (args: { where: Partial<FakeLog>; data: Partial<FakeLog> }) => {
+        let count = 0;
+        for (const l of logs) {
+          const keys = Object.keys(args.where) as Array<keyof FakeLog>;
+          if (keys.every((k) => l[k] === args.where[k])) {
+            Object.assign(l, args.data);
+            count += 1;
+          }
+        }
+        return { count };
+      }),
+      // releaseClaim: a fresh claim whose session moved or was cancelled.
+      deleteMany: jest.fn(async (args: { where: { id: string; claim_token: string } }) => {
+        const before = logs.length;
+        for (let i = logs.length - 1; i >= 0; i--) {
+          if (logs[i].id === args.where.id && logs[i].claim_token === args.where.claim_token) {
+            logs.splice(i, 1);
+          }
+        }
+        return { count: before - logs.length };
       }),
     },
+    // Sol B-647-1: remindOne's fence reads the session FOR SHARE inside a
+    // transaction; the fake answers from the CURRENT session state (what a
+    // FOR SHARE read sees once any in-flight reschedule has committed).
+    $transaction: jest.fn(
+      async <T>(
+        fn: (tx: {
+          $queryRaw: (...a: unknown[]) => Promise<unknown[]>;
+          coachingSession: { findUnique: (a: { where: { id: string } }) => Promise<unknown> };
+        }) => Promise<T>,
+      ): Promise<T> =>
+        fn({
+          $queryRaw: async () => [],
+          coachingSession: {
+            findUnique: async (a: { where: { id: string } }) =>
+              sessions.find((s) => s.id === a.where.id) ?? null,
+          },
+        }),
+    ),
     user: {
       findUnique: jest.fn(async (args: { where: { id: string } }) => {
         const u = users.get(args.where.id);
@@ -121,7 +210,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     const sessions = [session({ id: 'sess-1', startsInMinutes: 60 })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -141,10 +230,12 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     expect(emitter.emitReminder1h).toHaveBeenCalledTimes(2);
 
     // The client should see "Coach K" and the coach should see "Jamie".
-    const recipients = emitter.emitReminder1h.mock.calls.map((c: [{ recipientUserId: string; otherPartyDisplayName: string }]) => ({
-      r: c[0].recipientUserId,
-      other: c[0].otherPartyDisplayName,
-    }));
+    const recipients = emitter.emitReminder1h.mock.calls.map(
+      (c: [{ recipientUserId: string; otherPartyDisplayName: string }]) => ({
+        r: c[0].recipientUserId,
+        other: c[0].otherPartyDisplayName,
+      }),
+    );
     expect(recipients).toEqual(
       expect.arrayContaining([
         { r: 'client-1', other: 'Coach K' },
@@ -163,7 +254,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -187,7 +278,7 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
     const sessions = [session({ id: 'sess-idem', startsInMinutes: 60 })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const args = {
       lowerOffsetMinutes: 55,
@@ -213,12 +304,10 @@ describe('SessionReminderJob — 1h reminder sweep', () => {
   });
 
   it('handles a coach-only session (client_id null) without crashing', async () => {
-    const sessions = [
-      session({ id: 'sess-solo', startsInMinutes: 60, client_id: null }),
-    ];
+    const sessions = [session({ id: 'sess-solo', startsInMinutes: 60, client_id: null })];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 55,
@@ -247,7 +336,7 @@ describe('SessionReminderJob — 24h reminder sweep', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 60 * 24 - 15,
@@ -275,9 +364,10 @@ describe('SessionReminderJob — 24h reminder sweep', () => {
       session_id: 'sess-partial',
       user_id: 'client-1',
       kind: NotificationKind.BOOKING_REMINDER_24H,
+      start_at: sessions[0].start_at,
     });
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const result = await job.dispatchWindow({
       lowerOffsetMinutes: 60 * 24 - 15,
@@ -295,9 +385,7 @@ describe('SessionReminderJob — 24h reminder sweep', () => {
     expect(result.dispatched).toBe(1);
     expect(result.skipped).toBe(1);
     expect(emitter.emitReminder24h).toHaveBeenCalledTimes(1);
-    expect(
-      emitter.emitReminder24h.mock.calls[0][0].recipientUserId,
-    ).toBe('coach-1');
+    expect(emitter.emitReminder24h.mock.calls[0][0].recipientUserId).toBe('coach-1');
   });
 });
 
@@ -310,7 +398,7 @@ describe('SessionReminderJob — findDueReminders helper', () => {
     ];
     const prisma = buildPrismaFake(sessions);
     const emitter = buildBookingEmitter();
-    const job = new SessionReminderJob(prisma as never, emitter as never);
+    const job = cronJob(prisma, emitter);
 
     const due = await job.findDueReminders(60);
     expect(due.map((s) => s.id)).toEqual(['s-in']);
@@ -349,5 +437,165 @@ describe('SessionReminderJob — explicit launch switch', () => {
     await job.runTwentyFourHourReminderSweep();
     expect(emitter.emitReminder1h).toHaveBeenCalledTimes(2);
     expect(emitter.emitReminder24h).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Sol B-647-1 (backend main #647, merged into S-SCHED-2): a reminder claim is
+// bound to the start time the sweep selected (claim key session, user, kind,
+// start_at), and nothing is sent unless the session, re-read FOR SHARE inside
+// a transaction, is still confirmed at that start.
+describe('SessionReminderJob — schedule generation fence (Sol B-647-1)', () => {
+  const window24h = (emitter: ReturnType<typeof buildBookingEmitter>) => ({
+    lowerOffsetMinutes: 60 * 24 - 15,
+    upperOffsetMinutes: 60 * 24 + 15,
+    kind: NotificationKind.BOOKING_REMINDER_24H,
+    emit: (recipient: string, otherName: string, s: FakeSession) =>
+      emitter.emitReminder24h({
+        recipientUserId: recipient,
+        otherPartyDisplayName: otherName,
+        sessionId: s.id,
+        scheduledAt: s.start_at,
+      }),
+  });
+  const window1h = (emitter: ReturnType<typeof buildBookingEmitter>) => ({
+    lowerOffsetMinutes: 55,
+    upperOffsetMinutes: 65,
+    kind: NotificationKind.BOOKING_REMINDER_1H,
+    emit: (recipient: string, otherName: string, s: FakeSession) =>
+      emitter.emitReminder1h({
+        recipientUserId: recipient,
+        otherPartyDisplayName: otherName,
+        sessionId: s.id,
+        scheduledAt: s.start_at,
+      }),
+  });
+
+  it('a sweep that read the old slot before a reschedule committed emits nothing and keeps no claim', async () => {
+    const sessions = [session({ id: 'sess-moved', startsInMinutes: 60 * 24 })];
+    const prisma = buildPrismaFake(sessions);
+    const movedTo = new Date(sessions[0].start_at.getTime() + 3 * 60 * 60_000);
+    // The sweep's band read returns the old snapshot; the reschedule commits
+    // before the sweep's fence read.
+    prisma.coachingSession.findMany.mockImplementationOnce(async () => {
+      const snapshot = sessions.map((s) => ({ ...s }));
+      sessions[0].start_at = movedTo;
+      return snapshot;
+    });
+    const emitter = buildBookingEmitter();
+    const job = cronJob(prisma, emitter);
+
+    const result = await job.dispatchWindow(window24h(emitter));
+    expect(emitter.emitReminder24h).not.toHaveBeenCalled();
+    expect(result.dispatched).toBe(0);
+    expect(prisma._logs).toEqual([]);
+
+    // The new time's sweep reminds both people, once.
+    jest.useFakeTimers({ now: new Date(movedTo.getTime() - 24 * 60 * 60_000) });
+    try {
+      const again = await job.dispatchWindow(window24h(emitter));
+      expect(again.dispatched).toBe(2);
+      expect(emitter.emitReminder24h.mock.calls.map((c) => c[0].scheduledAt)).toEqual([
+        movedTo,
+        movedTo,
+      ]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('an old-time claim (written by a stale sweep) does not suppress the new time', async () => {
+    const sessions = [session({ id: 'sess-new', startsInMinutes: 60 * 24 })];
+    const prisma = buildPrismaFake(sessions);
+    const oldStart = new Date(sessions[0].start_at.getTime() - 2 * 60 * 60_000);
+    for (const user_id of ['client-1', 'coach-1']) {
+      prisma._logs.push({
+        id: `old-${user_id}`,
+        session_id: 'sess-new',
+        user_id,
+        kind: NotificationKind.BOOKING_REMINDER_24H,
+        start_at: oldStart,
+        status: 'sent',
+      });
+    }
+    const emitter = buildBookingEmitter();
+    const job = cronJob(prisma, emitter);
+    const result = await job.dispatchWindow(window24h(emitter));
+    expect(result.dispatched).toBe(2);
+    expect(prisma._logs).toHaveLength(4);
+  });
+
+  it('a no-op reschedule (same slot) cannot replay a reminder that already went out', async () => {
+    const sessions = [session({ id: 'sess-same', startsInMinutes: 60 * 24 })];
+    const prisma = buildPrismaFake(sessions);
+    const emitter = buildBookingEmitter();
+    const job = cronJob(prisma, emitter);
+    expect((await job.dispatchWindow(window24h(emitter))).dispatched).toBe(2);
+    // "Reschedule" to the identical start time: the claims stay valid.
+    sessions[0].start_at = new Date(sessions[0].start_at.getTime());
+    const again = await job.dispatchWindow(window24h(emitter));
+    expect(again.dispatched).toBe(0);
+    expect(again.skipped).toBe(2);
+    expect(emitter.emitReminder24h).toHaveBeenCalledTimes(2);
+  });
+
+  it('a session cancelled after the sweep read it is not reminded', async () => {
+    const sessions = [session({ id: 'sess-cancel', startsInMinutes: 60 })];
+    const prisma = buildPrismaFake(sessions);
+    prisma.coachingSession.findMany.mockImplementationOnce(async () => {
+      const snapshot = sessions.map((s) => ({ ...s }));
+      sessions[0].status = 'canceled';
+      return snapshot;
+    });
+    const emitter = buildBookingEmitter();
+    const job = cronJob(prisma, emitter);
+    const result = await job.dispatchWindow(window1h(emitter));
+    expect(result.dispatched).toBe(0);
+    expect(emitter.emitReminder1h).not.toHaveBeenCalled();
+    expect(prisma._logs).toEqual([]);
+  });
+
+  it('a claim that cannot be written (database error) never emits unclaimed and counts as failed (B-634-2)', async () => {
+    const sessions = [session({ id: 'sess-dberr', startsInMinutes: 60 })];
+    const prisma = buildPrismaFake(sessions);
+    prisma.notificationDeliveryLog.create.mockRejectedValue(new Error('connection reset'));
+    const emitter = buildBookingEmitter();
+    const job = cronJob(prisma, emitter);
+    const result = await job.dispatchWindow(window1h(emitter));
+    expect(result.dispatched).toBe(0);
+    // Only P2002 means "already claimed"; any other error is a failure the
+    // next sweep retries, never a skip.
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toBe(2);
+    expect(emitter.emitReminder1h).not.toHaveBeenCalled();
+  });
+
+  it('the fence is read FOR SHARE in a transaction; a failed fence read sends nothing', async () => {
+    const sessions = [session({ id: 'sess-fence', startsInMinutes: 60 })];
+    const prisma = buildPrismaFake(sessions);
+    const sql: string[] = [];
+    prisma.$transaction.mockImplementationOnce(async (fn) =>
+      fn({
+        $queryRaw: async (strings: unknown) => {
+          sql.push((strings as TemplateStringsArray).join('?'));
+          return [];
+        },
+        coachingSession: {
+          findUnique: async (a: { where: { id: string } }) =>
+            sessions.find((s) => s.id === a.where.id) ?? null,
+        },
+      }),
+    );
+    prisma.$transaction.mockRejectedValueOnce(new Error('connection reset'));
+    const emitter = buildBookingEmitter();
+    const job = cronJob(prisma, emitter);
+    const result = await job.dispatchWindow(window1h(emitter));
+    expect(sql).toHaveLength(1);
+    expect(sql[0]).toContain('FOR SHARE');
+    // First recipient: fence held, sent. Second: fence read failed, nothing
+    // sent, its claim stays 'sending' for the next sweep to take over.
+    expect(result.dispatched).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(emitter.emitReminder1h).toHaveBeenCalledTimes(1);
+    expect(prisma._logs.map((l) => l.status)).toEqual(['sent', 'sending']);
   });
 });
