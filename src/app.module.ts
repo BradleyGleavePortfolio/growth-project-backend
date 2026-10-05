@@ -36,6 +36,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { KmsModule } from './common/kms/kms.module';
 import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
+import { CoachlessModule } from './coachless/coachless.module';
 import { InviteGrantModule } from './invite-grant/invite-grant.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { MessagesSafetyModule } from './messages-safety/messages-safety.module';
@@ -228,6 +229,8 @@ import { WearablesModule } from './wearables/wearables.module';
     WaterModule,
     HealthModule,
     InviteCodesModule,
+    // A1-COACHLESS — coachless Home, featured-coach config, coach-code redemption.
+    CoachlessModule,
     // Clinic C01 — invite-code → package grants, free-package claims, revoke.
     InviteGrantModule,
     MessagingModule,
