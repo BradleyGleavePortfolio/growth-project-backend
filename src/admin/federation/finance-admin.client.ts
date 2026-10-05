@@ -30,6 +30,17 @@ const MAX_TIMEOUT_MS = 15000;
 const MAX_ATTEMPTS = 2;
 const RETRY_BACKOFF_MS = 150;
 
+// B-700-2: what a degraded log line names. Paths carry the address
+// (`/by-email/<encoded address>`) or the search text (`?q=`), so the line
+// names one of these fixed labels instead.
+type FinanceRoute =
+  | 'health'
+  | 'users/search'
+  | 'clients/by-email'
+  | 'coaches/by-email'
+  | 'usage/product'
+  | 'coaches/by-email/practice';
+
 @Injectable()
 export class FinanceAdminClient {
   private readonly logger = new Logger(FinanceAdminClient.name);
@@ -45,7 +56,7 @@ export class FinanceAdminClient {
   }
 
   async getHealth(): Promise<FinanceCallOutcome<FinanceHealthContract>> {
-    return this.get<FinanceHealthContract>('/api/admin/federation/health');
+    return this.get<FinanceHealthContract>('health', '/api/admin/federation/health');
   }
 
   async searchUsers(
@@ -54,6 +65,7 @@ export class FinanceAdminClient {
   ): Promise<FinanceCallOutcome<FinanceUserSearchHit[]>> {
     const params = new URLSearchParams({ q, limit: String(limit) });
     return this.getArray<FinanceUserSearchHit>(
+      'users/search',
       `/api/admin/federation/users/search?${params.toString()}`,
     );
   }
@@ -62,6 +74,7 @@ export class FinanceAdminClient {
     email: string,
   ): Promise<FinanceCallOutcome<FinanceClientSummary>> {
     return this.get<FinanceClientSummary>(
+      'clients/by-email',
       `/api/admin/federation/clients/by-email/${encodeURIComponent(email)}`,
     );
   }
@@ -70,12 +83,13 @@ export class FinanceAdminClient {
     email: string,
   ): Promise<FinanceCallOutcome<FinanceCoachSummary>> {
     return this.get<FinanceCoachSummary>(
+      'coaches/by-email',
       `/api/admin/federation/coaches/by-email/${encodeURIComponent(email)}`,
     );
   }
 
   async getProductUsage(): Promise<FinanceCallOutcome<FinanceProductUsage>> {
-    return this.get<FinanceProductUsage>('/api/admin/federation/usage/product');
+    return this.get<FinanceProductUsage>('usage/product', '/api/admin/federation/usage/product');
   }
 
   // Sprint A — symmetric practice-type write. Calls the finance
@@ -90,13 +104,14 @@ export class FinanceAdminClient {
     practiceType: 'fitness_only' | 'finance_only' | 'both',
   ): Promise<FinanceCallOutcome<{ email: string; practice_type: string }>> {
     return this.put<{ email: string; practice_type: string }>(
+      'coaches/by-email/practice',
       `/api/admin/federation/coaches/by-email/${encodeURIComponent(email)}/practice`,
       { practice_type: practiceType },
     );
   }
 
-  private put<T>(path: string, body: unknown): Promise<FinanceCallOutcome<T>> {
-    return this.request<T>(path, { expectArray: false, method: 'PUT', body });
+  private put<T>(route: FinanceRoute, path: string, body: unknown): Promise<FinanceCallOutcome<T>> {
+    return this.request<T>(route, path, { expectArray: false, method: 'PUT', body });
   }
 
   private resolveTimeoutMs(): number {
@@ -106,15 +121,16 @@ export class FinanceAdminClient {
     return Math.min(Math.max(parsed, MIN_TIMEOUT_MS), MAX_TIMEOUT_MS);
   }
 
-  private get<T>(path: string): Promise<FinanceCallOutcome<T>> {
-    return this.request<T>(path, { expectArray: false });
+  private get<T>(route: FinanceRoute, path: string): Promise<FinanceCallOutcome<T>> {
+    return this.request<T>(route, path, { expectArray: false });
   }
 
-  private getArray<T>(path: string): Promise<FinanceCallOutcome<T[]>> {
-    return this.request<T[]>(path, { expectArray: true });
+  private getArray<T>(route: FinanceRoute, path: string): Promise<FinanceCallOutcome<T[]>> {
+    return this.request<T[]>(route, path, { expectArray: true });
   }
 
   private async request<T>(
+    route: FinanceRoute,
     path: string,
     opts: {
       expectArray: boolean;
@@ -162,9 +178,10 @@ export class FinanceAdminClient {
         await sleep(RETRY_BACKOFF_MS);
       }
     }
-    // Surface the last failure mode in logs (no PII; URL path only).
+    // Surface the last failure mode in logs. B-700-2: the fixed route label,
+    // never the path (it holds the address or the search text).
     this.logger.warn(
-      `Finance federation degraded path=${path} reason=${lastDegraded?.kind === 'degraded' ? lastDegraded.reason : 'unknown'}`,
+      `Finance federation degraded route=${route} reason=${lastDegraded?.kind === 'degraded' ? lastDegraded.reason : 'unknown'}`,
     );
     return (
       lastDegraded ?? {

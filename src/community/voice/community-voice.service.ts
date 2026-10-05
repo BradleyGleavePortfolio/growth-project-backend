@@ -589,12 +589,14 @@ export class CommunityVoiceService {
    * read the note gets the same 404 as a missing note (no existence leak); a
    * member who can read it but did not record it gets 403 VOICE_NOT_AUTHOR.
    *
-   * B-610-5: the erasure of the recording is recorded durably first
-   * (community_voice_erasures), then the note and its search row are
-   * soft-deleted (no read path, queue or search shows it and nothing signs it
-   * again), then the object is erased and the removal verified. A storage
-   * outage leaves the erasure open and VoiceErasureService retries it until
-   * verified, so "deleted" is never a recording left behind.
+   * B-610-5 / C-610-10: the erasure of the recording (community_voice_erasures)
+   * and the soft delete of the note and its search row (no read path, queue
+   * or search shows it and nothing signs it again) commit in ONE transaction;
+   * only after that commit is the object erased and the removal verified. A
+   * crash can therefore never leave a live note whose recording the retry
+   * cron erases. A storage outage leaves the erasure open and
+   * VoiceErasureService retries it until verified, so "deleted" is never a
+   * recording left behind.
    */
   async delete(user: User, voiceNoteId: string): Promise<{ deleted: true }> {
     const own = await this.repo.findById(voiceNoteId);
@@ -618,17 +620,13 @@ export class CommunityVoiceService {
     return { deleted: true };
   }
 
-  /** Record the erasure durably, soft-delete the rows, then erase + verify. */
+  /**
+   * One transaction records the erasure and soft-deletes the rows
+   * (C-610-10); storage is tried only after it commits.
+   */
   private async deleteAndErase(row: CommunityVoiceNote): Promise<void> {
-    const work = await this.repo.recordErasure([row.storage_key], 'author_delete');
-    await this.softDeleteNote(row);
+    const work = await this.repo.softDeleteWithErasure(row, 'author_delete');
     await this.runErasure(row, work);
-  }
-
-  private async softDeleteNote(row: CommunityVoiceNote): Promise<void> {
-    const at = new Date();
-    await this.repo.softDelete(row.id, at);
-    await this.repo.softDeleteSearchEntries(row.id, at);
   }
 
   /** Re-open (or create) the durable erasure for an already-deleted note and try it. */
@@ -641,10 +639,19 @@ export class CommunityVoiceService {
     row: CommunityVoiceNote,
     work: Awaited<ReturnType<CommunityVoiceRepository['recordErasure']>>,
   ): Promise<void> {
-    const outcome = await this.repo.attemptErasure(this.upload, work);
-    if (outcome.pending > 0) {
-      this.logger.warn(
-        `voice note ${row.id}: recording removal not yet verified; erasure recorded and retried by VoiceErasureService`,
+    try {
+      const outcome = await this.repo.attemptErasure(this.upload, work);
+      if (outcome.pending > 0) {
+        this.logger.warn(
+          `voice note ${row.id}: recording removal not yet verified; erasure recorded and retried by VoiceErasureService`,
+        );
+      }
+    } catch (err) {
+      // The delete and its erasure work are already committed (C-610-10), so
+      // the member's delete succeeded; the retry cron owns the erasure from
+      // here (same rule as a moderation Hide/Ban after commit).
+      this.logger.error(
+        `voice note ${row.id}: erasure attempt failed after commit (${(err as Error).message}); VoiceErasureService retries it`,
       );
     }
   }

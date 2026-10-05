@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { COUNTED_RECOVERY_STATUSES, coachNetCents } from '../connect/fees/coach-net';
 import { PrismaService } from '../prisma.service';
 
 // AdminAnalyticsService — Phase 7 enterprise rollups.
@@ -69,6 +70,12 @@ export interface CoachEarningsSummary {
     pending_cents: number;
     reversed_cents: number;
     refunds_cents: number;
+    // S-FEE: owed back on refunded / disputed charges beyond what a transfer
+    // reversal recovered (netted from future payouts).
+    recoveries_cents: number;
+    // S-FEE: coachNetCents(posted, recoveries) — same figure as
+    // /coach/connect/metrics net_30d and the earnings summary.
+    net_cents: number;
     purchases_count: number;
   };
   // Earnings this coach received as a HEAD COACH (head_coach_split kind).
@@ -77,6 +84,8 @@ export interface CoachEarningsSummary {
     posted_cents: number;
     pending_cents: number;
     reversed_cents: number;
+    recoveries_cents: number;
+    net_cents: number;
     sub_coaches_count: number; // # of distinct selling sub-coaches contributing
   };
   // Most-recent payout from PayoutSnapshot (last_payout_*).
@@ -325,6 +334,36 @@ export class AdminAnalyticsService {
     const sellerSums = bucketByStatus(asSellerLedger);
     const headCoachSums = bucketByStatus(asHeadCoachLedger);
 
+    // S-FEE — recoveries owed by this payee in the window, split by the leg
+    // they came from (seller vs head coach) through their settlement.
+    const recoveryRows = await this.prisma.payeeRecovery.findMany({
+      where: {
+        payee_user_id: coachUserId,
+        status: { in: [...COUNTED_RECOVERY_STATUSES] },
+        created_at: { gte: from, lte: to },
+      },
+      select: { amount_cents: true, settlement_id: true },
+    });
+    const sellerSettlementIds = new Set(
+      recoveryRows.length === 0
+        ? []
+        : (
+            await this.prisma.chargeSettlement.findMany({
+              where: {
+                id: { in: [...new Set(recoveryRows.map((r) => r.settlement_id))] },
+                coach_user_id: coachUserId,
+              },
+              select: { id: true },
+            })
+          ).map((x) => x.id),
+    );
+    let sellerRecoveries = 0;
+    let headCoachRecoveries = 0;
+    for (const r of recoveryRows) {
+      if (sellerSettlementIds.has(r.settlement_id)) sellerRecoveries += r.amount_cents;
+      else headCoachRecoveries += r.amount_cents;
+    }
+
     const subCoaches = new Set<string>();
     if (asHeadCoachLedger.length) {
       const purchaseIdsHC = asHeadCoachLedger.map((l) => l.purchase_id);
@@ -348,6 +387,8 @@ export class AdminAnalyticsService {
         pending_cents: sellerSums.pending_cents,
         reversed_cents: sellerSums.reversed_cents,
         refunds_cents: sumBy(refundRows, (r) => r.amount_cents),
+        recoveries_cents: sellerRecoveries,
+        net_cents: coachNetCents(sellerSums.posted_cents, sellerRecoveries),
         purchases_count: sellerPurchases.length,
       },
       as_head_coach: {
@@ -356,6 +397,8 @@ export class AdminAnalyticsService {
         posted_cents: headCoachSums.posted_cents,
         pending_cents: headCoachSums.pending_cents,
         reversed_cents: headCoachSums.reversed_cents,
+        recoveries_cents: headCoachRecoveries,
+        net_cents: coachNetCents(headCoachSums.posted_cents, headCoachRecoveries),
         sub_coaches_count: subCoaches.size,
       },
       last_payout: {

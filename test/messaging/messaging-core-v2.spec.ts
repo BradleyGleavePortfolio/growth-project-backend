@@ -67,6 +67,7 @@ function row(over: Partial<Row> = {}): Row {
     created_at: new Date(),
     read_at: null,
     ai_draft_id: null,
+    welcome_job_id: null,
     client_message_id: null,
     reply_to_id: null,
     edited_at: null,
@@ -112,6 +113,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
       upsert: jest.fn().mockResolvedValue({ muted_until: null, pinned_at: new Date() }),
     },
     communityVoiceErasure: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       upsert: jest.fn().mockResolvedValue({ id: 'e1', kind: 'object', target: 'x', attempts: 0 }),
     },
     $executeRaw: jest.fn().mockResolvedValue(1),

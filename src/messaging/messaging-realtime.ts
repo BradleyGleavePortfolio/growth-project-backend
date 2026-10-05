@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { SupabaseService } from '../supabase/supabase.service';
+import { describeFailure } from '../observability/log-pii';
 
 /**
  * A3-MSG-CORE — ID-only realtime pings for thread changes that are not a new
@@ -49,7 +50,7 @@ export async function broadcastThreadUpdated(
             payload,
           });
         } catch (sendErr) {
-          logger.warn(`thread-updated send failed: ${(sendErr as Error).message}`);
+          logger.warn(`thread-updated send failed: ${describeFailure(sendErr)}`);
         }
         clearTimeout(timeout);
         resolve();
@@ -57,6 +58,6 @@ export async function broadcastThreadUpdated(
     });
     await client.removeChannel(channel);
   } catch (err) {
-    logger.warn(`thread-updated broadcast failed: ${(err as Error).message}`);
+    logger.warn(`thread-updated broadcast failed: ${describeFailure(err)}`);
   }
 }

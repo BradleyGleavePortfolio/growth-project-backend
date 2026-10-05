@@ -1,10 +1,13 @@
 import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
-import type {
-  ChargeDispute,
-  ChargeRefund,
-  ClientPurchase,
-  Prisma,
-} from '@prisma/client';
+import type { ChargeDispute, ChargeRefund, ClientPurchase, Prisma } from '@prisma/client';
+import {
+  ChargeSettlementService,
+  chargeRefundsFromStripe,
+  disputeAmountsFrom,
+  isLegacyDestinationCharge,
+  settlementFailureCode,
+} from '../connect/fees/charge-settlement.service';
+import { isRetryableMoneyError, RefundStateUnavailableError } from '../connect/fees/money-errors';
 import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
 import { SplitLedgerService } from '../connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
@@ -13,6 +16,7 @@ import {
   StripeConnectApiService,
 } from '../connect/stripe-connect-api.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PayoutNoticeService } from './payout-notice.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PartialRefundDecisionService } from '../regimes/partial-refund-decision.service';
@@ -29,6 +33,20 @@ type WebhookTx = Prisma.TransactionClient;
 // the surface that these tgp:// URIs hit.
 const COACH_REFUND_DEEP_LINK = 'tgp://coach/billing/refunds';
 const COACH_DISPUTE_DEEP_LINK = 'tgp://coach/billing/disputes';
+
+// Round 17 (Opus B-684-8): Stripe refund statuses that never change again.
+const FAILED_REFUND_STATUSES = new Set(['failed', 'canceled']);
+// Round 19 (B-684-12): status compare-and-set retries before the delivery fails closed.
+const REFUND_STATUS_CAS_ATTEMPTS = 5;
+
+/** A refund's status only moves forward; an older event never rewrites a newer outcome. */
+function nextRefundStatus(current: string, incoming: string): string {
+  if (FAILED_REFUND_STATUSES.has(current)) return current;
+  if (current === 'succeeded' && (incoming === 'pending' || incoming === 'requires_action')) {
+    return current;
+  }
+  return incoming;
+}
 
 // RefundDisputeHandlerService — webhook + admin-driven side of the
 // refund / dispute / payout pipeline.
@@ -86,6 +104,16 @@ export class RefundDisputeHandlerService {
     // wiring (CheckoutModule imports RegimesModule) always provides it. The
     // service itself no-ops when FEATURE_NAMED_REGIMES is OFF.
     @Optional() private partialRefundDecisions?: PartialRefundDecisionService,
+    // S-FEE — per-charge settlement. Refunds / disputes on a separate-charge-
+    // and-transfer charge re-derive every payee's target here (coach bears
+    // the refunded principal and every Stripe fee; TGP is never out the
+    // processing or dispute fee). @Optional() for legacy hand-built wiring;
+    // production (CheckoutModule imports ConnectModule) always provides it.
+    @Optional() private settlements?: ChargeSettlementService,
+    // S-FEE round 5 (OR-111-1) — delivers the exact-amount payout notices the
+    // settlement writes for each refund / chargeback / dispute outcome
+    // (push + in-app + email). @Optional() for legacy hand-built wiring.
+    @Optional() private payoutNotices?: PayoutNoticeService,
   ) {}
 
   // Webhook entry point — returns claimed=true iff we matched to a
@@ -98,15 +126,72 @@ export class RefundDisputeHandlerService {
   // atomically with the entitlement flip. Side-effect handlers that do
   // NOT revoke entitlement (refund.updated, dispute.created/updated,
   // transfer.reversed, payout.*) ignore it.
-  async handle(event: {
-    id: string;
+  async handle(
+    event: {
+      id: string;
+      type: string;
+      data: { object: Record<string, unknown> };
+    },
+    tx?: WebhookTx,
+  ): Promise<{
+    claimed: boolean;
+    reason?: string;
+    purchase_id?: string;
+    deferredPayoutNoticeChargeId?: string;
+  }> {
+    const result = await this.route(event, tx);
+    const chargeId = this.payoutNoticeChargeId(event);
+    if (!chargeId) return result;
+    // C-627-7 (round 6): inside BillingService's webhook $transaction the
+    // push / email HTTP calls must not run; the caller delivers after commit
+    // (deliverPayoutNotices) and the sweeper is the backstop. Without an
+    // outer transaction (direct callers) delivery runs here.
+    if (tx) return { ...result, deferredPayoutNoticeChargeId: chargeId };
+    await this.deliverPayoutNotices(chargeId);
+    return result;
+  }
+
+  // The charge whose payout notices this event may have recorded.
+  private payoutNoticeChargeId(event: {
     type: string;
     data: { object: Record<string, unknown> };
-  }, tx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+  }): string | null {
+    // Round 17 (Sol B-684-4): refund.updated carries the refund, like charge.refund.updated.
+    if (!this.payoutNotices) return null;
+    if (!event.type.startsWith('charge.') && event.type !== 'refund.updated') return null;
+    const obj = event.data.object as { id?: unknown; charge?: unknown };
+    if (event.type === 'charge.refunded') return typeof obj.id === 'string' ? obj.id : null;
+    return typeof obj.charge === 'string' ? obj.charge : null;
+  }
+
+  // OR-111-1: deliver the payout notices the settlement recorded for this
+  // charge once the money step (and its lock) is done and no transaction is
+  // open. Best effort, never throws: the notices are durable rows and the
+  // sweeper re-delivers undelivered ones.
+  async deliverPayoutNotices(chargeId: string): Promise<void> {
+    if (!this.payoutNotices) return;
+    try {
+      await this.payoutNotices.dispatchForCharge(chargeId);
+    } catch (err) {
+      this.logger.warn(
+        `SFEE_NOTICE_DISPATCH_DEFERRED charge=${chargeId}: ${settlementFailureCode(err)}; the sweeper delivers it`,
+      );
+    }
+  }
+
+  private async route(
+    event: {
+      id: string;
+      type: string;
+      data: { object: Record<string, unknown> };
+    },
+    tx?: WebhookTx,
+  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
     switch (event.type) {
       case 'charge.refunded':
         return this.onChargeRefunded(event, tx);
       case 'charge.refund.updated':
+      case 'refund.updated':
         return this.onRefundUpdated(event);
       case 'charge.dispute.created':
         return this.onDisputeOpened(event);
@@ -127,9 +212,12 @@ export class RefundDisputeHandlerService {
 
   // --- Refund pipeline ---
 
-  private async onChargeRefunded(event: {
-    data: { object: Record<string, unknown> };
-  }, _outerTx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+  private async onChargeRefunded(
+    event: {
+      data: { object: Record<string, unknown> };
+    },
+    _outerTx?: WebhookTx,
+  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
     // PR-16: _outerTx is accepted for interface symmetry but the refund
     // path opens its OWN inner $transaction for the entitlement flip
     // (see fullyRefunded branch below). cancelPendingForPurchase rides
@@ -143,7 +231,10 @@ export class RefundDisputeHandlerService {
       amount?: number;
       amount_refunded?: number;
       refunded?: boolean;
-      refunds?: { data?: Array<{ id?: string; amount?: number; status?: string; reason?: string | null }> };
+      refunds?: {
+        data?: Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>;
+        has_more?: boolean;
+      };
     };
     if (!charge?.id) return { claimed: false, reason: 'no_charge_id' };
     const purchase = await this.resolvePurchaseByCharge(charge.id);
@@ -154,7 +245,10 @@ export class RefundDisputeHandlerService {
     // upsertAndApplyRefund returns { ledger_just_reversed: boolean } so
     // we know which refund ids transitioned this delivery; redeliveries
     // see ledger_reversed already true and skip.
-    const refunds = charge.refunds?.data ?? [];
+    const refunds = await this.completeRefunds(charge);
+    // Round 17 (Opus B-684-8): converge on the rows as written, so a stale snapshot never
+    // counts a refund this service already knows has failed.
+    let succeededCents = 0;
     const newlyAppliedRefunds: Array<{
       id: string;
       amount_cents: number;
@@ -170,6 +264,8 @@ export class RefundDisputeHandlerService {
         status: r.status ?? 'pending',
         reason: r.reason ?? null,
       });
+      if (outcome.row.status === 'succeeded')
+        succeededCents += Math.max(0, outcome.row.amount_cents);
       if (outcome.ledger_just_reversed) {
         newlyAppliedRefunds.push({
           id: r.id,
@@ -185,10 +281,8 @@ export class RefundDisputeHandlerService {
     // refunded charges carry the running total). Partial refunds keep
     // entitlement_active true; the client keeps the access they paid
     // net-of-credit for.
-    const totalAmount =
-      typeof charge.amount === 'number' ? charge.amount : purchase.amount_cents;
-    const refundedCents =
-      typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
+    const totalAmount = typeof charge.amount === 'number' ? charge.amount : purchase.amount_cents;
+    const refundedCents = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
     const fullyRefunded = totalAmount > 0 && refundedCents >= totalAmount;
     // R81 (PR-395 follow-up, F5) — refund/chargeback behaviour for the Roman P4
     // first-payment celebration is RETAIN-BY-DESIGN: a refund (even a full one)
@@ -203,77 +297,7 @@ export class RefundDisputeHandlerService {
     // first-payment-refund-retention.spec.ts). If product later wants the
     // celebration to be re-armable, delete the ledger row inside the inner
     // $transaction below — but that is a deliberate product decision, not a bug.
-    if (fullyRefunded) {
-      // A276-F2-P2-3 — the ClientPurchase status flip and the
-      // GuestCheckout lockstep mirror MUST commit atomically. The
-      // previous implementation issued both writes on `this.prisma`,
-      // so a crash between the two could leave ClientPurchase='refunded'
-      // / GuestCheckout='converted' until the Stripe retry converged
-      // via the WHERE guards. The WHERE-guards still keep both writes
-      // idempotent under Stripe redelivery; the transaction adds the
-      // crash-safety the audit flagged as missing.
-      //
-      // We deliberately do NOT include the upstream ledger reversals
-      // or the Stripe-side transfer reversal in this transaction
-      // because those involve Stripe HTTP calls (transfers.reverse)
-      // — the exact in-tx HTTP anti-pattern P1-3 / P2-1 eliminate.
-      // The ledger writes have already committed on `this.prisma`
-      // above and the WHERE-guards make every step idempotent on
-      // Stripe retry.
-      await this.prisma.$transaction(async (tx) => {
-        // WHERE-guard on status keeps this idempotent under Stripe
-        // redelivery (the second delivery sees status already 'refunded'
-        // and the updateMany returns count=0 as a no-op).
-        await tx.clientPurchase.updateMany({
-          where: { id: purchase.id, status: { not: 'refunded' } },
-          data: { status: 'refunded', entitlement_active: false },
-        });
-
-        // A276 P1-2 (refix) — keep the originating GuestCheckout row in
-        // lockstep. After conversion the row's status is 'converted'; a
-        // refund of the underlying charge must flip it to 'refunded' so
-        // admin reports that filter `GuestCheckout WHERE status='refunded'`
-        // surface the transaction. updateMany with a status guard makes
-        // this idempotent under Stripe redelivery and a no-op when no
-        // GuestCheckout exists (direct ClientPurchase paths). We never
-        // re-stamp refunded_at here — the GuestCheckout-path handler
-        // (handleChargeRefunded) owns that field's audit trail; in the
-        // post-conversion case it stays null, which correctly reflects
-        // "never refunded through the guest path".
-        if (purchase.stripe_payment_intent_id) {
-          await tx.guestCheckout.updateMany({
-            where: {
-              stripe_payment_intent_id: purchase.stripe_payment_intent_id,
-              status: { not: 'refunded' },
-            },
-            data: { status: 'refunded' },
-          });
-        }
-
-        // PR-16 — full-refund branch: cancel every not-yet-fired drop
-        // for this purchase. Runs in the SAME inner $transaction as the
-        // ClientPurchase.status='refunded' / entitlement_active=false
-        // flip so revoke + drop-cancel commit-or-rollback together. The
-        // WHERE clause inside cancelPendingForPurchase filters
-        // status IN ('pending','due') so a Stripe redelivery (which hits
-        // count=0 on the WHERE-guarded updateMany above) is a true
-        // no-op for drops too.
-        //
-        // Partial refunds: the brief mandates we match the entitlement
-        // rule. Per existing code (lines ~152-156), partial refund keeps
-        // entitlement_active=true (`fullyRefunded` gate is total>=cents).
-        // So drops are ONLY canceled when the refund is full. Partial
-        // refund = client keeps the access they paid net-of-credit for,
-        // and continues receiving dripped content. Documented.
-        if (this.fanout) {
-          await this.fanout.cancelPendingForPurchase(
-            purchase.id,
-            'refund',
-            tx,
-          );
-        }
-      });
-    }
+    if (fullyRefunded) await this.revokeFullyRefunded(purchase);
 
     // F2 — partial-refund coach-decision surface. When the refund is NOT a
     // full refund, entitlement_active stays true (the fullyRefunded branch
@@ -310,7 +334,83 @@ export class RefundDisputeHandlerService {
       });
     }
 
+    // B-684-1 (round 11): the settlement also converges once more, under the charge lock,
+    // after the per-refund alerts, so a retried delivery loses none of them. Round 13 (Opus
+    // B-684-3): on the SUCCEEDED refunds of the complete list, never amount_refunded (it also
+    // counts pending refunds). A converted charge reads its own debits from Stripe (B-683-1).
+    if (this.settlements && succeededCents > 0) {
+      await this.settlements.applyAdjustments({
+        purchase,
+        charge_id: charge.id,
+        refunded_cents: succeededCents,
+      });
+    }
+
     return { claimed: true, purchase_id: purchase.id };
+  }
+
+  /**
+   * A full refund ends access (shared by charge.refunded and the refund status events, Sol
+   * B-684-5). The ClientPurchase flip, its GuestCheckout mirror and the drop cancel commit
+   * together (A276-F2-P2-3, PR-16); the status WHERE-guards make a redelivery a no-op. Money and
+   * Stripe calls stay outside this transaction (P1-3). Partial refunds keep access.
+   */
+  private async revokeFullyRefunded(purchase: ClientPurchase): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.clientPurchase.updateMany({
+        where: { id: purchase.id, status: { not: 'refunded' } },
+        data: { status: 'refunded', entitlement_active: false },
+      });
+      if (purchase.stripe_payment_intent_id) {
+        await tx.guestCheckout.updateMany({
+          where: {
+            stripe_payment_intent_id: purchase.stripe_payment_intent_id,
+            status: { not: 'refunded' },
+          },
+          data: { status: 'refunded' },
+        });
+      }
+      if (this.fanout) {
+        await this.fanout.cancelPendingForPurchase(purchase.id, 'refund', tx);
+      }
+    });
+  }
+
+  /**
+   * Round 13 (Sol B-684-1, Opus B-684-3): every refund on the charge. The event embeds at most
+   * the latest ten (none on current API versions), so unless the embedded list is explicitly
+   * complete and accounts for amount_refunded, it is read from Stripe to the last page. An
+   * incomplete read throws RefundStateUnavailableError (the webhook fails, Stripe redelivers);
+   * nothing moves.
+   */
+  private async completeRefunds(charge: {
+    id?: string;
+    amount_refunded?: number;
+    refunds?: {
+      data?: Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>;
+      has_more?: boolean;
+    };
+  }): Promise<Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>> {
+    const embedded = charge.refunds?.data ?? [];
+    const live = embedded.reduce(
+      (n, r) =>
+        n +
+        (r.status !== 'failed' && r.status !== 'canceled' && typeof r.amount === 'number'
+          ? r.amount
+          : 0),
+      0,
+    );
+    const complete = charge.refunds?.has_more !== true && live >= (charge.amount_refunded ?? 0);
+    if (complete || !this.settlements || !charge.id) return embedded;
+    // Ids, statuses and the client's own amounts; the settlement debits are read under the lock.
+    const list = await chargeRefundsFromStripe(this.stripe, charge.id, null);
+    const reasons = new Map(embedded.map((r) => [r.id, r.reason ?? null]));
+    return list.refunds.map((r) => ({
+      id: r.id,
+      amount: r.amount_cents,
+      status: r.status,
+      reason: reasons.get(r.id) ?? null,
+    }));
   }
 
   private async onRefundUpdated(event: {
@@ -321,24 +421,113 @@ export class RefundDisputeHandlerService {
       charge?: string | null;
       amount?: number;
       status?: string;
+      reason?: string | null;
       failure_reason?: string | null;
     };
     if (!refund?.id) return { claimed: false };
     const existing = await this.prisma.chargeRefund.findUnique({
       where: { stripe_refund_id: refund.id },
     });
+    const chargeId =
+      existing?.stripe_charge_id ?? (typeof refund.charge === 'string' ? refund.charge : null);
+    if (this.settlements && chargeId) {
+      return this.applyRefundUpdate(refund, existing, chargeId);
+    }
     if (!existing) {
       // No-op: we'll see the parent charge.refunded shortly.
       return { claimed: false, reason: 'no_known_refund' };
     }
-    await this.prisma.chargeRefund.update({
-      where: { stripe_refund_id: refund.id },
-      data: {
-        status: refund.status ?? existing.status,
-        failure_reason: refund.failure_reason ?? null,
-      },
+    // Round 19 (B-684-12): the same monotonic compare-and-set as every other refund writer.
+    await this.writeRefundStatus(existing, existing.stripe_charge_id, (current) => {
+      const status = nextRefundStatus(current.status, refund.status ?? current.status);
+      // A refused (older) event keeps the stored failure reason with the stored status.
+      const moved = status === (refund.status ?? current.status);
+      return {
+        status,
+        failure_reason: moved ? (refund.failure_reason ?? null) : current.failure_reason,
+      };
     });
     return { claimed: true, purchase_id: existing.purchase_id };
+  }
+
+  /**
+   * Round 13 (Opus B-684-3): a refund's terminal status moves its money. One that becomes
+   * succeeded is applied now (once, under the charge lock, idempotent on ledger_reversed) and
+   * the coach is told; a pending one moves nothing. One that fails or is canceled after its
+   * money was applied raises an alert and flags the settlement for review (C-684-4, decided
+   * under the charge lock in upsertAndApplyRefund; nothing is re-credited automatically). A
+   * refund this service has not seen yet is recorded too.
+   * Round 17 (Sol B-684-5): a succeeded refund also converges the purchase. Before anything
+   * moves, the charge (presentment amount) and its complete refund list are read from Stripe
+   * (fail closed: the webhook fails and Stripe redelivers); when the succeeded refunds cover
+   * the charge, access ends exactly as on charge.refunded, otherwise a newly applied refund
+   * gets the partial-refund decision. Re-run on every succeeded delivery (idempotent).
+   */
+  private async applyRefundUpdate(
+    refund: {
+      id?: string;
+      amount?: number;
+      status?: string;
+      reason?: string | null;
+      failure_reason?: string | null;
+    },
+    existing: ChargeRefund | null,
+    chargeId: string,
+  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+    const purchase = existing
+      ? await this.prisma.clientPurchase.findUnique({ where: { id: existing.purchase_id } })
+      : await this.resolvePurchaseByCharge(chargeId);
+    if (!purchase || !refund.id) return { claimed: false, reason: 'no_matching_purchase' };
+    const status = refund.status ?? existing?.status ?? 'pending';
+    const fullyRefunded = status === 'succeeded' ? await this.coversCharge(chargeId) : false;
+    const outcome = await this.upsertAndApplyRefund({
+      purchase,
+      stripe_refund_id: refund.id,
+      stripe_charge_id: chargeId,
+      amount_cents:
+        typeof refund.amount === 'number' ? refund.amount : (existing?.amount_cents ?? 0),
+      status,
+      reason: refund.reason ?? existing?.reason ?? null,
+    });
+    if (refund.failure_reason !== undefined && outcome.row.status === status) {
+      await this.prisma.chargeRefund.update({
+        where: { stripe_refund_id: refund.id },
+        data: { failure_reason: refund.failure_reason ?? null },
+      });
+    }
+    if (outcome.row.status === 'succeeded' && outcome.row.ledger_reversed && fullyRefunded) {
+      await this.revokeFullyRefunded(purchase);
+    } else if (outcome.ledger_just_reversed && this.partialRefundDecisions) {
+      const fresh = await this.prisma.clientPurchase.findUnique({ where: { id: purchase.id } });
+      if (fresh && fresh.status !== 'refunded') {
+        await this.partialRefundDecisions.onPartialRefund({
+          client_purchase_id: purchase.id,
+          stripe_refund_id: refund.id,
+        });
+      }
+    }
+    if (outcome.ledger_just_reversed) {
+      await this.emitRefundCoachAlert({
+        purchase,
+        amount_cents: outcome.row.amount_cents,
+        stripe_refund_id: refund.id,
+        stripe_charge_id: chargeId,
+        reason: outcome.row.reason ?? null,
+      });
+    }
+    return { claimed: true, purchase_id: purchase.id };
+  }
+
+  // Round 17 (Sol B-684-5): whether the charge's succeeded refunds (complete Stripe list,
+  // presentment minor units on both sides) cover the charge's own amount, so a renewal charge
+  // is judged on itself. Unreadable state throws RefundStateUnavailableError before money moves.
+  private async coversCharge(chargeId: string): Promise<boolean> {
+    const charge = await this.stripe.retrieveCharge(chargeId).catch((err: unknown) => {
+      throw new RefundStateUnavailableError(chargeId, settlementFailureCode(err));
+    });
+    const list = await chargeRefundsFromStripe(this.stripe, chargeId, null);
+    const amount = typeof charge?.amount === 'number' ? charge.amount : 0;
+    return amount > 0 && list.succeeded_client_cents >= amount;
   }
 
   // Idempotently create a refund row + apply ledger reversals. Safe to
@@ -360,23 +549,32 @@ export class RefundDisputeHandlerService {
     note?: string | null;
     initiated_by_user_id?: string | null;
   }): Promise<{ row: ChargeRefund; ledger_just_reversed: boolean }> {
+    // Round 17 (Opus B-684-8): a refund's status only moves forward. failed and canceled are
+    // terminal, and succeeded never goes back to pending / requires_action, so a stale or
+    // redelivered older event (or snapshot) never rewrites a newer outcome.
+    // Round 19 (B-684-12): the transition is a compare-and-set on the status this writer read,
+    // so a newer outcome written between the read and the write is never overwritten.
+    const updateExisting = (existing: ChargeRefund) =>
+      this.writeRefundStatus(existing, args.stripe_charge_id, (current) => {
+        const status = nextRefundStatus(current.status, args.status);
+        return {
+          status,
+          amount_cents: args.amount_cents,
+          reason: args.reason ?? current.reason,
+          note: args.note ?? current.note,
+          initiated_by_user_id: args.initiated_by_user_id ?? current.initiated_by_user_id,
+          posted_at: status === 'succeeded' ? new Date() : current.posted_at,
+        };
+      });
     const existing = await this.prisma.chargeRefund.findUnique({
       where: { stripe_refund_id: args.stripe_refund_id },
     });
-    const row = existing
-      ? await this.prisma.chargeRefund.update({
-          where: { stripe_refund_id: args.stripe_refund_id },
-          data: {
-            status: args.status,
-            amount_cents: args.amount_cents,
-            reason: args.reason ?? existing.reason,
-            note: args.note ?? existing.note,
-            initiated_by_user_id:
-              args.initiated_by_user_id ?? existing.initiated_by_user_id,
-            posted_at: args.status === 'succeeded' ? new Date() : existing.posted_at,
-          },
-        })
-      : await this.prisma.chargeRefund.create({
+    let row: ChargeRefund;
+    if (existing) {
+      row = await updateExisting(existing);
+    } else {
+      try {
+        row = await this.prisma.chargeRefund.create({
           data: {
             purchase_id: args.purchase.id,
             stripe_refund_id: args.stripe_refund_id,
@@ -389,22 +587,128 @@ export class RefundDisputeHandlerService {
             posted_at: args.status === 'succeeded' ? new Date() : null,
           },
         });
+      } catch (err) {
+        // An admin refund and its charge.refunded webhook raced to insert the
+        // same refund id: the loser updates the winner's row.
+        const raced =
+          typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2002'
+            ? await this.prisma.chargeRefund.findUnique({
+                where: { stripe_refund_id: args.stripe_refund_id },
+              })
+            : null;
+        if (!raced) throw err;
+        row = await updateExisting(raced);
+      }
+    }
 
+    // Round 17 (Opus B-684-8): a failed / canceled refund whose money was already applied is
+    // decided under the charge lock, after this status write, so a concurrent apply either saw
+    // the terminal status (and moved nothing) or finished first (and is flagged here).
+    if (FAILED_REFUND_STATUSES.has(row.status) && this.settlements) {
+      await this.settlements.withChargeLock(args.stripe_charge_id, () =>
+        this.flagFailedAfterApply(row.id, args.stripe_charge_id),
+      );
+      return { row, ledger_just_reversed: false };
+    }
     // Apply ledger reversals only once per refund (idempotency flag),
     // and only when the refund is actually `succeeded` — pending refunds
     // shouldn't move our books.
-    if (args.status !== 'succeeded' || row.ledger_reversed) {
+    if (row.status !== 'succeeded' || row.ledger_reversed) {
       return { row, ledger_just_reversed: false };
     }
 
-    await this.applyLedgerReversal(args.purchase.id, args.amount_cents);
-    await this.applyHeadCoachReversal(args.purchase.id, args.amount_cents);
-
-    const updated = await this.prisma.chargeRefund.update({
-      where: { id: row.id },
-      data: { ledger_reversed: true, transfer_reversed: true },
-    });
+    // S-FEE round 3 (B-627-2): one application per Stripe refund id, and one
+    // money movement at a time per charge. "Is this refund applied yet",
+    // the adjustment and "mark it applied" form one critical section under
+    // the charge's lock, so a duplicate delivery, two refunds of one charge
+    // delivered together, or an admin refund racing its own charge.refunded
+    // webhook apply each refund exactly once. The settlement path converges
+    // on the cumulative refunded total; the legacy path reverses this
+    // refund's share with an idempotency key that carries the refund id.
+    // A ChargeLockBusyError propagates (the webhook returns non-2xx and
+    // Stripe redelivers; the lock holder applies this refund before it
+    // releases, because it re-reads the charge's succeeded refunds).
+    const apply = async (): Promise<ChargeRefund | null> => {
+      if (this.settlements) {
+        // Round 17 (Opus B-684-8): the status as it is now, under the lock.
+        const fresh = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
+        if (!fresh || fresh.ledger_reversed || fresh.status !== 'succeeded') return null;
+      }
+      const settled = await this.applySettlementRefund(args.purchase, args.stripe_charge_id);
+      if (!settled) {
+        // Legacy destination charge (pre-S-FEE): unchanged reversal path.
+        await this.applyLedgerReversal(args.purchase.id, args.amount_cents, args.stripe_charge_id);
+        await this.applyHeadCoachReversal(
+          args.purchase.id,
+          args.amount_cents,
+          args.stripe_charge_id,
+          args.stripe_refund_id,
+        );
+      }
+      return this.prisma.chargeRefund.update({
+        where: { id: row.id },
+        data: { ledger_reversed: true, transfer_reversed: true },
+      });
+    };
+    const updated = this.settlements
+      ? await this.settlements.withChargeLock(args.stripe_charge_id, apply)
+      : await apply();
+    if (!updated) {
+      const current = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
+      return { row: current ?? row, ledger_just_reversed: false };
+    }
     return { row: updated, ledger_just_reversed: true };
+  }
+
+  /**
+   * Round 19 (B-684-12, both lenses): write a refund row's status as a compare-and-set on the
+   * status it was read with. The update matches only while the row still has that status; when
+   * it matches nothing (Prisma P2025) because another writer changed the status in between, the
+   * row is re-read and the next status is decided again from what is stored now.
+   * nextRefundStatus depends only on the stored status, so a match on it is enough. Bounded:
+   * after REFUND_STATUS_CAS_ATTEMPTS misses it fails closed (RefundStateUnavailableError, nothing
+   * moved; the delivery fails and Stripe redelivers).
+   */
+  private async writeRefundStatus(
+    read: ChargeRefund,
+    chargeId: string,
+    next: (current: ChargeRefund) => Prisma.ChargeRefundUpdateInput & { status: string },
+  ): Promise<ChargeRefund> {
+    let current = read;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.prisma.chargeRefund.update({
+          where: { stripe_refund_id: current.stripe_refund_id, status: current.status },
+          data: next(current),
+        });
+      } catch (err) {
+        const now = await this.prisma.chargeRefund.findUnique({
+          where: { stripe_refund_id: current.stripe_refund_id },
+        });
+        if (!now || now.status === current.status) throw err;
+        if (attempt >= REFUND_STATUS_CAS_ATTEMPTS) {
+          throw new RefundStateUnavailableError(chargeId, 'kind=refund_status_contended');
+        }
+        current = now;
+      }
+    }
+  }
+
+  // C-684-4 / Opus B-684-8: the payout was already reduced for a refund Stripe now reports
+  // failed or canceled. Runs under the charge lock; nothing is re-credited automatically.
+  private async flagFailedAfterApply(rowId: string, chargeId: string): Promise<void> {
+    const fresh = await this.prisma.chargeRefund.findUnique({ where: { id: rowId } });
+    if (!fresh?.ledger_reversed || !FAILED_REFUND_STATUSES.has(fresh.status)) return;
+    this.logger.error(
+      `SFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=${chargeId} refund=${fresh.stripe_refund_id} status=${fresh.status}: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically`,
+    );
+    await this.prisma.chargeSettlement.updateMany({
+      where: { stripe_charge_id: chargeId },
+      data: {
+        reconcile_requested_at: new Date(),
+        reconcile_reason: 'SFEE_REFUND_FAILED_AFTER_APPLY',
+      },
+    });
   }
 
   // A276 P0-2 (refix) — single source of truth for the post-conversion
@@ -420,6 +724,15 @@ export class RefundDisputeHandlerService {
     reason: string | null;
   }): Promise<void> {
     try {
+      // OR-111-1: a settlement charge's refund already has an exact-amount
+      // payout notice (what the client got back, what came back from that
+      // sale's payout, what is held from the next sale). Deliver it and skip
+      // this generic line so the coach gets one alert, with the real numbers.
+      // Delivery itself runs after the webhook commits (handle() and
+      // deliverPayoutNotices, C-627-7); this only checks that one exists.
+      if (this.payoutNotices && (await this.payoutNotices.hasNotices(args.stripe_charge_id))) {
+        return;
+      }
       // Determine whether this refund is full (purchase fully refunded)
       // or partial — affects the message body and entitlement_revoked
       // payload field. We re-read the purchase rather than relying on
@@ -428,8 +741,7 @@ export class RefundDisputeHandlerService {
       const fresh = await this.prisma.clientPurchase.findUnique({
         where: { id: args.purchase.id },
       });
-      const isFullRefund =
-        !!fresh && fresh.status === 'refunded' && !fresh.entitlement_active;
+      const isFullRefund = !!fresh && fresh.status === 'refunded' && !fresh.entitlement_active;
       const dollars = (args.amount_cents / 100).toFixed(2);
       const body = isFullRefund
         ? `Refund processed: $${dollars} returned to client.`
@@ -464,11 +776,62 @@ export class RefundDisputeHandlerService {
 
   // Reverses the destination + application_fee ledger slices
   // proportionally to the refund amount.
+  // S-FEE — route a refund on a separate-charge-and-transfer charge through
+  // the settlement (cumulative succeeded refunds on the charge). Returns
+  // false when the charge is a legacy destination charge (or unsettled
+  // legacy wiring), so the caller runs the legacy reversal path.
+  private async applySettlementRefund(
+    purchase: ClientPurchase,
+    chargeId: string,
+  ): Promise<boolean> {
+    if (!this.settlements) return false;
+    const refunds = await this.prisma.chargeRefund.findMany({
+      where: { stripe_charge_id: chargeId, status: 'succeeded' },
+      select: { amount_cents: true },
+    });
+    const refundedCents = refunds.reduce((n, r) => n + r.amount_cents, 0);
+    const outcome = await this.settlements.applyAdjustments({
+      purchase,
+      charge_id: chargeId,
+      refunded_cents: refundedCents,
+    });
+    return outcome !== 'legacy' && outcome !== 'no_settlement';
+  }
+
+  // S-FEE — dispute position change on a separate-charge-and-transfer
+  // charge. Stripe debits the platform for the disputed amount and the
+  // dispute fee; the coach bears both (transfer reversal, then netting).
+  // Returns false for a legacy destination charge.
+  private async applySettlementDispute(
+    purchase: ClientPurchase,
+    chargeId: string,
+    balanceTransactions: Array<{ amount?: number; fee?: number }> | undefined,
+    disputeId?: string | null,
+    noticeEvent: 'dispute_lost' | null = null,
+  ): Promise<boolean> {
+    if (!this.settlements || !balanceTransactions) return false;
+    const outcome = await this.settlements.applyAdjustments({
+      purchase,
+      charge_id: chargeId,
+      dispute: disputeAmountsFrom(balanceTransactions),
+      // Read the dispute's current position under the charge lock, so an
+      // older event processed late cannot undo a newer outcome.
+      dispute_id: disputeId ?? null,
+      notice_event: noticeEvent,
+    });
+    return outcome !== 'legacy' && outcome !== 'no_settlement';
+  }
+
   private async applyLedgerReversal(
     purchaseId: string,
     refundAmountCents: number,
+    chargeId?: string | null,
   ): Promise<void> {
-    const entries = await this.ledger.findByPurchase(purchaseId);
+    // Legacy rows only: per-purchase slices (stripe_charge_id may be null)
+    // or the slices of THIS charge. Never touch another charge's slices.
+    const entries = (await this.ledger.findByPurchase(purchaseId)).filter(
+      (e) => !chargeId || e.stripe_charge_id == null || e.stripe_charge_id === chargeId,
+    );
     const purchase = await this.prisma.clientPurchase.findUnique({
       where: { id: purchaseId },
     });
@@ -498,9 +861,20 @@ export class RefundDisputeHandlerService {
   private async applyHeadCoachReversal(
     purchaseId: string,
     refundAmountCents: number,
+    chargeId?: string | null,
+    // Stripe refund id (or dispute id): one reversal per refund at Stripe.
+    reversalSourceId?: string | null,
   ): Promise<void> {
+    // Legacy head-coach transfers only (S-FEE settlement transfers are
+    // reversed by ChargeSettlementService).
     const transfer = await this.prisma.connectTransfer.findFirst({
-      where: { purchase_id: purchaseId, status: 'succeeded' },
+      where: {
+        purchase_id: purchaseId,
+        status: 'succeeded',
+        kind: 'head_coach_split',
+        settlement_id: null,
+        ...(chargeId ? { source_stripe_charge_id: chargeId } : {}),
+      },
     });
     if (!transfer) return;
     const purchase = await this.prisma.clientPurchase.findUnique({
@@ -517,6 +891,10 @@ export class RefundDisputeHandlerService {
       await this.transfers.reverse({
         transfer_row_id: transfer.id,
         amount_cents: amount,
+        purpose: 'legacy',
+        ...(reversalSourceId
+          ? { idempotency_key: `tgp-tr-rev-${transfer.id}-src-${reversalSourceId}` }
+          : {}),
       });
     } catch (err) {
       this.logger.warn(
@@ -539,9 +917,12 @@ export class RefundDisputeHandlerService {
     return this.upsertDispute(event, /*initial=*/ false);
   }
 
-  private async onDisputeClosed(event: {
-    data: { object: Record<string, unknown> };
-  }, _outerTx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+  private async onDisputeClosed(
+    event: {
+      data: { object: Record<string, unknown> };
+    },
+    _outerTx?: WebhookTx,
+  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
     // PR-16: see onChargeRefunded — _outerTx is accepted for symmetry
     // but the dispute path's entitlement flip already executes on
     // this.prisma directly (not through the outer billing tx, because
@@ -553,7 +934,7 @@ export class RefundDisputeHandlerService {
       charge?: string | null;
       status?: string;
       amount?: number;
-      balance_transactions?: Array<{ id: string }>;
+      balance_transactions?: Array<{ id: string; amount?: number; fee?: number }>;
     };
     if (!dispute?.id) return { claimed: false };
     const existing = await this.prisma.chargeDispute.findUnique({
@@ -569,15 +950,36 @@ export class RefundDisputeHandlerService {
           dispute.balance_transactions?.[0]?.id ?? existing.balance_transaction_id,
       },
     });
+    // S-FEE — converge the settlement to the dispute's final position (won:
+    // principal reinstated, the coach is paid back less any fee Stripe kept;
+    // lost: the withdrawal stands). Entitlement handling below is unchanged.
+    let settlementHandled = false;
+    if (dispute.charge) {
+      const disputePurchase = await this.prisma.clientPurchase.findUnique({
+        where: { id: updated.purchase_id },
+      });
+      if (disputePurchase) {
+        settlementHandled = await this.applySettlementDispute(
+          disputePurchase,
+          dispute.charge,
+          dispute.balance_transactions,
+          dispute.id,
+          dispute.status === 'lost' ? 'dispute_lost' : null,
+        );
+      }
+    }
     // On a `lost` outcome, reverse the destination + application_fee
-    // ledger slices and reverse any head-coach transfer.
+    // ledger slices and reverse any head-coach transfer (legacy charges;
+    // a settlement-backed charge was already recovered above).
     if (dispute.status === 'lost' && !updated.ledger_reversed) {
       const purchase = await this.prisma.clientPurchase.findUnique({
         where: { id: updated.purchase_id },
       });
       if (purchase) {
-        await this.applyLedgerReversal(purchase.id, updated.amount_cents);
-        await this.applyHeadCoachReversal(purchase.id, updated.amount_cents);
+        if (!settlementHandled) {
+          await this.applyLedgerReversal(purchase.id, updated.amount_cents, dispute.charge);
+          await this.applyHeadCoachReversal(purchase.id, updated.amount_cents, dispute.charge);
+        }
         // PR-16 — entitlement flip + drop-cancel commit atomically.
         // The Stripe-HTTP-ridden ledger / transfer reversals above
         // intentionally run outside this tx (P1-3 anti-pattern). The
@@ -594,11 +996,7 @@ export class RefundDisputeHandlerService {
             data: { status: 'chargeback_lost', entitlement_active: false },
           });
           if (this.fanout) {
-            await this.fanout.cancelPendingForPurchase(
-              purchase.id,
-              'dispute',
-              tx,
-            );
+            await this.fanout.cancelPendingForPurchase(purchase.id, 'dispute', tx);
           }
         });
       }
@@ -629,6 +1027,7 @@ export class RefundDisputeHandlerService {
       currency?: string;
       reason?: string;
       evidence_details?: { due_by?: number; submission_count?: number };
+      balance_transactions?: Array<{ id?: string; amount?: number; fee?: number }>;
     };
     if (!dispute?.id || !dispute.charge) return { claimed: false };
     const purchase = await this.resolvePurchaseByCharge(dispute.charge);
@@ -679,8 +1078,7 @@ export class RefundDisputeHandlerService {
             purchase_id: purchase.id,
             stripe_dispute_id: disputeId,
             stripe_charge_id: chargeId,
-            amount_cents:
-              typeof dispute.amount === 'number' ? dispute.amount : 0,
+            amount_cents: typeof dispute.amount === 'number' ? dispute.amount : 0,
             currency: dispute.currency ?? 'usd',
             status: dispute.status ?? 'needs_response',
             reason: dispute.reason ?? null,
@@ -707,11 +1105,7 @@ export class RefundDisputeHandlerService {
     } catch (err) {
       // Prisma raises P2002 on a unique-constraint violation. Anything
       // else (e.g. connection error) we propagate so Stripe retries.
-      if (
-        !err ||
-        typeof err !== 'object' ||
-        (err as { code?: string }).code !== 'P2002'
-      ) {
+      if (!err || typeof err !== 'object' || (err as { code?: string }).code !== 'P2002') {
         throw err;
       }
       // Race lost — another delivery wrote first. The in-tx create
@@ -742,8 +1136,7 @@ export class RefundDisputeHandlerService {
             status: dispute.status ?? 'needs_response',
             reason: dispute.reason ?? null,
             evidence_due_by: dueBy ?? undefined,
-            amount_cents:
-              typeof dispute.amount === 'number' ? dispute.amount : undefined,
+            amount_cents: typeof dispute.amount === 'number' ? dispute.amount : undefined,
           },
         });
         if (initial) {
@@ -758,6 +1151,33 @@ export class RefundDisputeHandlerService {
         return updated;
       });
       isFirstObservation = false;
+    }
+
+    // S-FEE — Stripe debited the platform for the disputed amount + fee
+    // (dispute.balance_transactions). Recover it from the payees now, as
+    // Stripe recommends on charge.dispute.created ("recover funds from the
+    // connected account by reversing the transfer"). Idempotent per dispute
+    // position; a legacy destination charge is left to the legacy path.
+    // Round 4 (B-627-4): no adjustment failure is swallowed. Lock busy / lost,
+    // an unreadable canonical dispute or an unknown reversal outcome (and any
+    // other error) fail the delivery so Stripe redelivers it; the settlement
+    // is also flagged for the sweeper. The coach alert below still goes out
+    // first, because a redelivery is no longer the first observation.
+    let adjustmentError: unknown = null;
+    try {
+      await this.applySettlementDispute(
+        purchase,
+        dispute.charge,
+        dispute.balance_transactions,
+        dispute.id,
+      );
+    } catch (err) {
+      adjustmentError = err;
+      const level = isRetryableMoneyError(err) ? 'warn' : 'error';
+      this.logger[level](
+        `dispute settlement adjustment failed dispute=${dispute.id} charge=${dispute.charge}` +
+          `${level === 'error' ? ' alert=true' : ''}: ${settlementFailureCode(err)}; the delivery is retried`,
+      );
     }
 
     // A276 P1-1 (refix) — emit COACH_ALERT on the FIRST observation of
@@ -804,6 +1224,7 @@ export class RefundDisputeHandlerService {
       }
     }
 
+    if (adjustmentError) throw adjustmentError;
     return { claimed: true, purchase_id: row.purchase_id };
   }
 
@@ -823,17 +1244,50 @@ export class RefundDisputeHandlerService {
       where: { stripe_transfer_id: transfer.id },
     });
     if (!row) return { claimed: false };
-    const fullyReversed = !!transfer.reversed;
-    await this.prisma.connectTransfer.update({
-      where: { id: row.id },
-      data: {
-        reversed_amount_cents:
-          typeof transfer.amount_reversed === 'number'
-            ? transfer.amount_reversed
-            : row.reversed_amount_cents,
-        status: fullyReversed ? 'reversed' : row.status,
-        reversed_at: fullyReversed ? new Date() : row.reversed_at,
-      },
+    const settlement =
+      row.settlement_id && this.settlements
+        ? await this.prisma.chargeSettlement.findUnique({ where: { id: row.settlement_id } })
+        : null;
+    // Absolute sync from Stripe's cumulative amount_reversed; never lowers
+    // what we already recorded (an older event can arrive late).
+    const sync = async () => {
+      const fresh = await this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+      const reversed =
+        typeof transfer.amount_reversed === 'number'
+          ? Math.min(
+              fresh.amount_cents,
+              Math.max(fresh.reversed_amount_cents, transfer.amount_reversed),
+            )
+          : fresh.reversed_amount_cents;
+      const fullyReversed = !!transfer.reversed || reversed >= fresh.amount_cents;
+      await this.prisma.connectTransfer.update({
+        where: { id: row.id },
+        data: {
+          reversed_amount_cents: reversed,
+          status: fullyReversed ? 'reversed' : fresh.status,
+          reversed_at: fullyReversed ? (fresh.reversed_at ?? new Date()) : fresh.reversed_at,
+        },
+      });
+    };
+    if (!settlement || !this.settlements) {
+      await sync();
+      return { claimed: true, purchase_id: row.purchase_id };
+    }
+    // Round 4 (B-627-5): a settlement transfer's reversal is synced and the
+    // charge re-converged under the charge's lock, so a reversal Stripe
+    // applied while our receipt was lost corrects the payee's position (and
+    // any recovery opened for it) without waiting for another adjustment.
+    const purchase = await this.prisma.clientPurchase.findUnique({
+      where: { id: settlement.purchase_id },
+    });
+    await this.settlements.withChargeLock(settlement.stripe_charge_id, async () => {
+      await sync();
+      if (purchase) {
+        await this.settlements!.applyAdjustments({
+          purchase,
+          charge_id: settlement.stripe_charge_id,
+        });
+      }
     });
     return { claimed: true, purchase_id: row.purchase_id };
   }
@@ -864,9 +1318,7 @@ export class RefundDisputeHandlerService {
       amount_cents: typeof payout.amount === 'number' ? payout.amount : 0,
       status,
       arrival_at:
-        typeof payout.arrival_date === 'number'
-          ? new Date(payout.arrival_date * 1000)
-          : null,
+        typeof payout.arrival_date === 'number' ? new Date(payout.arrival_date * 1000) : null,
       failure_message: payout.failure_message ?? null,
     });
     return { claimed: true };
@@ -877,9 +1329,14 @@ export class RefundDisputeHandlerService {
   // Resolve a ClientPurchase from a Stripe charge id by walking the
   // SplitLedgerEntry table (which we populate at charge time with
   // stripe_charge_id).
-  private async resolvePurchaseByCharge(
-    chargeId: string,
-  ): Promise<ClientPurchase | null> {
+  private async resolvePurchaseByCharge(chargeId: string): Promise<ClientPurchase | null> {
+    // S-FEE: every settled charge (incl. renewals) has a settlement row.
+    const settledPurchaseId = await this.settlements?.purchaseIdForCharge(chargeId);
+    if (settledPurchaseId) {
+      return this.prisma.clientPurchase.findUnique({
+        where: { id: settledPurchaseId },
+      });
+    }
     const entry = await this.prisma.splitLedgerEntry.findFirst({
       where: { stripe_charge_id: chargeId, kind: 'destination' },
     });
@@ -891,8 +1348,7 @@ export class RefundDisputeHandlerService {
     // Fallback — pull the PI off the Charge and match on stripe_payment_intent_id.
     try {
       const charge = await this.stripe.retrieveCharge(chargeId);
-      const piId =
-        typeof charge.payment_intent === 'string' ? charge.payment_intent : null;
+      const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null;
       if (!piId) return null;
       return this.prisma.clientPurchase.findFirst({
         where: { stripe_payment_intent_id: piId },
@@ -929,40 +1385,67 @@ export class RefundDisputeHandlerService {
     if (purchase.source) {
       throw new BadRequestException({
         error: 'GRANT_NOT_REFUNDABLE',
-        message: 'This entitlement is a $0 grant, not a purchase; use POST /v1/entitlements/grants/revoke',
+        message:
+          'This entitlement is a $0 grant, not a purchase; use POST /v1/entitlements/grants/revoke',
       });
     }
     // Resolve the underlying charge id. For one_time prefer the saved PI;
     // for recurring use the most recent destination ledger slice.
     const chargeId = await this.resolveChargeIdForPurchase(purchase);
     if (!chargeId) {
-      throw new Error(
-        `createAdminRefund: no charge id for purchase ${purchase.id}`,
-      );
+      throw new Error(`createAdminRefund: no charge id for purchase ${purchase.id}`);
     }
     const idempotencyKey = `tgp-refund-${purchase.id}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;
+    // S-FEE: reverse_transfer / refund_application_fee only exist for
+    // destination charges. A separate-charge-and-transfer charge is
+    // recovered by ChargeSettlementService when the refund is applied.
+    // Decided from the Stripe charge itself, so a not-yet-settled charge is
+    // classified correctly too.
+    const legacyDestination = this.settlements
+      ? isLegacyDestinationCharge(await this.stripe.retrieveCharge(chargeId))
+      : true;
     const stripe = await this.stripe.createRefund({
       charge_id: chargeId,
       amount: args.amount_cents,
       reason: args.reason,
-      reverse_transfer: true,
-      refund_application_fee: true,
+      reverse_transfer: legacyDestination,
+      refund_application_fee: legacyDestination,
       metadata: {
         tgp_purchase_id: purchase.id,
         tgp_initiated_by: args.initiated_by_user_id,
       },
       idempotencyKey,
     });
-    const outcome = await this.upsertAndApplyRefund({
+    const refundInput = {
       purchase,
       stripe_refund_id: stripe.id,
       stripe_charge_id: chargeId,
-      amount_cents: typeof stripe.amount === 'number' ? stripe.amount : args.amount_cents ?? purchase.amount_cents,
+      amount_cents:
+        typeof stripe.amount === 'number'
+          ? stripe.amount
+          : (args.amount_cents ?? purchase.amount_cents),
       status: stripe.status ?? 'pending',
       reason: args.reason ?? null,
       note: args.note ?? null,
       initiated_by_user_id: args.initiated_by_user_id,
-    });
+    };
+    let outcome: { row: ChargeRefund; ledger_just_reversed: boolean };
+    try {
+      outcome = await this.upsertAndApplyRefund(refundInput);
+    } catch (err) {
+      // The refund exists at Stripe and its ChargeRefund row is written; the
+      // payout adjustment is applied by whoever holds the charge lock (it
+      // re-reads the refunds) or by the charge.refunded webhook.
+      if (!isRetryableMoneyError(err)) throw err;
+      this.logger.warn(
+        `admin refund recorded; payout adjustment deferred to the charge.refunded webhook refund=${stripe.id} charge=${chargeId}: ${settlementFailureCode(err)}`,
+      );
+      const recorded = await this.prisma.chargeRefund.findUnique({
+        where: { stripe_refund_id: stripe.id },
+      });
+      if (!recorded) throw err;
+      return recorded;
+    }
     // A276 P0-2 (refix) — admin-initiated refund: re-read the purchase
     // (admin path doesn't go through the webhook's purchase.update
     // branch, so we use the row state at call time) and emit the same
@@ -973,7 +1456,7 @@ export class RefundDisputeHandlerService {
       const amount_cents =
         typeof stripe.amount === 'number'
           ? stripe.amount
-          : args.amount_cents ?? purchase.amount_cents;
+          : (args.amount_cents ?? purchase.amount_cents);
       // Admin refund implicitly fully refunds when amount matches the
       // purchase amount. Mirror the webhook's purchase-state update so
       // emitRefundCoachAlert observes the correct status.
@@ -994,23 +1477,18 @@ export class RefundDisputeHandlerService {
     return outcome.row;
   }
 
-  private async resolveChargeIdForPurchase(
-    purchase: ClientPurchase,
-  ): Promise<string | null> {
+  private async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
     if (purchase.stripe_payment_intent_id) {
       try {
-        const pi = await this.stripe.retrievePaymentIntent(
-          purchase.stripe_payment_intent_id,
-        );
-        const latest =
-          typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
+        const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
+        const latest = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
         if (latest) return latest;
       } catch (err) {
-        this.logger.warn(
-          `retrievePaymentIntent failed: ${(err as Error).message}`,
-        );
+        this.logger.warn(`retrievePaymentIntent failed: ${settlementFailureCode(err)}`);
       }
     }
+    const latestSettled = await this.settlements?.latestChargeIdForPurchase(purchase.id);
+    if (latestSettled) return latestSettled;
     const entry = await this.prisma.splitLedgerEntry.findFirst({
       where: { purchase_id: purchase.id, kind: 'destination' },
       orderBy: { posted_at: 'desc' },
