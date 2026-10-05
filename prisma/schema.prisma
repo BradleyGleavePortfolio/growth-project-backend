@@ -2171,6 +2171,8 @@ model PushOutbox {
   handed_off_at      DateTime?
   attempts           Int       @default(0)
   // Last outcome code (sent, no-token, device-not-registered, ...).
+  // token-cleanup-pending: Expo reported DeviceNotRegistered but clearing the
+  // token failed; the receipt sweep retries the clear (never the send).
   result_code        String?
   ticket_id          String?
   token              String?
@@ -2184,6 +2186,7 @@ model PushOutbox {
   @@index([user_id, collapse_key, created_at])
   @@index([user_id, sent_at])
   @@index([sent_at, receipt_checked_at])
+  @@index([result_code])
 }
 
 model NotificationDigestLog {
