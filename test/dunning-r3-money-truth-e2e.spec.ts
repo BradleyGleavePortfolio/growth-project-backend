@@ -1032,11 +1032,11 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
       jest.setSystemTime(at(2 * DAY));
       let journalAtVoid: unknown = null;
       const voidFn = w.stripe.voidInvoice.bind(w.stripe);
-      jest.spyOn(w.stripe, 'voidInvoice').mockImplementation(async (args) => {
+      jest.spyOn(w.stripe, 'voidInvoice').mockImplementation(async (...args) => {
         journalAtVoid = w.fake
           .rows('clientBillingOperation')
           .find((o) => o.kind === 'cancel')?.lines;
-        return voidFn(args);
+        return voidFn(...args);
       });
       failJournalWriteOnce(() => w.stripe.invoices.get('in_dv2_renewal_1')?.status === 'void');
       await expect(w.billing.cancelPlan('client-1', 'purchase-1')).rejects.toThrow(
@@ -2059,7 +2059,9 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
     });
 
     it('isNeverEntitledPaymentAttempt: running, past_due and locked plans always dun; only never-started attempts do not', () => {
-      const f = isNeverEntitledPaymentAttempt;
+      // Main's signature also takes trial_started_at (never started here).
+      const f = (p: { status: string; entitlement_active: boolean }, reason: string | null) =>
+        isNeverEntitledPaymentAttempt({ ...p, trial_started_at: null }, reason);
       expect(f({ status: 'active', entitlement_active: true }, 'subscription_create')).toBe(true);
       expect(f({ status: 'pending', entitlement_active: false }, 'subscription_cycle')).toBe(true);
       expect(f({ status: 'incomplete', entitlement_active: false }, null)).toBe(true);
