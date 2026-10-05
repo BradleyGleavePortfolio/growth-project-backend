@@ -22,6 +22,7 @@ import {
   type ExecutionContext,
   type INestApplication,
   InternalServerErrorException,
+  NotFoundException,
   Param,
   Post,
   UnauthorizedException,
@@ -69,52 +70,56 @@ class HeaderAuthGuard implements CanActivate {
  * internal fields, and a 5xx.
  */
 const GOOD_TOKEN = 'abcdef0123456789';
-const CRAFTED: Readonly<Record<string, () => Error>> = {
-  other_code: () =>
-    new ConflictException({
-      code: 'program_name_taken',
-      error: 'program_name_taken',
-      head_revision_index: 5,
-      lock_token: GOOD_TOKEN,
-    }),
-  no_code: () =>
-    new ConflictException({
-      error: 'autosave_lock_stale',
-      head_revision_index: 5,
-      lock_token: GOOD_TOKEN,
-    }),
-  bad_shapes: () =>
-    new ConflictException({
-      code: 'undo_head_moved',
-      error: 'undo_head_moved',
-      head_revision_index: -1,
-      lock_token: 'ABCDEF0123456789',
-      plan_id: PLAN_ID,
-      version: 7,
-      head_revision_id: HEAD_REV,
-      statusCode: 200,
-    }),
-  bad_index_type: () =>
-    new ConflictException({
-      code: 'autosave_conflict_retry',
-      error: 'autosave_conflict_retry',
-      head_revision_index: '5',
-      lock_token: `${GOOD_TOKEN}00`,
-    }),
-  server_error: () =>
-    new InternalServerErrorException({
-      code: 'autosave_lock_stale',
-      error: 'autosave_lock_stale',
-      head_revision_index: 5,
-      lock_token: GOOD_TOKEN,
-    }),
-};
+function crafted(kind: string): Error {
+  switch (kind) {
+    case 'other_code':
+      return new ConflictException({
+        code: 'program_name_taken',
+        error: 'program_name_taken',
+        head_revision_index: 5,
+        lock_token: GOOD_TOKEN,
+      });
+    case 'no_code':
+      return new ConflictException({
+        error: 'autosave_lock_stale',
+        head_revision_index: 5,
+        lock_token: GOOD_TOKEN,
+      });
+    case 'bad_shapes':
+      return new ConflictException({
+        code: 'undo_head_moved',
+        error: 'undo_head_moved',
+        head_revision_index: -1,
+        lock_token: 'ABCDEF0123456789',
+        plan_id: PLAN_ID,
+        version: 7,
+        head_revision_id: HEAD_REV,
+        statusCode: 200,
+      });
+    case 'bad_index_type':
+      return new ConflictException({
+        code: 'autosave_conflict_retry',
+        error: 'autosave_conflict_retry',
+        head_revision_index: '5',
+        lock_token: `${GOOD_TOKEN}00`,
+      });
+    case 'server_error':
+      return new InternalServerErrorException({
+        code: 'autosave_lock_stale',
+        error: 'autosave_lock_stale',
+        head_revision_index: 5,
+        lock_token: GOOD_TOKEN,
+      });
+    default:
+      return new NotFoundException();
+  }
+}
 
 @Controller('mwb409-crafted')
 class CraftedErrorController {
   @Post(':kind')
   raise(@Param('kind') kind: string): never {
-    throw CRAFTED[kind]();
+    throw crafted(kind);
   }
 }
 
