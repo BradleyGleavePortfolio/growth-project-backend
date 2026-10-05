@@ -24,11 +24,21 @@ import type { CreateNotificationInput } from '../src/notifications/notifications
 
 const createNotificationMock = jest.fn().mockResolvedValue({ id: 'notif-1' });
 const pushToCoachMock = jest.fn().mockResolvedValue(true);
+// C-643-2: device delivery. Emitters write ONE inbox row (inapp) and send
+// the device push through sendPush, which writes no row.
+const sendPushMock = jest.fn().mockResolvedValue({ sent: true, code: 'sent' });
 
 const mockNotificationsService = {
   createNotification: createNotificationMock,
   pushToCoach: pushToCoachMock,
+  sendPush: sendPushMock,
 } as never;
+
+function pushedTo(): Array<{ user_id: string; kind: string; body: string; deep_link?: string }> {
+  return sendPushMock.mock.calls.map(
+    (c: [{ user_id: string; kind: string; body: string; deep_link?: string }]) => c[0],
+  );
+}
 
 function capturedCalls(): CreateNotificationInput[] {
   return createNotificationMock.mock.calls.map((c: [CreateNotificationInput]) => c[0]);
@@ -37,6 +47,7 @@ function capturedCalls(): CreateNotificationInput[] {
 beforeEach(() => {
   createNotificationMock.mockClear();
   pushToCoachMock.mockClear();
+  sendPushMock.mockClear();
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -56,17 +67,20 @@ function assertNoPii(body: string) {
 describe('MilestoneReachedEmitter', () => {
   const emitter = new MilestoneReachedEmitter(mockNotificationsService);
 
-  it('emits inapp + push notifications with correct kind', async () => {
+  it('writes ONE inapp inbox row and sends one device push (C-643-2)', async () => {
     await emitter.emit('user-1', { milestoneType: 'weight_goal', value: '185 lbs' });
 
     const calls = capturedCalls();
-    expect(calls.length).toBe(2);
-
-    const [inapp, push] = calls;
-    expect(inapp.kind).toBe(NotificationKind.MILESTONE_REACHED);
-    expect(inapp.channel).toBe('inapp');
-    expect(push.kind).toBe(NotificationKind.MILESTONE_REACHED);
-    expect(push.channel).toBe('push');
+    expect(calls.length).toBe(1);
+    expect(calls[0].kind).toBe(NotificationKind.MILESTONE_REACHED);
+    expect(calls[0].channel).toBe('inapp');
+    expect(pushedTo()).toEqual([
+      expect.objectContaining({
+        user_id: 'user-1',
+        kind: NotificationKind.MILESTONE_REACHED,
+        deep_link: 'tgp://timeline',
+      }),
+    ]);
   });
 
   it('body contains the milestone value and is under 160 chars', async () => {
@@ -112,9 +126,12 @@ describe('MessageReceivedEmitter', () => {
     await emitter.emit('client-1', { senderName: 'Alex', threadId: 'thread-abc' });
 
     const calls = capturedCalls();
-    expect(calls.length).toBe(2);
+    expect(calls.length).toBe(1);
     expect(calls[0].kind).toBe(NotificationKind.MESSAGE_RECEIVED);
     expect(calls[0].user_id).toBe('client-1');
+    expect(pushedTo()).toEqual([
+      expect.objectContaining({ user_id: 'client-1', kind: NotificationKind.MESSAGE_RECEIVED }),
+    ]);
   });
 
   it('body contains sender name', async () => {
@@ -145,8 +162,9 @@ describe('MissedCheckinEmitter', () => {
   it('emits client notification', async () => {
     await emitter.emit({ clientUserId: 'u1', daysMissed: 3 });
     const calls = capturedCalls();
-    // At minimum: inapp + push for client
-    expect(calls.filter((c) => c.user_id === 'u1').length).toBeGreaterThanOrEqual(2);
+    // One inbox row and one device push for the client (C-643-2).
+    expect(calls.filter((c) => c.user_id === 'u1').length).toBe(1);
+    expect(pushedTo().filter((c) => c.user_id === 'u1').length).toBe(1);
   });
 
   it('emits coach notification when coachId is provided', async () => {
@@ -293,7 +311,7 @@ describe('BuildWeekDayUnlockedEmitter', () => {
 describe('CoachAlertEmitter', () => {
   const emitter = new CoachAlertEmitter(mockNotificationsService);
 
-  it('emits inapp notification and calls pushToCoach', async () => {
+  it('writes one inapp row and sends one quiet device push via sendPush (C-643-2)', async () => {
     await emitter.emit({
       coachId: 'coach-1',
       alertId: 'alert-1',
@@ -304,11 +322,17 @@ describe('CoachAlertEmitter', () => {
     });
 
     const calls = capturedCalls();
-    expect(calls.some((c) => c.channel === 'inapp')).toBe(true);
-    expect(pushToCoachMock).toHaveBeenCalledWith(
-      'coach-1',
-      expect.objectContaining({ alertId: 'alert-1', alertType: 'risk_red_transition' }),
-    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].channel).toBe('inapp');
+    expect(pushedTo()).toEqual([
+      expect.objectContaining({
+        user_id: 'coach-1',
+        kind: NotificationKind.COACH_ALERT,
+        deep_link: 'tgp://coach/clients/u1',
+      }),
+    ]);
+    // The raw pushToCoach path put the alert text on the lock screen.
+    expect(pushToCoachMock).not.toHaveBeenCalled();
   });
 
   it('notification goes to coach, not client', async () => {

@@ -51,13 +51,13 @@ export class CheckinSubmittedEmitter {
 
       // Push is opt-in for coaches (default off per prefs matrix — coaches
       // handle high volumes and push for every check-in is too noisy).
-      await this.notifications.createNotification({
+      // C-643-2: one inbox row (above) plus a device push with quiet
+      // lock-screen copy; no second `push` inbox row.
+      await this.notifications.sendPush({
         user_id: coachId,
         kind: NotificationKind.CHECKIN_SUBMITTED,
         body,
-        payload: { clientUserId, streakDays },
         deep_link: `tgp://coach/clients/${clientUserId}/checkins`,
-        channel: 'push',
       });
     } catch (err) {
       this.logger.warn(

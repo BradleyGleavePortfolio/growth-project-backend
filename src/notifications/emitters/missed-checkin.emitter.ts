@@ -45,21 +45,22 @@ export class MissedCheckinEmitter {
         channel: 'inapp',
       });
 
-      await this.notifications.createNotification({
+      // C-643-2: one inbox row (above) plus a device push with quiet
+      // lock-screen copy; no second `push` inbox row.
+      await this.notifications.sendPush({
         user_id: clientUserId,
         kind: NotificationKind.MISSED_CHECKIN,
         body: `You have missed ${daysMissed} check-in${daysMissed !== 1 ? 's' : ''}. Log today's check-in to keep your streak.`,
-        payload: { daysMissed },
         deep_link: 'tgp://checkin/today',
-        channel: 'push',
       });
 
       // Coach-facing notification.
       if (coachId && clientDisplayName) {
-        const coachBody = `${clientDisplayName} has missed ${daysMissed} check-in${daysMissed !== 1 ? 's' : ''}. Last active: ${daysMissed} day${daysMissed !== 1 ? 's' : ''} ago.`.slice(
-          0,
-          160,
-        );
+        const coachBody =
+          `${clientDisplayName} has missed ${daysMissed} check-in${daysMissed !== 1 ? 's' : ''}. Last active: ${daysMissed} day${daysMissed !== 1 ? 's' : ''} ago.`.slice(
+            0,
+            160,
+          );
 
         await this.notifications.createNotification({
           user_id: coachId,
@@ -70,19 +71,17 @@ export class MissedCheckinEmitter {
           channel: 'inapp',
         });
 
-        await this.notifications.createNotification({
+        // C-643-2: one inbox row (above) plus a device push with quiet
+        // lock-screen copy; no second `push` inbox row.
+        await this.notifications.sendPush({
           user_id: coachId,
           kind: NotificationKind.MISSED_CHECKIN,
           body: coachBody,
-          payload: { daysMissed, clientUserId },
           deep_link: `tgp://coach/clients/${clientUserId}`,
-          channel: 'push',
         });
       }
     } catch (err) {
-      this.logger.warn(
-        `MissedCheckinEmitter failed: ${(err as Error).message}`,
-      );
+      this.logger.warn(`MissedCheckinEmitter failed: ${(err as Error).message}`);
     }
   }
 }

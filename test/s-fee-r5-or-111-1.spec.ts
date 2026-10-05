@@ -859,7 +859,8 @@ describe('round 6 B-627-6: per-channel delivery against the real EmailService', 
     const pushCall = ctx.notifications.createNotification.mock.calls.find(
       (c) => (c[0] as { channel?: string }).channel === 'push',
     );
-    expect(pushCall?.[0]).toMatchObject({ throttle_key: ctx.db.notices![0].id });
+    // Opus C-693-2 (#693): one inbox item per notice, the push row is its twin.
+    expect(pushCall?.[0]).toMatchObject({ throttle_key: ctx.db.notices![0].id, push_twin: true });
   });
 });
 
