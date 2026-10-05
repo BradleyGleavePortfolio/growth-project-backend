@@ -667,9 +667,11 @@ const wearableConnections = [
 const sample = (user_id: string, metric: string, value: number, start: string, end = start) => ({
   user_id,
   metric,
+  provider: 'OURA',
   value,
   start_at: new Date(start),
   end_at: new Date(end),
+  recorded_at: new Date(end),
   source_tz: 'America/Los_Angeles',
 });
 

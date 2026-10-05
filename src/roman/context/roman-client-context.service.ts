@@ -76,7 +76,12 @@ export const ROMAN_CTX_LIMITS = {
   coach_messages: 8,
   community_posts: 5,
   wearable_days: 7,
-  wearable_samples: 600,
+  /** B-665-2: read cap+1; more rows means the window is incomplete and is withheld. */
+  wearable_samples: 3000,
+  /** B-665-4: today and the next 14 local days, ascending (read cap+1). */
+  plan_upcoming: 30,
+  /** B-665-4: the last 14 local days plus today, newest first (read cap+1). */
+  plan_history: 40,
   consultation_answers: 30,
   screen_answers: 12,
   bookings: 3,
@@ -154,6 +159,33 @@ export function addDays(ymd: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 const ymdOf = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** B-665-3: local YYYY-MM-DD of an instant, one formatter per call site. */
+export function localDateOf(timezone: string): (d: Date) => string {
+  const f = new Intl.DateTimeFormat('en-CA', {
+    timeZone: localClock(new Date(0), timezone).timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return (d) => f.format(d);
+}
+
+/** B-665-3: the UTC instant at which local date `ymd` begins in `timezone` (DST-safe). */
+export function localDayStart(ymd: string, timezone: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const target = Date.UTC(y, m - 1, d);
+  let t = target;
+  for (let i = 0; i < 3; i++) {
+    const c = localClock(new Date(t), timezone);
+    const [ly, lm, ld] = c.local_date.split('-').map(Number);
+    const [hh, mm] = c.local_time.split(':').map(Number);
+    const seen = Date.UTC(ly, lm - 1, ld, hh, mm);
+    if (seen === target) break;
+    t += target - seen;
+  }
+  return new Date(t);
+}
 
 /** Age as a whole number of years from a DOB, in the client's local date. */
 export function ageYears(dob: Date | null | undefined, localDate: string): number | null {
@@ -341,6 +373,11 @@ export class RomanClientContextService {
         profile: true,
         notification_prefs: { select: { timezone: true } },
         coach: { select: { id: true, name: true, role: true, deleted_at: true } },
+        // B-665-1: the client's per-metric provider choice (resolveBest policy).
+        wearable_metric_preferences: {
+          where: { metric: { in: [...ROMAN_WEARABLE_METRICS] } },
+          select: { metric: true, preferred_provider: true },
+        },
       },
     });
 
@@ -362,11 +399,15 @@ export class RomanClientContextService {
     const d14 = addDays(today, -14);
     const d30 = addDays(today, -30);
     const plus14 = addDays(today, 14);
+    // B-665-3: assignment times are instants; window bounds are local midnights.
+    const tz = clock.timezone;
+    const truncated: string[] = [];
 
     const [
       macroTarget,
       foodEntries,
-      assignments,
+      historyRows,
+      upcomingRows,
       workoutSessions,
       weightLogs,
       checkIns,
@@ -404,16 +445,44 @@ export class RomanClientContextService {
           },
         },
       })),
+      // B-665-4: history (adherence, completions) and upcoming (today, next)
+      // are read separately, each with a cap+1 completeness check.
       coachId
         ? (queries++,
           this.prisma.clientWorkoutAssignment.findMany({
             where: {
               client_id: userId,
               assigned_by_coach_id: coachId,
-              scheduled_for: { gte: dateOnly(d14), lt: dateOnly(addDays(plus14, 1)) },
+              scheduled_for: {
+                gte: localDayStart(d14, tz),
+                lt: localDayStart(addDays(today, 1), tz),
+              },
+            },
+            orderBy: { scheduled_for: 'desc' },
+            take: ROMAN_CTX_LIMITS.plan_history + 1,
+            select: {
+              scheduled_for: true,
+              completed_at: true,
+              post_rpe: true,
+              post_notes: true,
+              snapshot: { select: { plan_name: true } },
+              workout_plan: { select: { name: true, program: { select: { name: true } } } },
+            },
+          }))
+        : [],
+      coachId
+        ? (queries++,
+          this.prisma.clientWorkoutAssignment.findMany({
+            where: {
+              client_id: userId,
+              assigned_by_coach_id: coachId,
+              scheduled_for: {
+                gte: localDayStart(today, tz),
+                lt: localDayStart(addDays(plus14, 1), tz),
+              },
             },
             orderBy: { scheduled_for: 'asc' },
-            take: 40,
+            take: ROMAN_CTX_LIMITS.plan_upcoming + 1,
             select: {
               scheduled_for: true,
               completed_at: true,
@@ -557,8 +626,16 @@ export class RomanClientContextService {
           start_at: { gte: new Date(`${addDays(today, -8)}T00:00:00.000Z`) },
         },
         orderBy: { start_at: 'desc' },
-        take: ROMAN_CTX_LIMITS.wearable_samples,
-        select: { metric: true, value: true, start_at: true, end_at: true, source_tz: true },
+        take: ROMAN_CTX_LIMITS.wearable_samples + 1,
+        select: {
+          metric: true,
+          provider: true,
+          value: true,
+          start_at: true,
+          end_at: true,
+          recorded_at: true,
+          source_tz: true,
+        },
       })),
       // Upcoming sessions with the CURRENT coach (bookings). Title, time and
       // status only: never coach_notes_md, recaps, video links or provider ids.
@@ -578,8 +655,17 @@ export class RomanClientContextService {
         : [],
     ]);
 
+    // B-665-4: cap+1 rows means the window is incomplete; say so, never guess.
+    const history = historyRows.slice(0, ROMAN_CTX_LIMITS.plan_history);
+    const historyComplete = historyRows.length <= ROMAN_CTX_LIMITS.plan_history;
+    if (!historyComplete) truncated.push('plan.history');
+    const upcoming = upcomingRows.slice(0, ROMAN_CTX_LIMITS.plan_upcoming);
+    const upcomingComplete = upcomingRows.length <= ROMAN_CTX_LIMITS.plan_upcoming;
+    if (!upcomingComplete) truncated.push('plan.upcoming');
+    const dayOf = localDateOf(tz);
+
     // Exercise names for the next/today session (one catalog lookup).
-    const sessionsNeedingNames = pickSessions(assignments, today);
+    const sessionsNeedingNames = pickSessions(upcoming, today, dayOf);
     const externalIds = new Set<string>();
     for (const s of [sessionsNeedingNames.today, sessionsNeedingNames.next]) {
       for (const ex of s?.rawExercises ?? []) externalIds.add(ex.exercise_external_id);
@@ -730,7 +816,13 @@ export class RomanClientContextService {
         : null;
 
     // ── plan ──
-    const plan = buildPlan(assignments, sessionsNeedingNames, nameById, today, d14);
+    const plan = buildPlan(
+      { history, historyComplete, upcoming, upcomingComplete },
+      sessionsNeedingNames,
+      nameById,
+      today,
+      dayOf,
+    );
     if (!plan) missing.push('plan');
 
     // ── logged workouts ──
@@ -803,11 +895,14 @@ export class RomanClientContextService {
     }));
 
     // ── wearables ──
+    const wearablesComplete = wearableSamples.length <= ROMAN_CTX_LIMITS.wearable_samples;
+    if (!wearablesComplete) truncated.push('wearables.samples');
     const wearables = summarizeWearables(
       wearableConnections,
       wearableSamples,
       today,
       clock.timezone,
+      { preferences: user.wearable_metric_preferences ?? [], complete: wearablesComplete },
     );
 
     // ── bookings (upcoming, current coach only) ──
@@ -928,7 +1023,7 @@ export class RomanClientContextService {
       upcoming_sessions,
       community_posts,
       meal_plan,
-      data_quality: { generated_at: now.toISOString(), missing, truncated: [] },
+      data_quality: { generated_at: now.toISOString(), missing, truncated },
     };
     return { context, query_count: queries };
   }
@@ -1041,6 +1136,16 @@ type AssignmentRow = {
   };
 };
 type PickedSession = { row: AssignmentRow; rawExercises: RawExercise[] };
+/** B-665-4: the light history projection (no exercises). */
+type HistoryRow = {
+  scheduled_for: Date;
+  completed_at: Date | null;
+  post_rpe: number | null;
+  post_notes: string | null;
+  snapshot: { plan_name: string } | null;
+  workout_plan: { name: string; program: { name: string } | null };
+};
+type DayOf = (d: Date) => string;
 
 function rawExercisesOf(a: AssignmentRow): RawExercise[] {
   const snap = a.snapshot?.exercises_json;
@@ -1063,21 +1168,25 @@ function rawExercisesOf(a: AssignmentRow): RawExercise[] {
   return a.workout_plan.exercises.slice(0, 8);
 }
 
+/**
+ * `upcoming` is ascending from local today: the first open row of each kind
+ * is exact even when the read hit its cap (every earlier row was read).
+ */
 function pickSessions(
-  assignments: AssignmentRow[],
+  upcoming: AssignmentRow[],
   today: string,
+  dayOf: DayOf,
 ): { today: PickedSession | null; next: PickedSession | null } {
   const todayRow =
-    assignments.find((a) => ymdOf(a.scheduled_for) === today && !a.completed_at) ?? null;
-  const nextRow =
-    assignments.find((a) => ymdOf(a.scheduled_for) > today && !a.completed_at) ?? null;
+    upcoming.find((a) => dayOf(a.scheduled_for) === today && !a.completed_at) ?? null;
+  const nextRow = upcoming.find((a) => dayOf(a.scheduled_for) > today && !a.completed_at) ?? null;
   return {
     today: todayRow ? { row: todayRow, rawExercises: rawExercisesOf(todayRow) } : null,
     next: nextRow ? { row: nextRow, rawExercises: rawExercisesOf(nextRow) } : null,
   };
 }
 
-function toSession(p: PickedSession, nameById: Map<string, string>): RomanCtxSession {
+function toSession(p: PickedSession, nameById: Map<string, string>, dayOf: DayOf): RomanCtxSession {
   const exercises: RomanCtxExercise[] = p.rawExercises.map((e) => ({
     name: clamp(nameById.get(e.exercise_external_id) ?? 'Exercise', 60) ?? 'Exercise',
     sets: e.sets,
@@ -1085,7 +1194,7 @@ function toSession(p: PickedSession, nameById: Map<string, string>): RomanCtxSes
     cue: clamp(e.notes, 80),
   }));
   return {
-    date: ymdOf(p.row.scheduled_for),
+    date: dayOf(p.row.scheduled_for),
     name: clamp(p.row.snapshot?.plan_name ?? p.row.workout_plan.name, 80) ?? 'Workout',
     type: clamp(p.row.snapshot?.plan_type ?? p.row.workout_plan.type, 30),
     exercises,
@@ -1093,40 +1202,51 @@ function toSession(p: PickedSession, nameById: Map<string, string>): RomanCtxSes
 }
 
 function buildPlan(
-  assignments: AssignmentRow[],
+  rows: {
+    history: HistoryRow[];
+    historyComplete: boolean;
+    upcoming: AssignmentRow[];
+    upcomingComplete: boolean;
+  },
   picked: { today: PickedSession | null; next: PickedSession | null },
   nameById: Map<string, string>,
   today: string,
-  d14: string,
+  dayOf: DayOf,
 ): RomanCtxPlan | null {
-  if (assignments.length === 0) return null;
-  const recent = assignments.filter(
-    (a) => ymdOf(a.scheduled_for) >= d14 && ymdOf(a.scheduled_for) <= today,
-  );
-  const completions: RomanCtxCompletion[] = recent
+  const { history, upcoming } = rows;
+  if (history.length === 0 && upcoming.length === 0) return null;
+  // history is newest first; completions are the 10 most recent, oldest first.
+  const completions: RomanCtxCompletion[] = history
     .filter((a) => a.completed_at)
-    .slice(-10)
+    .slice(0, 10)
+    .reverse()
     .map((a) => ({
-      date: ymdOf(a.scheduled_for),
+      date: dayOf(a.scheduled_for),
       name: clamp(a.snapshot?.plan_name ?? a.workout_plan.name, 80) ?? 'Workout',
       post_rpe: a.post_rpe ?? null,
       has_notes: !!a.post_notes,
       notes: clamp(a.post_notes, 140),
     }));
-  const anchor = picked.today?.row ?? picked.next?.row ?? assignments[assignments.length - 1];
+  const anchor =
+    picked.today?.row ?? picked.next?.row ?? upcoming[upcoming.length - 1] ?? history[0];
   const upcomingDays = new Set(
-    assignments.filter((a) => ymdOf(a.scheduled_for) > today).map((a) => ymdOf(a.scheduled_for)),
+    upcoming.map((a) => dayOf(a.scheduled_for)).filter((d) => d > today),
   );
   return {
     program_name: clamp(anchor.workout_plan.program?.name ?? null, 80),
-    days_per_week: upcomingDays.size ? Math.min(7, Math.ceil(upcomingDays.size / 2)) : null,
+    // Unknown (null) when the upcoming read hit its cap.
+    days_per_week:
+      rows.upcomingComplete && upcomingDays.size
+        ? Math.min(7, Math.ceil(upcomingDays.size / 2))
+        : null,
     assigned_at: null,
-    today_session: picked.today ? toSession(picked.today, nameById) : null,
-    next_session: picked.next ? toSession(picked.next, nameById) : null,
+    today_session: picked.today ? toSession(picked.today, nameById, dayOf) : null,
+    next_session: picked.next ? toSession(picked.next, nameById, dayOf) : null,
     recent_completions: completions,
-    adherence_14d: recent.length
-      ? { completed: recent.filter((a) => a.completed_at).length, scheduled: recent.length }
-      : null,
+    adherence_14d:
+      rows.historyComplete && history.length
+        ? { completed: history.filter((a) => a.completed_at).length, scheduled: history.length }
+        : null,
   };
 }
 
@@ -1135,11 +1255,42 @@ function buildPlan(
 type WearableConnRow = { provider: string; status: string; last_synced_at: Date | null };
 type WearableSampleRow = {
   metric: string;
+  /** Absent only in legacy test rows; treated as one unnamed provider. */
+  provider?: string;
   value: number;
   start_at: Date;
   end_at: Date;
+  recorded_at?: Date;
   source_tz: string | null;
 };
+type WearablePrefRow = { metric: string; preferred_provider: string };
+
+/**
+ * B-665-1: one provider per metric, the same policy as
+ * WearablesIngestionService.resolveBest: the client's preferred provider for
+ * that metric (even when it has no rows in the window), otherwise the provider
+ * that most recently recorded a sample in the window (ties: lowest name).
+ * Competing providers are never summed.
+ */
+export function selectWearableProviders(
+  samples: WearableSampleRow[],
+  preferences: WearablePrefRow[],
+): Map<string, string> {
+  const chosen = new Map<string, string>();
+  const newest = new Map<string, { provider: string; at: number }>();
+  for (const smp of samples) {
+    const metric = String(smp.metric);
+    const provider = String(smp.provider);
+    const at = smp.recorded_at ? new Date(smp.recorded_at).getTime() : Number.NEGATIVE_INFINITY;
+    const cur = newest.get(metric);
+    if (!cur || at > cur.at || (at === cur.at && provider < cur.provider)) {
+      newest.set(metric, { provider, at });
+    }
+  }
+  for (const [metric, n] of newest) chosen.set(metric, n.provider);
+  for (const p of preferences) chosen.set(String(p.metric), String(p.preferred_provider));
+  return chosen;
+}
 
 const EMPTY_WEARABLE_DAY: Omit<RomanCtxWearableDay, 'date'> = {
   steps: null,
@@ -1182,6 +1333,7 @@ export function summarizeWearables(
   samples: WearableSampleRow[],
   today: string,
   timezone: string = DEFAULT_TZ,
+  opts: { preferences?: WearablePrefRow[]; complete?: boolean } = {},
 ): RomanCtxWearables {
   const active = connections.filter((c) => c.status === 'connected');
   const providers = [...new Set(active.map((c) => String(c.provider).toLowerCase()))].sort();
@@ -1191,16 +1343,29 @@ export function summarizeWearables(
     .filter((d): d is Date => d != null && typeof (d as Date).getTime === 'function')
     .sort((a, b) => b.getTime() - a.getTime())[0];
   if (active.length === 0 && samples.length === 0) return emptyWearables();
+  // B-665-2: an incomplete read publishes no totals or averages at all; the
+  // caller records `wearables.samples` in data_quality.truncated.
+  if (opts.complete === false) {
+    return {
+      ...emptyWearables(),
+      connected: active.length > 0,
+      providers,
+      last_synced_at: lastSync ? lastSync.toISOString() : null,
+    };
+  }
+  const chosen = selectWearableProviders(samples, opts.preferences ?? []);
+  const dayOf = localDateOf(timezone);
 
   type Acc = Record<string, { sum: number; n: number }>;
   const perDay = new Map<string, Acc>();
   const since = addDays(today, -(ROMAN_CTX_LIMITS.wearable_days - 1));
   for (const smp of samples) {
     const metric = String(smp.metric);
+    if (chosen.get(metric) !== String(smp.provider)) continue;
     const isSleep = metric.startsWith('SLEEP_');
     // C-R3-1: bucket by the client's LOCAL date (their authoritative
     // timezone), never the UTC date.
-    const day = localClock(isSleep ? smp.end_at : smp.start_at, timezone).local_date;
+    const day = dayOf(isSleep ? smp.end_at : smp.start_at);
     if (day < since || day > today) continue;
     if (!Number.isFinite(smp.value)) continue;
     const acc = perDay.get(day) ?? {};
