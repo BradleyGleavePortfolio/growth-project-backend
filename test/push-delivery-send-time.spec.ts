@@ -219,7 +219,7 @@ describe('B-648-8 (round 6): the handoff CAS follows the final read', () => {
     const original = w.db.user.findUnique.getMockImplementation();
     let reads = 0;
     w.db.user.findUnique.mockImplementation(async (args) => {
-      const out = original ? await original(args) : null;
+      const out = original ? await original(args) : { expo_push_token: null };
       const { select } = args as { select?: { expo_push_token?: boolean } };
       if (select?.expo_push_token && ++reads === 2) await change();
       return out;
