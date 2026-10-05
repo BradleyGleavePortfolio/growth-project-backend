@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { headCoachSplitCents, platformBaseFeeCents } from '../../payouts-v2/platform-fee.service';
 
 // FeePolicyService — single source of truth for "how does a purchase
 // dollar get split". Two-layer policy:
@@ -41,15 +42,15 @@ export interface SplitPlanInput {
 export interface SplitPlan {
   amount_cents: number;
   currency_assumed: string;
-  // The platform's slice (application_fee_amount on the Stripe charge).
-  // Always rounded toward platform safety (floor).
+  // The platform's slice (2% by default). Floored. S-FEE: no longer sent to
+  // Stripe as an application fee; TGP keeps it by transferring less.
   application_fee_cents: number;
   // The head-coach's slice. 0 when seller is solo (no head_coach_id).
-  // This is a follow-on Transfer minted by us after the charge succeeds.
+  // Paid as its own Transfer (source_transaction = the charge) at settlement.
   head_coach_split_cents: number;
-  // Destination amount the connected account (selling coach) ends up
-  // with, BEFORE Stripe's processing fee. Computed for display only —
-  // Stripe doesn't take this as input; it's the residual.
+  // Preview of the selling coach's share BEFORE Stripe's processing fee.
+  // Display / validation only — the settled coach net is computed after the
+  // charge from the actual Stripe fee (ChargeSettlementService).
   destination_cents: number;
   policy: FeePolicySnapshot;
   // The head coach we'd transfer to. Mirrored here so callers don't have
@@ -121,14 +122,13 @@ export class FeePolicyService {
         }) exceeds cap ${MAX_COMBINED_BPS}`,
       });
     }
-    const applicationFeeCents = Math.floor(
-      (args.amount_cents * platformBps) / 10_000,
-    );
-    const headCoachSplitCents = Math.floor(
-      (args.amount_cents * headCoachBps) / 10_000,
-    );
-    const destinationCents =
-      args.amount_cents - applicationFeeCents - headCoachSplitCents;
+    // S-FEE: the slices come from the single fee module. This plan is a
+    // PRE-CHARGE preview (Stripe's actual fee is unknown until the charge
+    // settles); the money that moves is computed by ChargeSettlementService
+    // from the charge's balance_transaction.fee.
+    const applicationFeeCents = platformBaseFeeCents(args.amount_cents, platformBps);
+    const headCoachCents = headCoachSplitCents(args.amount_cents, headCoachBps);
+    const destinationCents = args.amount_cents - applicationFeeCents - headCoachCents;
     if (destinationCents <= 0) {
       throw new BadRequestException({
         error: 'POLICY_DRAINS_DESTINATION',
@@ -140,7 +140,7 @@ export class FeePolicyService {
       amount_cents: args.amount_cents,
       currency_assumed: 'usd',
       application_fee_cents: applicationFeeCents,
-      head_coach_split_cents: headCoachSplitCents,
+      head_coach_split_cents: headCoachCents,
       destination_cents: destinationCents,
       policy,
       head_coach_id: args.head_coach_id,

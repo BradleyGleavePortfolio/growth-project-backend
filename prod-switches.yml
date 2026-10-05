@@ -368,6 +368,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: coach
     description: "Phase 6D — when 'true' (default), AdminService.promoteUser auto-starts the 6-step onboarding wizard for newly-promoted coaches. Set to 'fals"
+  - name: COACH_WELCOME_SCHEDULER_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: engagement
+    description: "Launch switch (C05 item 6): coach welcome-message cron. Code default is on (only 'false', '0' or 'off' disable); sends nothing until a coach's welcome setting is enabled at C04."
   - name: COMMUNITY_EVENT_LINK_HOSTS
     tier: optional
     prod_default: STUB_ALLOWED
@@ -1076,6 +1082,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: observability
     description: "Phase 10 — fraction of transactions sampled for Sentry Performance (0.0–1.0). Defaults to 0.1 (10%). Errors are always captured at 1.0 regar"
+  - name: SFEE_SETTLEMENT_SWEEP_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "Kill switch — when 'false', the 15-minute coach payout / settlement sweep (SettlementSweepCron) stops running on schedule; the admin run-sweeper endpoint still works by hand. Defaults to on. Leave unset in prod."
   - name: STOREFRONT_BASE_URL
     tier: feature
     prod_default: ON
@@ -1334,6 +1346,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: wearables
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: WORKOUT_REMINDERS_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: engagement
+    description: "Launch switch (C05 item 7): workout-reminder cron. Code default is on (only 'false', '0' or 'off' disable); must stay unset or on for launch."
   - name: YMOVE_API_KEY
     tier: optional
     prod_default: STUB_ALLOWED

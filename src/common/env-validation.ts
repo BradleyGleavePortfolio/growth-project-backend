@@ -443,6 +443,12 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Feature flag — when "false", the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). Use to quickly disable the scoring engine if a heuristic regression is shipped.',
   },
   {
+    name: 'SFEE_SETTLEMENT_SWEEP_ENABLED',
+    tier: 'optional',
+    default: "on (unset = on; only the exact string 'false' pauses the scheduled sweep)",
+    reason: 'Kill switch — when "false", the 15-minute coach payout / settlement sweep (SettlementSweepCron) stops running on schedule; the admin run-sweeper endpoint still works by hand. Defaults to on.',
+  },
+  {
     name: 'PTM_SCORING_CRON',
     tier: 'optional',
     reason: 'Override for the nightly PTM recompute cron expression. Defaults to "0 4 * * *" (04:00 UTC, 1h after the GDPR scrub at 03:00 UTC). Must be a valid 5-field cron expression.',
@@ -1160,6 +1166,26 @@ export const ENV_RULES: EnvRule[] = [
       'Launch switch (operator 2026-10-01): booking 24h/1h reminder crons. Since S-SCHED #632 the sweeps need an explicit "on"; unset now means off. Must be set to "on" for launch through the audited prod-switch manifest, after notification delivery/device QA.',
   },
   {
+    name: 'COACH_WELCOME_SCHEDULER_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'on',
+    tier: 'optional',
+    launch: 'switch',
+    default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
+    reason:
+      "Clinic C05 item 6 kill switch for the coach welcome-message cron (src/engagement/engagement.flags.ts, read by coach-welcome.service.ts every minute). Ships on; it sends nothing until the owner enables a coach's welcome setting at C04 (CoachWelcomeMessageSetting.enabled, default false). Emergency kill: set 'false' (unsetting turns it back on); scheduling and sending stop without a deploy, the erasure sweep keeps running.",
+  },
+  {
+    name: 'WORKOUT_REMINDERS_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'on',
+    tier: 'optional',
+    launch: 'switch',
+    default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
+    reason:
+      "Clinic C05 item 7 kill switch for the workout-reminder cron (src/engagement/engagement.flags.ts, read by workout-reminder.service.ts every 5 minutes, fixed schedule). Ships on: reminders are launch scope from the client's first-session day; clients opt out in Settings > Notifications. Emergency kill: set 'false' (unsetting turns it back on); every workout reminder stops without a deploy, the erasure sweep keeps running.",
+  },
+  {
     name: 'DELETION_FINALIZE_CRON',
     tier: 'optional',
     default: "'0 3 * * *'",
@@ -1643,6 +1669,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → SOC2 snapshot omits app/releases',
     reason: 'Fly app name (set by Fly at runtime) for the SOC2 evidence snapshot.',
+  },
+  {
+    name: 'FLY_MACHINE_ID',
+    tier: 'optional',
+    default: 'unset → os.hostname() (Fly sets it per machine at runtime)',
+    reason:
+      'Holder id for the S-FEE single-runner leases: the settlement sweep CronLease (SettlementSweepCron) and the per-charge money lock (ChargeLock), so each machine is told apart when it takes or fences a lease.',
   },
   {
     name: 'FLY_PRIMARY_REGION',

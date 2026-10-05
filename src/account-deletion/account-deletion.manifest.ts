@@ -149,6 +149,12 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // ── Workout and meal programming
   { model: 'ClientWorkoutAssignment', field: 'client_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'assigned_by_coach_id', action: retain(FROZEN_PLAN) },
+  // S-MWB Programs (#640, B-640-3): the client's own program copies (bulk
+  // assign, package delivery, consultation clones). Masters are coach content
+  // (is_template = true, client_id null) and never match. The copy's plans,
+  // exercises, revisions, delivery snapshots and remaining assignments cascade
+  // from the program row.
+  { model: 'WorkoutProgram', field: 'client_id', action: del, where: { is_template: false } },
   { model: 'WorkoutPlan', field: 'coach_id', action: del, where: { assignments: { none: {} } } },
   { model: 'WorkoutPlan', field: 'coach_id', action: retain(FROZEN_PLAN) },
   { model: 'WorkoutProgram', field: 'coach_id', action: retain(FROZEN_PLAN) },
@@ -456,6 +462,19 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'ConnectAccount', field: 'coach_user_id', action: retain(FINANCE) },
   { model: 'SplitLedgerEntry', field: 'payee_user_id', action: retain(FINANCE) },
   { model: 'ConnectTransfer', field: 'destination_user_id', action: retain(FINANCE) },
+  // S-FEE (#627, C-627-2): per-charge settlement, held-balance recovery and
+  // payout-adjustment records. Amounts, Stripe ids and system-generated
+  // amount notices only; they reconcile the retained ledger and transfers.
+  { model: 'ChargeSettlement', field: 'coach_user_id', action: retain(FINANCE) },
+  { model: 'ChargeSettlement', field: 'head_coach_user_id', action: retain(FINANCE) },
+  { model: 'PayeeRecovery', field: 'payee_user_id', action: retain(FINANCE) },
+  {
+    model: 'PayoutAdjustmentNotice',
+    field: 'payee_user_id',
+    action: retain(
+      'payout adjustment record (amounts, Stripe ids, system-generated amount notice; no contact data) backing the retained ledger and recovery rows',
+    ),
+  },
   { model: 'ChargeRefund', field: 'initiated_by_user_id', action: detach('initiated_by_user_id') },
   { model: 'PartialRefundDecision', field: 'decided_by_coach_user_id', action: retain(FINANCE) },
   { model: 'CoachCreditPackPurchase', field: 'coach_user_id', action: retain(FINANCE) },

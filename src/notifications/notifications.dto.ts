@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -269,6 +270,16 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   nudge_inactive_inapp?: boolean;
+
+  // ── C05 item 7: workout reminders (default on) ────────────────────────────
+
+  @IsOptional()
+  @IsBoolean()
+  workout_reminder_push?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  workout_reminder_inapp?: boolean;
 }
 
 // ── Notification center query params ────────────────────────────────────────
@@ -289,4 +300,22 @@ export class GetNotificationsQueryDto {
   @IsOptional()
   @IsString()
   filter?: 'unread' | 'all';
+}
+
+// B-NOTIF-4 (Opus B-647-1 / Sol B-647-2): the recipient's own IANA zone.
+// The mobile app sends the device zone on sign-in, when the app returns to
+// the foreground with a different zone, and at onboarding. The service
+// validates the name against the runtime's IANA database (Intl) and stamps
+// provenance, so notification copy and quiet hours trust it.
+export const TIME_ZONE_SOURCES = ['device', 'settings'] as const;
+export type TimeZoneSource = (typeof TIME_ZONE_SOURCES)[number];
+
+export class UpdateTimeZoneDto {
+  @IsString()
+  @MaxLength(64)
+  timezone!: string;
+
+  @IsOptional()
+  @IsIn(TIME_ZONE_SOURCES)
+  source?: TimeZoneSource;
 }
