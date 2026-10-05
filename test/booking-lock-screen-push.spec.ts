@@ -189,7 +189,12 @@ describe('B-714-1 / B-653-1 booking pushes keep names and coach text off the loc
       { kind: K.BOOKING_DECLINED, ...fixed(K.BOOKING_DECLINED) },
       { kind: K.BOOKING_CANCELLED, ...fixed(K.BOOKING_CANCELLED) },
       { kind: K.BOOKING_RESCHEDULED, ...fixed(K.BOOKING_RESCHEDULED) },
-      { kind: K.BOOKING_RESCHEDULED, ...fixed(K.BOOKING_RESCHEDULED) },
+      // B-653-4: the client's move request is not a move yet.
+      {
+        kind: K.BOOKING_RESCHEDULED,
+        title: 'Time change requested',
+        body: 'A client asked to move a session. Open the app to review.',
+      },
       {
         kind: K.BOOKING_REMINDER_24H,
         title: 'Session reminder',
@@ -245,6 +250,41 @@ describe('B-714-1 / B-653-1 booking pushes keep names and coach text off the loc
     for (const kind of Object.keys(BOOKING_LOCK_SCREEN)) {
       const c = bookingLockScreenCopy(kind, { ...ctx, timeZone: 'America/New_York' });
       for (const x of CANARIES) expect(`${c.title} ${c.body}`).not.toContain(x);
+    }
+  });
+});
+
+describe('B-653-4 a client move request is not shown as a moved session', () => {
+  it('the coach is told a time change is requested; a real move still says moved', async () => {
+    const { emitter, pushes } = build();
+    await emitter.emitMoveRequested({
+      coachUserId: 'coach-1',
+      clientDisplayName: NAME,
+      sessionId: 's-1',
+      sessionTypeName: TYPE,
+      oldScheduledAt: AT,
+      newScheduledAt: LATER,
+    });
+    await emitter.emitRescheduled({
+      recipientUserId: 'client-1',
+      recipientRole: 'client',
+      reschedulerDisplayName: NAME,
+      sessionId: 's-1',
+      sessionTypeName: TYPE,
+      oldScheduledAt: AT,
+      newScheduledAt: LATER,
+    });
+    expect(pushes).toEqual([
+      {
+        kind: K.BOOKING_RESCHEDULED,
+        title: 'Time change requested',
+        body: 'A client asked to move a session. Open the app to review.',
+      },
+      { kind: K.BOOKING_RESCHEDULED, title: 'Session moved', body: expect.any(String) },
+    ]);
+    for (const p of pushes) {
+      for (const c of CANARIES) expect(`${p.title} ${p.body}`).not.toContain(c);
+      expect(`${p.title} ${p.body}`).not.toMatch(/!|\b(I|me|my|we|our)\b/);
     }
   });
 });

@@ -346,6 +346,8 @@ export class BookingEmitter {
       userId: p.coachUserId,
       role: 'coach',
       kind: NotificationKind.BOOKING_RESCHEDULED,
+      // B-653-4: nothing has moved yet; the lock screen says a move is requested.
+      lockScreen: 'move_requested',
       title: 'Session move requested',
       body: `${p.clientDisplayName} asked to move ${typeLabel(p.sessionTypeName, 'a session')} to ${to}. Approve or decline in your booking inbox.`,
       sessionId: p.sessionId,
@@ -512,6 +514,8 @@ export class BookingEmitter {
     skipInApp?: boolean;
     skipPush?: boolean;
     notificationId?: string | null;
+    /** Same kind, different request state: picks the lock-screen line. */
+    lockScreen?: BookingLockScreenState;
   }): Promise<BookingDeliveryOutcome> {
     const body = args.body.slice(0, 160);
     const actionScreen = BOOKING_PUSH_SCREEN[args.role];
@@ -563,7 +567,7 @@ export class BookingEmitter {
         return outcome;
       }
       // B-714-1 / B-653-1: fixed per-kind lock-screen copy, never the inbox text.
-      const lock = bookingLockScreenCopy(args.kind, args.payload);
+      const lock = bookingLockScreenCopy(args.kind, args.payload, args.lockScreen);
       const result = await this.notifications.pushToUser(args.userId, lock.title, lock.body, {
         kind: args.kind,
         category: NotificationCategory.COACH_DIRECT,
@@ -661,6 +665,16 @@ export const BOOKING_LOCK_SCREEN: Readonly<Record<string, { title: string; body:
     body: `A session request has closed. ${LOCK_DETAILS}`,
   },
 };
+/**
+ * B-653-4: a client's move request on a coach-approval session keeps the
+ * booking_rescheduled kind, but nothing has moved until the coach approves,
+ * so its lock-screen line says a move is requested.
+ */
+export type BookingLockScreenState = 'move_requested';
+export const BOOKING_MOVE_REQUESTED_LOCK_SCREEN: Readonly<{ title: string; body: string }> = {
+  title: 'Time change requested',
+  body: 'A client asked to move a session. Open the app to review.',
+};
 const LOCK_DEFAULT = {
   title: 'The Growth Project',
   body: `You have a new notification. ${LOCK_OPEN}`,
@@ -676,7 +690,11 @@ const LOCK_DEFAULT = {
 export function bookingLockScreenCopy(
   kind: string,
   context?: { scheduledAt?: unknown; timeZone?: unknown } | null,
+  state?: BookingLockScreenState,
 ): { title: string; body: string } {
+  if (state === 'move_requested' && kind === NotificationKind.BOOKING_RESCHEDULED) {
+    return { ...BOOKING_MOVE_REQUESTED_LOCK_SCREEN };
+  }
   const fixed = BOOKING_LOCK_SCREEN[kind] ?? LOCK_DEFAULT;
   const tz = typeof context?.timeZone === 'string' ? context.timeZone : null;
   const at = typeof context?.scheduledAt === 'string' ? new Date(context.scheduledAt) : null;
