@@ -219,6 +219,8 @@ function world(
       has_more: false,
     })),
     listOpenInvoices: jest.fn(async () => ({ data: [{ id: 'in_open' }], has_more: false })),
+    listUncollectibleInvoices: jest.fn(async () => ({ data: [], has_more: false })),
+    listDraftInvoices: jest.fn(async () => ({ data: [], has_more: false })),
     voidInvoice: jest.fn(async (id: string) => ({ id, status: 'void' })),
   });
   const conflictSvc = new TrialConflictService(

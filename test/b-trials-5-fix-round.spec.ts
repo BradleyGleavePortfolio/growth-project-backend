@@ -38,6 +38,10 @@ const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0, currency: 'usd
 const PAID_INVOICE = { id: 'in_renewal', amount_paid: 4900, total: 4900, currency: 'usd' };
 const OPEN_LIST = 'GET /invoices?subscription=sub_1&status=open&limit=100';
 const PAID_LIST = 'GET /invoices?subscription=sub_1&status=paid&limit=100';
+// B-TR6-119 — the uncollectible list (Sol B-673-1); routed to a complete empty page by default.
+const UNC_LIST = 'GET /invoices?subscription=sub_1&status=uncollectible&limit=100';
+// B-TR7-120 — the draft list (B-707-1); routed to a complete empty page.
+const DRAFT_LIST = 'GET /invoices?subscription=sub_1&status=draft&limit=100';
 
 type C = ConstructorParameters<typeof TrialConflictService>;
 type Res = { status?: number; body: unknown };
@@ -65,7 +69,13 @@ const notOpen: Res = {
   body: { error: { type: 'invalid_request_error', code: 'invoice_not_open' } },
 };
 
-async function world(r: { sub: Reply; open?: Reply; paid?: Reply; void?: (id: string) => Reply }) {
+async function world(r: {
+  sub: Reply;
+  open?: Reply;
+  uncollectible?: Reply;
+  paid?: Reply;
+  void?: (id: string) => Reply;
+}) {
   const table = makeTrialConflictTable();
   await table.createMany({
     data: [
@@ -94,7 +104,16 @@ async function world(r: { sub: Reply; open?: Reply; paid?: Reply; void?: (id: st
     if (method === 'POST' && voidId) return reply((r.void ?? voided)(decodeURIComponent(voidId)));
     if (path.startsWith('/invoices?')) {
       const status = new URLSearchParams(path.split('?')[1]).get('status');
-      const x = status === 'open' ? r.open : status === 'paid' ? r.paid : undefined;
+      const x =
+        status === 'open'
+          ? r.open
+          : status === 'paid'
+            ? r.paid
+            : status === 'uncollectible'
+              ? (r.uncollectible ?? page([]))
+              : status === 'draft'
+                ? page([])
+                : undefined;
       return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
     }
     return reply(r.sub);
@@ -283,9 +302,16 @@ describe('B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids eve
       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
       expect(w.calls).toEqual([
         'GET /subscriptions/sub_1',
+        DRAFT_LIST,
         OPEN_LIST,
+        UNC_LIST,
         PAID_LIST,
         'POST /invoices/in_renewal/void',
+        // B-TR7-120 — the recheck before the DELETE (in_renewal is void: not new).
+        DRAFT_LIST,
+        OPEN_LIST,
+        UNC_LIST,
+        PAID_LIST,
         'DELETE /subscriptions/sub_1',
       ]);
       expect(w.row()).toMatchObject({ status: 'cancelled', last_error: null, lease_token: null });
@@ -381,16 +407,24 @@ describe('B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids eve
     });
   });
 
-  it('lease budget: voids plus the DELETE must fit inside the lease (two open invoices do not): no void, no DELETE', async () => {
+  // B-TR6-119 — the lease is renewed (compare-and-set) before each void and
+  // before the DELETE, so two open invoices settle (round 11 refused them).
+  it('lease renewed per void: two open invoices are both confirmed void, then one DELETE', async () => {
     const w = await world({
       sub: sub('unpaid'),
       open: page([{ id: 'in_a' }, { id: 'in_b' }]),
       paid: page([TRIAL_INVOICE]),
     });
-    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
-    expect(w.voids()).toBe(0);
-    expect(w.deletes()).toBe(0);
-    expect(w.row()).toMatchObject({ status: 'owed', last_error: 'lease_exhausted' });
+    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+    expect(w.calls.slice(-7)).toEqual([
+      'POST /invoices/in_a/void',
+      'POST /invoices/in_b/void',
+      DRAFT_LIST,
+      OPEN_LIST,
+      UNC_LIST,
+      PAID_LIST,
+      'DELETE /subscriptions/sub_1',
+    ]);
   });
 
   it('three unsettled attempts alert support once (cancel still failing); never a DELETE', async () => {
