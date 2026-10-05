@@ -221,12 +221,14 @@ thread; thread reads then carry `reply_to { id, sender_id, kind, preview }`
 and `deleted`.
 
 Realtime: non-message changes ping `messages:<userId>` with the distinct event
-`thread-updated` and an ID-only payload `{ kind, thread_client_id,
-message_id }`, so edits and read receipts never trigger the new-message banner.
+`thread-updated` and an empty payload `{}` (the channel is public, so no ids),
+so edits and read receipts never trigger the new-message banner; the app
+refetches over the authenticated routes.
 
 Errors: every failure carries `{ code, error, message }` with a stable
 `messaging.*` code (see `messaging-errors.ts`). Blocking parity: edit and pin
-are refused when either side blocked the other; delete is always allowed.
+are refused when either side blocked the other (head coach or acting
+sub-coach versus the client), as send is; delete is always allowed.
 Audit: edit, delete, pin, unpin write AuditLog rows with lengths and ids only.
 
 RLS: `CoachThreadState` is ENABLE + FORCE, self-only plus owner staff, proven
