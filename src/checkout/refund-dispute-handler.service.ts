@@ -971,6 +971,12 @@ export class RefundDisputeHandlerService {
       send = { transfer_row_id: owed.transfer.id, amount_cents: admission.amount_cents };
       if (current.transfer_reversal_first_attempt_at) unproven = owed.transfer;
     }
+    // B-641-8 / B-674-16: every attempt, a re-drive of the operation already
+    // written too, is stamped first; the sweep orders by it, least recent first.
+    await this.prisma.chargeRefund.updateMany({
+      where: { id: refundRowId, transfer_reversed: false, transfer_reversal_review_at: null },
+      data: { transfer_reversal_last_attempt_at: clock() },
+    });
     try {
       const res =
         (unproven && (await this.reversalStripeHolds(unproven, { kind: 'refund', id: refundRowId }, key))) ||
@@ -1091,11 +1097,6 @@ export class RefundDisputeHandlerService {
     if (row.transfer_reversal_review_at) return { outcome: 'needs_review' };
     const firstAttempt = row.transfer_reversal_first_attempt_at ?? now;
     if (now.getTime() - firstAttempt.getTime() <= REFUND_TRANSFER_RETRY_WINDOW_MS) {
-      // B-641-8 (narrowed): the sweep orders by this, least recent first.
-      await this.prisma.chargeRefund.updateMany({
-        where: { id: refundRowId, transfer_reversed: false, transfer_reversal_review_at: null },
-        data: { transfer_reversal_last_attempt_at: now },
-      });
       return {
         outcome: 'admitted',
         amount_cents: row.transfer_reversal_amount_cents ?? amountCents,
