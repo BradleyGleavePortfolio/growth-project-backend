@@ -196,3 +196,33 @@
 0 wt=21 top=54MB:node
 11:29 used=343MB avail=7614MB load1=1.20 disk=73% heavyq=0
 0 wt=17 top=55MB:node
+11:30 used=339MB avail=7618MB load1=0.47 disk=73% heavyq=0
+0 wt=17 top=54MB:node
+11:31 used=331MB avail=7626MB load1=0.24 disk=71% heavyq=0
+0 wt=14 top=54MB:node
+11:32 used=325MB avail=7632MB load1=0.33 disk=71% heavyq=0
+0 wt=14 top=54MB:node
+11:33 used=330MB avail=7627MB load1=0.56 disk=67% heavyq=0
+0 wt=3 top=55MB:node
+11:34 used=329MB avail=7627MB load1=0.20 disk=67% heavyq=0
+0 wt=3 top=55MB:node
+11:35 used=325MB avail=7632MB load1=0.07 disk=67% heavyq=0
+0 wt=3 top=54MB:node
+11:36 used=328MB avail=7629MB load1=0.02 disk=67% heavyq=0
+0 wt=3 top=54MB:node
+11:37 used=328MB avail=7629MB load1=0.01 disk=67% heavyq=0
+0 wt=3 top=55MB:node
+11:38 used=328MB avail=7629MB load1=0.00 disk=67% heavyq=0
+0 wt=3 top=55MB:node
+11:39 used=327MB avail=7629MB load1=0.00 disk=67% heavyq=0
+0 wt=3 top=54MB:node
+11:40 used=325MB avail=7632MB load1=0.00 disk=67% heavyq=0
+0 wt=3 top=54MB:node
+11:41 used=329MB avail=7628MB load1=0.00 disk=66% heavyq=0
+0 wt=2 top=54MB:node
+11:42 used=326MB avail=7631MB load1=0.00 disk=66% heavyq=0
+0 wt=2 top=55MB:node
+11:43 used=327MB avail=7630MB load1=0.00 disk=66% heavyq=0
+0 wt=2 top=55MB:node
+11:44 used=330MB avail=7627MB load1=0.00 disk=66% heavyq=0
+0 wt=2 top=54MB:node

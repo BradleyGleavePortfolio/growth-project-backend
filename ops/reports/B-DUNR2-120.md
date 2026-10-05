@@ -47,5 +47,36 @@ Started 11:05 PDT 10-05. Lock `dunning` taken 11:05:58 PDT (ops/lanes120/locks/d
 - Read model: billing_paused only when billing_paused_at is set (Sol B-705-4).
 - Lost closure of a coach-restarted plan: money reversal runs, access and status unchanged (B-705-3 Opus ruling).
 
+- 11:29 operator mail: credits nearly spent, finish fast. D2d not started on remote (local migration draft discarded); stopped.
+- Lane 37355304885 at 0f445691: 2 failed / 34 passed (new flag-rollback cases). PR CI green at d86b31a6, 2662d01a, 764af2e1, 2a03d7dd.
+- Comments: #687 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-6000627026 (READY),
+  #688 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/688#issuecomment-6000627374 (READY),
+  #704 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/704#issuecomment-6000627664 (READY),
+  #705 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/705#issuecomment-6000627915 (IN PROGRESS). PR bodies: Fix round table appended.
+
+## Follow-ups (C)
+- Sol C-687-8 src/checkout/dunning-v2/dunning-v2.copy.ts:59-78,104-108,134-144: payment push copy asserts attempts / first person; rule: state only what is known.
+- Sol C-687-9 dunning-v2.copy.ts:209-211: LR_LOCKOUT_SCREEN aliases the card lockout; rule: dispute screen copy of its own.
+- Sol C-687-10 dunning-v2.dispatcher.ts:310: dispute CTA routes to tgp://billing/update; rule: no card CTA on a dispute pause.
+- Opus C-687-4: migration ordering note. C-688-9 lock order (webhook ClientPurchase then DunningState). C-688-12 land as one.
+- C-705-1 test/dunning-v2-dispute-pause.spec.ts:342 empty catch; rule: assert the rejection.
+- C-705-5 invoices marked uncollectible stay so after restart; C-705-6 sweep reconciler for unconfirmed pauses (planned in D2d).
+- New: subscription-checkout.service.ts:513-522 counts a dispute-paused plan with status 'active' as live, so re-buy is refused; rule: exclude dispute-paused plans (ruling says re-buy is allowed).
+- New: refund-dispute-handler.service.ts ~1093-1104 'disputed' mirror after a coach restart (out-of-order dispute.created) ends access while billing runs; rule: skip when the obligation has restarted_at (D2d).
+- Mobile: render billing-is-paused copy only when billing_paused is true. C-DUNMR-2..5 carried.
+
+## Decisions for operator (recommended default first)
+1. D2d carries all non-flag #705 fixes (pause effects and restart), not only restart fixes, since #705 has 75 lines headroom. Default: yes.
+2. Additive migration 20270318000000_dunning_dispute_pause_effects (DunningState.billing_paused_at, DunningDisputeObligation.restarted_at). Default: yes.
+3. A restart while a pause's Stripe step is in flight returns coded billing_busy (serialized on ClientBillingLease, shared with D3). Default: yes.
+4. Sweep re-pause of unconfirmed pauses stays flag-gated like other writes. Default: yes.
+
 ## HANDOFF
 - In progress. Next: B-687-8 copy fix on #687; read #705 pause/restart code.
+- State at 2026-10-05 11:31:01 PDT: #687 d86b31a67e1d89352c3e92dde674cb4d45a25a1a READY (0/0 B open); #688 2662d01a82c267f00af27566e3984d58fb0996d1 and
+  #704 764af2e1df66612c503427016f83c3d1776cfdc0 restacked READY; #705 2a03d7dd1d39e2553df10f4d7e10ecdb025807aa 1,425 lines, IN PROGRESS:
+  B-705-4 Opus / B-705-1 Sol fixed; open: Sol B-705-2..5, Opus B-705-1..3.
+- Next job: build D2d per "## D2d plan" (new branch from 2a03d7dd, base agent119/dunning-split-2c-dispute-pause), failing-before lane
+  per finding, replay all D6 probes (adapt Sol in-flight pause probe to billing_busy, Opus B-705-3 probe to the ruling), then B-DUNB-120.
+- Worktrees removed; ci/B-DUNR2-120-1 and -2 deleted; lock released; notify written.
+

@@ -470,3 +470,21 @@ rate watch) against the backend's 60/min limit: batch per type/day and respect 4
 sleep can be counted twice (probe: 330 + 180 minutes for one night): dedupe overlapping sleep sessions per night before posting (rule
 predates H8). Sleep totals feed Roman and coach views, so both land before the clinic Android build. New PR on main after H1-H8 land,
 under 1,500 lines. Also ticket (not built): backend replace for rewritten Health Connect records (C-370-1 / H8-C1).
+
+## Agent 120 wrap-up notes (11:4x PDT 10-05) for the next operator
+- AI usage is LAYERED (owner 11:40-11:41) and the coach pool ALREADY EXISTS on main: src/ai-credits/ (CoachAIBudgetService owns
+  CoachAIBudget + CoachCreditPackPurchase; monthly period to the start of the next calendar month; credit packs; sub-coach usage is
+  attributed to the head coach). Each client also has a daily cap (#669 assertDailyCapacity). Day-1 requirement for the Roman stack
+  (B-ROMAN-C2-120 / RA-RB lenses / M-ROMANCAP-120): every Roman and AI turn debits the coach's CoachAIBudget (recordUsage) AND passes the
+  client daily cap; verify #667-#670 do this (on main src/roman has no CoachAIBudget reference). Pool used up -> its own code and copy
+  (client: friendly pop-up; coach: notice to top up), distinct from the daily-cap pop-up "You've used your maximum AI allotment today."
+- B-DUNR2-120 partial: #687 d86b31a6 FIX ROUND 4 READY (6000627026), #688 2662d01a RESTACK READY, #704 764af2e1 RESTACK READY, #705 2a03d7dd
+  IN PROGRESS (B-705-4/Sol B-705-1 fixed; Sol B-705-2..5 + Opus B-705-1..3 open). Operator rulings (builder defaults): a new D2d PR on #705
+  carries the remaining #705 fixes; D2d may add migration 20270318000000 (nullable DunningState.billing_paused_at,
+  DunningDisputeObligation.restarted_at); restart overlapping an in-flight pause returns billing_busy; re-pause sweep stays behind the flag.
+  Plan in ops/reports/B-DUNR2-120.md.
+- B-TR8-120: #673 14b7a7a2 FIX ROUND 12 (2,996), #706 9567f8bd RESTACK (+ shared-rule spec), #707 81ec2756 RESTACK (2 conflicts): NOT yet
+  READY (CI was running; PR bodies, T5 probe replay on #707 and READY comments left). Rulings: one trial claim at trial start in the webhook;
+  production has no native trials yet: verify with a read-only count before landing.
+- B-PUSH3-120 DONE: #693 cc0a167f FIX ROUND 6 READY (6000796965; 2,965 lines; B-648-8 fixed; #692 unchanged at 346cf4a8). Next: Opus
+  PUSH3 on #692 + #693, Sol delta on #693 (Sol's refined probe 1 read-count line: builder variant counts the replica's own reads; Sol judges).

@@ -1,0 +1,503 @@
+﻿2026-10-05T18:29:41.5865140Z Current runner version: '2.337.0'
+2026-10-05T18:29:41.5893492Z ##[group]Runner Image Provisioner
+2026-10-05T18:29:41.5894508Z Hosted Compute Agent
+2026-10-05T18:29:41.5895201Z Version: 20260901.588
+2026-10-05T18:29:41.5895874Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T18:29:41.5896611Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T18:29:41.5897355Z Worker ID: {8fb107ba-6c64-4ff5-b1b1-05375afd2ad0}
+2026-10-05T18:29:41.5898115Z Azure Region: westus
+2026-10-05T18:29:41.5899084Z ##[endgroup]
+2026-10-05T18:29:41.5901003Z ##[group]Operating System
+2026-10-05T18:29:41.5901685Z Ubuntu
+2026-10-05T18:29:41.5902351Z 24.04.5
+2026-10-05T18:29:41.5903213Z LTS
+2026-10-05T18:29:41.5903763Z ##[endgroup]
+2026-10-05T18:29:41.5904401Z ##[group]Runner Image
+2026-10-05T18:29:41.5905003Z Image: ubuntu-24.04
+2026-10-05T18:29:41.5905601Z Version: 20260927.320.1
+2026-10-05T18:29:41.5907003Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T18:29:41.5908738Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T18:29:41.5909720Z ##[endgroup]
+2026-10-05T18:29:41.5911019Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T18:29:41.5913372Z Contents: read
+2026-10-05T18:29:41.5914093Z Metadata: read
+2026-10-05T18:29:41.5914691Z Packages: read
+2026-10-05T18:29:41.5915268Z ##[endgroup]
+2026-10-05T18:29:41.5917714Z Secret source: Actions
+2026-10-05T18:29:41.5918662Z Cache mode: write
+2026-10-05T18:29:41.5919498Z Prepare workflow directory
+2026-10-05T18:29:41.6443871Z Prepare all required actions
+2026-10-05T18:29:41.6495727Z Getting action download info
+2026-10-05T18:29:42.0281695Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T18:29:42.1533501Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T18:29:42.3960224Z Complete job name: targeted
+2026-10-05T18:29:42.4488823Z ##[group]Checking docker version
+2026-10-05T18:29:42.4502093Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-05T18:29:42.5579819Z '1.48'
+2026-10-05T18:29:42.5603562Z Docker daemon API version: '1.48'
+2026-10-05T18:29:42.5604441Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-05T18:29:42.5775900Z '1.48'
+2026-10-05T18:29:42.5789608Z Docker client API version: '1.48'
+2026-10-05T18:29:42.5796423Z ##[endgroup]
+2026-10-05T18:29:42.5800162Z ##[group]Clean up resources from previous jobs
+2026-10-05T18:29:42.5806504Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=98317d"
+2026-10-05T18:29:42.5954071Z ##[command]/usr/bin/docker network prune --force --filter "label=98317d"
+2026-10-05T18:29:42.6095972Z ##[endgroup]
+2026-10-05T18:29:42.6096566Z ##[group]Create local container network
+2026-10-05T18:29:42.6107870Z ##[command]/usr/bin/docker network create --label 98317d github_network_6a760280664a44848f3c866e8a0d48b1
+2026-10-05T18:29:42.6677546Z a6b3bd3f4c8c30db36a2fb1f266ab36c32ed5574d660178c08e2c832eca88918
+2026-10-05T18:29:42.6695871Z ##[endgroup]
+2026-10-05T18:29:42.6720522Z ##[group]Starting redis service container
+2026-10-05T18:29:42.6745984Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-05T18:29:43.6002467Z 7-alpine: Pulling from library/redis
+2026-10-05T18:29:43.8698954Z 16333ee0c00f: Pulling fs layer
+2026-10-05T18:29:43.8700591Z 83234986c742: Pulling fs layer
+2026-10-05T18:29:43.8701987Z 7eb50503c2b0: Pulling fs layer
+2026-10-05T18:29:43.8703677Z 1522f9c6f453: Pulling fs layer
+2026-10-05T18:29:43.8705160Z 9928009b15c8: Pulling fs layer
+2026-10-05T18:29:43.8706118Z 4f4fb700ef54: Pulling fs layer
+2026-10-05T18:29:43.8707276Z 4eb14bae0e1d: Pulling fs layer
+2026-10-05T18:29:43.8708737Z 9928009b15c8: Waiting
+2026-10-05T18:29:43.8709618Z 4f4fb700ef54: Waiting
+2026-10-05T18:29:43.8710632Z 4eb14bae0e1d: Waiting
+2026-10-05T18:29:43.8711317Z 1522f9c6f453: Waiting
+2026-10-05T18:29:44.0824308Z 83234986c742: Download complete
+2026-10-05T18:29:44.0858537Z 7eb50503c2b0: Verifying Checksum
+2026-10-05T18:29:44.0860115Z 7eb50503c2b0: Download complete
+2026-10-05T18:29:44.0915491Z 16333ee0c00f: Download complete
+2026-10-05T18:29:44.2037495Z 16333ee0c00f: Pull complete
+2026-10-05T18:29:44.2309678Z 83234986c742: Pull complete
+2026-10-05T18:29:44.3057900Z 9928009b15c8: Download complete
+2026-10-05T18:29:44.3086345Z 4f4fb700ef54: Verifying Checksum
+2026-10-05T18:29:44.3088234Z 4f4fb700ef54: Download complete
+2026-10-05T18:29:44.3430935Z 1522f9c6f453: Verifying Checksum
+2026-10-05T18:29:44.3431573Z 1522f9c6f453: Download complete
+2026-10-05T18:29:44.3936060Z 7eb50503c2b0: Pull complete
+2026-10-05T18:29:44.5086275Z 4eb14bae0e1d: Verifying Checksum
+2026-10-05T18:29:44.5086990Z 4eb14bae0e1d: Download complete
+2026-10-05T18:29:44.5963441Z 1522f9c6f453: Pull complete
+2026-10-05T18:29:44.6045254Z 9928009b15c8: Pull complete
+2026-10-05T18:29:44.6118826Z 4f4fb700ef54: Pull complete
+2026-10-05T18:29:44.6240446Z 4eb14bae0e1d: Pull complete
+2026-10-05T18:29:44.6281777Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-05T18:29:44.6293862Z Status: Downloaded newer image for redis:7-alpine
+2026-10-05T18:29:44.6306793Z docker.io/library/redis:7-alpine
+2026-10-05T18:29:44.6341223Z ##[command]/usr/bin/docker create --name 9136a78096374653b38c9dec3d3a616c_redis7alpine_148806 --label 98317d --network github_network_6a760280664a44848f3c866e8a0d48b1 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-05T18:29:44.6640983Z 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9
+2026-10-05T18:29:44.6663081Z ##[command]/usr/bin/docker start 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9
+2026-10-05T18:29:44.8847342Z 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9
+2026-10-05T18:29:44.8878498Z ##[command]/usr/bin/docker ps --all --filter id=58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T18:29:44.9001294Z 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9 Up Less than a second (health: starting)
+2026-10-05T18:29:44.9020309Z ##[command]/usr/bin/docker port 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9
+2026-10-05T18:29:44.9142607Z 6379/tcp -> 0.0.0.0:6379
+2026-10-05T18:29:44.9143808Z 6379/tcp -> [::]:6379
+2026-10-05T18:29:44.9189575Z ##[endgroup]
+2026-10-05T18:29:44.9191033Z ##[group]Starting postgres service container
+2026-10-05T18:29:44.9192328Z ##[command]/usr/bin/docker pull postgres:15
+2026-10-05T18:29:45.7980779Z 15: Pulling from library/postgres
+2026-10-05T18:29:46.0577109Z 6b37362b3da7: Pulling fs layer
+2026-10-05T18:29:46.0577865Z 0d791b2b75ae: Pulling fs layer
+2026-10-05T18:29:46.0578534Z 0d39881c83f7: Pulling fs layer
+2026-10-05T18:29:46.0579217Z c95afe7c234f: Pulling fs layer
+2026-10-05T18:29:46.0581242Z bc176b99a33a: Pulling fs layer
+2026-10-05T18:29:46.0581855Z 08a5cd487deb: Pulling fs layer
+2026-10-05T18:29:46.0582897Z eb4d92aaee0a: Pulling fs layer
+2026-10-05T18:29:46.0583753Z 75a4dff090e8: Pulling fs layer
+2026-10-05T18:29:46.0584266Z afe9a40fb214: Pulling fs layer
+2026-10-05T18:29:46.0584753Z ca5e97c0cd7d: Pulling fs layer
+2026-10-05T18:29:46.0585271Z 53fa82bdba52: Pulling fs layer
+2026-10-05T18:29:46.0585661Z 7b9c6b8e5e6e: Pulling fs layer
+2026-10-05T18:29:46.0586251Z b65147f15943: Pulling fs layer
+2026-10-05T18:29:46.0586756Z 170d9ea1cd85: Pulling fs layer
+2026-10-05T18:29:46.0587115Z afe9a40fb214: Waiting
+2026-10-05T18:29:46.0587723Z ca5e97c0cd7d: Waiting
+2026-10-05T18:29:46.0588341Z b65147f15943: Waiting
+2026-10-05T18:29:46.0588981Z 170d9ea1cd85: Waiting
+2026-10-05T18:29:46.0589557Z c95afe7c234f: Waiting
+2026-10-05T18:29:46.0590163Z 53fa82bdba52: Waiting
+2026-10-05T18:29:46.0590790Z eb4d92aaee0a: Waiting
+2026-10-05T18:29:46.0591134Z 08a5cd487deb: Waiting
+2026-10-05T18:29:46.0591467Z 7b9c6b8e5e6e: Waiting
+2026-10-05T18:29:46.0591768Z 75a4dff090e8: Waiting
+2026-10-05T18:29:46.2541496Z 0d791b2b75ae: Download complete
+2026-10-05T18:29:46.2930961Z 0d39881c83f7: Verifying Checksum
+2026-10-05T18:29:46.2931959Z 0d39881c83f7: Download complete
+2026-10-05T18:29:46.3666310Z 6b37362b3da7: Verifying Checksum
+2026-10-05T18:29:46.3666824Z 6b37362b3da7: Download complete
+2026-10-05T18:29:46.4856039Z c95afe7c234f: Verifying Checksum
+2026-10-05T18:29:46.4858026Z c95afe7c234f: Download complete
+2026-10-05T18:29:46.5135899Z bc176b99a33a: Verifying Checksum
+2026-10-05T18:29:46.5137000Z bc176b99a33a: Download complete
+2026-10-05T18:29:46.5994028Z 08a5cd487deb: Verifying Checksum
+2026-10-05T18:29:46.5994596Z 08a5cd487deb: Download complete
+2026-10-05T18:29:46.6891415Z eb4d92aaee0a: Download complete
+2026-10-05T18:29:46.7208416Z 75a4dff090e8: Verifying Checksum
+2026-10-05T18:29:46.7209275Z 75a4dff090e8: Download complete
+2026-10-05T18:29:46.9094143Z ca5e97c0cd7d: Verifying Checksum
+2026-10-05T18:29:46.9095550Z ca5e97c0cd7d: Download complete
+2026-10-05T18:29:46.9252452Z 53fa82bdba52: Verifying Checksum
+2026-10-05T18:29:46.9253875Z 53fa82bdba52: Download complete
+2026-10-05T18:29:47.1336995Z b65147f15943: Verifying Checksum
+2026-10-05T18:29:47.1344039Z b65147f15943: Download complete
+2026-10-05T18:29:47.1345743Z 7b9c6b8e5e6e: Verifying Checksum
+2026-10-05T18:29:47.1346519Z 7b9c6b8e5e6e: Download complete
+2026-10-05T18:29:47.1749327Z afe9a40fb214: Verifying Checksum
+2026-10-05T18:29:47.1750085Z afe9a40fb214: Download complete
+2026-10-05T18:29:47.3392102Z 170d9ea1cd85: Verifying Checksum
+2026-10-05T18:29:47.3392648Z 170d9ea1cd85: Download complete
+2026-10-05T18:29:47.4741894Z 6b37362b3da7: Pull complete
+2026-10-05T18:29:47.7729077Z 0d791b2b75ae: Pull complete
+2026-10-05T18:29:47.9609604Z 0d39881c83f7: Pull complete
+2026-10-05T18:29:48.0013743Z c95afe7c234f: Pull complete
+2026-10-05T18:29:48.3199508Z bc176b99a33a: Pull complete
+2026-10-05T18:29:48.3928473Z 08a5cd487deb: Pull complete
+2026-10-05T18:29:48.4048580Z eb4d92aaee0a: Pull complete
+2026-10-05T18:29:48.4135130Z 75a4dff090e8: Pull complete
+2026-10-05T18:29:51.4297737Z afe9a40fb214: Pull complete
+2026-10-05T18:29:51.4445545Z ca5e97c0cd7d: Pull complete
+2026-10-05T18:29:51.4551284Z 53fa82bdba52: Pull complete
+2026-10-05T18:29:51.4649557Z 7b9c6b8e5e6e: Pull complete
+2026-10-05T18:29:51.4745806Z b65147f15943: Pull complete
+2026-10-05T18:29:51.4837966Z 170d9ea1cd85: Pull complete
+2026-10-05T18:29:51.4873758Z Digest: sha256:724292da1f2e50bdccfc3302ce75bbba7f4a6076701b588cc795fcac65683550
+2026-10-05T18:29:51.4885411Z Status: Downloaded newer image for postgres:15
+2026-10-05T18:29:51.4893575Z docker.io/library/postgres:15
+2026-10-05T18:29:51.4940583Z ##[command]/usr/bin/docker create --name eafae29216224f12aef2913247dd48c9_postgres15_e3f646 --label 98317d --network github_network_6a760280664a44848f3c866e8a0d48b1 --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=postgres" -e GITHUB_ACTIONS=true -e CI=true postgres:15
+2026-10-05T18:29:51.5175010Z afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:29:51.5190564Z ##[command]/usr/bin/docker start afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:29:51.6698915Z afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:29:51.6715545Z ##[command]/usr/bin/docker ps --all --filter id=afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T18:29:51.6865937Z afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f Up Less than a second (health: starting)
+2026-10-05T18:29:51.6882027Z ##[command]/usr/bin/docker port afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:29:51.7033798Z 5432/tcp -> 0.0.0.0:5432
+2026-10-05T18:29:51.7034466Z 5432/tcp -> [::]:5432
+2026-10-05T18:29:51.7096129Z ##[endgroup]
+2026-10-05T18:29:51.7109773Z ##[group]Waiting for all services to be ready
+2026-10-05T18:29:51.7128991Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9
+2026-10-05T18:29:51.7274419Z healthy
+2026-10-05T18:29:51.7303105Z redis service is healthy.
+2026-10-05T18:29:51.7304970Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:29:51.7444166Z starting
+2026-10-05T18:29:51.7462021Z postgres service is starting, waiting 2 seconds before checking again.
+2026-10-05T18:29:53.7457948Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:29:53.7583289Z starting
+2026-10-05T18:29:53.7596673Z postgres service is starting, waiting 3 seconds before checking again.
+2026-10-05T18:29:57.4938202Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:29:57.5058186Z starting
+2026-10-05T18:29:57.5070393Z postgres service is starting, waiting 7 seconds before checking again.
+2026-10-05T18:30:04.7146293Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:30:04.7278314Z healthy
+2026-10-05T18:30:04.7357217Z postgres service is healthy.
+2026-10-05T18:30:04.7357912Z ##[endgroup]
+2026-10-05T18:30:04.7673726Z ##[group]Run actions/checkout@v6
+2026-10-05T18:30:04.7674425Z with:
+2026-10-05T18:30:04.7674748Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:30:04.7677574Z   token: ***
+2026-10-05T18:30:04.7677784Z   ssh-strict: true
+2026-10-05T18:30:04.7677997Z   ssh-user: git
+2026-10-05T18:30:04.7678208Z   persist-credentials: true
+2026-10-05T18:30:04.7678476Z   clean: true
+2026-10-05T18:30:04.7678688Z   sparse-checkout-cone-mode: true
+2026-10-05T18:30:04.7678945Z   fetch-depth: 1
+2026-10-05T18:30:04.7679145Z   fetch-tags: false
+2026-10-05T18:30:04.7679358Z   show-progress: true
+2026-10-05T18:30:04.7679584Z   lfs: false
+2026-10-05T18:30:04.7679786Z   submodules: false
+2026-10-05T18:30:04.7679994Z   set-safe-directory: true
+2026-10-05T18:30:04.7680240Z   allow-unsafe-pr-checkout: false
+2026-10-05T18:30:04.7680690Z env:
+2026-10-05T18:30:04.7681139Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:04.7681582Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T18:30:04.7682083Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:04.7682383Z ##[endgroup]
+2026-10-05T18:30:04.8702560Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:30:04.8705046Z ##[group]Getting Git version info
+2026-10-05T18:30:04.8705555Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T18:30:04.8706325Z [command]/usr/bin/git version
+2026-10-05T18:30:04.8837284Z git version 2.55.0
+2026-10-05T18:30:04.8863495Z ##[endgroup]
+2026-10-05T18:30:04.8879820Z Temporarily overriding HOME='/home/runner/work/_temp/7b0ea578-b037-45d9-98dd-98ae35580d7a' before making global git config changes
+2026-10-05T18:30:04.8881290Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T18:30:04.8886460Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:30:04.8943412Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T18:30:04.8948466Z ##[group]Determining repository object format
+2026-10-05T18:30:04.8951426Z ##[endgroup]
+2026-10-05T18:30:04.8952369Z ##[group]Initializing the repository
+2026-10-05T18:30:04.8957754Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:30:04.9078745Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T18:30:04.9079414Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T18:30:04.9079951Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T18:30:04.9080373Z hint: call:
+2026-10-05T18:30:04.9080583Z hint:
+2026-10-05T18:30:04.9081045Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T18:30:04.9081582Z hint:
+2026-10-05T18:30:04.9082087Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T18:30:04.9083146Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T18:30:04.9083586Z hint:
+2026-10-05T18:30:04.9083915Z hint: 	git branch -m <name>
+2026-10-05T18:30:04.9084317Z hint:
+2026-10-05T18:30:04.9084893Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T18:30:04.9086071Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-05T18:30:04.9097575Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:30:04.9156063Z ##[endgroup]
+2026-10-05T18:30:04.9156727Z ##[group]Disabling automatic garbage collection
+2026-10-05T18:30:04.9163211Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T18:30:04.9197572Z ##[endgroup]
+2026-10-05T18:30:04.9198214Z ##[group]Setting up auth
+2026-10-05T18:30:04.9199555Z Removing SSH command configuration
+2026-10-05T18:30:04.9207324Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T18:30:04.9241606Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T18:30:04.9586040Z Removing HTTP extra header
+2026-10-05T18:30:04.9593269Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T18:30:04.9629358Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T18:30:04.9854136Z Removing includeIf entries pointing to credentials config files
+2026-10-05T18:30:04.9861816Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T18:30:04.9898542Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T18:30:05.0193660Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T18:30:05.0238878Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:30:05.0273389Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:30:05.0317183Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:30:05.0382612Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:30:05.0424168Z ##[endgroup]
+2026-10-05T18:30:05.0424550Z ##[group]Fetching the repository
+2026-10-05T18:30:05.0435681Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +5d7c7bc05cb3aca685b99b02d92ac41bc7f34d3d:refs/remotes/origin/ci/B-PUSH3-120-replay-1
+2026-10-05T18:30:06.5418135Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:30:06.5419246Z  * [new ref]         5d7c7bc05cb3aca685b99b02d92ac41bc7f34d3d -> origin/ci/B-PUSH3-120-replay-1
+2026-10-05T18:30:06.5430691Z [command]/usr/bin/git branch --list --remote origin/ci/B-PUSH3-120-replay-1
+2026-10-05T18:30:06.5458671Z   origin/ci/B-PUSH3-120-replay-1
+2026-10-05T18:30:06.5476393Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-PUSH3-120-replay-1
+2026-10-05T18:30:06.5494487Z 5d7c7bc05cb3aca685b99b02d92ac41bc7f34d3d
+2026-10-05T18:30:06.5504729Z ##[endgroup]
+2026-10-05T18:30:06.5505432Z ##[group]Determining the checkout info
+2026-10-05T18:30:06.5506212Z ##[endgroup]
+2026-10-05T18:30:06.5513528Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T18:30:06.5569265Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T18:30:06.5603912Z ##[group]Checking out the ref
+2026-10-05T18:30:06.5609638Z [command]/usr/bin/git checkout --progress --force -B ci/B-PUSH3-120-replay-1 refs/remotes/origin/ci/B-PUSH3-120-replay-1
+2026-10-05T18:30:06.7932295Z Switched to a new branch 'ci/B-PUSH3-120-replay-1'
+2026-10-05T18:30:06.7937525Z branch 'ci/B-PUSH3-120-replay-1' set up to track 'origin/ci/B-PUSH3-120-replay-1'.
+2026-10-05T18:30:06.7948639Z ##[endgroup]
+2026-10-05T18:30:06.7994795Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T18:30:06.8020010Z 5d7c7bc05cb3aca685b99b02d92ac41bc7f34d3d
+2026-10-05T18:30:06.8279295Z ##[group]Run actions/setup-node@v6
+2026-10-05T18:30:06.8279587Z with:
+2026-10-05T18:30:06.8279783Z   node-version: 20
+2026-10-05T18:30:06.8279990Z   cache: npm
+2026-10-05T18:30:06.8280187Z   check-latest: false
+2026-10-05T18:30:06.8282643Z   token: ***
+2026-10-05T18:30:06.8283052Z   package-manager-cache: true
+2026-10-05T18:30:06.8283294Z env:
+2026-10-05T18:30:06.8283697Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:06.8284142Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T18:30:06.8284584Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:06.8284876Z ##[endgroup]
+2026-10-05T18:30:06.9784151Z Attempting to download 20...
+2026-10-05T18:30:07.7964290Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-05T18:30:08.1880543Z Extracting ...
+2026-10-05T18:30:08.1995440Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/9e98511d-c7bf-4000-b890-882cf8f37ff1 -f /home/runner/work/_temp/24628049-eb17-48c4-a76d-2137c9d15031
+2026-10-05T18:30:09.2277931Z Adding to the cache ...
+2026-10-05T18:30:11.1816770Z ##[group]Environment details
+2026-10-05T18:30:11.4177050Z node: v20.20.2
+2026-10-05T18:30:11.4177459Z npm: 10.8.2
+2026-10-05T18:30:11.4177772Z yarn: 1.22.22
+2026-10-05T18:30:11.4178435Z ##[endgroup]
+2026-10-05T18:30:11.4197549Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-05T18:30:11.5271817Z /home/runner/.npm
+2026-10-05T18:30:11.8029190Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T18:30:13.0863985Z Received 4194304 of 86828135 (4.8%), 4.0 MBs/sec
+2026-10-05T18:30:13.8283066Z Received 86828135 of 86828135 (100.0%), 47.5 MBs/sec
+2026-10-05T18:30:13.8284061Z Cache Size: ~83 MB (86828135 B)
+2026-10-05T18:30:13.8395656Z [command]/usr/bin/tar -xf /home/runner/work/_temp/ddd0535e-c752-4d5b-b779-e70e21f2d05e/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-05T18:30:14.0345059Z Cache restored successfully
+2026-10-05T18:30:14.0393258Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T18:30:14.0591994Z ##[group]Run npm ci
+2026-10-05T18:30:14.0592297Z [36;1mnpm ci[0m
+2026-10-05T18:30:14.0823857Z shell: /usr/bin/bash -e {0}
+2026-10-05T18:30:14.0824243Z env:
+2026-10-05T18:30:14.0824916Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:14.0825781Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T18:30:14.0826412Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:14.0826848Z ##[endgroup]
+2026-10-05T18:30:20.2781155Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T18:30:21.3003058Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-05T18:30:22.5407649Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:30:23.9917316Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:30:23.9994798Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:30:24.0561226Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:30:37.8467937Z 
+2026-10-05T18:30:37.8469034Z > growth-project-backend@1.0.0 postinstall
+2026-10-05T18:30:37.8469658Z > prisma generate
+2026-10-05T18:30:37.8469933Z 
+2026-10-05T18:30:38.8281325Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T18:30:42.8524330Z ┌─────────────────────────────────────────────────────────┐
+2026-10-05T18:30:42.8525605Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+2026-10-05T18:30:42.8526638Z │                                                         │
+2026-10-05T18:30:42.8527752Z │  This is a major update - please follow the guide at    │
+2026-10-05T18:30:42.8529006Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-05T18:30:42.8530115Z │                                                         │
+2026-10-05T18:30:42.8530818Z │  Run the following to update                            │
+2026-10-05T18:30:42.8531554Z │    npm i --save-dev prisma@latest                       │
+2026-10-05T18:30:42.8532231Z │    npm i @prisma/client@latest                          │
+2026-10-05T18:30:42.8533221Z └─────────────────────────────────────────────────────────┘
+2026-10-05T18:30:42.8533583Z 
+2026-10-05T18:30:42.8534169Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.21s
+2026-10-05T18:30:42.8534637Z 
+2026-10-05T18:30:42.8535142Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T18:30:42.8535631Z 
+2026-10-05T18:30:42.8536374Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-05T18:30:42.8537026Z 
+2026-10-05T18:30:42.9108223Z 
+2026-10-05T18:30:42.9108944Z > growth-project-backend@1.0.0 prepare
+2026-10-05T18:30:42.9109634Z > lefthook install
+2026-10-05T18:30:42.9109912Z 
+2026-10-05T18:30:42.9621061Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-05T18:30:42.9796738Z 
+2026-10-05T18:30:42.9797920Z added 1115 packages, and audited 1116 packages in 29s
+2026-10-05T18:30:42.9798917Z 
+2026-10-05T18:30:42.9799243Z 202 packages are looking for funding
+2026-10-05T18:30:42.9799784Z   run `npm fund` for details
+2026-10-05T18:30:42.9832481Z 
+2026-10-05T18:30:42.9832939Z 3 high severity vulnerabilities
+2026-10-05T18:30:42.9833923Z 
+2026-10-05T18:30:42.9834367Z To address all issues (including breaking changes), run:
+2026-10-05T18:30:42.9835298Z   npm audit fix --force
+2026-10-05T18:30:42.9835573Z 
+2026-10-05T18:30:42.9835821Z Run `npm audit` for details.
+2026-10-05T18:30:43.0477149Z ##[group]Run npx prisma generate
+2026-10-05T18:30:43.0477490Z [36;1mnpx prisma generate[0m
+2026-10-05T18:30:43.0551187Z shell: /usr/bin/bash -e {0}
+2026-10-05T18:30:43.0551465Z env:
+2026-10-05T18:30:43.0551942Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:43.0552391Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T18:30:43.0553034Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:43.0553367Z ##[endgroup]
+2026-10-05T18:30:44.3384396Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T18:30:48.3435109Z 
+2026-10-05T18:30:48.3436523Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.19s
+2026-10-05T18:30:48.3437185Z 
+2026-10-05T18:30:48.3437822Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T18:30:48.3438408Z 
+2026-10-05T18:30:48.3439186Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-05T18:30:48.3440001Z 
+2026-10-05T18:30:48.4678027Z ##[group]Run npx tsc --noEmit
+2026-10-05T18:30:48.4678366Z [36;1mnpx tsc --noEmit[0m
+2026-10-05T18:30:48.4742305Z shell: /usr/bin/bash -e {0}
+2026-10-05T18:30:48.4742587Z env:
+2026-10-05T18:30:48.4743352Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:48.4743832Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T18:30:48.4744295Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T18:30:48.4744642Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T18:30:48.4744933Z ##[endgroup]
+2026-10-05T18:31:45.9486278Z ##[error]test/push-delivery-send-time.spec.ts(221,45): error TS2345: Argument of type '(args: { where: { id: string; }; }) => Promise<{ expo_push_token: string | null; } | null>' is not assignable to parameter of type '(args_0: { where: { id: string; }; }) => Promise<{ expo_push_token: string | null; }>'.
+2026-10-05T18:31:45.9495921Z   Type 'Promise<{ expo_push_token: string | null; } | null>' is not assignable to type 'Promise<{ expo_push_token: string | null; }>'.
+2026-10-05T18:31:45.9496877Z     Type '{ expo_push_token: string | null; } | null' is not assignable to type '{ expo_push_token: string | null; }'.
+2026-10-05T18:31:45.9497597Z       Type 'null' is not assignable to type '{ expo_push_token: string | null; }'.
+2026-10-05T18:31:46.2113122Z ##[error]Process completed with exit code 2.
+2026-10-05T18:31:46.2231719Z Post job cleanup.
+2026-10-05T18:31:46.3097617Z [command]/usr/bin/git version
+2026-10-05T18:31:46.3135598Z git version 2.55.0
+2026-10-05T18:31:46.3179637Z Temporarily overriding HOME='/home/runner/work/_temp/3282b09d-4f49-46f0-8a84-3111e2c75863' before making global git config changes
+2026-10-05T18:31:46.3181195Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T18:31:46.3186683Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:31:46.3218632Z Removing SSH command configuration
+2026-10-05T18:31:46.3226297Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T18:31:46.3264058Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T18:31:46.3490633Z Removing HTTP extra header
+2026-10-05T18:31:46.3496279Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T18:31:46.3529147Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T18:31:46.3763469Z Removing includeIf entries pointing to credentials config files
+2026-10-05T18:31:46.3770563Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T18:31:46.3800034Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T18:31:46.3801138Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T18:31:46.3801891Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T18:31:46.3802421Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T18:31:46.3810687Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T18:31:46.3832625Z /home/runner/work/_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:31:46.3844195Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:31:46.3879451Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T18:31:46.3901458Z /home/runner/work/_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:31:46.3911588Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:31:46.3947168Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T18:31:46.3968951Z /github/runner_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:31:46.3976904Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:31:46.4009667Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T18:31:46.4030149Z /github/runner_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:31:46.4039964Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config
+2026-10-05T18:31:46.4073799Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T18:31:46.4321368Z Removing credentials config '/home/runner/work/_temp/git-credentials-1e48a50d-d3f2-48b5-84c0-34c3cd21cb4d.config'
+2026-10-05T18:31:46.4450999Z Print service container logs: 9136a78096374653b38c9dec3d3a616c_redis7alpine_148806
+2026-10-05T18:31:46.4455936Z ##[command]/usr/bin/docker logs --details 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9
+2026-10-05T18:31:46.4591662Z  1:C 05 Oct 2026 18:29:44.890 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-05T18:31:46.4594028Z  1:C 05 Oct 2026 18:29:44.890 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-05T18:31:46.4595123Z  1:C 05 Oct 2026 18:29:44.890 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-05T18:31:46.4596745Z  1:C 05 Oct 2026 18:29:44.890 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-05T18:31:46.4603730Z  1:M 05 Oct 2026 18:29:44.890 * monotonic clock: POSIX clock_gettime
+2026-10-05T18:31:46.4605044Z  1:M 05 Oct 2026 18:29:44.891 * Running mode=standalone, port=6379.
+2026-10-05T18:31:46.4605926Z  1:M 05 Oct 2026 18:29:44.891 * Server initialized
+2026-10-05T18:31:46.4606737Z  1:M 05 Oct 2026 18:29:44.891 * Ready to accept connections tcp
+2026-10-05T18:31:46.4619520Z Stop and remove container: 9136a78096374653b38c9dec3d3a616c_redis7alpine_148806
+2026-10-05T18:31:46.4625186Z ##[command]/usr/bin/docker rm --force 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9
+2026-10-05T18:31:46.5828158Z 58a2c29c06e4fff7d12d6a76fb6bad702c186f5db87c762133b7202cd0f9dec9
+2026-10-05T18:31:46.5856097Z Print service container logs: eafae29216224f12aef2913247dd48c9_postgres15_e3f646
+2026-10-05T18:31:46.5857922Z ##[command]/usr/bin/docker logs --details afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:31:46.5991728Z  initdb: warning: enabling "trust" authentication for local connections
+2026-10-05T18:31:46.5992670Z  The files belonging to this database system will be owned by user "postgres".
+2026-10-05T18:31:46.5994557Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-10-05T18:31:46.5996407Z  2026-10-05 18:29:52.570 UTC [1] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-05T18:31:46.5997830Z  2026-10-05 18:29:52.571 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-10-05T18:31:46.5998726Z  2026-10-05 18:29:52.571 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-10-05T18:31:46.5999783Z  2026-10-05 18:29:52.572 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-05T18:31:46.6000886Z  2026-10-05 18:29:52.574 UTC [62] LOG:  database system was shut down at 2026-10-05 18:29:52 UTC
+2026-10-05T18:31:46.6001914Z  2026-10-05 18:29:52.579 UTC [1] LOG:  database system is ready to accept connections
+2026-10-05T18:31:46.6003374Z  This user must also own the server process.
+2026-10-05T18:31:46.6003879Z  
+2026-10-05T18:31:46.6004340Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-10-05T18:31:46.6005095Z  The default database encoding has accordingly been set to "UTF8".
+2026-10-05T18:31:46.6005793Z  The default text search configuration will be set to "english".
+2026-10-05T18:31:46.6006384Z  
+2026-10-05T18:31:46.6006696Z  Data page checksums are disabled.
+2026-10-05T18:31:46.6007311Z  
+2026-10-05T18:31:46.6007836Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-10-05T18:31:46.6008518Z  creating subdirectories ... ok
+2026-10-05T18:31:46.6009044Z  selecting dynamic shared memory implementation ... posix
+2026-10-05T18:31:46.6010021Z  selecting default max_connections ... 100
+2026-10-05T18:31:46.6010538Z  selecting default shared_buffers ... 128MB
+2026-10-05T18:31:46.6011030Z  selecting default time zone ... Etc/UTC
+2026-10-05T18:31:46.6011426Z  creating configuration files ... ok
+2026-10-05T18:31:46.6011712Z  running bootstrap script ... ok
+2026-10-05T18:31:46.6012025Z  performing post-bootstrap initialization ... ok
+2026-10-05T18:31:46.6012349Z  syncing data to disk ... ok
+2026-10-05T18:31:46.6012582Z  
+2026-10-05T18:31:46.6013060Z  
+2026-10-05T18:31:46.6013434Z  Success. You can now start the database server using:
+2026-10-05T18:31:46.6014078Z  
+2026-10-05T18:31:46.6014483Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-10-05T18:31:46.6014992Z  
+2026-10-05T18:31:46.6015733Z  waiting for server to start....2026-10-05 18:29:52.332 UTC [48] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-05T18:31:46.6016665Z  2026-10-05 18:29:52.333 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-05T18:31:46.6017263Z  2026-10-05 18:29:52.336 UTC [51] LOG:  database system was shut down at 2026-10-05 18:29:52 UTC
+2026-10-05T18:31:46.6018027Z  2026-10-05 18:29:52.340 UTC [48] LOG:  database system is ready to accept connections
+2026-10-05T18:31:46.6018404Z   done
+2026-10-05T18:31:46.6018586Z  server started
+2026-10-05T18:31:46.6018777Z  
+2026-10-05T18:31:46.6019103Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-10-05T18:31:46.6019497Z  
+2026-10-05T18:31:46.6019749Z  2026-10-05 18:29:52.451 UTC [48] LOG:  received fast shutdown request
+2026-10-05T18:31:46.6020286Z  waiting for server to shut down....2026-10-05 18:29:52.451 UTC [48] LOG:  aborting any active transactions
+2026-10-05T18:31:46.6020981Z  2026-10-05 18:29:52.454 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+2026-10-05T18:31:46.6021525Z  2026-10-05 18:29:52.454 UTC [49] LOG:  shutting down
+2026-10-05T18:31:46.6021922Z  2026-10-05 18:29:52.454 UTC [49] LOG:  checkpoint starting: shutdown immediate
+2026-10-05T18:31:46.6023248Z  2026-10-05 18:29:52.456 UTC [49] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+2026-10-05T18:31:46.6024215Z  2026-10-05 18:29:52.460 UTC [48] LOG:  database system is shut down
+2026-10-05T18:31:46.6024548Z   done
+2026-10-05T18:31:46.6024730Z  server stopped
+2026-10-05T18:31:46.6024920Z  
+2026-10-05T18:31:46.6025155Z  PostgreSQL init process complete; ready for start up.
+2026-10-05T18:31:46.6025451Z  
+2026-10-05T18:31:46.6026430Z Stop and remove container: eafae29216224f12aef2913247dd48c9_postgres15_e3f646
+2026-10-05T18:31:46.6027194Z ##[command]/usr/bin/docker rm --force afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:31:46.7220971Z afd47b55b754cae20ea064b4a72b1b5f94cf98465e9f591e54209519d838fc8f
+2026-10-05T18:31:46.7246208Z Remove container network: github_network_6a760280664a44848f3c866e8a0d48b1
+2026-10-05T18:31:46.7250671Z ##[command]/usr/bin/docker network rm github_network_6a760280664a44848f3c866e8a0d48b1
+2026-10-05T18:31:46.8170657Z github_network_6a760280664a44848f3c866e8a0d48b1
+2026-10-05T18:31:46.8248648Z Cleaning up orphan processes

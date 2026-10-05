@@ -109,3 +109,4 @@ Queue (next when slots free / gates open)
 - 11:24 launched AUD-OPUS-L3-120 (lens_opus_mobile_lockout_l3_muvkukpn).
 - 11:24 launched B-MSG2-120 (messaging_rls_fix_708_muvkwqxh). Active 7: B-TR8, B-CM9, B-DUNR2, B-PUSH3, Sol L3, Opus L3, B-MSG2.
 - 11:28 owner credits 37.7k/45k: STOP LAUNCHING. Cancelled B-MSG2, Sol L3, Opus L3. #661 MERGED 11:28 (5da537d6). H1-H8 MERGED 11:29 (b79ca594). Handoff v3 e4a080f.
+- 11:44 #661 DEPLOYED (5da537d6). 11:45 relaunched B-MSG2-120 (messaging_rls_fix_708_muvln99y) on owner order. Handoff v4.
