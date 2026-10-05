@@ -25,6 +25,7 @@ import {
   isMessagingCoreV2Enabled,
   MessagingCoreV2Guard,
 } from '../../src/messaging/messaging-core.feature';
+import { broadcastThreadUpdated } from '../../src/messaging/messaging-realtime';
 
 const COACH = '11111111-1111-4111-8111-111111111111';
 const CLIENT = '22222222-2222-4222-8222-222222222222';
@@ -442,5 +443,21 @@ describe('unread counts ignore tombstones (flag ON only)', () => {
     const off = build();
     await off.messaging.unreadCountForCoach(COACH);
     expect(off.prisma.coachMessage.groupBy.mock.calls[0][0].where).not.toHaveProperty('deleted_at');
+  });
+});
+
+describe('thread-updated ping on the public channel (B-709-1)', () => {
+  it('carries an empty payload: no client id, message id or change kind', async () => {
+    const send = jest.fn().mockResolvedValue('ok');
+    const channel = jest.fn(() => ({
+      subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
+      send,
+    }));
+    const supabase = dep(SupabaseService, {
+      getClient: () => ({ channel, removeChannel: jest.fn().mockResolvedValue('ok') }),
+    });
+    await broadcastThreadUpdated(supabase, COACH);
+    expect(channel).toHaveBeenCalledWith(`messages:${COACH}`);
+    expect(send).toHaveBeenCalledWith({ type: 'broadcast', event: 'thread-updated', payload: {} });
   });
 });
