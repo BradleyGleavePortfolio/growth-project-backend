@@ -109,7 +109,11 @@ class SilentNotifications {
     booking_push: true,
     muted: false,
   }));
-  pushToUser = jest.fn(async () => ({ delivered: false, code: 'no-token' as const }));
+  // B-SCHED2-121: booking pushes go through the push stack's one sender.
+  sendPush = jest.fn(async (_input: { user_id: string }) => ({
+    code: 'queued' as const,
+    notBefore: new Date(0),
+  }));
 }
 
 function actor(id: string): ActorContext {
@@ -478,7 +482,7 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
       }
     };
     try {
-      const pushesBefore = liveNotifications.pushToUser.mock.calls.length;
+      const pushesBefore = liveNotifications.sendPush.mock.calls.length;
       // 1. Recovery sees the retry for an earlier start of a session that is
       //    now 120 minutes out: it is parked, and Postgres accepts the write.
       await tick();
@@ -502,7 +506,7 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
         attempts: parked.attempts,
         claim_token: parked.claim_token,
       });
-      expect(liveNotifications.pushToUser.mock.calls.length).toBe(pushesBefore);
+      expect(liveNotifications.sendPush.mock.calls.length).toBe(pushesBefore);
       // 3. The session's new start reaches the 1h band: the band pass claims
       //    the new start (claim key session, user, kind, start_at, B-NOTIF-4)
       //    and delivers it once; the claim for the earlier start stays parked.
@@ -525,9 +529,9 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
         where: { id: row.id },
       });
       expect(earlier.status).toBe('parked');
-      const clientPushes = liveNotifications.pushToUser.mock.calls
+      const clientPushes = liveNotifications.sendPush.mock.calls
         .slice(pushesBefore)
-        .filter((c: unknown[]) => c[0] === clientId);
+        .filter((c: unknown[]) => (c[0] as { user_id: string }).user_id === clientId);
       expect(clientPushes).toHaveLength(1);
       // 4. The CHECK still refuses a value outside the job's set.
       await expect(

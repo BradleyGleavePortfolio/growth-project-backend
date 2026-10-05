@@ -3,7 +3,8 @@
  *
  * S-SCHED-2: each event writes exactly ONE in-app row (the notification
  * center entry) and sends a REAL push through
- * NotificationsService.pushToUser, gated on the recipient's booking_push /
+ * NotificationsService.sendPush (B-SCHED2-121: the push stack's one sender,
+ * fixed lock-screen copy, exactly once per event), gated on booking_push /
  * muted preference. Both carry actionScreen/actionParams so a tap opens the
  * session (client: CalendarSession, coach: CoachBookingInbox). Times are in
  * the recipient's zone with the zone abbreviation; the zone comes from
@@ -23,7 +24,13 @@ import {
   NotificationsService,
   type CreateNotificationInput,
 } from '../src/notifications/notifications.service';
-import type { PushDeliveryResult } from '../src/notifications/push-delivery.types';
+import type { EnqueueResult } from '../src/notifications/push/push-delivery.service';
+import {
+  QUEUED,
+  recordPush,
+  type RecordedPush,
+  type SendPushInput,
+} from './utils/booking-push-fake';
 import { PrismaService } from '../src/prisma.service';
 
 const SCHEDULED_AT = new Date('2026-10-06T17:00:00Z'); // Tue Oct 6, 10:00 AM PDT
@@ -32,10 +39,9 @@ const REQUESTED_AT = new Date('2026-10-05T15:00:00Z');
 
 class FakeNotifications {
   rows: CreateNotificationInput[] = [];
-  pushes: Array<{ userId: string; title: string; body: string; data: Record<string, unknown> }> =
-    [];
+  pushes: RecordedPush[] = [];
   prefs: Record<string, Record<string, unknown>> = {};
-  pushResult: PushDeliveryResult = { delivered: true, code: 'delivered' };
+  pushResult: EnqueueResult | null = QUEUED;
   failInapp = false;
   failPush = false;
 
@@ -54,13 +60,11 @@ class FakeNotifications {
     ...(this.prefs[userId] ?? {}),
   }));
 
-  pushToUser = jest.fn(
-    async (userId: string, title: string, body: string, data?: Record<string, unknown>) => {
-      if (this.failPush) throw new TypeError('expo unreachable');
-      this.pushes.push({ userId, title, body, data: data ?? {} });
-      return this.pushResult;
-    },
-  );
+  sendPush = jest.fn(async (input: SendPushInput) => {
+    if (this.failPush) throw new TypeError('outbox unreachable');
+    recordPush(this.pushes, input);
+    return this.pushResult;
+  });
 
   // Zone provenance (B-647-1 / B-647-2): the emitter reads the recipient's
   // zone through recipient-timezone.ts. This answers it from `prefs` as a
@@ -102,7 +106,7 @@ describe('BookingEmitter delivery', () => {
       scheduledAt: SCHEDULED_AT,
       notes: null,
     });
-    expect(outcome).toEqual({ inapp: 'written', push: 'delivered', notificationId: 'notif-1' });
+    expect(outcome).toEqual({ inapp: 'written', push: 'queued', notificationId: 'notif-1' });
     expect(fake.rows).toHaveLength(1);
     const [row] = fake.rows;
     expect(row).toMatchObject({
@@ -123,18 +127,27 @@ describe('BookingEmitter delivery', () => {
       scheduledAt: SCHEDULED_AT.toISOString(),
       sessionTypeName: 'Quick Q/A Call',
     });
-    expect(fake.pushToUser).toHaveBeenCalledTimes(1);
-    // B-714-1: the push carries the fixed lock-screen line, never row.body.
+    expect(fake.sendPush).toHaveBeenCalledTimes(1);
+    // B-714-1: one sender (sendPush); the lock screen gets the fixed line,
+    // never row.body; the context holds ids, instants and the zone only.
     expect(fake.pushes[0]).toEqual({
       userId: 'coach-1',
+      kind: 'booking_requested',
       title: 'Session request',
       body: 'There is a new session request. Open the app to see it.',
+      inboxBody: row.body,
+      dedupeKey: `booking_requested:sess-1:${SCHEDULED_AT.toISOString()}`,
+      context: {
+        sessionId: 'sess-1',
+        scheduledAt: SCHEDULED_AT.toISOString(),
+        newScheduledAt: undefined,
+        oldScheduledAt: undefined,
+        timeZone: 'America/Los_Angeles',
+      },
       data: {
         kind: 'booking_requested',
-        category: 'COACH_DIRECT',
-        actionScreen: 'CoachBookingInbox',
-        actionParams: { sessionId: 'sess-1' },
-        notificationId: 'notif-1',
+        sessionId: 'sess-1',
+        deepLink: 'tgp://coach/sessions/sess-1',
       },
     });
   });
@@ -160,9 +173,13 @@ describe('BookingEmitter delivery', () => {
       'Your Quick initialization with Coach Kim is confirmed for Tue, Oct 6, 10:00 AM PDT.',
       'Coach Kim confirmed your Quick Q/A Call on Tue, Oct 6, 10:00 AM PDT.',
     ]);
-    expect(fake.pushes.map((p) => p.data.actionScreen)).toEqual([
+    expect(fake.rows.map((r) => r.payload?.actionScreen)).toEqual([
       'CalendarSession',
       'CalendarSession',
+    ]);
+    expect(fake.pushes.map((p) => p.data.deepLink)).toEqual([
+      'tgp://client/sessions/sess-2',
+      'tgp://client/sessions/sess-3',
     ]);
   });
 
@@ -208,7 +225,7 @@ describe('BookingEmitter delivery', () => {
       scheduledAt: SCHEDULED_AT,
     });
     expect(outcome).toEqual({ inapp: 'written', push: 'disabled', notificationId: 'notif-1' });
-    expect(fake.pushToUser).not.toHaveBeenCalled();
+    expect(fake.sendPush).not.toHaveBeenCalled();
   });
 
   it('muted recipient: nothing written, nothing pushed', async () => {
@@ -224,12 +241,12 @@ describe('BookingEmitter delivery', () => {
     });
     expect(outcome).toEqual({ inapp: 'suppressed', push: 'disabled', notificationId: null });
     expect(fake.rows).toHaveLength(0);
-    expect(fake.pushToUser).not.toHaveBeenCalled();
+    expect(fake.sendPush).not.toHaveBeenCalled();
   });
 
-  it('reports a missing device token without throwing', async () => {
+  it('reports a push the sender did not queue as failed (retryable), without throwing', async () => {
     const { fake, emitter } = build();
-    fake.pushResult = { delivered: false, code: 'no-token' };
+    fake.pushResult = null;
     const outcome = await emitter.emitReminder1h({
       recipientUserId: 'client-1',
       recipientRole: 'client',
@@ -239,7 +256,7 @@ describe('BookingEmitter delivery', () => {
       sessionTypeName: 'Quick Q/A Call',
       hasMeetingLink: true,
     });
-    expect(outcome).toEqual({ inapp: 'written', push: 'no-token', notificationId: 'notif-1' });
+    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
   });
 
   it('never throws when storage or transport fail', async () => {
@@ -282,9 +299,10 @@ describe('BookingEmitter delivery', () => {
       'Your Quick Q/A Call with Jamie is on Tue, Oct 6, 10:00 AM PDT. It has no call link yet. Add one so they can join.',
       'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 10:00 AM PDT. Your coach will add the call link before it starts.',
     ]);
-    expect(fake.pushes.map((p) => [p.title, p.data.actionScreen])).toEqual([
-      ['Session reminder', 'CoachBookingInbox'],
-      ['Session reminder', 'CalendarSession'],
+    expect(fake.pushes.map((p) => p.title)).toEqual(['Session reminder', 'Session reminder']);
+    expect(fake.rows.map((r) => r.payload?.actionScreen)).toEqual([
+      'CoachBookingInbox',
+      'CalendarSession',
     ]);
   });
 
@@ -377,7 +395,7 @@ describe('B-634-8: emitter logs never carry raw ORM diagnostics', () => {
       throw ormError();
     });
     const outcome = await emitter.emitRequested(requested);
-    expect(outcome).toEqual({ inapp: 'failed', push: 'delivered', notificationId: null });
+    expect(outcome).toEqual({ inapp: 'failed', push: 'queued', notificationId: null });
     expect(fake.pushes[0].data).not.toHaveProperty('notificationId');
     const text = loggedText();
     expect(text).toContain('booking_requested in-app write failed for user=coach-1');
@@ -394,7 +412,7 @@ describe('B-634-8: emitter logs never carry raw ORM diagnostics', () => {
     });
     const outcome = await emitter.emitRequested(requested);
     expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
-    expect(fake.pushToUser).not.toHaveBeenCalled();
+    expect(fake.sendPush).not.toHaveBeenCalled();
     const text = loggedText();
     expect(text).toContain('booking_requested push failed for user=coach-1');
     expect(text).toContain('Database request failed (P2024)');
@@ -407,7 +425,7 @@ describe('B-634-8: emitter logs never carry raw ORM diagnostics', () => {
       throw ormError();
     });
     const outcome = await emitter.emitRequested(requested);
-    expect(outcome).toEqual({ inapp: 'written', push: 'delivered', notificationId: 'notif-1' });
+    expect(outcome).toEqual({ inapp: 'written', push: 'queued', notificationId: 'notif-1' });
     expect(fake.rows[0].body).not.toMatch(/AM|PM|\d:\d{2}/);
     const text = loggedText();
     // recipient-timezone.ts logs the error class only.
@@ -425,7 +443,7 @@ describe('B-634-8: emitter logs never carry raw ORM diagnostics', () => {
       throw wrapped;
     });
     const plain = Object.assign(new TypeError(`bad payload ${CANARY}`), { code: 'ERR_X' });
-    fake.pushToUser.mockImplementationOnce(async () => {
+    fake.sendPush.mockImplementationOnce(async () => {
       throw plain;
     });
     const outcome = await emitter.emitRequested(requested);
@@ -479,7 +497,7 @@ describe('B-634-10: emitter logs carry only closed-enum error classes and codes'
       throw canaryError();
     });
     const outcome = await emitter.emitRequested(requested);
-    expect(outcome).toEqual({ inapp: 'failed', push: 'delivered', notificationId: null });
+    expect(outcome).toEqual({ inapp: 'failed', push: 'queued', notificationId: null });
     const text = loggedText();
     expect(text).toContain('booking_requested in-app write failed for user=coach-1: OtherError');
     expect(text).not.toContain(NAME_CANARY);
@@ -488,7 +506,7 @@ describe('B-634-10: emitter logs carry only closed-enum error classes and codes'
 
   it('push: a known class with an unknown code logs the class only', async () => {
     const { fake, emitter } = build();
-    fake.pushToUser.mockImplementationOnce(async () => {
+    fake.sendPush.mockImplementationOnce(async () => {
       throw Object.assign(new TypeError('x'), { code: CODE_CANARY });
     });
     const outcome = await emitter.emitRequested(requested);
@@ -503,7 +521,7 @@ describe('B-634-10: emitter logs carry only closed-enum error classes and codes'
     fake.zoneReads.mockImplementationOnce(async () => {
       throw Object.assign(new Error('outer'), { cause: canaryError() });
     });
-    fake.pushToUser.mockImplementationOnce(async () => {
+    fake.sendPush.mockImplementationOnce(async () => {
       throw { name: NAME_CANARY, code: CODE_CANARY };
     });
     const outcome = await emitter.emitRequested(requested);
@@ -519,7 +537,7 @@ describe('B-634-10: emitter logs carry only closed-enum error classes and codes'
 
   it('a catalogued transport code on a cause is kept for operators', async () => {
     const { fake, emitter } = build();
-    fake.pushToUser.mockImplementationOnce(async () => {
+    fake.sendPush.mockImplementationOnce(async () => {
       throw Object.assign(new TypeError('fetch failed'), {
         cause: Object.assign(new Error('socket'), { code: 'ECONNRESET' }),
       });

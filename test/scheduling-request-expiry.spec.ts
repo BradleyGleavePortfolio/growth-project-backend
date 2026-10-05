@@ -13,7 +13,7 @@ import {
   NotificationsService,
   type CreateNotificationInput,
 } from '../src/notifications/notifications.service';
-import type { PushDeliveryResult } from '../src/notifications/push-delivery.types';
+import type { EnqueueResult } from '../src/notifications/push/push-delivery.service';
 import {
   BookingRequestExpiryJob,
   REQUEST_EXPIRY_LEASE_NAME,
@@ -22,6 +22,12 @@ import { SchedulingJobLeaseService } from '../src/scheduling/jobs/scheduling-job
 import { SchedulingService } from '../src/scheduling/scheduling.service';
 import { requestExpiresAt, type ActorContext } from '../src/scheduling/scheduling.types';
 import { SchedulingFakeDb, asPrisma } from './utils/scheduling-fake-db';
+import {
+  QUEUED,
+  recordPush,
+  type RecordedPush,
+  type SendPushInput,
+} from './utils/booking-push-fake';
 
 const NOW = new Date('2026-10-05T15:00:00.000Z'); // Monday
 const TUE_1000 = '2026-10-06T17:00:00.000Z';
@@ -39,8 +45,9 @@ const CLIENT_2: ActorContext = {
 
 class FakeNotifications {
   rows: CreateNotificationInput[] = [];
-  pushes: Array<{ userId: string; title: string; body: string }> = [];
-  pushResult: PushDeliveryResult = { delivered: true, code: 'delivered' };
+  pushes: RecordedPush[] = [];
+  /** The sender's answer; null = not queued (a retryable failure). */
+  pushResult: EnqueueResult | null = QUEUED;
   createNotification = jest.fn(async (input: CreateNotificationInput) => {
     this.rows.push(input);
     return { id: `notif-${this.rows.length}` };
@@ -52,8 +59,9 @@ class FakeNotifications {
     booking_inapp: true,
     muted: false,
   }));
-  pushToUser = jest.fn(async (userId: string, title: string, body: string) => {
-    this.pushes.push({ userId, title, body });
+  // B-SCHED2-121: the push stack's one sender; records the stored lock-screen copy.
+  sendPush = jest.fn(async (input: SendPushInput) => {
+    recordPush(this.pushes, input);
     return this.pushResult;
   });
   expiredFor(userId: string): CreateNotificationInput[] {
@@ -377,12 +385,12 @@ describe('S-SCHED-5 expiry sweep', () => {
     await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
     notifications.rows.length = 0;
     jest.setSystemTime(TUE_DEADLINE);
-    notifications.pushResult = { delivered: false, code: 'transport-error' };
+    notifications.pushResult = null;
     const first = await job.sweep(new Date());
     expect(first).toMatchObject({ expired: 1, notified: 0, retrying: 2 });
     const inAppAfterFirst = notifications.rows.length;
     expect(inAppAfterFirst).toBe(2);
-    notifications.pushResult = { delivered: true, code: 'delivered' };
+    notifications.pushResult = QUEUED;
     const second = await job.sweep(new Date(TUE_DEADLINE.getTime() + 5 * 60_000));
     expect(second).toMatchObject({ recovered: 2, notified: 2 });
     expect(notifications.rows).toHaveLength(inAppAfterFirst); // no duplicate in-app row
@@ -397,7 +405,7 @@ describe('S-SCHED-5 expiry sweep', () => {
     const { svc, db, job, notifications } = harness();
     await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
     jest.setSystemTime(TUE_DEADLINE);
-    notifications.pushResult = { delivered: false, code: 'transport-error' };
+    notifications.pushResult = null;
     for (let i = 0; i < 4; i++) await job.sweep(new Date(TUE_DEADLINE.getTime() + i * 5 * 60_000));
     const logs = db.deliveryLogs.filter((l) => l.kind === NotificationKind.BOOKING_REQUEST_EXPIRED);
     expect(logs.map((l) => l.status)).toEqual(['gave_up', 'gave_up']);

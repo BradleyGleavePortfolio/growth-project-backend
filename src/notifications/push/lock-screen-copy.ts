@@ -55,6 +55,19 @@ const TEMPLATES: Record<string, LockScreenCopy> = {
     title: 'Session starting soon',
     body: `Your session starts in about an hour. ${DETAILS}`,
   },
+  // B-714-1 / B-653-1 (B-SCHED2-121): the scheduling train's booking kinds.
+  [NotificationKind.BOOKING_LINK_NEEDED]: {
+    title: 'Add a call link',
+    body: 'A session has no call link yet. Open the app to add one.',
+  },
+  [NotificationKind.BOOKING_LINK_READY]: {
+    title: 'Call link ready',
+    body: `The call link for your session is ready. ${OPEN}`,
+  },
+  [NotificationKind.BOOKING_REQUEST_EXPIRED]: {
+    title: 'Session request closed',
+    body: `A session request has closed. ${DETAILS}`,
+  },
   [NotificationKind.MILESTONE_REACHED]: {
     title: 'New milestone',
     body: `You reached a milestone. ${OPEN}`,

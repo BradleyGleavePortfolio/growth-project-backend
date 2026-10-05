@@ -24,14 +24,19 @@ import { ZoomVideoAdapter } from '../src/scheduling/providers/zoom-video.adapter
 import { SchedulingService } from '../src/scheduling/scheduling.service';
 import type { ActorContext } from '../src/scheduling/scheduling.types';
 import { SchedulingFakeDb, asPrisma } from './utils/scheduling-fake-db';
+import {
+  QUEUED,
+  recordPush,
+  type RecordedPush,
+  type SendPushInput,
+} from './utils/booking-push-fake';
 
 const NOW = new Date('2026-10-05T15:00:00.000Z');
 const MIN = 60_000;
 
 class FakeNotifications {
   rows: CreateNotificationInput[] = [];
-  pushes: Array<{ userId: string; title: string; body: string; data: Record<string, unknown> }> =
-    [];
+  pushes: RecordedPush[] = [];
   createNotification = jest.fn(async (input: CreateNotificationInput) => {
     this.rows.push(input);
     return { id: `notif-${this.rows.length}` };
@@ -42,12 +47,11 @@ class FakeNotifications {
     booking_push: true,
     muted: false,
   }));
-  pushToUser = jest.fn(
-    async (userId: string, title: string, body: string, data?: Record<string, unknown>) => {
-      this.pushes.push({ userId, title, body, data: data ?? {} });
-      return { delivered: true, code: 'delivered' as const };
-    },
-  );
+  // B-SCHED2-121: the push stack's one sender; records the stored lock-screen copy.
+  sendPush = jest.fn(async (input: SendPushInput) => {
+    recordPush(this.pushes, input);
+    return QUEUED;
+  });
 }
 
 function build() {
@@ -149,20 +153,22 @@ describe('24h reminder', () => {
     addSession(db, 's1', 24 * 60);
     await sweep24h(job);
     const byUser = Object.fromEntries(fake.pushes.map((p) => [p.userId, p]));
-    // B-714-1: the lock screen keeps the time and drops the name and type.
+    // B-714-1: the lock screen keeps the time and drops the name and type;
+    // the tap target is set by the sender from the session (pushTapData).
     expect(byUser['client-1']).toMatchObject({
       title: 'Session reminder',
-      body: 'Your session is on Tue, Oct 6, 8:00 AM PDT.',
-      data: {
-        kind: NotificationKind.BOOKING_REMINDER_24H,
-        actionScreen: 'CalendarSession',
-        actionParams: { sessionId: 's1' },
-      },
+      body: 'Your session is tomorrow at 8:00 AM PDT.',
+      dedupeKey: `${NotificationKind.BOOKING_REMINDER_24H}:s1:${byUser['client-1'].context?.scheduledAt}`,
+      data: { kind: NotificationKind.BOOKING_REMINDER_24H, sessionId: 's1' },
     });
     expect(byUser['coach-1']).toMatchObject({
-      body: 'Your session is on Tue, Oct 6, 8:00 AM PDT.',
-      data: { actionScreen: 'CoachBookingInbox', actionParams: { sessionId: 's1' } },
+      body: 'Your session is tomorrow at 8:00 AM PDT.',
+      data: { sessionId: 's1' },
     });
+    expect(fake.rows.map((r) => r.payload?.actionScreen).sort()).toEqual([
+      'CalendarSession',
+      'CoachBookingInbox',
+    ]);
     expect(fake.rows.map((r) => r.channel)).toEqual(['inapp', 'inapp']);
   });
 
@@ -207,10 +213,7 @@ describe('1h reminder', () => {
     addSession(db, 'ok', 60, 'pending_provider');
     await sweep1h(job);
     expect(fake.pushes).toHaveLength(2);
-    expect(fake.pushes.map((p) => p.data.actionParams)).toEqual([
-      { sessionId: 'ok' },
-      { sessionId: 'ok' },
-    ]);
+    expect(fake.pushes.map((p) => p.data.sessionId)).toEqual(['ok', 'ok']);
   });
 
   it('is idempotent across sweeps and replicas', async () => {

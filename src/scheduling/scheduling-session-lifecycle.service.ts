@@ -528,6 +528,10 @@ export class SchedulingSessionLifecycleService {
     });
 
     const actorName = await this.resolveDisplayName(actor.id);
+    // B-693-1: this move's persisted identity (one push per move, even a move
+    // back to an earlier time).
+    const moveId =
+      result.row.updated_at instanceof Date ? result.row.updated_at.toISOString() : undefined;
     if (isClient) {
       if (result.row.status === 'requested') {
         await this.bookingEmitter.emitMoveRequested({
@@ -537,6 +541,7 @@ export class SchedulingSessionLifecycleService {
           sessionTypeName: result.typeName,
           oldScheduledAt: existing.start_at,
           newScheduledAt: start,
+          rescheduleEventId: moveId,
         });
       } else {
         await this.bookingEmitter.emitRescheduled({
@@ -547,6 +552,7 @@ export class SchedulingSessionLifecycleService {
           sessionTypeName: result.typeName,
           oldScheduledAt: existing.start_at,
           newScheduledAt: start,
+          rescheduleEventId: moveId,
         });
       }
     } else if (existing.client_id && existing.client_id !== actor.id) {
@@ -558,9 +564,7 @@ export class SchedulingSessionLifecycleService {
         sessionTypeName: result.typeName,
         oldScheduledAt: existing.start_at,
         newScheduledAt: start,
-        // B-693-1: this move's persisted identity (one push per move).
-        rescheduleEventId:
-          updated.updated_at instanceof Date ? updated.updated_at.toISOString() : undefined,
+        rescheduleEventId: moveId,
       });
     }
     return result.row;
