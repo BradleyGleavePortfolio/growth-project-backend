@@ -64,6 +64,8 @@ const EMERGENCY: RegExp[] = [
   // "food poisoning" last week is history (medical scope); a poisoning or an
   // overdose happening now is not.
   /\b(overdos(e|ed|ing)|(?<!food )poison(ed|ing))\b/i,
+  // A-666-1 (Opus): an overdose described without the word.
+  /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of)( of)?( my| the)? (\w+ )?(pills|tablets|meds|medication|medicine|capsules|painkillers|sleeping pills)\b/i,
   /\b(coughing|throwing|vomiting) up blood\b/i,
 ];
 
@@ -80,6 +82,8 @@ const SELF_HARM: RegExp[] = [
   /\bbetter off dead\b/i,
   /\b(want|wish) (to die|i was dead|i were dead)\b/i,
   /\bnot worth living\b/i,
+  // A-666-1 (Opus): "I cannot go on anymore" (but not "I can't go on the bike").
+  /\b(can'?t|cannot|can not) go on( (anymore|any more|any longer|like this|living))\b|\b(can'?t|cannot|can not) go on[.!?]*\s*$/i,
 ];
 
 const EATING_DISORDER: RegExp[] = [
