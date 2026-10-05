@@ -454,6 +454,7 @@ jobs:
           npx jest
           test/community/rls/community-wins-rls.live.spec.ts
           test/community/rls/community-message-shape.live.spec.ts
+          test/messaging/rls/coach-thread-state-rls.live.spec.ts
           test/community/community-moderation.e2e.spec.ts
           test/community/community-reactions.e2e.spec.ts
           test/community/community-dms.e2e.spec.ts
@@ -546,6 +547,8 @@ jobs:
         # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
         # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
         # transfer on real Postgres; same gate and bootstrap.
+        # And test/checkout-settlement.live.spec.ts (#661 C-661-12): payment
+        # settlement row versions, row locks and recovery on real Postgres.
         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
         # set they execute their live blocks instead of skipping. --runInBand so
@@ -565,6 +568,7 @@ jobs:
             test/mwb-3-revision-prune.cron.spec.ts \
             test/profile-put-concurrency.live.spec.ts \
             test/onboarding-tenancy-fence.live.spec.ts \
+            test/checkout-settlement.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
@@ -588,5 +592,12 @@ jobs:
         # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap; its own
         # step so it never edits the shared default-lane spec list.
         run: npx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run refund reversal concurrency live spec (#674 B-674-1)
+        # Two refunds reversing one slice / transfer at once both count, on
+        # real Postgres behind a held row lock (same gate and bootstrap).
+        run: npx jest test/refund-reversal-concurrency.live.spec.ts --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096

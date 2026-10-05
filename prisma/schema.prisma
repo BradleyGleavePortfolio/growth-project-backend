@@ -220,6 +220,7 @@ model User {
   // participates in, as coach and as client.
   conversation_reviews_as_coach  ConversationReview[]     @relation("ConversationReviewCoach")
   conversation_reviews_as_client ConversationReview[]     @relation("ConversationReviewClient")
+  coach_thread_states            CoachThreadState[]       @relation("CoachThreadStateUser")
   // Apple 1.2 — safety: reports filed by this user, blocks they have set,
   // and inbound blocks against them. The reviewer relation is owner-staff only.
   reports_filed                  MessageReport[]          @relation("MessageReportReporter")
@@ -356,6 +357,7 @@ model User {
   notifications              Notification[]
   digest_logs                NotificationDigestLog[]
   notification_delivery_logs NotificationDeliveryLog[]
+  push_outbox                PushOutbox[]
   // NUDGE-V1 — behavioral nudge ledger (one row per decision: sent / suppressed / deferred).
   nudge_logs                 NudgeLog[]
 
@@ -1278,10 +1280,52 @@ model CoachMessage {
   // NULL for every other message.
   welcome_job_id String? @unique
 
+  // A3-MSG-CORE (20270303000000) — Telegram-grade message actions.
+  // Offline-queue idempotency key minted by the sender's device (UUID). A
+  // replayed send with the same (sender_id, client_message_id) returns the
+  // original row instead of inserting a duplicate. NULL for legacy senders.
+  client_message_id String?
+  // Swipe-reply: the quoted message in the SAME thread (server-validated).
+  // SET NULL so erasing the quoted row never cascades into the reply.
+  reply_to_id       String?
+  reply_to          CoachMessage?  @relation("CoachMessageReply", fields: [reply_to_id], references: [id], onDelete: SetNull)
+  replies           CoachMessage[] @relation("CoachMessageReply")
+  // Author edit (body only, inside the edit window). Shown as "edited".
+  edited_at         DateTime?
+  // Tombstone: content columns are erased and deleted_at is set; the row
+  // stays so thread order, read state and reply links remain stable.
+  deleted_at        DateTime?
+  deleted_by_id     String?
+  // Thread-shared pin (either participant may pin; capped per thread).
+  pinned_at         DateTime?
+  pinned_by_id      String?
+
+  @@unique([sender_id, client_message_id], name: "CoachMessage_sender_client_message_key")
   @@index([coach_id])
   @@index([client_id])
   @@index([created_at])
   @@index([coach_id, client_id, created_at])
+  @@index([coach_id, client_id, pinned_at])
+}
+
+// A3-MSG-CORE (20270303000000) — one participant's private preferences for one
+// CoachMessage thread (thread = coach_id + client_id; coach_id is the HEAD
+// coach for sub-coach threads). Mute silences push for this thread until
+// muted_until; pinned_at pins the thread to the top of that user's inbox.
+// Never visible to the other participant (RLS: self only).
+model CoachThreadState {
+  id          String    @id @default(uuid())
+  user_id     String
+  user        User      @relation("CoachThreadStateUser", fields: [user_id], references: [id], onDelete: Cascade)
+  coach_id    String
+  client_id   String
+  muted_until DateTime?
+  pinned_at   DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@unique([user_id, coach_id, client_id], name: "CoachThreadState_user_thread_key")
+  @@index([coach_id, client_id])
 }
 
 // ED.6 (Roman coach-is-watching micro-signal) — per-conversation coach-review
@@ -2114,9 +2158,78 @@ model Notification {
   // Stream 2 ai_draft_id columns.
   ai_draft_id String? @unique
 
+  // B-648-7: true only for a proven duplicate: a `push` row written next to
+  // an `inapp` row for the same event (same user, kind, deep link and text,
+  // within seconds). The inbox and unread counts skip these; a sole push row
+  // (coach-AI, community, assignments) is never hidden. Set at write time by
+  // NotificationsService.createNotification and backfilled once by
+  // 20270307000000_push_outbox_quiet_hours.
+  inbox_hidden Boolean @default(false)
+
   @@index([user_id, created_at])
   @@index([user_id, read_at])
   @@index([kind, created_at])
+}
+
+// B-NOTIF-5 (#648): the durable device-push outbox. Every inbox
+// notification that should reach a phone is one row here, written in the
+// emitter's request (or transaction) and sent by PushDeliveryService's
+// worker, so a request never waits on Expo (B-648-6) and a restart loses
+// nothing. Quiet hours (OR-113-5, 21:00-08:00 in the recipient's zone) set
+// not_before to 08:00 local for non-urgent kinds (B-648-1: distinct events
+// are never dropped; a per-user burst cap defers instead of dropping).
+// Receipts are tracked on the row (C-648-5). Account deletion cascades.
+model PushOutbox {
+  id                 String    @id @default(uuid())
+  user_id            String
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  kind               String
+  // Exactly-once identity for events that have one (a booking event for a
+  // session at a start time). NULL for events that collapse instead.
+  dedupe_key         String?
+  // Same-conversation repeats collapse into one unsent push (latest copy).
+  collapse_key       String
+  title              String
+  body               String
+  // Tap routing for the mobile pushTapRouter: ids and enums only.
+  data               Json
+  // Booking context (sessionId, scheduledAt, timeZone, otherPartyDisplayName)
+  // so a deferred push is re-rendered and re-checked when it is sent.
+  context            Json?
+  // The caller's explicit urgency only. Quiet hours and the burst cap are
+  // re-decided at every send from the kind, the context and the clock.
+  urgent             Boolean   @default(false)
+  // The recipient's zone at enqueue; the worker prefers the current one.
+  time_zone          String?
+  // pending | sending | sent | dropped
+  status             String    @default("pending")
+  not_before         DateTime  @default(now())
+  // quiet_hours | burst_cap | provider_retry | worker_retry (why not_before is later)
+  deferred_reason    String?
+  lease_until        DateTime?
+  // Fences every write of the worker that claimed the row (B-648-8).
+  lease_token        String?
+  // Set right before the Expo call. A lapsed lease without it was never
+  // started (back to pending); with it the send is unknown (closed).
+  handed_off_at      DateTime?
+  attempts           Int       @default(0)
+  // Last outcome code (sent, no-token, device-not-registered, ...).
+  // token-cleanup-pending: Expo reported DeviceNotRegistered but clearing the
+  // token failed; the receipt sweep retries the clear (never the send).
+  result_code        String?
+  ticket_id          String?
+  token              String?
+  sent_at            DateTime?
+  receipt_checked_at DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  @@unique([user_id, dedupe_key])
+  @@index([status, not_before])
+  @@index([user_id, collapse_key, created_at])
+  @@index([user_id, sent_at])
+  @@index([sent_at, receipt_checked_at])
+  @@index([result_code])
 }
 
 model NotificationDigestLog {
@@ -4072,6 +4185,8 @@ model SplitLedgerEntry {
   reversed_at               DateTime?
   created_at                DateTime       @default(now())
   updated_at                DateTime       @updatedAt
+  // B-676-1 (B-CM1-116): one immutable row per reversal posted to this slice.
+  reversal_postings         SplitLedgerReversal[]
 
   // S-FEE: the ledger is per CHARGE. A recurring purchase has one set of rows
   // per renewal, distinguished by stripe_charge_id. Kinds written by
@@ -4084,6 +4199,22 @@ model SplitLedgerEntry {
   @@index([kind, status])
   @@index([payee_user_id, status])
   @@index([stripe_charge_id])
+}
+
+// B-676-1 (B-CM1-116): what ONE refund / lost chargeback (source_id) took back
+// from ONE slice, written once with the reversed_cents increase.
+model SplitLedgerReversal {
+  id          String           @id @default(uuid())
+  entry_id    String
+  entry       SplitLedgerEntry @relation(fields: [entry_id], references: [id], onDelete: Cascade)
+  source_kind String // refund | dispute
+  source_id   String
+  cents       Int
+  posted_at   DateTime
+  created_at  DateTime         @default(now())
+
+  @@unique([entry_id, source_kind, source_id])
+  @@index([posted_at])
 }
 
 // Phase 4 Connect — Follow-on Connect transfer record.
@@ -4702,6 +4833,24 @@ model ChargeRefund {
   // Whether we've reversed the matching ledger entry / head-coach transfer.
   ledger_reversed      Boolean        @default(false)
   transfer_reversed    Boolean        @default(false)
+  // B-641-7/8 (B-COACH-5): the first time a head-coach transfer reversal for
+  // this refund was (or may have been) sent to Stripe under the refund-scoped
+  // key. Stripe keeps a key for 24 hours from its first request, so a retry is
+  // admitted only while this is under 23 hours old, for every caller.
+  transfer_reversal_first_attempt_at DateTime?
+  // Set once when a reversal is still owed past that window: the row leaves
+  // automatic retry, an operator alert fires once, and an owner reconciles it
+  // (POST /v1/admin/payments/refund-reversals/:id/reconcile).
+  transfer_reversal_review_at        DateTime?
+  // B-641-8 (narrowed): the latest admitted attempt. The retry sweep takes
+  // never-attempted rows first, then the least recently attempted, so rows
+  // that keep failing never hold later refunds back across runs.
+  transfer_reversal_last_attempt_at  DateTime?
+  // B-674-3 (d): the first attempt's amount; every resend replays it.
+  transfer_reversal_amount_cents     Int?
+  // B-641-9: the Stripe transfer reversal recorded for this refund (every
+  // path, B-674-3). Unique, so one Stripe reversal settles at most one refund.
+  transfer_reversal_stripe_id        String?   @unique
   posted_at            DateTime?
   created_at           DateTime       @default(now())
   updated_at           DateTime       @updatedAt
@@ -4709,6 +4858,7 @@ model ChargeRefund {
   @@index([purchase_id])
   @@index([status])
   @@index([stripe_charge_id])
+  @@index([transfer_reversed, transfer_reversal_review_at])
 }
 
 // F2 — Partial-refund coach-decision surface.
@@ -4772,6 +4922,17 @@ model ChargeDispute {
   // Stripe-side balance transaction id for the chargeback debit (when lost).
   // Used to reconcile the negative balance against our ledger.
   balance_transaction_id String?
+  // B-674-5 / B-674-10: the lost chargeback's head-coach transfer reversal.
+  // Amount and first attempt are stamped before the first Stripe call (every
+  // attempt replays them under one key); reversed_at is the once-only record
+  // claim; stripe_id is the reversal recorded (unique: settles one dispute).
+  // B-674-11: last_attempt_at orders and claims the retry sweep (least
+  // recently attempted first).
+  transfer_reversal_amount_cents     Int?
+  transfer_reversal_first_attempt_at DateTime?
+  transfer_reversal_last_attempt_at  DateTime?
+  transfer_reversed_at               DateTime?
+  transfer_reversal_stripe_id        String?        @unique
   created_at             DateTime       @default(now())
   updated_at             DateTime       @updatedAt
 

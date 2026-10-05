@@ -73,7 +73,7 @@ function build() {
     {
       createNotification: jest.fn(async () => ({ id: 'n' })),
       getPreferences: jest.fn(async () => ({ timezone: 'America/Los_Angeles' })),
-      pushToUser: jest.fn(async () => ({ delivered: false, code: 'no-token' as const })),
+      sendPush: jest.fn(async () => ({ code: 'queued' as const, notBefore: new Date(0) })),
     },
   );
   const calendarSpy = new GoogleCalendarAdapter();

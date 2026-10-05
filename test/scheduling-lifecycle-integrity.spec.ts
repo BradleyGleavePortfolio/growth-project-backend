@@ -31,7 +31,7 @@ import {
   NotificationsService,
   type CreateNotificationInput,
 } from '../src/notifications/notifications.service';
-import type { PushDeliveryResult } from '../src/notifications/push-delivery.types';
+import type { EnqueueResult } from '../src/notifications/push/push-delivery.service';
 import { GoogleCalendarAdapter } from '../src/scheduling/providers/google-calendar.adapter';
 import { GoogleMeetAdapter } from '../src/scheduling/providers/google-meet.adapter';
 import { SchedulingProviderRegistry } from '../src/scheduling/providers/scheduling-provider.registry';
@@ -41,6 +41,12 @@ import { ZoomVideoAdapter } from '../src/scheduling/providers/zoom-video.adapter
 import { SchedulingService } from '../src/scheduling/scheduling.service';
 import type { ActorContext } from '../src/scheduling/scheduling.types';
 import { SchedulingFakeDb, asPrisma } from './utils/scheduling-fake-db';
+import {
+  QUEUED,
+  recordPush,
+  type RecordedPush,
+  type SendPushInput,
+} from './utils/booking-push-fake';
 
 // Monday 2026-10-05 08:00 PDT.
 const NOW = new Date('2026-10-05T15:00:00.000Z');
@@ -81,10 +87,10 @@ function client(n: number): ActorContext {
 
 class FakeNotifications {
   rows: CreateNotificationInput[] = [];
-  pushes: Array<{ userId: string; title: string; body: string; data: Record<string, unknown> }> =
-    [];
+  pushes: RecordedPush[] = [];
   prefs = new Map<string, Record<string, unknown>>();
-  pushResult: PushDeliveryResult = { delivered: true, code: 'delivered' };
+  /** The sender's answer; null = not queued (a retryable failure). */
+  pushResult: EnqueueResult | null = QUEUED;
 
   createNotification = jest.fn(async (input: CreateNotificationInput) => {
     const p = this.prefs.get(input.user_id) ?? {};
@@ -102,12 +108,11 @@ class FakeNotifications {
     ...(this.prefs.get(userId) ?? {}),
   }));
 
-  pushToUser = jest.fn(
-    async (userId: string, title: string, body: string, data?: Record<string, unknown>) => {
-      this.pushes.push({ userId, title, body, data: data ?? {} });
-      return this.pushResult;
-    },
-  );
+  // B-SCHED2-121: the push stack's one sender; records the stored lock-screen copy.
+  sendPush = jest.fn(async (input: SendPushInput) => {
+    recordPush(this.pushes, input);
+    return this.pushResult;
+  });
 
   kindsFor(userId: string): string[] {
     return this.rows.filter((r) => r.user_id === userId).map((r) => r.kind);
@@ -412,8 +417,8 @@ describe('booking validation matrix (request)', () => {
     const coachRow = notifications.rows.find((r) => r.user_id === 'coach-1');
     expect(coachRow?.body).toContain('Quick Q/A Call');
     expect(coachRow?.body).toContain('Tue, Oct 6, 10:00 AM PDT');
-    expect(push?.data).toMatchObject({
-      kind: 'booking_requested',
+    expect(push?.data).toMatchObject({ kind: 'booking_requested', sessionId: s.id });
+    expect(coachRow?.payload).toMatchObject({
       actionScreen: 'CoachBookingInbox',
       actionParams: { sessionId: s.id },
     });
@@ -433,7 +438,9 @@ describe('booking validation matrix (request)', () => {
     expect(notifications.kindsFor('client-1')).toEqual([NotificationKind.BOOKING_CONFIRMED]);
     expect(notifications.kindsFor('coach-1')).toEqual([NotificationKind.BOOKING_CONFIRMED]);
     const clientPush = notifications.pushes.find((p) => p.userId === 'client-1');
-    expect(clientPush?.data).toMatchObject({
+    expect(clientPush?.data).toMatchObject({ sessionId: s.id });
+    const clientRow = notifications.rows.find((r) => r.user_id === 'client-1');
+    expect(clientRow?.payload).toMatchObject({
       actionScreen: 'CalendarSession',
       actionParams: { sessionId: s.id },
     });
@@ -856,6 +863,31 @@ describe('lifecycle rules', () => {
     expect(toCoach[0].payload).toMatchObject({ title: 'Session move requested' });
   });
 
+  it('B-693-1 / B-SCHED2-121: each move is pushed once, even a move back to an earlier time', async () => {
+    const { svc, notifications } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-w', TUE_1000, TUE_1030));
+    const moves: Array<[string, string]> = [
+      [TUE_1100, TUE_1130],
+      [TUE_1000, TUE_1030],
+      [TUE_1100, TUE_1130],
+    ];
+    for (const [i, [start_at, end_at]] of moves.entries()) {
+      jest.setSystemTime(new Date(NOW.getTime() + (i + 1) * 60_000));
+      await svc.rescheduleSession(COACH, s.id, { start_at, end_at });
+    }
+    jest.setSystemTime(NOW);
+    const moved = notifications.pushes.filter(
+      (p) => p.userId === 'client-1' && p.kind === NotificationKind.BOOKING_RESCHEDULED,
+    );
+    expect(moved).toHaveLength(3);
+    // The key is the move's persisted identity (updated_at), not the times.
+    expect(new Set(moved.map((p) => p.dedupeKey)).size).toBe(3);
+    for (const p of moved) {
+      expect(p.dedupeKey).toMatch(new RegExp(`^booking_rescheduled:${s.id}:\\d{4}-\\d{2}-\\d{2}T`));
+      expect(p.dedupeKey).not.toContain('>');
+    }
+  });
+
   it('client moving an instant-confirm session stays confirmed and must keep the type duration', async () => {
     const { svc, notifications } = harness();
     const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-open', TUE_1000, TUE_1030));
@@ -1066,7 +1098,7 @@ describe('lifecycle rules', () => {
     }
     for (const p of notifications.pushes) {
       expect(p.title).not.toMatch(/!/);
-      expect(p.data.actionParams).toBeDefined();
+      expect(p.data.sessionId).toBeDefined();
     }
   });
 });
@@ -1455,8 +1487,8 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
     dueSession(db);
     notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
     notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
-    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
-    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.sendPush.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.sendPush.mockRejectedValueOnce(new Error('temporary push outage'));
     await withReminders(async () => {
       await reminder.runOneHourReminderSweep();
       expect(remindersFor(notifications)).toHaveLength(0);
@@ -1473,7 +1505,7 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
   it('partial failure retries only the failed channel; the retried push links the first in-app row', async () => {
     const { db, notifications, reminder, emitter } = harness();
     dueSession(db);
-    notifications.pushToUser.mockResolvedValueOnce({ delivered: false, code: 'transport-error' });
+    notifications.sendPush.mockResolvedValueOnce(null);
     await withReminders(async () => {
       const first = await reminder.dispatchWindow({
         lowerOffsetMinutes: 55,
@@ -1496,7 +1528,12 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
       expect(clientPushes).toHaveLength(1);
       const clientRow = db.deliveryLogs.find((l) => l.user_id === 'client-1');
       expect(clientRow).toMatchObject({ status: 'sent', attempts: 2 });
-      expect(clientPushes[0].data.notificationId).toBe(clientRow?.notification_id);
+      // Outbox world: the retry carries the same exactly-once key, so it is
+      // queued once; the inbox row is not written again.
+      expect(clientPushes[0].dedupeKey).toBe(
+        `${NotificationKind.BOOKING_REMINDER_1H}:rem-1:${clientPushes[0].context?.scheduledAt}`,
+      );
+      expect(clientRow?.notification_id).toBeTruthy();
     });
   });
 
@@ -1559,7 +1596,7 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
         lowerOffsetMinutes: 55,
         upperOffsetMinutes: 65,
         kind: NotificationKind.BOOKING_REMINDER_1H,
-        emit: async () => ({ inapp: 'written', push: 'delivered' }),
+        emit: async () => ({ inapp: 'written', push: 'queued' }),
       });
       expect(r1).toMatchObject({ dispatched: 0, skipped: 0, failed: 2 });
       await reminder.runOneHourReminderSweep();
@@ -1571,13 +1608,14 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
     const { db, notifications, reminder } = harness();
     dueSession(db);
     notifications.prefs.set('client-1', { muted: true });
-    notifications.pushResult = { delivered: false, code: 'no-token' };
+    // No device is now the outbox worker's answer: the sender queued it.
+    notifications.pushResult = QUEUED;
     await withReminders(async () => {
       await reminder.runOneHourReminderSweep();
       await reminder.runOneHourReminderSweep();
     });
     expect(remindersFor(notifications).map((r) => r.user_id)).toEqual(['coach-1']);
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
     expect(db.deliveryLogs.map((l) => [l.user_id, l.status, l.attempts])).toEqual([
       ['client-1', 'sent', 1],
       ['coach-1', 'sent', 1],
@@ -1647,7 +1685,7 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
   it('gives up after the attempt limit and says so', async () => {
     const { db, notifications, reminder } = harness();
     dueSession(db);
-    notifications.pushResult = { delivered: false, code: 'transport-error' };
+    notifications.pushResult = null;
     await withReminders(async () => {
       for (let i = 0; i < 5; i++) await reminder.runOneHourReminderSweep();
     });
@@ -1655,7 +1693,7 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
       ['gave_up', 3],
       ['gave_up', 3],
     ]);
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(6);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(6);
     expect(remindersFor(notifications)).toHaveLength(2);
     expect(String(db.deliveryLogs[0].last_error)).toContain('push');
   });
@@ -1717,8 +1755,8 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
     confirmed(db, 'edge-1h', 55);
     notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
     notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
-    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
-    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.sendPush.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.sendPush.mockRejectedValueOnce(new Error('temporary push outage'));
     await at(0, () => reminder.runOneHourReminderSweep());
     expect(db.deliveryLogs.map((l) => [l.status, l.attempts])).toEqual([
       ['retry', 1],
@@ -1747,8 +1785,8 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
     confirmed(db, 'edge-24h', 24 * 60 - 15);
     notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
     notifications.createNotification.mockRejectedValueOnce(new Error('temporary db outage'));
-    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
-    notifications.pushToUser.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.sendPush.mockRejectedValueOnce(new Error('temporary push outage'));
+    notifications.sendPush.mockRejectedValueOnce(new Error('temporary push outage'));
     await at(0, () => reminder.runTwentyFourHourReminderSweep());
     expect(db.deliveryLogs.map((l) => l.status)).toEqual(['retry', 'retry']);
     await at(15, () => reminder.runTwentyFourHourReminderSweep());
@@ -1763,7 +1801,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
   it('partial failure at the final tick: the next tick re-sends only the push, linked to the first in-app row', async () => {
     const { db, notifications, reminder } = harness();
     confirmed(db, 'edge-push', 55);
-    notifications.pushToUser.mockResolvedValueOnce({ delivered: false, code: 'transport-error' });
+    notifications.sendPush.mockResolvedValueOnce(null);
     await at(0, () => reminder.runOneHourReminderSweep());
     const failed = db.deliveryLogs.find((l) => l.status === 'retry');
     expect(failed).toBeDefined();
@@ -1775,7 +1813,9 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
     expect(retried).toMatchObject({ status: 'sent', attempts: 2, notification_id: firstInApp });
     const pushes = notifications.pushes.filter((p) => p.userId === failed?.user_id);
     expect(pushes).toHaveLength(1);
-    expect(pushes[0].data.notificationId).toBe(firstInApp);
+    expect(pushes[0].dedupeKey).toBe(
+      `${NotificationKind.BOOKING_REMINDER_1H}:edge-push:${pushes[0].context?.scheduledAt}`,
+    );
   });
 
   it('worker crash at the final tick: a live lease is left alone, the expired lease is taken over on the next tick', async () => {
@@ -1840,7 +1880,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         lowerOffsetMinutes: 55,
         upperOffsetMinutes: 65,
         kind: NotificationKind.BOOKING_REMINDER_1H,
-        emit: async () => ({ inapp: 'written', push: 'delivered' }),
+        emit: async () => ({ inapp: 'written', push: 'queued' }),
       }),
     );
     expect(result).toMatchObject({ scanned: 1, recovered: 1, dispatched: 1, retired: 0 });

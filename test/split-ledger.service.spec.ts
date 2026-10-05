@@ -64,6 +64,12 @@ function makePrismaStub() {
         Object.assign(row, data);
         return { ...row };
       }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const row = entries.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+        if (!row) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      }),
     },
   };
 }
