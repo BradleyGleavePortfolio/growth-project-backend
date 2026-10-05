@@ -233,6 +233,9 @@ export class BillingService {
     // sweeper-backed, so a rolled-back tx simply skips this (the descriptor
     // is captured but never executed) and Stripe's redelivery reconciles.
     let deferredSplit: DeferredSplitTask | null = null;
+    // S-FEE round 6 (#627 C-627-7) — payout notices recorded inside the tx
+    // are delivered after it commits (no push / email HTTP inside the tx).
+    let deferredPayoutNoticeChargeId: string | null = null;
     // B-TRIALS (OR-113-2) — trial-ending notice recorded inside the tx (push +
     // email go out after commit) and a second-trial subscription to cancel
     // after commit. Both are dropped if the tx rolls back.
@@ -248,6 +251,10 @@ export class BillingService {
     const guestSubFallbackRef: { value: { guest_checkout_id: string; payment_intent_id: string } | null } = {
       value: null,
     };
+    // S-FEE — guest PaymentIntent whose conversion this delivery drove. The
+    // coach payout for it is settled post-commit (Stripe HTTP never runs
+    // inside the tx); the settlement sweeper is the backstop.
+    const guestSettlementPiRef: { value: string | null } = { value: null };
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -291,6 +298,9 @@ export class BillingService {
           // post-commit (below) so no Stripe HTTP fires inside this tx.
           if (result.deferredSplit) {
             deferredSplit = result.deferredSplit;
+          }
+          if (result.deferredPayoutNoticeChargeId) {
+            deferredPayoutNoticeChargeId = result.deferredPayoutNoticeChargeId;
           }
           if (result.deferredTrialNoticeId) {
             deferredTrialNoticeId = result.deferredTrialNoticeId;
@@ -441,10 +451,12 @@ export class BillingService {
                 chargeId = chargeId ?? preResolved.chargeId;
                 preResolveAttempted = true;
               }
-              await this.guestCheckout.handlePaymentSucceeded(
-                pi.id,
-                { chargeId, receiptUrl, preResolveAttempted },
-              );
+              await this.guestCheckout.handlePaymentSucceeded(pi.id, {
+                chargeId,
+                receiptUrl,
+                preResolveAttempted,
+              });
+              guestSettlementPiRef.value = pi.id;
             }
             break;
           }
@@ -701,12 +713,34 @@ export class BillingService {
       if (piId) {
         try {
           await this.guestCheckout.handlePaymentSucceeded(piId);
+          guestSettlementPiRef.value = guestSettlementPiRef.value ?? piId;
         } catch (err) {
           this.logger.warn(
             `guest subscription fallback handlePaymentSucceeded failed pi=${piId}: ${(err as Error).message}`,
           );
         }
       }
+    }
+
+    // S-FEE round 6 (C-627-7) — deliver the refund / chargeback payout
+    // notices now that the webhook tx committed. Never throws; the notice
+    // sweeper re-delivers anything undelivered.
+    if (
+      deferredPayoutNoticeChargeId &&
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.deliverPayoutNotices === 'function'
+    ) {
+      await this.checkoutWebhooks.deliverPayoutNotices(deferredPayoutNoticeChargeId);
+    }
+
+    // S-FEE — settle the guest purchase's charge(s) now that the conversion
+    // committed. Failure-isolated (never throws); the sweeper retries.
+    if (
+      guestSettlementPiRef.value &&
+      this.checkoutWebhooks &&
+      typeof this.checkoutWebhooks.settleGuestPurchase === 'function'
+    ) {
+      await this.checkoutWebhooks.settleGuestPurchase(guestSettlementPiRef.value);
     }
     return { processed: true };
   }

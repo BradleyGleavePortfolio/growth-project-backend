@@ -81,6 +81,8 @@ Repeat sections 2.1–2.5 once per environment (staging and production are
    - `invoice.paid`
    - `invoice.payment_failed`
    - `customer.updated`
+   - `setup_intent.succeeded` (native package trials: the card a client
+     saves for a trial is made the subscription's default from this event)
 5. Save the endpoint. Copy the **Signing secret** (`whsec_...`) — this
    becomes `STRIPE_WEBHOOK_SECRET`.
 

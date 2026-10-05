@@ -290,7 +290,7 @@ export class TrialConflictService {
         const subId = row.stripe_subscription_id;
         const payable = historic ? await readPayable(this.stripe, subId) : null;
         const history = historic
-          ? trialPaidHistory(await readOrNull(this.stripe.listPaidInvoices(subId)))
+          ? trialPaidHistory(await readOrNull(this.stripe.listSubscriptionPaidInvoices(subId)))
           : undefined;
         // B-673-2 — the row must still be owed under this lease after the
         // reads, and (B-TR6-119) before each void and before the DELETE.
@@ -442,7 +442,8 @@ export class TrialConflictService {
         if (fin.lease !== 'ok') return fin.lease;
         if (fin.res?.id !== inv || fin.res.status !== 'open') return 'draft_not_fenced';
       }
-      const res = await call(() => stripe.voidInvoice(inv));
+      // Main's voidInvoice is keyed: one void per invoice however often this retries.
+      const res = await call(() => stripe.voidInvoice(inv, `tgp-trial-void-${inv}`));
       if (res.lease !== 'ok') return res.lease;
       if (res.res?.status !== 'void') return 'invoice_not_voided';
     }
@@ -461,7 +462,7 @@ export class TrialConflictService {
       if (!now) return 'invoices_unknown';
       if (now.some((inv) => !fenced.includes(inv))) return 'invoices_changed';
     }
-    const paid = await call(() => stripe.listPaidInvoices(subId));
+    const paid = await call(() => stripe.listSubscriptionPaidInvoices(subId));
     if (paid.lease !== 'ok') return paid.lease;
     const history = trialPaidHistory(paid.res);
     if (history === 'charged') return 'billed';
