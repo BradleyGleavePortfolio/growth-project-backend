@@ -24,6 +24,10 @@ import { z } from 'zod';
  *   coach_community_wearable_prompts ← FEATURE_COMMUNITY_WEARABLE_PROMPTS (coach/owner only)
  *   community_classroom              ← FEATURE_COMMUNITY_CLASSROOM_POSTS
  *   community_events                 ← FEATURE_COMMUNITY_EVENTS
+ *   messaging_core_v2                ← FEATURE_MESSAGING_CORE_V2 (A3-MSG-CORE;
+ *                                      the 1:1 coach thread is not a community
+ *                                      surface, so it is NOT behind the
+ *                                      community master gate)
  *
  * All flags additionally require the community master gate
  * (FEATURE_COMMUNITY_API, via resolveCommunityFlag) — a flag cannot read
@@ -35,6 +39,7 @@ export const FEATURE_FLAG_KEYS = [
   'community_classroom',
   'community_events',
   'coachless_home',
+  'messaging_core_v2',
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

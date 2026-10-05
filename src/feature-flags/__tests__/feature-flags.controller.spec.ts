@@ -34,6 +34,7 @@ describe('FeatureFlagsController', () => {
     community_classroom: true,
     community_events: true,
     coachless_home: true,
+    messaging_core_v2: true,
   };
 
   beforeEach(() => {
