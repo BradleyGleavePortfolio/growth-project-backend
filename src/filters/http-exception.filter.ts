@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import * as Sentry from '@sentry/node';
 import { safeDiagnostic } from '../observability/orm-diagnostics';
 import { buildErrorEnvelope } from './not-found-envelope';
+import { pickErrorDetails } from './error-details';
 
 // Structured error shape: { statusCode, message, error, timestamp, path }.
 // Mobile only reads `err.response?.data?.message` (verified in growth-project-mobile
@@ -42,6 +43,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // exception body (e.g. `invite_code_invalid_format`). Keep it strictly
     // additive so existing clients that only read `message` are unaffected.
     let code: string | undefined;
+    // B-RECUR-BE — allowlisted, shape-checked facts of a coded 4xx (see
+    // error-details.ts). Empty for every code not on the allowlist.
+    let details: Record<string, unknown> = {};
 
     // An HttpException whose cause is an ORM failure normally carries a body
     // derived from that failure, so its original response must not reach the
@@ -58,6 +62,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = body.message ?? exception.message;
         error = body.error ?? exception.name.replace(/Exception$/, '');
         if (typeof body.code === 'string') code = body.code;
+        details = pickErrorDetails(status, code, res as Record<string, unknown>);
       }
     } else if (diagnostic instanceof Error) {
       // Log unexpected errors; do NOT leak internal details to clients.
@@ -90,14 +95,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // Envelope construction is shared with the R-DARK-1 feature-flag 404
     // middleware (see src/filters/not-found-envelope.ts) so a dark-route 404
     // is key-for-key identical to this filter's unmounted-route 404.
-    response.status(status).json(
-      buildErrorEnvelope(request, {
+    // Details never carry an envelope key (error-details.ts skips them).
+    response.status(status).json({
+      ...buildErrorEnvelope(request, {
         statusCode: status,
         code,
         message,
         error,
         requestId: reqWithId.requestId,
       }),
-    );
+      ...details,
+    });
   }
 }

@@ -172,7 +172,11 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'checkout/purchases/:purchaseid/drops',
   'checkout/sessions',
   'checkout/sessions/:sessionid/confirm',
+  'checkout/subscription-intent', // B-RECUR SubscriptionCheckoutController (native subscriptions)
+  'checkout/subscriptions',
+  'checkout/subscriptions/:purchaseid',
   'checkout/subscriptions/:purchaseid/cancel', // ClientBillingController — 2A / option A cancel (S-DUNNING-R2)
+  'checkout/subscriptions/:purchaseid/resume',
   'coach/billing/portal-session', // mobile coach billing (MobileCoachBillingController)
   'coach/billing/status',
   'coach/me/billing', // v1 coach billing (CoachBillingController) — Lens A P2-1

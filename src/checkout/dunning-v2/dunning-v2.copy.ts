@@ -65,9 +65,9 @@ export const DAY1_PUSH: RomanVariantPair = {
 
 export const DAY1_EMAIL: RomanVariantPair = {
   straight:
-    'Good day, {firstName}.\n\nYour payment of {amount} has not yet cleared. I attempted it again today, and it was declined. The card on file ends {cardLast4}.\n\nUpdate your payment method and I will see the rest sorted. Nothing else is required of you.\n\n— Roman, on behalf of {coachName}',
+    'Good day, {firstName}.\n\nYour payment of {amount} has not yet cleared. The card on file ends {cardLast4}.\n\nA new card is charged the amount owed. Once that payment goes through, nothing else is required of you.\n\n— Roman, on behalf of {coachName}',
   dryRoman:
-    "Good day, {firstName}.\n\nYour payment of {amount} remains unpersuaded. I tried once more today; the card ending {cardLast4} held firm.\n\nA fresh card usually settles the argument. I'll handle the rest.\n\n— Roman, on behalf of {coachName}",
+    "Good day, {firstName}.\n\nYour payment of {amount} remains unpersuaded. The card on file ends {cardLast4}.\n\nA fresh card is charged the amount owed, and once that clears, the argument is over.\n\n— Roman, on behalf of {coachName}",
 };
 
 // ── §C.3 Day 3 — push + email + in-app blocker ──────────────────────────────
@@ -80,21 +80,21 @@ export const DAY3_PUSH: RomanVariantPair = {
 
 export const DAY3_EMAIL: RomanVariantPair = {
   straight:
-    'Good day, {firstName}.\n\nYour payment of {amount} has now failed three times. If it remains unsettled, you will lose access to your programme. Update your card and I will restore everything at once.\n\n— Roman, on behalf of {coachName}',
+    'Good day, {firstName}.\n\nYour payment of {amount} is still unpaid. If it remains unsettled, access to your programme pauses on {lockoutDate}. A new card is charged the amount owed, and once that payment goes through, everything stays as it is.\n\n— Roman, on behalf of {coachName}',
   dryRoman:
-    "Good day, {firstName}.\n\nThree attempts, three refusals. Your access is genuinely at risk now. Update the card and I'll put it all back the moment it clears.\n\n— Roman, on behalf of {coachName}",
+    "Good day, {firstName}.\n\n{amount} is still outstanding, and your access is genuinely at risk now: it pauses on {lockoutDate}. A new card is charged the amount owed, and the moment that clears, nothing changes.\n\n— Roman, on behalf of {coachName}",
 };
 
 export const DAY3_BLOCKER: BlockerCopy = {
   straight: {
     headline: 'You are going to lose access.',
-    body: 'Your payment of {amount} has not cleared after three attempts, {firstName}. Update your card now and you will keep everything. If it stays unpaid, your access will be locked.',
+    body: 'Your payment of {amount} has not cleared, {firstName}. A new card is charged the amount owed; once that goes through, you keep everything.',
     primaryCta: 'Update Payment',
     secondaryCta: 'Not now',
   },
   dryRoman: {
     headline: 'You are going to lose access.',
-    body: "I have asked your card three times, {firstName}, and three times it's said no. Update it now and we'll forget this ever happened. Leave it, and the door locks.",
+    body: "Your card has said no, {firstName}. A new one is charged the amount owed; once that clears, this is behind you. Leave it, and the door locks.",
     primaryCta: 'Update Payment',
     secondaryCta: 'Not now',
   },
@@ -110,21 +110,21 @@ export const DAY7_PUSH: RomanVariantPair = {
 
 export const DAY7_EMAIL: RomanVariantPair = {
   straight:
-    'Good day, {firstName}.\n\nThis is the final notice. Your payment of {amount} remains unpaid after four attempts. In three days your access will be locked on {lockoutDate}. Update your card now and I will restore everything immediately.\n\n— Roman, on behalf of {coachName}',
+    'Good day, {firstName}.\n\nThis is the final notice. Your payment of {amount} remains unpaid. Your access will be locked on {lockoutDate}. A new card is charged the amount owed, and once that payment goes through, your access stays on.\n\n— Roman, on behalf of {coachName}',
   dryRoman:
-    "Good day, {firstName}.\n\nThe final notice, and I do not send many. {amount} is still outstanding after four attempts. On {lockoutDate} the door locks. A working card stops it, and I'll have you back in at once.\n\n— Roman, on behalf of {coachName}",
+    "Good day, {firstName}.\n\nThe final notice, and I do not send many. {amount} is still outstanding. On {lockoutDate} the door locks. A working card is charged the amount owed, and once that clears, the door stays open.\n\n— Roman, on behalf of {coachName}",
 };
 
 export const DAY7_BLOCKER: BlockerCopy = {
   straight: {
     headline: 'Last chance before lockout.',
-    body: 'Your payment of {amount} has failed four times, {firstName}. On {lockoutDate} your access will be locked. Update your card now to keep everything.',
+    body: 'Your payment of {amount} is still unpaid, {firstName}. Access locks on {lockoutDate}. A new card is charged; once that clears, you keep everything.',
     primaryCta: 'Update Payment',
     secondaryCta: 'Not now',
   },
   dryRoman: {
     headline: 'Last chance before lockout.',
-    body: "Four attempts, {firstName}, and the card hasn't budged. On {lockoutDate} the door locks for good. One working card is all it takes, and I'll let you straight back in.",
+    body: "The card hasn't budged, {firstName}. On {lockoutDate} the door locks. A working card is charged; once that clears, the door stays open.",
     primaryCta: 'Update Payment',
     secondaryCta: 'Not now',
   },
@@ -135,7 +135,7 @@ export const COACH_INAPP: RomanVariantPair = {
   straight:
     "{clientName}'s payment failed — they will be locked out in 3 days.",
   dryRoman:
-    "{clientName}'s payment has failed four times. They lock out in 3 days unless the card cooperates.",
+    "{clientName}'s payment still refuses to clear. They lock out in 3 days unless the card cooperates.",
 };
 
 export const COACH_PUSH: RomanVariantPair = {
@@ -146,9 +146,9 @@ export const COACH_PUSH: RomanVariantPair = {
 
 export const COACH_EMAIL: RomanVariantPair = {
   straight:
-    'Good day, {coachName}.\n\nOne of your clients, {clientName}, has a payment that will not clear. I have attempted it four times and it remains unpaid. Unless it is settled, their access will be locked on {lockoutDate}.\n\nRetry history:\n• Day 0 — {amount} — declined ({reason})\n• Day 1 — {amount} — declined ({reason})\n• Day 3 — {amount} — declined ({reason})\n• Day 7 — {amount} — declined ({reason})\n\nYou may wish to reach out to them directly. The full record is here: {dunningDetailDeeplink}\n\n— Roman',
+    'Good day, {coachName}.\n\nOne of your clients, {clientName}, has a payment of {amount} that has not cleared. Unless it is settled, their access will be locked on {lockoutDate}.\n\nRetry history:\n• Day 0 — {amount} — declined\n• Charge attempts on this invoice so far: {attempts}\n\nYou may wish to reach out to them directly. The full record is in the app: open Clients, then {clientName}.\n\n— Roman',
   dryRoman:
-    "Good day, {coachName}.\n\n{clientName}'s card and I have had four conversations this week, none of them productive. {amount} is still outstanding, and their access locks on {lockoutDate}.\n\nRetry history:\n• Day 0 — {amount} — declined ({reason})\n• Day 1 — {amount} — declined ({reason})\n• Day 3 — {amount} — declined ({reason})\n• Day 7 — {amount} — declined ({reason})\n\nA word from you may carry more weight than mine has. The record is here: {dunningDetailDeeplink}\n\n— Roman",
+    "Good day, {coachName}.\n\n{clientName}'s card and the payment have not made peace. {amount} is still outstanding, and their access locks on {lockoutDate}.\n\nRetry history:\n• Day 0 — {amount} — declined\n• Charge attempts on this invoice so far: {attempts}\n\nA word from you may carry more weight. The record is in the app: open Clients, then {clientName}.\n\n— Roman",
 };
 
 // ── §C.6 Day 10 — lockout screen ────────────────────────────────────────────
@@ -176,35 +176,39 @@ export const EXPIRED_LINK: RomanVariantPair = {
     "This link has expired, {firstName}. Links, like milk, do not keep. Request a new one and I'll have it to you within the minute.",
 };
 
-// ── §C.8 Late-reversal copy (reversal_count ≥ 1) ─────────────────────────────
-export const LR_DAY3_PUSH: RomanVariantPair = {
-  straight:
-    '{firstName}, your last payment update failed. You will be locked out in 3 days unless it is settled. Update your card to keep your access.',
-  dryRoman:
-    '{firstName}, the payment we thought was settled has come undone. Three days to a lockout. A fresh card sets it right.',
-};
+// ── §C.8 Dispute (late-reversal) cycle copy ─────────────────────────────────
+// R-DISPUTE-PAUSE (owner 10-04): a dispute ends access and pauses billing at
+// once; only the coach restarts it. One variant (no quip); no amount.
+// B-687-8: owner ruling 6 (10-05) pauses on an inquiry too, and an inquiry
+// moves no money, so no line claims a reversal: the bank opened a dispute or
+// inquiry (true for both). C-687-9: {coachName} never starts a sentence (its
+// fallback is lower case).
+const same = (text: string): RomanVariantPair => ({ straight: text, dryRoman: text });
+export const LR_DAY3_PUSH: RomanVariantPair = same(
+  '{firstName}, the bank opened a dispute or inquiry about a recent payment. Access has ended and billing is paused. Restarting it is up to {coachName}.',
+);
 
-export const LR_DAY3_BLOCKER: BlockerCopy = {
-  straight: {
-    headline: 'Your last payment update failed.',
-    body: 'The payment that restored your access has been reversed, {firstName}. You will be locked out in 3 days unless your card is updated. Update it now to keep everything.',
-    primaryCta: 'Update Payment',
-    secondaryCta: 'Not now',
-  },
-  dryRoman: {
-    headline: 'Your last payment update failed.',
-    body: "We have been here before, {firstName} — the payment came undone again. Three days until lockout. Update the card and I'll consider the matter closed, this time for good.",
-    primaryCta: 'Update Payment',
-    secondaryCta: 'Not now',
-  },
+const LR_BLOCKER: BlockerVariant = {
+  headline: 'The bank opened a dispute or inquiry about a payment.',
+  body: 'The bank opened a dispute or inquiry about a recent payment. Access has ended and billing is paused. Restarting it is up to {coachName}.',
+  primaryCta: 'See details',
+  secondaryCta: 'Not now',
 };
+export const LR_DAY3_BLOCKER: BlockerCopy = { straight: LR_BLOCKER, dryRoman: LR_BLOCKER };
 
-export const LR_DAY7_ESCALATION: RomanVariantPair = {
-  straight:
-    'Good day, {firstName}. This is the second time a settled payment has come undone. Your access will be locked on {lockoutDate} unless {amount} clears. Update your card now and I will restore everything at once. — Roman, on behalf of {coachName}',
-  dryRoman:
-    "Good day, {firstName}. Twice now a payment has slipped through after I thought it settled. On {lockoutDate} the door locks. A working card ends the cycle, and I'll let you back in immediately. — Roman, on behalf of {coachName}",
-};
+export const LR_DAY7_ESCALATION: RomanVariantPair = same(
+  'Good day, {firstName}.\n\nThe bank opened a dispute or inquiry about a recent payment for your plan with {coachName}. Access has ended and billing for the plan is paused.\n\nRestarting it is up to {coachName}. The dispute or inquiry closing does not restart it on its own.\n\n— Roman, on behalf of {coachName}',
+);
+
+export const LR_COACH_INAPP: RomanVariantPair = same(
+  "{clientName}'s bank opened a dispute or inquiry about a recent payment. Their access has ended and billing for the plan is paused. Restarting is your decision.",
+);
+export const LR_COACH_PUSH: RomanVariantPair = same(
+  '{clientName}: the bank opened a dispute or inquiry about a payment. Access has ended and billing is paused. Restarting is your decision.',
+);
+export const LR_COACH_EMAIL: RomanVariantPair = same(
+  'Good day, {coachName}.\n\nThe bank of one of your clients, {clientName}, opened a dispute or inquiry about a recent payment. Their access has ended and billing for the plan is paused. It stays that way when the dispute or inquiry closes, whatever the outcome.\n\nRestarting access and billing is your decision. The full record is in the app: open Clients, then {clientName}.\n\n— Roman',
+);
 
 // Late-reversal Day-10 lockout copy is IDENTICAL to the regular lockout
 // (§C.8 final line → §C.6). Re-export so callers do not branch.
@@ -222,5 +226,5 @@ export const ROMAN_STEMS = {
   coach: 'locked out in 3 days',
   day10: 'household ledger',
   expired: 'Links, like milk',
-  lateReversal: 'last payment update failed',
+  lateReversal: 'dispute or inquiry',
 } as const;

@@ -72,10 +72,12 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
     else process.env.STRIPE_SECRET_KEY = prev;
   });
 
-  it('createSetupIntent: off_session card SetupIntent on the customer, no Stripe-Account, no on_behalf_of', async () => {
+  // Main's signature (B-DUNB-120 ruling): on_behalf_of is the coach's account.
+  it('createSetupIntent: off_session SetupIntent on the customer, on_behalf_of the coach, no Stripe-Account', async () => {
     const s = new RecordingStripe();
     await s.createSetupIntent({
       customer: 'cus_1',
+      onBehalfOf: 'acct_coach',
       metadata: { tgp_client_user_id: 'u1' },
       idempotencyKey: 'k1',
     });
@@ -87,7 +89,7 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
     expect(Object.fromEntries(r.body)).toEqual({
       customer: 'cus_1',
       usage: 'off_session',
-      'payment_method_types[0]': 'card',
+      on_behalf_of: 'acct_coach',
       'metadata[tgp_client_user_id]': 'u1',
     });
   });
@@ -116,7 +118,7 @@ describe('S-DUNNING-R2 Stripe wrappers (platform account, form + Idempotency-Key
   it('payInvoice is on-session with the explicit card; voidInvoice and cancel-at-period-end are keyed', async () => {
     const s = new RecordingStripe();
     await s.payInvoice({ invoiceId: 'in_1', paymentMethodId: 'pm_1', idempotencyKey: 'p' });
-    await s.voidInvoice({ invoiceId: 'in_1', idempotencyKey: 'v' });
+    await s.voidInvoice('in_1', 'v');
     await s.setCancelAtPeriodEnd({ subscriptionId: 'sub_1', idempotencyKey: 'c' });
     expect(s.requests[0].url).toBe('https://api.stripe.com/v1/invoices/in_1/pay');
     expect(Object.fromEntries(s.requests[0].body)).toEqual({

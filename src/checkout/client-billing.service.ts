@@ -31,7 +31,11 @@ import {
 } from './client-billing.money';
 import { DunningService } from './dunning.service';
 import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
-import { DUNNING_V2_REVERSAL_REASON, DunningV2Service } from './dunning-v2/dunning-v2.service';
+import {
+  DUNNING_V2_REVERSAL_REASON,
+  DunningV2Service,
+  outstandingDisputes,
+} from './dunning-v2/dunning-v2.service';
 import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
 
 /**
@@ -320,14 +324,8 @@ export function isDisputeCycle(state: DunningState | null | undefined): boolean 
   return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
 }
 
-/**
- * The reversed amount is known only on a dispute cycle (the marker's cycle
- * records it); a dispute recorded during a payment cycle has none here.
- */
-function disputedAmount(p: PurchaseWithDunning | undefined): number | null {
-  const v = p?.dunning?.last_failed_amount_cents;
-  return isDisputeCycle(p?.dunning) && Number.isInteger(v) ? (v as number) : null;
-}
+/** B-689-5: what the dispute ledger says was reversed on one plan. */
+type ReversedAmount = { currency: string; amount_cents: number };
 
 function isDelinquent(p: PurchaseWithDunning): boolean {
   return DELINQUENT_STATUSES.has(p.status) || p.dunning?.status === 'active';
@@ -371,11 +369,17 @@ export class ClientBillingService {
     // any Stripe call so no orphan SetupIntent is created.
     const publishableKey = this.requirePublishableKey();
     const customer = await this.requireCustomer(clientUserId);
+    // Main's createSetupIntent sets on_behalf_of: the coach account the
+    // client's plans charge through (a plan in billing trouble first), with
+    // main's '' fallback (subscription-attempt.ts) for a row without one.
+    const plans = await this.livePurchases(clientUserId);
+    const onBehalfOf = (plans.find(isDelinquent) ?? plans[0])?.stripe_destination_account ?? '';
     const key = `tgp-card-setup-${clientUserId}-${idempotencyKey}`;
     try {
       const [setupIntent, ephemeralKey] = await Promise.all([
         this.stripe.createSetupIntent({
           customer: customer.stripe_customer_id,
+          onBehalfOf,
           metadata: {
             tgp_client_user_id: clientUserId,
             tgp_purpose: 'client_card_update',
@@ -434,11 +438,12 @@ export class ClientBillingService {
       }
       // B-689-1: the obligation-aware authority, not the marker alone.
       if (await this.disputeOpen(p.id)) {
+        const reversed = await this.reversedAmount(p.id);
         disputes.push({
           purchase_id: p.id,
           coach_name: coachNames.get(p.coach_user_id) ?? null,
-          currency: normalizeCurrency(p.currency),
-          amount_cents: disputedAmount(p),
+          currency: reversed?.currency ?? normalizeCurrency(p.currency),
+          amount_cents: reversed?.amount_cents ?? null,
         });
       }
     }
@@ -565,7 +570,11 @@ export class ClientBillingService {
     if (!anyPaid && actionable.length > 0 && actionable.every((p) => p.outcome === 'in_progress')) {
       throw this.inProgress();
     }
-    return this.composeCardResult(card, plans, delinquent, secrets);
+    const reversed = new Map<string, ReversedAmount | null>();
+    for (const p of plans.filter((x) => x.dispute_open)) {
+      reversed.set(p.purchase_id, await this.reversedAmount(p.purchase_id));
+    }
+    return this.composeCardResult(card, plans, delinquent, secrets, reversed);
   }
 
   /**
@@ -1208,6 +1217,7 @@ export class ClientBillingService {
     plans: PlanPayResult[],
     delinquent: PurchaseWithDunning[],
     secrets: Map<string, string | null>,
+    reversed: Map<string, ReversedAmount | null>,
   ): CardUpdateResult {
     const allLines = plans.flatMap((p) => p.invoices);
     const paidTotals = totalsByCurrency(
@@ -1270,8 +1280,8 @@ export class ClientBillingService {
               .map((p) => ({
                 purchase_id: p.purchase_id,
                 coach_name: p.coach_name,
-                currency: p.currency,
-                amount_cents: this.disputeAmount(delinquent, p.purchase_id),
+                currency: reversed.get(p.purchase_id)?.currency ?? p.currency,
+                amount_cents: reversed.get(p.purchase_id)?.amount_cents ?? null,
               })),
           }
         : null;
@@ -1308,7 +1318,7 @@ export class ClientBillingService {
         focusDue,
         accessState,
         plans,
-        delinquent,
+        reversed,
       ),
     };
   }
@@ -1328,8 +1338,20 @@ export class ClientBillingService {
     );
   }
 
-  private disputeAmount(delinquent: PurchaseWithDunning[], purchaseId: string): number | null {
-    return disputedAmount(delinquent.find((x) => x.id === purchaseId));
+  /**
+   * B-689-5: the reversed amount comes only from the dispute ledger
+   * (ChargeDispute) of the plan's outstanding disputes, in one currency;
+   * otherwise null and the copy names no amount.
+   */
+  private async reversedAmount(purchaseId: string): Promise<ReversedAmount | null> {
+    const rows = await this.prisma.chargeDispute.findMany({ where: { purchase_id: purchaseId } });
+    const totals = totalsByCurrency(
+      outstandingDisputes(rows, null).map((d) => ({
+        currency: normalizeCurrency(d.currency),
+        amount_cents: d.amount_cents,
+      })),
+    );
+    return totals.length === 1 && totals[0].amount_cents > 0 ? totals[0] : null;
   }
 
   /**
@@ -1343,7 +1365,7 @@ export class ClientBillingService {
     due: MoneyTotal[],
     access: CardUpdateResult['access_state'],
     plans: PlanPayResult[],
-    delinquent: PurchaseWithDunning[],
+    reversed: Map<string, ReversedAmount | null>,
   ): string {
     const ending = card?.last4 ? ` ending ${card.last4}` : '';
     const parts: string[] = [`Your card${ending} is saved.`];
@@ -1414,12 +1436,9 @@ export class ClientBillingService {
     }
     const disputes = plans.filter((p) => p.dispute_open);
     if (disputes.length > 0) {
-      const amounts = totalsByCurrency(
-        disputes.map((p) => ({
-          currency: p.currency,
-          amount_cents: this.disputeAmount(delinquent, p.purchase_id) ?? 0,
-        })),
-      );
+      // B-689-5: an amount only when the ledger knows every reversed payment.
+      const known = disputes.map((p) => reversed.get(p.purchase_id) ?? null);
+      const amounts = known.every((r) => r !== null) ? totalsByCurrency(known as ReversedAmount[]) : [];
       parts.push(
         `Your bank reversed an earlier payment${amounts.length ? ` of ${formatTotals(amounts)}` : ''}. Saving a card does not settle that; contact support at ${SUPPORT_EMAIL} to sort it out.`,
       );
@@ -1600,10 +1619,7 @@ export class ClientBillingService {
         lines.push(intent);
         await this.saveOperation(lease, opId, 'voiding', lines, null, false);
         try {
-          await this.stripe.voidInvoice({
-            invoiceId: inv.id,
-            idempotencyKey: voidIdempotencyKey(inv.id),
-          });
+          await this.stripe.voidInvoice(inv.id, voidIdempotencyKey(inv.id));
         } catch (err) {
           const fresh = await this.safeRetrieveInvoice(inv.id);
           if (fresh?.status === 'paid') {

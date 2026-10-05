@@ -246,8 +246,9 @@ export class CoachAlertsService {
         payload,
       );
       if (!delivered) {
+        // C-611-17: alert.message names the client; log the alert id.
         this.logger.log(
-          `push skipped (no token) coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}: ${alert.message}`,
+          `push skipped (no token) alert=${alert.id} coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}`,
         );
       }
     } catch {

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
+import Handlebars from 'handlebars';
 import { effectiveLock } from '../src/checkout/dunning-v2/dunning-effective-access';
 import {
   DispatchContext,
@@ -148,11 +149,32 @@ describe('B-687-2 (Sol), operator ruling OR-113-4: the pending prefix has no dep
     }
   });
 
+  // D2d (B-DUND2D-121, operator ruling on B-DUNR2-120): the later dunning
+  // stack migration that may add columns to a table this one creates. It is
+  // pending with this one and sorts after it, so it can never apply first.
+  const STACK_ADDITIONS = new Set(['20270318000000_dunning_dispute_pause_effects']);
+
   it('no later-sorting migration touches a table it creates', () => {
     const own = creates(mine);
     expect(own.length).toBeGreaterThan(0);
-    for (const d of dirs.filter((x) => x > mine)) {
+    for (const d of dirs.filter((x) => x > mine && !STACK_ADDITIONS.has(x))) {
       for (const t of own) expect(sql(d)).not.toContain(`"${t}"`);
+    }
+  });
+
+  it('the dunning stack addition only adds nullable columns to those tables', () => {
+    for (const d of STACK_ADDITIONS) {
+      expect(dirs).toContain(d);
+      expect(d > mine).toBe(true);
+      const body = sql(d)
+        .split('\n')
+        .filter((l) => !l.startsWith('--'))
+        .join('\n');
+      const touched = [
+        ...body.matchAll(/ALTER TABLE "(\w+)" ADD COLUMN IF NOT EXISTS "\w+" TIMESTAMP\(3\);/g),
+      ];
+      expect(touched.length).toBeGreaterThan(0);
+      expect(body).not.toMatch(/DROP|NOT NULL|DEFAULT|CREATE|RENAME/);
     }
   });
 });
@@ -190,7 +212,10 @@ describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => 
       createNotification: jest.fn(async () => {
         throw new Error('synthetic DB failure');
       }),
-      pushToCoach: jest.fn(async () => false),
+      // C-643-2: the coach push goes through the one sender (sendPush).
+      sendPush: jest.fn(async () => {
+        throw new Error('synthetic outbox failure');
+      }),
     };
     const { d, t } = dispatcher(notifications);
     const { results } = await d.dispatchStepDetailed(
@@ -205,8 +230,10 @@ describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => 
 
   it('a retry of the failed push does not write a second coach feed row', async () => {
     const notifications = {
-      createNotification: jest.fn(async () => ({ id: 'n1' })),
-      pushToCoach: jest.fn(async () => false),
+      createNotification: jest.fn(async (): Promise<unknown> => ({ id: 'n1' })),
+      sendPush: jest.fn(async (): Promise<unknown> => {
+        throw new Error('synthetic outbox failure');
+      }),
     };
     const { d } = dispatcher(notifications);
     const first = await d.dispatchStepDetailed(
@@ -221,7 +248,7 @@ describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => 
         (c: unknown[]) => (c[0] as { channel?: string }).channel === 'inapp',
       ).length;
     expect(inappWrites()).toBe(1);
-    notifications.pushToCoach.mockImplementation(async () => true);
+    notifications.sendPush.mockImplementation(async () => ({ code: 'queued' }));
     const retry = await d.dispatchStepDetailed(
       ctx(),
       undefined,
@@ -230,13 +257,13 @@ describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => 
     expect(stub(retry.results).coach_push?.status).toBe('sent');
     expect(retry.results.coach_alert).toBeUndefined();
     expect(inappWrites()).toBe(1);
-    expect(notifications.pushToCoach).toHaveBeenCalledTimes(2);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(2);
   });
 
   it('control: a successful coach delivery is sent on both transports', async () => {
     const notifications = {
       createNotification: jest.fn(async () => ({ id: 'n1' })),
-      pushToCoach: jest.fn(async () => true),
+      sendPush: jest.fn(async () => ({ code: 'queued' })),
     };
     const { d, t } = dispatcher(notifications);
     const { results } = await d.dispatchStepDetailed(
@@ -284,7 +311,7 @@ describe('B-688-4 (Sol): transport failures cross the log / outbox boundary as c
       createNotification: jest.fn(async () => {
         throw secretNamed();
       }),
-      pushToCoach: jest.fn(async () => {
+      sendPush: jest.fn(async () => {
         throw secretNamed();
       }),
     };
@@ -322,5 +349,135 @@ describe('dunningErrorCode: a closed vocabulary, whatever the error carries', ()
     [null, 'error_unknown'],
   ])('%p -> %s', (err, code) => {
     expect(dunningErrorCode(err)).toBe(code);
+  });
+});
+
+// B-DUNA-118 fix round (D1), on main's one push sender (C-643-2, B-DUNR3-122):
+// the coach push is queued through sendPush, whose outbox reads the Expo
+// ticket and retries; the lock screen gets sendPush's quiet copy.
+describe('B-687-3 (Sol) / C-687-7: the coach push goes through the one push sender', () => {
+  const run = async (queued: unknown) => {
+    const notifications = {
+      createNotification: jest.fn(async () => ({ id: 'n1' })),
+      sendPush: jest.fn(async () => queued),
+      pushToUser: jest.fn(async () => ({ delivered: true })),
+      pushToCoach: jest.fn(async () => true),
+    };
+    const out = await dispatcher(notifications).d.dispatchStepDetailed(ctx(), undefined, {
+      channels: ['coach_push'],
+    });
+    return { result: out.results.coach_push, notifications };
+  };
+  it('a queued push is sent; a push suppressed by a preference is skipped', async () => {
+    const { result, notifications } = await run({ code: 'queued', notBefore: NOW });
+    expect(result?.status).toBe('sent');
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: expect.any(String), kind: 'coach_alert' }),
+    );
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(notifications.pushToCoach).not.toHaveBeenCalled();
+    expect((await run(null)).result?.status).toBe('skipped');
+  });
+});
+
+/** Every client and coach surface of one step, as the user sees it. */
+async function renderStep(over: Partial<DispatchContext>): Promise<string> {
+  const seen: string[] = [];
+  const hbs = (name: string) => readFileSync(join(ROOT, 'src/email/templates', `${name}.hbs`));
+  const record = async (text: string, ret: unknown) => (seen.push(text), ret);
+  const notifications = {
+    pushToUser: (_u: string, _t: string, body: string) => record(body, { delivered: true }),
+    sendPush: async () => ({ code: 'queued' }),
+    createNotification: (n: { body?: string; payload?: object }) =>
+      record(`${n.body} ${JSON.stringify(n.payload ?? {})}`, { id: 'n1' }),
+  };
+  const email = {
+    send: (m: { template: string; data: { subject?: string } }) =>
+      record(
+        // The subject is part of what the client sees (B-687-8).
+        `${m.data.subject ?? ''}\n${Handlebars.compile(String(hbs(m.template)))(m.data).replace(/<[^>]*>/g, ' ')}`,
+        { status: 'sent' },
+      ),
+  };
+  const channels = ['client_push', 'client_email', 'client_blocker', 'coach_alert'];
+  const all = stub({ channels: [...channels, 'coach_push', 'coach_email'] });
+  await dispatcher(notifications, email).d.dispatchStepDetailed(ctx(over), undefined, all);
+  return seen.join('\n');
+}
+
+describe('B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true', () => {
+  it.each([0, 1, 2, 3])('dispute cycle step %i: no card or cancel promise', async (stepIndex) => {
+    const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+    expect(text).toMatch(/dispute/);
+    // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
+    expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
+    expect(text).toMatch(/Restarting it is up to Morgan Coach/);
+    // Step 3 adds the coach channels: the coach is told the restart is theirs.
+    if (stepIndex === 3) expect(text).toMatch(/Restarting is your decision/);
+    expect(text).not.toMatch(
+      /stays on|restore|keep everything|will settle it|paid with it|End my plan|Update card|pauses on|locks/i,
+    );
+    expect(text).not.toMatch(/attempt|declined|failed/i);
+  });
+  it('payment cycle: a card update is a charge; access follows once it goes through', async () => {
+    const text = await renderStep({ stepIndex: 3 });
+    expect(text).not.toMatch(/amount owed is paid with it|four times|attempted it|three times/);
+    expect(text).toMatch(/once that payment goes through, your access stays on/);
+    expect(text).toMatch(/nothing more is charged, and access ends right away/);
+  });
+});
+
+describe('B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too', () => {
+  it.each([0, 1, 2, 3])(
+    'dispute cycle step %i: no reversal claim, names a dispute or inquiry',
+    async (stepIndex) => {
+      // Owner ruling 6 (10-05): an inquiry pauses the plan, and an inquiry moves no money.
+      const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+      expect(text).not.toMatch(/revers/i);
+      expect(text).toMatch(/dispute or inquiry/);
+    },
+  );
+  it('the dispute email subject makes no reversal claim', async () => {
+    const texts = await Promise.all(
+      [0, 1, 2, 3].map((stepIndex) => renderStep({ stepIndex, isLateReversalCycle: true })),
+    );
+    expect(texts.join('\n')).toMatch(/Your plan is paused after a payment dispute or inquiry/);
+  });
+  it.each([0, 1, 2, 3])(
+    'step %i: the lower-case coach fallback never starts a sentence',
+    async (stepIndex) => {
+      const tokens = { firstName: 'Avery', clientName: 'Avery Client', coachName: 'your coach' };
+      const text = await renderStep({ stepIndex, isLateReversalCycle: true, tokens });
+      expect(text).toMatch(/up to your coach/);
+      expect(text).not.toMatch(/(^|[.?]\s+)your coach/m);
+    },
+  );
+});
+
+describe('B-688-7 (Opus): no surface shows a raw token', () => {
+  afterEach(() => jest.restoreAllMocks());
+  const tokens = { firstName: 'Avery', clientName: 'Avery Client', coachName: 'Morgan Coach' };
+  it.each([0, 1, 2, 3])('step %i, both kinds and variants, no card / amount', async (stepIndex) => {
+    for (const lr of [false, true]) {
+      for (const quip of [0, 1]) {
+        jest.spyOn(Math, 'random').mockReturnValue(quip);
+        const text = await renderStep({ stepIndex, isLateReversalCycle: lr, tokens });
+        expect(text).not.toMatch(/\{\w+\}|ends \.|of {2}/);
+        expect(text).not.toMatch(/so far: *$/m);
+      }
+    }
+  });
+});
+
+describe('Sol B-688-7 support: the fake sorts like PostgreSQL', () => {
+  it('plain desc puts nulls first, asc puts them last, `nulls` overrides', async () => {
+    const fake = new FakePrisma();
+    fake.seed('dunningState', { id: 'a', locked_out_at: null });
+    fake.seed('dunningState', { id: 'b', locked_out_at: NOW });
+    const rows = (orderBy: object) => stub(fake.client()).dunningState.findMany({ orderBy });
+    const ids = async (orderBy: object) => (await rows(orderBy)).map((r: { id: string }) => r.id);
+    expect(await ids({ locked_out_at: 'desc' })).toEqual(['a', 'b']);
+    expect(await ids({ locked_out_at: { sort: 'desc', nulls: 'last' } })).toEqual(['b', 'a']);
   });
 });

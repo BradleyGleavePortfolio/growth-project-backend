@@ -4,6 +4,11 @@
  *
  * Reuses the existing SessionType contract. Existing active or archived
  * matching names are preserved, including coach edits; no reset/delete.
+ *
+ * S-SCHED-4: "Quick initialization" is created as the coach's welcome type
+ * (is_welcome, the type the onboarding tutorial's "Book your welcome call"
+ * opens), unless the coach already has an active welcome type; the partial
+ * unique index SessionType_one_active_welcome_per_coach allows one.
  */
 import { Prisma, PrismaClient } from '@prisma/client';
 
@@ -13,12 +18,14 @@ export const DAY1_SESSION_TYPES = [
     description: 'A short first call to say hello and get you set up.',
     duration_minutes: 15,
     auto_approve: true,
+    is_welcome: true,
   },
   {
     name: 'Quick Q/A Call',
     description: 'A short call for questions about your plan.',
     duration_minutes: 20,
     auto_approve: true,
+    is_welcome: false,
   },
   {
     name: 'Tele-Health Dietary/Fitness Check-in',
@@ -26,6 +33,7 @@ export const DAY1_SESSION_TYPES = [
       'A personal-training check-in on nutrition and fitness, not medical care. Your coach confirms the time.',
     duration_minutes: 45,
     auto_approve: false,
+    is_welcome: false,
   },
 ] as const;
 
@@ -37,10 +45,22 @@ export interface ExistingType {
   duration_minutes: number;
   auto_approve: boolean;
   archived_at: Date | null;
+  is_welcome?: boolean;
 }
 export type SeedAction =
   | { kind: 'create'; spec: SeedSpec }
-  | { kind: 'keep'; id: string; spec: SeedSpec; drift: boolean; archived: boolean };
+  | {
+      kind: 'keep';
+      id: string;
+      spec: SeedSpec;
+      drift: boolean;
+      archived: boolean;
+      /**
+       * C-634-5: the kept welcome type has no welcome marker and the coach
+       * has no other active welcome type, so --apply marks it.
+       */
+      welcomeMissing: boolean;
+    };
 
 export function planSeed(existing: ExistingType[]): SeedAction[] {
   return DAY1_SESSION_TYPES.map((spec) => {
@@ -52,11 +72,19 @@ export function planSeed(existing: ExistingType[]): SeedAction[] {
     }
     const match = matches[0];
     if (!match) return { kind: 'create', spec };
+    const otherActiveWelcome = existing.some(
+      (row) => row.id !== match.id && row.is_welcome === true && row.archived_at === null,
+    );
     return {
       kind: 'keep',
       id: match.id,
       spec,
       archived: match.archived_at !== null,
+      welcomeMissing:
+        spec.is_welcome &&
+        match.archived_at === null &&
+        match.is_welcome !== true &&
+        !otherActiveWelcome,
       drift:
         match.description !== spec.description ||
         match.duration_minutes !== spec.duration_minutes ||
@@ -101,10 +129,33 @@ export async function seedCoachTypes(
       const existing = await tx.sessionType.findMany({ where: { coach_id: coachId } });
       const plan = planSeed(existing);
       if (apply) {
+        // A coach-chosen active welcome type is kept; the seed never moves it.
+        let welcomeTaken = existing.some(
+          (row) => row.is_welcome === true && row.archived_at === null,
+        );
         for (const action of plan) {
+          if (action.kind === 'keep' && action.welcomeMissing && !welcomeTaken) {
+            // C-634-5: a type seeded before the welcome marker existed.
+            // Only when the coach has no active welcome type of their own.
+            welcomeTaken = true;
+            await tx.sessionType.update({
+              where: { id: action.id },
+              data: { is_welcome: true },
+            });
+          }
           if (action.kind === 'create') {
+            const isWelcome = action.spec.is_welcome && !welcomeTaken;
+            if (isWelcome) welcomeTaken = true;
             await tx.sessionType.create({
-              data: { ...action.spec, coach_id: coachId, default_video_provider: 'manual' },
+              data: {
+                name: action.spec.name,
+                description: action.spec.description,
+                duration_minutes: action.spec.duration_minutes,
+                auto_approve: action.spec.auto_approve,
+                is_welcome: isWelcome,
+                coach_id: coachId,
+                default_video_provider: 'manual',
+              },
             });
           }
         }
@@ -125,9 +176,13 @@ async function main(): Promise<void> {
         action.kind === 'keep'
           ? action.archived
             ? ' (archived by coach; not restored)'
-            : action.drift
-              ? ' (coach edits preserved)'
-              : ''
+            : `${action.drift ? ' (coach edits preserved)' : ''}${
+                action.welcomeMissing
+                  ? apply
+                    ? ' (marked as the welcome call type)'
+                    : ' (welcome call marker missing; --apply marks it)'
+                  : ''
+              }`
           : '';
       process.stdout.write(`${action.kind}: ${action.spec.name}${detail}\n`);
     }

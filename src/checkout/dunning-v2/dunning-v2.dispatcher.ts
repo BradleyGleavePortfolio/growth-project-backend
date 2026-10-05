@@ -10,7 +10,7 @@ import { DunningV2Telemetry } from './dunning-v2.telemetry';
 import { DUNNING_UPDATE_CARD_URL, DUNNING_V2_CADENCE_DAYS } from './dunning-v2.cadence';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 import { SurfaceKey, RomanCopyPayload } from '../../roman/voice/voice-policy.constants';
-import { applyTokens } from './dunning-v2.renderer';
+import { applyTokensTruthfully } from './dunning-v2.renderer';
 import { dunningErrorCode } from './dunning-v2.safe-error';
 
 /**
@@ -67,11 +67,7 @@ export type ChannelStatus = 'sent' | 'skipped' | 'failed';
 
 export interface ChannelResult {
   status: ChannelStatus;
-  /**
-   * A closed code ("push_ticket-error", "email_failed", "error_unknown"),
-   * never provider or exception text (B-688-4): it is logged and stored in
-   * DunningNoticeDelivery.last_error.
-   */
+  /** A closed code ("push_ticket-error"), never provider text (B-688-4). */
   error?: string;
 }
 
@@ -93,11 +89,7 @@ export function dunningChannelsFor(decision: ChannelDecision): DunningChannel[] 
 /** Resolved context the cadence service hands the dispatcher per step. */
 export interface DispatchContext {
   dunningStateId: string;
-  /**
-   * S-DUNNING-R3 (B-628-6): the cycle this step belongs to (the cycle's
-   * entered_at in ms). Idempotency keys carry it so a second cycle on the
-   * same DunningState row is never deduplicated against the first one.
-   */
+  /** B-628-6: the cycle's entered_at in ms; idempotency keys carry it. */
   cycleKey?: string;
   stepIndex: number;
   isLateReversalCycle: boolean;
@@ -143,12 +135,9 @@ export class DunningV2Dispatcher {
   }
 
   /**
-   * S-DUNNING-R3 (B-628-6): send a step's notices and report each
-   * transport's real result, so the caller can record durable delivery and
-   * retry only what failed. `channels` limits a retry to the failed
-   * transports; `attempt` (> 0 on a retry) gives the email a fresh
-   * idempotency key, because EmailService remembers a key even when the
-   * first send failed and would skip the retry forever.
+   * B-628-6: send a step's notices and report each transport's real result.
+   * `channels` limits a retry to the failed transports; `attempt` > 0 gives
+   * the email a fresh idempotency key (EmailService remembers failed keys).
    */
   async dispatchStepDetailed(
     ctx: DispatchContext,
@@ -218,7 +207,7 @@ export class DunningV2Dispatcher {
     let body: string;
     if (policy && policy.voice_variant === 'roman_v2') {
       // Flag ON: use the Roman Option-3 Phase 2 copy.
-      body = applyTokens(policy.text, ctx.tokens);
+      body = applyTokensTruthfully(policy.text, ctx.tokens);
     } else {
       // Flag OFF (or out of Phase 2 scope): keep the EXACT existing rendering,
       // including the locked quip rotation, so flag-off runtime behaviour is
@@ -276,6 +265,8 @@ export class DunningV2Dispatcher {
           ...ctx.tokens,
           subject: this.clientEmailSubject(ctx),
           update_card_url: DUNNING_UPDATE_CARD_URL,
+          // B-687-4/5: card-update and cancel wording differ in a dispute cycle.
+          dispute: ctx.isLateReversalCycle,
         },
         idempotencyKey: `dunning_v2:${ctx.dunningStateId}${this.cyclePart(ctx)}:email:${ctx.stepIndex}${attempt > 0 ? `:r${attempt}` : ''}`,
       });
@@ -293,12 +284,12 @@ export class DunningV2Dispatcher {
     rotation: QuipRotation,
     day: number,
   ): Promise<ChannelResult> {
-    const variant =
-      decision.blockerVariant === 'none'
+    // A dispute cycle shows the dispute blocker at every step (B-687-5).
+    const variant = ctx.isLateReversalCycle
+      ? 'lr_day3'
+      : decision.blockerVariant === 'none'
         ? 'day3'
-        : decision.copyKey === 'lr_day3'
-          ? 'lr_day3'
-          : decision.blockerVariant;
+        : decision.blockerVariant;
     const quip = rotation.shouldQuip('client');
     const blocker = this.renderer.blocker(variant as 'day3' | 'day7' | 'lr_day3', ctx.tokens, quip);
     if (!this.notifications) return { status: 'skipped', error: 'inapp_not_wired' };
@@ -333,24 +324,23 @@ export class DunningV2Dispatcher {
     const rotation = new QuipRotation();
     // Coach quip rate 0.083; never two in a row across the 3 transports.
     const inappQuip = rotation.shouldQuip('coach');
-    // The push slot of the rotation: the emitter pushes the in-app body.
-    rotation.shouldQuip('coach');
+    const pushQuip = rotation.shouldQuip('coach');
     const emailQuip = rotation.shouldQuip('coach');
+    const dispute = ctx.isLateReversalCycle;
 
-    const inappBody = this.renderer.coachInApp(ctx.tokens, inappQuip);
+    const inappBody = this.renderer.coachInApp(ctx.tokens, inappQuip, dispute);
+    const pushBody = this.renderer.coachPush(ctx.tokens, pushQuip, dispute);
     const emailBody = this.renderer.coachEmail(
       { ...ctx.tokens, dunningDetailDeeplink: ctx.dunningDetailDeeplink },
       emailQuip,
+      dispute,
     );
     const out: Partial<Record<DunningChannel, ChannelResult>> = {};
     // Cycle-scoped (B-628-6): a second cycle on the same row alerts again.
     const alertId = `coach_notify:${ctx.dunningStateId}${this.cyclePart(ctx)}`;
 
-    // In-app feed row and push via the existing CoachAlertEmitter, ONE call
-    // for whichever of the two this attempt still owes. B-688-3 (Sol): each
-    // is its own outbox channel with the emitter's real per-transport result,
-    // so a failed write or push is retried, and a retry of the push alone
-    // never writes a second feed row. Idempotency is keyed on the cycle (§9.3).
+    // B-688-3: ONE emitter call for whichever of feed row and push is still
+    // owed; each is its own outbox channel, so a push retry adds no feed row.
     if (want.alert || want.push) {
       const coach = await this.run('coach alert', async () => {
         if (!this.coachAlert) return { status: 'skipped', error: 'coach_not_wired' };
@@ -364,12 +354,19 @@ export class DunningV2Dispatcher {
             clientUserId: ctx.clientUserId,
           },
           { inapp: want.alert, push: want.push },
+          { title: 'Payment', body: pushBody },
         );
         // An emitter that returns no verdict (legacy stubs) counts as sent.
         const inapp = delivery?.inapp ?? 'sent';
         const push = delivery?.push ?? 'sent';
         if (want.alert) out.coach_alert = coachResult(inapp, 'inapp');
-        if (want.push) out.coach_push = coachResult(push, 'push');
+        if (want.push) {
+          // B-687-3: the ticket verdict's code, as on the client push.
+          const code = delivery?.pushCode;
+          out.coach_push = code
+            ? { status: push, error: code === 'no-token' ? 'push_no_token' : `push_${code}` }
+            : coachResult(push, 'push');
+        }
         if (want.alert && inapp === 'sent') {
           this.telemetry.coachNotified(ctx.coachUserId, { dunning_state_id: ctx.dunningStateId });
           this.telemetry.notifySent(ctx.coachUserId, 7, 'inapp', 'coach');
@@ -392,7 +389,7 @@ export class DunningV2Dispatcher {
         const res = await this.email.send({
           to: ctx.coachEmail,
           template: EmailTemplateKey.DUNNING_V2_COACH,
-          data: { roman_body: emailBody, ...ctx.tokens },
+          data: { roman_body: emailBody, ...ctx.tokens, dispute },
           idempotencyKey: `${alertId}:email${want.attempt > 0 ? `:r${want.attempt}` : ''}`,
         });
         if (res?.status === 'failed') return { status: 'failed', error: 'email_failed' };
@@ -404,15 +401,10 @@ export class DunningV2Dispatcher {
     return out;
   }
 
-  /**
-   * Per-step client subject. S-DUNNING-R2 (F17): v2 used to send the v1
-   * cadence templates, which render v1 fields (`billing_portal_url`,
-   * `amount_display`) v2 never passes, so the button had no link and the
-   * amount was blank; the coach got the client's "subscription is ending"
-   * mail. v2 now has its own templates that render `roman_body`.
-   */
+  /** Per-step client subject (F17: v2 has its own `roman_body` templates). */
   private clientEmailSubject(ctx: DispatchContext): string {
-    if (ctx.isLateReversalCycle) return 'Your recent payment was reversed';
+    // B-687-8: true for a dispute and for an inquiry (no reversal claim).
+    if (ctx.isLateReversalCycle) return 'Your plan is paused after a payment dispute or inquiry';
     switch (ctx.stepIndex) {
       case 0:
         return 'Your payment did not go through';
@@ -429,11 +421,7 @@ export class DunningV2Dispatcher {
     }
   }
 
-  /**
-   * Run a transport; never let a transport failure break the cadence tick.
-   * A throw is a failed delivery (recorded and retried by the outbox), and
-   * telemetry "sent" is only emitted by a transport that really sent.
-   */
+  /** Run a transport: a throw is a failed (retried) delivery, never a tick break. */
   private async run(label: string, fn: () => Promise<ChannelResult>): Promise<ChannelResult> {
     try {
       return await fn();
