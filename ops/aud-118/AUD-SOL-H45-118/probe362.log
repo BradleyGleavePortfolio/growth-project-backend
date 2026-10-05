@@ -1,0 +1,880 @@
+﻿2026-10-04T17:10:26.2246261Z Current runner version: '2.337.0'
+2026-10-04T17:10:26.2282142Z ##[group]Runner Image Provisioner
+2026-10-04T17:10:26.2283546Z Hosted Compute Agent
+2026-10-04T17:10:26.2284915Z Version: 20260901.588
+2026-10-04T17:10:26.2286078Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T17:10:26.2287393Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T17:10:26.2288543Z Worker ID: {fdce37db-ae3f-4ddc-ac7a-cb94d846f3d7}
+2026-10-04T17:10:26.2289824Z Azure Region: eastus
+2026-10-04T17:10:26.2290774Z ##[endgroup]
+2026-10-04T17:10:26.2293585Z ##[group]Operating System
+2026-10-04T17:10:26.2294993Z Ubuntu
+2026-10-04T17:10:26.2295950Z 24.04.5
+2026-10-04T17:10:26.2296810Z LTS
+2026-10-04T17:10:26.2297831Z ##[endgroup]
+2026-10-04T17:10:26.2298754Z ##[group]Runner Image
+2026-10-04T17:10:26.2299788Z Image: ubuntu-24.04
+2026-10-04T17:10:26.2300758Z Version: 20260927.320.1
+2026-10-04T17:10:26.2302937Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T17:10:26.2305928Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T17:10:26.2308340Z ##[endgroup]
+2026-10-04T17:10:26.2310479Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T17:10:26.2313411Z Contents: read
+2026-10-04T17:10:26.2314416Z Metadata: read
+2026-10-04T17:10:26.2315694Z Packages: read
+2026-10-04T17:10:26.2316618Z ##[endgroup]
+2026-10-04T17:10:26.2319710Z Secret source: Actions
+2026-10-04T17:10:26.2321434Z Cache mode: write
+2026-10-04T17:10:26.2323058Z Prepare workflow directory
+2026-10-04T17:10:26.2808781Z Prepare all required actions
+2026-10-04T17:10:26.2880111Z Getting action download info
+2026-10-04T17:10:26.5052849Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T17:10:26.6133260Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T17:10:26.8027691Z Complete job name: targeted
+2026-10-04T17:10:26.8794109Z ##[group]Run actions/checkout@v6
+2026-10-04T17:10:26.8795308Z with:
+2026-10-04T17:10:26.8795879Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:10:26.8799901Z   token: ***
+2026-10-04T17:10:26.8800335Z   ssh-strict: true
+2026-10-04T17:10:26.8800773Z   ssh-user: git
+2026-10-04T17:10:26.8801211Z   persist-credentials: true
+2026-10-04T17:10:26.8801698Z   clean: true
+2026-10-04T17:10:26.8802137Z   sparse-checkout-cone-mode: true
+2026-10-04T17:10:26.8802651Z   fetch-depth: 1
+2026-10-04T17:10:26.8803073Z   fetch-tags: false
+2026-10-04T17:10:26.8803506Z   show-progress: true
+2026-10-04T17:10:26.8803944Z   lfs: false
+2026-10-04T17:10:26.8804352Z   submodules: false
+2026-10-04T17:10:26.8804980Z   set-safe-directory: true
+2026-10-04T17:10:26.8805480Z   allow-unsafe-pr-checkout: false
+2026-10-04T17:10:26.8806276Z ##[endgroup]
+2026-10-04T17:10:26.9849564Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:10:26.9851792Z ##[group]Getting Git version info
+2026-10-04T17:10:26.9852706Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T17:10:26.9853878Z [command]/usr/bin/git version
+2026-10-04T17:10:26.9931090Z git version 2.55.0
+2026-10-04T17:10:26.9955490Z ##[endgroup]
+2026-10-04T17:10:26.9971009Z Temporarily overriding HOME='/home/runner/work/_temp/b5cd2ae7-d7d3-4d68-9646-98cfeb6f6c68' before making global git config changes
+2026-10-04T17:10:26.9973218Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:10:26.9976780Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:10:27.0030746Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T17:10:27.0035426Z ##[group]Determining repository object format
+2026-10-04T17:10:27.0038095Z ##[endgroup]
+2026-10-04T17:10:27.0043137Z ##[group]Initializing the repository
+2026-10-04T17:10:27.0044160Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:10:27.0145224Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T17:10:27.0147035Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T17:10:27.0148587Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T17:10:27.0149582Z hint: call:
+2026-10-04T17:10:27.0149989Z hint:
+2026-10-04T17:10:27.0150536Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T17:10:27.0151170Z hint:
+2026-10-04T17:10:27.0151762Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T17:10:27.0152696Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T17:10:27.0153441Z hint:
+2026-10-04T17:10:27.0153858Z hint: 	git branch -m <name>
+2026-10-04T17:10:27.0154336Z hint:
+2026-10-04T17:10:27.0155191Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T17:10:27.0160170Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-04T17:10:27.0171388Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:10:27.0218273Z ##[endgroup]
+2026-10-04T17:10:27.0219062Z ##[group]Disabling automatic garbage collection
+2026-10-04T17:10:27.0222238Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T17:10:27.0251991Z ##[endgroup]
+2026-10-04T17:10:27.0253216Z ##[group]Setting up auth
+2026-10-04T17:10:27.0253953Z Removing SSH command configuration
+2026-10-04T17:10:27.0260447Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:10:27.0293273Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:10:27.0620678Z Removing HTTP extra header
+2026-10-04T17:10:27.0627605Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:10:27.0662741Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:10:27.0890167Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:10:27.0897914Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:10:27.0931872Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:10:27.1163790Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T17:10:27.1204502Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:10:27.1238245Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:10:27.1274184Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:10:27.1307226Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:10:27.1374427Z ##[endgroup]
+2026-10-04T17:10:27.1375541Z ##[group]Fetching the repository
+2026-10-04T17:10:27.1385272Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +08b7e93dbc49a9dd300c161e19a7988c399921f6:refs/remotes/origin/audit/AUD-SOL-H45-118/362-boundaries
+2026-10-04T17:10:27.9581615Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:10:27.9584939Z  * [new ref]         08b7e93dbc49a9dd300c161e19a7988c399921f6 -> origin/audit/AUD-SOL-H45-118/362-boundaries
+2026-10-04T17:10:27.9593638Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-H45-118/362-boundaries
+2026-10-04T17:10:27.9619580Z   origin/audit/AUD-SOL-H45-118/362-boundaries
+2026-10-04T17:10:27.9629208Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-H45-118/362-boundaries
+2026-10-04T17:10:27.9652427Z 08b7e93dbc49a9dd300c161e19a7988c399921f6
+2026-10-04T17:10:27.9659794Z ##[endgroup]
+2026-10-04T17:10:27.9662018Z ##[group]Determining the checkout info
+2026-10-04T17:10:27.9665080Z ##[endgroup]
+2026-10-04T17:10:27.9666703Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T17:10:27.9715800Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T17:10:27.9746151Z ##[group]Checking out the ref
+2026-10-04T17:10:27.9750584Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-H45-118/362-boundaries refs/remotes/origin/audit/AUD-SOL-H45-118/362-boundaries
+2026-10-04T17:10:28.0856168Z Switched to a new branch 'audit/AUD-SOL-H45-118/362-boundaries'
+2026-10-04T17:10:28.0867803Z branch 'audit/AUD-SOL-H45-118/362-boundaries' set up to track 'origin/audit/AUD-SOL-H45-118/362-boundaries'.
+2026-10-04T17:10:28.0880147Z ##[endgroup]
+2026-10-04T17:10:28.0921628Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T17:10:28.0946923Z 08b7e93dbc49a9dd300c161e19a7988c399921f6
+2026-10-04T17:10:28.1321773Z ##[group]Run actions/setup-node@v6
+2026-10-04T17:10:28.1322906Z with:
+2026-10-04T17:10:28.1323757Z   node-version: 22.13
+2026-10-04T17:10:28.1325123Z   cache: npm
+2026-10-04T17:10:28.1326028Z   check-latest: false
+2026-10-04T17:10:28.1335263Z   token: ***
+2026-10-04T17:10:28.1336207Z   package-manager-cache: true
+2026-10-04T17:10:28.1337275Z ##[endgroup]
+2026-10-04T17:10:28.2796428Z Attempting to download 22.13...
+2026-10-04T17:10:28.6504459Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-04T17:10:29.0882398Z Extracting ...
+2026-10-04T17:10:29.1039616Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/8c7de016-f457-42f2-8f9d-d82ab9a1068a -f /home/runner/work/_temp/5862e84d-b396-406d-98a6-bb9f5b28cbf5
+2026-10-04T17:10:30.2900320Z Adding to the cache ...
+2026-10-04T17:10:32.3886058Z ##[group]Environment details
+2026-10-04T17:10:32.6030553Z node: v22.13.1
+2026-10-04T17:10:32.6031027Z npm: 10.9.2
+2026-10-04T17:10:32.6031376Z yarn: 1.22.22
+2026-10-04T17:10:32.6032179Z ##[endgroup]
+2026-10-04T17:10:32.6051475Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-04T17:10:32.6999051Z /home/runner/.npm
+2026-10-04T17:10:32.7662129Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T17:10:33.7857410Z Received 241027159 of 241027159 (100.0%), 240.7 MBs/sec
+2026-10-04T17:10:33.7858391Z Cache Size: ~230 MB (241027159 B)
+2026-10-04T17:10:33.7920423Z [command]/usr/bin/tar -xf /home/runner/work/_temp/cbea62bb-c160-4fba-8a60-526f61eaa71e/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-04T17:10:34.6284102Z Cache restored successfully
+2026-10-04T17:10:34.6416289Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T17:10:34.6679047Z ##[group]Run npm ci
+2026-10-04T17:10:34.6679385Z [36;1mnpm ci[0m
+2026-10-04T17:10:34.6923174Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:10:34.6923522Z ##[endgroup]
+2026-10-04T17:10:40.0341044Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T17:10:40.2622079Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-04T17:10:40.2760302Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-04T17:10:40.2817654Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-04T17:10:40.3054044Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-04T17:10:40.4481061Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-04T17:10:40.4524891Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:10:40.4545324Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:10:40.4566758Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:10:40.4570064Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:10:40.4596330Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:10:40.4952197Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:10:40.5557472Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-04T17:10:41.0206899Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-04T17:10:41.8145312Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-04T17:10:45.5933203Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-04T17:11:38.1114721Z 
+2026-10-04T17:11:38.1118597Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-04T17:11:38.1118990Z 
+2026-10-04T17:11:38.1119216Z 187 packages are looking for funding
+2026-10-04T17:11:38.1119621Z   run `npm fund` for details
+2026-10-04T17:11:38.5209193Z 
+2026-10-04T17:11:38.5210425Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-04T17:11:38.5210829Z 
+2026-10-04T17:11:38.5211125Z To address issues that do not require attention, run:
+2026-10-04T17:11:38.5212088Z   npm audit fix
+2026-10-04T17:11:38.5212275Z 
+2026-10-04T17:11:38.5212581Z To address all issues (including breaking changes), run:
+2026-10-04T17:11:38.5213031Z   npm audit fix --force
+2026-10-04T17:11:38.5213214Z 
+2026-10-04T17:11:38.5213373Z Run `npm audit` for details.
+2026-10-04T17:11:38.7172803Z ##[group]Run set -euo pipefail
+2026-10-04T17:11:38.7173147Z [36;1mset -euo pipefail[0m
+2026-10-04T17:11:38.7173759Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T17:11:38.7174278Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T17:11:38.7174951Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T17:11:38.7175225Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-04T17:11:38.7241121Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T17:11:38.7241483Z ##[endgroup]
+2026-10-04T17:11:38.7340877Z specs: src/hooks/useWearableConnections.sol118.test.tsx src/screens/client/wearables/__tests__/ConnectionsScreen.sol118.test.tsx
+2026-10-04T17:11:44.1462011Z FAIL src/hooks/useWearableConnections.sol118.test.tsx
+2026-10-04T17:11:44.1463918Z   ● AUD-SOL-118 disconnect boundaries › retirement rejection never crosses the logger boundary ([Error: AUDIT_PRIVATE_WEIGHT_81_6_KG])
+2026-10-04T17:11:44.1465151Z 
+2026-10-04T17:11:44.1465621Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:11:44.1466078Z 
+2026-10-04T17:11:44.1466463Z     Expected substring: not "AUDIT_PRIVATE_WEIGHT_81_6_KG"
+2026-10-04T17:11:44.1467702Z     Received string:        "\"[wearables] retire on-device state failed\" Error:AUDIT_PRIVATE_WEIGHT_81_6_KG"
+2026-10-04T17:11:44.1468438Z 
+2026-10-04T17:11:44.1470198Z     [0m [90m 87 |[39m       args[33m.[39mmap((x) [33m=>[39m x [36minstanceof[39m [33mError[39m [33m?[39m [32m`${x.name}:${x.message}`[39m [33m:[39m [33mJSON[39m[33m.[39mstringify(x))[33m.[39mjoin([32m' '[39m)[33m,[39m
+2026-10-04T17:11:44.1471996Z      [90m 88 |[39m     )[33m.[39mjoin([32m'\n'[39m)[33m;[39m
+2026-10-04T17:11:44.1473474Z     [31m[1m>[22m[39m[90m 89 |[39m     expect(payload)[33m.[39mnot[33m.[39mtoContain([32m'AUDIT_PRIVATE_WEIGHT_81_6_KG'[39m)[33m;[39m
+2026-10-04T17:11:44.1475008Z      [90m    |[39m                         [31m[1m^[22m[39m
+2026-10-04T17:11:44.1475720Z      [90m 90 |[39m   })[33m;[39m
+2026-10-04T17:11:44.1476231Z      [90m 91 |[39m
+2026-10-04T17:11:44.1477582Z      [90m 92 |[39m   it([32m'old A disconnect completion does not retire B new authorization'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T17:11:44.1478499Z 
+2026-10-04T17:11:44.1478979Z       at toContain (src/hooks/useWearableConnections.sol118.test.tsx:89:25)
+2026-10-04T17:11:44.1480161Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:11:44.1481324Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:11:44.1481909Z 
+2026-10-04T17:11:44.1483586Z   ● AUD-SOL-118 disconnect boundaries › retirement rejection never crosses the logger boundary ({"key": "wearables_on_device:auth:HEALTH_CONNECT:audit-a", "message": "AUDIT_PRIVATE_WEIGHT_81_6_KG"})
+2026-10-04T17:11:44.1485191Z 
+2026-10-04T17:11:44.1485542Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:11:44.1485985Z 
+2026-10-04T17:11:44.1486348Z     Expected substring: not "AUDIT_PRIVATE_WEIGHT_81_6_KG"
+2026-10-04T17:11:44.1487964Z     Received string:        "\"[wearables] retire on-device state failed\" {\"message\":\"AUDIT_PRIVATE_WEIGHT_81_6_KG\",\"key\":\"wearables_on_device:auth:HEALTH_CONNECT:audit-a\"}"
+2026-10-04T17:11:44.1489146Z 
+2026-10-04T17:11:44.1490899Z     [0m [90m 87 |[39m       args[33m.[39mmap((x) [33m=>[39m x [36minstanceof[39m [33mError[39m [33m?[39m [32m`${x.name}:${x.message}`[39m [33m:[39m [33mJSON[39m[33m.[39mstringify(x))[33m.[39mjoin([32m' '[39m)[33m,[39m
+2026-10-04T17:11:44.1492696Z      [90m 88 |[39m     )[33m.[39mjoin([32m'\n'[39m)[33m;[39m
+2026-10-04T17:11:44.1494150Z     [31m[1m>[22m[39m[90m 89 |[39m     expect(payload)[33m.[39mnot[33m.[39mtoContain([32m'AUDIT_PRIVATE_WEIGHT_81_6_KG'[39m)[33m;[39m
+2026-10-04T17:11:44.1495668Z      [90m    |[39m                         [31m[1m^[22m[39m
+2026-10-04T17:11:44.1496779Z      [90m 90 |[39m   })[33m;[39m
+2026-10-04T17:11:44.1497441Z      [90m 91 |[39m
+2026-10-04T17:11:44.1499032Z      [90m 92 |[39m   it([32m'old A disconnect completion does not retire B new authorization'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T17:11:44.1499945Z 
+2026-10-04T17:11:44.1500417Z       at toContain (src/hooks/useWearableConnections.sol118.test.tsx:89:25)
+2026-10-04T17:11:44.1501525Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:11:44.1502609Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:11:44.1503153Z 
+2026-10-04T17:11:44.1503999Z   ● AUD-SOL-118 disconnect boundaries › old A disconnect completion does not retire B new authorization
+2026-10-04T17:11:44.1504976Z 
+2026-10-04T17:11:44.1505370Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:11:44.1505812Z 
+2026-10-04T17:11:44.1506048Z     Expected: "audit-connection-b"
+2026-10-04T17:11:44.1506540Z     Received: undefined
+2026-10-04T17:11:44.1506795Z 
+2026-10-04T17:11:44.1507664Z     [0m [90m 109 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(remove)[33m.[39mtoHaveBeenCalled())[33m;[39m
+2026-10-04T17:11:44.1509672Z      [90m 110 |[39m     expect(([36mawait[39m getLocalAuthorization([32m'audit-b'[39m[33m,[39m [32m'HEALTH_CONNECT'[39m))[33m?[39m[33m.[39mconnectionId)
+2026-10-04T17:11:44.1511346Z     [31m[1m>[22m[39m[90m 111 |[39m       [33m.[39mtoBe([32m'audit-connection-b'[39m)[33m;[39m
+2026-10-04T17:11:44.1512396Z      [90m     |[39m        [31m[1m^[22m[39m
+2026-10-04T17:11:44.1513036Z      [90m 112 |[39m   })[33m;[39m
+2026-10-04T17:11:44.1513543Z      [90m 113 |[39m
+2026-10-04T17:11:44.1514375Z      [90m 114 |[39m   it[33m.[39meach([[36mfalse[39m[33m,[39m [36mtrue[39m])([0m
+2026-10-04T17:11:44.1515152Z 
+2026-10-04T17:11:44.1515642Z       at Object.toBe (src/hooks/useWearableConnections.sol118.test.tsx:111:8)
+2026-10-04T17:11:44.1516781Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:11:44.1517888Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:11:44.1518422Z 
+2026-10-04T17:11:44.1519468Z   ● AUD-SOL-118 disconnect boundaries › a held real native page starts another page only if not disconnected (disconnect=true)
+2026-10-04T17:11:44.1520341Z 
+2026-10-04T17:11:44.1520660Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-04T17:11:44.1521079Z 
+2026-10-04T17:11:44.1521304Z     Expected number of calls: 1
+2026-10-04T17:11:44.1521806Z     Received number of calls: 2
+2026-10-04T17:11:44.1522099Z 
+2026-10-04T17:11:44.1523169Z     [0m [90m 137 |[39m       first[33m.[39mresolve({ records[33m:[39m [][33m,[39m pageToken[33m:[39m [32m'audit-next-page'[39m })[33m;[39m
+2026-10-04T17:11:44.1524431Z      [90m 138 |[39m       [36mawait[39m syncing[33m;[39m
+2026-10-04T17:11:44.1526470Z     [31m[1m>[22m[39m[90m 139 |[39m       expect(mockReadRecords)[33m.[39mtoHaveBeenCalledTimes(disconnect [33m?[39m [35m1[39m [33m:[39m [35m2[39m)[33m;[39m
+2026-10-04T17:11:44.1527959Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-04T17:11:44.1528668Z      [90m 140 |[39m     }[33m,[39m
+2026-10-04T17:11:44.1529263Z      [90m 141 |[39m   )[33m;[39m
+2026-10-04T17:11:44.1529841Z      [90m 142 |[39m })[33m;[39m[0m
+2026-10-04T17:11:44.1530154Z 
+2026-10-04T17:11:44.1530747Z       at toHaveBeenCalledTimes (src/hooks/useWearableConnections.sol118.test.tsx:139:31)
+2026-10-04T17:11:44.1531985Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:11:44.1533069Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:11:44.1533605Z 
+2026-10-04T17:11:49.9387171Z FAIL src/screens/client/wearables/__tests__/ConnectionsScreen.sol118.test.tsx (9.477 s)
+2026-10-04T17:11:49.9389771Z   ● AUD-SOL-118 actual parent/sheet empty history outcome › first import with 0 posted samples has the correct visible result
+2026-10-04T17:11:49.9390906Z 
+2026-10-04T17:11:49.9391466Z     Unable to find an element with text: /no data from the last 30 days to bring in/
+2026-10-04T17:11:49.9392045Z 
+2026-10-04T17:11:49.9392377Z     [36m<View>[39m
+2026-10-04T17:11:49.9392876Z       [36m<View>[39m
+2026-10-04T17:11:49.9393376Z         [36m<Text[39m
+2026-10-04T17:11:49.9394065Z           [33maccessibilityRole[39m=[32m"header"[39m
+2026-10-04T17:11:49.9395015Z         [36m>[39m
+2026-10-04T17:11:49.9395531Z           [0mConnections[0m
+2026-10-04T17:11:49.9396082Z         [36m</Text>[39m
+2026-10-04T17:11:49.9396596Z         [36m<Text>[39m
+2026-10-04T17:11:49.9397419Z           [0mManage the apps and devices that feed your health data.[0m
+2026-10-04T17:11:49.9398282Z         [36m</Text>[39m
+2026-10-04T17:11:49.9398833Z       [36m</View>[39m
+2026-10-04T17:11:49.9399376Z       [36m<RCTScrollView>[39m
+2026-10-04T17:11:49.9400005Z         [36m<RCTRefreshControl />[39m
+2026-10-04T17:11:49.9400564Z         [36m<View>[39m
+2026-10-04T17:11:49.9401049Z           [36m<View>[39m
+2026-10-04T17:11:49.9401600Z             [36m<View[39m
+2026-10-04T17:11:49.9402504Z               [33maccessibilityLabel[39m=[32m"Apple Health, Not connected"[39m
+2026-10-04T17:11:49.9403328Z             [36m>[39m
+2026-10-04T17:11:49.9403823Z               [36m<Text[39m
+2026-10-04T17:11:49.9404506Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9405417Z               [36m/>[39m
+2026-10-04T17:11:49.9405908Z               [36m<View>[39m
+2026-10-04T17:11:49.9406497Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9407120Z                   [0mApple Health[0m
+2026-10-04T17:11:49.9407731Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9408406Z                 [36m<View>[39m
+2026-10-04T17:11:49.9408994Z                   [36m<View>[39m
+2026-10-04T17:11:49.9409622Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9410255Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9410996Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9411651Z                   [36m</View>[39m
+2026-10-04T17:11:49.9412265Z                 [36m</View>[39m
+2026-10-04T17:11:49.9412865Z               [36m</View>[39m
+2026-10-04T17:11:49.9413417Z               [36m<View[39m
+2026-10-04T17:11:49.9414284Z                 [33maccessibilityLabel[39m=[32m"Connect Apple Health"[39m
+2026-10-04T17:11:49.9415508Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9416302Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9416920Z                   {
+2026-10-04T17:11:49.9417408Z                     "disabled": false,
+2026-10-04T17:11:49.9417942Z                   }
+2026-10-04T17:11:49.9418466Z                 }[39m
+2026-10-04T17:11:49.9418979Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9419513Z               [36m>[39m
+2026-10-04T17:11:49.9419975Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9420474Z                   [0mConnect[0m
+2026-10-04T17:11:49.9420993Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9421433Z               [36m</View>[39m
+2026-10-04T17:11:49.9421879Z             [36m</View>[39m
+2026-10-04T17:11:49.9422363Z             [36m<View />[39m
+2026-10-04T17:11:49.9422781Z           [36m</View>[39m
+2026-10-04T17:11:49.9423185Z           [36m<View>[39m
+2026-10-04T17:11:49.9423588Z             [36m<View[39m
+2026-10-04T17:11:49.9424286Z               [33maccessibilityLabel[39m=[32m"Beddit, Not connected"[39m
+2026-10-04T17:11:49.9425293Z             [36m>[39m
+2026-10-04T17:11:49.9425745Z               [36m<Text[39m
+2026-10-04T17:11:49.9426431Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9427026Z               [36m/>[39m
+2026-10-04T17:11:49.9427481Z               [36m<View>[39m
+2026-10-04T17:11:49.9428233Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9428733Z                   [0mBeddit[0m
+2026-10-04T17:11:49.9429487Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9430011Z                 [36m<View>[39m
+2026-10-04T17:11:49.9430581Z                   [36m<View>[39m
+2026-10-04T17:11:49.9431286Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9431870Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9432459Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9432795Z                   [36m</View>[39m
+2026-10-04T17:11:49.9433122Z                 [36m</View>[39m
+2026-10-04T17:11:49.9433429Z               [36m</View>[39m
+2026-10-04T17:11:49.9433705Z               [36m<View[39m
+2026-10-04T17:11:49.9434119Z                 [33maccessibilityLabel[39m=[32m"Connect Beddit"[39m
+2026-10-04T17:11:49.9434867Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9435343Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9435668Z                   {
+2026-10-04T17:11:49.9435921Z                     "disabled": false,
+2026-10-04T17:11:49.9436195Z                   }
+2026-10-04T17:11:49.9436437Z                 }[39m
+2026-10-04T17:11:49.9436820Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9437146Z               [36m>[39m
+2026-10-04T17:11:49.9437439Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9437742Z                   [0mConnect[0m
+2026-10-04T17:11:49.9438043Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9438344Z               [36m</View>[39m
+2026-10-04T17:11:49.9438626Z             [36m</View>[39m
+2026-10-04T17:11:49.9438916Z             [36m<View />[39m
+2026-10-04T17:11:49.9439185Z           [36m</View>[39m
+2026-10-04T17:11:49.9439454Z           [36m<View>[39m
+2026-10-04T17:11:49.9439735Z             [36m<View[39m
+2026-10-04T17:11:49.9440218Z               [33maccessibilityLabel[39m=[32m"Eight Sleep, Not connected"[39m
+2026-10-04T17:11:49.9440645Z             [36m>[39m
+2026-10-04T17:11:49.9440902Z               [36m<Text[39m
+2026-10-04T17:11:49.9441298Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9441666Z               [36m/>[39m
+2026-10-04T17:11:49.9441951Z               [36m<View>[39m
+2026-10-04T17:11:49.9442243Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9442554Z                   [0mEight Sleep[0m
+2026-10-04T17:11:49.9442877Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9443171Z                 [36m<View>[39m
+2026-10-04T17:11:49.9443465Z                   [36m<View>[39m
+2026-10-04T17:11:49.9443777Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9444107Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9444443Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9445046Z                   [36m</View>[39m
+2026-10-04T17:11:49.9445359Z                 [36m</View>[39m
+2026-10-04T17:11:49.9445660Z               [36m</View>[39m
+2026-10-04T17:11:49.9445950Z               [36m<View[39m
+2026-10-04T17:11:49.9446384Z                 [33maccessibilityLabel[39m=[32m"Connect Eight Sleep"[39m
+2026-10-04T17:11:49.9446884Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9447305Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9447596Z                   {
+2026-10-04T17:11:49.9447839Z                     "disabled": false,
+2026-10-04T17:11:49.9448098Z                   }
+2026-10-04T17:11:49.9448338Z                 }[39m
+2026-10-04T17:11:49.9448660Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9448986Z               [36m>[39m
+2026-10-04T17:11:49.9449279Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9449585Z                   [0mConnect[0m
+2026-10-04T17:11:49.9449885Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9450182Z               [36m</View>[39m
+2026-10-04T17:11:49.9450456Z             [36m</View>[39m
+2026-10-04T17:11:49.9450926Z             [36m<View />[39m
+2026-10-04T17:11:49.9451226Z           [36m</View>[39m
+2026-10-04T17:11:49.9451617Z           [36m<View>[39m
+2026-10-04T17:11:49.9451876Z             [36m<View[39m
+2026-10-04T17:11:49.9452300Z               [33maccessibilityLabel[39m=[32m"Fitbit, Not connected"[39m
+2026-10-04T17:11:49.9452702Z             [36m>[39m
+2026-10-04T17:11:49.9452959Z               [36m<Text[39m
+2026-10-04T17:11:49.9453348Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9453714Z               [36m/>[39m
+2026-10-04T17:11:49.9453996Z               [36m<View>[39m
+2026-10-04T17:11:49.9454282Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9454818Z                   [0mFitbit[0m
+2026-10-04T17:11:49.9455143Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9455442Z                 [36m<View>[39m
+2026-10-04T17:11:49.9455747Z                   [36m<View>[39m
+2026-10-04T17:11:49.9456056Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9456395Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9456738Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9457055Z                   [36m</View>[39m
+2026-10-04T17:11:49.9457357Z                 [36m</View>[39m
+2026-10-04T17:11:49.9457648Z               [36m</View>[39m
+2026-10-04T17:11:49.9457926Z               [36m<View[39m
+2026-10-04T17:11:49.9458328Z                 [33maccessibilityLabel[39m=[32m"Connect Fitbit"[39m
+2026-10-04T17:11:49.9458799Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9459209Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9459497Z                   {
+2026-10-04T17:11:49.9459738Z                     "disabled": false,
+2026-10-04T17:11:49.9459995Z                   }
+2026-10-04T17:11:49.9460225Z                 }[39m
+2026-10-04T17:11:49.9460543Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9460866Z               [36m>[39m
+2026-10-04T17:11:49.9461148Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9461446Z                   [0mConnect[0m
+2026-10-04T17:11:49.9461753Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9462043Z               [36m</View>[39m
+2026-10-04T17:11:49.9462315Z             [36m</View>[39m
+2026-10-04T17:11:49.9462600Z             [36m<View />[39m
+2026-10-04T17:11:49.9462873Z           [36m</View>[39m
+2026-10-04T17:11:49.9463134Z           [36m<View>[39m
+2026-10-04T17:11:49.9463392Z             [36m<View[39m
+2026-10-04T17:11:49.9463827Z               [33maccessibilityLabel[39m=[32m"Garmin, Not connected"[39m
+2026-10-04T17:11:49.9464216Z             [36m>[39m
+2026-10-04T17:11:49.9464466Z               [36m<Text[39m
+2026-10-04T17:11:49.9465137Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9465501Z               [36m/>[39m
+2026-10-04T17:11:49.9465787Z               [36m<View>[39m
+2026-10-04T17:11:49.9466086Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9466384Z                   [0mGarmin[0m
+2026-10-04T17:11:49.9466681Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9466982Z                 [36m<View>[39m
+2026-10-04T17:11:49.9467291Z                   [36m<View>[39m
+2026-10-04T17:11:49.9467605Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9467938Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9468278Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9468596Z                   [36m</View>[39m
+2026-10-04T17:11:49.9468900Z                 [36m</View>[39m
+2026-10-04T17:11:49.9469203Z               [36m</View>[39m
+2026-10-04T17:11:49.9469480Z               [36m<View[39m
+2026-10-04T17:11:49.9469892Z                 [33maccessibilityLabel[39m=[32m"Connect Garmin"[39m
+2026-10-04T17:11:49.9470373Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9470783Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9471071Z                   {
+2026-10-04T17:11:49.9471491Z                     "disabled": false,
+2026-10-04T17:11:49.9471757Z                   }
+2026-10-04T17:11:49.9472103Z                 }[39m
+2026-10-04T17:11:49.9472423Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9472745Z               [36m>[39m
+2026-10-04T17:11:49.9473026Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9473324Z                   [0mConnect[0m
+2026-10-04T17:11:49.9473629Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9473951Z               [36m</View>[39m
+2026-10-04T17:11:49.9474225Z             [36m</View>[39m
+2026-10-04T17:11:49.9474779Z             [36m<View />[39m
+2026-10-04T17:11:49.9475265Z           [36m</View>[39m
+2026-10-04T17:11:49.9475714Z           [36m<View>[39m
+2026-10-04T17:11:49.9475988Z             [36m<View[39m
+2026-10-04T17:11:49.9476461Z               [33maccessibilityLabel[39m=[32m"Health Connect, Not connected"[39m
+2026-10-04T17:11:49.9476892Z             [36m>[39m
+2026-10-04T17:11:49.9477161Z               [36m<Text[39m
+2026-10-04T17:11:49.9477571Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9477952Z               [36m/>[39m
+2026-10-04T17:11:49.9478256Z               [36m<View>[39m
+2026-10-04T17:11:49.9478562Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9478899Z                   [0mHealth Connect[0m
+2026-10-04T17:11:49.9479230Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9479531Z                 [36m<View>[39m
+2026-10-04T17:11:49.9479835Z                   [36m<View>[39m
+2026-10-04T17:11:49.9480147Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9480481Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9480820Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9481149Z                   [36m</View>[39m
+2026-10-04T17:11:49.9481454Z                 [36m</View>[39m
+2026-10-04T17:11:49.9481755Z               [36m</View>[39m
+2026-10-04T17:11:49.9482033Z               [36m<View[39m
+2026-10-04T17:11:49.9482479Z                 [33maccessibilityLabel[39m=[32m"Connect Health Connect"[39m
+2026-10-04T17:11:49.9482989Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9483415Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9483710Z                   {
+2026-10-04T17:11:49.9483966Z                     "disabled": false,
+2026-10-04T17:11:49.9484227Z                   }
+2026-10-04T17:11:49.9484457Z                 }[39m
+2026-10-04T17:11:49.9485059Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9485389Z               [36m>[39m
+2026-10-04T17:11:49.9485672Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9485971Z                   [0mConnect[0m
+2026-10-04T17:11:49.9486269Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9486587Z               [36m</View>[39m
+2026-10-04T17:11:49.9486861Z             [36m</View>[39m
+2026-10-04T17:11:49.9487147Z             [36m<View />[39m
+2026-10-04T17:11:49.9487426Z           [36m</View>[39m
+2026-10-04T17:11:49.9487689Z           [36m<View>[39m
+2026-10-04T17:11:49.9487954Z             [36m<View[39m
+2026-10-04T17:11:49.9488411Z               [33maccessibilityLabel[39m=[32m"MyFitnessPal, Not connected"[39m
+2026-10-04T17:11:49.9488823Z             [36m>[39m
+2026-10-04T17:11:49.9489076Z               [36m<Text[39m
+2026-10-04T17:11:49.9489462Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9489825Z               [36m/>[39m
+2026-10-04T17:11:49.9490107Z               [36m<View>[39m
+2026-10-04T17:11:49.9490401Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9490713Z                   [0mMyFitnessPal[0m
+2026-10-04T17:11:49.9491028Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9491544Z                 [36m<View>[39m
+2026-10-04T17:11:49.9512293Z                   [36m<View>[39m
+2026-10-04T17:11:49.9512668Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9513275Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9513665Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9514169Z                   [36m</View>[39m
+2026-10-04T17:11:49.9514757Z                 [36m</View>[39m
+2026-10-04T17:11:49.9515152Z               [36m</View>[39m
+2026-10-04T17:11:49.9515472Z               [36m<View[39m
+2026-10-04T17:11:49.9515942Z                 [33maccessibilityLabel[39m=[32m"Connect MyFitnessPal"[39m
+2026-10-04T17:11:49.9516468Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9516906Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9517207Z                   {
+2026-10-04T17:11:49.9517463Z                     "disabled": false,
+2026-10-04T17:11:49.9517754Z                   }
+2026-10-04T17:11:49.9518004Z                 }[39m
+2026-10-04T17:11:49.9518339Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9518672Z               [36m>[39m
+2026-10-04T17:11:49.9518967Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9519293Z                   [0mConnect[0m
+2026-10-04T17:11:49.9519607Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9519912Z               [36m</View>[39m
+2026-10-04T17:11:49.9520210Z             [36m</View>[39m
+2026-10-04T17:11:49.9520504Z             [36m<View />[39m
+2026-10-04T17:11:49.9520816Z           [36m</View>[39m
+2026-10-04T17:11:49.9521085Z           [36m<View>[39m
+2026-10-04T17:11:49.9521351Z             [36m<View[39m
+2026-10-04T17:11:49.9521786Z               [33maccessibilityLabel[39m=[32m"Oura, Not connected"[39m
+2026-10-04T17:11:49.9522178Z             [36m>[39m
+2026-10-04T17:11:49.9522442Z               [36m<Text[39m
+2026-10-04T17:11:49.9522841Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9523201Z               [36m/>[39m
+2026-10-04T17:11:49.9523485Z               [36m<View>[39m
+2026-10-04T17:11:49.9523788Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9524089Z                   [0mOura[0m
+2026-10-04T17:11:49.9524394Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9524940Z                 [36m<View>[39m
+2026-10-04T17:11:49.9525270Z                   [36m<View>[39m
+2026-10-04T17:11:49.9525592Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9525934Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9526289Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9526618Z                   [36m</View>[39m
+2026-10-04T17:11:49.9526931Z                 [36m</View>[39m
+2026-10-04T17:11:49.9527244Z               [36m</View>[39m
+2026-10-04T17:11:49.9527526Z               [36m<View[39m
+2026-10-04T17:11:49.9527927Z                 [33maccessibilityLabel[39m=[32m"Connect Oura"[39m
+2026-10-04T17:11:49.9528403Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9528819Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9529111Z                   {
+2026-10-04T17:11:49.9529382Z                     "disabled": false,
+2026-10-04T17:11:49.9529640Z                   }
+2026-10-04T17:11:49.9529877Z                 }[39m
+2026-10-04T17:11:49.9530209Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9530529Z               [36m>[39m
+2026-10-04T17:11:49.9530819Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9531126Z                   [0mConnect[0m
+2026-10-04T17:11:49.9531441Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9531736Z               [36m</View>[39m
+2026-10-04T17:11:49.9532015Z             [36m</View>[39m
+2026-10-04T17:11:49.9532314Z             [36m<View />[39m
+2026-10-04T17:11:49.9532587Z           [36m</View>[39m
+2026-10-04T17:11:49.9532858Z           [36m<View>[39m
+2026-10-04T17:11:49.9533128Z             [36m<View[39m
+2026-10-04T17:11:49.9533570Z               [33maccessibilityLabel[39m=[32m"Peloton, Not connected"[39m
+2026-10-04T17:11:49.9533978Z             [36m>[39m
+2026-10-04T17:11:49.9534251Z               [36m<Text[39m
+2026-10-04T17:11:49.9535082Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9535592Z               [36m/>[39m
+2026-10-04T17:11:49.9535884Z               [36m<View>[39m
+2026-10-04T17:11:49.9536191Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9536497Z                   [0mPeloton[0m
+2026-10-04T17:11:49.9536847Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9537155Z                 [36m<View>[39m
+2026-10-04T17:11:49.9537459Z                   [36m<View>[39m
+2026-10-04T17:11:49.9537769Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9538112Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9538455Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9538779Z                   [36m</View>[39m
+2026-10-04T17:11:49.9539101Z                 [36m</View>[39m
+2026-10-04T17:11:49.9539405Z               [36m</View>[39m
+2026-10-04T17:11:49.9539685Z               [36m<View[39m
+2026-10-04T17:11:49.9540115Z                 [33maccessibilityLabel[39m=[32m"Connect Peloton"[39m
+2026-10-04T17:11:49.9540608Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9541028Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9541322Z                   {
+2026-10-04T17:11:49.9541578Z                     "disabled": false,
+2026-10-04T17:11:49.9541841Z                   }
+2026-10-04T17:11:49.9542082Z                 }[39m
+2026-10-04T17:11:49.9542417Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9542743Z               [36m>[39m
+2026-10-04T17:11:49.9543034Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9543354Z                   [0mConnect[0m
+2026-10-04T17:11:49.9543662Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9543965Z               [36m</View>[39m
+2026-10-04T17:11:49.9544254Z             [36m</View>[39m
+2026-10-04T17:11:49.9544759Z             [36m<View />[39m
+2026-10-04T17:11:49.9545065Z           [36m</View>[39m
+2026-10-04T17:11:49.9545345Z           [36m<View>[39m
+2026-10-04T17:11:49.9545620Z             [36m<View[39m
+2026-10-04T17:11:49.9546057Z               [33maccessibilityLabel[39m=[32m"Polar, Not connected"[39m
+2026-10-04T17:11:49.9546450Z             [36m>[39m
+2026-10-04T17:11:49.9546726Z               [36m<Text[39m
+2026-10-04T17:11:49.9547121Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9547486Z               [36m/>[39m
+2026-10-04T17:11:49.9547775Z               [36m<View>[39m
+2026-10-04T17:11:49.9548074Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9548378Z                   [0mPolar[0m
+2026-10-04T17:11:49.9548696Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9549001Z                 [36m<View>[39m
+2026-10-04T17:11:49.9549306Z                   [36m<View>[39m
+2026-10-04T17:11:49.9549630Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9549969Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9550311Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9550640Z                   [36m</View>[39m
+2026-10-04T17:11:49.9550953Z                 [36m</View>[39m
+2026-10-04T17:11:49.9551260Z               [36m</View>[39m
+2026-10-04T17:11:49.9551538Z               [36m<View[39m
+2026-10-04T17:11:49.9551952Z                 [33maccessibilityLabel[39m=[32m"Connect Polar"[39m
+2026-10-04T17:11:49.9552443Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9552869Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9553169Z                   {
+2026-10-04T17:11:49.9553419Z                     "disabled": false,
+2026-10-04T17:11:49.9553683Z                   }
+2026-10-04T17:11:49.9553930Z                 }[39m
+2026-10-04T17:11:49.9554257Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9554848Z               [36m>[39m
+2026-10-04T17:11:49.9555165Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9555478Z                   [0mConnect[0m
+2026-10-04T17:11:49.9555945Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9556270Z               [36m</View>[39m
+2026-10-04T17:11:49.9556663Z             [36m</View>[39m
+2026-10-04T17:11:49.9556962Z             [36m<View />[39m
+2026-10-04T17:11:49.9557244Z           [36m</View>[39m
+2026-10-04T17:11:49.9557509Z           [36m<View>[39m
+2026-10-04T17:11:49.9557771Z             [36m<View[39m
+2026-10-04T17:11:49.9558242Z               [33maccessibilityLabel[39m=[32m"Samsung Health, Not connected"[39m
+2026-10-04T17:11:49.9558666Z             [36m>[39m
+2026-10-04T17:11:49.9558928Z               [36m<Text[39m
+2026-10-04T17:11:49.9559328Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9559686Z               [36m/>[39m
+2026-10-04T17:11:49.9559968Z               [36m<View>[39m
+2026-10-04T17:11:49.9560271Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9560592Z                   [0mSamsung Health[0m
+2026-10-04T17:11:49.9560922Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9561228Z                 [36m<View>[39m
+2026-10-04T17:11:49.9561537Z                   [36m<View>[39m
+2026-10-04T17:11:49.9561853Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9562188Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9562539Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9562859Z                   [36m</View>[39m
+2026-10-04T17:11:49.9563166Z                 [36m</View>[39m
+2026-10-04T17:11:49.9563474Z               [36m</View>[39m
+2026-10-04T17:11:49.9563755Z               [36m<View[39m
+2026-10-04T17:11:49.9564197Z                 [33maccessibilityLabel[39m=[32m"Connect Samsung Health"[39m
+2026-10-04T17:11:49.9564973Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9565395Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9565688Z                   {
+2026-10-04T17:11:49.9565943Z                     "disabled": false,
+2026-10-04T17:11:49.9566206Z                   }
+2026-10-04T17:11:49.9566445Z                 }[39m
+2026-10-04T17:11:49.9566775Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9567114Z               [36m>[39m
+2026-10-04T17:11:49.9567407Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9567715Z                   [0mConnect[0m
+2026-10-04T17:11:49.9568032Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9568333Z               [36m</View>[39m
+2026-10-04T17:11:49.9568612Z             [36m</View>[39m
+2026-10-04T17:11:49.9568918Z             [36m<View />[39m
+2026-10-04T17:11:49.9569198Z           [36m</View>[39m
+2026-10-04T17:11:49.9569467Z           [36m<View>[39m
+2026-10-04T17:11:49.9569737Z             [36m<View[39m
+2026-10-04T17:11:49.9570165Z               [33maccessibilityLabel[39m=[32m"Strava, Not connected"[39m
+2026-10-04T17:11:49.9570558Z             [36m>[39m
+2026-10-04T17:11:49.9570824Z               [36m<Text[39m
+2026-10-04T17:11:49.9571222Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9571583Z               [36m/>[39m
+2026-10-04T17:11:49.9571870Z               [36m<View>[39m
+2026-10-04T17:11:49.9572172Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9572475Z                   [0mStrava[0m
+2026-10-04T17:11:49.9572774Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9573080Z                 [36m<View>[39m
+2026-10-04T17:11:49.9573378Z                   [36m<View>[39m
+2026-10-04T17:11:49.9573693Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9574036Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9574376Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9574912Z                   [36m</View>[39m
+2026-10-04T17:11:49.9575231Z                 [36m</View>[39m
+2026-10-04T17:11:49.9575535Z               [36m</View>[39m
+2026-10-04T17:11:49.9575815Z               [36m<View[39m
+2026-10-04T17:11:49.9576215Z                 [33maccessibilityLabel[39m=[32m"Connect Strava"[39m
+2026-10-04T17:11:49.9576831Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9577359Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9577655Z                   {
+2026-10-04T17:11:49.9577907Z                     "disabled": false,
+2026-10-04T17:11:49.9578170Z                   }
+2026-10-04T17:11:49.9578407Z                 }[39m
+2026-10-04T17:11:49.9578733Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9579058Z               [36m>[39m
+2026-10-04T17:11:49.9579358Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9579671Z                   [0mConnect[0m
+2026-10-04T17:11:49.9579983Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9580283Z               [36m</View>[39m
+2026-10-04T17:11:49.9580573Z             [36m</View>[39m
+2026-10-04T17:11:49.9580875Z             [36m<View />[39m
+2026-10-04T17:11:49.9581155Z           [36m</View>[39m
+2026-10-04T17:11:49.9581450Z           [36m<View>[39m
+2026-10-04T17:11:49.9581731Z             [36m<View[39m
+2026-10-04T17:11:49.9582154Z               [33maccessibilityLabel[39m=[32m"Wahoo, Not connected"[39m
+2026-10-04T17:11:49.9582550Z             [36m>[39m
+2026-10-04T17:11:49.9582812Z               [36m<Text[39m
+2026-10-04T17:11:49.9583196Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9583557Z               [36m/>[39m
+2026-10-04T17:11:49.9583841Z               [36m<View>[39m
+2026-10-04T17:11:49.9584133Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9584432Z                   [0mWahoo[0m
+2026-10-04T17:11:49.9584955Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9585258Z                 [36m<View>[39m
+2026-10-04T17:11:49.9585561Z                   [36m<View>[39m
+2026-10-04T17:11:49.9585881Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9586218Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9586554Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9586877Z                   [36m</View>[39m
+2026-10-04T17:11:49.9587197Z                 [36m</View>[39m
+2026-10-04T17:11:49.9587500Z               [36m</View>[39m
+2026-10-04T17:11:49.9587776Z               [36m<View[39m
+2026-10-04T17:11:49.9588179Z                 [33maccessibilityLabel[39m=[32m"Connect Wahoo"[39m
+2026-10-04T17:11:49.9588646Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9589060Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9589359Z                   {
+2026-10-04T17:11:49.9589608Z                     "disabled": false,
+2026-10-04T17:11:49.9589864Z                   }
+2026-10-04T17:11:49.9590108Z                 }[39m
+2026-10-04T17:11:49.9590436Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9590759Z               [36m>[39m
+2026-10-04T17:11:49.9591048Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9591349Z                   [0mConnect[0m
+2026-10-04T17:11:49.9591652Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9591955Z               [36m</View>[39m
+2026-10-04T17:11:49.9592240Z             [36m</View>[39m
+2026-10-04T17:11:49.9592537Z             [36m<View />[39m
+2026-10-04T17:11:49.9592811Z           [36m</View>[39m
+2026-10-04T17:11:49.9593087Z           [36m<View>[39m
+2026-10-04T17:11:49.9593356Z             [36m<View[39m
+2026-10-04T17:11:49.9593777Z               [33maccessibilityLabel[39m=[32m"WHOOP, Not connected"[39m
+2026-10-04T17:11:49.9594177Z             [36m>[39m
+2026-10-04T17:11:49.9594440Z               [36m<Text[39m
+2026-10-04T17:11:49.9595120Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9595492Z               [36m/>[39m
+2026-10-04T17:11:49.9595769Z               [36m<View>[39m
+2026-10-04T17:11:49.9596062Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9596358Z                   [0mWHOOP[0m
+2026-10-04T17:11:49.9596660Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9596955Z                 [36m<View>[39m
+2026-10-04T17:11:49.9597405Z                   [36m<View>[39m
+2026-10-04T17:11:49.9597737Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9598183Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9598526Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9598846Z                   [36m</View>[39m
+2026-10-04T17:11:49.9599152Z                 [36m</View>[39m
+2026-10-04T17:11:49.9599451Z               [36m</View>[39m
+2026-10-04T17:11:49.9599733Z               [36m<View[39m
+2026-10-04T17:11:49.9600137Z                 [33maccessibilityLabel[39m=[32m"Connect WHOOP"[39m
+2026-10-04T17:11:49.9600606Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9601027Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9601318Z                   {
+2026-10-04T17:11:49.9601562Z                     "disabled": false,
+2026-10-04T17:11:49.9601818Z                   }
+2026-10-04T17:11:49.9602056Z                 }[39m
+2026-10-04T17:11:49.9602382Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9602705Z               [36m>[39m
+2026-10-04T17:11:49.9603001Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9603304Z                   [0mConnect[0m
+2026-10-04T17:11:49.9603604Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9603904Z               [36m</View>[39m
+2026-10-04T17:11:49.9604180Z             [36m</View>[39m
+2026-10-04T17:11:49.9604473Z             [36m<View />[39m
+2026-10-04T17:11:49.9605057Z           [36m</View>[39m
+2026-10-04T17:11:49.9605332Z           [36m<View>[39m
+2026-10-04T17:11:49.9605596Z             [36m<View[39m
+2026-10-04T17:11:49.9606041Z               [33maccessibilityLabel[39m=[32m"Withings, Not connected"[39m
+2026-10-04T17:11:49.9606466Z             [36m>[39m
+2026-10-04T17:11:49.9606721Z               [36m<Text[39m
+2026-10-04T17:11:49.9607116Z                 [33mimportantForAccessibility[39m=[32m"no"[39m
+2026-10-04T17:11:49.9607473Z               [36m/>[39m
+2026-10-04T17:11:49.9607764Z               [36m<View>[39m
+2026-10-04T17:11:49.9608058Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9608372Z                   [0mWithings[0m
+2026-10-04T17:11:49.9608680Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9608980Z                 [36m<View>[39m
+2026-10-04T17:11:49.9609281Z                   [36m<View>[39m
+2026-10-04T17:11:49.9609595Z                     [36m<Text>[39m
+2026-10-04T17:11:49.9609930Z                       [0mNot connected[0m
+2026-10-04T17:11:49.9610277Z                     [36m</Text>[39m
+2026-10-04T17:11:49.9610591Z                   [36m</View>[39m
+2026-10-04T17:11:49.9610898Z                 [36m</View>[39m
+2026-10-04T17:11:49.9611199Z               [36m</View>[39m
+2026-10-04T17:11:49.9611470Z               [36m<View[39m
+2026-10-04T17:11:49.9611878Z                 [33maccessibilityLabel[39m=[32m"Connect Withings"[39m
+2026-10-04T17:11:49.9612364Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-04T17:11:49.9612780Z                 [33maccessibilityState[39m=[32m{
+2026-10-04T17:11:49.9613078Z                   {
+2026-10-04T17:11:49.9613318Z                     "disabled": false,
+2026-10-04T17:11:49.9613579Z                   }
+2026-10-04T17:11:49.9613813Z                 }[39m
+2026-10-04T17:11:49.9614139Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-04T17:11:49.9614465Z               [36m>[39m
+2026-10-04T17:11:49.9614984Z                 [36m<Text>[39m
+2026-10-04T17:11:49.9615287Z                   [0mConnect[0m
+2026-10-04T17:11:49.9615609Z                 [36m</Text>[39m
+2026-10-04T17:11:49.9615912Z               [36m</View>[39m
+2026-10-04T17:11:49.9616191Z             [36m</View>[39m
+2026-10-04T17:11:49.9616464Z           [36m</View>[39m
+2026-10-04T17:11:49.9616725Z         [36m</View>[39m
+2026-10-04T17:11:49.9617025Z       [36m</RCTScrollView>[39m
+2026-10-04T17:11:49.9617305Z     [36m</View>[39m
+2026-10-04T17:11:49.9617446Z 
+2026-10-04T17:11:49.9618146Z     [0m [90m 59 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(mockImport)[33m.[39mtoHaveBeenCalledTimes([35m1[39m))[33m;[39m
+2026-10-04T17:11:49.9619039Z      [90m 60 |[39m     [36mif[39m (postedCount [33m===[39m [35m0[39m) {
+2026-10-04T17:11:49.9619957Z     [31m[1m>[22m[39m[90m 61 |[39m       expect(screen[33m.[39mgetByText([35m/no data from the last 30 days to bring in/[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-04T17:11:49.9620697Z      [90m    |[39m                     [31m[1m^[22m[39m
+2026-10-04T17:11:49.9621366Z      [90m 62 |[39m       expect(screen[33m.[39mgetByLabelText([32m'Close'[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-04T17:11:49.9621920Z      [90m 63 |[39m     } [36melse[39m {
+2026-10-04T17:11:49.9622760Z      [90m 64 |[39m       [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mqueryByText([32m'Connect Apple Health'[39m))[33m.[39mtoBeNull())[33m;[39m[0m
+2026-10-04T17:11:49.9623301Z 
+2026-10-04T17:11:49.9623660Z       at getByText (src/screens/client/wearables/__tests__/ConnectionsScreen.sol118.test.tsx:61:21)
+2026-10-04T17:11:49.9624367Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:11:49.9625188Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:11:49.9625489Z 
+2026-10-04T17:11:50.4776421Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+2026-10-04T17:11:50.4802135Z Test Suites: 2 failed, 2 total
+2026-10-04T17:11:50.4802755Z Tests:       5 failed, 2 passed, 7 total
+2026-10-04T17:11:50.4803324Z Snapshots:   0 total
+2026-10-04T17:11:50.4803762Z Time:        10.595 s
+2026-10-04T17:11:50.4805741Z Ran all test suites matching /src\/hooks\/useWearableConnections.sol118.test.tsx|src\/screens\/client\/wearables\/__tests__\/ConnectionsScreen.sol118.test.tsx/i.
+2026-10-04T17:11:50.4978210Z ##[error]Process completed with exit code 1.
+2026-10-04T17:11:50.5121768Z Post job cleanup.
+2026-10-04T17:11:50.5973283Z [command]/usr/bin/git version
+2026-10-04T17:11:50.6010427Z git version 2.55.0
+2026-10-04T17:11:50.6051586Z Temporarily overriding HOME='/home/runner/work/_temp/d1b50a91-91a6-47e4-9979-12f7fcf7d27c' before making global git config changes
+2026-10-04T17:11:50.6053085Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:11:50.6057482Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:11:50.6090396Z Removing SSH command configuration
+2026-10-04T17:11:50.6097332Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:11:50.6131856Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:11:50.6357904Z Removing HTTP extra header
+2026-10-04T17:11:50.6363512Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:11:50.6397397Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:11:50.6617760Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:11:50.6625113Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:11:50.6655737Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T17:11:50.6656643Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T17:11:50.6657253Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:11:50.6657704Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:11:50.6665369Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T17:11:50.6686851Z /home/runner/work/_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:11:50.6698237Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:11:50.6734089Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T17:11:50.6756380Z /home/runner/work/_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:11:50.6766331Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:11:50.6799358Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:11:50.6821014Z /github/runner_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:11:50.6830064Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:11:50.6862681Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:11:50.6884143Z /github/runner_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:11:50.6895223Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config
+2026-10-04T17:11:50.6930266Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:11:50.7170684Z Removing credentials config '/home/runner/work/_temp/git-credentials-3296f72c-8705-4946-b785-232712c7b007.config'
+2026-10-04T17:11:50.7327754Z Cleaning up orphan processes

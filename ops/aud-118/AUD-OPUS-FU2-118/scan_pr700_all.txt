@@ -1,0 +1,955 @@
+total calls matched: 960; flagged: 954
+main.ts:204 [Logger.log] port , STR
+prisma.service.ts:20 [this.logger.warn] STR ,
+prisma.service.ts:26 [this.logger.log] STR
+prisma.service.ts:28 [this.logger.error] { event: STR , operation: STR , }
+storefront/checkout-receipt.service.ts:94 [this.logger.debug] checkoutId ,
+storefront/checkout-receipt.service.ts:100 [this.logger.debug] checkoutId row.status ,
+storefront/checkout-receipt.service.ts:110 [this.logger.error] checkoutId err instanceof Error ? err.message : STR ,
+storefront/checkout-receipt.service.ts:122 [this.logger.error] checkoutId err instanceof Error ? err.message : STR ,
+storefront/checkout-receipt.service.ts:137 [this.logger.error] checkoutId err instanceof Error ? err.message : STR ,
+storefront/checkout-receipt.service.ts:166 [this.logger.error] checkoutId err instanceof Error ? err.message : STR ,
+storefront/checkout-receipt.service.ts:269 [this.logger.log] filePath buffer.length ,
+storefront/checkout-recovery.service.ts:140 [this.logger.error] msg
+storefront/checkout-recovery.service.ts:143 [this.logger.log] STR ,
+storefront/checkout-recovery.service.ts:154 [this.logger.log] STR
+storefront/checkout-recovery.service.ts:164 [this.logger.error] detail ,
+storefront/checkout-recovery.service.ts:178 [this.logger.warn] nodeEnv ?? STR detail ,
+storefront/checkout-recovery.service.ts:237 [this.logger.warn] checkout.id recentCount ,
+storefront/checkout-recovery.service.ts:278 [this.logger.error] checkout.id redactEmailAddresses( err instanceof Error ? err.message : STR , ) ,
+storefront/checkout-recovery.service.ts:417 [this.logger.error] err instanceof Error ? err.message : STR ,
+storefront/checkout-recovery.service.ts:428 [this.logger.warn] STR ,
+storefront/checkout-recovery.service.ts:444 [this.logger.warn] STR ,
+storefront/checkout-recovery.service.ts:512 [this.logger.log] STR
+storefront/checkout-recovery.service.ts:515 [this.logger.warn] detail ,
+storefront/lost-webhook-reconcile.service.ts:61 [this.logger.log] processed
+storefront/lost-webhook-reconcile.service.ts:64 [this.logger.error] err instanceof Error ? err.message : STR ,
+storefront/lost-webhook-reconcile.service.ts:104 [this.logger.error] row.id err instanceof Error ? err.message : STR ,
+storefront/lost-webhook-reconcile.service.ts:146 [this.logger.warn] checkoutId claimed.reconcile_attempts ,
+storefront/lost-webhook-reconcile.service.ts:164 [this.logger.warn] paymentIntentId err instanceof Error ? err.message : STR ,
+storefront/lost-webhook-reconcile.service.ts:201 [this.logger.warn] subscriptionId checkoutId err instanceof Error ? err.message : STR ,
+storefront/lost-webhook-reconcile.service.ts:234 [this.logger.warn] subscriptionId checkoutId err instanceof Error ? err.message : STR ,
+storefront/checkout-idempotency.service.ts:59 [this.logger.log] STR ,
+storefront/checkout-idempotency.service.ts:70 [this.logger.log] STR
+storefront/checkout-idempotency.service.ts:72 [this.logger.warn] err instanceof Error ? err.message : STR ,
+storefront/checkout-idempotency.service.ts:126 [this.logger.warn] err instanceof Error ? err.message : STR ,
+storefront/checkout-idempotency.service.ts:148 [this.logger.warn] err instanceof Error ? err.message : STR ,
+storefront/guest-checkout-reconciliation.service.ts:55 [this.logger.log] retryableCount orphanCount ,
+storefront/guest-checkout-reconciliation.service.ts:62 [this.logger.error] (err as Error)?.message ?? String(err) ,
+storefront/guest-checkout-reconciliation.service.ts:92 [this.logger.error] row.id (err as Error)?.message ?? String(err) ,
+storefront/guest-checkout-reconciliation.service.ts:124 [this.logger.error] row.id (err as Error)?.message ?? String(err) ,
+storefront/guest-checkout-pii-scrub.service.ts:74 [this.logger.log] total ,
+storefront/guest-checkout-pii-scrub.service.ts:79 [this.logger.error] (err as Error)?.message ?? String(err) ,
+storefront/guest-checkout-pii-scrub.service.ts:120 [this.logger.error] row.id (err as Error)?.message ?? String(err) ,
+storefront/storefront.service.ts:145 [this.logger.warn] connectAccount.charges_enabled connectAccount.payouts_enabled connectAccount.details_submitted connectAccount.disabled_reason ?? STR ,
+storefront/storefront.service.ts:162 [this.logger.error] STR ,
+storefront/checkout-rate-limiter.service.ts:86 [this.logger.log] STR ,
+storefront/checkout-rate-limiter.service.ts:96 [this.logger.log] STR
+storefront/checkout-rate-limiter.service.ts:98 [this.logger.warn] err instanceof Error ? err.message : STR ,
+storefront/checkout-rate-limiter.service.ts:151 [this.logger.warn] err instanceof Error ? err.message : STR ,
+storefront/checkout-receipt.scheduler.ts:54 [this.logger.log] processed
+storefront/checkout-receipt.scheduler.ts:57 [this.logger.error] err instanceof Error ? err.message : STR ,
+storefront/checkout-receipt.scheduler.ts:80 [this.logger.error] row.id err instanceof Error ? err.message : STR ,
+storefront/checkout-cookie.service.ts:53 [this.logger.debug] STR
+storefront/checkout-cookie.service.ts:69 [this.logger.warn] err instanceof Error ? err.message : STR ,
+storefront/connect-preflight.service.ts:60 [this.logger.log] STR ,
+storefront/connect-preflight.service.ts:70 [this.logger.log] STR
+storefront/connect-preflight.service.ts:72 [this.logger.warn] err instanceof Error ? err.message : STR ,
+storefront/connect-preflight.service.ts:106 [this.logger.debug] err instanceof Error ? err.message : STR ,
+storefront/connect-preflight.service.ts:130 [this.logger.debug] err instanceof Error ? err.message : STR ,
+storefront/connect-preflight.service.ts:168 [this.logger.warn] accountId err instanceof Error ? err.message : STR ,
+storefront/guest-checkout.service.ts:268 [this.logger.warn] connectAccount.charges_enabled connectAccount.payouts_enabled connectAccount.details_submitted connectAccount.disabled_reason ?? STR ,
+storefront/guest-checkout.service.ts:292 [this.logger.warn] connectAccount.stripe_account_id live.disabled_reason ?? STR ,
+storefront/guest-checkout.service.ts:384 [this.logger.warn] landingPageId pkg.id ,
+storefront/guest-checkout.service.ts:451 [this.logger.error] existing.id safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:618 [this.logger.error] err.stripeCode ?? STR err.httpStatus ,
+storefront/guest-checkout.service.ts:667 [this.logger.warn] safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:859 [this.logger.error] subscription.id ,
+storefront/guest-checkout.service.ts:893 [this.logger.warn] sentinelId (err as Error).message ,
+storefront/guest-checkout.service.ts:975 [this.logger.error] safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1034 [this.logger.log] paymentIntentId ,
+storefront/guest-checkout.service.ts:1045 [this.logger.error] paymentIntentId ,
+storefront/guest-checkout.service.ts:1073 [this.logger.warn] paymentIntentId safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1095 [this.logger.error] safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1171 [this.logger.warn] paymentIntentId safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1188 [this.logger.error] safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1347 [this.logger.warn] paymentIntentId safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1357 [this.logger.log] paymentIntentId amountRefunded chargeAmount fullyRefunded result.purchaseClaimed ,
+storefront/guest-checkout.service.ts:1372 [this.logger.error] safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1437 [this.logger.warn] paymentIntentId safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1443 [this.logger.warn] paymentIntentId reason ?? STR ,
+storefront/guest-checkout.service.ts:1453 [this.logger.error] safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1474 [this.logger.log] checkout.id fresh?.status ?? STR ,
+storefront/guest-checkout.service.ts:1496 [this.logger.error] checkout.id safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1525 [this.logger.error] checkout.id safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1559 [this.logger.warn] checkout.stripe_subscription_id safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1611 [this.logger.log] dbUser.id dbUser.role checkout.package.coach_id ,
+storefront/guest-checkout.service.ts:1772 [this.logger.error] checkout.id safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1796 [this.logger.warn] entitledPurchaseId (err as Error).message ,
+storefront/guest-checkout.service.ts:1805 [this.logger.error] checkout.id safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:1978 [this.logger.error] checkoutId nextCount lastError.slice(0, 64) ,
+storefront/guest-checkout.service.ts:1983 [this.logger.error] checkoutId safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:2055 [this.logger.error] safeErrorTag(error) ,
+storefront/guest-checkout.service.ts:2067 [this.logger.error] safeErrorTag(err) ,
+storefront/guest-checkout.service.ts:2088 [this.logger.warn] checkout.id ,
+storefront/guest-checkout.service.ts:2166 [this.logger.error] res.status checkout.id ,
+storefront/webview-detect.middleware.ts:202 [this.logger.debug] matched req.path
+invite-codes/invite-codes.service.ts:315 [this.logger.warn] created.id err instanceof Error ? err.message : STR ,
+invite-codes/invite-codes.service.ts:323 [this.logger.warn] code
+invite-codes/invite-codes.service.ts:663 [this.logger.error] code_class (err as Error).message
+invite-codes/invite-codes.service.ts:711 [this.logger.warn] userId me.role ,
+invite-codes/invite-codes.service.ts:728 [this.logger.debug] userId target.coachId
+invite-codes/invite-codes.service.ts:732 [this.logger.warn] userId ,
+invite-codes/invite-codes.service.ts:800 [this.logger.debug] userId err.coachId
+invite-codes/invite-codes.service.ts:840 [this.logger.warn] userId coachId err instanceof Error ? err.message : String(err) ,
+invite-codes/invite-codes.service.ts:1034 [this.logger.warn] normalised err instanceof Error ? err.message : STR ,
+invite-codes/invite-codes.service.ts:1040 [this.logger.log] coachId rows.length created.length rejected.length ,
+invite-codes/invite-codes.service.ts:1264 [this.logger.error] code_class (err as Error).message
+share-link/share-link.service.ts:175 [this.logger.warn] attempt + 1 packageId ,
+share-link/share-link.service.ts:227 [this.logger.error] MAX_COLLISION_ATTEMPTS packageId ,
+coach-media/coach-media-mux-webhook.controller.ts:141 [this.logger.error] STR ,
+coach-media/coach-media-mux-webhook.controller.ts:348 [this.logger.warn] assetId row.status ,
+coach-media/supabase-storage.provider.ts:223 [this.logger.warn] STR ,
+coach-media/supabase-storage.provider.ts:235 [this.logger.warn] storageKey (err as Error).message ,
+coach-media/supabase-storage.provider.ts:241 [this.logger.warn] storageKey result.error.message ,
+coach-media/coach-media.service.ts:419 [this.logger.warn] grant.id purchaseCoachId row.coach_id ,
+coach-media/coach-media.service.ts:588 [this.logger.warn] mediaAssetId (err as Error).message ,
+team/team.service.ts:321 [this.logger.warn] msg
+invite-landing/well-known.controller.ts:96 [this.logger.error] STR ,
+invite-landing/well-known.controller.ts:104 [this.logger.warn] STR ,
+invite-landing/well-known.controller.ts:170 [this.logger.error] STR ,
+invite-landing/well-known.controller.ts:178 [this.logger.warn] STR ,
+exercise-catalog/exercise-video-provider.service.ts:139 [this.logger.warn] STR , err
+exercise-catalog/exercise-video-provider.service.ts:165 [this.logger.warn] res.status res.statusText
+exercise-catalog/exercise-video-provider.service.ts:183 [this.logger.log] map.size
+exercise-catalog/exercise-video-provider.service.ts:195 [this.logger.warn] STR , err
+exercise-catalog/exercise-video-provider.service.ts:202 [this.logger.warn] STR , err
+exercise-catalog/exercise-video-provider.service.ts:272 [this.logger.warn] STR , err
+exercise-catalog/exercise-video-provider.service.ts:299 [this.logger.warn] res.status res.statusText ,
+exercise-catalog/exercise-video-provider.service.ts:318 [this.logger.log] map.size
+exercise-catalog/exercise-video-provider.service.ts:329 [this.logger.warn] STR , err
+exercise-catalog/exercise-video-provider.service.ts:337 [this.logger.warn] STR , err
+exercise-catalog/exercise-video-provider.service.ts:390 [this.logger.log] STR
+exercise-catalog/exercise-video-provider.service.ts:397 [this.logger.warn] STR , err,
+exercise-catalog/exercise-video-provider.service.ts:433 [this.logger.warn] STR , err
+exercise-catalog/exercise-video-provider.service.ts:450 [this.logger.warn] provider.name exerciseName , err,
+exercise-catalog/exercise-video-provider.service.ts:471 [this.logger.warn] STR , err
+exercise-catalog/exercise-video-provider.service.ts:493 [this.logger.warn] STR , err
+community/events/community-events.scheduler.ts:53 [this.logger.warn] STR ,
+community/events/community-events.scheduler.ts:62 [this.logger.log] stats.promotedTomorrow stats.promotedLive ,
+community/events/community-events.scheduler.ts:67 [this.logger.error] err instanceof Error ? err.message : STR ,
+community/search/community-search.service.ts:147 [this.logger.log] { event: STR , workspace_id: workspaceId, user_id: user.id, term_length: query.q.length, kind: query.kind ?? null, result_count: results.length, took_ms: tookMs, }
+community/search/search-indexer.service.ts:82 [this.logger.log] { event: STR , workspace_id: target.workspaceId, kind: target.kind, target_id: target.targetId, created: result.created, excerpt_length: excerpt.length, }
+community/search/search-indexer.service.ts:102 [this.logger.log] { event: STR , workspace_id: workspaceId, kind, target_id: targetId, }
+community/search/search-indexer.listener.ts:129 [this.logger.log] { event: STR , workspace_id: workspaceId, kind, target_id: targetId, }
+community/realtime/community-realtime.service.ts:152 [this.logger.warn] channel event meta.channelKind message ,
+community/realtime/community-realtime.service.ts:171 [this.logger.warn] channel (removeErr as Error).message ,
+community/ack/ack-flag.guard.ts:31 [this.logger.log] req.user?.id ?? STR ,
+community/ai-triage/ai-triage-flag.guard.ts:33 [this.logger.log] req.user?.id ?? STR ,
+community/ai-triage/ai-triage.service.ts:166 [this.logger.debug] user.id
+community/ai-triage/ai-triage.service.ts:185 [this.logger.log] user.id
+community/ai-triage/ai-triage.service.ts:188 [this.logger.warn] user.id (err as Error).message ,
+community/ai-triage/ai-triage.service.ts:202 [this.logger.log] user.id
+community/ai-triage/ai-triage.service.ts:205 [this.logger.warn] user.id (err as Error).message ,
+community/ai-triage/ai-triage.service.ts:212 [this.logger.warn] user.id ,
+community/ai-triage/ai-triage.service.ts:226 [this.logger.debug] user.id response.source_item_ids.length this.lastModelUsed INBOX_TRIAGE_VERSION ,
+community/moderation/community-moderation.service.ts:496 [this.logger.warn] resolved.id ,
+community/moderation/community-moderation.service.ts:503 [this.logger.error] resolved.id (err as Error).message ,
+community/wearable-prompts/degraded-connector-fallback.service.ts:82 [this.logger.log] { event: STR , workspace_id: workspaceId, coach_id: coachId, client_id: clientId, reason, }
+community/wearable-prompts/wearable-prompts.service.ts:238 [this.logger.log] { event: STR , workspace_id: workspaceId, coach_id: coachId, generated_count: generated.length, skipped_count: skipped.length, }
+community/classroom/community-classroom.service.ts:119 [this.logger.warn] asset.id asset.kind message ,
+community/notifications/community-notifications.service.ts:180 [this.logger.debug] idempotencyKey ,
+community/notifications/community-notifications.service.ts:244 [this.logger.warn] kind recipientId result.code ,
+community/notifications/community-notifications.service.ts:258 [this.logger.warn] kind recipientId message ,
+community/voice/voice-upload.provider.ts:288 [this.logger.warn] (err as Error).message
+community/voice/voice-upload.provider.ts:337 [this.logger.warn] STR
+community/voice/voice-upload.provider.ts:360 [this.logger.warn] storageKey (err as Error).message ,
+community/voice/voice-upload.provider.ts:398 [this.logger.warn] (err as Error).message
+community/voice/voice-upload.provider.ts:430 [this.logger.warn] (err as Error).message
+community/voice/voice-upload.provider.ts:461 [this.logger.warn] describeStorageError(result.error)
+community/voice/voice-upload.provider.ts:465 [this.logger.warn] (err as Error).message
+community/voice/voice-upload.provider.ts:519 [this.logger.warn] result.error.message
+community/voice/voice-upload.provider.ts:525 [this.logger.warn] (err as Error).message
+community/voice/community-voice.service.ts:401 [this.logger.warn] keyCheck.reason
+community/voice/community-voice.service.ts:645 [this.logger.warn] row.id ,
+community/voice/community-voice.service.ts:653 [this.logger.error] row.id (err as Error).message ,
+community/voice/voice-erasure.ts:238 [this.logger.log] outcome.completed outcome.pending ,
+community/messages/community-messages.service.ts:124 [this.logger.log] user.id
+data-export/data-export-archive.store.ts:154 [deadlineLogger.debug] op err instanceof Error ? err.message : String(err) ,
+data-export/data-export.service.ts:275 [this.logger.warn] STR + STR ,
+data-export/data-export.service.ts:379 [this.logger.error] record.id userId err.message , err.stack
+data-export/data-export.service.ts:545 [this.logger.error] storageErrorCode(err) (err as Error).message + STR ,
+data-export/data-export.service.ts:549 [Sentry..captureMessage] STR , { level: STR , tags: { code: storageErrorCode(err) }, }
+data-export/data-export.service.ts:557 [this.logger.error] storageErrorCode(err) (err as Error).message ,
+data-export/data-export.service.ts:564 [this.logger.error] storageErrorCode(err) (err as Error).message + STR ,
+data-export/data-export.service.ts:568 [Sentry..captureMessage] STR , { level: STR , tags: { code: storageErrorCode(err) }, }
+data-export/data-export.service.ts:592 [this.logger.log] record.id record.user_id
+data-export/data-export.service.ts:594 [this.logger.error] record.id storageErrorCode(err) (err as Error).message + STR ,
+data-export/data-export.service.ts:621 [this.logger.error] row.id storageErrorCode(err) ,
+data-export/data-export.service.ts:626 [this.logger.warn] reaped
+data-export/data-export.service.ts:652 [this.logger.error] STR ,
+data-export/data-export.service.ts:677 [this.logger.error] r.export_id code r.attempts + 1 + this.store.kind === STR ? STR : machine ,
+data-export/data-export.service.ts:685 [Sentry..captureMessage] STR , { level: STR , tags: { code, reason: r.reason, stage: STR }, extra: { export_id: r.export_id, attempts: r.attempts + 1 }, }
+data-export/data-export.service.ts:698 [this.logger.warn] r.export_id ,
+data-export/data-export.service.ts:702 [this.logger.log] r.export_id r.attempts + 1 ,
+data-export/data-export.service.ts:715 [this.logger.error] stale + STR + STR ,
+data-export/data-export.service.ts:720 [Sentry..captureMessage] STR , { level: STR , tags: { stage: STR }, extra: { count: stale }, }
+data-export/data-export.service.ts:762 [this.logger.error] s.exportId storageErrorCode(err) (err as Error).message ,
+data-export/data-export.service.ts:767 [this.logger.log] removed
+data-export/data-export.service.ts:839 [this.logger.error] exportId stage ,
+data-export/data-export.service.ts:842 [Sentry..captureMessage] STR , { level: STR , tags: { code: STR , stage }, }
+data-export/data-export.service.ts:869 [this.logger.warn] record.id ,
+data-export/data-export.service.ts:877 [this.logger.error] record.id (dbErr as Error).message ,
+data-export/data-export.service.ts:888 [this.logger.error] exportId stage
+data-export/data-export.service.ts:889 [Sentry..captureMessage] STR , { level: STR , tags: { stage }, extra: { export_id: exportId }, }
+data-export/data-export.service.ts:896 [this.logger.error] exportId stage code
+data-export/data-export.service.ts:897 [Sentry..captureMessage] STR , { level: STR , tags: { code, stage }, extra: { export_id: exportId }, }
+data-export/data-export.service.ts:922 [this.logger.warn] row.id
+data-export/data-export.service.ts:927 [this.logger.error] (err as Error).message
+data-export/data-export.service.ts:947 [this.logger.log] row.id
+data-export/data-export.service.ts:993 [this.logger.warn] exportId ,
+data-export/data-export.service.ts:1009 [this.logger.error] exportId storageErrorCode(err) (err as Error).message , (err as Error).stack,
+data-export/data-export.service.ts:1014 [Sentry..captureMessage] STR , { level: STR , tags: { code: err.code }, extra: { export_id: exportId }, }
+data-export/data-export.service.ts:1027 [this.logger.error] (cleanupErr as Error).message
+data-export/data-export.service.ts:1316 [this.logger.log] exportId this.store.kind buffer.length
+data-export/data-export.service.ts:1381 [this.logger.error] exportId (recordErr as Error).message ,
+data-export/data-export.service.ts:1386 [Sentry..captureMessage] STR , { level: STR , tags: { code, reason, stage: STR , recorded: String(recorded) }, extra: { export_id: exportId }, }
+data-export/data-export.service.ts:1459 [this.logger.log] exportId userId expiresAt.toISOString() + STR ,
+data-export/data-export-cleanup.cron.ts:23 [this.logger.log] STR
+data-export/data-export-cleanup.cron.ts:26 [this.logger.log] STR
+data-export/data-export-cleanup.cron.ts:28 [this.logger.error] (err as Error).message , (err as Error).stack,
+data-export/data-export.controller.ts:161 [this.logger.warn] download.exportId
+data-export/data-export.controller.ts:164 [this.logger.error] download.exportId (err as Error).message ,
+data-export/data-export.controller.ts:167 [Sentry..captureMessage] STR , { level: STR , extra: { export_id: download.exportId }, }
+messaging/messaging.service.ts:692 [this.logger.warn] threadCoachId clientId err instanceof Error ? err.message : String(err) ,
+connect/connect.module.ts:77 [this.logger.warn] msg
+connect/connect.module.ts:90 [this.logger.warn] msg
+connect/connect.module.ts:101 [this.logger.warn] STR ,
+connect/connect.module.ts:106 [this.logger.warn] STR ,
+connect/connect.module.ts:113 [this.logger.log] STR
+connect/connect.service.ts:145 [this.logger.warn] stripeAccountId ,
+connect/connect.service.ts:155 [this.logger.warn] stripeAccountId err.message ,
+connect/connect.service.ts:186 [this.logger.warn] stripeAccountId ,
+connect/fees/transfer-orchestrator.service.ts:153 [this.logger.warn] row.purchase_id attemptCount message ,
+connect/fees/payout-readiness.service.ts:142 [this.logger.warn] coachUserId msg ,
+connect/fees/payout-readiness.service.ts:195 [this.logger.warn] coachUserId (err as Error).message ,
+connect/fees/payout-readiness.service.ts:321 [this.logger.warn] row.coach_user_id err.message ,
+connect/fees/payout-readiness.service.ts:325 [this.logger.warn] row.coach_user_id (err as Error).message ,
+connect/fees/reconciliation.service.ts:99 [this.logger.warn] row.id (err as Error).message ,
+connect/fees/reconciliation.service.ts:167 [this.logger.warn] purchase.id chargeId msg ,
+connect/fees/reconciliation.service.ts:233 [this.logger.warn] purchase.stripe_payment_intent_id (err as Error).message ,
+admin/admin.service.ts:147 [this.logger.warn] updated.id err instanceof Error ? err.message : String(err) ,
+admin/ptm/admin-ptm.service.ts:239 [this.logger.error] targetUserId msg ,
+admin/federation/finance-admin.client.ts:166 [this.logger.warn] path lastDegraded?.kind === STR ? lastDegraded.reason : STR ,
+admin/federation/federation-inbound.service.ts:89 [this.logger.warn] STR ,
+admin/federation/federation-inbound.service.ts:114 [this.logger.log] { event: STR }
+admin/soc2/soc2-evidence.service.ts:136 [this.logger.warn] candidate msg
+admin/soc2/soc2-evidence.service.ts:208 [this.logger.error] msg
+admin/soc2/soc2-evidence.service.ts:231 [this.logger.warn] res.status
+admin/soc2/soc2-evidence.service.ts:251 [this.logger.warn] msg
+timeline/timeline.service.ts:390 [this.logger.warn] cursor
+talent-marketplace/connect-adapter.service.ts:171 [this.logger.error] op PROVIDER_TIMEOUT_MS ,
+talent-marketplace/connect-adapter.service.ts:197 [this.logger.error] op kind correlationId name this.redact(err) ,
+talent-marketplace/admin-applications.service.ts:134 [this.logger.log] { event: STR , owner_id: ownerId, application_id: applicationId, decision: result.decision, note_length: result.note?.length ?? 0, replayed: result.replayed, result_status: result.status, ...(requestId ? { request_id: re
+talent-marketplace/marketplace-idempotency.service.ts:155 [this.logger.warn] userId routeKey ,
+talent-marketplace/marketplace-idempotency.service.ts:192 [this.logger.warn] userId routeKey ,
+talent-marketplace/marketplace-idempotency.service.ts:221 [this.logger.warn] userId routeKey ,
+talent-marketplace/marketplace-idempotency.service.ts:273 [this.logger.warn] key.userId key.routeKey ,
+talent-marketplace/admin-moderation.service.ts:118 [logger.log] { event, ...fields }, msg
+talent-marketplace/admin-moderation.service.ts:129 [this.logger.log] { event: STR , owner_id: ownerId, listing_id: listingId, decision: result.decision, note_length: result.note?.length ?? 0, replayed: result.replayed, result_status: result.status, ...(requestId ? { request_id: requestId 
+talent-marketplace/talent-connect-webhook.controller.ts:45 [this.logger.error] STR ,
+talent-marketplace/applicant-tracking.service.ts:277 [this.logger.warn] STR
+talent-marketplace/public-listing.service.ts:39 [this.logger.warn] warning
+talent-marketplace/talent-connect-webhook.service.ts:59 [this.logger.warn] event.id ,
+talent-marketplace/talent-connect-webhook.service.ts:106 [this.logger.log] event.id account.id onboardingCompleted ,
+talent-marketplace/anti-bot/in-house-anti-bot.provider.ts:53 [this.logger.log] STR
+talent-marketplace/anti-bot/in-house-anti-bot.provider.ts:61 [this.logger.log] STR
+talent-marketplace/anti-bot/in-house-anti-bot.provider.ts:63 [this.logger.warn] (err as Error).message
+talent-marketplace/anti-bot/in-house-anti-bot.provider.ts:99 [this.logger.warn] (err as Error).message
+ptm/ptm-recompute.service.ts:165 [this.logger.error] userId msg
+ptm/ptm-recompute.service.ts:202 [this.logger.error] userId msg ,
+ptm/ptm.service.ts:55 [this.logger.error] input.userId input.signalType msg ,
+ptm/ptm.scheduler.ts:47 [this.logger.log] STR
+ptm/ptm.scheduler.ts:50 [this.logger.log] STR
+ptm/ptm.scheduler.ts:53 [this.logger.log] report.considered report.recomputed report.errors ,
+ptm/ptm.scheduler.ts:58 [this.logger.error] message
+diagnostic/diagnostic.service.ts:132 [this.logger.warn] submission.id err instanceof Error ? err.message : String(err) ,
+diagnostic/ai-roadmap.service.ts:175 [this.logger.warn] msg
+email/email.service.ts:158 [this.logger.log] input.idempotencyKey ,
+email/email.service.ts:199 [this.logger.log] logRow.id input.template input.idempotencyKey ,
+email/email.service.ts:219 [this.logger.log] input.template logRow.id providerMessageId ,
+email/email.service.ts:233 [this.logger.error] input.template logRow.id msg ,
+email/email.service.ts:266 [this.logger.error] rowId err instanceof Error ? err.message : STR ,
+audit/audit.service.ts:235 [this.logger.error] input.action msg ,
+payouts-v2/payouts-v2-webhook.controller.ts:61 [this.logger.error] STR ,
+landing-pages/landing-pages.public.service.ts:202 [this.logger.warn] created.id String(err)
+landing-pages/landing-pages.public.service.ts:255 [this.logger.warn] String(err)
+landing-pages/landing-pages.public.controller.ts:153 [this.logger.debug] outcome host ?? STR ,
+landing-pages/landing-pages.public.controller.ts:158 [this.logger.debug] outcome host ? host.length : 0 ,
+landing-pages/lead-rate-limiter.service.ts:51 [this.logger.log] STR
+landing-pages/lead-rate-limiter.service.ts:59 [this.logger.log] STR
+landing-pages/lead-rate-limiter.service.ts:61 [this.logger.warn] (err as Error).message ,
+landing-pages/lead-rate-limiter.service.ts:97 [this.logger.warn] (err as Error).message
+landing-pages/custom-domain.service.ts:206 [this.logger.warn] pageId + verifyingDomain ,
+landing-pages/crm/lead-sync.processor.ts:97 [this.logger.log] processed
+landing-pages/crm/lead-sync.processor.ts:101 [this.logger.error] safeErrorMessage(err)
+landing-pages/crm/lead-sync.processor.ts:169 [this.logger.error] lead.id safeErrorMessage(err) ,
+landing-pages/crm/lead-sync.processor.ts:222 [this.logger.warn] page.coach_id lead.id ,
+landing-pages/crm/lead-sync.processor.ts:345 [this.logger.error] leadId safeErrorMessage(err) ,
+landing-pages/crm/lead-sync.queue.ts:36 [this.logger.debug] leadId
+scheduling/scheduling-session-lifecycle.service.ts:700 [this.logger.error] session.id msg ,
+scheduling/scheduling-webhook.controller.ts:60 [this.logger.debug] payloadShape(body) ,
+scheduling/scheduling-webhook.controller.ts:84 [this.logger.debug] payloadShape(body) ,
+scheduling/google-calendar/google-calendar-webhook.controller.ts:106 [this.logger.error] STR
+scheduling/google-calendar/google-calendar-webhook.controller.ts:124 [this.logger.log] channelId ,
+scheduling/google-calendar/google-calendar-webhook.controller.ts:141 [this.logger.log] channelId resourceState messageNumber ,
+scheduling/google-calendar/google-calendar-webhook.controller.ts:174 [this.logger.debug] args.channelId args.resourceState ,
+scheduling/google-calendar/gcal-watch-startup.ts:70 [logger.log] STR + STR ,
+scheduling/google-calendar/gcal-watch-startup.ts:110 [logger.log] STR ,
+scheduling/google-calendar/gcal-watch-startup.ts:133 [logger.log] res.status ,
+scheduling/google-calendar/google-calendar.service.ts:316 [this.logger.warn] connection.id message ,
+scheduling/google-calendar/google-calendar.service.ts:455 [this.logger.warn] action connection.id message ,
+scheduling/providers/google-meet.adapter.ts:28 [this.logger.error] input.idempotencyKey ,
+scheduling/providers/zoom-video.adapter.ts:22 [this.logger.error] input.idempotencyKey ,
+scheduling/providers/zoom-video.adapter.ts:34 [this.logger.warn] externalMeetingId ,
+scheduling/providers/scheduling-provider.registry.ts:48 [this.logger.warn] STR ,
+scheduling/providers/scheduling-provider.registry.ts:61 [this.logger.warn] STR ,
+scheduling/providers/scheduling-provider.registry.ts:70 [this.logger.warn] STR ,
+scheduling/providers/google-calendar.adapter.ts:33 [this.logger.error] input.idempotencyKey ,
+scheduling/providers/google-calendar.adapter.ts:45 [this.logger.warn] externalEventId ,
+scheduling/jobs/reminder.job.ts:71 [this.logger.debug] STR
+scheduling/jobs/reminder.job.ts:96 [this.logger.debug] STR
+scheduling/jobs/reminder.job.ts:162 [this.logger.warn] session.id p.userId args.kind (err as Error).message ,
+scheduling/jobs/reminder.job.ts:170 [this.logger.log] args.kind due.length dispatched skipped ,
+scheduling/jobs/reminder.job.ts:210 [this.logger.warn] session.id userId kind (err as Error).name ,
+scheduling/google-oauth/google-oauth.service.ts:161 [this.logger.warn] res.status args.userId detail.slice(0, 200) ,
+scheduling/google-oauth/google-oauth.service.ts:201 [this.logger.debug] userId ,
+leaderboard/leaderboard.service.ts:259 [this.logger.error] id msg
+leaderboard/leaderboard.scheduler.ts:37 [this.logger.log] STR
+leaderboard/leaderboard.scheduler.ts:41 [this.logger.log] STR
+leaderboard/leaderboard.scheduler.ts:44 [this.logger.log] computed errors ,
+leaderboard/leaderboard.scheduler.ts:49 [this.logger.error] msg
+exercise-library/exercise-library.service.ts:75 [this.logger.log] STR
+exercise-library/exercise-library.service.ts:77 [this.logger.warn] STR , err,
+exercise-library/exercise-library.service.ts:84 [this.logger.log] STR
+food/food.service.ts:143 [this.logger.log] STR
+food/food.service.ts:151 [this.logger.log] STR
+food/food.service.ts:153 [this.logger.warn] (err as Error).message
+sub-coach/sub-coach-idempotency.service.ts:210 [this.logger.error] delErr instanceof Error ? delErr.message : String(delErr) ,
+sub-coach/sub-coach-idempotency.service.ts:235 [this.logger.error] err instanceof Error ? err.message : String(err) ,
+sub-coach/sub-coach-scope.service.ts:81 [this.logger.warn] userId u.coach_id ,
+checkout/dunning.service.ts:654 [this.logger.warn] attempt.id attempt.step_index nextCount msg ,
+checkout/dunning.service.ts:674 [this.logger.warn] attempt.id attempt.step_index nextCount this.cfg.maxSendRetries nextRetryAt.toISOString() msg ,
+checkout/dunning.service.ts:782 [this.logger.warn] purchase.stripe_subscription_id (err as Error).message ,
+checkout/dunning.service.ts:930 [this.logger.warn] purchase.stripe_subscription_id (err as Error).message ,
+checkout/dunning.service.ts:1166 [this.logger.warn] purchase.stripe_subscription_id (err as Error).message ,
+checkout/dunning.service.ts:1193 [this.logger.warn] state.id (err as Error).message ,
+checkout/dunning.service.ts:1281 [this.logger.log] JSON.stringify({ event, ...fields })
+checkout/dunning.service.ts:1283 [this.logger.log] event JSON.stringify({ event })
+checkout/checkout-webhook-handler.service.ts:290 [this.logger.warn] (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:317 [this.logger.warn] (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:399 [this.logger.warn] inv.subscription (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:471 [this.logger.warn] event.type obj.id ?? STR (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:605 [this.logger.warn] updated.id (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:656 [this.logger.warn] purchase.id (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:683 [this.logger.warn] task.purchase.id (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:750 [this.logger.warn] sub.id ,
+checkout/checkout-webhook-handler.service.ts:780 [this.logger.warn] pending.id ,
+checkout/checkout-webhook-handler.service.ts:869 [this.logger.warn] purchase.id (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:948 [this.logger.warn] updated.id (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:1066 [this.logger.warn] inv.subscription ,
+checkout/checkout-webhook-handler.service.ts:1101 [this.logger.warn] inv.subscription (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:1123 [this.logger.warn] updated.id (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:1135 [this.logger.warn] updated.id (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:1180 [this.logger.warn] updated.id (err as Error).message ,
+checkout/checkout-webhook-handler.service.ts:1222 [this.logger.warn] dpm (err as Error).message ,
+checkout/checkout.service.ts:262 [this.logger.warn] existing.id (err as Error).message ,
+checkout/checkout.service.ts:701 [this.logger.error] reservation.id (cleanupErr as Error).message ,
+checkout/checkout.service.ts:938 [this.logger.warn] sessionId userId clientRef ,
+checkout/purchase-split-handler.service.ts:53 [this.logger.warn] purchase.stripe_payment_intent_id (err as Error).message ,
+checkout/purchase-split-handler.service.ts:73 [this.logger.warn] purchase.id ,
+checkout/purchase-split-handler.service.ts:90 [this.logger.warn] purchase.id plan.head_coach_id ,
+checkout/purchase-split-handler.service.ts:151 [this.logger.warn] purchase.id (err as Error).message ,
+checkout/refund-dispute-handler.service.ts:459 [this.logger.warn] args.stripe_refund_id args.stripe_charge_id args.purchase.coach_user_id (err as Error).message ,
+checkout/refund-dispute-handler.service.ts:522 [this.logger.warn] purchaseId (err as Error).message ,
+checkout/refund-dispute-handler.service.ts:801 [this.logger.warn] dispute.id dispute.charge purchase.coach_user_id (err as Error).message ,
+checkout/refund-dispute-handler.service.ts:902 [this.logger.warn] chargeId err.message ,
+checkout/refund-dispute-handler.service.ts:1009 [this.logger.warn] (err as Error).message ,
+checkout/dunning-v2/dunning-v2.service.ts:244 [this.logger.warn] c.id (err as Error).message ,
+checkout/dunning-v2/dunning-lockout.scheduler.ts:33 [this.logger.debug] STR ,
+checkout/dunning-v2/dunning-lockout.scheduler.ts:38 [this.logger.log] STR
+checkout/dunning-v2/dunning-lockout.scheduler.ts:41 [this.logger.log] locked
+checkout/dunning-v2/dunning-lockout.scheduler.ts:44 [this.logger.error] message
+checkout/dunning-v2/dunning-v2.dispatcher.ts:326 [this.logger.warn] label (err as Error).message ,
+checkout/dunning-v2/dunning-lockout.guard.ts:145 [this.logger.warn] userId (err as Error).message ,
+supabase/supabase.service.ts:65 [this.logger.warn] userId (sendErr as Error).message ,
+supabase/supabase.service.ts:79 [this.logger.warn] userId (err as Error).message ,
+users/gdpr-scrub.service.ts:150 [this.logger.log] candidates.length cutoff.toISOString() ,
+users/gdpr-scrub.service.ts:175 [this.logger.error] c.user_id message ,
+users/gdpr-scrub.service.ts:182 [this.logger.log] scrubbed candidates.length errors.length ,
+users/gdpr-scrub.scheduler.ts:40 [this.logger.log] STR
+users/gdpr-scrub.scheduler.ts:43 [this.logger.log] report.scrubbed report.considered report.errors.length ,
+users/gdpr-scrub.scheduler.ts:48 [this.logger.error] message
+users/account.service.ts:113 [this.logger.error] userId message
+wearables/ingestion/ingestion.service.ts:80 [this.logger.error] { msg: STR , user_id: samples[0]?.userId, provider: samples[0]?.provider, submitted_count: samples.length, error_message: (err as Error)?.message ?? String(err), }
+wearables/ingestion/ingestion.service.ts:155 [this.logger.log] { msg: STR , user_id: samples[0]?.userId, provider: samples[0]?.provider, inserted_count: inserted, skipped_count: skipped, submitted_count: samples.length, connection_count: connectionIds.length, }
+wearables/ingestion/ingestion.service.ts:167 [this.logger.error] { msg: STR , user_id: samples[0]?.userId, provider: samples[0]?.provider, submitted_count: samples.length, connection_count: connectionIds.length, error_code: (err as { code?: string })?.code ?? STR , error_message: (err
+wearables/connectors/polar/polar.connector.ts:296 [this.logger.error] STR
+wearables/connectors/polar/polar.connector.ts:596 [this.logger.error] { msg: STR , op, provider: STR , user_id_hash: conn?.user_id ? userHash(conn.user_id) : undefined, error_class: err instanceof Error ? err.name : STR , error_message: message, }
+wearables/connectors/polar/polar.connector.ts:616 [this.logger.error] { msg: STR , op, provider: STR , user_id_hash: conn?.user_id ? userHash(conn.user_id) : undefined, error_class: markErr instanceof Error ? markErr.name : STR , error_message: redactErrorMessage(markErr), }
+wearables/connectors/polar/polar-webhook.controller.ts:81 [this.logger.error] STR ,
+wearables/connectors/polar/polar-webhook.controller.ts:101 [this.logger.log] { msg: STR , provider: STR }
+wearables/connectors/polar/polar-webhook.controller.ts:128 [this.logger.log] { msg: STR , provider: STR , event_type: event.event, }
+wearables/connectors/polar/polar-webhook.controller.ts:175 [this.logger.error] { msg: STR , provider: STR , event_type: event.event, user_id_hash: this.hash(externalAccountId), error_class: err instanceof Error ? err.name : STR , error_message: redactErrorMessage(err), }
+wearables/connectors/polar/polar-webhook.controller.ts:186 [this.logger.warn] { msg: STR , provider: STR , event_type: event.event, user_id_hash: this.hash(externalAccountId), }
+wearables/connectors/polar/polar-webhook.controller.ts:218 [this.logger.log] { msg: STR , provider: STR , event_type: event.event, }
+wearables/connectors/oura/oura.connector.ts:333 [this.logger.error] STR
+wearables/connectors/oura/oura.connector.ts:546 [this.logger.error] { msg: STR , op, provider: STR , error_message: message, }
+wearables/connectors/oura/oura-webhook.controller.ts:100 [this.logger.error] STR ,
+wearables/connectors/oura/oura-webhook.controller.ts:134 [this.logger.log] { msg: STR , provider: STR , data_type: event.data_type, event_type: event.event_type, }
+wearables/connectors/oura/oura-webhook.controller.ts:180 [this.logger.error] { msg: STR , provider: STR , data_type: event.data_type, error_message: (err as Error)?.message ?? String(err), }
+wearables/connectors/oura/oura-webhook.controller.ts:189 [this.logger.warn] { msg: STR , provider: STR , data_type: event.data_type, }
+wearables/connectors/oura/oura-webhook.controller.ts:214 [this.logger.log] { msg: STR , provider: STR , data_type: event.data_type, }
+wearables/connectors/oura/oura-webhook.controller.ts:224 [this.logger.log] { msg: STR , provider: STR , data_type: event.data_type, event_type: event.event_type, }
+wearables/connectors/withings/withings.connector.ts:338 [this.logger.error] STR ,
+wearables/connectors/withings/withings.connector.ts:645 [this.logger.error] { msg: STR , op, provider: STR , error_message: message, }
+wearables/connectors/withings/withings.connector.ts:663 [this.logger.error] { msg: STR , op, provider: STR , conn_id: conn.id, error_class: (markErr as Error)?.name ?? typeof markErr, error_message: redactErrorMessage(markErr), }
+wearables/connectors/withings/withings-webhook.controller.ts:112 [this.logger.error] STR ,
+wearables/connectors/withings/withings-webhook.controller.ts:122 [this.logger.error] JSON.stringify({ msg: STR , reason: STR , }),
+wearables/connectors/withings/withings-webhook.controller.ts:171 [this.logger.log] { msg: STR , provider: STR , appli: event.appli, }
+wearables/connectors/withings/withings-webhook.controller.ts:222 [this.logger.error] { msg: STR , provider: STR , conn_id: connection.id, appli: event.appli, error_class: (markErr as Error)?.name ?? typeof markErr, error_message: redactErrorMessage(markErr), }
+wearables/connectors/withings/withings-webhook.controller.ts:232 [this.logger.error] { msg: STR , provider: STR , appli: event.appli, error_class: (err as Error)?.name ?? typeof err, error_message: safeError, }
+wearables/connectors/withings/withings-webhook.controller.ts:243 [this.logger.warn] { msg: STR , provider: STR , appli: event.appli, }
+wearables/connectors/withings/withings-webhook.controller.ts:267 [this.logger.log] { msg: STR , provider: STR , appli: event.appli, }
+wearables/connectors/withings/withings-webhook.controller.ts:277 [this.logger.log] { msg: STR , provider: STR , appli: event.appli, }
+wearables/connectors/whoop/whoop.connector.ts:435 [this.logger.error] STR ,
+wearables/connectors/whoop/whoop-webhook.controller.ts:79 [this.logger.error] STR ,
+wearables/connectors/whoop/whoop-webhook.controller.ts:113 [this.logger.warn] reason
+wearables/connectors/whoop/whoop-webhook.controller.ts:132 [this.logger.log] { msg: STR , provider_event_id: payload.id, type: payload.type, }
+wearables/connectors/whoop/whoop-webhook.controller.ts:155 [this.logger.log] { msg: STR , provider_event_id: payload.id, type: payload.type, trace_id: payload.trace_id, user_hash: hashWhoopUserId(payload.user_id), }
+wearables/connectors/whoop/whoop-webhook.controller.ts:190 [this.logger.log] { msg: STR , provider_event_id: payload.id, type: payload.type, trace_id: payload.trace_id, user_hash: hashWhoopUserId(payload.user_id), connections_disconnected: count, }
+wearables/connectors/fitbit/fitbit.connector.ts:357 [this.logger.error] STR ,
+wearables/connectors/fitbit/fitbit.connector.ts:592 [this.logger.error] { msg: STR , op, provider: STR , error_message: message, }
+wearables/connectors/fitbit/fitbit.connector.ts:609 [this.logger.error] { msg: STR , op, provider: STR , conn_id: conn.id, error_class: (markErr as { constructor?: { name?: string } }) ?.constructor?.name, error_message: redactErrorMessage(markErr), }
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:118 [this.logger.error] STR ,
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:168 [this.logger.log] { msg: STR , provider: STR , collection_type: notification.collectionType, user_hash: userHash, }
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:209 [this.logger.warn] { msg: STR , provider: STR , collection_type: notification.collectionType, date: notification.date, conn_id: connection.id, user_hash: userHash, }
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:246 [this.logger.error] { msg: STR , provider: STR , collection_type: notification.collectionType, user_hash: userHash, error_class: (markErr as { constructor?: { name?: string } }) ?.constructor?.name, error_message: redactErrorMessage(markErr
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:256 [this.logger.error] { msg: STR , provider: STR , collection_type: notification.collectionType, user_hash: userHash, error_message: safeMessage, }
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:266 [this.logger.warn] { msg: STR , provider: STR , collection_type: notification.collectionType, user_hash: userHash, }
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:292 [this.logger.log] { msg: STR , provider: STR , collection_type: notification.collectionType, user_hash: userHash, }
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:303 [this.logger.log] { msg: STR , provider: STR , collection_type: notification.collectionType, user_hash: userHash, }
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:377 [this.logger.warn] { msg: STR , provider: STR , invalid_fields: fieldPaths, issue_count: result.error.issues.length, }
+wearables/connectors/strava/strava.connector.ts:203 [this.logger.warn] page ,
+wearables/connectors/strava/strava-webhook.controller.ts:152 [this.logger.log] ownerId activityId + count === 1 ? STR : STR workId ,
+wearables/connectors/strava/strava-webhook.controller.ts:190 [this.logger.warn] STR + STR + STR ,
+wearables/connectors/strava/strava-webhook.controller.ts:216 [this.logger.error] STR
+wearables/connectors/strava/strava-webhook.controller.ts:220 [this.logger.warn] STR
+wearables/connectors/strava/strava-webhook.controller.ts:258 [this.logger.error] JSON.stringify({ msg: STR , reason: STR , }),
+wearables/connectors/strava/strava-webhook.controller.ts:267 [this.logger.warn] body.subscription_id ,
+wearables/connectors/strava/strava-webhook.controller.ts:289 [this.logger.log] providerEventId
+wearables/connectors/strava/strava-webhook.controller.ts:317 [this.logger.warn] issues
+wearables/connectors/strava/strava-webhook.controller.ts:339 [this.logger.warn] ip ?? STR
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:84 [this.logger.error] STR ,
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:119 [this.logger.log] { msg: STR , provider: STR , event_type: event.event_type, }
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:164 [this.logger.error] { msg: STR , provider: STR , conn_id: connection.id, event_type: event.event_type, user_hash: this.hash(userId), error_class: (markErr as Error)?.name ?? STR , redacted_message: redactErrorMessage(markErr), }
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:174 [this.logger.error] { msg: STR , provider: STR , event_type: event.event_type, user_hash: this.hash(userId), error_class: (err as Error)?.name ?? STR , }
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:187 [this.logger.warn] { msg: STR , provider: STR , event_type: event.event_type, user_hash: this.hash(userId), }
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:209 [this.logger.log] { msg: STR , provider: STR , event_type: event.event_type, }
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:219 [this.logger.log] { msg: STR , provider: STR , event_type: event.event_type, }
+wearables/connectors/wahoo/wahoo.connector.ts:319 [this.logger.error] STR ,
+wearables/connectors/wahoo/wahoo.connector.ts:347 [this.logger.error] STR ,
+wearables/connectors/wahoo/wahoo.connector.ts:451 [this.logger.error] { msg: STR , provider: STR , op: label, error_code: err.status ?? STR , error_class: err.name, }
+wearables/connectors/wahoo/wahoo.connector.ts:460 [this.logger.error] { msg: STR , provider: STR , op: label, error_class: (err as Error)?.name ?? STR , }
+wearables/connectors/wahoo/wahoo.connector.ts:556 [this.logger.error] { msg: STR , op, provider: STR , user_hash: conn?.user_id ? hashForLog(conn.user_id) : STR , error_message: message, }
+wearables/connectors/wahoo/wahoo.connector.ts:573 [this.logger.error] { msg: STR , op, provider: STR , conn_id: conn.id, user_hash: conn?.user_id ? hashForLog(conn.user_id) : STR , error_class: (markErr as Error)?.name ?? STR , error_message: redactErrorMessage(markErr), }
+wearables/connectors/garmin/garmin.connector.ts:411 [this.logger.error] STR ,
+wearables/connectors/garmin/garmin-webhook.controller.ts:94 [this.logger.error] STR ,
+wearables/connectors/garmin/garmin-webhook.controller.ts:119 [this.logger.warn] STR
+wearables/connectors/garmin/garmin-webhook.controller.ts:165 [this.logger.warn] { msg: STR , provider: STR , type: event.type, user_hash: hashGarminUserId(summary.userId), }
+wearables/connectors/garmin/garmin-webhook.controller.ts:211 [this.logger.error] { msg: STR , provider: STR , type: event.type, conn_id: connection.id, user_hash: hashGarminUserId(summary.userId), error_code: markRedacted.error_code, error_class: markRedacted.error_class, error_message: markRedacted.
+wearables/connectors/garmin/garmin-webhook.controller.ts:222 [this.logger.error] { msg: STR , provider: STR , type: event.type, user_hash: hashGarminUserId(summary.userId), error_code: redacted.error_code, error_class: redacted.error_class, error_message: redacted.redacted_message, }
+wearables/connectors/garmin/garmin-webhook.controller.ts:257 [this.logger.log] { msg: STR , provider: STR , processed, duplicate, }
+wearables/connectors/garmin/garmin-webhook.controller.ts:298 [this.logger.warn] STR
+wearables/connectors/garmin/garmin-webhook.controller.ts:317 [this.logger.log] { msg: STR , provider: STR , user_hash: hashGarminUserId(dereg.userId), connections_disconnected: count, }
+wearables/connections/connections.service.ts:137 [this.logger.error] this.sanitizeExchangeError(err, provider, userId)
+wearables/oauth/oauth-state.service.ts:170 [logger.warn] STR ,
+wearables/oauth/oauth-state.service.ts:186 [logger.log] STR
+wearables/oauth/oauth-state.service.ts:192 [logger.error] err && typeof err === STR && err.constructor ? err.constructor.name : typeof err ,
+wearables/preferences/preferences.service.ts:81 [this.logger.log] { event: STR , subject_user_id: effectiveUserId, actor_user_id: callerId, on_behalf_of: effectiveUserId !== callerId, metric: row.metric, preferred_provider: row.preferred_provider, }
+wearables/preferences/preferences.service.ts:119 [this.logger.log] { event: STR , subject_user_id: effectiveUserId, actor_user_id: callerId, on_behalf_of: effectiveUserId !== callerId, metric, existed: count > 0, }
+wearables/maintenance/wearable-processed-event-prune.scheduler.ts:49 [this.logger.log] { event: STR , deleted_count: deleted, cutoff_iso: cutoff.toISOString(), }
+wearables/maintenance/wearable-processed-event-prune.scheduler.ts:55 [this.logger.error] { event: STR , error: err instanceof Error ? err.message : String(err), }
+wearables/http/provider-http-client.ts:123 [this.logger.log] tag attempt totalAttempts response.status ,
+wearables/http/provider-http-client.ts:133 [this.logger.error] tag attempt totalAttempts response.status ,
+wearables/http/provider-http-client.ts:143 [this.logger.warn] tag attempt totalAttempts response.status ,
+wearables/http/provider-http-client.ts:153 [this.logger.warn] tag attempt totalAttempts err instanceof Error ? err.message : String(err) ,
+wearables/http/provider-http-client.ts:168 [this.logger.debug] tag delay
+wearables/http/provider-http-client.ts:174 [this.logger.error] tag totalAttempts lastStatus ?? STR ,
+wearables/samples/wearable-samples.service.ts:159 [this.logger.error] { event: STR }
+wearables/samples/wearable-samples.service.ts:170 [this.logger.warn] { event: STR , reason: err instanceof Error ? err.message : STR , }
+wearables/samples/wearable-samples.service.ts:178 [this.logger.error] { event: STR , reason: err instanceof Error ? err.message : STR , }
+wearables/samples/wearable-samples.service.ts:226 [this.logger.error] { event: STR , mismatches: drift, }
+wearables/samples/wearable-samples.service.ts:238 [this.logger.log] { event: STR , metric_count: defs.length, }
+wearables/samples/wearable-samples.service.ts:297 [this.logger.log] { event: STR , user_id: subjectUserId, bucket: query.bucket, metric: query.metric ?? null, window_days: windowDays, granularity: query.granularity, preferred_only: query.preferredOnly, sample_count: sampleCount, duration
+wearables/insights/insight-cache.service.ts:142 [this.logger.debug] res.count userId ,
+wearables/insights/wearable-insights.service.ts:177 [this.logger.debug] audience subjectUserId bucket ,
+wearables/insights/wearable-insights.service.ts:199 [this.logger.warn] audience subjectUserId (err as Error).message ,
+wearables/insights/wearable-insights.service.ts:217 [this.logger.warn] audience (err as Error).message ,
+wearables/insights/wearable-insights.service.ts:225 [this.logger.warn] audience subjectUserId ,
+wearables/insights/wearable-insights.service.ts:239 [this.logger.warn] audience subjectUserId guarded.reason ,
+wearables/insights/wearable-insights.service.ts:257 [this.logger.error] audience subjectUserId (err as Error).message ,
+account-deletion/account-deletion.service.ts:327 [this.logger.log] userId appleRevocation ,
+account-deletion/account-deletion.service.ts:340 [this.logger.error] userId (err as Error).message ,
+account-deletion/account-deletion.service.ts:594 [this.logger.log] STR
+account-deletion/account-deletion.service.ts:618 [this.logger.log] candidate.id result.reason ,
+account-deletion/account-deletion.service.ts:633 [this.logger.error] candidate.id (err as Error).message ,
+account-deletion/account-deletion.service.ts:653 [this.logger.error] row.id (err as Error).message ,
+account-deletion/account-deletion.service.ts:669 [this.logger.error] (err as Error).message ,
+account-deletion/account-deletion.service.ts:674 [this.logger.log] finalized skipped errors pendingAuth.length receiptsDropped ,
+account-deletion/account-deletion.service.ts:825 [this.logger.log] userId rowsChanged storage.removed billing.canceled ,
+account-deletion/account-deletion.service.ts:855 [this.logger.warn] outcome.pending userId ,
+account-deletion/account-deletion.service.ts:860 [this.logger.error] userId (err as Error).message ,
+account-deletion/account-deletion.service.ts:888 [this.logger.error] userId failure ,
+account-deletion/account-deletion.service.ts:909 [this.logger.error] userId ,
+account-deletion/apple-token-revocation.service.ts:117 [this.logger.warn] userIdForLog ,
+account-deletion/apple-token-revocation.service.ts:127 [this.logger.error] userIdForLog (err as Error).message ,
+account-deletion/apple-token-revocation.service.ts:143 [this.logger.warn] userIdForLog res.status ,
+account-deletion/apple-token-revocation.service.ts:156 [this.logger.warn] userIdForLog (err as Error).message ,
+account-deletion/apple-token-revocation.service.ts:171 [this.logger.warn] userIdForLog res.status
+account-deletion/apple-token-revocation.service.ts:175 [this.logger.warn] userIdForLog (err as Error).message ,
+account-deletion/account-deletion.billing.ts:88 [this.logger.log] canceled alreadyInactive ,
+account-deletion/account-deletion.storage.ts:164 [this.logger.warn] foreignRefs bwBucket ,
+account-deletion/account-deletion.storage.ts:255 [this.logger.log] byKind.supabase byKind.mux byKind.local ,
+filters/throttler-exception.filter.ts:74 [this.logger.warn] { message: STR , userId, ip, path, method, limit: STR , ttl: ThrottlerExceptionFilter.RETRY_AFTER_SECONDS, }
+filters/http-exception.filter.ts:64 [this.logger.error] request.method diagnosticPath diagnostic.message , diagnostic.stack,
+filters/http-exception.filter.ts:76 [scope..setTag] STR , request.method
+filters/http-exception.filter.ts:77 [scope..setTag] STR , diagnosticPath
+filters/http-exception.filter.ts:78 [scope..setExtra] STR , status
+filters/http-exception.filter.ts:79 [scope..setTag] STR , sentryReq.requestId
+filters/http-exception.filter.ts:80 [Sentry..captureException] diagnostic
+packages/drip-trigger.service.ts:194 [this.logger.log] input.buyerUserId input.assetType input.assetId flippedIds.length flippedIds.join( STR ) ,
+packages/drip-trigger.service.ts:200 [this.logger.warn] input.buyerUserId input.assetType input.assetId (err as Error).message ,
+packages/drip-trigger.service.ts:244 [this.logger.log] input.buyerUserId input.milestoneKey flippedIds.length flippedIds.join( STR ) ,
+packages/drip-trigger.service.ts:250 [this.logger.warn] input.buyerUserId input.milestoneKey (err as Error).message ,
+packages/package-push.service.ts:698 [this.logger.warn] (err as Error).message ,
+packages/package-push.service.ts:729 [this.logger.warn] drop.id (err as Error).message ,
+packages/package-push.service.ts:740 [this.logger.warn] drop.id (err as Error).message ,
+packages/package-push.service.ts:752 [this.logger.warn] drop.id (err as Error).message ,
+packages/drip-dispatcher.cron.ts:90 [this.logger.warn] STR
+packages/drip-dispatcher.cron.ts:101 [this.logger.log] stats.claimed stats.delivered stats.retried stats.failed_permanently ,
+packages/drip-dispatcher.cron.ts:106 [this.logger.error] err instanceof Error ? err.message : STR ,
+packages/drip-dispatcher.cron.ts:120 [this.logger.error] STR ,
+packages/drip-dispatcher.cron.ts:139 [this.logger.warn] claim.id ,
+packages/drip-dispatcher.cron.ts:149 [this.logger.log] reclaimed ,
+packages/drip-dispatcher.cron.ts:343 [this.logger.error] drop.id ,
+packages/drip-dispatcher.cron.ts:485 [this.logger.debug] drop.id clientUserId ,
+packages/drip-dispatcher.cron.ts:502 [this.logger.log] drop.id clientUserId drop.asset_type ,
+packages/drip-dispatcher.cron.ts:520 [this.logger.warn] drop.id clientUserId (err as Error).message ,
+packages/drip-dispatcher.cron.ts:531 [this.logger.warn] drop.id clientUserId (err as Error).message ,
+packages/drip-dispatcher.cron.ts:545 [this.logger.warn] drop.id clientUserId (err as Error).message ,
+packages/drip-dispatcher.cron.ts:595 [this.logger.warn] drop.id nextAttempt MAX_ATTEMPTS nextRetryAt.toISOString() reason ,
+packages/drip-dispatcher.cron.ts:612 [this.logger.error] drop.id purchase.client_user_id purchase.coach_user_id purchase.package_id drop.content_id drop.asset_type nextAttempt MAX_ATTEMPTS reason ,
+packages/drip-dispatcher.cron.ts:630 [this.logger.warn] drop.id ,
+packages/drip-dispatcher.cron.ts:659 [this.logger.warn] drop.id purchase.coach_user_id (err as Error).message ,
+packages/purchase-fanout.service.ts:218 [this.logger.debug] purchase.id ,
+packages/purchase-fanout.service.ts:248 [this.logger.debug] purchaseRow.package_id purchase.id ,
+packages/purchase-fanout.service.ts:346 [this.logger.log] drop.id drop.asset_type ,
+packages/purchase-fanout.service.ts:438 [this.logger.debug] purchaseId ,
+packages/purchase-fanout.service.ts:504 [this.logger.log] alert.scheduledDropId alert.clientId alert.assetType ,
+packages/purchase-fanout.service.ts:510 [this.logger.warn] alert.scheduledDropId (err as Error).message ,
+packages/purchase-fanout.service.ts:586 [this.logger.warn] clientPurchaseId reason ,
+packages/purchase-fanout.service.ts:604 [this.logger.log] result.count clientPurchaseId reason ,
+packages/purchase-fanout.service.ts:608 [this.logger.debug] clientPurchaseId reason ,
+packages/purchase-fanout.service.ts:649 [this.logger.log] alert.coachId alert.purchaseId ,
+packages/purchase-fanout.service.ts:680 [this.logger.warn] alert.coachId alert.purchaseId (err as Error).message ,
+packages/purchase-fanout.service.ts:690 [this.logger.warn] alert.coachId alert.purchaseId (err as Error).message ,
+packages/purchase-fanout.service.ts:704 [this.logger.warn] alert.coachId alert.purchaseId (err as Error).message ,
+packages/package-contents.service.ts:722 [this.logger.log] packageId contentId result.drops_updated result.buyers_affected skipped_delivered ,
+packages/package-contents.service.ts:749 [this.logger.error] msg
+packages/milestone.service.ts:54 [this.logger.warn] buyerUserId milestoneKey ,
+packages/milestone.service.ts:62 [this.logger.warn] buyerUserId milestoneKey (err as Error).message ,
+packages/asset-resolvers/workout.resolver.ts:166 [this.logger.error] input.clientId input.assetId ,
+packages/asset-resolvers/auto-message.resolver.ts:130 [this.logger.error] input.clientId ,
+packages/asset-resolvers/auto-message.resolver.ts:153 [this.logger.warn] purchaseId contentId (err as Error).message ,
+packages/asset-resolvers/assignable-asset-resolver.registry.ts:52 [this.logger.warn] r.assetType ,
+packages/asset-resolvers/meal-plan.resolver.ts:164 [this.logger.error] dropId ,
+packages/asset-resolvers/media-asset.resolver.ts:93 [this.logger.warn] asset.coach_id acting.tenantCoachId ,
+packages/asset-resolvers/media-asset.resolver.ts:105 [this.logger.warn] asset.id asset.status ,
+packages/asset-resolvers/media-asset.resolver.ts:142 [this.logger.error] input.clientId input.assetId ,
+onboarding/onboarding.service.ts:949 [this.logger.warn] clientId releaseErr instanceof Error ? releaseErr.name : STR ,
+contracts/contracts.module.ts:46 [logger.warn] STR ,
+contracts/contracts.module.ts:52 [logger.warn] STR ,
+contracts/checkout-contract-gate.service.ts:121 [this.logger.warn] STR ,
+contracts/signed-pdf-store.service.ts:53 [this.logger.log] envelopeId bucket envelopeId ,
+contracts/contract-envelope.service.ts:159 [this.logger.error] draft.id (err as Error).message ,
+contracts/contract-envelope.service.ts:230 [this.logger.warn] env.status target env.id ,
+contracts/contract-envelope.service.ts:340 [this.logger.warn] env.id (err as Error).message ,
+contracts/webhooks/hellosign-webhook.controller.ts:66 [this.logger.error] STR ,
+contracts/webhooks/hellosign-webhook.controller.ts:84 [this.logger.warn] (err as Error).message ,
+contracts/webhooks/hellosign-webhook.controller.ts:96 [this.logger.log] STR ,
+contracts/webhooks/hellosign-webhook.controller.ts:107 [this.logger.log] (err as Error).message ,
+contracts/webhooks/hellosign-webhook.controller.ts:114 [this.logger.warn] STR
+contracts/webhooks/hellosign-webhook.controller.ts:148 [this.logger.error] envelopeId (err as Error).message ,
+macros/macros.service.ts:95 [this.logger.log] coachId clientId dto.calories_kcal ,
+team-mode/team-mode.service.ts:135 [this.logger.warn] STR ,
+team-mode/team-mode.service.ts:139 [this.logger.warn] STR ,
+team-mode/team-mode.service.ts:143 [this.logger.warn] STR
+team-mode/team-mode.service.ts:259 [this.logger.error] assignment.id stripeError ,
+team-mode/team-mode.service.ts:338 [this.logger.error] assignment.id stripeError ,
+bloodwork/bloodwork-stale.scheduler.ts:31 [this.logger.log] out.marked
+bloodwork/bloodwork-stale.scheduler.ts:35 [this.logger.error] msg
+consent/consent.service.ts:102 [this.logger.warn] scope err instanceof Error ? err.message : String(err) ,
+workout-builder/workout-builder-revision-prune.cron.ts:46 [this.logger.debug] STR ,
+workout-builder/workout-builder-revision-prune.cron.ts:52 [this.logger.log] STR
+workout-builder/workout-builder-revision-prune.cron.ts:57 [this.logger.error] (err as Error).message , (err as Error).stack,
+workout-builder/workout-builder-revision-prune.cron.ts:75 [this.logger.error] planId (err as Error).message , (err as Error).stack,
+workout-builder/workout-builder-revision-prune.cron.ts:82 [this.logger.log] prunedPlans + totalDeleted ,
+workout-builder/program-delivery.service.ts:296 [this.logger.log] master.id programId input.clientId planRows.length input.source ,
+workout-builder/program-library.service.ts:1429 [this.logger.error] masterId clientId reference (e as Error)?.message ?? String(e) ,
+workout-builder/program-library.service.ts:1433 [scope..setTag] STR , reference
+workout-builder/program-library.service.ts:1434 [Sentry..captureException] e
+workout-builder/program-library.service.ts:1456 [this.logger.warn] clientId (e as Error)?.message ,
+workout-builder/workout-builder.service.ts:854 [this.logger.warn] assignmentId (err as Error).message ,
+workout-builder/workout-builder.service.ts:1603 [this.logger.warn] assignmentId (err as Error).message ,
+observability/process-errors.ts:11 [Sentry..captureException] diagnostic
+observability/db-stats.service.ts:128 [this.logger.warn] STR ,
+common/cors-origins.ts:46 [warnLogger.warn] parsed.message ,
+common/openapi.ts:66 [Logger.log] STR , STR
+common/redact-secrets.ts:20 [logger.log] redactSecrets({ DATABASE_URL: STR , user: STR })
+common/env-validation.ts:2634 [logger.error] msg
+common/env-validation.ts:2652 [logger.error] msg
+common/env-validation.ts:2879 [logger.error] seg
+common/env-validation.ts:2898 [logger.error] combined
+common/env-validation.ts:2910 [logger.error] msg
+common/env-validation.ts:2923 [logger.error] msg
+common/env-validation.ts:2929 [logger.warn] result.missingProd.join( STR ) ,
+common/env-validation.ts:2938 [logger.error] msg
+common/env-validation.ts:2944 [logger.warn] result.placeholderProd.join( STR ) ,
+common/env-validation.ts:2958 [logger.error] msg
+common/env-validation.ts:2968 [logger.warn] env.NODE_ENV result.missingFeature.join( STR ) ,
+common/env-validation.ts:2987 [logger.warn] env.NODE_ENV ,
+common/env-validation.ts:2994 [logger.warn] result.missingOptional.join( STR ) ,
+common/env-validation.ts:3000 [logger.warn] warning
+common/env-validation.ts:3012 [logger.log] env.NODE_ENV + satisfied ENV_RULES.length ,
+common/feature-flag/pilot-coach-allowlist.guard.ts:66 [this.logger.warn] message
+common/feature-flag/pilot-coach-allowlist.guard.ts:86 [this.logger.warn] message
+common/middleware/rls-context.middleware.ts:44 [this.logger.error] STR , error instanceof Error ? error.stack : String(error)
+common/middleware/rls-context.middleware.ts:65 [this.logger.warn] userId error instanceof Error ? error.message : String(error) ,
+common/interceptors/rls-context.interceptor.ts:61 [this.logger.warn] String(user.sub) error instanceof Error ? error.message : String(error) ,
+common/kms/kms.service.ts:196 [this.logger.warn] PLAINTEXT_MARKER ,
+ai-consent/ai-consent.service.ts:178 [this.logger.error] op userId prismaErrorCode(err)
+ai-consent/ai-consent.service.ts:301 [this.logger.log] action userId consent_version created.seq ,
+ai-consent/ai-consent.service.ts:308 [this.logger.warn] action userId
+ai-consent/ai-consent.service.ts:314 [this.logger.error] action userId prismaErrorCode(err)
+ai-consent/ai-consent.service.ts:332 [this.logger.warn] prismaErrorCode(err)
+ai-consent/ai-consent.service.ts:362 [this.logger.warn] prismaErrorCode(err)
+coach/coach-alerts.service.ts:250 [this.logger.log] alert.id alert.coach_id alert.alert_type alert.severity ,
+coach/coach-alerts.service.ts:257 [this.logger.warn] alert.id alert.coach_id ,
+coach/coach-effectiveness.scheduler.ts:52 [this.logger.log] STR
+coach/coach-effectiveness.scheduler.ts:55 [this.logger.log] STR
+coach/coach-effectiveness.scheduler.ts:58 [this.logger.log] report.considered report.computed report.errors ,
+coach/coach-effectiveness.scheduler.ts:63 [this.logger.error] message ,
+coach/coach-effectiveness.scheduler.ts:86 [this.logger.error] c.id msg ,
+coach/brief/coach-brief.service.ts:742 [this.logger.warn] coachId tz ,
+coach/brief/coach-brief.service.ts:1439 [this.logger.error] errorMessageOf(err) ,
+coach/brief/coach-brief.service.ts:1481 [this.logger.warn] violation safeCoachName ,
+coach/brief/coach-brief.service.ts:1501 [this.logger.warn] violation2 safeCoachName ,
+coach/brief/coach-brief.service.ts:1505 [this.logger.warn] safeCoachName secondAttempt.error ,
+coach/brief/coach-brief.service.ts:1510 [this.logger.error] safeCoachName firstAttempt.error ,
+coach/brief/coach-brief.service.ts:1832 [this.logger.error] coachId errorMessageOf(err) ,
+coach/brief/coach-brief.service.ts:1854 [this.logger.error] coachId briefDate errorMessageOf(err) errorMessageOf(cleanupErr) ,
+coach/brief/coach-brief.service.ts:2000 [this.logger.log] result.count cutoffStr retentionDays ,
+coach/brief/coach-brief.scheduler.ts:110 [this.logger.error] errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:120 [this.logger.error] cronExpr errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:145 [this.logger.error] errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:155 [this.logger.error] errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:172 [this.logger.debug] STR ,
+coach/brief/coach-brief.scheduler.ts:190 [this.logger.debug] STR ,
+coach/brief/coach-brief.scheduler.ts:199 [this.logger.debug] STR ,
+coach/brief/coach-brief.scheduler.ts:251 [this.logger.warn] prefs.timezone prefs.coach_id ,
+coach/brief/coach-brief.scheduler.ts:289 [this.logger.debug] prefs.coach_id ,
+coach/brief/coach-brief.scheduler.ts:331 [this.logger.debug] prefs.coach_id briefDate ,
+coach/brief/coach-brief.scheduler.ts:344 [this.logger.warn] prefs.coach_id briefDate attemptsSoFar ,
+coach/brief/coach-brief.scheduler.ts:372 [this.logger.debug] prefs.coach_id ,
+coach/brief/coach-brief.scheduler.ts:421 [this.logger.warn] prefs.coach_id briefDate errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:436 [this.logger.debug] prefs.coach_id pushOutcome nextAttemptCount MAX_PUSH_ATTEMPTS ,
+coach/brief/coach-brief.scheduler.ts:453 [this.logger.log] prefs.coach_id briefDate ,
+coach/brief/coach-brief.scheduler.ts:457 [this.logger.error] prefs.coach_id errorMessageOf(err) ,
+coach/command-center/ltv-metrics.service.ts:207 [this.logger.log] coachUserId ,
+coach/command-center/command-center.service.ts:136 [MAP_ALERT_TYPE_LOGGER.warn] backendType
+coach/command-center/churn-intervention.service.ts:421 [this.logger.warn] coachId clientId msg ,
+coach/command-center/churn-intervention.service.ts:430 [this.logger.warn] claimed.id markErr instanceof Error ? markErr.message : String(markErr) ,
+coach/command-center/churn-intervention.service.ts:653 [this.logger.warn] nudgeId err instanceof Error ? err.message : String(err) ,
+coach/practice-type/practice-type.service.ts:106 [this.logger.log] coachId ,
+coach/practice-type/practice-type.service.ts:110 [this.logger.error] coachId outcome.reason ,
+auth/recent-auth.guard.ts:123 [this.logger.error] RECENT_AUTH_SECRET_MIN_LENGTH ,
+auth/recent-auth.guard.ts:166 [this.logger.error] RECENT_AUTH_TTL_MIN_MS RECENT_AUTH_TTL_MAX_MS typeof rawTtl String(rawTtl) ,
+auth/recent-auth.guard.ts:241 [this.logger.warn] authedUserId hmacSuffix ,
+auth/recent-auth.guard.ts:251 [this.logger.error] authedUserId e instanceof Error ? e.message : String(e) ,
+auth/auth.service.ts:250 [this.logger.warn] flow userId code (err as Error).message ,
+auth/auth.service.ts:357 [this.logger.warn] attempt ,
+auth/auth.service.ts:421 [this.logger.warn] supabaseUserId reason + createdByThisRequest ,
+auth/auth.service.ts:463 [this.logger.warn] supabaseUserId
+auth/auth.service.ts:590 [this.logger.warn] supabaseUserId ,
+auth/auth.service.ts:620 [this.logger.warn] supabaseUserId ,
+auth/auth.service.ts:830 [this.logger.warn] error?.message ?? STR
+auth/auth.service.ts:879 [this.logger.error] linkError?.message ?? STR ,
+auth/auth.service.ts:897 [this.logger.error] otpError?.message ?? STR ,
+auth/auth.service.ts:1026 [this.logger.warn] supaUser.id ,
+auth/auth.service.ts:1046 [this.logger.warn] user.id supaUser.id ,
+auth/auth.service.ts:1097 [this.logger.warn] user.id user.role ,
+auth/auth.service.ts:1159 [this.logger.warn] (err as Error).message
+auth/auth.service.ts:1185 [this.logger.warn] ,
+auth/auth.service.ts:1215 [this.logger.warn] signInError?.message ?? STR ,
+auth/auth.service.ts:1242 [this.logger.warn] user.id supaUser.id ,
+auth/auth.service.ts:1308 [this.logger.warn] user.id user.role ,
+auth/auth.service.ts:1474 [this.logger.warn] error.message
+auth/auth.service.ts:1785 [this.logger.warn] user.id ,
+auth/auth.service.ts:1830 [this.logger.error] RECENT_AUTH_SECRET_MIN_LENGTH ,
+auth/auth.service.ts:1866 [this.logger.warn] m
+auth/auth.service.ts:1917 [this.logger.warn] m
+auth/auth.service.ts:1988 [this.logger.warn] user.id (err as Error).message ,
+auth/auth.service.ts:2024 [this.logger.warn] m
+auth/auth.service.ts:2030 [this.logger.warn] user.id signInError?.message ?? STR ,
+auth/auth.service.ts:2058 [this.logger.error] STR ,
+auth/auth.service.ts:2067 [this.logger.warn] user.id (err as Error).message ,
+auth/auth.service.ts:2113 [this.logger.warn] m
+auth/auth.service.ts:2116 [this.logger.warn] user.id (err as Error).message ,
+auth/jwks.service.ts:66 [this.logger.log] this.issuer
+auth/jwks.service.ts:112 [this.logger.debug] STR
+auth/jwks.service.ts:114 [this.logger.warn] err.claim
+auth/jwks.service.ts:116 [this.logger.warn] STR
+auth/jwks.service.ts:118 [this.logger.warn] STR
+auth/jwks.service.ts:120 [this.logger.warn] (err as Error).message
+ai/client-ai-context.service.ts:120 [this.logger.warn] userId
+ai/ai.service.ts:526 [this.logger.warn] error instanceof Error ? error.message : String(error) ,
+ai/ai.service.ts:765 [this.logger.warn] error instanceof Error ? error.message : String(error) ,
+ai/ai-guardrails.service.ts:121 [this.logger.log] applied.join( STR )
+ai/gateway/ai-approval.service.ts:157 [this.logger.error] draft.id draft.capability msg ,
+ai/gateway/ai-gateway.service.ts:164 [this.logger.warn] { event: STR , capability: req.capability, requesterId: req.requester.id, requesterRole: req.requester.role, subjectUserId: req.subjectUserId ?? null, ip: req.ip ?? null, }, req.capability req.requester.role ,
+ai/gateway/ai-gateway.service.ts:324 [this.logger.warn] resolved.provider errorMsg
+ai/gateway/ai-gateway.service.ts:369 [this.logger.error] req.capability (err as Error).message ,
+ai/gateway/ai-gateway.service.ts:480 [this.logger.error] req.capability msg
+ai/gateway/providers/provider-registry.ts:28 [this.logger.warn] name
+ai/gateway/materialisers/assign-workout.materialiser.ts:117 [this.logger.warn] { event: STR , capability: this.capability, draftId: draft.id, requesterId: draft.requester_id, requesterRole: requester?.role ?? null, }, STR ,
+ai/gateway/materialisers/assign-workout.materialiser.ts:148 [this.logger.warn] draft.id (err as Error).message ,
+ai/gateway/materialisers/assign-workout.materialiser.ts:263 [this.logger.error] draft.id ,
+ai/gateway/materialisers/assign-workout.materialiser.ts:290 [this.logger.warn] { event: STR , capability: this.capability, draftId: draft.id, assignmentId, error: (err as Error).message, }, STR ,
+ai/gateway/materialisers/create-workout-plan.materialiser.ts:156 [this.logger.warn] { event: STR , capability: this.capability, draftId: draft.id, requesterId: draft.requester_id, targetClientId: payload.target_client_id, }, STR ,
+ai/gateway/materialisers/create-workout-plan.materialiser.ts:369 [this.logger.warn] draft.id (err as Error).message ,
+ai/gateway/materialisers/coach-message.materialiser.ts:136 [this.logger.warn] draft.id (err as Error).message ,
+ai/gateway/materialisers/coach-message.materialiser.ts:200 [this.logger.error] draft.id (rollbackErr as Error).message ,
+ai/gateway/materialisers/coach-message.materialiser.ts:277 [this.logger.warn] draft.id ,
+ai/gateway/materialisers/coach-wearable-message.materialiser.ts:150 [this.logger.warn] draft.id (err as Error).message ,
+ai/gateway/materialisers/coach-wearable-message.materialiser.ts:196 [this.logger.error] draft.id (rollbackErr as Error).message ,
+ai/gateway/materialisers/coach-wearable-message.materialiser.ts:266 [this.logger.warn] draft.id ,
+ai/gateway/materialisers/send-notification.materialiser.ts:103 [this.logger.warn] { event: STR , capability: this.capability, draftId: draft.id, requesterId: draft.requester_id, requesterRole: requester?.role ?? null, }, STR ,
+ai/gateway/materialisers/send-notification.materialiser.ts:125 [this.logger.warn] draft.id (err as Error).message ,
+ai/gateway/materialisers/send-notification.materialiser.ts:163 [this.logger.error] draft.id ,
+ai/gateway/materialisers/assign-meal-plan.materialiser.ts:98 [this.logger.warn] { event: STR , capability: this.capability, draftId: draft.id, requesterId: draft.requester_id, requesterRole: requester?.role ?? null, }, STR ,
+ai/gateway/materialisers/assign-meal-plan.materialiser.ts:126 [this.logger.warn] draft.id (err as Error).message ,
+ai/gateway/materialisers/assign-meal-plan.materialiser.ts:178 [this.logger.error] draft.id ,
+ai/gateway/materialisers/assign-meal-plan.materialiser.ts:201 [this.logger.warn] { event: STR , capability: this.capability, draftId: draft.id, assignmentId, error: (err as Error).message, }, STR ,
+ai/gateway/materialisers/capability-materialiser.registry.ts:49 [this.logger.warn] m.capability ,
+ai/gateway/materialisers/edit-workout-plan.materialiser.ts:347 [this.logger.warn] draft.id (err as Error).message ,
+ai/gateway/materialisers/edit-workout-plan.materialiser.ts:418 [this.logger.warn] { event: STR , capability: this.capability, planId, requesterId, clientId: a.client_id, }, STR ,
+ai/adapters/anthropic.adapter.ts:152 [this.logger.warn] status attempt + 1 delay ,
+ai/adapters/anthropic.adapter.ts:200 [this.logger.warn] errorMessageOf(err) ,
+ai/adapters/anthropic.adapter.ts:266 [this.logger.warn] errorMessageOf(err)
+ai/coach/weekly-insight.cron.ts:39 [this.logger.debug] STR
+ai/coach/weekly-insight.cron.ts:43 [this.logger.warn] STR
+ai/coach/weekly-insight.cron.ts:47 [this.logger.log] coachIds.length
+ai/coach/weekly-insight.cron.ts:56 [this.logger.log] { event: STR , coachId }, coachId ,
+ai/coach/weekly-insight.cron.ts:66 [this.logger.log] { event: STR , coachId, skipped: rosterIds.length - clientIds.length, }, coachId rosterIds.length - clientIds.length ,
+ai/coach/weekly-insight.cron.ts:83 [this.logger.warn] coachId clientId err instanceof Error ? err.message : String(err) ,
+ai/coach/weekly-insight.cron.ts:89 [this.logger.log] { event: STR , total: coachIds.length, skippedDormant }, coachIds.length skippedDormant ,
+ai/coach/coach-ai.service.ts:413 [this.logger.warn] day.day day.daily_totals.calories target Math.round(drift * 100) ,
+ai/coach/coach-ai.service.ts:421 [this.logger.warn] day.day day.daily_totals.protein_g protein Math.round(drift * 100) ,
+ai/coach/coach-ai-state.service.ts:55 [this.logger.warn] STR
+ai/coach/coach-ai-state.service.ts:89 [this.logger.log] COACH_AI_MODEL
+ai/coach/coach-ai-state.service.ts:97 [this.logger.warn] msg ,
+ai/context/client-context.service.ts:92 [this.logger.warn] clientId
+video/mux-webhook.controller.ts:143 [this.logger.warn] uploadId ,
+video/mux-webhook.controller.ts:249 [this.logger.warn] assetId ,
+roman/roman-erasure.sweep.ts:112 [Sentry..captureException] diagnostic, { tags: { job: STR , trigger }, }
+roman/roman-erasure.sweep.ts:115 [this.logger.error] trigger String(diagnostic)
+roman/roman-erasure.sweep.ts:124 [this.logger.error] trigger String(safeDiagnostic(err)) ,
+roman/roman-erasure.sweep.ts:132 [this.logger.warn] line
+roman/roman-erasure.sweep.ts:133 [this.logger.log] line
+roman/roman-erasure.sweep.ts:136 [Sentry..captureException] sweepAlert( STR , trigger erased failed remainingText , ), { tags: { job: STR , trigger }, extra: { erased, failed, remaining, first_failure: firstFailure }, },
+roman/roman-erasure.sweep.ts:163 [Sentry..captureException] sweepAlert( STR , trigger this.retriesWithoutProgress why , ), { tags: { job: STR , trigger } },
+roman/roman-erasure.sweep.ts:170 [this.logger.error] trigger this.retriesWithoutProgress why ,
+roman/roman.service.ts:219 [this.logger.error] surface String(safeDiagnostic(eraseErr)) ,
+roman/roman.service.ts:423 [this.logger.error] logLine String(diagnostic)
+roman/roman.service.ts:424 [Sentry..captureException] diagnostic, { tags: { feature: STR , op: meta.op , stage: meta.stage }, }
+roman/roman.service.ts:485 [this.logger.error] erased left
+roman/roman.service.ts:538 [this.logger.error] sessionId left
+roman/roman.service.ts:639 [this.logger.error] row.id diagnostic
+roman/roman.service.ts:963 [this.logger.warn] session.id err instanceof Error ? err.message : String(err) ,
+health/health.controller.ts:86 [this.logger.error] failure instanceof ReadinessTimeout ? { event: STR , operation: STR , timeout_ms: READINESS_TIMEOUT_MS, } : { event: STR , operation: STR , },
+invite-grant/invite-grant.service.ts:448 [this.logger.warn] input.clientUserId pkg.id input.source ,
+invite-grant/invite-grant.service.ts:709 [this.logger.warn] status input.clientUserId input.coachUserId packageId binding.code detail ,
+invite-grant/invite-grant.service.ts:934 [this.logger.warn] clientId coachId err instanceof Error ? err.message : String(err) ,
+coach-connect/coach-connect.service.ts:211 [this.logger.warn] coachUserId err.message ,
+coach-connect/coach-connect.service.ts:422 [this.logger.warn] coachUserId (err as Error)?.message ?? err ,
+extension-pair/extension-pair.service.ts:165 [this.logger.error] STR
+extension-pair/extension-pair.service.ts:246 [this.logger.warn] STR
+ai-credits/coach-ai-budget.scheduler.ts:34 [this.logger.log] STR
+ai-credits/coach-ai-budget.scheduler.ts:44 [this.logger.log] { event: STR , rolled: result.rolled, duration_ms: durationMs, }, result.rolled durationMs ,
+ai-credits/coach-ai-budget.scheduler.ts:56 [this.logger.error] { event: STR , err: (err as Error).message, duration_ms: Date.now() - start, }, STR ,
+ai-credits/coach-ai-credit-pack.service.ts:212 [this.logger.warn] { event: STR , stripeEventId: event.id }, STR ,
+ai-credits/coach-ai-credit-pack.service.ts:245 [this.logger.warn] { event: STR , stripeEventId: event.id, stripeSessionId: obj.id, }, STR ,
+ai-credits/coach-ai-credit-pack.service.ts:258 [this.logger.warn] { event: STR , stripeEventId: event.id, stripeSessionId: obj.id, }, STR ,
+ai-credits/coach-ai-credit-pack.service.ts:277 [this.logger.warn] { event: STR , stripeEventId: event.id, stripeSessionId: obj.id, ccppPaidCents: existing.paid_cents, stripeAmountTotal: obj.amount_total, }, STR ,
+ai-credits/coach-ai-credit-pack.service.ts:345 [this.logger.warn] { coachId: headCoachId, err: (err as Error).message }, STR ,
+ai-credits/coach-ai-budget.service.ts:113 [this.logger.log] { event: STR , subCoachId: userId, oldHeadCoachId: cached, newHeadCoachId: resolved, }, STR ,
+ai-credits/coach-ai-budget.service.ts:224 [this.logger.warn] { event: STR , coachId: args.coachId, capability: args.capability, contextId: args.contextId ?? null, actualCostCents: args.actualCostCents, ceilingCents, actualUsedCents: budget.actual_used_cents, periodEnd: budget.peri
+ai-credits/coach-ai-budget.service.ts:315 [this.logger.warn] { event: STR , coachId: args.coachId, stripeCheckoutSessionId: args.stripeCheckoutSessionId, }, STR ,
+ai-credits/coach-ai-budget.service.ts:419 [this.logger.log] { event: STR , coachId: args.coachId, displayedCents: args.displayedCents, actorOwnerId: args.actorOwnerId, reason: args.reason, purchaseId: purchase.id, }, STR ,
+ai-credits/coach-ai-budget.service.ts:470 [this.logger.log] { event: STR , purchaseId: purchase.id, coachId: purchase.coach_user_id, paidCents: purchase.paid_cents, actorOwnerId: args.actorOwnerId, reason: args.reason, }, STR ,
+secrets/secrets.service.ts:232 [this.logger.warn] secretName ,
+secrets/secrets.service.ts:245 [this.logger.log] secretName rotatedByUserId ,
+notifications/digest.scheduler.ts:43 [this.logger.debug] STR
+notifications/digest.scheduler.ts:46 [this.logger.log] STR
+notifications/digest.scheduler.ts:61 [this.logger.debug] STR
+notifications/digest.scheduler.ts:64 [this.logger.log] STR
+notifications/digest.scheduler.ts:76 [this.logger.log] STR
+notifications/digest.service.ts:65 [this.logger.log] clients.length windowDate
+notifications/digest.service.ts:82 [this.logger.log] coaches.length windowDate
+notifications/digest.service.ts:98 [this.logger.log] clients.length windowDate
+notifications/digest.service.ts:106 [this.logger.log] coaches.length windowDate
+notifications/digest.service.ts:127 [this.logger.debug] client.id digestKind windowDate ,
+notifications/digest.service.ts:168 [this.logger.error] client.id digestKind msg
+notifications/digest.service.ts:184 [this.logger.debug] coach.id digestKind windowDate ,
+notifications/digest.service.ts:229 [this.logger.error] coach.id digestKind msg
+notifications/digest.service.ts:429 [this.logger.log] userId templateKey
+notifications/digest.service.ts:441 [this.logger.warn] STR
+notifications/digest.service.ts:463 [this.logger.warn] STR
+notifications/digest.service.ts:490 [this.logger.warn] STR
+notifications/digest.service.ts:523 [this.logger.warn] filePath
+notifications/coach-first-payment.service.ts:121 [this.logger.log] { event: STR , coachId }
+notifications/coach-first-payment.service.ts:159 [this.logger.log] { event: STR , coachId }
+notifications/notifications.service.ts:437 [this.logger.debug] input.user_id input.kind
+notifications/notifications.service.ts:582 [this.logger.log] coachId payload.alertId payload.alertType payload.severity category ,
+notifications/notifications.service.ts:593 [this.logger.warn] coachId
+notifications/notifications.service.ts:612 [this.logger.error] coachId (err as Error).message , err
+notifications/notifications.service.ts:693 [this.logger.error] userId errorCode
+notifications/notifications.service.ts:713 [this.logger.error] userId , err
+notifications/notifications.service.ts:748 [this.logger.error] userId receipt.details?.error ?? STR ,
+notifications/notifications.service.ts:755 [this.logger.warn] STR , err
+notifications/notifications.service.ts:782 [this.logger.error] STR , err
+notifications/recipient-timezone.ts:88 [logger.warn] recipientUserId (err as Error).name ,
+notifications/emitters/build-week-day-unlocked.emitter.ts:54 [this.logger.warn] clientUserId (err as Error).message ,
+notifications/emitters/first-payment.emitter.ts:111 [this.logger.log] { event: STR , coachId, category: NotificationCategory.COACH_DIRECT, }
+notifications/emitters/milestone-reached.emitter.ts:53 [this.logger.warn] userId (err as Error).message ,
+notifications/emitters/booking.emitter.ts:259 [this.logger.warn] args.kind args.userId (err as Error).message ,
+notifications/emitters/missed-checkin.emitter.ts:83 [this.logger.warn] (err as Error).message ,
+notifications/emitters/message-received.emitter.ts:51 [this.logger.warn] recipientUserId (err as Error).message ,
+notifications/emitters/weight-trend-alert.emitter.ts:66 [this.logger.warn] userId (err as Error).message ,
+notifications/emitters/coach-alert.emitter.ts:72 [this.logger.warn] payload.coachId (err as Error).message ,
+notifications/emitters/checkin-submitted.emitter.ts:63 [this.logger.warn] payload.coachId (err as Error).message ,
+notifications/nudges/nudge.scheduler.ts:50 [this.logger.debug] STR
+notifications/nudges/nudge.scheduler.ts:57 [this.logger.log] reprocessed
+notifications/nudges/nudge.scheduler.ts:60 [this.logger.warn] (err as Error).message ,
+notifications/nudges/nudge.scheduler.ts:67 [this.logger.log] candidates.length
+notifications/nudges/nudge.scheduler.ts:72 [this.logger.error] STR , err
+notifications/nudges/nudge-engine.service.ts:112 [this.logger.debug] candidate.user_id candidate.trigger_type ,
+notifications/nudges/nudge-engine.service.ts:118 [this.logger.error] candidate.user_id candidate.trigger_type , err,
+notifications/nudges/nudge-engine.service.ts:167 [this.logger.debug] candidate.user_id candidate.trigger_type quiet.deferred_until?.toISOString() ,
+notifications/nudges/nudge-engine.service.ts:196 [this.logger.error] candidate.user_id , err,
+notifications/nudges/nudge-engine.service.ts:281 [this.logger.debug] userId bucket.toISOString() ,
+notifications/nudges/nudge-engine.service.ts:348 [this.logger.error] candidate.user_id , err,
+notifications/nudges/nudge-engine.service.ts:408 [this.logger.warn] candidate.user_id candidate.trigger_type (err as Error).message ,
+notifications/nudges/nudge-engine.service.ts:430 [this.logger.warn] candidate.user_id candidate.trigger_type (err as Error).message ,
+notifications/nudges/nudge-engine.service.ts:462 [this.logger.warn] candidate.user_id candidate.trigger_type (err as Error).message ,
+notifications/nudges/nudge-engine.service.ts:496 [this.logger.error] logId , err
+notifications/nudges/nudge-engine.service.ts:498 [this.logger.log] candidate.user_id candidate.trigger_type status channels.join( STR ) || STR ,
+throttler/login-throttle-reset.service.ts:120 [this.logger.warn] key err instanceof Error ? err.message : String(err) ,
+throttler/login-throttle-reset.service.ts:131 [this.logger.warn] key rec.totalHits limit ,
+throttler/login-throttle-reset.service.ts:139 [this.logger.warn] op err instanceof Error ? err.message : String(err) ,
+throttler/login-throttle-reset.service.ts:215 [this.logger.warn] err instanceof Error ? err.message : String(err) ,
+throttler/throttler.config.ts:609 [logger.warn] { message: STR , throttler: name, error: err instanceof Error ? err.message : String(err), }
+throttler/throttler.config.ts:654 [logger.log] STR ,
+throttler/throttler.config.ts:676 [logger.warn] err.message
+throttler/throttler.config.ts:679 [logger.log] throttlers .map((t) => t.name) .join( STR ) ,
+throttler/throttler.config.ts:694 [logger.log] redisHost
+billing/stripe-webhook.controller.ts:75 [this.logger.error] STR ,
+billing/subscription.guard.ts:248 [this.logger.warn] enforce ? STR : STR coachId currentState reason method route ,
+billing/subscription.guard.ts:263 [this.logger.warn] { err }, STR
+billing/billing.service.ts:159 [this.logger.warn] pi.id (err as Error).message ,
+billing/billing.service.ts:383 [this.logger.warn] pi.id (err as Error).message ,
+billing/billing.service.ts:455 [this.logger.warn] pi.id (err as Error).message ,
+billing/billing.service.ts:470 [this.logger.log] pi?.id ?? STR ,
+billing/billing.service.ts:544 [this.logger.log] event.type
+billing/billing.service.ts:567 [this.logger.error] event.id event.type (err as Error)?.message ?? String(err) ,
+billing/billing.service.ts:594 [this.logger.warn] event.id event.type dripAlertPurchaseId dripAlertPurchaseId dripAlertPurchaseId ,
+billing/billing.service.ts:629 [this.logger.warn] dripAlertPurchaseId (err as Error).message ,
+billing/billing.service.ts:670 [this.logger.warn] piId (err as Error).message ,
+billing/billing.service.ts:751 [this.logger.warn] subId (err as Error).message ,
+billing/billing.service.ts:811 [this.logger.warn] event.id
+billing/billing.service.ts:883 [this.logger.warn] sub.id sub.customer ,
+billing/billing.service.ts:1122 [this.logger.warn] args.coachId ,
+billing/billing.service.ts:1143 [this.logger.error] args.coachId err instanceof Error ? err.message : STR ,
+billing/billing.service.ts:1199 [this.logger.warn] event.id event.type ,
+billing/billing.service.ts:1205 [this.logger.warn] event.id event.type ,
+billing/billing.service.ts:1240 [this.logger.warn] event.id ,
+billing/billing.service.ts:1246 [this.logger.warn] event.id ,
+billing/billing.service.ts:1307 [this.logger.warn] event.id ,
+billing/billing.service.ts:1320 [this.logger.warn] event.id transfer.id ,
+billing/billing.service.ts:1348 [this.logger.warn] event.id transfer.id coachId ?? STR amountCents failureReason ?? STR ,
+billing/billing.service.ts:1356 [this.logger.warn] event.id transfer.id ,
+billing/billing.service.ts:1362 [this.logger.warn] event.id transfer.id ,
+billing/billing.service.ts:1390 [this.logger.warn] transfer.id coachId (err as Error).message ,
+billing/billing.service.ts:1445 [this.logger.warn] event.type event.id ,
+billing/billing.service.ts:1451 [this.logger.warn] event.type event.id payout.id ,
+billing/billing.service.ts:1463 [this.logger.warn] event.type event.id payout.id accountId ,
+billing/billing.service.ts:1500 [this.logger.warn] event.type event.id payout.id accountId coachId amountCents failureReason ?? STR ,
+billing/billing.service.ts:1504 [this.logger.warn] event.type event.id payout.id ,
+billing/billing.service.ts:1532 [this.logger.warn] event.type payout.id coachId (err as Error).message ,
+billing/owner-billing.controller.ts:241 [this.logger.warn] coach.id err.stripeCode err.httpStatus ,
+billing/owner-billing.controller.ts:342 [this.logger.log] req.user.id coachId immediately ? STR : STR status ,
+billing/owner-billing.controller.ts:355 [this.logger.warn] coachId err.stripeCode err.httpStatus ,
+scout/scout-ledger-backfill.cli.ts:54 [console.error] detail
+scout/scout.service.ts:242 [this.logger.warn] sk err instanceof Error ? err.name : STR ,
+scout/scout.service.ts:295 [this.logger.warn] coachId dto.intent_id err instanceof Error ? err.name : STR ,
+scout/scout.service.ts:550 [this.logger.error] intentId + STR ,
+scout/scout.service.ts:571 [this.logger.error] intentId + STR ,
+scout/scout.service.ts:600 [this.logger.warn] coachId err instanceof Error ? err.name : STR ,
+scout/scout-reconstruct.service.ts:133 [this.logger.warn] JSON.stringify(summary)
+scout/scout-reconstruct.service.ts:135 [this.logger.log] JSON.stringify(summary)
+scout/scout-reconstruct.service.ts:220 [this.logger.warn] JSON.stringify(summary)
+scout/scout-reconstruct.service.ts:222 [this.logger.log] JSON.stringify(summary)
+scout/scout-reconstruct.service.ts:406 [this.logger.warn] JSON.stringify({ intent_id: intentId, coach_id: coachId, staged, max: RECONSTRUCT_MAX_ROWS, }) ,
+analytics/analytics.service.ts:60 [this.logger.warn] STR ,
+analytics/analytics.service.ts:69 [this.logger.warn] (err as Error).message
+regimes/regimes.service.ts:199 [this.logger.log] programId coachId ,
+regimes/regimes.service.ts:334 [this.logger.log] id coachId
+regimes/regime-revision-retention.service.ts:89 [this.logger.log] result.count programId retention ,
+regimes/partial-refund-decision.service.ts:119 [this.logger.log] args.client_purchase_id args.stripe_refund_id ,
+regimes/partial-refund-decision.service.ts:127 [this.logger.log] args.client_purchase_id args.stripe_refund_id ,
+regimes/partial-refund-decision.service.ts:229 [this.logger.log] stripeRefundId decision dropsCanceled coachUserId ,
+first-win/first-win.service.ts:178 [this.logger.warn] STR
+first-win/first-win.service.ts:183 [this.logger.error] STR , err
+engagement/workout-reminder.service.ts:124 [this.logger.log] s.considered s.sent s.failed s.opted_out s.locked_out s.already_logged ,
+engagement/workout-reminder.service.ts:129 [this.logger.error] err instanceof Error ? err.name : STR ,
+engagement/workout-reminder.service.ts:179 [this.logger.warn] row.client_id err instanceof Error ? err.name : STR ,
+engagement/workout-reminder.service.ts:340 [this.logger.log] n
+engagement/workout-reminder.service.ts:343 [this.logger.warn] err instanceof Error ? err.name : STR ,
+engagement/coach-welcome.service.ts:133 [this.logger.log] stats.scheduled stats.skipped stats.sent stats.cancelled stats.retried stats.failed ,
+engagement/coach-welcome.service.ts:138 [this.logger.error] err instanceof Error ? err.name : STR ,
+engagement/coach-welcome.service.ts:169 [this.logger.log] n
+engagement/coach-welcome.service.ts:172 [this.logger.warn] err instanceof Error ? err.name : STR ,
+engagement/coach-welcome.service.ts:326 [this.logger.warn] job.id
+engagement/coach-welcome.service.ts:343 [this.logger.log] job.id reason
+engagement/coach-welcome.service.ts:457 [this.logger.error] job.id reason
+engagement/coach-welcome.service.ts:470 [this.logger.warn] job.id attempt reason
+ai-egress/ai-egress.service.ts:184 [this.logger.error] surface
+ai-egress/ai-egress.service.ts:191 [this.logger.error] surface
+ai-egress/ai-egress.service.ts:195 [this.logger.error] surface processor ,
+ai-egress/ai-egress.service.ts:203 [this.logger.log] surface ids.length missing ,
+ai-egress/ai-egress.service.ts:231 [this.logger.warn] STR
+ai-egress/ai-egress.service.ts:260 [this.logger.warn] surface processor statusOf(err) ?? STR retry + 2 ,
+ai-egress/ai-egress.service.ts:279 [this.logger.error] surface
+ai-egress/ai-egress.service.ts:335 [this.logger.error] surface
+insights/holistic-insights.service.ts:78 [this.logger.warn] userId reason

@@ -1,0 +1,428 @@
+﻿2026-10-04T19:35:59.0698871Z ##[group]Run set -euo pipefail
+2026-10-04T19:35:59.0699219Z [36;1mset -euo pipefail[0m
+2026-10-04T19:35:59.0699624Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T19:35:59.0700122Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T19:35:59.0700483Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T19:35:59.0700771Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T19:35:59.0776364Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T19:35:59.0777012Z env:
+2026-10-04T19:35:59.0777427Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T19:35:59.0778058Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T19:35:59.0778643Z ##[endgroup]
+2026-10-04T19:35:59.0883786Z specs: test/audit-sol-t23-119-672.spec.ts test/audit-sol-t23-119-673.spec.ts test/b-trials-3-fix-round.spec.ts test/b-trials-t2-fix-round-8.spec.ts test/b-trials-t2-fix-round-6.spec.ts test/b-trials-t2-idempotent-create-http.spec.ts test/b-trials-notice-and-webhook.spec.ts test/b-trials-idempotent-create-compose.spec.ts
+2026-10-04T19:36:03.0048891Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0107826Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0167645Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.0227713Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0277815Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0418445Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0448014Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0507878Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0515292Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:23 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=timeout (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.0528410Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0568432Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.0572407Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.0577117Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.0607996Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=4 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.0638074Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=5 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.0667932Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0671356Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T19:36:03.0674714Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.0678671Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.1172631Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.1176293Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.1178547Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.1180448Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.1181886Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push outcome dropped (lease lost) notice=row_1[39m
+2026-10-04T19:36:03.1183843Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice email outcome dropped (lease lost) notice=row_1[39m
+2026-10-04T19:36:03.1186613Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:38 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push still running after abort notice=row_1; lease held[39m
+2026-10-04T19:36:03.4943220Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.4946592Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.4949551Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.4951897Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.4957624Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T19:36:03.4966793Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.4969619Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.4971728Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.4973800Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.4976748Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T19:36:03.5273262Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.5278614Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T19:36:03.5318239Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.5320867Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.5323965Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=state_unknown (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T19:36:03.5334567Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.5343645Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.5354024Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:03.5448527Z PASS test/b-trials-3-fix-round.spec.ts (122 MB heap size)
+2026-10-04T19:36:04.6557200Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:04.6559721Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=row_1 code=card_state_unknown[39m
+2026-10-04T19:36:04.6562100Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:04.6564751Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6567829Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6569676Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6571172Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:09 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase p-0 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6573009Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:18 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase p-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6574438Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:27 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase p-2 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6576186Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:36 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase p-3 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6577661Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:45 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase p-4 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6579066Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:54 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase p-5 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6580504Z [33m[Nest] 3082  - [39m10/09/2026, 5:01:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase p-6 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6581898Z [33m[Nest] 3082  - [39m10/09/2026, 5:01:08 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase p-7 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.6757936Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:04 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T19:36:04.6847429Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:04 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T19:36:04.6896045Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:04 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T19:36:04.7039890Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:04 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:04.7125029Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:04 PM [31m  ERROR[39m [38;5;3m[BillingService] [39m[31mStripe event handler failed event=evt_t2 type=customer.subscription.trial_will_end: db down[39m
+2026-10-04T19:36:04.7490288Z PASS test/b-trials-notice-and-webhook.spec.ts (203 MB heap size)
+2026-10-04T19:36:05.0790065Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:04 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mtrial conflict: cancelled subscription sub_1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:05.2966484Z [31m[Nest] 3082  - [39m10/09/2026, 5:00:30 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=trial-ending to=client@example.test: synthetic abort[39m
+2026-10-04T19:36:05.3326862Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.3329021Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p code=card_state_unknown[39m
+2026-10-04T19:36:05.3330964Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.3333066Z [32m[Nest] 3082  - [39m10/09/2026, 5:00:30 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=synthetic-provider-id[39m
+2026-10-04T19:36:05.3341025Z FAIL test/audit-sol-t23-119-672.spec.ts (228 MB heap size)
+2026-10-04T19:36:05.3342740Z   ● AUD-SOL-T23-119 — customer-card truth across final preparation › does not promise a charge after the only customer default card is removed during the final purchase read
+2026-10-04T19:36:05.3344559Z 
+2026-10-04T19:36:05.3345246Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T19:36:05.3346120Z 
+2026-10-04T19:36:05.3346466Z     Expected substring: not "will be charged"
+2026-10-04T19:36:05.3347591Z     Received string:        "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before."
+2026-10-04T19:36:05.3348133Z 
+2026-10-04T19:36:05.3348582Z     [0m [90m 116 |[39m     expect(customerCard)[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T19:36:05.3349604Z      [90m 117 |[39m     expect(w[33m.[39mnotifications[33m.[39mpushToUser)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-04T19:36:05.3351334Z     [31m[1m>[22m[39m[90m 118 |[39m     expect([33mString[39m(w[33m.[39mnotifications[33m.[39mpushToUser[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m2[39m]))[33m.[39mnot[33m.[39mtoContain([32m'will be charged'[39m)[33m;[39m
+2026-10-04T19:36:05.3352588Z      [90m     |[39m                                                                     [31m[1m^[22m[39m
+2026-10-04T19:36:05.3353021Z      [90m 119 |[39m   })[33m;[39m
+2026-10-04T19:36:05.3353341Z      [90m 120 |[39m })[33m;[39m
+2026-10-04T19:36:05.3354534Z      [90m 121 |[39m [36mconst[39m tx [33m=[39m (w[33m:[39m [33mWorld[39m) [33m=>[39m stub[33m<[39m[33mParameters[39m[33m<[39m[33mTrialNoticeService[39m[[32m'recordNotice'[39m][33m>[39m[[35m0[39m][33m>[39m(w[33m.[39mprisma)[33m;[39m[0m
+2026-10-04T19:36:05.3355318Z 
+2026-10-04T19:36:05.3355835Z       at Object.<anonymous> (test/audit-sol-t23-119-672.spec.ts:118:69)
+2026-10-04T19:36:05.3356241Z 
+2026-10-04T19:36:05.8417907Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8419431Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0000 code=card_state_unknown[39m
+2026-10-04T19:36:05.8420705Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8422029Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0001 code=card_state_unknown[39m
+2026-10-04T19:36:05.8423615Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8424904Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0002 code=card_state_unknown[39m
+2026-10-04T19:36:05.8426402Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8427667Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0003 code=card_state_unknown[39m
+2026-10-04T19:36:05.8428904Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8430161Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0004 code=card_state_unknown[39m
+2026-10-04T19:36:05.8431341Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8432573Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0005 code=card_state_unknown[39m
+2026-10-04T19:36:05.8433994Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8435248Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0006 code=card_state_unknown[39m
+2026-10-04T19:36:05.8436823Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8438087Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0007 code=card_state_unknown[39m
+2026-10-04T19:36:05.8439282Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8440529Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0008 code=card_state_unknown[39m
+2026-10-04T19:36:05.8441716Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8442966Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0009 code=card_state_unknown[39m
+2026-10-04T19:36:05.8444145Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8445669Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0010 code=card_state_unknown[39m
+2026-10-04T19:36:05.8446919Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8448172Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0011 code=card_state_unknown[39m
+2026-10-04T19:36:05.8449518Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8450753Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0012 code=card_state_unknown[39m
+2026-10-04T19:36:05.8451942Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8453184Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0013 code=card_state_unknown[39m
+2026-10-04T19:36:05.8454368Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8456039Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0014 code=card_state_unknown[39m
+2026-10-04T19:36:05.8457451Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8458736Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0015 code=card_state_unknown[39m
+2026-10-04T19:36:05.8460145Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8461409Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0016 code=card_state_unknown[39m
+2026-10-04T19:36:05.8462605Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8463911Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0017 code=card_state_unknown[39m
+2026-10-04T19:36:05.8465111Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8466637Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0018 code=card_state_unknown[39m
+2026-10-04T19:36:05.8467845Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8469091Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0019 code=card_state_unknown[39m
+2026-10-04T19:36:05.8470289Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8471532Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0020 code=card_state_unknown[39m
+2026-10-04T19:36:05.8472722Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8473973Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0021 code=card_state_unknown[39m
+2026-10-04T19:36:05.8475153Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8477292Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0022 code=card_state_unknown[39m
+2026-10-04T19:36:05.8478545Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8479806Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0023 code=card_state_unknown[39m
+2026-10-04T19:36:05.8481017Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8482284Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0024 code=card_state_unknown[39m
+2026-10-04T19:36:05.8483480Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8484721Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0025 code=card_state_unknown[39m
+2026-10-04T19:36:05.8486266Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8487764Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0026 code=card_state_unknown[39m
+2026-10-04T19:36:05.8489520Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8491949Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0027 code=card_state_unknown[39m
+2026-10-04T19:36:05.8494324Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8497068Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0028 code=card_state_unknown[39m
+2026-10-04T19:36:05.8499376Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8501754Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0029 code=card_state_unknown[39m
+2026-10-04T19:36:05.8504035Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8506673Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0030 code=card_state_unknown[39m
+2026-10-04T19:36:05.8508912Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8511239Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0031 code=card_state_unknown[39m
+2026-10-04T19:36:05.8513434Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8516130Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0032 code=card_state_unknown[39m
+2026-10-04T19:36:05.8518693Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8521036Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0033 code=card_state_unknown[39m
+2026-10-04T19:36:05.8523333Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8525891Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0034 code=card_state_unknown[39m
+2026-10-04T19:36:05.8528166Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8530584Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0035 code=card_state_unknown[39m
+2026-10-04T19:36:05.8532886Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8535237Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0036 code=card_state_unknown[39m
+2026-10-04T19:36:05.8537960Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8540289Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0037 code=card_state_unknown[39m
+2026-10-04T19:36:05.8542568Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8544922Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0038 code=card_state_unknown[39m
+2026-10-04T19:36:05.8547386Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8549763Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0039 code=card_state_unknown[39m
+2026-10-04T19:36:05.8552026Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8554378Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0040 code=card_state_unknown[39m
+2026-10-04T19:36:05.8556811Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8559235Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0041 code=card_state_unknown[39m
+2026-10-04T19:36:05.8561208Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8562533Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0042 code=card_state_unknown[39m
+2026-10-04T19:36:05.8563948Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8565245Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0043 code=card_state_unknown[39m
+2026-10-04T19:36:05.8566814Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8568091Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0044 code=card_state_unknown[39m
+2026-10-04T19:36:05.8569315Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8570562Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0045 code=card_state_unknown[39m
+2026-10-04T19:36:05.8571764Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8573009Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0046 code=card_state_unknown[39m
+2026-10-04T19:36:05.8574190Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8575777Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0047 code=card_state_unknown[39m
+2026-10-04T19:36:05.8576987Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8578243Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0048 code=card_state_unknown[39m
+2026-10-04T19:36:05.8579430Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8580670Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0049 code=card_state_unknown[39m
+2026-10-04T19:36:05.8581875Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8583119Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0050 code=card_state_unknown[39m
+2026-10-04T19:36:05.8584330Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8585742Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0051 code=card_state_unknown[39m
+2026-10-04T19:36:05.8586940Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8588197Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0052 code=card_state_unknown[39m
+2026-10-04T19:36:05.8589388Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8591274Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0053 code=card_state_unknown[39m
+2026-10-04T19:36:05.8593523Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8595768Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0054 code=card_state_unknown[39m
+2026-10-04T19:36:05.8597007Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8598251Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0055 code=card_state_unknown[39m
+2026-10-04T19:36:05.8599447Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8600697Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0056 code=card_state_unknown[39m
+2026-10-04T19:36:05.8601886Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8603140Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0057 code=card_state_unknown[39m
+2026-10-04T19:36:05.8604543Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8605910Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0058 code=card_state_unknown[39m
+2026-10-04T19:36:05.8607106Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8608342Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0059 code=card_state_unknown[39m
+2026-10-04T19:36:05.8609529Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8610769Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0060 code=card_state_unknown[39m
+2026-10-04T19:36:05.8611963Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8613205Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0061 code=card_state_unknown[39m
+2026-10-04T19:36:05.8614392Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8615748Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0062 code=card_state_unknown[39m
+2026-10-04T19:36:05.8616938Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8618207Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0063 code=card_state_unknown[39m
+2026-10-04T19:36:05.8619526Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8620762Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0064 code=card_state_unknown[39m
+2026-10-04T19:36:05.8621951Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8623199Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0065 code=card_state_unknown[39m
+2026-10-04T19:36:05.8624386Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8625836Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0066 code=card_state_unknown[39m
+2026-10-04T19:36:05.8627274Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8629807Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0067 code=card_state_unknown[39m
+2026-10-04T19:36:05.8632525Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8633936Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0068 code=card_state_unknown[39m
+2026-10-04T19:36:05.8635183Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8636624Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0069 code=card_state_unknown[39m
+2026-10-04T19:36:05.8637834Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8639081Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0070 code=card_state_unknown[39m
+2026-10-04T19:36:05.8640273Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8641506Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0071 code=card_state_unknown[39m
+2026-10-04T19:36:05.8642690Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8643938Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0072 code=card_state_unknown[39m
+2026-10-04T19:36:05.8645138Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8646506Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0073 code=card_state_unknown[39m
+2026-10-04T19:36:05.8647683Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8649124Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0074 code=card_state_unknown[39m
+2026-10-04T19:36:05.8650314Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8651544Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0075 code=card_state_unknown[39m
+2026-10-04T19:36:05.8652735Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8653972Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0076 code=card_state_unknown[39m
+2026-10-04T19:36:05.8655148Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8656521Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0077 code=card_state_unknown[39m
+2026-10-04T19:36:05.8657704Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8659123Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0078 code=card_state_unknown[39m
+2026-10-04T19:36:05.8660308Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8661548Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0079 code=card_state_unknown[39m
+2026-10-04T19:36:05.8662736Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8663968Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0080 code=card_state_unknown[39m
+2026-10-04T19:36:05.8665161Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8666536Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0081 code=card_state_unknown[39m
+2026-10-04T19:36:05.8667721Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8668967Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0082 code=card_state_unknown[39m
+2026-10-04T19:36:05.8670145Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8671398Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0083 code=card_state_unknown[39m
+2026-10-04T19:36:05.8672580Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8673958Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0084 code=card_state_unknown[39m
+2026-10-04T19:36:05.8675162Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8676547Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0085 code=card_state_unknown[39m
+2026-10-04T19:36:05.8677775Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8679022Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0086 code=card_state_unknown[39m
+2026-10-04T19:36:05.8680209Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8681458Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0087 code=card_state_unknown[39m
+2026-10-04T19:36:05.8682648Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8683891Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0088 code=card_state_unknown[39m
+2026-10-04T19:36:05.8685222Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8686622Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0089 code=card_state_unknown[39m
+2026-10-04T19:36:05.8687828Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8689072Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0090 code=card_state_unknown[39m
+2026-10-04T19:36:05.8690261Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8691506Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0091 code=card_state_unknown[39m
+2026-10-04T19:36:05.8692692Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8693943Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0092 code=card_state_unknown[39m
+2026-10-04T19:36:05.8695126Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8696493Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0093 code=card_state_unknown[39m
+2026-10-04T19:36:05.8697686Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8698923Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0094 code=card_state_unknown[39m
+2026-10-04T19:36:05.8700247Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8701480Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0095 code=card_state_unknown[39m
+2026-10-04T19:36:05.8702681Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8703941Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0096 code=card_state_unknown[39m
+2026-10-04T19:36:05.8705130Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8706499Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0097 code=card_state_unknown[39m
+2026-10-04T19:36:05.8707689Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8708929Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0098 code=card_state_unknown[39m
+2026-10-04T19:36:05.8710289Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8711529Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0099 code=card_state_unknown[39m
+2026-10-04T19:36:05.8712719Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8713961Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0100 code=card_state_unknown[39m
+2026-10-04T19:36:05.8715145Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8716521Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0101 code=card_state_unknown[39m
+2026-10-04T19:36:05.8717721Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8718959Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0102 code=card_state_unknown[39m
+2026-10-04T19:36:05.8720154Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8721392Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0103 code=card_state_unknown[39m
+2026-10-04T19:36:05.8722574Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8723822Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0104 code=card_state_unknown[39m
+2026-10-04T19:36:05.8725004Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8726504Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0105 code=card_state_unknown[39m
+2026-10-04T19:36:05.8727687Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8728918Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0106 code=card_state_unknown[39m
+2026-10-04T19:36:05.8730111Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8731348Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0107 code=card_state_unknown[39m
+2026-10-04T19:36:05.8732539Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8733783Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0108 code=card_state_unknown[39m
+2026-10-04T19:36:05.8734967Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8736458Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0109 code=card_state_unknown[39m
+2026-10-04T19:36:05.8737646Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8738895Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0110 code=card_state_unknown[39m
+2026-10-04T19:36:05.8740788Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8743037Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0111 code=card_state_unknown[39m
+2026-10-04T19:36:05.8745305Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8748020Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0112 code=card_state_unknown[39m
+2026-10-04T19:36:05.8750315Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8752671Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0113 code=card_state_unknown[39m
+2026-10-04T19:36:05.8754617Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8756297Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0114 code=card_state_unknown[39m
+2026-10-04T19:36:05.8757575Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8758897Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0115 code=card_state_unknown[39m
+2026-10-04T19:36:05.8760293Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8761547Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0116 code=card_state_unknown[39m
+2026-10-04T19:36:05.8762752Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8764004Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0117 code=card_state_unknown[39m
+2026-10-04T19:36:05.8765204Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8766628Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0118 code=card_state_unknown[39m
+2026-10-04T19:36:05.8767825Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T19:36:05.8769065Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:05 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p-0119 code=card_state_unknown[39m
+2026-10-04T19:36:05.9592804Z PASS test/b-trials-t2-fix-round-6.spec.ts (260 MB heap size)
+2026-10-04T19:36:06.9452750Z PASS test/b-trials-t2-idempotent-create-http.spec.ts (319 MB heap size)
+2026-10-04T19:36:07.3323552Z [31m[Nest] 3082  - [39m10/09/2026, 5:00:30 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=trial-ending to=client@example.test: abort[39m
+2026-10-04T19:36:07.3754063Z PASS test/b-trials-t2-fix-round-8.spec.ts (353 MB heap size)
+2026-10-04T19:36:07.7347582Z [32m[Nest] 3082  - [39m10/09/2026, 5:00:30 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T19:36:07.7349721Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:35 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice email still running after abort notice=notice-p; lease held[39m
+2026-10-04T19:36:07.7351714Z [32m[Nest] 3082  - [39m10/09/2026, 5:03:55 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-1[39m
+2026-10-04T19:36:07.7354214Z [32m[Nest] 3082  - [39m10/09/2026, 5:03:55 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T19:36:07.7356889Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:35 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push still running after abort notice=notice-p; lease held[39m
+2026-10-04T19:36:07.7359155Z [32m[Nest] 3082  - [39m10/04/2026, 7:36:07 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-1[39m
+2026-10-04T19:36:07.7361350Z [32m[Nest] 3082  - [39m10/04/2026, 7:36:07 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T19:36:07.7363553Z [32m[Nest] 3082  - [39m10/04/2026, 7:36:07 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-3[39m
+2026-10-04T19:36:07.7688894Z [31m[Nest] 3082  - [39m10/04/2026, 7:36:07 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase purchase-paid started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T19:36:07.7873269Z FAIL test/audit-sol-t23-119-673.spec.ts (378 MB heap size)
+2026-10-04T19:36:07.7875571Z   ● AUD-SOL-T23-119 — cancellation safety beyond one active snapshot › does not infer never-billed from past_due when previous paid conversion evidence is unavailable
+2026-10-04T19:36:07.7876736Z 
+2026-10-04T19:36:07.7877068Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T19:36:07.7877508Z 
+2026-10-04T19:36:07.7877731Z     Expected value: not "DELETE"
+2026-10-04T19:36:07.7878243Z     Received array:     ["GET", "DELETE"]
+2026-10-04T19:36:07.7878603Z 
+2026-10-04T19:36:07.7878942Z     [0m [90m 92 |[39m         )[33m;[39m
+2026-10-04T19:36:07.7879922Z      [90m 93 |[39m         [36mawait[39m service[33m.[39msweep([33mNOW[39m)[33m;[39m
+2026-10-04T19:36:07.7881286Z     [31m[1m>[22m[39m[90m 94 |[39m         expect(calls)[33m.[39mnot[33m.[39mtoContain([32m'DELETE'[39m)[33m;[39m
+2026-10-04T19:36:07.7882406Z      [90m    |[39m                           [31m[1m^[22m[39m
+2026-10-04T19:36:07.7883807Z      [90m 95 |[39m         expect(table[33m.[39mrows[[35m0[39m][33m.[39mstatus)[33m.[39mnot[33m.[39mtoBe([32m'cancelled'[39m)[33m;[39m
+2026-10-04T19:36:07.7884959Z      [90m 96 |[39m       } [36mfinally[39m {
+2026-10-04T19:36:07.7886767Z      [90m 97 |[39m         [36mif[39m (originalSecret [33m===[39m undefined) [36mdelete[39m process[33m.[39menv[33m.[39m[33mSTRIPE_SECRET_KEY[39m[33m;[39m[0m
+2026-10-04T19:36:07.7887767Z 
+2026-10-04T19:36:07.7888062Z       at test/audit-sol-t23-119-673.spec.ts:94:27
+2026-10-04T19:36:07.7888871Z 
+2026-10-04T19:36:07.7889769Z   ● AUD-SOL-T23-119 — cancellation safety beyond one active snapshot › does not infer never-billed from unpaid when previous paid conversion evidence is unavailable
+2026-10-04T19:36:07.7890410Z 
+2026-10-04T19:36:07.7890606Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T19:36:07.7890857Z 
+2026-10-04T19:36:07.7890988Z     Expected value: not "DELETE"
+2026-10-04T19:36:07.7891286Z     Received array:     ["GET", "DELETE"]
+2026-10-04T19:36:07.7891482Z 
+2026-10-04T19:36:07.7891661Z     [0m [90m 92 |[39m         )[33m;[39m
+2026-10-04T19:36:07.7892182Z      [90m 93 |[39m         [36mawait[39m service[33m.[39msweep([33mNOW[39m)[33m;[39m
+2026-10-04T19:36:07.7892934Z     [31m[1m>[22m[39m[90m 94 |[39m         expect(calls)[33m.[39mnot[33m.[39mtoContain([32m'DELETE'[39m)[33m;[39m
+2026-10-04T19:36:07.7893541Z      [90m    |[39m                           [31m[1m^[22m[39m
+2026-10-04T19:36:07.7894307Z      [90m 95 |[39m         expect(table[33m.[39mrows[[35m0[39m][33m.[39mstatus)[33m.[39mnot[33m.[39mtoBe([32m'cancelled'[39m)[33m;[39m
+2026-10-04T19:36:07.7894939Z      [90m 96 |[39m       } [36mfinally[39m {
+2026-10-04T19:36:07.7896202Z      [90m 97 |[39m         [36mif[39m (originalSecret [33m===[39m undefined) [36mdelete[39m process[33m.[39menv[33m.[39m[33mSTRIPE_SECRET_KEY[39m[33m;[39m[0m
+2026-10-04T19:36:07.7896770Z 
+2026-10-04T19:36:07.7896932Z       at test/audit-sol-t23-119-673.spec.ts:94:27
+2026-10-04T19:36:07.7897145Z 
+2026-10-04T19:36:07.7897964Z   ● AUD-SOL-T23-119 — cancellation safety beyond one active snapshot › a superseding webhook committed during the GET vetoes DELETE even when its older response says trialing far from end
+2026-10-04T19:36:07.7898642Z 
+2026-10-04T19:36:07.7898810Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-04T19:36:07.7899015Z 
+2026-10-04T19:36:07.7899138Z     Expected number of calls: 0
+2026-10-04T19:36:07.7899432Z     Received number of calls: 1
+2026-10-04T19:36:07.7899595Z 
+2026-10-04T19:36:07.7899692Z     1: "sub-race"
+2026-10-04T19:36:07.7899820Z 
+2026-10-04T19:36:07.7900150Z     [0m [90m 121 |[39m     expect(result)[33m.[39mtoBe([32m'stale'[39m)[33m;[39m
+2026-10-04T19:36:07.7900941Z      [90m 122 |[39m     expect(table[33m.[39mrows[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'superseded'[39m)[33m;[39m
+2026-10-04T19:36:07.7902073Z     [31m[1m>[22m[39m[90m 123 |[39m     expect(cancelSubscription)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T19:36:07.7902733Z      [90m     |[39m                                    [31m[1m^[22m[39m
+2026-10-04T19:36:07.7903124Z      [90m 124 |[39m   })[33m;[39m
+2026-10-04T19:36:07.7903429Z      [90m 125 |[39m
+2026-10-04T19:36:07.7904134Z      [90m 126 |[39m   it([32m'an unchanged, still-unbilled trial far from end cancels once'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T19:36:07.7904624Z 
+2026-10-04T19:36:07.7904860Z       at Object.<anonymous> (test/audit-sol-t23-119-673.spec.ts:123:36)
+2026-10-04T19:36:07.7905139Z 
+2026-10-04T19:36:07.9532684Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:09 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-0 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9535035Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:18 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9537780Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:27 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-2 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9540532Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:36 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-3 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9543763Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:45 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-4 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9546583Z [33m[Nest] 3082  - [39m10/09/2026, 5:00:54 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-5 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9549323Z [33m[Nest] 3082  - [39m10/09/2026, 5:01:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-6 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9551909Z [33m[Nest] 3082  - [39m10/09/2026, 5:01:08 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-7 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9554420Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:07 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-late (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9557372Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:07 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-late (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9560045Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:07 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-control (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9562808Z [33m[Nest] 3082  - [39m10/04/2026, 7:36:07 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: purchase purchase-paid billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:36:07.9576298Z PASS test/b-trials-idempotent-create-compose.spec.ts (392 MB heap size)
+2026-10-04T19:36:07.9594650Z 
+2026-10-04T19:36:07.9603084Z Test Suites: 2 failed, 6 passed, 8 total
+2026-10-04T19:36:07.9603761Z Tests:       4 failed, 142 passed, 146 total
+2026-10-04T19:36:07.9604091Z Snapshots:   0 total
+2026-10-04T19:36:07.9604331Z Time:        8.04 s
+2026-10-04T19:36:08.1563515Z Ran all test suites matching test/audit-sol-t23-119-672.spec.ts|test/audit-sol-t23-119-673.spec.ts|test/b-trials-3-fix-round.spec.ts|test/b-trials-t2-fix-round-8.spec.ts|test/b-trials-t2-fix-round-6.spec.ts|test/b-trials-t2-idempotent-create-http.spec.ts|test/b-trials-notice-and-webhook.spec.ts|test/b-trials-idempotent-create-compose.spec.ts.
+2026-10-04T19:36:08.1575129Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,603 @@
+﻿2026-10-04T17:17:19.9058558Z Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {65a00519-65cf-4c45-aab9-16015306b3ce}
+Azure Region: westus
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+##[group]Checking docker version
+##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+'1.48'
+Docker daemon API version: '1.48'
+##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+'1.48'
+Docker client API version: '1.48'
+##[endgroup]
+##[group]Clean up resources from previous jobs
+##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=dec940"
+##[command]/usr/bin/docker network prune --force --filter "label=dec940"
+##[endgroup]
+##[group]Create local container network
+##[command]/usr/bin/docker network create --label dec940 github_network_578a40920bf24f9cac63df417d79801c
+e206359bdeca2694a1f998ad420cd38f002f912ac98b8a616026604654960365
+##[endgroup]
+##[group]Starting redis service container
+##[command]/usr/bin/docker pull redis:7-alpine
+7-alpine: Pulling from library/redis
+16333ee0c00f: Pulling fs layer
+83234986c742: Pulling fs layer
+7eb50503c2b0: Pulling fs layer
+1522f9c6f453: Pulling fs layer
+9928009b15c8: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4eb14bae0e1d: Pulling fs layer
+9928009b15c8: Waiting
+4f4fb700ef54: Waiting
+1522f9c6f453: Waiting
+4eb14bae0e1d: Waiting
+83234986c742: Verifying Checksum
+83234986c742: Download complete
+7eb50503c2b0: Download complete
+16333ee0c00f: Download complete
+16333ee0c00f: Pull complete
+9928009b15c8: Verifying Checksum
+9928009b15c8: Download complete
+4f4fb700ef54: Verifying Checksum
+4f4fb700ef54: Download complete
+1522f9c6f453: Verifying Checksum
+1522f9c6f453: Download complete
+4eb14bae0e1d: Verifying Checksum
+4eb14bae0e1d: Download complete
+83234986c742: Pull complete
+7eb50503c2b0: Pull complete
+1522f9c6f453: Pull complete
+9928009b15c8: Pull complete
+4f4fb700ef54: Pull complete
+4eb14bae0e1d: Pull complete
+Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+Status: Downloaded newer image for redis:7-alpine
+docker.io/library/redis:7-alpine
+##[command]/usr/bin/docker create --name c36c6cd555a2427a9eed94ff4ece2961_redis7alpine_e81fd3 --label dec940 --network github_network_578a40920bf24f9cac63df417d79801c --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+##[command]/usr/bin/docker start 4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+##[command]/usr/bin/docker ps --all --filter id=4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9 Up Less than a second (health: starting)
+##[command]/usr/bin/docker port 4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+6379/tcp -> 0.0.0.0:6379
+6379/tcp -> [::]:6379
+##[endgroup]
+##[group]Waiting for all services to be ready
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+starting
+redis service is starting, waiting 2 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+starting
+redis service is starting, waiting 3 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+healthy
+redis service is healthy.
+##[endgroup]
+##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-backend
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-backend
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/d76651f1-b0e3-4e10-ade0-84b542c2ce63' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +6155e28f78a8a1605b46ec656b7b47fb11de437a:refs/remotes/origin/ci/B-FEES15-118-683-before
+From https://github.com/BradleyGleavePortfolio/growth-project-backend
+ * [new ref]         6155e28f78a8a1605b46ec656b7b47fb11de437a -> origin/ci/B-FEES15-118-683-before
+[command]/usr/bin/git branch --list --remote origin/ci/B-FEES15-118-683-before
+  origin/ci/B-FEES15-118-683-before
+[command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-FEES15-118-683-before
+6155e28f78a8a1605b46ec656b7b47fb11de437a
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B ci/B-FEES15-118-683-before refs/remotes/origin/ci/B-FEES15-118-683-before
+Switched to a new branch 'ci/B-FEES15-118-683-before'
+branch 'ci/B-FEES15-118-683-before' set up to track 'origin/ci/B-FEES15-118-683-before'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+6155e28f78a8a1605b46ec656b7b47fb11de437a
+##[group]Run actions/setup-node@v6
+with:
+  node-version: 20
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 20...
+Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/14d24de4-eafb-4b81-ba1a-86484917ac6e -f /home/runner/work/_temp/755a2b63-7433-4e15-b707-e8598f26ebe9
+Adding to the cache ...
+##[group]Environment details
+node: v20.20.2
+npm: 10.8.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+Received 0 of 86828135 (0.0%), 0.0 MBs/sec
+Received 86828135 of 86828135 (100.0%), 49.3 MBs/sec
+Cache Size: ~83 MB (86828135 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/461a28a9-b4d6-4c53-b558-655140e79204/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+##[group]Run npm ci
+npm ci
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> growth-project-backend@1.0.0 postinstall
+> prisma generate
+
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.19                 │
+
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.21s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+
+
+> growth-project-backend@1.0.0 prepare
+> lefthook install
+
+sync hooks: ✔️(pre-commit, commit-msg)
+
+added 1115 packages, and audited 1116 packages in 28s
+
+202 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+##[group]Run npx prisma generate
+npx prisma generate
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.21s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+
+##[group]Run set -euo pipefail
+set -euo pipefail
+test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+echo "specs: ${SPECS[*]}"
+npx jest --ci --runInBand "${SPECS[@]}"
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+##[endgroup]
+specs: test/s-fee-r15-deferred-fx-notice-flag.spec.ts
+FAIL test/s-fee-r15-deferred-fx-notice-flag.spec.ts (107 MB heap size)
+  Sol B-683-1 a deferred refund is settled in the settlement currency
+    ✕ CAD 25 refunded before the fee (no balance transaction): USD 20.00 booked, coach USD 56.40, zero drift after replay (18 ms)
+    ✕ CAD 25 refunded before the fee (first Stripe read unavailable): USD 20.00 booked, coach USD 56.40, zero drift after replay (5 ms)
+    ✕ a refund converted at a lower rate (USD 19.00) books its own debit (5 ms)
+    ✕ a refund converted at a higher rate (USD 21.00) books its own debit (6 ms)
+    ✓ a refund converted at a rate above 1:1 (USD 26.00, control) books its own debit (5 ms)
+    ✕ a stale charge (amount_refunded 0) still reads the list for a deferred converted refund (6 ms)
+    ✕ refund list unreadable (amount_refunded 0): stays awaiting, nothing moves (7 ms)
+    ✕ refund list unreadable (amount_refunded 2500): stays awaiting, nothing moves (10 ms)
+    ✕ a pending second refund moves nothing; the succeeded one books its debit (4 ms)
+    ✕ a failed second refund moves nothing; the succeeded one books its debit (4 ms)
+    ✓ control: a deferred refund on a same-currency charge keeps its amount (3 ms)
+    ✕ head coach: the deferred converted refund splits like a late one (5,340 / 300) (4 ms)
+    ✓ control: a late converted refund notice still names both amounts (7 ms)
+  Sol B-683-5 a run never clears the retry flag it raised
+    ✕ a notice that fails in the same millisecond keeps its flag; the sweep writes it once (13 ms)
+    ✓ control: a successful run clears a flag raised before it started (6 ms)
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › CAD 25 refunded before the fee (no balance transaction): USD 20.00 booked, coach USD 56.40, zero drift after replay
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "currency": "usd",
+    -   "refunded_cents": 2000,
+    +   "refunded_cents": 2500,
+      }
+
+      137 |       c.refunds(c.refund(2_000));
+      138 |       expect((await c.settle()).status).toBe('settled');
+    > 139 |       expect(c.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: 2_000 });
+          |                                   ^
+      140 |       expect(c.stripe.netTo('acct_coach')).toBe(5_640);
+      141 |       // Webhook redelivery and a sweep replay change nothing.
+      142 |       expect(await c.adjust()).toBe('unchanged');
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:139:35
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › CAD 25 refunded before the fee (first Stripe read unavailable): USD 20.00 booked, coach USD 56.40, zero drift after replay
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "currency": "usd",
+    -   "refunded_cents": 2000,
+    +   "refunded_cents": 2500,
+      }
+
+      137 |       c.refunds(c.refund(2_000));
+      138 |       expect((await c.settle()).status).toBe('settled');
+    > 139 |       expect(c.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: 2_000 });
+          |                                   ^
+      140 |       expect(c.stripe.netTo('acct_coach')).toBe(5_640);
+      141 |       // Webhook redelivery and a sweep replay change nothing.
+      142 |       expect(await c.adjust()).toBe('unchanged');
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:139:35
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › a refund converted at a lower rate (USD 19.00) books its own debit
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "currency": "usd",
+    -   "refunded_cents": 1900,
+    +   "refunded_cents": 2500,
+      }
+
+      159 |     c.refunds(c.refund(debit));
+      160 |     await c.settle();
+    > 161 |     expect(c.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: debit });
+          |                                 ^
+      162 |     expect(c.stripe.netTo('acct_coach')).toBe(net);
+      163 |     expect(await c.reconcile()).toMatchObject({ status: 'ok', drift_cents: 0 });
+      164 |   });
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:161:33
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › a refund converted at a higher rate (USD 21.00) books its own debit
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "currency": "usd",
+    -   "refunded_cents": 2100,
+    +   "refunded_cents": 2500,
+      }
+
+      159 |     c.refunds(c.refund(debit));
+      160 |     await c.settle();
+    > 161 |     expect(c.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: debit });
+          |                                 ^
+      162 |     expect(c.stripe.netTo('acct_coach')).toBe(net);
+      163 |     expect(await c.reconcile()).toMatchObject({ status: 'ok', drift_cents: 0 });
+      164 |   });
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:161:33
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › a stale charge (amount_refunded 0) still reads the list for a deferred converted refund
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "currency": "usd",
+    -   "refunded_cents": 2000,
+    +   "refunded_cents": 2500,
+      }
+
+      170 |     c.refunds(c.refund(2_000));
+      171 |     await c.settle();
+    > 172 |     expect(c.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: 2_000 });
+          |                                 ^
+      173 |     expect(c.stripe.netTo('acct_coach')).toBe(5_640);
+      174 |   });
+      175 |
+
+      at Object.<anonymous> (test/s-fee-r15-deferred-fx-notice-flag.spec.ts:172:33)
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › refund list unreadable (amount_refunded 0): stays awaiting, nothing moves
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "awaiting_fee"
+    Received: "settled"
+
+      181 |       c.stripe.charges.set('ch_1', c.charge(seen));
+      182 |       c.stripe.failListRefunds = true;
+    > 183 |       expect((await c.settle()).status).toBe('awaiting_fee');
+          |                                         ^
+      184 |       expect(c.db.settlements[0]).toMatchObject({
+      185 |         status: 'awaiting_fee',
+      186 |         currency: 'cad',
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:183:41
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › refund list unreadable (amount_refunded 2500): stays awaiting, nothing moves
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5640
+    Received: 5140
+
+      191 |       c.refunds(c.refund(2_000));
+      192 |       expect((await c.settle()).status).toBe('settled');
+    > 193 |       expect(c.stripe.netTo('acct_coach')).toBe(5_640);
+          |                                            ^
+      194 |     },
+      195 |   );
+      196 |
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:193:44
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › a pending second refund moves nothing; the succeeded one books its debit
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "currency": "usd",
+    -   "refunded_cents": 2000,
+    +   "refunded_cents": 2500,
+      }
+
+      203 |       c.refunds(c.refund(800, status, 're_2', 1_000), c.refund(2_000));
+      204 |       await c.settle();
+    > 205 |       expect(c.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: 2_000 });
+          |                                   ^
+      206 |       expect(c.stripe.netTo('acct_coach')).toBe(5_640);
+      207 |       expect(await c.reconcile()).toMatchObject({ status: 'ok', drift_cents: 0 });
+      208 |     },
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:205:35
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › a failed second refund moves nothing; the succeeded one books its debit
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "currency": "usd",
+    -   "refunded_cents": 2000,
+    +   "refunded_cents": 2500,
+      }
+
+      203 |       c.refunds(c.refund(800, status, 're_2', 1_000), c.refund(2_000));
+      204 |       await c.settle();
+    > 205 |       expect(c.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: 2_000 });
+          |                                   ^
+      206 |       expect(c.stripe.netTo('acct_coach')).toBe(5_640);
+      207 |       expect(await c.reconcile()).toMatchObject({ status: 'ok', drift_cents: 0 });
+      208 |     },
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:205:35
+
+  ● Sol B-683-1 a deferred refund is settled in the settlement currency › head coach: the deferred converted refund splits like a late one (5,340 / 300)
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "currency": "usd",
+    -   "refunded_cents": 2000,
+    +   "refunded_cents": 2500,
+      }
+
+      226 |     c.refunds(c.refund(2_000));
+      227 |     await c.settle();
+    > 228 |     expect(c.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: 2_000 });
+          |                                 ^
+      229 |     expect(c.stripe.netTo('acct_coach')).toBe(5_340);
+      230 |     expect(c.stripe.netTo('acct_head')).toBe(300);
+      231 |   });
+
+      at Object.<anonymous> (test/s-fee-r15-deferred-fx-notice-flag.spec.ts:228:33)
+
+  ● Sol B-683-5 a run never clears the retry flag it raised › a notice that fails in the same millisecond keeps its flag; the sweep writes it once
+
+    expect(received).toBeInstanceOf(expected)
+
+    Expected constructor: ClockDate
+
+    Received value has no prototype
+    Received value: null
+
+      264 |     expect(c.stripe.netTo('acct_coach')).toBe(5_640);
+      265 |     expect(c.db.notices).toHaveLength(0);
+    > 266 |     expect(c.db.settlements[0].reconcile_requested_at).toBeInstanceOf(Date);
+          |                                                        ^
+      267 |     const reversals = c.stripe.reversals.length;
+      268 |     jest.setSystemTime(Date.now() + 2 * 60_000);
+      269 |     await c.svc.runSettlementSweep(new Date());
+
+      at Object.<anonymous> (test/s-fee-r15-deferred-fx-notice-flag.spec.ts:266:56)
+
+Test Suites: 1 failed, 1 total
+Tests:       11 failed, 4 passed, 15 total
+Snapshots:   0 total
+Time:        1.698 s
+Ran all test suites matching test/s-fee-r15-deferred-fx-notice-flag.spec.ts.
+##[error]Process completed with exit code 1.
+Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/18ae3e58-81ec-4037-8f20-ec5058846dac' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+/home/runner/work/_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-6b0e17a6-374c-4cf9-9dbf-aa281c3ab295.config'
+Print service container logs: c36c6cd555a2427a9eed94ff4ece2961_redis7alpine_e81fd3
+##[command]/usr/bin/docker logs --details 4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+ 1:C 04 Oct 2026 17:17:25.452 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+ 1:C 04 Oct 2026 17:17:25.452 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+ 1:C 04 Oct 2026 17:17:25.452 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+ 1:C 04 Oct 2026 17:17:25.452 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+ 1:M 04 Oct 2026 17:17:25.453 * monotonic clock: POSIX clock_gettime
+ 1:M 04 Oct 2026 17:17:25.453 * Running mode=standalone, port=6379.
+ 1:M 04 Oct 2026 17:17:25.454 * Server initialized
+ 1:M 04 Oct 2026 17:17:25.454 * Ready to accept connections tcp
+Stop and remove container: c36c6cd555a2427a9eed94ff4ece2961_redis7alpine_e81fd3
+##[command]/usr/bin/docker rm --force 4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+4ee2064d71dd3b9485dab4c6e3dd51682e8d4d1ba2755936a0e1fea9d5f195b9
+Remove container network: github_network_578a40920bf24f9cac63df417d79801c
+##[command]/usr/bin/docker network rm github_network_578a40920bf24f9cac63df417d79801c
+github_network_578a40920bf24f9cac63df417d79801c
+Cleaning up orphan processes

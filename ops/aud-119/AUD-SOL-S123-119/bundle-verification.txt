@@ -1,0 +1,11 @@
+/home/user/workspace/ops/aud-119/AUD-SOL-S123-119/probes-final.bundle is okay
+The bundle contains these 7 refs:
+eedc2fc657ba47f01588ffd0f348c8c1409339af refs/remotes/origin/audit/AUD-SOL-S123-119/342-core
+8bb375dd656a0ea1d3cc8b38e2a2432bb8ff832b refs/remotes/origin/audit/AUD-SOL-S123-119/342-replay
+dbc0fd1db7448ac60506296cf1f680a206a3dd55 refs/remotes/origin/audit/AUD-SOL-S123-119/343-current-pins
+29af30c9c4cf2bbc0ec307020ef18367c362891e refs/remotes/origin/audit/AUD-SOL-S123-119/343-recovery-current
+d53abbe66c4143228ceb2244164362566e70c900 refs/remotes/origin/audit/AUD-SOL-S123-119/343-replay
+152b813299872711021e7a732e8c468899981d31 refs/remotes/origin/audit/AUD-SOL-S123-119/344-authority
+f045291d27e3a02f5f4fa0e144d49caa2f2ab1c3 refs/remotes/origin/audit/AUD-SOL-S123-119/344-replay
+The bundle records a complete history.
+The bundle uses this hash algorithm: sha1

@@ -1,0 +1,44 @@
+diff --git a/test/privacy/no-pii-in-logs.spec.ts b/test/privacy/no-pii-in-logs.spec.ts
+index 53832444a..40c06a013 100644
+--- a/test/privacy/no-pii-in-logs.spec.ts
++++ b/test/privacy/no-pii-in-logs.spec.ts
+@@ -752,3 +752,39 @@ describe('C-611-17 / B-700-1 / B-700-2 guard: no log call under src/ interpolate
+     }
+   });
+ });
++
++// AUD-SOL-PV3-118 independent negative controls. Probe-only: no source edits.
++describe('AUD-SOL-PV3-118: unchanged baseline rejects growth and fixes require a lower pin', () => {
++  it('pins 306 exception sites in 141 files, not a global allowance', () => {
++    expect(Object.keys(LEGACY_EXCEPTION_TEXT)).toHaveLength(141);
++    expect(Object.values(LEGACY_EXCEPTION_TEXT).reduce((sum, count) => sum + count, 0)).toBe(306);
++  });
++
++  it('the real scanner sees an added raw error in a legacy file and exact equality rejects it', () => {
++    const rel = 'src/account-deletion/account-deletion.service.ts';
++    const source = readFileSync(join(__dirname, '..', '..', rel), 'utf8');
++    const count = (text: string) =>
++      logCalls(text).filter((call) => violations(call.code).includes('exception-text')).length;
++    const before = count(source);
++    expect(before).toBe(LEGACY_EXCEPTION_TEXT[rel]);
++    const after = count(source + '\nthis.logger.warn(`failure: ${err.message}`);\n');
++    expect(after).toBe(before + 1);
++    expect(() => expect(after).toBe(LEGACY_EXCEPTION_TEXT[rel])).toThrow();
++    expect(() => expect(before - 1).toBe(LEGACY_EXCEPTION_TEXT[rel])).toThrow();
++  });
++
++  it('all three prior static bypass shapes are violations, while bounded descriptions are safe', () => {
++    const samples: Array<[string, string, CallContext?]> = [
++      ['this.logger.error(`coach=${safeCoachName}`)', 'name'],
++      ['this.logger.warn(`reset failed: ${error.message}`)', 'exception-text'],
++      ['this.logger.warn(`degraded path=${path}`)', 'path', { encodesAddress: true }],
++    ];
++    for (const [text, rule, context] of samples) {
++      const calls = logCalls(text);
++      expect(calls).toHaveLength(1);
++      expect(violations(calls[0].code, context)).toContain(rule);
++    }
++    const safe = logCalls('this.logger.error(`failure: ${describeFailure(err)}`)');
++    expect(violations(safe[0].code)).toEqual([]);
++  });
++});

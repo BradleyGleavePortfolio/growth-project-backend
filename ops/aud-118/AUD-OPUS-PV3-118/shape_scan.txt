@@ -1,0 +1,54 @@
+src/account-deletion/account-deletion.service.ts:618 | result.reason | candidate.id result.reason ,
+src/ai/gateway/ai-gateway.service.ts:164 | req.ip | { event: STR , capability: req.capability, requesterId: req.requester.id, requesterRole: req.requester.role, subjectUserId: req.subjectUserId ?? null, ip: req.ip ?? null,
+src/ai/gateway/providers/provider-registry.ts:28 | name | name
+src/ai-credits/coach-ai-budget.service.ts:419 | args.reason | { event: STR , coachId: args.coachId, displayedCents: args.displayedCents, actorOwnerId: args.actorOwnerId, reason: args.reason, purchaseId: purchase.id, }, STR ,
+src/ai-credits/coach-ai-budget.service.ts:470 | args.reason | { event: STR , purchaseId: purchase.id, coachId: purchase.coach_user_id, paidCents: purchase.paid_cents, actorOwnerId: args.actorOwnerId, reason: args.reason, }, STR ,
+src/auth/auth.service.ts:422 | reason | supabaseUserId reason + createdByThisRequest ,
+src/billing/subscription.guard.ts:248 | reason | enforce ? STR : STR coachId currentState reason method route ,
+src/coach/practice-type/practice-type.service.ts:110 | outcome.reason | coachId outcome.reason ,
+src/community/search/community-search.service.ts:147 | query.q | { event: STR , workspace_id: workspaceId, user_id: user.id, term_length: query.q.length, kind: query.kind ?? null, result_count: results.length, took_ms: tookMs, }
+src/community/voice/community-voice.service.ts:401 | keyCheck.reason | keyCheck.reason
+src/community/wearable-prompts/degraded-connector-fallback.service.ts:82 | reason | { event: STR , workspace_id: workspaceId, coach_id: coachId, client_id: clientId, reason, }
+src/engagement/coach-welcome.service.ts:343 | reason | job.id reason
+src/engagement/coach-welcome.service.ts:457 | reason | job.id reason
+src/engagement/coach-welcome.service.ts:470 | reason | job.id attempt reason
+src/filters/throttler-exception.filter.ts:74 | ip | { message: STR , userId, ip, path, method, limit: STR , ttl: ThrottlerExceptionFilter.RETRY_AFTER_SECONDS, }
+src/insights/holistic-insights.service.ts:78 | reason | userId reason
+src/invite-grant/invite-grant.service.ts:709 | detail | status input.clientUserId input.coachUserId packageId binding.code detail ,
+src/notifications/notifications.service.ts:750 | receipt.details | userId receipt.details?.error ?? STR ,
+src/notifications/recipient-timezone.ts:88 | .name | recipientUserId (err as Error).name ,
+src/packages/drip-dispatcher.cron.ts:595 | reason | drop.id nextAttempt MAX_ATTEMPTS nextRetryAt.toISOString() reason ,
+src/packages/drip-dispatcher.cron.ts:612 | reason | drop.id purchase.client_user_id purchase.coach_user_id purchase.package_id drop.content_id drop.asset_type nextAttempt MAX_ATTEMPTS reason ,
+src/packages/purchase-fanout.service.ts:586 | reason | clientPurchaseId reason ,
+src/packages/purchase-fanout.service.ts:604 | reason | result.count clientPurchaseId reason ,
+src/packages/purchase-fanout.service.ts:608 | reason | clientPurchaseId reason ,
+src/scheduling/google-oauth/google-oauth.service.ts:161 | detail | res.status args.userId detail.slice(0, 200) ,
+src/scheduling/jobs/reminder.job.ts:210 | .name | session.id userId kind (err as Error).name ,
+src/scheduling/scheduling-webhook.controller.ts:61 | (body | payloadShape(body) ,
+src/scheduling/scheduling-webhook.controller.ts:85 | (body | payloadShape(body) ,
+src/scout/scout-ledger-backfill.cli.ts:54 | detail | detail
+src/scout/scout-reconstruct.service.ts:133 | (summary | JSON.stringify(summary)
+src/scout/scout-reconstruct.service.ts:135 | (summary | JSON.stringify(summary)
+src/scout/scout-reconstruct.service.ts:220 | (summary | JSON.stringify(summary)
+src/scout/scout-reconstruct.service.ts:222 | (summary | JSON.stringify(summary)
+src/storefront/checkout-recovery.service.ts:164 | detail | detail ,
+src/storefront/checkout-recovery.service.ts:178 | detail | nodeEnv ?? STR detail ,
+src/storefront/checkout-recovery.service.ts:511 | detail | detail ,
+src/storefront/guest-checkout.service.ts:1443 | reason | paymentIntentId reason ?? STR ,
+src/talent-marketplace/admin-applications.service.ts:134 | result.note | { event: STR , owner_id: ownerId, application_id: applicationId, decision: result.decision, note_length: result.note?.length ?? 0, replayed: result.replayed, result_statu
+src/talent-marketplace/admin-moderation.service.ts:129 | result.note | { event: STR , owner_id: ownerId, listing_id: listingId, decision: result.decision, note_length: result.note?.length ?? 0, replayed: result.replayed, result_status: resul
+src/talent-marketplace/connect-adapter.service.ts:197 | name | op kind correlationId name this.redact(err) ,
+src/throttler/throttler.config.ts:679 | t.name | throttlers .map((t) => t.name) .join( STR ) ,
+src/wearables/connectors/garmin/garmin-webhook.controller.ts:165 | (summary | { msg: STR , provider: STR , type: event.type, user_hash: hashGarminUserId(summary.userId), }
+src/wearables/connectors/garmin/garmin-webhook.controller.ts:211 | (summary | { msg: STR , provider: STR , type: event.type, conn_id: connection.id, user_hash: hashGarminUserId(summary.userId), error_code: markRedacted.error_code, error_class: mark
+src/wearables/connectors/garmin/garmin-webhook.controller.ts:222 | (summary | { msg: STR , provider: STR , type: event.type, user_hash: hashGarminUserId(summary.userId), error_code: redacted.error_code, error_class: redacted.error_class, error_mess
+src/wearables/connectors/strava/strava-webhook.controller.ts:267 | body | body.subscription_id ,
+src/wearables/connectors/strava/strava-webhook.controller.ts:339 | ip | ip ?? STR
+src/wearables/connectors/wahoo/wahoo-webhook.controller.ts:174 | .name | { msg: STR , provider: STR , event_type: event.event_type, user_hash: this.hash(userId), error_class: (err as Error)?.name ?? STR , }
+src/wearables/connectors/wahoo/wahoo.connector.ts:451 | label | { msg: STR , provider: STR , op: label, error_code: err.status ?? STR , error_class: err.name, }
+src/wearables/connectors/wahoo/wahoo.connector.ts:460 | label | { msg: STR , provider: STR , op: label, error_class: (err as Error)?.name ?? STR , }
+src/wearables/connectors/whoop/whoop-webhook.controller.ts:113 | reason | reason
+src/wearables/connectors/withings/withings-webhook.controller.ts:232 | .name | { msg: STR , provider: STR , appli: event.appli, error_class: (err as Error)?.name ?? typeof err, error_message: safeError, }
+src/wearables/insights/wearable-insights.service.ts:239 | guarded.reason | audience subjectUserId guarded.reason ,
+src/wearables/samples/wearable-samples.service.ts:297 | query | { event: STR , user_id: subjectUserId, bucket: query.bucket, metric: query.metric ?? null, window_days: windowDays, granularity: query.granularity, preferred_only: query.
+total 53

@@ -1,0 +1,271 @@
+build-sbom	UNKNOWN STEP	﻿2026-10-04T05:40:20.5821371Z Current runner version: '2.337.0'
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5842624Z ##[group]Runner Image Provisioner
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5843565Z Hosted Compute Agent
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5844049Z Version: 20260901.588
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5844543Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5845208Z Build Date: 2026-09-01T19:56:44Z
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5845776Z Worker ID: {44822ae4-0417-41cf-9a75-ebc160a27ed4}
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5846402Z Azure Region: mexicocentral
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5846911Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5848256Z ##[group]Operating System
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5848928Z Ubuntu
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5849389Z 24.04.5
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5849856Z LTS
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5850297Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5850754Z ##[group]Runner Image
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5851309Z Image: ubuntu-24.04
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5851801Z Version: 20260927.320.1
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5852894Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5854124Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5854967Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5855888Z ##[group]GITHUB_TOKEN Permissions
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5857695Z Contents: read
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5858196Z Metadata: read
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5858638Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5860542Z Secret source: Actions
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5861360Z Cache mode: write
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.5862059Z Prepare workflow directory
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.6150849Z Prepare all required actions
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.6201654Z Getting action download info
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:20.9214979Z Download action repository 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' (SHA:df4cb1c069e1874edd31b4311f1884172cec0e10)
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.2700120Z Download action repository 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e' (SHA:48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e)
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.4490059Z Download action repository 'actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4' (SHA:330a01c490aca151604b8cf639adc76d48f6c5d4)
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.6917225Z Complete job name: build-sbom
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7530518Z ##[group]Run actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7531321Z with:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7531678Z   persist-credentials: false
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7532190Z   repository: BradleyGleavePortfolio/growth-project-backend
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7535405Z   token: ***
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7535763Z   ssh-strict: true
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7536109Z   ssh-user: git
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7536447Z   clean: true
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7536796Z   sparse-checkout-cone-mode: true
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7537215Z   fetch-depth: 1
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7537793Z   fetch-tags: false
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7538153Z   show-progress: true
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7538508Z   lfs: false
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7538833Z   submodules: false
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7539195Z   set-safe-directory: true
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.7539764Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8349865Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8351442Z ##[group]Getting Git version info
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8352241Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8353172Z [command]/usr/bin/git version
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8426543Z git version 2.55.0
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8444335Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8456976Z Temporarily overriding HOME='/home/runner/work/_temp/9b00b932-12fc-4e1f-a7c8-10aba1bde5bc' before making global git config changes
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8458928Z Adding repository directory to the temporary git global config as a safe directory
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8462226Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8513111Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8515852Z ##[group]Determining repository object format
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8517812Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8518574Z ##[group]Initializing the repository
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8522001Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8604629Z hint: Using 'master' as the name for the initial branch. This default branch name
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8605437Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8606514Z hint: to use in all of your new repositories, which will suppress this warning,
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8607581Z hint: call:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8608097Z hint:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8608557Z hint: 	git config --global init.defaultBranch <name>
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8609340Z hint:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8610088Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8611112Z hint: 'development'. The just-created branch can be renamed via this command:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8611684Z hint:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8612034Z hint: 	git branch -m <name>
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8612411Z hint:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8612909Z hint: Disable this message with "git config set advice.defaultBranchName false"
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8614004Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8615938Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8658104Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8659049Z ##[group]Disabling automatic garbage collection
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8661408Z [command]/usr/bin/git config --local gc.auto 0
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8686717Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8687838Z ##[group]Setting up auth
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8688504Z Removing SSH command configuration
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8692765Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.8718101Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9024802Z Removing HTTP extra header
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9030036Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9055072Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9232842Z Removing includeIf entries pointing to credentials config files
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9237564Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9263029Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9446039Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9475386Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:21.9501133Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:22.1727848Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:22.1758286Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:22.1781769Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:22.1783049Z ##[group]Fetching the repository
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:22.1788842Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +3f4c29d8a8daea0d086db2dfa3694addff865724:refs/remotes/pull/699/merge
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3622506Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3623477Z  * [new ref]         3f4c29d8a8daea0d086db2dfa3694addff865724 -> pull/699/merge
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3627658Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3628413Z ##[group]Determining the checkout info
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3632897Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3633519Z [command]/usr/bin/git sparse-checkout disable
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3680505Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3704952Z ##[group]Checking out the ref
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.3708386Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/699/merge
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5415547Z Note: switching to 'refs/remotes/pull/699/merge'.
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5417213Z 
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5417737Z You are in 'detached HEAD' state. You can look around, make experimental
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5418477Z changes and commit them, and you can discard any commits you make in this
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5419137Z state without impacting any branches by switching back to a branch.
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5419538Z 
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5419787Z If you want to create a new branch to retain commits you create, you may
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5420409Z do so (now or later) by using -c with the switch command. Example:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5420764Z 
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5420926Z   git switch -c <new-branch-name>
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5421170Z 
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5421332Z Or undo this operation with:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5421546Z 
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5421690Z   git switch -
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5421897Z 
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5422376Z Turn off this advice by setting config variable advice.detachedHead to false
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5422821Z 
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5423288Z HEAD is now at 3f4c29d Merge 40ce17578ca8b70d80a5ff8d22237ca1239062bd into b644198b90bb9ab1dc62a78794e12cf09f8ace7c
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5428871Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5537794Z [command]/usr/bin/git log -1 --format=%H
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5538481Z 3f4c29d8a8daea0d086db2dfa3694addff865724
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5539563Z ##[group]Removing auth
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5539824Z Removing SSH command configuration
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5540272Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5541308Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5722489Z Removing HTTP extra header
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5725742Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5754839Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5952624Z Removing includeIf entries pointing to credentials config files
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5955546Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5978692Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5979429Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5979909Z includeif.gitdir:/github/workspace/.git.path
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5980777Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.5985953Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6003758Z /home/runner/work/_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6011277Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6038188Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6055166Z /home/runner/work/_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6061386Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6087523Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6104779Z /github/runner_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6111345Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6145914Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6163803Z /github/runner_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6173533Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6200796Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6385303Z Removing credentials config '/home/runner/work/_temp/git-credentials-38d4573c-6885-4a68-b629-ccd3b750a3a6.config'
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6394717Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6604174Z ##[group]Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6604558Z with:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6604767Z   node-version: 20
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6604990Z   cache: npm
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6605199Z   check-latest: false
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6607183Z   token: ***
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6607542Z   package-manager-cache: true
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.6607792Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:24.7893719Z Attempting to download 20...
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:25.9992900Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:26.4289322Z Extracting ...
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:26.4388051Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/f1af9488-9be7-4053-b4ff-53461c0e33a5 -f /home/runner/work/_temp/67715985-3c11-414c-a864-88d7be1ecc5f
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:27.2953832Z Adding to the cache ...
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:29.1254817Z ##[group]Environment details
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:29.3206927Z node: v20.20.2
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:29.3207285Z npm: 10.8.2
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:29.3207682Z yarn: 1.22.22
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:29.3208148Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:29.3221879Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:29.4052368Z /home/runner/.npm
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:29.6192428Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:30.8427660Z Received 33554432 of 86828135 (38.6%), 32.0 MBs/sec
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.3047752Z Received 86828135 of 86828135 (100.0%), 56.6 MBs/sec
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.3048471Z Cache Size: ~83 MB (86828135 B)
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.3102909Z [command]/usr/bin/tar -xf /home/runner/work/_temp/99310093-3a34-49e8-bd76-e7130ab6b788/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.4444068Z Cache restored successfully
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.4485290Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.4654888Z ##[group]Run npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.4655391Z ^[[36;1mnpm ci --omit=dev --ignore-scripts --no-audit --no-fund^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.5029137Z shell: /usr/bin/bash -e {0}
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:31.5029438Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:34.3171113Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.0925154Z 
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.0926075Z added 351 packages in 6s
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.1410503Z ##[group]Run cp package.json package.json.orig
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.1410858Z ^[[36;1mcp package.json package.json.orig^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.1411117Z ^[[36;1mnpm pkg delete devDependencies^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.1411487Z ^[[36;1mnpm sbom --sbom-format cyclonedx --sbom-type application > sbom.cdx.json^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.1411870Z ^[[36;1mmv package.json.orig package.json^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.1412148Z ^[[36;1mls -l sbom.cdx.json^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.1476656Z shell: /usr/bin/bash -e {0}
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.1476911Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.8717267Z -rw-r--r-- 1 runner runner 516028 Oct  4 05:40 sbom.cdx.json
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.8757531Z ##[group]Run bash scripts/ci/assert-prod-sbom.sh sbom.cdx.json package-lock.json
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.8758322Z ^[[36;1mbash scripts/ci/assert-prod-sbom.sh sbom.cdx.json package-lock.json^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.8831014Z shell: /usr/bin/bash -e {0}
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:37.8831379Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0065258Z assert-prod-sbom: OK 351 components, 0 dev-only leaks, required runtime packages present
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0066106Z assert-prod-sbom: sha256 18ed9fd6940106a08b0d93ab320eed129a784189fb1f008a034ea44d1f7a6c05
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0139835Z ##[group]Run {
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0140163Z ^[[36;1m{^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0140445Z ^[[36;1m  echo "## SBOM summary"^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0140807Z ^[[36;1m  echo ''^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0141157Z ^[[36;1m  echo "Commit: \`${GITHUB_SHA}\`"^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0141772Z ^[[36;1m  echo "Components: **${COMPONENTS}** (production closure, no dev-only packages)"^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0142395Z ^[[36;1m  echo "sha256: \`${SBOM_SHA256}\`"^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0142787Z ^[[36;1m  echo ''^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0143102Z ^[[36;1m  echo "Top 10 by name (alpha):"^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0143720Z ^[[36;1m  jq -r '.components | sort_by(.name) | .[0:10] | .[] | "- \(.name)@\(.version // "?")"' sbom.cdx.json^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0144360Z ^[[36;1m} >> "$GITHUB_STEP_SUMMARY"^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0144849Z ^[[36;1mecho "${SBOM_SHA256}  sbom.cdx.json" > sbom.cdx.json.sha256^[[0m
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0215050Z shell: /usr/bin/bash -e {0}
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0215282Z env:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0215498Z   COMPONENTS: 351
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0215809Z   SBOM_SHA256: 18ed9fd6940106a08b0d93ab320eed129a784189fb1f008a034ea44d1f7a6c05
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0216148Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0483463Z ##[group]Run actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0483832Z with:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0484083Z   name: sbom-cyclonedx-3f4c29d8a8daea0d086db2dfa3694addff865724
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0484400Z   path: sbom.cdx.json
+build-sbom	UNKNOWN STEP	sbom.cdx.json.sha256
+build-sbom	UNKNOWN STEP	
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0484650Z   if-no-files-found: error
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0484853Z   retention-days: 90
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0485049Z   compression-level: 6
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0485235Z   overwrite: false
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0485415Z   include-hidden-files: false
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.0485643Z ##[endgroup]
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.1860831Z (node:2314) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.1861486Z (Use `node --trace-deprecation ...` to show where the warning was created)
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.1938606Z Multiple search paths detected. Calculating the least common ancestor of all paths
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.1939787Z The least common ancestor is /home/runner/work/growth-project-backend/growth-project-backend. This will be the root directory of the artifact
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.1940764Z With the provided path, there will be 2 files uploaded
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.1941228Z Artifact name is valid!
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.1941476Z Root directory input is valid!
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.5398419Z Beginning upload of artifact content to blob storage
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.5612087Z (node:2314) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.8737756Z Uploaded bytes 69298
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.9325518Z Finished uploading artifact content to blob storage!
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.9326390Z SHA256 digest of uploaded artifact zip is 4e6f6231434ac687b2e7c8e2208c235c048fec85a47ac23248a37927c554c8a2
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:38.9328256Z Finalizing artifact upload
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.1791069Z Artifact sbom-cyclonedx-3f4c29d8a8daea0d086db2dfa3694addff865724.zip successfully finalized. Artifact ID 11295187757
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.1792649Z Artifact sbom-cyclonedx-3f4c29d8a8daea0d086db2dfa3694addff865724 has been successfully uploaded! Final size is 69298 bytes. Artifact ID is 11295187757
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.1796853Z Artifact download URL: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37180479160/artifacts/11295187757
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.1938965Z Post job cleanup.
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.2874436Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.2982727Z Post job cleanup.
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3646907Z [command]/usr/bin/git version
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3677999Z git version 2.55.0
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3708637Z Temporarily overriding HOME='/home/runner/work/_temp/cc745b8d-6e8c-48a3-8b89-0c304d16bfcd' before making global git config changes
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3709832Z Adding repository directory to the temporary git global config as a safe directory
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3713776Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3739643Z Removing SSH command configuration
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3744560Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3771398Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3957769Z Removing HTTP extra header
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3961847Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.3990512Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.4172795Z Removing includeIf entries pointing to credentials config files
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.4179187Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.4207024Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.4520724Z Cleaning up orphan processes
+build-sbom	UNKNOWN STEP	2026-10-04T05:40:39.4780602Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

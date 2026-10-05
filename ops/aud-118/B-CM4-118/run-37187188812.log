@@ -1,0 +1,524 @@
+targeted	UNKNOWN STEP	﻿2026-10-04T07:54:10.5714714Z Current runner version: '2.337.0'
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5736116Z ##[group]Runner Image Provisioner
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5736922Z Hosted Compute Agent
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5737703Z Version: 20260901.588
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5738263Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5738859Z Build Date: 2026-09-01T19:56:44Z
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5739522Z Worker ID: {d5d64d80-e8a6-4195-946b-ebdb9ccc4f57}
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5740112Z Azure Region: eastus
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5740564Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5741799Z ##[group]Operating System
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5742355Z Ubuntu
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5742885Z 24.04.5
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5743312Z LTS
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5743722Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5744239Z ##[group]Runner Image
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5744750Z Image: ubuntu-24.04
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5745395Z Version: 20260927.320.1
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5746433Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5747708Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5748481Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5749525Z ##[group]GITHUB_TOKEN Permissions
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5751222Z Contents: read
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5751762Z Metadata: read
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5752239Z Packages: read
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5752806Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5754458Z Secret source: Actions
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5755332Z Cache mode: write
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.5756110Z Prepare workflow directory
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.6086537Z Prepare all required actions
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.6124172Z Getting action download info
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.7802589Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	UNKNOWN STEP	2026-10-04T07:54:10.9321031Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.1426945Z Complete job name: targeted
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.1827761Z ##[group]Checking docker version
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.1838390Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4374079Z '1.48'
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4387693Z Docker daemon API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4388422Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4691364Z '1.48'
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4703040Z Docker client API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4707985Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4710479Z ##[group]Clean up resources from previous jobs
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4714957Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=6cb92c"
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4839091Z ##[command]/usr/bin/docker network prune --force --filter "label=6cb92c"
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4941390Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4941869Z ##[group]Create local container network
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.4950315Z ##[command]/usr/bin/docker network create --label 6cb92c github_network_518c7eab954f4ca78139810aad800652
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.5604848Z c4b23f8210e8671760a85ce5e3d99113b9f34cb316bfe11d5c038c7dc28d1dc8
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.5632456Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.5662120Z ##[group]Starting redis service container
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.5679175Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.8551631Z 7-alpine: Pulling from library/redis
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9466307Z 16333ee0c00f: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9467256Z 83234986c742: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9468000Z 7eb50503c2b0: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9468735Z 1522f9c6f453: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9469246Z 9928009b15c8: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9469692Z 4f4fb700ef54: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9470135Z 4eb14bae0e1d: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9470556Z 1522f9c6f453: Waiting
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9470940Z 9928009b15c8: Waiting
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9471322Z 4f4fb700ef54: Waiting
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9471701Z 4eb14bae0e1d: Waiting
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9763165Z 83234986c742: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9763945Z 83234986c742: Download complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9861400Z 7eb50503c2b0: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T07:54:11.9862379Z 7eb50503c2b0: Download complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0039446Z 16333ee0c00f: Download complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0110620Z 9928009b15c8: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0111854Z 9928009b15c8: Download complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0291435Z 4f4fb700ef54: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0292729Z 4f4fb700ef54: Download complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0343074Z 4eb14bae0e1d: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0344734Z 4eb14bae0e1d: Download complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0544257Z 1522f9c6f453: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.0545351Z 1522f9c6f453: Download complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:12.1412575Z 16333ee0c00f: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.3660363Z 83234986c742: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.4846332Z 7eb50503c2b0: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.7863256Z 1522f9c6f453: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8048722Z 9928009b15c8: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8103815Z 4f4fb700ef54: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8181586Z 4eb14bae0e1d: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8214144Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8230253Z Status: Downloaded newer image for redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8238386Z docker.io/library/redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8273388Z ##[command]/usr/bin/docker create --name 2a55d5cc68bb4b119d7ca9435f8eb9e6_redis7alpine_22d276 --label 6cb92c --network github_network_518c7eab954f4ca78139810aad800652 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8476200Z f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:54:18.8494601Z ##[command]/usr/bin/docker start f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.1971727Z f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.1989956Z ##[command]/usr/bin/docker ps --all --filter id=f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2089380Z f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0 Up Less than a second (health: starting)
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2106394Z ##[command]/usr/bin/docker port f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2203469Z 6379/tcp -> 0.0.0.0:6379
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2205702Z 6379/tcp -> [::]:6379
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2239904Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2247131Z ##[group]Waiting for all services to be ready
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2257897Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2350618Z starting
+targeted	UNKNOWN STEP	2026-10-04T07:54:19.2367290Z redis service is starting, waiting 2 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-04T07:54:21.2372613Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:54:21.2471988Z starting
+targeted	UNKNOWN STEP	2026-10-04T07:54:21.2482377Z redis service is starting, waiting 3 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2254824Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2365327Z healthy
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2410329Z redis service is healthy.
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2410951Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2630626Z ##[group]Run actions/checkout@v6
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2631040Z with:
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2631290Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2633579Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2633764Z   ssh-strict: true
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2633943Z   ssh-user: git
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2634126Z   persist-credentials: true
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2634511Z   clean: true
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2634688Z   sparse-checkout-cone-mode: true
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2634898Z   fetch-depth: 1
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2635059Z   fetch-tags: false
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2635412Z   show-progress: true
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2635583Z   lfs: false
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2635733Z   submodules: false
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2635905Z   set-safe-directory: true
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2636099Z   allow-unsafe-pr-checkout: false
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.2636482Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.3481748Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.3482912Z ##[group]Getting Git version info
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.3483304Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.3483822Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4366830Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4386319Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4397354Z Temporarily overriding HOME='/home/runner/work/_temp/9bf3d662-26c0-4ce1-b23f-7210a5d5d603' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4398022Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4402784Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4445975Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4449219Z ##[group]Determining repository object format
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4451182Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4451572Z ##[group]Initializing the repository
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4455669Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4554124Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4554786Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4555692Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4556106Z hint: call:
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4556356Z hint:
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4556686Z hint: 	git config --global init.defaultBranch <name>
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4557101Z hint:
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4557473Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4558098Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4558560Z hint:
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4558815Z hint: 	git branch -m <name>
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4559092Z hint:
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4559434Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4559960Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4564952Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4607243Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4607772Z ##[group]Disabling automatic garbage collection
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4610785Z [command]/usr/bin/git config --local gc.auto 0
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4634406Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4635083Z ##[group]Setting up auth
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4635824Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4640164Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.4664978Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5052929Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5057391Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5082574Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5260576Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5265551Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5291873Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5476684Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5506374Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5531113Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5686114Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5713314Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5742430Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5742887Z ##[group]Fetching the repository
+targeted	UNKNOWN STEP	2026-10-04T07:54:25.5749688Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +5f33eb7daf6192dd4689adb79380a0347e794c14:refs/remotes/origin/ci/B-CM3-117-676-before
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9550686Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9551500Z  * [new ref]         5f33eb7daf6192dd4689adb79380a0347e794c14 -> origin/ci/B-CM3-117-676-before
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9559522Z [command]/usr/bin/git branch --list --remote origin/ci/B-CM3-117-676-before
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9580023Z   origin/ci/B-CM3-117-676-before
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9587066Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-CM3-117-676-before
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9606108Z 5f33eb7daf6192dd4689adb79380a0347e794c14
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9613209Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9613669Z ##[group]Determining the checkout info
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9614186Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9615077Z [command]/usr/bin/git sparse-checkout disable
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9678494Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9700570Z ##[group]Checking out the ref
+targeted	UNKNOWN STEP	2026-10-04T07:54:26.9703623Z [command]/usr/bin/git checkout --progress --force -B ci/B-CM3-117-676-before refs/remotes/origin/ci/B-CM3-117-676-before
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1402155Z Switched to a new branch 'ci/B-CM3-117-676-before'
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1406148Z branch 'ci/B-CM3-117-676-before' set up to track 'origin/ci/B-CM3-117-676-before'.
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1414436Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1452746Z [command]/usr/bin/git log -1 --format=%H
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1472557Z 5f33eb7daf6192dd4689adb79380a0347e794c14
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1678373Z ##[group]Run actions/setup-node@v6
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1678594Z with:
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1678755Z   node-version: 20
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1678915Z   cache: npm
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1679074Z   check-latest: false
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1681225Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1681408Z   package-manager-cache: true
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.1681610Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.2788337Z Attempting to download 20...
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.7259476Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.9815676Z Extracting ...
+targeted	UNKNOWN STEP	2026-10-04T07:54:27.9903312Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/7e281677-db0f-4fba-bddf-7d006cf7ec08 -f /home/runner/work/_temp/fa047e13-438c-4490-ad94-4d3ad8d19347
+targeted	UNKNOWN STEP	2026-10-04T07:54:28.8341635Z Adding to the cache ...
+targeted	UNKNOWN STEP	2026-10-04T07:54:30.5780887Z ##[group]Environment details
+targeted	UNKNOWN STEP	2026-10-04T07:54:30.7512877Z node: v20.20.2
+targeted	UNKNOWN STEP	2026-10-04T07:54:30.7513171Z npm: 10.8.2
+targeted	UNKNOWN STEP	2026-10-04T07:54:30.7513343Z yarn: 1.22.22
+targeted	UNKNOWN STEP	2026-10-04T07:54:30.7513765Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:30.7531366Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	UNKNOWN STEP	2026-10-04T07:54:30.8318787Z /home/runner/.npm
+targeted	UNKNOWN STEP	2026-10-04T07:54:30.8941329Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.3646691Z Received 86828135 of 86828135 (100.0%), 199.5 MBs/sec
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.3647320Z Cache Size: ~83 MB (86828135 B)
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.3694796Z [command]/usr/bin/tar -xf /home/runner/work/_temp/77440123-8101-4510-88c0-8624b65b7d14/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.5051262Z Cache restored successfully
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.5091643Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.5251686Z ##[group]Run npm ci
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.5251919Z ^[[36;1mnpm ci^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.5443945Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-04T07:54:31.5444183Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:36.0970693Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	UNKNOWN STEP	2026-10-04T07:54:37.0646617Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	UNKNOWN STEP	2026-10-04T07:54:37.8989568Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T07:54:38.8635601Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T07:54:38.8772607Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T07:54:38.9079071Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T07:54:48.9083372Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:48.9084020Z > growth-project-backend@1.0.0 postinstall
+targeted	UNKNOWN STEP	2026-10-04T07:54:48.9084366Z > prisma generate
+targeted	UNKNOWN STEP	2026-10-04T07:54:48.9084486Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:49.6240178Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.5997607Z ┌─────────────────────────────────────────────────────────┐
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.5998593Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.5999236Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.5999865Z │  This is a major update - please follow the guide at    │
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6000590Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6001205Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6001790Z │  Run the following to update                            │
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6002416Z │    npm i --save-dev prisma@latest                       │
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6003044Z │    npm i @prisma/client@latest                          │
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6004094Z └─────────────────────────────────────────────────────────┘
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6004402Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6004965Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.58s
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6011539Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6011941Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6012222Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6012648Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6013009Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6470027Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6470740Z > growth-project-backend@1.0.0 prepare
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6471207Z > lefthook install
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6471383Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.6887428Z sync hooks: ✔️(commit-msg, pre-commit)
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7024818Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7025663Z added 1115 packages, and audited 1116 packages in 21s
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7025993Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7026183Z 202 packages are looking for funding
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7026465Z   run `npm fund` for details
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7051498Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7051696Z 3 high severity vulnerabilities
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7052344Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7052711Z To address all issues (including breaking changes), run:
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7053160Z   npm audit fix --force
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7053334Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7053458Z Run `npm audit` for details.
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7588840Z ##[group]Run npx prisma generate
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7589106Z ^[[36;1mnpx prisma generate^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7643009Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-04T07:54:52.7643236Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:53.7131787Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.6595264Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.6596516Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.58s
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.6596915Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.6597325Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.6597783Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.6598307Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.6598661Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7568343Z ##[group]Run set -euo pipefail
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7568612Z ^[[36;1mset -euo pipefail^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7568920Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7569311Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7569598Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7569823Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7626487Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7626764Z env:
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7626949Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7627239Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7627505Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T07:54:56.7714680Z specs: test/coach-money-occurrence-rows.spec.ts test/audit-sol-cm1r2-117-boundaries.spec.ts test/audit-sol-cm1-116-boundaries.spec.ts test/audit-sol-cm1-117-money-boundaries.spec.ts test/coach-money-event-rows.spec.ts
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1665847Z FAIL test/coach-money-occurrence-rows.spec.ts (140 MB heap size)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1667685Z   ● B-676-3 — a refund or chargeback whose ledger portions round to zero keeps its row › two one-cent refunds in one millisecond and a one-cent lost chargeback: three rows, totals 0
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1668535Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1668798Z     expect(received).toEqual(expected) // deep equality
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1669112Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1669239Z     - Expected  - 29
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1669548Z     + Received  +  1
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1669705Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1669821Z     - Array [
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1670069Z     -   Array [
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1670376Z     -     "2027-03-21T10:00:00.000Z",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1670710Z     -     "refund",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1671451Z     -     "ch_p-1",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1671717Z     -     "USD",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1672152Z     -     "0.01",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1672410Z     -     "0.00",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1672669Z     -     "0.00",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1672950Z     -   ],
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1673189Z     -   Array [
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1673471Z     -     "2027-03-21T10:00:00.000Z",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1673801Z     -     "refund",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1674070Z     -     "ch_p-1",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1674325Z     -     "USD",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1674571Z     -     "0.01",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1674826Z     -     "0.00",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1675078Z     -     "0.00",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1675521Z     -   ],
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1675861Z     -   Array [
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1676138Z     -     "2027-03-21T10:00:00.000Z",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1676456Z     -     "chargeback",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1676705Z     -     "ch_p-1",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1676953Z     -     "USD",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1677184Z     -     "0.01",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1677444Z     -     "0.00",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1677702Z     -     "0.00",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1677954Z     -   ],
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1678193Z     - ]
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1678439Z     + Array []
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1678603Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1679656Z     ^[[0m ^[[90m 76 |^[[39m     ^[[36mconst^[[39m csv ^[[33m=^[[39m ^[[36mawait^[[39m h^[[33m.^[[39mmoney^[[33m.^[[39mexportCsv(^[[33mCOACH^[[39m^[[33m,^[[39m ^[[33mHOUR_WINDOW^[[39m^[[33m,^[[39m ^[[32m'usd'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1681851Z      ^[[90m 77 |^[[39m     ^[[36mconst^[[39m row ^[[33m=^[[39m (type^[[33m:^[[39m string) ^[[33m=>^[[39m [^[[33mAT^[[39m^[[33m.^[[39mtoISOString()^[[33m,^[[39m type^[[33m,^[[39m ^[[32m'ch_p-1'^[[39m^[[33m,^[[39m ^[[32m'USD'^[[39m^[[33m,^[[39m ^[[32m'0.01'^[[39m^[[33m,^[[39m ^[[32m'0.00'^[[39m^[[33m,^[[39m ^[[32m'0.00'^[[39m]^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1683767Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 78 |^[[39m     expect(cols(csv))^[[33m.^[[39mtoEqual([row(^[[32m'refund'^[[39m)^[[33m,^[[39m row(^[[32m'refund'^[[39m)^[[33m,^[[39m row(^[[32m'chargeback'^[[39m)])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1684729Z      ^[[90m    |^[[39m                       ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1694815Z      ^[[90m 79 |^[[39m     expect((^[[36mawait^[[39m h^[[33m.^[[39mmoney^[[33m.^[[39mtotalsFor(^[[33mCOACH^[[39m^[[33m,^[[39m ^[[33mHOUR_WINDOW^[[39m^[[33m,^[[39m ^[[32m'usd'^[[39m))^[[33m.^[[39mnet_cents)^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1696172Z      ^[[90m 80 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1696562Z      ^[[90m 81 |^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1696743Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1697126Z       at Object.<anonymous> (test/coach-money-occurrence-rows.spec.ts:78:23)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1697536Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1698516Z   ● B-676-3 — a refund or chargeback whose ledger portions round to zero keeps its row › only the coach's own sales in the export currency; another charge keeps its own charge id
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1699303Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1699547Z     expect(received).toEqual(expected) // deep equality
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1699853Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1699982Z     - Expected  - 4
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1700281Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1700436Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1700549Z     - Array [
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1700804Z     -   "ch_p-1",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1701087Z     -   "ch_p-1-renewal",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1701377Z     - ]
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1701609Z     + Array []
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1701762Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1702362Z     ^[[0m ^[[90m 102 |^[[39m     refund(^[[32m'r-gbp'^[[39m^[[33m,^[[39m ^[[32m'p-gbp'^[[39m^[[33m,^[[39m ^[[32m'ch_p-gbp'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1703774Z      ^[[90m 103 |^[[39m     ^[[36mconst^[[39m csv ^[[33m=^[[39m ^[[36mawait^[[39m h^[[33m.^[[39mmoney^[[33m.^[[39mexportCsv(^[[33mCOACH^[[39m^[[33m,^[[39m ^[[33mHOUR_WINDOW^[[39m^[[33m,^[[39m ^[[32m'usd'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1705750Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 104 |^[[39m     expect(cols(csv)^[[33m.^[[39mmap((c) ^[[33m=>^[[39m c[^[[35m2^[[39m]))^[[33m.^[[39mtoEqual([^[[32m'ch_p-1'^[[39m^[[33m,^[[39m ^[[32m'ch_p-1-renewal'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1706842Z      ^[[90m     |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1708222Z      ^[[90m 105 |^[[39m     ^[[36mconst^[[39m all ^[[33m=^[[39m ^[[36mawait^[[39m h^[[33m.^[[39mmoney^[[33m.^[[39mexportCsv(^[[33mCOACH^[[39m^[[33m,^[[39m ^[[33mHOUR_WINDOW^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1709491Z      ^[[90m 106 |^[[39m     expect(cols(all)^[[33m.^[[39mmap((c) ^[[33m=>^[[39m [c[^[[35m2^[[39m]^[[33m,^[[39m c[^[[35m3^[[39m]]))^[[33m.^[[39mtoEqual([
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1710394Z      ^[[90m 107 |^[[39m       [^[[32m'ch_p-1'^[[39m^[[33m,^[[39m ^[[32m'USD'^[[39m]^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1710754Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1711093Z       at Object.<anonymous> (test/coach-money-occurrence-rows.spec.ts:104:40)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1711468Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1712348Z   ● B-676-3 — a refund or chargeback whose ledger portions round to zero keeps its row › a period with more refunds than one file holds is MONEY_EXPORT_TOO_LARGE
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1713068Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1713276Z     expect(received).rejects.toMatchObject()
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1713548Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1713776Z     Received promise resolved instead of rejected
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1714880Z     Resolved to value: "date_utc,type,charge_id,stripe_charge_id,client,package,currency,client_paid,client_refunded,processing_fee,tgp_fee,head_coach_share,net_to_you·
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1715889Z     "
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1716140Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1716963Z     ^[[0m ^[[90m 118 |^[[39m       ^[[36mreturn^[[39m ^[[33mArray^[[39m^[[33m.^[[39m^[[36mfrom^[[39m({ length^[[33m:^[[39m args^[[33m.^[[39mtake }^[[33m,^[[39m () ^[[33m=>^[[39m ({}))^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1717914Z      ^[[90m 119 |^[[39m     }^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1719150Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 120 |^[[39m     ^[[36mawait^[[39m expect(h^[[33m.^[[39mmoney^[[33m.^[[39mexportCsv(^[[33mCOACH^[[39m^[[33m,^[[39m ^[[33mHOUR_WINDOW^[[39m))^[[33m.^[[39mrejects^[[33m.^[[39mtoMatchObject({
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1720246Z      ^[[90m     |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1721024Z      ^[[90m 121 |^[[39m       response^[[33m:^[[39m { code^[[33m:^[[39m ^[[32m'MONEY_EXPORT_TOO_LARGE'^[[39m }^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1721726Z      ^[[90m 122 |^[[39m     })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1722834Z      ^[[90m 123 |^[[39m     expect(take)^[[33m.^[[39mtoEqual([^[[33mMONEY_EXPORT_MAX_ROWS^[[39m ^[[33m+^[[39m ^[[35m1^[[39m])^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1723403Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1723654Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1724310Z       at Object.<anonymous> (test/coach-money-occurrence-rows.spec.ts:120:11)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1724720Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1725856Z   ● B-676-3 — window boundaries and a later head-coach recovery › an event at the last millisecond is September; one at the boundary and the recovery are October
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1726602Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1726809Z     expect(received).toEqual(expected) // deep equality
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1727105Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1727235Z     - Expected  - 11
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1727523Z     + Received  +  1
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1727694Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1727822Z     - Array [
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1728070Z     -   Array [
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1728367Z     -     "2026-09-30T23:59:59.999Z",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1728686Z     -     "refund",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1728982Z     -     "ch_1",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1729243Z     -     "USD",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1729499Z     -     "24.50",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1729764Z     -     "0.00",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1730014Z     -     "0.00",
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1730266Z     -   ],
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1730519Z     - ]
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1730760Z     + Array []
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1730908Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1731115Z     ^[[0m ^[[90m 167 |^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1732118Z      ^[[90m 168 |^[[39m   it(^[[32m'an event at the last millisecond is September; one at the boundary and the recovery are October'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1733232Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 169 |^[[39m     expect(csv(^[[33mSEP^[[39m))^[[33m.^[[39mtoEqual([
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1733905Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1735748Z      ^[[90m 170 |^[[39m       [last^[[33m.^[[39mtoISOString()^[[33m,^[[39m ^[[32m'refund'^[[39m^[[33m,^[[39m ^[[32m'ch_1'^[[39m^[[33m,^[[39m ^[[32m'USD'^[[39m^[[33m,^[[39m ^[[32m'24.50'^[[39m^[[33m,^[[39m ^[[32m'0.00'^[[39m^[[33m,^[[39m ^[[32m'0.00'^[[39m]^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1736824Z      ^[[90m 171 |^[[39m     ])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1737322Z      ^[[90m 172 |^[[39m     expect(csv(^[[33mOCT^[[39m))^[[33m.^[[39mtoEqual([^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1737626Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1737959Z       at Object.<anonymous> (test/coach-money-occurrence-rows.spec.ts:169:22)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.1738328Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.3258439Z PASS test/coach-money-event-rows.spec.ts (158 MB heap size)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6481183Z PASS test/audit-sol-cm1-117-money-boundaries.spec.ts (183 MB heap size)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6656526Z   ● Console
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6685450Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6705753Z     console.log
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6707630Z       AUDIT_TEAM_REFUND {"csv":"date_utc,type,charge_id,stripe_charge_id,client,package,currency,client_paid,client_refunded,processing_fee,tgp_fee,head_coach_share,net_to_you\r\n2026-10-04T07:54:59.615Z,refund,p-audit,ch_p-audit,Client,Monthly coaching,USD,,24.50,0.00,-0.49,-1.22,-22.78\r\n","refundedTotal":2450}
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6708979Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6709348Z       at Object.<anonymous> (test/audit-sol-cm1-117-money-boundaries.spec.ts:75:13)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6709750Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6709856Z     console.log
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6711461Z       AUDIT_DELAYED_HEAD_REFUND {"csv":"date_utc,type,charge_id,stripe_charge_id,client,package,currency,client_paid,client_refunded,processing_fee,tgp_fee,head_coach_share,net_to_you\r\n2026-10-04T09:54:59.629Z,refund,p-audit,ch_p-audit,Client,Monthly coaching,USD,,,0.00,0.00,-1.22,0.00\r\n","refundedTotal":0}
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6712807Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6713110Z       at Object.<anonymous> (test/audit-sol-cm1-117-money-boundaries.spec.ts:97:13)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6713477Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6713561Z     console.log
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6715316Z       AUDIT_SAME_MILLISECOND_REFUNDS {"csv":"date_utc,type,charge_id,stripe_charge_id,client,package,currency,client_paid,client_refunded,processing_fee,tgp_fee,head_coach_share,net_to_you\r\n2026-10-04T07:54:59.636Z,refund,p-audit,ch_p-audit,Client,Monthly coaching,USD,,0.99,0.00,-0.01,0.00,-0.97\r\n2026-10-04T07:54:59.636Z,refund,p-audit,ch_p-audit,Client,Monthly coaching,USD,,1.01,0.00,-0.02,0.00,-0.98\r\n","refundedTotal":200}
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6716634Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6716867Z       at Object.<anonymous> (test/audit-sol-cm1-117-money-boundaries.spec.ts:112:13)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6717119Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6717196Z     console.log
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6717635Z       AUDIT_TRIAL_CHURN {"mrr_cents":0,"paying_clients":0,"trial_clients":0,"trial_mrr_cents":0,"churned_30d":1,"new_clients_30d":1}
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6717965Z 
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6718179Z       at Object.<anonymous> (test/audit-sol-cm1-117-money-boundaries.spec.ts:132:13)
+targeted	UNKNOWN STEP	2026-10-04T07:54:59.6718422Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.0673228Z ^[[33m[Nest] 2820  - ^[[39m10/04/2026, 7:54:59 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-audit refund=36004fab-2d43-4188-a58b-7197d224d96c code=error^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.0674695Z PASS test/audit-sol-cm1-116-boundaries.spec.ts (134 MB heap size)
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3555954Z FAIL test/audit-sol-cm1r2-117-boundaries.spec.ts (164 MB heap size)
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3556798Z   ● Console
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3556946Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3557051Z     console.log
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3558469Z       AUDIT_R2_ZERO_SLICE_REFUND {"csv":"date_utc,type,charge_id,stripe_charge_id,client,package,currency,client_paid,client_refunded,processing_fee,tgp_fee,head_coach_share,net_to_you\r\n","totals":{"gross_cents":0,"processing_cents":0,"platform_fee_cents":0,"head_coach_split_cents":0,"refunded_cents":0,"head_coach_income_cents":0,"net_cents":0,"charge_count":0,"processing_paid_by":"none"}}
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3559490Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3560041Z       at Object.<anonymous> (test/audit-sol-cm1r2-117-boundaries.spec.ts:33:13)
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3560296Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3560853Z   ● Sol R2 agent 117 — complete client refund CSV attribution › a real one-cent refund must remain visible when every proportional slice rounds to zero
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3561264Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3561410Z     expect(received).toEqual(expected) // deep equality
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3561599Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3561684Z     - Expected  - 3
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3561867Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3561967Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3562036Z     - Array [
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3562207Z     -   "0.01",
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3562374Z     - ]
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3562528Z     + Array []
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3562629Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3563134Z     ^[[0m ^[[90m 33 |^[[39m     console^[[33m.^[[39mlog(^[[32m'AUDIT_R2_ZERO_SLICE_REFUND'^[[39m^[[33m,^[[39m ^[[33mJSON^[[39m^[[33m.^[[39mstringify({ csv^[[33m,^[[39m totals }))^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3564016Z      ^[[90m 34 |^[[39m     expect(totals^[[33m.^[[39mnet_cents)^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m ^[[90m// Preserve exact ledger parity; client amount is independent.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3565019Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 35 |^[[39m     expect(lines^[[33m.^[[39mslice(^[[35m1^[[39m)^[[33m.^[[39mmap((line) ^[[33m=>^[[39m line^[[33m.^[[39msplit(^[[32m','^[[39m)[^[[35m8^[[39m]))^[[33m.^[[39mtoEqual([^[[32m'0.01'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3565902Z      ^[[90m    |^[[39m                                                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3566231Z      ^[[90m 36 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3566488Z      ^[[90m 37 |^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3566713Z      ^[[90m 38 |^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3566833Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3567043Z       at Object.<anonymous> (test/audit-sol-cm1r2-117-boundaries.spec.ts:35:62)
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3567283Z 
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3576897Z Test Suites: 2 failed, 3 passed, 5 total
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3577333Z Tests:       5 failed, 11 passed, 16 total
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3577648Z Snapshots:   0 total
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3577843Z Time:        2.941 s
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.3578934Z Ran all test suites matching test/coach-money-occurrence-rows.spec.ts|test/audit-sol-cm1r2-117-boundaries.spec.ts|test/audit-sol-cm1-116-boundaries.spec.ts|test/audit-sol-cm1-117-money-boundaries.spec.ts|test/coach-money-event-rows.spec.ts.
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.4900686Z ##[error]Process completed with exit code 1.
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5014144Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5687373Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5717904Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5747910Z Temporarily overriding HOME='/home/runner/work/_temp/0cc64f5b-62d2-43e0-8a17-10adf26e996f' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5749067Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5752467Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5779049Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5784115Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.5813105Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6038171Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6042143Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6069691Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6259261Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6264553Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6289128Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6290387Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6291018Z includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6291561Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6297430Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6316649Z /home/runner/work/_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6325283Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6374819Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6392586Z /home/runner/work/_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6399772Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6574857Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6593673Z /github/runner_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.6607267Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7500168Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7521356Z /github/runner_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7528738Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7596442Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7780612Z Removing credentials config '/home/runner/work/_temp/git-credentials-45470b85-3da2-4398-89f4-8524d246ad4f.config'
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7883831Z Print service container logs: 2a55d5cc68bb4b119d7ca9435f8eb9e6_redis7alpine_22d276
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7888771Z ##[command]/usr/bin/docker logs --details f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7994326Z  1:C 04 Oct 2026 07:54:19.201 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7997341Z  1:C 04 Oct 2026 07:54:19.201 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7998150Z  1:C 04 Oct 2026 07:54:19.201 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.7999406Z  1:C 04 Oct 2026 07:54:19.201 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.8000395Z  1:M 04 Oct 2026 07:54:19.201 * monotonic clock: POSIX clock_gettime
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.8000929Z  1:M 04 Oct 2026 07:54:19.201 * Running mode=standalone, port=6379.
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.8001485Z  1:M 04 Oct 2026 07:54:19.202 * Server initialized
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.8002147Z  1:M 04 Oct 2026 07:54:19.202 * Ready to accept connections tcp
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.8012768Z Stop and remove container: 2a55d5cc68bb4b119d7ca9435f8eb9e6_redis7alpine_22d276
+targeted	UNKNOWN STEP	2026-10-04T07:55:00.8017091Z ##[command]/usr/bin/docker rm --force f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:55:06.5436968Z f1d159971f660561d30303b45ba9b14ed492e21eb7dade0c3ad43325c22f32b0
+targeted	UNKNOWN STEP	2026-10-04T07:55:06.5460974Z Remove container network: github_network_518c7eab954f4ca78139810aad800652
+targeted	UNKNOWN STEP	2026-10-04T07:55:06.5464570Z ##[command]/usr/bin/docker network rm github_network_518c7eab954f4ca78139810aad800652
+targeted	UNKNOWN STEP	2026-10-04T07:55:06.6656231Z github_network_518c7eab954f4ca78139810aad800652
+targeted	UNKNOWN STEP	2026-10-04T07:55:06.6727321Z Cleaning up orphan processes

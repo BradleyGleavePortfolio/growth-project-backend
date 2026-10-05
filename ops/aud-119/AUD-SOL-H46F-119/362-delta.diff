@@ -1,0 +1,137 @@
+diff --git a/src/services/authActions.ts b/src/services/authActions.ts
+index 6a9ab93..fa49fc3 100644
+--- a/src/services/authActions.ts
++++ b/src/services/authActions.ts
+@@ -21,7 +21,7 @@ import { deleteWorkoutLogsForUser } from '../offline/sync/sync-engine';
+ import { AUTOSAVE_MIRROR_KEY_PREFIX } from '../storage/autosaveMirror';
+ import { IMPORT_PAIRING_MIRROR_KEY_PREFIX } from '../storage/importPairingMirror';
+ import { IMPORT_OFFER_DECISION_KEY_PREFIX } from '../storage/importOfferDecision';
+-import { ON_DEVICE_STATE_PREFIX } from './health/onDeviceState';
++import { retireOnDeviceStateAtSignOut } from './health/onDeviceState';
+ import { stopOnDeviceHealthWork } from './health/sessionFence';
+ import { LEGACY_DRAFT_PREFIX, purgeConsultationDraft } from '../lib/consultation/storage';
+ import { useCoachStore } from '../store/coachStore';
+@@ -109,11 +109,6 @@ const ASYNC_SIGN_OUT_PREFIXES = [
+   // inherit it and be handed a session that pairs into someone else's account.
+   // Swept via the exported constant so the literal lives in one place.
+   IMPORT_PAIRING_MIRROR_KEY_PREFIX,
+-  // S14 (A-317-1 / B-317-1): on-device health Connect authorizations and
+-  // per-account sync progress (`services/health/onDeviceState.ts`). Swept for
+-  // every account on sign-out (and therefore after account deletion): the
+-  // phone's health store must not be read again until someone taps Connect.
+-  ON_DEVICE_STATE_PREFIX,
+   // Legacy plaintext consultation drafts (first build of PR #310, keyed
+   // `consultation_v1:<userId>`): health and screening answers must never
+   // survive sign-out. Current drafts live in SecureStore and are purged by
+@@ -300,6 +295,8 @@ export async function signOut(userId?: string | null): Promise<void> {
+   // no new native page, record type, upload or progress write starts after
+   // the person taps Log out (the `logout` event below comes much later).
+   stopOnDeviceHealthWork();
++  // Sol B-362-7: health grants and progress leave through their own chain.
++  const healthStateRetired = retireOnDeviceStateAtSignOut();
+ 
+   // Clear all auth + session state and notify the root navigator.
+   // We surface failures via console.error instead of Alert because a sign-out
+@@ -394,6 +391,7 @@ export async function signOut(userId?: string | null): Promise<void> {
+       // `logout` is emitted below. clearAllStorage() also wipes the namespace;
+       // this is the explicit, mirror-aware path.
+       clearUserCache(),
++      healthStateRetired,
+       ...SECURE_SIGN_OUT_KEYS.map((k) => secureStorage.removeItem(k)),
+       AsyncStorage.removeMany([...ASYNC_SIGN_OUT_KEYS, ...prefixedKeys, ...perUserKeys]),
+       // R15 (PR #161): route new user-scoped MMKV keys through proper storage
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index 88f65ad..da56100 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -23,6 +23,7 @@
+  */
+ 
+ import AsyncStorage from '@react-native-async-storage/async-storage';
++import { OnDeviceSessionChangedError } from './sessionFence';
+ 
+ /** Every key this module writes starts with this prefix. */
+ export const ON_DEVICE_STATE_PREFIX = 'wearables_on_device:';
+@@ -115,6 +116,19 @@ function serialStorage<T>(op: () => Promise<T>): Promise<T> {
+   return run;
+ }
+ 
++/** Sol B-362-7: moves when sign-out starts; a write queued before it never runs. */
++let signOutEpoch = 0;
++/** No grant written at or before this sequence is honoured after a sign-out. */
++let signedOutThroughSeq = 0;
++
++function serialWrite(op: () => Promise<void>): Promise<void> {
++  const epoch = signOutEpoch;
++  return serialStorage(() => {
++    if (epoch !== signOutEpoch) throw new OnDeviceSessionChangedError();
++    return op();
++  });
++}
++
+ /** The local authorization write sequence now (capture it before any await). */
+ export function localAuthorizationSeq(): number {
+   return authWriteSeq;
+@@ -134,8 +148,19 @@ export async function recordLocalAuthorization(
+   };
+   const key = authKey(scope.userId, scope.source);
+   authWriteSeq += 1; // before the await: a retirement already running sees it (Sol B-362-2)
+-  authWrittenAt.set(key, authWriteSeq);
+-  await serialStorage(() => AsyncStorage.setItem(key, JSON.stringify(record)));
++  const seq = authWriteSeq;
++  const prior = authWrittenAt.get(key);
++  authWrittenAt.set(key, seq);
++  try {
++    await serialWrite(() => AsyncStorage.setItem(key, JSON.stringify(record)));
++  } catch (err) {
++    // Opus C-362-13: a grant that failed or was dropped never counts as newer.
++    if (authWrittenAt.get(key) === seq) {
++      if (prior === undefined) authWrittenAt.delete(key);
++      else authWrittenAt.set(key, prior);
++    }
++    throw err;
++  }
+   return record;
+ }
+ 
+@@ -145,7 +170,9 @@ export async function getLocalAuthorization(
+   source: OnDeviceSource,
+ ): Promise<LocalAuthorization | null> {
+   await storageTail; // every write already queued has settled
+-  const parsed = await readJson(authKey(userId, source));
++  const key = authKey(userId, source);
++  if (signOutEpoch > 0 && (authWrittenAt.get(key) ?? 0) <= signedOutThroughSeq) return null;
++  const parsed = await readJson(key);
+   if (!isRecord(parsed)) return null;
+   if (
+     parsed.v !== 1 ||
+@@ -185,6 +212,22 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+   if (doomed.length > 0) await serialStorage(() => AsyncStorage.removeMany(doomed));
+ }
+ 
++/**
++ * Sign-out (Sol B-362-7). Synchronously drops every queued write and voids
++ * every grant written so far (even if the removal below fails), then, in the
++ * same chain, waits for the native operation in flight and removes every key
++ * under the prefix. Never rejects: sign-out always completes.
++ */
++export function retireOnDeviceStateAtSignOut(): Promise<void> {
++  signOutEpoch += 1;
++  signedOutThroughSeq = authWriteSeq;
++  return serialStorage(async () => {
++    const keys = await AsyncStorage.getAllKeys();
++    const doomed = keys.filter((k) => k.startsWith(ON_DEVICE_STATE_PREFIX));
++    if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
++  }).catch(() => undefined);
++}
++
+ /**
+  * Disconnect cleanup for `source` (Sol B-362-2): removes `userId`'s local
+  * authorization and progress, never another account's; with `userId` null
+@@ -256,5 +299,5 @@ export async function getSyncProgress(scope: OnDeviceScope): Promise<SyncProgres
+ /** Persist the progress for a scope. */
+ export async function setSyncProgress(scope: OnDeviceScope, progress: SyncProgress): Promise<void> {
+   const value = JSON.stringify(progress);
+-  await serialStorage(() => AsyncStorage.setItem(progressKey(scope), value));
++  await serialWrite(() => AsyncStorage.setItem(progressKey(scope), value));
+ }

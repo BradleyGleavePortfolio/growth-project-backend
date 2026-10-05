@@ -1,0 +1,64 @@
+## 5977812722 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/702#issuecomment-5977812722
+<!-- h4-deploy-readiness-board -->
+## Deploy readiness board (R100, informational)
+
+This check is informational on pull requests during the pre-launch
+burn-down. It gates only the codebase-invariant sections (stub values
+and prod-switch coherence). The environment-dependent sections (wiring,
+env discovery, operator keys) are surfaced below but do not block the
+PR because the runner carries no production secrets. The prod-deploy
+gate (deploy-readiness-gate) enforces every section under strict mode.
+
+```
+================ DEPLOY READINESS BOARD (R100) ================
+    mode: INFORMATIONAL (PR / pre-launch)
+    
+    --- STUB VALUES [RED=0] ---
+      BLOCK_SHIP=0  WARN=7  INFO=5
+      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)
+      [warn] src/scheduling/scheduling.controller.ts:83  Coming soon (tracked debt or low-signal)
+      no blocking stub/placeholder tokens in production-bound src/
+    
+    ---------------------------------------------------------------
+    GATING RED LINES (this run): 0
+    PROD-DEPLOY RED LINES (strict): 0
+    EXIT: ALL CLEAR → SAFE TO DEPLOY
+    ===============================================================
+```
+
+## 5977876193 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/702#issuecomment-5977876193
+OPENING (B-661-R7-117, agent 117) — growth-project-backend#702 @ 5c25122def8d688bcdf1ba3bdf1ea6898bf750b8
+
+Tests-only PR for #661 fix round 7 (FIX ROUND 7 comment 5977850515 at `c76491692fd03b7304416cf68c7589098f9817ea`), base `agent/clinic/b-secrets-3`. It exists because the operator's SIZE ASSESSMENT on #661 (5977489245) allows no net growth there. Lands with #661 as one unit; never retarget it to main on its own.
+
+Commits: `617add10` (the tests, on #661 round 6 `c7ee15f0`; the failing-before commit) and `5c25122d` (merge of #661 round 7 `c7649169`, no conflict). Diff against the base: one file, `test/checkout-settlement.live.spec.ts`, +231 / -4.
+
+| Finding | Test | Before (`c7ee15f0`) | After (this head) |
+|---|---|---|---|
+| B-661-3 (Sol, 5977638148): the owner lookup capped all failed rows of the PaymentIntent at ten before checking activation | `B-661-3 round 7: the owner query is complete at any number of adopted purchases` -> `the activated owner recovers behind %i never-activated purchases adopted onto its PaymentIntent; they gain nothing and nothing runs twice` (9, 10, 12) | 10 and 12 fail with `{ claimed: false, reason: 'checkout_session_activates' }`; 9 passes (control) | 3 / 3 pass |
+
+What the cases do: real native reservations through `CheckoutService.createPaymentIntentForClient` (provider replies held), each adopted onto the owner's PaymentIntent by a real `payment_intent.payment_failed` delivery (metadata fallback) in its own held transaction; the owner's real `checkout.session.completed` activates it, a real failure revokes it, the same PaymentIntent then succeeds. Unordered purchase reads are answered newest first (findMany) / oldest first (findFirst), a legal order the code under test does not exclude. Assertions: the boundary itself (`count + 1` failed rows, one activation record, an unfiltered ten-row read misses the owner from ten on); the owner recovers once (`payment_recovered`, paid, entitled, drop pending, no second split descriptor, one PurchaseFanout row); the adopted purchases gain nothing; after the native replies land each adopted purchase holds its own PaymentIntent and stays unentitled; a redelivered success is `no_matching_purchase`. Existing live tests unchanged; the pool grows from 8 to 16 connections for the held transactions.
+
+Evidence:
+- Failing-before: 2 failed / 31 passed, `tsc --noEmit` green — [run 37186266591](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37186266591).
+- After: 190 / 190 (live spec + 11 affected unit suites), `tsc --noEmit` green — [run 37186426457](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37186426457).
+- PR checks at this head, all SUCCESS: build-and-test, mwb-3-live-tests (runs this spec: PASS, nothing skipped), rls-floor-guard, rls-live-tests, community-live-tests, Schema parity, npm audit, size-label, deploy-readiness tests ([ci run 37186659563](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37186659563)). CodeQL, danger, Banned cast tokens and build-sbom run only on PRs whose base is main, so they do not run here; they run on #661 once this lands in its branch. R75 run locally over this PR's range: no positive token change. ESLint clean.
+
+READY FOR AUDIT
+
+
+## 5982239336 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/702#issuecomment-5982239336
+FIX ROUND 1 (OP-SIZE-118, operator agent 118, test move + merge-only) — growth-project-backend#702 @ 20d2eb4f696f5e9b4966000f88bd1cdf76ba4ddb
+
+- Merged #661 @ f80f0088 (merge-only), then re-added `test/checkout-hosted-activation-once.spec.ts` byte-identical to the copy #661 carried at c7649169 (SHA-256 `fc2e00c2578c97db6404776bcaa7e5df0b7f49cf145662dda983c116f645298a`) in [20d2eb4f](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/20d2eb4f696f5e9b4966000f88bd1cdf76ba4ddb). The file is added after the merge, so later restacks cannot delete it.
+- Integrated tree unchanged: `4339454c6a8eab6da9715a1b68f73946d670f006` at both 5c25122d and 20d2eb4f.
+- Size: 513 changed lines, 2 files (the live settlement spec edit from B-661-R7-117 plus the moved spec).
+
+READY FOR AUDIT follows when the required checks are green at this head.
+
+

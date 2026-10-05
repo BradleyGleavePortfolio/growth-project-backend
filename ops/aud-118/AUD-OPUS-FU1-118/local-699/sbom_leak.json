@@ -1,0 +1,1 @@
+{"bomFormat":"CycloneDX","components":[{"name":"@nestjs/core","version":"11.0.0"},{"name":"@prisma/client","version":"6.19.3"},{"name":"prisma","version":"6.19.3"},{"name":"leftpad-devonly","version":"1.0.0"}]}

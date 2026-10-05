@@ -1,0 +1,559 @@
+targeted	Set up job	﻿2026-10-04T22:03:51.7001173Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T22:03:51.7017475Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T22:03:51.7017987Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T22:03:51.7018406Z Version: 20260901.588
+targeted	Set up job	2026-10-04T22:03:51.7018793Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T22:03:51.7019264Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T22:03:51.7019660Z Worker ID: {3e7c38b0-64d0-4327-9ca3-c35e45ae11ac}
+targeted	Set up job	2026-10-04T22:03:51.7020060Z Azure Region: westus2
+targeted	Set up job	2026-10-04T22:03:51.7020425Z ##[endgroup]
+targeted	Set up job	2026-10-04T22:03:51.7021120Z ##[group]Operating System
+targeted	Set up job	2026-10-04T22:03:51.7021480Z Ubuntu
+targeted	Set up job	2026-10-04T22:03:51.7021906Z 24.04.5
+targeted	Set up job	2026-10-04T22:03:51.7022207Z LTS
+targeted	Set up job	2026-10-04T22:03:51.7022832Z ##[endgroup]
+targeted	Set up job	2026-10-04T22:03:51.7023210Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T22:03:51.7023547Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T22:03:51.7023912Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T22:03:51.7024559Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T22:03:51.7025740Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T22:03:51.7026263Z ##[endgroup]
+targeted	Set up job	2026-10-04T22:03:51.7026966Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T22:03:51.7028129Z Contents: read
+targeted	Set up job	2026-10-04T22:03:51.7028520Z Metadata: read
+targeted	Set up job	2026-10-04T22:03:51.7028870Z Packages: read
+targeted	Set up job	2026-10-04T22:03:51.7029212Z ##[endgroup]
+targeted	Set up job	2026-10-04T22:03:51.7030458Z Secret source: Actions
+targeted	Set up job	2026-10-04T22:03:51.7031021Z Cache mode: write
+targeted	Set up job	2026-10-04T22:03:51.7031461Z Prepare workflow directory
+targeted	Set up job	2026-10-04T22:03:51.7280771Z Prepare all required actions
+targeted	Set up job	2026-10-04T22:03:51.7310447Z Getting action download info
+targeted	Set up job	2026-10-04T22:03:52.0598277Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T22:03:52.1264517Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T22:03:52.2884246Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T22:03:52.3181364Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T22:03:52.3189395Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T22:03:52.3969910Z '1.48'
+targeted	Initialize containers	2026-10-04T22:03:52.3983912Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T22:03:52.3984428Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T22:03:52.4098009Z '1.48'
+targeted	Initialize containers	2026-10-04T22:03:52.4109146Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T22:03:52.4112465Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T22:03:52.4113690Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T22:03:52.4117215Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=3e5d53"
+targeted	Initialize containers	2026-10-04T22:03:52.4224282Z ##[command]/usr/bin/docker network prune --force --filter "label=3e5d53"
+targeted	Initialize containers	2026-10-04T22:03:52.4309141Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T22:03:52.4309429Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T22:03:52.4315261Z ##[command]/usr/bin/docker network create --label 3e5d53 github_network_45fee404049d4adc995c0828e69779aa
+targeted	Initialize containers	2026-10-04T22:03:52.4665083Z 2efbe3938197bd182244755b088bcf643857ec3439084d67534e27495b899758
+targeted	Initialize containers	2026-10-04T22:03:52.4680537Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T22:03:52.4697515Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T22:03:52.4711011Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T22:03:53.4756396Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T22:03:53.7396874Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:03:53.7397844Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:03:53.7398570Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:03:53.7399946Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:03:53.7400606Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:03:53.7401211Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:03:53.7401873Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T22:03:53.7402454Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T22:03:53.7403071Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:03:53.7403714Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T22:03:53.7404238Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T22:03:53.9820847Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T22:03:54.0039675Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:03:54.0041009Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T22:03:54.0610151Z 16333ee0c00f: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:03:54.0611527Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-04T22:03:54.1262963Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T22:03:54.2089023Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T22:03:54.2421019Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:03:54.2421632Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T22:03:54.2890015Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:03:54.2890576Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T22:03:54.3242816Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:03:54.3243149Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T22:03:54.3887248Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T22:03:54.4804225Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T22:03:54.6681979Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T22:03:54.6748466Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T22:03:54.6806205Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T22:03:54.6880115Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T22:03:54.6908928Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T22:03:54.6918724Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T22:03:54.6924197Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T22:03:54.6950265Z ##[command]/usr/bin/docker create --name 202b0ff958894227b698e8386d4e2cc2_redis7alpine_fa1fb4 --label 3e5d53 --network github_network_45fee404049d4adc995c0828e69779aa --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T22:03:54.7128420Z f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Initialize containers	2026-10-04T22:03:54.7145273Z ##[command]/usr/bin/docker start f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Initialize containers	2026-10-04T22:03:54.8717867Z f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Initialize containers	2026-10-04T22:03:54.8733736Z ##[command]/usr/bin/docker ps --all --filter id=f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T22:03:54.8820822Z f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5 Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T22:03:54.8836461Z ##[command]/usr/bin/docker port f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Initialize containers	2026-10-04T22:03:54.8916277Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T22:03:54.8916553Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T22:03:54.8948465Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T22:03:54.8953887Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T22:03:54.8962543Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Initialize containers	2026-10-04T22:03:54.9038818Z starting
+targeted	Initialize containers	2026-10-04T22:03:54.9053256Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T22:03:56.9050017Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Initialize containers	2026-10-04T22:03:56.9136984Z starting
+targeted	Initialize containers	2026-10-04T22:03:56.9147151Z redis service is starting, waiting 4 seconds before checking again.
+targeted	Initialize containers	2026-10-04T22:04:00.9881388Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Initialize containers	2026-10-04T22:04:00.9971342Z healthy
+targeted	Initialize containers	2026-10-04T22:04:00.9983655Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T22:04:00.9984154Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T22:04:01.0144313Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0144550Z with:
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0144864Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0146122Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0146245Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0146379Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0146499Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0146627Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0146902Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0147039Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0147149Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0147268Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0147378Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0147480Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0147592Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0147726Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0147939Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0809399Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0810200Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0810522Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0810990Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0811539Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0824465Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0832651Z Temporarily overriding HOME='/home/runner/work/_temp/a4908635-1953-40c0-8f62-3aeb2bc26f62' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0833056Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0836359Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0875920Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0878607Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0880156Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0882974Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0883394Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0978519Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0978889Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0979263Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0979473Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0979577Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0979768Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0979944Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0980102Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0980363Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0980557Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0980668Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0980791Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0980961Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0982438Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.0988906Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1026530Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1026759Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1028872Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1049655Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1049947Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1050640Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1054032Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1075379Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1350881Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1353614Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1374114Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1529636Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1529929Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1550493Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1707378Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1731602Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1753032Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1777149Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1799735Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1825657Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1825875Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T22:04:01.1830437Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a2d99e709c10092e9f6a7103d9e5350e0ee9451e:refs/remotes/origin/audit/AUD-OPUS-T3E-119/706-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6228102Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6228709Z  * [new ref]         a2d99e709c10092e9f6a7103d9e5350e0ee9451e -> origin/audit/AUD-OPUS-T3E-119/706-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6237924Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-T3E-119/706-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6259203Z   origin/audit/AUD-OPUS-T3E-119/706-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6265106Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-T3E-119/706-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6281102Z a2d99e709c10092e9f6a7103d9e5350e0ee9451e
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6284063Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6284381Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6284996Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6295702Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6324989Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6346223Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.6348469Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-T3E-119/706-probes refs/remotes/origin/audit/AUD-OPUS-T3E-119/706-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.7854152Z Switched to a new branch 'audit/AUD-OPUS-T3E-119/706-probes'
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.7857657Z branch 'audit/AUD-OPUS-T3E-119/706-probes' set up to track 'origin/audit/AUD-OPUS-T3E-119/706-probes'.
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.7866266Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.7899530Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T22:04:02.7917271Z a2d99e709c10092e9f6a7103d9e5350e0ee9451e
+targeted	Run actions/setup-node@v6	﻿2026-10-04T22:04:02.8085622Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:02.8085774Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:02.8085878Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:02.8085984Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:02.8086090Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:02.8087312Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:02.8087425Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:02.8087558Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:02.8960251Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:03.3720845Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:03.7545575Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:03.7628565Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/d1f355af-7a6e-4359-8e09-4dfb5ccce037 -f /home/runner/work/_temp/953de782-75fa-4de6-acd7-3315a2832fcd
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:04.4930753Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:05.9206032Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:06.0620138Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:06.0620598Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:06.0620926Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:06.0621600Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:06.0632578Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:06.1258863Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:06.3609307Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:07.6715174Z Received 0 of 86828135 (0.0%), 0.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:08.2991833Z Received 86828135 of 86828135 (100.0%), 50.9 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:08.2992316Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:08.3066291Z [command]/usr/bin/tar -xf /home/runner/work/_temp/e8a1ae1c-5a27-4115-993a-4510ffa6160f/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:08.4245626Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T22:04:08.4286020Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T22:04:08.4443521Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T22:04:08.4443844Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T22:04:08.4617723Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T22:04:08.4618023Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T22:04:11.8070128Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T22:04:11.9946090Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T22:04:13.1349394Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T22:04:13.7711949Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T22:04:13.7882862Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T22:04:13.8344086Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T22:04:21.1134635Z 
+targeted	Run npm ci	2026-10-04T22:04:21.1135715Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T22:04:21.1136180Z > prisma generate
+targeted	Run npm ci	2026-10-04T22:04:21.1136465Z 
+targeted	Run npm ci	2026-10-04T22:04:21.6350231Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T22:04:23.8156448Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T22:04:23.8157002Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T22:04:23.8157571Z │                                                         │
+targeted	Run npm ci	2026-10-04T22:04:23.8158076Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T22:04:23.8158642Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T22:04:23.8159199Z │                                                         │
+targeted	Run npm ci	2026-10-04T22:04:23.8159643Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T22:04:23.8160510Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T22:04:23.8161030Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T22:04:23.8161519Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T22:04:23.8162154Z 
+targeted	Run npm ci	2026-10-04T22:04:23.8162909Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.17s
+targeted	Run npm ci	2026-10-04T22:04:23.8163241Z 
+targeted	Run npm ci	2026-10-04T22:04:23.8163685Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T22:04:23.8164123Z 
+targeted	Run npm ci	2026-10-04T22:04:23.8165060Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	Run npm ci	2026-10-04T22:04:23.8165471Z 
+targeted	Run npm ci	2026-10-04T22:04:23.8640490Z 
+targeted	Run npm ci	2026-10-04T22:04:23.8641036Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T22:04:23.8641436Z > lefthook install
+targeted	Run npm ci	2026-10-04T22:04:23.9051826Z 
+targeted	Run npm ci	2026-10-04T22:04:23.9052618Z sync hooks: ✔️(commit-msg, pre-commit)
+targeted	Run npm ci	2026-10-04T22:04:23.9169970Z 
+targeted	Run npm ci	2026-10-04T22:04:23.9170526Z added 1115 packages, and audited 1116 packages in 15s
+targeted	Run npm ci	2026-10-04T22:04:23.9170756Z 
+targeted	Run npm ci	2026-10-04T22:04:23.9170854Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T22:04:23.9171060Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T22:04:23.9192419Z 
+targeted	Run npm ci	2026-10-04T22:04:23.9192646Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-04T22:04:23.9192807Z 
+targeted	Run npm ci	2026-10-04T22:04:23.9193406Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T22:04:23.9193686Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T22:04:23.9193806Z 
+targeted	Run npm ci	2026-10-04T22:04:23.9193995Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T22:04:23.9764522Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T22:04:23.9764892Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T22:04:23.9819614Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T22:04:23.9819771Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T22:04:24.6930819Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T22:04:26.8823319Z 
+targeted	Run npx prisma generate	2026-10-04T22:04:26.8824425Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.15s
+targeted	Run npx prisma generate	2026-10-04T22:04:26.8824838Z 
+targeted	Run npx prisma generate	2026-10-04T22:04:26.8825043Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T22:04:26.8825223Z 
+targeted	Run npx prisma generate	2026-10-04T22:04:26.8825478Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	Run npx prisma generate	2026-10-04T22:04:26.8825707Z 
+targeted	Targeted jest	﻿2026-10-04T22:04:26.9696631Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T22:04:26.9696828Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T22:04:26.9697043Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T22:04:26.9697301Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T22:04:26.9697489Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T22:04:26.9697646Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T22:04:26.9749315Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T22:04:26.9749501Z env:
+targeted	Targeted jest	2026-10-04T22:04:26.9749621Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T22:04:26.9749827Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T22:04:26.9749995Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T22:04:26.9826383Z specs: test/audit-opus-t3e-119-673.spec.ts test/audit-opus-t23-118-673.spec.ts test/audit-opus-t23-119-673.spec.ts test/audit-opus-t23d-119-673.spec.ts test/b-trials-3-fix-round.spec.ts test/b-trials-4-fix-round.spec.ts test/b-trials-5-fix-round.spec.ts
+targeted	Targeted jest	2026-10-04T22:04:29.2297120Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2326040Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2342722Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2385826Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2415812Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2445770Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2478122Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2586165Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2636031Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:49 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=timeout (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2652412Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2662592Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2664342Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2666822Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2686329Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=4 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2690835Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=5 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2692455Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2694102Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2695888Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.2697823Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.3349078Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.3350485Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.3351804Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.3353139Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.3354317Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice push outcome dropped (lease lost) notice=row_1^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.3355811Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice email outcome dropped (lease lost) notice=row_1^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.3356983Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:05:04 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice push still running after abort notice=row_1; lease held^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4741469Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4742958Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4744301Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4746427Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4748360Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4754376Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4757100Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4758464Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4759900Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4761552Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4941289Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4944242Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4950048Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4951393Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4952968Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=state_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4959740Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4965314Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.4973739Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.5025505Z PASS test/b-trials-3-fix-round.spec.ts (125 MB heap size)
+targeted	Targeted jest	2026-10-04T22:04:29.7858045Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7859173Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=row_1 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7860138Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7861264Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7862044Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7862791Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7863509Z ^[[33m[Nest] 2799  - ^[[39m10/09/2026, 5:00:09 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase p-0 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7864583Z ^[[33m[Nest] 2799  - ^[[39m10/09/2026, 5:00:18 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase p-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7865489Z ^[[33m[Nest] 2799  - ^[[39m10/09/2026, 5:00:27 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase p-2 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7866196Z ^[[33m[Nest] 2799  - ^[[39m10/09/2026, 5:00:36 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase p-3 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7866898Z ^[[33m[Nest] 2799  - ^[[39m10/09/2026, 5:00:45 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase p-4 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7867597Z ^[[33m[Nest] 2799  - ^[[39m10/09/2026, 5:00:54 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase p-5 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7868301Z ^[[33m[Nest] 2799  - ^[[39m10/09/2026, 5:01:03 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase p-6 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7868998Z ^[[33m[Nest] 2799  - ^[[39m10/09/2026, 5:01:08 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase p-7 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7900130Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.7937792Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase purchase-payment attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8013779Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8020600Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8032639Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8038934Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8065493Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8078240Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8092564Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8106820Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8144104Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8155351Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8163987Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8172069Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8180145Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8187673Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8195078Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8203196Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8211520Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=lease_exhausted (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8221680Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8227266Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8232462Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=3 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8237743Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=4 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:29.8330983Z PASS test/b-trials-5-fix-round.spec.ts (176 MB heap size)
+targeted	Targeted jest	2026-10-04T22:04:30.0745299Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0746149Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0747229Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0748404Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0749755Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0751053Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0811551Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0830144Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0888124Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0896559Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0906451Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0916999Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0927798Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0938479Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0943323Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=2 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0948119Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=3 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.0954031Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=4 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.1126902Z PASS test/b-trials-4-fix-round.spec.ts (203 MB heap size)
+targeted	Targeted jest	2026-10-04T22:04:30.3681281Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3682762Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3684169Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3685735Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3687036Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3688294Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3689481Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3690716Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3692220Z ^[[31m[Nest] 2799  - ^[[39m10/09/2026, 5:00:00 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3707254Z ^[[31m[Nest] 2799  - ^[[39m10/09/2026, 5:00:41 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=lease_exhausted (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3723890Z ^[[31m[Nest] 2799  - ^[[39m10/12/2026, 4:59:20 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3729006Z ^[[31m[Nest] 2799  - ^[[39m10/12/2026, 4:59:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=trial_ending (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3771300Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3783672Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3793386Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3805547Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.3816674Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.4003422Z FAIL test/audit-opus-t23-119-673.spec.ts (249 MB heap size)
+targeted	Targeted jest	2026-10-04T22:04:30.4004283Z   ● C-673-4 probe — a worker supersede after out-of-order events › probe (expected red): active applied first, then the older trialing event: the paying client keeps access
+targeted	Targeted jest	2026-10-04T22:04:30.4004781Z 
+targeted	Targeted jest	2026-10-04T22:04:30.4005052Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:04:30.4005299Z 
+targeted	Targeted jest	2026-10-04T22:04:30.4005363Z     Expected: true
+targeted	Targeted jest	2026-10-04T22:04:30.4005490Z     Received: false
+targeted	Targeted jest	2026-10-04T22:04:30.4005565Z 
+targeted	Targeted jest	2026-10-04T22:04:30.4005672Z     ^[[0m ^[[90m 405 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.4005989Z      ^[[90m 406 |^[[39m     ^[[90m// Stripe says active and paid: the purchase must grant access again.^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.4006468Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 407 |^[[39m     expect(w^[[33m.^[[39mpurchase()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.4006853Z      ^[[90m     |^[[39m                                             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.4007074Z      ^[[90m 408 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.4007246Z      ^[[90m 409 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.4007407Z      ^[[90m 410 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:04:30.4007488Z 
+targeted	Targeted jest	2026-10-04T22:04:30.4007620Z       at Object.<anonymous> (test/audit-opus-t23-119-673.spec.ts:407:45)
+targeted	Targeted jest	2026-10-04T22:04:30.4007768Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7005650Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7007090Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7008390Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7009737Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7155531Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7374619Z FAIL test/audit-opus-t23-118-673.spec.ts (290 MB heap size)
+targeted	Targeted jest	2026-10-04T22:04:30.7375815Z   ● C-673-2 probe — an older subscription event rewrites an extended trial end › probe (expected red): a retried pre-extension update keeps the extended end and records no notice
+targeted	Targeted jest	2026-10-04T22:04:30.7376536Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7381483Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T22:04:30.7381741Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7381859Z     Expected: 2026-10-13T22:04:30.000Z
+targeted	Targeted jest	2026-10-04T22:04:30.7382126Z     Received: 2026-10-06T22:04:30.000Z
+targeted	Targeted jest	2026-10-04T22:04:30.7382272Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7382469Z     ^[[0m ^[[90m 217 |^[[39m     }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7383152Z      ^[[90m 218 |^[[39m     ^[[36mconst^[[39m res ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mhandler^[[33m.^[[39mhandle(stale^[[33m,^[[39m w^[[33m.^[[39mtx)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7384025Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 219 |^[[39m     expect(w^[[33m.^[[39mpurchases[^[[35m0^[[39m]^[[33m.^[[39mtrial_ends_at)^[[33m.^[[39mtoEqual(extended)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7384630Z      ^[[90m     |^[[39m                                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7385405Z      ^[[90m 220 |^[[39m     expect(res^[[33m.^[[39mdeferredTrialNoticeId ^[[33m?^[[39m^[[33m?^[[39m ^[[36mnull^[[39m)^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7386459Z      ^[[90m 221 |^[[39m     expect(w^[[33m.^[[39mnotices^[[33m.^[[39mrows)^[[33m.^[[39mtoHaveLength(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7386901Z      ^[[90m 222 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:04:30.7387056Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7387256Z       at Object.<anonymous> (test/audit-opus-t23-118-673.spec.ts:219:42)
+targeted	Targeted jest	2026-10-04T22:04:30.7387499Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7388048Z   ● C-673-3 probe (outside this diff) — coach metrics count a never-billed trial › probe (expected red): a started trial (nothing billed) adds no MRR
+targeted	Targeted jest	2026-10-04T22:04:30.7388485Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7388652Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:04:30.7388859Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7388939Z     Expected: 0
+targeted	Targeted jest	2026-10-04T22:04:30.7389123Z     Received: 49
+targeted	Targeted jest	2026-10-04T22:04:30.7389233Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7389878Z     ^[[0m ^[[90m 266 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mhandler^[[33m.^[[39mhandle(event(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m trialSub())^[[33m,^[[39m w^[[33m.^[[39mtx)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7391081Z      ^[[90m 267 |^[[39m     expect(w^[[33m.^[[39mpurchases[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'trialing'^[[39m^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7392019Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 268 |^[[39m     expect((^[[36mawait^[[39m metrics(w))^[[33m.^[[39mmrr)^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7392572Z      ^[[90m     |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7392900Z      ^[[90m 269 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7393144Z      ^[[90m 270 |^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7393825Z      ^[[90m 271 |^[[39m   it(^[[32m'probe (expected red): a never-billed trial cancelled during the trial is not churn'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T22:04:30.7394337Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7394531Z       at Object.<anonymous> (test/audit-opus-t23-118-673.spec.ts:268:36)
+targeted	Targeted jest	2026-10-04T22:04:30.7394875Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7395469Z   ● C-673-3 probe (outside this diff) — coach metrics count a never-billed trial › probe (expected red): a never-billed trial cancelled during the trial is not churn
+targeted	Targeted jest	2026-10-04T22:04:30.7395940Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7396096Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:04:30.7396296Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7396375Z     Expected: 0
+targeted	Targeted jest	2026-10-04T22:04:30.7396774Z     Received: 1
+targeted	Targeted jest	2026-10-04T22:04:30.7396879Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7397677Z     ^[[0m ^[[90m 275 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mhandler^[[33m.^[[39mhandle(event(^[[32m'customer.subscription.deleted'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'sub_1'^[[39m }^[[33m,^[[39m ^[[32m'evt_2'^[[39m)^[[33m,^[[39m w^[[33m.^[[39mtx)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7398707Z      ^[[90m 276 |^[[39m     expect(w^[[33m.^[[39mpurchases[^[[35m0^[[39m]^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7399483Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 277 |^[[39m     expect((^[[36mawait^[[39m metrics(w))^[[33m.^[[39mclients_churned_30d)^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7400072Z      ^[[90m     |^[[39m                                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7400421Z      ^[[90m 278 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7400690Z      ^[[90m 279 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.7400935Z      ^[[90m 280 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:04:30.7401062Z 
+targeted	Targeted jest	2026-10-04T22:04:30.7401258Z       at Object.<anonymous> (test/audit-opus-t23-118-673.spec.ts:277:52)
+targeted	Targeted jest	2026-10-04T22:04:30.7401488Z 
+targeted	Targeted jest	2026-10-04T22:04:30.9164484Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.9181616Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.9196113Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:55 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=lease_exhausted (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.9220201Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.9231834Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=history_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.9293023Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoices_unknown (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.9326148Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=invoice_not_voided (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:30.9344233Z PASS test/audit-opus-t3e-119-673.spec.ts (318 MB heap size)
+targeted	Targeted jest	2026-10-04T22:04:31.1007340Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.1008782Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:45 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.1010034Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.1011299Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.1012516Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.1054225Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:31 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel not done for purchase pur-1 attempt=1 code=Error (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.1081226Z ^[[31m[Nest] 2799  - ^[[39m10/04/2026, 10:04:31 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.1105167Z PASS test/audit-opus-t23d-119-673.spec.ts (348 MB heap size)
+targeted	Targeted jest	2026-10-04T22:04:31.1117526Z 
+targeted	Targeted jest	2026-10-04T22:04:31.1122372Z Test Suites: 2 failed, 5 passed, 7 total
+targeted	Targeted jest	2026-10-04T22:04:31.1122713Z Tests:       4 failed, 135 passed, 139 total
+targeted	Targeted jest	2026-10-04T22:04:31.1122977Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T22:04:31.1123200Z Time:        3.653 s
+targeted	Targeted jest	2026-10-04T22:04:31.1124263Z Ran all test suites matching test/audit-opus-t3e-119-673.spec.ts|test/audit-opus-t23-118-673.spec.ts|test/audit-opus-t23-119-673.spec.ts|test/audit-opus-t23d-119-673.spec.ts|test/b-trials-3-fix-round.spec.ts|test/b-trials-4-fix-round.spec.ts|test/b-trials-5-fix-round.spec.ts.
+targeted	Targeted jest	2026-10-04T22:04:31.2029989Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:31 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.2030830Z ^[[33m[Nest] 2799  - ^[[39m10/04/2026, 10:04:31 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: purchase pur-1 billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T22:04:31.2692838Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T22:04:31.2764141Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3258522Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3285709Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3307285Z Temporarily overriding HOME='/home/runner/work/_temp/b94516c9-8035-4bd6-bf9b-5c89cdc933a0' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3307735Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3311130Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3333625Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3337455Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3362682Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3529813Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3532398Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3556222Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3715661Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3719362Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3741004Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3741702Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3742032Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3742256Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3746695Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3762547Z /home/runner/work/_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3769531Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3796583Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3812201Z /home/runner/work/_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3817882Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3840594Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3855069Z /github/runner_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3859436Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3881322Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3896043Z /github/runner_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3901578Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.3925715Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T22:04:31.4116230Z Removing credentials config '/home/runner/work/_temp/git-credentials-128fb2aa-265f-4e36-a060-c445e411796c.config'
+targeted	Stop containers	﻿2026-10-04T22:04:31.4202464Z Print service container logs: 202b0ff958894227b698e8386d4e2cc2_redis7alpine_fa1fb4
+targeted	Stop containers	2026-10-04T22:04:31.4205188Z ##[command]/usr/bin/docker logs --details f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Stop containers	2026-10-04T22:04:31.4290966Z  1:C 04 Oct 2026 22:03:54.874 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T22:04:31.4291875Z  1:C 04 Oct 2026 22:03:54.874 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T22:04:31.4292159Z  1:C 04 Oct 2026 22:03:54.874 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T22:04:31.4292581Z  1:C 04 Oct 2026 22:03:54.874 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T22:04:31.4292985Z  1:M 04 Oct 2026 22:03:54.874 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T22:04:31.4293200Z  1:M 04 Oct 2026 22:03:54.874 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T22:04:31.4293394Z  1:M 04 Oct 2026 22:03:54.875 * Server initialized
+targeted	Stop containers	2026-10-04T22:04:31.4293622Z  1:M 04 Oct 2026 22:03:54.875 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T22:04:31.4306863Z Stop and remove container: 202b0ff958894227b698e8386d4e2cc2_redis7alpine_fa1fb4
+targeted	Stop containers	2026-10-04T22:04:31.4309865Z ##[command]/usr/bin/docker rm --force f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Stop containers	2026-10-04T22:04:37.3017624Z f15f728fab9c550972031e37d019d31e8b96614872d1bc40c67639723e1b30f5
+targeted	Stop containers	2026-10-04T22:04:37.3040201Z Remove container network: github_network_45fee404049d4adc995c0828e69779aa
+targeted	Stop containers	2026-10-04T22:04:37.3042924Z ##[command]/usr/bin/docker network rm github_network_45fee404049d4adc995c0828e69779aa
+targeted	Stop containers	2026-10-04T22:04:37.3930554Z github_network_45fee404049d4adc995c0828e69779aa
+targeted	Complete job	﻿2026-10-04T22:04:37.3980313Z Cleaning up orphan processes

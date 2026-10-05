@@ -1,0 +1,306 @@
+targeted	Set up job	﻿2026-10-04T18:43:55.4674493Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T18:43:55.4701883Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T18:43:55.4702878Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T18:43:55.4703458Z Version: 20260901.588
+targeted	Set up job	2026-10-04T18:43:55.4704136Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T18:43:55.4704906Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T18:43:55.4705576Z Worker ID: {30d6942f-96e5-43c1-adda-808c21de7d4e}
+targeted	Set up job	2026-10-04T18:43:55.4706353Z Azure Region: eastus
+targeted	Set up job	2026-10-04T18:43:55.4706912Z ##[endgroup]
+targeted	Set up job	2026-10-04T18:43:55.4709672Z ##[group]Operating System
+targeted	Set up job	2026-10-04T18:43:55.4710406Z Ubuntu
+targeted	Set up job	2026-10-04T18:43:55.4710947Z 24.04.5
+targeted	Set up job	2026-10-04T18:43:55.4711521Z LTS
+targeted	Set up job	2026-10-04T18:43:55.4712016Z ##[endgroup]
+targeted	Set up job	2026-10-04T18:43:55.4712603Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T18:43:55.4713259Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T18:43:55.4713816Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T18:43:55.4714963Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T18:43:55.4716743Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T18:43:55.4717756Z ##[endgroup]
+targeted	Set up job	2026-10-04T18:43:55.4719805Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T18:43:55.4722067Z Contents: read
+targeted	Set up job	2026-10-04T18:43:55.4722693Z Metadata: read
+targeted	Set up job	2026-10-04T18:43:55.4723361Z Packages: read
+targeted	Set up job	2026-10-04T18:43:55.4723908Z ##[endgroup]
+targeted	Set up job	2026-10-04T18:43:55.4726447Z Secret source: Actions
+targeted	Set up job	2026-10-04T18:43:55.4727408Z Cache mode: write
+targeted	Set up job	2026-10-04T18:43:55.4728522Z Prepare workflow directory
+targeted	Set up job	2026-10-04T18:43:55.5069611Z Prepare all required actions
+targeted	Set up job	2026-10-04T18:43:55.5119030Z Getting action download info
+targeted	Set up job	2026-10-04T18:43:55.7355748Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T18:43:55.8355950Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T18:43:56.0630606Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-04T18:43:56.1403931Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1404901Z with:
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1405485Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1409477Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1409912Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1410343Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1410783Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1411259Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1411690Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1412202Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1412627Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1413061Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1413508Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1413919Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1414362Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1414864Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.1415645Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2448589Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2450607Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2451559Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2452719Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2538473Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2562125Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2576515Z Temporarily overriding HOME='/home/runner/work/_temp/43842eee-0c44-4ff4-91d2-5cca061e50a8' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2578791Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2582183Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2636139Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2640912Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2642954Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2643839Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2647668Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2787810Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2789637Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2790780Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2792099Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2792609Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2793310Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2794412Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2795636Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2797242Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2798147Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2798889Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2799406Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2800072Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2802198Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2804484Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2884559Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2885359Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2888590Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2919439Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2920776Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2921368Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2926972Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.2958011Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3310784Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3319485Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3352746Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3565187Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3573432Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3607623Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3831138Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3867240Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3897033Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3930129Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3966854Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3994482Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.3995253Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T18:43:56.4003399Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +4269a547b469a58c11558f4f48e554612d66bab5:refs/remotes/origin/ci/B-HC4-118-364-before
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2114397Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2117009Z  * [new ref]         4269a547b469a58c11558f4f48e554612d66bab5 -> origin/ci/B-HC4-118-364-before
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2150041Z [command]/usr/bin/git branch --list --remote origin/ci/B-HC4-118-364-before
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2156590Z   origin/ci/B-HC4-118-364-before
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2171190Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-HC4-118-364-before
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2196410Z 4269a547b469a58c11558f4f48e554612d66bab5
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2209804Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2211154Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2212571Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2222858Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2270322Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2301313Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.2305707Z [command]/usr/bin/git checkout --progress --force -B ci/B-HC4-118-364-before refs/remotes/origin/ci/B-HC4-118-364-before
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.3361720Z Switched to a new branch 'ci/B-HC4-118-364-before'
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.3366017Z branch 'ci/B-HC4-118-364-before' set up to track 'origin/ci/B-HC4-118-364-before'.
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.3375063Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.3419689Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T18:43:57.3444050Z 4269a547b469a58c11558f4f48e554612d66bab5
+targeted	Run actions/setup-node@v6	﻿2026-10-04T18:43:57.3822127Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:57.3823484Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:57.3824439Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:57.3825488Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:57.3826472Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:57.3835126Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:57.3836192Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:57.3837358Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:57.5296302Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:58.0694613Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:58.7057193Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:58.7184090Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/e4c214a1-0184-4f17-a9ee-e25f885794fb -f /home/runner/work/_temp/074fa1ae-a722-448c-854c-853418cf09bf
+targeted	Run actions/setup-node@v6	2026-10-04T18:43:59.8575254Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:01.9099566Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:02.1333584Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:02.1334310Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:02.1334671Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:02.1335791Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:02.1359323Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:02.2304922Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:02.3123840Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:03.3589374Z Received 241027159 of 241027159 (100.0%), 234.8 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:03.3590932Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:03.3626530Z [command]/usr/bin/tar -xf /home/runner/work/_temp/e9fb1577-79c8-44b5-9f24-3afe2cd6fae9/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:04.0049168Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T18:44:04.0161475Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-04T18:44:04.0386015Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T18:44:04.0386359Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T18:44:04.0676045Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T18:44:04.0676418Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T18:44:09.0255725Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T18:44:09.2484896Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-04T18:44:09.2645197Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-04T18:44:09.2696242Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-04T18:44:09.2929343Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-04T18:44:09.4383857Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-04T18:44:09.4434130Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T18:44:09.4438627Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T18:44:09.4456486Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T18:44:09.4462175Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T18:44:09.4483950Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T18:44:09.4887675Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T18:44:09.5386534Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-04T18:44:10.0102991Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-04T18:44:10.8164179Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-04T18:44:14.6449512Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-04T18:45:05.9817692Z 
+targeted	Run npm ci	2026-10-04T18:45:05.9819054Z added 1108 packages, and audited 1109 packages in 1m
+targeted	Run npm ci	2026-10-04T18:45:05.9819586Z 
+targeted	Run npm ci	2026-10-04T18:45:05.9819821Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-04T18:45:05.9820223Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T18:45:06.3709486Z 
+targeted	Run npm ci	2026-10-04T18:45:06.3710308Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-04T18:45:06.3710632Z 
+targeted	Run npm ci	2026-10-04T18:45:06.3710859Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-04T18:45:06.3711219Z   npm audit fix
+targeted	Run npm ci	2026-10-04T18:45:06.3711792Z 
+targeted	Run npm ci	2026-10-04T18:45:06.3712038Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T18:45:06.3712519Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T18:45:06.3712684Z 
+targeted	Run npm ci	2026-10-04T18:45:06.3712817Z Run `npm audit` for details.
+targeted	Targeted jest	﻿2026-10-04T18:45:06.5682236Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T18:45:06.5682586Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T18:45:06.5682989Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T18:45:06.5683680Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T18:45:06.5684045Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T18:45:06.5684317Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T18:45:06.5750014Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T18:45:06.5750391Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T18:45:06.5851346Z specs: src/services/health/__tests__/healthPlatformConfig.test.ts
+targeted	Targeted jest	2026-10-04T18:45:10.2859527Z FAIL src/services/health/__tests__/healthPlatformConfig.test.ts
+targeted	Targeted jest	2026-10-04T18:45:10.2876841Z   Health Connect manifest
+targeted	Targeted jest	2026-10-04T18:45:10.2878017Z     ✓ declares the read permission for Steps (2 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2879125Z     ✓ declares the read permission for ActiveCaloriesBurned
+targeted	Targeted jest	2026-10-04T18:45:10.2880021Z     ✓ declares the read permission for HeartRate (1 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2880896Z     ✓ declares the read permission for RestingHeartRate
+targeted	Targeted jest	2026-10-04T18:45:10.2881516Z     ✓ declares the read permission for Vo2Max
+targeted	Targeted jest	2026-10-04T18:45:10.2882007Z     ✓ declares the read permission for ExerciseSession (1 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2882456Z     ✓ declares the read permission for Distance
+targeted	Targeted jest	2026-10-04T18:45:10.2882850Z     ✓ declares the read permission for Weight
+targeted	Targeted jest	2026-10-04T18:45:10.2883246Z     ✓ declares the read permission for BodyFat
+targeted	Targeted jest	2026-10-04T18:45:10.2883661Z     ✓ declares the read permission for BloodPressure
+targeted	Targeted jest	2026-10-04T18:45:10.2884121Z     ✓ declares the read permission for SleepSession (1 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2884633Z     ✓ declares the read permission for HeartRateVariabilityRmssd
+targeted	Targeted jest	2026-10-04T18:45:10.2885124Z     ✓ declares the read permission for OxygenSaturation
+targeted	Targeted jest	2026-10-04T18:45:10.2885554Z     ✓ declares the read permission for RespiratoryRate
+targeted	Targeted jest	2026-10-04T18:45:10.2886015Z     ✓ declares the read permission for BodyTemperature (3 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2886589Z     ✓ declares exactly the Health Connect read permissions the sync reads (1 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2887184Z     ✓ registers the library plugin and the S14 delegate plugin after it
+targeted	Targeted jest	2026-10-04T18:45:10.2887629Z   withHealthConnectPermissionDelegate
+targeted	Targeted jest	2026-10-04T18:45:10.2888198Z     ✓ prebuild mod adds the delegate to the APK MainActivity, after super.onCreate (26 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2889738Z     ✓ prebuild mod adds the Android 14 permission usage alias (1 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2890793Z     ✓ registers the delegate right after super.onCreate (Kotlin)
+targeted	Targeted jest	2026-10-04T18:45:10.2892095Z     ✕ MainActivity opens the privacy policy for both Health Connect privacy intents (1 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2893359Z     ✕ fails loudly where the privacy policy handler cannot be added (1 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2894285Z     ✓ is idempotent across repeated prebuilds
+targeted	Targeted jest	2026-10-04T18:45:10.2895194Z     ✓ fails loudly when MainActivity has no onCreate anchor (2 ms)
+targeted	Targeted jest	2026-10-04T18:45:10.2896206Z     ✓ adds the Android 14 permission usage alias once
+targeted	Targeted jest	2026-10-04T18:45:10.2896845Z   Apple Health config
+targeted	Targeted jest	2026-10-04T18:45:10.2897690Z     ✓ registers react-native-health with read and write usage strings
+targeted	Targeted jest	2026-10-04T18:45:10.2916028Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2917211Z   ● withHealthConnectPermissionDelegate › MainActivity opens the privacy policy for both Health Connect privacy intents
+targeted	Targeted jest	2026-10-04T18:45:10.2918175Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2918837Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-04T18:45:10.2919228Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2920109Z     Expected pattern: /setPermissionDelegate\(this\)\n\s+if \(showHealthConnectPrivacyPolicy\(intent\)\) finish\(\)\n\s+\}/
+targeted	Targeted jest	2026-10-04T18:45:10.2921521Z     Received string:  "package com.growthproject.app·
+targeted	Targeted jest	2026-10-04T18:45:10.2922678Z     import dev.matinzd.healthconnect.permissions.HealthConnectPermissionDelegate·
+targeted	Targeted jest	2026-10-04T18:45:10.2923601Z     import android.os.Bundle
+targeted	Targeted jest	2026-10-04T18:45:10.2924176Z     import com.facebook.react.ReactActivity
+targeted	Targeted jest	2026-10-04T18:45:10.2925009Z     import expo.modules.splashscreen.SplashScreenManager·
+targeted	Targeted jest	2026-10-04T18:45:10.2926220Z     class MainActivity : ReactActivity() {
+targeted	Targeted jest	2026-10-04T18:45:10.2926934Z       override fun onCreate(savedInstanceState: Bundle?) {
+targeted	Targeted jest	2026-10-04T18:45:10.2929366Z         SplashScreenManager.registerOnActivity(this)
+targeted	Targeted jest	2026-10-04T18:45:10.2930022Z         super.onCreate(null)
+targeted	Targeted jest	2026-10-04T18:45:10.2930808Z         HealthConnectPermissionDelegate.setPermissionDelegate(this)
+targeted	Targeted jest	2026-10-04T18:45:10.2931548Z       }
+targeted	Targeted jest	2026-10-04T18:45:10.2931889Z     }
+targeted	Targeted jest	2026-10-04T18:45:10.2932229Z     "
+targeted	Targeted jest	2026-10-04T18:45:10.2932418Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2933579Z     ^[[0m ^[[90m 201 |^[[39m   it(^[[32m'MainActivity opens the privacy policy for both Health Connect privacy intents'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T18:45:10.2935862Z      ^[[90m 202 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m plugin^[[33m.^[[39maddDelegateToMainActivity(^[[33mAPK_MAIN_ACTIVITY^[[39m^[[33m,^[[39m ^[[32m'kt'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2937525Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 203 |^[[39m     expect(out)^[[33m.^[[39mtoMatch(
+targeted	Targeted jest	2026-10-04T18:45:10.2938735Z      ^[[90m     |^[[39m                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2940353Z      ^[[90m 204 |^[[39m       ^[[35m/setPermissionDelegate\(this\)\n\s+if \(showHealthConnectPrivacyPolicy\(intent\)\) finish\(\)\n\s+\}/^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2941703Z      ^[[90m 205 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2942459Z      ^[[90m 206 |^[[39m     expect(out)^[[33m.^[[39mtoMatch(^[[0m
+targeted	Targeted jest	2026-10-04T18:45:10.2942956Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2943595Z       at Object.toMatch (src/services/health/__tests__/healthPlatformConfig.test.ts:203:17)
+targeted	Targeted jest	2026-10-04T18:45:10.2944313Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2945306Z   ● withHealthConnectPermissionDelegate › fails loudly where the privacy policy handler cannot be added
+targeted	Targeted jest	2026-10-04T18:45:10.2946170Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2946514Z     expect(received).toThrow(expected)
+targeted	Targeted jest	2026-10-04T18:45:10.2946884Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2947160Z     Expected pattern: /onNewIntent/
+targeted	Targeted jest	2026-10-04T18:45:10.2947518Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2947793Z     Received function did not throw
+targeted	Targeted jest	2026-10-04T18:45:10.2948127Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2949505Z     ^[[0m ^[[90m 215 |^[[39m   it(^[[32m'fails loudly where the privacy policy handler cannot be added'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T18:45:10.2952017Z      ^[[90m 216 |^[[39m     ^[[36mconst^[[39m withIntent ^[[33m=^[[39m ^[[33mAPK_MAIN_ACTIVITY^[[39m^[[33m.^[[39mreplace(^[[35m/\}\n$/^[[39m^[[33m,^[[39m ^[[32m'  override fun onNewIntent(i: Intent) {}\n}\n'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2954773Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 217 |^[[39m     expect(() ^[[33m=>^[[39m plugin^[[33m.^[[39maddDelegateToMainActivity(withIntent^[[33m,^[[39m ^[[32m'kt'^[[39m))^[[33m.^[[39mtoThrow(^[[35m/onNewIntent/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2956591Z      ^[[90m     |^[[39m                                                                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2958831Z      ^[[90m 218 |^[[39m     expect(() ^[[33m=>^[[39m plugin^[[33m.^[[39maddDelegateToMainActivity(^[[33mAPK_MAIN_ACTIVITY^[[39m^[[33m,^[[39m ^[[32m'java'^[[39m))^[[33m.^[[39mtoThrow(^[[35m/Kotlin/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2960341Z      ^[[90m 219 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T18:45:10.2960881Z      ^[[90m 220 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T18:45:10.2961189Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2961786Z       at Object.toThrow (src/services/health/__tests__/healthPlatformConfig.test.ts:217:70)
+targeted	Targeted jest	2026-10-04T18:45:10.2962577Z 
+targeted	Targeted jest	2026-10-04T18:45:10.2962864Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T18:45:10.2966808Z Tests:       2 failed, 24 passed, 26 total
+targeted	Targeted jest	2026-10-04T18:45:10.2967567Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T18:45:10.2967989Z Time:        2.566 s
+targeted	Targeted jest	2026-10-04T18:45:10.2969101Z Ran all test suites matching /src\/services\/health\/__tests__\/healthPlatformConfig.test.ts/i.
+targeted	Targeted jest	2026-10-04T18:45:10.3469257Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T18:45:10.3613340Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4470521Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4508592Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4547823Z Temporarily overriding HOME='/home/runner/work/_temp/2bcf6ec4-af7a-44e7-be1f-9f3cbac3064a' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4549548Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4553456Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4584591Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4591420Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4626523Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4848743Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4853827Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.4887668Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5102059Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5108489Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5167670Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5169532Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5170716Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5171563Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5178052Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5200690Z /home/runner/work/_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5212146Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5248109Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5268993Z /home/runner/work/_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5277624Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5308152Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5329297Z /github/runner_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5337589Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5367963Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5389109Z /github/runner_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5399470Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5434627Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T18:45:10.5667472Z Removing credentials config '/home/runner/work/_temp/git-credentials-fdc82965-7b9d-4d9b-84a4-7e94b3c7da0f.config'
+targeted	Complete job	﻿2026-10-04T18:45:10.5811369Z Cleaning up orphan processes

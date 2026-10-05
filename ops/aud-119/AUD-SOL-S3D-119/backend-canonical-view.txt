@@ -1,0 +1,27 @@
+    coach_user_id: row.coach_user_id,
+    state,
+    status,
+    entitlement_active: row.entitlement_active,
+    amount_cents: row.amount_cents,
+    currency: row.currency,
+    interval,
+    interval_count: intervalCount,
+    current_period_end: iso(periodEnd),
+    next_charge_at: live && !row.cancel_at_period_end ? iso(periodEnd) : null,
+    cancel_at_period_end: row.cancel_at_period_end,
+    access_ends_at: ended
+      ? iso(row.canceled_at ?? row.access_expires_at)
+      : live && row.cancel_at_period_end
+        ? iso(periodEnd)
+        : null,
+    trial_days: row.trial_days ?? null,
+    trial_ends_at: state === 'trialing' ? iso(periodEnd) : null,
+    can_cancel: live && !row.cancel_at_period_end,
+    can_resume: live && row.cancel_at_period_end,
+    can_resubscribe: ended,
+    last_payment_error:
+      state === 'payment_failed' || state === 'past_due'
+        ? 'Your last payment did not go through.'
+        : null,
+    checkout_state: null,
+  };

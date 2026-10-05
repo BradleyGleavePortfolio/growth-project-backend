@@ -1,0 +1,221 @@
+commit 010f9b57884456f61bf91455d0073421d91c3500
+Merge: f80f0088 8c925944
+Author: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date:   Sun Oct 4 23:35:31 2026 +0000
+
+    Merge recurring R1-R5 (8c925944) into b-secrets-3 (B-661R-119, agent 119)
+    
+    Brings in main f48267f9 (fees) and the recurring stack head 8c925944.
+    Conflicts resolved so both sides survive:
+    - checkout.service.ts: #661 replay classifier (PAID / REFUNDED_OR_REVIEW /
+      CHECKOUT_CLOSED) kept next to recurring isRecurringPackage.
+    - checkout-webhook-handler.service.ts: prefetch fields and dispatch are the
+      union; endSubscriptionPurchase keeps recurring's ending/trial patch and
+      always erases sheet credentials (#661 rule); payment_intent.succeeded and
+      payment_intent.payment_failed hand native subscription rows to the
+      invoice events first, then run #661's lock / CAS / provider-status logic.
+
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/checkout-webhook-handler.service.ts
+index 15499149..096f3db0 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -471,7 +471,6 @@ export interface CheckoutWebhookPrefetch {
+   // (rare settling race); the split handler no-ops the transfer and the
+   // sweeper picks it up. undefined entry = no pre-resolution attempted.
+   chargeIdByPurchaseId?: Record<string, string | null>;
+-<<<<<<< f80f0088 (test(checkout): move the hosted activation-once spec to the stacked tests piece #702 (size, decision 3))
+   // B-661-3 — Stripe's current status of the PaymentIntent a
+   // payment_intent.payment_failed names, keyed by PaymentIntent id. Resolved
+   // out-of-tx only when the matched purchase already settled (a decline of a
+@@ -480,7 +479,6 @@ export interface CheckoutWebhookPrefetch {
+   // B-661-3 round 4/5 — the purchase version read BEFORE that Stripe lookup.
+   // The status applies only while the purchase is still that version.
+   paymentIntentWitnessById?: Record<string, PurchaseVersion>;
+-=======
+   // B-654-1 — setup_intent.succeeded for a native trial attempt: the saved
+   // card was made the subscription's default out-of-tx. null = the
+   // SetupIntent is not a native trial's; ok=false = the Stripe write failed
+@@ -507,7 +505,6 @@ export interface CheckoutWebhookPrefetch {
+     subscriptionStatus: string | null;
+     latestInvoiceId: string | null;
+   };
+->>>>>>> 8c925944 (Merge commit 'b0b34c7b0fc3fdea0c874882cbc6482bc332e4fd' into HEAD)
+ }
+ 
+ @Injectable()
+@@ -787,10 +784,9 @@ export class CheckoutWebhookHandlerService {
+     ) {
+       return this.prefetchChargeIdForActivation(event);
+     }
+-<<<<<<< f80f0088 (test(checkout): move the hosted activation-once spec to the stacked tests piece #702 (size, decision 3))
+     if (event.type === 'payment_intent.payment_failed') {
+       return this.prefetchFailedPaymentIntentStatus(event);
+-=======
++    }
+     if (event.type === 'setup_intent.succeeded') {
+       return { trialCard: await this.attachNativeTrialCard(event) };
+     }
+@@ -802,7 +798,6 @@ export class CheckoutWebhookHandlerService {
+     }
+     if (event.type === 'invoice.payment_failed') {
+       return this.prefetchFailedInvoice(event);
+->>>>>>> 8c925944 (Merge commit 'b0b34c7b0fc3fdea0c874882cbc6482bc332e4fd' into HEAD)
+     }
+     if (
+       event.type !== 'invoice.paid' &&
+@@ -1806,13 +1801,11 @@ export class CheckoutWebhookHandlerService {
+       data: {
+         ...ending,
+         entitlement_active: false,
+-<<<<<<< f80f0088 (test(checkout): move the hosted activation-once spec to the stacked tests piece #702 (size, decision 3))
+-        canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
+-        ...CLEARED_PAYMENT_SECRETS,
+-=======
+         ...trial,
+-        ...(unpaidAttempt ? { stripe_client_secret: null, stripe_ephemeral_key: null } : {}),
+->>>>>>> 8c925944 (Merge commit 'b0b34c7b0fc3fdea0c874882cbc6482bc332e4fd' into HEAD)
++        // B-SECRETS-3 (#661): an ended subscription can never be paid through its
++        // sheet again, so its cached credentials are erased whether or not it
++        // was ever paid (supersedes the unpaid-attempt-only erase).
++        ...CLEARED_PAYMENT_SECRETS,
+       },
+     });
+     // PR-16 — cancel any not-yet-fired drops for this purchase. Runs in
+@@ -1875,7 +1868,13 @@ export class CheckoutWebhookHandlerService {
+     const purchase = await db.clientPurchase.findFirst({
+       where: { stripe_payment_intent_id: pi.id, status: { in: PI_SUCCEEDED_CLAIMABLE } },
+     });
+-<<<<<<< f80f0088 (test(checkout): move the hosted activation-once spec to the stacked tests piece #702 (size, decision 3))
++    // B-RECUR — the PaymentIntent of a native subscription's first invoice.
++    // invoice.paid is the single owner of that purchase's entitlement and
++    // settlement; flipping it to a one-time 'paid' here would mislabel a
++    // renewing plan and settle it from a second path.
++    if (purchase && purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {
++      return { claimed: true, purchase_id: purchase.id, reason: 'subscription_invoice_owned_by_invoice_paid' };
++    }
+     if (!purchase || !activatesOnPaymentIntentSuccess(purchase, pi.id)) {
+       // B-661-3 (Sol, round 4/5): record the settlement on every entitled
+       // purchase this PaymentIntent paid (e.g. a hosted checkout that
+@@ -1893,15 +1892,6 @@ export class CheckoutWebhookHandlerService {
+         claimed: false,
+         reason: purchase ? 'checkout_session_activates' : 'no_matching_purchase',
+       };
+-=======
+-    if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
+-    // B-RECUR — the PaymentIntent of a native subscription's first invoice.
+-    // invoice.paid is the single owner of that purchase's entitlement and
+-    // settlement; flipping it to a one-time 'paid' here would mislabel a
+-    // renewing plan and settle it from a second path.
+-    if (purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {
+-      return { claimed: true, purchase_id: purchase.id, reason: 'subscription_invoice_owned_by_invoice_paid' };
+->>>>>>> 8c925944 (Merge commit 'b0b34c7b0fc3fdea0c874882cbc6482bc332e4fd' into HEAD)
+     }
+ 
+     // B-661-8 (Sol, round 5): compare-and-set on the state this was decided
+@@ -2072,26 +2062,6 @@ export class CheckoutWebhookHandlerService {
+       if (adopted.count === 0) throw declineRetryLater('purchase_changed', pi.id);
+       return { claimed: true, purchase_id: pending.id };
+     }
+-<<<<<<< f80f0088 (test(checkout): move the hosted activation-once spec to the stacked tests piece #702 (size, decision 3))
+-
+-    if (PI_FAILED_CLAIMABLE.includes(purchase.status)) {
+-      // B-661-3: compare-and-set on a status that may still fail. A success
+-      // of this PaymentIntent that commits first makes the count 0 (Postgres
+-      // re-checks the predicate after the row lock is released).
+-      const wasEntitled = !!purchase.entitlement_active;
+-      const claimed = await db.clientPurchase.updateMany({
+-        where: { id: purchase.id, status: { in: PI_FAILED_CLAIMABLE } },
+-        data: failure,
+-      });
+-      if (claimed.count === 1) {
+-        await this.cancelDropsAfterFailure(purchase.id, wasEntitled, tx);
+-        return { claimed: true, purchase_id: purchase.id };
+-      }
+-      // The purchase moved while this decline was in flight: judge its
+-      // current state below.
+-      purchase = await db.clientPurchase.findUnique({ where: { id: purchase.id } });
+-      if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
+-=======
+     // B-RECUR-BE R1-7 — the PaymentIntent of a native subscription's first
+     // invoice. invoice.payment_failed owns subscription rows (first-attempt
+     // decline = last_error only; renewal = past_due + dunning). Flipping the
+@@ -2114,29 +2084,24 @@ export class CheckoutWebhookHandlerService {
+         reason: 'subscription_invoice_owned_by_invoice_events',
+       };
+     }
+-    // Capture pre-flip entitlement: only entitled purchases have drops
+-    // worth canceling. A first-attempt PaymentSheet failure on a still-
+-    // pending purchase never minted drops; a later recurring-charge
+-    // failure on an already-entitled purchase did. Either way the cancel
+-    // call is idempotent — but skipping when wasEntitled=false matches
+-    // the brief's "PI-failed-never-entitled does not cancel" semantic
+-    // and keeps the log clean.
+-    const wasEntitled = !!purchase.entitlement_active;
+-    await db.clientPurchase.update({
+-      where: { id: purchase.id },
+-      data: {
+-        status: 'payment_failed',
+-        entitlement_active: false,
+-        last_error: pi.last_payment_error?.message ?? 'payment_failed',
+-      },
+-    });
+-    if (this.fanout && wasEntitled) {
+-      await this.fanout.cancelPendingForPurchase(
+-        purchase.id,
+-        'payment_failed',
+-        (tx ?? (this.prisma as unknown as WebhookTx)),
+-      );
+->>>>>>> 8c925944 (Merge commit 'b0b34c7b0fc3fdea0c874882cbc6482bc332e4fd' into HEAD)
++
++    if (PI_FAILED_CLAIMABLE.includes(purchase.status)) {
++      // B-661-3: compare-and-set on a status that may still fail. A success
++      // of this PaymentIntent that commits first makes the count 0 (Postgres
++      // re-checks the predicate after the row lock is released).
++      const wasEntitled = !!purchase.entitlement_active;
++      const claimed = await db.clientPurchase.updateMany({
++        where: { id: purchase.id, status: { in: PI_FAILED_CLAIMABLE } },
++        data: failure,
++      });
++      if (claimed.count === 1) {
++        await this.cancelDropsAfterFailure(purchase.id, wasEntitled, tx);
++        return { claimed: true, purchase_id: purchase.id };
++      }
++      // The purchase moved while this decline was in flight: judge its
++      // current state below.
++      purchase = await db.clientPurchase.findUnique({ where: { id: purchase.id } });
++      if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
+     }
+ 
+     if (PI_FAILED_NEVER_REWRITES.has(purchase.status)) {
+diff --git a/src/checkout/checkout.service.ts b/src/checkout/checkout.service.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/checkout.service.ts
+index ff35deeb..e38592c8 100644
+--- a/src/checkout/checkout.service.ts
++++ b/src/checkout/checkout.service.ts
+@@ -84,7 +84,6 @@ export interface BuyerDropView {
+ // <50 in practice. 500 is well above any realistic package.
+ const DROP_LIST_HARD_CAP = 500;
+ 
+-<<<<<<< f80f0088 (test(checkout): move the hosted activation-once spec to the stacked tests piece #702 (size, decision 3))
+ // B-SECRETS-3 — the answer to a payment-intent request whose idempotency key
+ // belongs to a payment that already finished.
+ const PAID_STATUSES = new Set(['paid', 'active', 'past_due', 'trialing']);
+@@ -147,7 +146,8 @@ export function classifyPaymentReplay(
+   }
+   if (row.status === 'pending') return { kind: 'wait' };
+   return { kind: 'finished', error: finishedPaymentReplay(row.status) };
+-=======
++}
++
+ /**
+  * B-RECUR — true when buying this package starts a renewing charge: a
+  * recurring package, or a one-time package with a recurring second price
+@@ -165,7 +165,6 @@ export function isRecurringPackage(
+       pkg.recurring_amount_cents > 0 &&
+       pkg.recurring_interval != null)
+   );
+->>>>>>> 8c925944 (Merge commit 'b0b34c7b0fc3fdea0c874882cbc6482bc332e4fd' into HEAD)
+ }
+ 
+ @Injectable()

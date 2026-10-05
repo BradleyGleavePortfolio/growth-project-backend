@@ -1,0 +1,47 @@
+FIX ROUND 1 (B-WIZ-118, agent 118) — growth-project-mobile#346 @ 2baea5b82a2d0e0a22bac21e8fdb5e074bec9d60
+
+Merged the #345 fix round in first (`bc2442a5`, then `2baea5b8` for #345's last commit; both merge-only, clean). Own commits: tests `d6ff125d` (failing-before), fix `10e278b6`.
+
+| Finding | Change | Commit | Test |
+|---|---|---|---|
+| B-329-5 caller (Opus) = B-346-1 (Sol): the form could create, publish, read the invite, bind or call back after it closed or the account changed | FirstPackageForm passes `isLive: stillOwner` (mounted, same owner, same generation) to the helper; re-checks after publish, invite read, binding and the final intent clear before `setResumed` / `onCreated`. An account change bumps the generation and resets intent, in-flight flag, busy, error, invalid, resumed and fields to defaults; a retired run's `finally` leaves the new account's state alone. | 10e278b6 | w2FixRound118.test.tsx: closed during write-ahead (no create, no leftover), account change during write-ahead (no create, form clean), account change during publish (no invite read, no binding, no callback; coach one's package stays remembered for coach one), closed during the final clear (no callback) |
+| B-346-2 (Sol): Get paid could open Stripe, re-read status or call onChange after unmount or sign-out | GetPaidPanel binds load, Stripe visit and re-check to an epoch that unmount and any auth change retire. An open sheet is dismissed (`WebBrowser.dismissAuthSession`), and no later answer opens a sheet, re-reads, sets state or calls `onChange`. An auth change also clears the earlier account's status from the panel. | 10e278b6 | w2FixRound118.test.tsx: closed during link mint (Stripe never opens), closed with Stripe open (sheet dismissed, no re-read, no onChange), sign-out during re-read (answer dropped) |
+| C-346-1 (Sol, same GetPaidPanel lines) | Retry repeats the action that failed (load, open or check), not `view ? openStripe : load`; "Check status again" is disabled while it runs. | 10e278b6 | w2FixRound118.test.tsx: failed re-check -> Retry re-checks, Stripe not reopened |
+| B-346-1 (Opus): first-person app copy | CoachSetupChecklist: "This ticks when your first client payment arrives."; CoachSetupScreen: "Stripe, the payments provider TGP uses, collects ...". Guard `\b(we\|We\|us\|our\|Our)\b\|!` over every checklist state and the rendered setup screen (both sections). | 10e278b6 | w2FixRound118.test.tsx: 2 guard cases |
+| C-346-2 (Opus): a remembered package archived since trapped the form | When publish or the update answers `PACKAGE_ARCHIVED` or `PACKAGE_NOT_FOUND` (codes only, never a bare 404) for a remembered intent, the form forgets it and makes one fresh package and publishes it in the same tap. | 10e278b6 | w2FixRound118.test.tsx: archived remembered package -> one fresh create, live, onCreated once |
+| C-345-1 (Opus, copy truth) | Resumed copy: "Your package from earlier is saved on this device. Tap Create package to finish that same package." (no "will not be made twice"). | 10e278b6 | - |
+| B-345-1 at the form (Opus) | Covered by the #345 fix merged in; form-level test checks the server row's cadence equals the cadence passed to `onCreated`. | (#345 d197ea9c) | w2FixRound118.test.tsx: monthly made, publish lost, One time picked -> PATCH one-time, row one-time |
+| Production capability (job) | Stale note uses `refreshUnavailable`: on today's server (no live re-read route) it reads "This shows the last update Stripe sent to TGP. A change made just now can take a few minutes to show here." instead of "Stripe did not answer just now". Header comment notes the sheet may stay open until the coach closes it when the server's return URL is not the tgp:// landing (backend #676 adds it); status is re-read either way. | 10e278b6 | w2FixRound118.test.tsx: legacy status payload + 404 refresh -> "last update" note |
+
+Existing test changed: packageCreateDurability "leaving the screen while the create is in flight" asserted that the package id was written to storage after unmount. B-329-5 forbids writes after retire, so it now asserts the sent intent stays (same key) and that reopening and tapping again finishes the same package with no second create (stronger end-to-end check).
+
+Failing-before (test commit `d6ff125d` without the fix): [CI lane 37219889067](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37219889067): 13 failed, 6 passed (5 unchanged durability cases, and the form-level cadence case, which the merged #345 fix already turns green; its failing-before is in the #345 lane 37219210136).
+
+Probe replay at this head: [CI lane 37220273057](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37220273057)
+| Probe | Result |
+|---|---|
+| Opus audOpusS12FormProbe: paid monthly control | pass |
+| Opus: free from the start control | pass |
+| Opus: monthly made, publish lost, One time picked | pass (was fail) |
+| Opus: monthly made, publish lost, Free picked | pass (was fail) |
+| Opus: leaving during write-ahead sends no create | pass (was fail) |
+| Opus: account change during write-ahead sends no create | pass (was fail) |
+| Opus: PACKAGE_ARCHIVED remembered package -> fresh package same tap | pass (was fail) |
+| Sol 346-lifecycle-v3 (and v2): create control, held write-ahead, free publish after unmount, held final delete | pass (4/4 each) |
+| Sol v3 Stripe cases (held mint after unmount; Stripe control) | harness error, not product: `screen.UNSAFE_getByType is not a function` (v2: `getByTestId(...).props.onPress is not a function`) in RNTL 14. Same file with only the press changed to `fireEvent.press(getByTestId("get-paid-open"))`, not awaited for the held case (346-lifecycle-v3-hostpress): 6/6 pass |
+
+Money list self-check:
+- Webhook order and redelivery: none handled in W2; after every Stripe visit and on "Check status again" the panel re-reads server status, so late or repeated events only change the next read.
+- Concurrency: double tap held by the in-flight ref; one key per intent; a retired run (unmount, sign-out, A->B->A switch via generation) sends and writes nothing more; the archived recovery runs at most once per tap.
+- Terminal states: archived or missing remembered package -> fresh package; 410 IDEMPOTENT_PACKAGE_REMOVED -> fresh create; sign-out or deleted account -> work retired, Stripe sheet dismissed. Refund, dispute and cancel are not shown in W2.
+- List pagination and completeness: checklist reads are existence checks on full lists (`/v1/coach/packages` has no cursor) or `limit=1` paid charges.
+- Currency: USD only; prices in minor units; Free is one-time $0; paid floor $19.99 matches the server.
+- Copy truth: "ready" only when Stripe has charges and payouts on; the stale note says what is known; first payment ticks only with server or device proof; resumed copy narrowed; no first person.
+
+Size: 2,609 changed lines (2,609+ / 0-, no lockfiles), in the 1,500-3,000 band: operator SIZE ASSESSMENT needed.
+
+Restack: #347 merged this head merge-only (`3beab160`), its own diff unchanged.
+
+Checks at this head: Typecheck, lint, test pass (Analyze/CodeQL run on the main-based piece only).
+
+READY FOR AUDIT

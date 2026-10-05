@@ -1,0 +1,256 @@
+﻿2026-10-04T20:41:31.5774806Z Current runner version: '2.337.0'
+2026-10-04T20:41:31.5801348Z ##[group]Runner Image Provisioner
+2026-10-04T20:41:31.5802250Z Hosted Compute Agent
+2026-10-04T20:41:31.5803006Z Version: 20260901.588
+2026-10-04T20:41:31.5803669Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T20:41:31.5804392Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T20:41:31.5805149Z Worker ID: {8199092a-5161-4e34-9bff-9f31729279bb}
+2026-10-04T20:41:31.5805867Z Azure Region: westus3
+2026-10-04T20:41:31.5806499Z ##[endgroup]
+2026-10-04T20:41:31.5808215Z ##[group]Operating System
+2026-10-04T20:41:31.5808891Z Ubuntu
+2026-10-04T20:41:31.5809513Z 24.04.5
+2026-10-04T20:41:31.5810248Z LTS
+2026-10-04T20:41:31.5810851Z ##[endgroup]
+2026-10-04T20:41:31.5811434Z ##[group]Runner Image
+2026-10-04T20:41:31.5812044Z Image: ubuntu-24.04
+2026-10-04T20:41:31.5812663Z Version: 20260927.320.1
+2026-10-04T20:41:31.5814006Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T20:41:31.5815703Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T20:41:31.5816700Z ##[endgroup]
+2026-10-04T20:41:31.5817985Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T20:41:31.5820522Z Contents: read
+2026-10-04T20:41:31.5821591Z Metadata: read
+2026-10-04T20:41:31.5822186Z Packages: read
+2026-10-04T20:41:31.5822816Z ##[endgroup]
+2026-10-04T20:41:31.5825012Z Secret source: Actions
+2026-10-04T20:41:31.5825984Z Cache mode: write
+2026-10-04T20:41:31.5827008Z Prepare workflow directory
+2026-10-04T20:41:31.6184634Z Prepare all required actions
+2026-10-04T20:41:31.6233228Z Getting action download info
+2026-10-04T20:41:31.9647605Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T20:41:32.0587283Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T20:41:32.2497586Z Complete job name: targeted
+2026-10-04T20:41:32.3287789Z ##[group]Run actions/checkout@v6
+2026-10-04T20:41:32.3288722Z with:
+2026-10-04T20:41:32.3289326Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:41:32.3293469Z   token: ***
+2026-10-04T20:41:32.3293917Z   ssh-strict: true
+2026-10-04T20:41:32.3294415Z   ssh-user: git
+2026-10-04T20:41:32.3294874Z   persist-credentials: true
+2026-10-04T20:41:32.3295369Z   clean: true
+2026-10-04T20:41:32.3295817Z   sparse-checkout-cone-mode: true
+2026-10-04T20:41:32.3296338Z   fetch-depth: 1
+2026-10-04T20:41:32.3296770Z   fetch-tags: false
+2026-10-04T20:41:32.3297212Z   show-progress: true
+2026-10-04T20:41:32.3297657Z   lfs: false
+2026-10-04T20:41:32.3298070Z   submodules: false
+2026-10-04T20:41:32.3298527Z   set-safe-directory: true
+2026-10-04T20:41:32.3299045Z   allow-unsafe-pr-checkout: false
+2026-10-04T20:41:32.3300447Z ##[endgroup]
+2026-10-04T20:41:32.4301308Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:41:32.4303421Z ##[group]Getting Git version info
+2026-10-04T20:41:32.4304396Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T20:41:32.4305591Z [command]/usr/bin/git version
+2026-10-04T20:41:32.4365536Z git version 2.55.0
+2026-10-04T20:41:32.4390126Z ##[endgroup]
+2026-10-04T20:41:32.4405442Z Temporarily overriding HOME='/home/runner/work/_temp/b4ad0418-5f5c-4bcb-8948-1d933d441b7d' before making global git config changes
+2026-10-04T20:41:32.4406971Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:41:32.4411711Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:41:32.4461086Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T20:41:32.4465685Z ##[group]Determining repository object format
+2026-10-04T20:41:32.4468278Z ##[endgroup]
+2026-10-04T20:41:32.4469104Z ##[group]Initializing the repository
+2026-10-04T20:41:32.4473194Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:41:32.4570037Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T20:41:32.4571885Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T20:41:32.4572921Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T20:41:32.4573717Z hint: call:
+2026-10-04T20:41:32.4574152Z hint:
+2026-10-04T20:41:32.4574711Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T20:41:32.4575379Z hint:
+2026-10-04T20:41:32.4576005Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T20:41:32.4577027Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T20:41:32.4577873Z hint:
+2026-10-04T20:41:32.4578316Z hint: 	git branch -m <name>
+2026-10-04T20:41:32.4578823Z hint:
+2026-10-04T20:41:32.4579533Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T20:41:32.4585760Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-04T20:41:32.4595756Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:41:32.4642489Z ##[endgroup]
+2026-10-04T20:41:32.4643296Z ##[group]Disabling automatic garbage collection
+2026-10-04T20:41:32.4646235Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T20:41:32.4676979Z ##[endgroup]
+2026-10-04T20:41:32.4678352Z ##[group]Setting up auth
+2026-10-04T20:41:32.4679219Z Removing SSH command configuration
+2026-10-04T20:41:32.4685489Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:41:32.4718681Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:41:32.5046132Z Removing HTTP extra header
+2026-10-04T20:41:32.5052359Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:41:32.5084643Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:41:32.5299017Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:41:32.5305540Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:41:32.5337068Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:41:32.5576887Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T20:41:32.5618579Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:41:32.5651588Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:41:32.5684429Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:41:32.5717483Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:41:32.5753260Z ##[endgroup]
+2026-10-04T20:41:32.5754443Z ##[group]Fetching the repository
+2026-10-04T20:41:32.5761711Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +867139bfdf361c3fab44010b654f3c838eaf9d33:refs/remotes/origin/ci/B-SHEET4-119-343-after
+2026-10-04T20:41:34.1170667Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:41:34.1173228Z  * [new ref]         867139bfdf361c3fab44010b654f3c838eaf9d33 -> origin/ci/B-SHEET4-119-343-after
+2026-10-04T20:41:34.1184209Z [command]/usr/bin/git branch --list --remote origin/ci/B-SHEET4-119-343-after
+2026-10-04T20:41:34.1220125Z   origin/ci/B-SHEET4-119-343-after
+2026-10-04T20:41:34.1235171Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-SHEET4-119-343-after
+2026-10-04T20:41:34.1266998Z 867139bfdf361c3fab44010b654f3c838eaf9d33
+2026-10-04T20:41:34.1271903Z ##[endgroup]
+2026-10-04T20:41:34.1273197Z ##[group]Determining the checkout info
+2026-10-04T20:41:34.1274439Z ##[endgroup]
+2026-10-04T20:41:34.1279389Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T20:41:34.1331103Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T20:41:34.1360440Z ##[group]Checking out the ref
+2026-10-04T20:41:34.1364138Z [command]/usr/bin/git checkout --progress --force -B ci/B-SHEET4-119-343-after refs/remotes/origin/ci/B-SHEET4-119-343-after
+2026-10-04T20:41:34.2443888Z Switched to a new branch 'ci/B-SHEET4-119-343-after'
+2026-10-04T20:41:34.2452437Z branch 'ci/B-SHEET4-119-343-after' set up to track 'origin/ci/B-SHEET4-119-343-after'.
+2026-10-04T20:41:34.2458467Z ##[endgroup]
+2026-10-04T20:41:34.2509109Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T20:41:34.2537384Z 867139bfdf361c3fab44010b654f3c838eaf9d33
+2026-10-04T20:41:34.2863459Z ##[group]Run actions/setup-node@v6
+2026-10-04T20:41:34.2864159Z with:
+2026-10-04T20:41:34.2864604Z   node-version: 22.13
+2026-10-04T20:41:34.2865097Z   cache: npm
+2026-10-04T20:41:34.2865552Z   check-latest: false
+2026-10-04T20:41:34.2870624Z   token: ***
+2026-10-04T20:41:34.2871110Z   package-manager-cache: true
+2026-10-04T20:41:34.2871681Z ##[endgroup]
+2026-10-04T20:41:34.4441310Z Attempting to download 22.13...
+2026-10-04T20:41:35.4697842Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-04T20:41:36.0683907Z Extracting ...
+2026-10-04T20:41:36.0850978Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/f5123538-a955-4e6b-be1a-7410e30b8d3e -f /home/runner/work/_temp/3cc4d222-ef5b-4db6-8e2c-9f281bdc032d
+2026-10-04T20:41:37.2628587Z Adding to the cache ...
+2026-10-04T20:41:39.3313727Z ##[group]Environment details
+2026-10-04T20:41:39.5600838Z node: v22.13.1
+2026-10-04T20:41:39.5601388Z npm: 10.9.2
+2026-10-04T20:41:39.5601745Z yarn: 1.22.22
+2026-10-04T20:41:39.5602485Z ##[endgroup]
+2026-10-04T20:41:39.5625370Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-04T20:41:39.6572477Z /home/runner/.npm
+2026-10-04T20:41:39.8730758Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T20:41:41.0956554Z Received 33554432 of 241027159 (13.9%), 32.0 MBs/sec
+2026-10-04T20:41:42.0964973Z Received 197132288 of 241027159 (81.8%), 93.9 MBs/sec
+2026-10-04T20:41:42.3087787Z Received 241027159 of 241027159 (100.0%), 103.8 MBs/sec
+2026-10-04T20:41:42.3088665Z Cache Size: ~230 MB (241027159 B)
+2026-10-04T20:41:42.3150326Z [command]/usr/bin/tar -xf /home/runner/work/_temp/4cc2aa8c-32ae-40cd-bb3c-45fbe1a35e7e/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-04T20:41:43.0019977Z Cache restored successfully
+2026-10-04T20:41:43.0134388Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T20:41:43.0351764Z ##[group]Run npm ci
+2026-10-04T20:41:43.0352106Z npm ci
+2026-10-04T20:41:43.0629037Z shell: /usr/bin/bash -e {0}
+2026-10-04T20:41:43.0629396Z ##[endgroup]
+2026-10-04T20:41:48.2823179Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T20:41:48.5484670Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-04T20:41:48.5679072Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-04T20:41:48.5735559Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-04T20:41:48.5980143Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-04T20:41:48.7636137Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-04T20:41:48.7691709Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:41:48.7703266Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:41:48.7728236Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:41:48.7732623Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:41:48.7765012Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:41:48.8224456Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:41:48.8720495Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-04T20:41:49.3520124Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-04T20:41:50.1447602Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-04T20:41:53.8421786Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-04T20:42:45.8889874Z 
+2026-10-04T20:42:45.8891292Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-04T20:42:45.8904136Z 
+2026-10-04T20:42:45.8905035Z 187 packages are looking for funding
+2026-10-04T20:42:45.8905589Z   run `npm fund` for details
+2026-10-04T20:42:46.2865209Z 
+2026-10-04T20:42:46.2866140Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-04T20:42:46.2866534Z 
+2026-10-04T20:42:46.2866818Z To address issues that do not require attention, run:
+2026-10-04T20:42:46.2867811Z   npm audit fix
+2026-10-04T20:42:46.2868031Z 
+2026-10-04T20:42:46.2868321Z To address all issues (including breaking changes), run:
+2026-10-04T20:42:46.2868742Z   npm audit fix --force
+2026-10-04T20:42:46.2868925Z 
+2026-10-04T20:42:46.2869069Z Run `npm audit` for details.
+2026-10-04T20:42:46.4831716Z ##[group]Run set -euo pipefail
+2026-10-04T20:42:46.4832238Z set -euo pipefail
+2026-10-04T20:42:46.4832632Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T20:42:46.4833120Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T20:42:46.4833487Z echo "specs: ${SPECS[*]}"
+2026-10-04T20:42:46.4833763Z npx jest --ci "${SPECS[@]}"
+2026-10-04T20:42:46.4900605Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T20:42:46.4900970Z ##[endgroup]
+2026-10-04T20:42:46.5016800Z specs: src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx src/components/__tests__/audOpusS12119.probe343.test.tsx src/hooks/__tests__/usePackagePurchase.boundary.test.tsx src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx src/components/__tests__/PackageSelectionSheet.payment.test.tsx src/lib/__tests__/packagePayment.replyCodes.test.ts
+2026-10-04T20:42:52.3132635Z PASS src/lib/__tests__/packagePayment.replyCodes.test.ts
+2026-10-04T20:42:53.1221919Z PASS src/hooks/__tests__/usePackagePurchase.boundary.test.tsx
+2026-10-04T20:42:53.3585003Z PASS src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx
+2026-10-04T20:42:53.6510484Z PASS src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx
+2026-10-04T20:42:53.9005780Z PASS src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx
+2026-10-04T20:42:58.9283890Z FAIL src/components/__tests__/audOpusS12119.probe343.test.tsx (10.443 s)
+2026-10-04T20:42:58.9285730Z   ● Q5 INFO (C-343-8) PAYMENT_ALREADY_COMPLETE without a plan destination › a notice that says "Open your plan" offers an action with that name
+2026-10-04T20:42:58.9286417Z 
+2026-10-04T20:42:58.9287139Z     expect(received).toBeTruthy()
+2026-10-04T20:42:58.9287490Z 
+2026-10-04T20:42:58.9287668Z     Received: null
+2026-10-04T20:42:58.9287888Z 
+2026-10-04T20:42:58.9289150Z       197 |     const msg = r.getByTestId('payment-error').props.children as string;
+2026-10-04T20:42:58.9290423Z       198 |     expect(msg).toMatch(/Open your plan/);
+2026-10-04T20:42:58.9291308Z     > 199 |     expect(r.queryByText('Open your plan')).toBeTruthy();
+2026-10-04T20:42:58.9292042Z           |                                             ^
+2026-10-04T20:42:58.9292476Z       200 |   });
+2026-10-04T20:42:58.9292840Z       201 | });
+2026-10-04T20:42:58.9293154Z       202 |
+2026-10-04T20:42:58.9293316Z 
+2026-10-04T20:42:58.9293659Z       at Object.toBeTruthy (src/components/__tests__/audOpusS12119.probe343.test.tsx:199:45)
+2026-10-04T20:42:58.9294359Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:42:58.9294995Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:42:58.9295310Z 
+2026-10-04T20:42:59.3392533Z PASS src/components/__tests__/PackageSelectionSheet.payment.test.tsx (10.957 s)
+2026-10-04T20:42:59.4066109Z 
+2026-10-04T20:42:59.4073857Z Test Suites: 1 failed, 6 passed, 7 total
+2026-10-04T20:42:59.4074458Z Tests:       1 failed, 97 passed, 98 total
+2026-10-04T20:42:59.4074796Z Snapshots:   0 total
+2026-10-04T20:42:59.4075049Z Time:        11.74 s
+2026-10-04T20:42:59.4077200Z Ran all test suites matching /src\/hooks\/__tests__\/usePackagePurchase.nativeFence.test.tsx|src\/hooks\/__tests__\/audSolS12119.nativeRejection.test.tsx|src\/components\/__tests__\/audOpusS12119.probe343.test.tsx|src\/hooks\/__tests__\/usePackagePurchase.boundary.test.tsx|src\/hooks\/__tests__\/usePackagePurchase.sheet2.test.tsx|src\/components\/__tests__\/PackageSelectionSheet.payment.test.tsx|src\/lib\/__tests__\/packagePayment.replyCodes.test.ts/i.
+2026-10-04T20:42:59.4554821Z ##[error]Process completed with exit code 1.
+2026-10-04T20:42:59.4701613Z Post job cleanup.
+2026-10-04T20:42:59.5570418Z [command]/usr/bin/git version
+2026-10-04T20:42:59.5610609Z git version 2.55.0
+2026-10-04T20:42:59.5654509Z Temporarily overriding HOME='/home/runner/work/_temp/31c391b5-a622-40d5-abe1-91aaf23c8e0f' before making global git config changes
+2026-10-04T20:42:59.5656196Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:42:59.5659943Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:42:59.5693930Z Removing SSH command configuration
+2026-10-04T20:42:59.5701456Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:42:59.5739261Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:42:59.5976425Z Removing HTTP extra header
+2026-10-04T20:42:59.5982496Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:42:59.6020271Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:42:59.6251462Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:42:59.6258361Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:42:59.6287385Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T20:42:59.6288432Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T20:42:59.6289089Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:42:59.6289565Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:42:59.6299241Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T20:42:59.6323311Z /home/runner/work/_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:42:59.6334608Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:42:59.6373781Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T20:42:59.6400973Z /home/runner/work/_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:42:59.6412685Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:42:59.6447697Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:42:59.6469608Z /github/runner_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:42:59.6478237Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:42:59.6512316Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:42:59.6533782Z /github/runner_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:42:59.6544382Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config
+2026-10-04T20:42:59.6585231Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:42:59.6848777Z Removing credentials config '/home/runner/work/_temp/git-credentials-b1e4095c-0b3d-4d05-b1d5-dad9fe1852ef.config'
+2026-10-04T20:42:59.7071606Z Cleaning up orphan processes

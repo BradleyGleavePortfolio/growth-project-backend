@@ -1,0 +1,532 @@
+targeted	UNKNOWN STEP	﻿2026-10-04T04:06:12.4851764Z Current runner version: '2.337.0'
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4871068Z ##[group]Runner Image Provisioner
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4871618Z Hosted Compute Agent
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4872070Z Version: 20260901.588
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4872464Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4872894Z Build Date: 2026-09-01T19:56:44Z
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4873388Z Worker ID: {4053ae2b-d672-4e13-8960-e3017612b7d5}
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4873852Z Azure Region: centralus
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4874255Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4875098Z ##[group]Operating System
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4875465Z Ubuntu
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4875877Z 24.04.5
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4876195Z LTS
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4876536Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4876880Z ##[group]Runner Image
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4877231Z Image: ubuntu-24.04
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4877646Z Version: 20260927.320.1
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4878695Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4879690Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4880272Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4881084Z ##[group]GITHUB_TOKEN Permissions
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4882477Z Contents: read
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4883125Z Metadata: read
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4883501Z Packages: read
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4883905Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4885316Z Secret source: Actions
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4885858Z Cache mode: write
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.4886470Z Prepare workflow directory
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.5588637Z Prepare all required actions
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.5625013Z Getting action download info
+targeted	UNKNOWN STEP	2026-10-04T04:06:12.8485734Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.2281207Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.8662745Z Complete job name: targeted
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9268672Z ##[group]Run actions/checkout@v6
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9269521Z with:
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9270185Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9276481Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9277049Z   ssh-strict: true
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9277583Z   ssh-user: git
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9278302Z   persist-credentials: true
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9278986Z   clean: true
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9279540Z   sparse-checkout-cone-mode: true
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9280183Z   fetch-depth: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9280709Z   fetch-tags: false
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9281247Z   show-progress: true
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9281804Z   lfs: false
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9282319Z   submodules: false
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9282865Z   set-safe-directory: true
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9283495Z   allow-unsafe-pr-checkout: false
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9284596Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9976044Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9978016Z ##[group]Getting Git version info
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9979218Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	UNKNOWN STEP	2026-10-04T04:06:13.9980674Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0045838Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0060992Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0071482Z Temporarily overriding HOME='/home/runner/work/_temp/6507ae70-7cc9-4b3e-ae4c-97e3a63d3929' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0073172Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0075401Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0817648Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0826461Z ##[group]Determining repository object format
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0827587Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0828763Z ##[group]Initializing the repository
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.0830332Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2224364Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2225781Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2226920Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2227809Z hint: call:
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2228413Z hint:
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2229047Z hint: 	git config --global init.defaultBranch <name>
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2229772Z hint:
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2230450Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2231542Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2232406Z hint:
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2232896Z hint: 	git branch -m <name>
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2233446Z hint:
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2234238Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2235614Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.2239631Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3099910Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3101941Z ##[group]Disabling automatic garbage collection
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3102896Z [command]/usr/bin/git config --local gc.auto 0
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3214729Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3215612Z ##[group]Setting up auth
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3216405Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3218831Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3247333Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3782762Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3787246Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3813460Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3981033Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.3984822Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4009266Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4186319Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4224670Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4403430Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4506990Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4608059Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4794946Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4795469Z ##[group]Fetching the repository
+targeted	UNKNOWN STEP	2026-10-04T04:06:14.4801674Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +0bcf80c752ac797ac32d688c75f9ad64f8c24bb0:refs/remotes/origin/ci/B-W2-116-360-before
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6651754Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6652221Z  * [new ref]         0bcf80c752ac797ac32d688c75f9ad64f8c24bb0 -> origin/ci/B-W2-116-360-before
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6663042Z [command]/usr/bin/git branch --list --remote origin/ci/B-W2-116-360-before
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6684233Z   origin/ci/B-W2-116-360-before
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6692313Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-W2-116-360-before
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6726544Z 0bcf80c752ac797ac32d688c75f9ad64f8c24bb0
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6729577Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6729912Z ##[group]Determining the checkout info
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6730927Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6733946Z [command]/usr/bin/git sparse-checkout disable
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6780644Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6803229Z ##[group]Checking out the ref
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.6805865Z [command]/usr/bin/git checkout --progress --force -B ci/B-W2-116-360-before refs/remotes/origin/ci/B-W2-116-360-before
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.7922648Z Switched to a new branch 'ci/B-W2-116-360-before'
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.7926186Z branch 'ci/B-W2-116-360-before' set up to track 'origin/ci/B-W2-116-360-before'.
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.7934170Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.7972261Z [command]/usr/bin/git log -1 --format=%H
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.7991514Z 0bcf80c752ac797ac32d688c75f9ad64f8c24bb0
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.8185571Z ##[group]Run actions/setup-node@v6
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.8185759Z with:
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.8185874Z   node-version: 22.13
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.8185997Z   cache: npm
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.8186117Z   check-latest: false
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.8187550Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.8187673Z   package-manager-cache: true
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.8187831Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:15.9294182Z Attempting to download 22.13...
+targeted	UNKNOWN STEP	2026-10-04T04:06:16.6336017Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	UNKNOWN STEP	2026-10-04T04:06:17.1799380Z Extracting ...
+targeted	UNKNOWN STEP	2026-10-04T04:06:17.1881805Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/f1dc6b80-4290-454e-86b8-629e11467413 -f /home/runner/work/_temp/7f99d940-611e-4ac7-971f-913897ec4a53
+targeted	UNKNOWN STEP	2026-10-04T04:06:18.0274759Z Adding to the cache ...
+targeted	UNKNOWN STEP	2026-10-04T04:06:19.8111287Z ##[group]Environment details
+targeted	UNKNOWN STEP	2026-10-04T04:06:20.0980299Z node: v22.13.1
+targeted	UNKNOWN STEP	2026-10-04T04:06:20.0980570Z npm: 10.9.2
+targeted	UNKNOWN STEP	2026-10-04T04:06:20.0980741Z yarn: 1.22.22
+targeted	UNKNOWN STEP	2026-10-04T04:06:20.0981222Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:20.0992363Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	UNKNOWN STEP	2026-10-04T04:06:20.1597025Z /home/runner/.npm
+targeted	UNKNOWN STEP	2026-10-04T04:06:20.2956890Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	UNKNOWN STEP	2026-10-04T04:06:21.4552717Z Received 117440512 of 241027159 (48.7%), 111.9 MBs/sec
+targeted	UNKNOWN STEP	2026-10-04T04:06:22.0678325Z Received 241027159 of 241027159 (100.0%), 142.5 MBs/sec
+targeted	UNKNOWN STEP	2026-10-04T04:06:22.0678729Z Cache Size: ~230 MB (241027159 B)
+targeted	UNKNOWN STEP	2026-10-04T04:06:22.0724078Z [command]/usr/bin/tar -xf /home/runner/work/_temp/2177b7e7-1d30-4eac-a693-578da84fd631/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	UNKNOWN STEP	2026-10-04T04:06:22.9526653Z Cache restored successfully
+targeted	UNKNOWN STEP	2026-10-04T04:06:22.9626518Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	UNKNOWN STEP	2026-10-04T04:06:22.9821023Z ##[group]Run npm ci
+targeted	UNKNOWN STEP	2026-10-04T04:06:22.9821229Z ^[[36;1mnpm ci^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:23.1189478Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-04T04:06:23.1189717Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.5704188Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.7139071Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.7194648Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.7230246Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.7322361Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.8062550Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.8083670Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.8088994Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.8105624Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.8107490Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.8117993Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.8319271Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:06:26.8576227Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	UNKNOWN STEP	2026-10-04T04:06:27.1007663Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	UNKNOWN STEP	2026-10-04T04:06:27.5054298Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	UNKNOWN STEP	2026-10-04T04:06:29.6899832Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	UNKNOWN STEP	2026-10-04T04:06:34.9154243Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:34.9155073Z added 1108 packages, and audited 1109 packages in 12s
+targeted	UNKNOWN STEP	2026-10-04T04:06:34.9155350Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:34.9155502Z 187 packages are looking for funding
+targeted	UNKNOWN STEP	2026-10-04T04:06:34.9155799Z   run `npm fund` for details
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1449491Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1450398Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1450808Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1451121Z To address issues that do not require attention, run:
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1452299Z   npm audit fix
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1452459Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1452689Z To address all issues (including breaking changes), run:
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1453030Z   npm audit fix --force
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1453166Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.1453285Z Run `npm audit` for details.
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2825920Z ##[group]Run set -euo pipefail
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2826118Z ^[[36;1mset -euo pipefail^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2826451Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2826714Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2826902Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2827047Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2878724Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2878931Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:06:35.2959694Z specs: src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts src/services/health/__tests__/onDeviceConnect.test.ts
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4136386Z FAIL src/services/health/__tests__/onDeviceConnect.test.ts
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4138332Z   ● Sol B-317-9: the attempt check stops setup before any permission screen › B-360-1: Apple Health: a permission-screen failure after the attempt ended is a stop, not an error
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4139232Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4139738Z     expect(received).resolves.toBe(expected) // Object.is equality
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4140054Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4140177Z     Expected: "stopped"
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4140404Z     Received: "error"
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4140538Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4140930Z     ^[[0m ^[[90m 255 |^[[39m       cb(^[[32m'permission error'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4141305Z      ^[[90m 256 |^[[39m     })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4142250Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 257 |^[[39m     ^[[36mawait^[[39m expect(connectOnDeviceProvider(^[[32m'APPLE_HEALTHKIT'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m live))^[[33m.^[[39mresolves^[[33m.^[[39mtoBe(^[[32m'stopped'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4143234Z      ^[[90m     |^[[39m                                                                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4143631Z      ^[[90m 258 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4143897Z      ^[[90m 259 |^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4144595Z      ^[[90m 260 |^[[39m   it(^[[32m'Apple Health: an attempt that already ended opens no HealthKit sheet'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4145059Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4145247Z       at Object.toBe (node_modules/expect/build/index.js:174:22)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4145741Z       at Object.toBe (src/services/health/__tests__/onDeviceConnect.test.ts:257:83)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4146313Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4146857Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4147321Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4147867Z       at Object.<anonymous> (node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.4148502Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6921733Z FAIL src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6923238Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › an Error carrying native text: that type fails, the next is read, only the class is logged
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6923882Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6924061Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6924281Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6924373Z     - Expected
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6924590Z     + Received
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6924703Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6924801Z       "healthConnectSync",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6925027Z       "readRecords failed",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6925227Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6925561Z     -   "error": "unknown",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6925821Z     +   "error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6926097Z         "recordType": "Steps",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6926319Z         "resumed": false,
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6926517Z       },
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6926609Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6926691Z     Number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6926813Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6927632Z     ^[[0m ^[[90m 480 |^[[39m     expect(res^[[33m.^[[39mcomplete)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6928672Z      ^[[90m 481 |^[[39m     expect(res^[[33m.^[[39mfailedRecordTypes)^[[33m.^[[39mtoEqual([^[[32m'Steps'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6929621Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 482 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mtoHaveBeenCalledWith(^[[32m'healthConnectSync'^[[39m^[[33m,^[[39m ^[[32m'readRecords failed'^[[39m^[[33m,^[[39m {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6930342Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6930764Z      ^[[90m 483 |^[[39m       recordType^[[33m:^[[39m ^[[32m'Steps'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6931213Z      ^[[90m 484 |^[[39m       resumed^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6931616Z      ^[[90m 485 |^[[39m       error^[[33m:^[[39m cls^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6931800Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6932152Z       at toHaveBeenCalledWith (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:482:26)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6932770Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6933313Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6933567Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6934259Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › a library PERMISSION_ERROR: that type fails, the next is read, only the class is logged
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6934814Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6934974Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6935176Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6935255Z     - Expected
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6935433Z     + Received
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6935561Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6935656Z       "healthConnectSync",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6935991Z       "readRecords failed",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6936203Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6936413Z     -   "error": "permission",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6936700Z     +   "error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6937047Z         "recordType": "Steps",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6937427Z         "resumed": false,
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6937630Z       },
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6937731Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6937813Z     Number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6937939Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6938450Z     ^[[0m ^[[90m 480 |^[[39m     expect(res^[[33m.^[[39mcomplete)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6939107Z      ^[[90m 481 |^[[39m     expect(res^[[33m.^[[39mfailedRecordTypes)^[[33m.^[[39mtoEqual([^[[32m'Steps'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6940047Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 482 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mtoHaveBeenCalledWith(^[[32m'healthConnectSync'^[[39m^[[33m,^[[39m ^[[32m'readRecords failed'^[[39m^[[33m,^[[39m {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6940810Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6941295Z      ^[[90m 483 |^[[39m       recordType^[[33m:^[[39m ^[[32m'Steps'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6941798Z      ^[[90m 484 |^[[39m       resumed^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6942240Z      ^[[90m 485 |^[[39m       error^[[33m:^[[39m cls^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6942446Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6942829Z       at toHaveBeenCalledWith (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:482:26)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6943532Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6944078Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6944349Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6945055Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › a library IO_EXCEPTION: that type fails, the next is read, only the class is logged
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6945620Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6945798Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6946019Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6946333Z     - Expected
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6946517Z     + Received
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6946646Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6946737Z       "healthConnectSync",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6947091Z       "readRecords failed",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6947320Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6947520Z     -   "error": "io",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6947775Z     +   "error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6948191Z         "recordType": "Steps",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6948408Z         "resumed": false,
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6948598Z       },
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6948686Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6948766Z     Number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6948883Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6949210Z     ^[[0m ^[[90m 480 |^[[39m     expect(res^[[33m.^[[39mcomplete)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6949857Z      ^[[90m 481 |^[[39m     expect(res^[[33m.^[[39mfailedRecordTypes)^[[33m.^[[39mtoEqual([^[[32m'Steps'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6950819Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 482 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mtoHaveBeenCalledWith(^[[32m'healthConnectSync'^[[39m^[[33m,^[[39m ^[[32m'readRecords failed'^[[39m^[[33m,^[[39m {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6951523Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6951939Z      ^[[90m 483 |^[[39m       recordType^[[33m:^[[39m ^[[32m'Steps'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6952359Z      ^[[90m 484 |^[[39m       resumed^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6952745Z      ^[[90m 485 |^[[39m       error^[[33m:^[[39m cls^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6952928Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6953281Z       at toHaveBeenCalledWith (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:482:26)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6953904Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6954394Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6954671Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6955344Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › a code outside the allow-list: that type fails, the next is read, only the class is logged
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6955883Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6956043Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6956245Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6956333Z     - Expected
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6956511Z     + Received
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6956614Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6956707Z       "healthConnectSync",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6956919Z       "readRecords failed",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6957153Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6957340Z     -   "error": "unknown",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6957597Z     +   "error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6957870Z         "recordType": "Steps",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6958227Z         "resumed": false,
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6958425Z       },
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6958518Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6958628Z     Number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6958754Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6959091Z     ^[[0m ^[[90m 480 |^[[39m     expect(res^[[33m.^[[39mcomplete)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6959731Z      ^[[90m 481 |^[[39m     expect(res^[[33m.^[[39mfailedRecordTypes)^[[33m.^[[39mtoEqual([^[[32m'Steps'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6960672Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 482 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mtoHaveBeenCalledWith(^[[32m'healthConnectSync'^[[39m^[[33m,^[[39m ^[[32m'readRecords failed'^[[39m^[[33m,^[[39m {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6961379Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6961844Z      ^[[90m 483 |^[[39m       recordType^[[33m:^[[39m ^[[32m'Steps'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6962316Z      ^[[90m 484 |^[[39m       resumed^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6962766Z      ^[[90m 485 |^[[39m       error^[[33m:^[[39m cls^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6962958Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6963360Z       at toHaveBeenCalledWith (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:482:26)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6964230Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6964788Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6965167Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6965900Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › a non-Error rejection: that type fails, the next is read, only the class is logged
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6966458Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6966640Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6966862Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6966940Z     - Expected
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6967123Z     + Received
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6967261Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6967354Z       "healthConnectSync",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6967599Z       "readRecords failed",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6967832Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6968038Z     -   "error": "unknown",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6968438Z     +   "error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6968731Z         "recordType": "Steps",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6968974Z         "resumed": false,
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6969193Z       },
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6969297Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6969402Z     Number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6969519Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6969875Z     ^[[0m ^[[90m 480 |^[[39m     expect(res^[[33m.^[[39mcomplete)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6970583Z      ^[[90m 481 |^[[39m     expect(res^[[33m.^[[39mfailedRecordTypes)^[[33m.^[[39mtoEqual([^[[32m'Steps'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6971607Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 482 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mtoHaveBeenCalledWith(^[[32m'healthConnectSync'^[[39m^[[33m,^[[39m ^[[32m'readRecords failed'^[[39m^[[33m,^[[39m {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6972370Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6972840Z      ^[[90m 483 |^[[39m       recordType^[[33m:^[[39m ^[[32m'Steps'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6973316Z      ^[[90m 484 |^[[39m       resumed^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6973768Z      ^[[90m 485 |^[[39m       error^[[33m:^[[39m cls^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6973966Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6974367Z       at toHaveBeenCalledWith (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:482:26)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6975052Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6975593Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6975866Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6976604Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › a rejection whose code getter throws: that type fails, the next is read, only the class is logged
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6977201Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6977377Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6977575Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6977653Z     - Expected
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6977855Z     + Received
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6977964Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6978167Z       "healthConnectSync",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6978392Z       "readRecords failed",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6978599Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6978780Z     -   "error": "unknown",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6979037Z     +   "error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6979318Z         "recordType": "Steps",
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6979533Z         "resumed": false,
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6979733Z       },
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6979831Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6979938Z     Number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6980075Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6980440Z     ^[[0m ^[[90m 480 |^[[39m     expect(res^[[33m.^[[39mcomplete)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6981145Z      ^[[90m 481 |^[[39m     expect(res^[[33m.^[[39mfailedRecordTypes)^[[33m.^[[39mtoEqual([^[[32m'Steps'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6982316Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 482 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mtoHaveBeenCalledWith(^[[32m'healthConnectSync'^[[39m^[[33m,^[[39m ^[[32m'readRecords failed'^[[39m^[[33m,^[[39m {
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6983084Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6983650Z      ^[[90m 483 |^[[39m       recordType^[[33m:^[[39m ^[[32m'Steps'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6984108Z      ^[[90m 484 |^[[39m       resumed^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6984570Z      ^[[90m 485 |^[[39m       error^[[33m:^[[39m cls^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6984784Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6985164Z       at toHaveBeenCalledWith (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:482:26)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6985869Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6986410Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6986679Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6987414Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › the start of sign-out while a page is in flight, then it rejects: silent, nothing sent or saved
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6988003Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6988240Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6988441Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6988546Z     Expected number of calls: 0
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6988818Z     Received number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6988978Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6989398Z     1: "healthConnectSync", "readRecords failed", {"error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG", "recordType": "Steps", "resumed": false}
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6989824Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6990163Z     ^[[0m ^[[90m 508 |^[[39m     expect(ingest)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6991231Z      ^[[90m 509 |^[[39m     expect(^[[36mawait^[[39m getSyncProgress(^[[33mSCOPE^[[39m))^[[33m.^[[39mtoEqual({ v^[[33m:^[[39m ^[[35m1^[[39m^[[33m,^[[39m completedThrough^[[33m:^[[39m {}^[[33m,^[[39m resume^[[33m:^[[39m {} })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6992249Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 510 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6992847Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6993410Z      ^[[90m 511 |^[[39m     expect(logged())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[33mCANARY^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6993855Z      ^[[90m 512 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6994142Z      ^[[90m 513 |^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6994291Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6994659Z       at toHaveBeenCalled (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:510:30)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6995328Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6995875Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6996146Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6996870Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › an account switch while a page is in flight, then it rejects: silent, nothing sent or saved
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6997458Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6997585Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6997787Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6997912Z     Expected number of calls: 0
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6998252Z     Received number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6998390Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6998799Z     1: "healthConnectSync", "readRecords failed", {"error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG", "recordType": "Steps", "resumed": false}
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6999263Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.6999616Z     ^[[0m ^[[90m 508 |^[[39m     expect(ingest)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7000750Z      ^[[90m 509 |^[[39m     expect(^[[36mawait^[[39m getSyncProgress(^[[33mSCOPE^[[39m))^[[33m.^[[39mtoEqual({ v^[[33m:^[[39m ^[[35m1^[[39m^[[33m,^[[39m completedThrough^[[33m:^[[39m {}^[[33m,^[[39m resume^[[33m:^[[39m {} })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7001984Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 510 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7002596Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7003332Z      ^[[90m 511 |^[[39m     expect(logged())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[33mCANARY^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7003819Z      ^[[90m 512 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7004125Z      ^[[90m 513 |^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7004269Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7004670Z       at toHaveBeenCalled (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:510:30)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7005400Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7005981Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7006267Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7007056Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › a cancelled Connect while a page is in flight, then it rejects: silent, nothing sent or saved
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7007683Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7007832Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7008037Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7008267Z     Expected number of calls: 0
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7008535Z     Received number of calls: 1
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7008704Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7009153Z     1: "healthConnectSync", "readRecords failed", {"error": "AUDIT_360_PRIVATE_WEIGHT_81_6_KG", "recordType": "Steps", "resumed": false}
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7009633Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7009985Z     ^[[0m ^[[90m 508 |^[[39m     expect(ingest)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7011130Z      ^[[90m 509 |^[[39m     expect(^[[36mawait^[[39m getSyncProgress(^[[33mSCOPE^[[39m))^[[33m.^[[39mtoEqual({ v^[[33m:^[[39m ^[[35m1^[[39m^[[33m,^[[39m completedThrough^[[33m:^[[39m {}^[[33m,^[[39m resume^[[33m:^[[39m {} })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7012245Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 510 |^[[39m     expect(logger^[[33m.^[[39merror)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7012873Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7013485Z      ^[[90m 511 |^[[39m     expect(logged())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[33mCANARY^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7013988Z      ^[[90m 512 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7014286Z      ^[[90m 513 |^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7014439Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7014822Z       at toHaveBeenCalled (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:510:30)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7015543Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7016124Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7016420Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7017122Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › a grant read that resolves after sign-out started reports and logs nothing
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7017732Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7017908Z     expect(received).rejects.toBeInstanceOf(expected)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7018230Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7018437Z     Expected constructor: OnDeviceSessionChangedError
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7018856Z     Received constructor: HealthConnectPermissionDeniedError
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7019126Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7019333Z     ^[[0m ^[[90m 521 |^[[39m       })^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7019700Z      ^[[90m 522 |^[[39m     }^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7020695Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 523 |^[[39m     ^[[36mawait^[[39m expect(sync(fence^[[33m,^[[39m jest^[[33m.^[[39mfn()^[[33m,^[[39m revoked))^[[33m.^[[39mrejects^[[33m.^[[39mtoBeInstanceOf(^[[33mOnDeviceSessionChangedError^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7021675Z      ^[[90m     |^[[39m                                                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7022347Z      ^[[90m 524 |^[[39m     expect(logger^[[33m.^[[39mwarn)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7023226Z      ^[[90m 525 |^[[39m     expect(mockNativeRead)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7023858Z      ^[[90m 526 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7024041Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7024269Z       at Object.toBeInstanceOf (node_modules/expect/build/index.js:218:22)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7024999Z       at Object.toBeInstanceOf (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:523:59)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7025744Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7026317Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7026592Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7027300Z   ● B-360-1: a rejected native page never logs native text, nor anything after the fence retires › classifies only the library codes; everything else is unknown
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7027857Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7028313Z     TypeError: (0 , _healthConnectSyncService.healthConnectReadErrorClass) is not a function
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7028684Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7029579Z     ^[[0m ^[[90m 537 |^[[39m       ^[[32m'IO_EXCEPTION'^[[39m^[[33m,^[[39m ^[[32m'SDK_VERSION_ERROR'^[[39m^[[33m,^[[39m ^[[32m'ARGUMENT_VALIDATION_ERROR'^[[39m^[[33m,^[[39m ^[[32m'INVALID_RECORD_TYPE'^[[39m^[[33m,^[[39m ^[[32m'UNKNOWN_ERROR'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7030634Z      ^[[90m 538 |^[[39m       ^[[32m'__proto__'^[[39m^[[33m,^[[39m ^[[32m'constructor'^[[39m]^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7031671Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 539 |^[[39m     expect(codes^[[33m.^[[39mmap((code) ^[[33m=>^[[39m healthConnectReadErrorClass({ code })))^[[33m.^[[39mtoEqual([^[[32m'permission'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7032540Z      ^[[90m     |^[[39m                                                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7033633Z      ^[[90m 540 |^[[39m       ^[[32m'service_unavailable'^[[39m^[[33m,^[[39m ^[[32m'service_unavailable'^[[39m^[[33m,^[[39m ^[[32m'service_unavailable'^[[39m^[[33m,^[[39m ^[[32m'io'^[[39m^[[33m,^[[39m ^[[32m'sdk_version'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7034963Z      ^[[90m 541 |^[[39m       ^[[32m'invalid_request'^[[39m^[[33m,^[[39m ^[[32m'invalid_request'^[[39m^[[33m,^[[39m ^[[32m'unknown'^[[39m^[[33m,^[[39m ^[[32m'unknown'^[[39m^[[33m,^[[39m ^[[32m'unknown'^[[39m])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7036390Z      ^[[90m 542 |^[[39m     expect([^[[36mnull^[[39m^[[33m,^[[39m undefined^[[33m,^[[39m ^[[35m42^[[39m^[[33m,^[[39m ^[[33mCANARY^[[39m^[[33m,^[[39m { code^[[33m:^[[39m ^[[35m7^[[39m }]^[[33m.^[[39mmap(healthConnectReadErrorClass))^[[33m.^[[39mtoEqual(^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7038335Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7038662Z       at src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:539:59
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7039165Z           at Array.map (<anonymous>)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7039687Z       at Object.map (src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts:539:18)
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7040094Z 
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7235827Z Test Suites: 2 failed, 2 total
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7236270Z Tests:       12 failed, 41 passed, 53 total
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7236471Z Snapshots:   0 total
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7236611Z Time:        2.625 s
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7237084Z Ran all test suites matching /src\/services\/health\/healthConnect\/__tests__\/healthConnectSyncService.test.ts|src\/services\/health\/__tests__\/onDeviceConnect.test.ts/i.
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7413553Z ##[error]Process completed with exit code 1.
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.7526408Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8091672Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8119876Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8142711Z Temporarily overriding HOME='/home/runner/work/_temp/b0c66964-e5ed-439f-9488-0c3a16f13329' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8143240Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8146074Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8488439Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8493735Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8524901Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8713748Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8717396Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8743855Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8931764Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8937537Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8982059Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8982817Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8983484Z includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8983977Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.8990694Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9009359Z /home/runner/work/_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9017026Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9090008Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9108311Z /home/runner/work/_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9115613Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9145367Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9163614Z /github/runner_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9169522Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9249165Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9272394Z /github/runner_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9279857Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9344252Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9529628Z Removing credentials config '/home/runner/work/_temp/git-credentials-3f2e1733-28f8-4180-8736-55605a89cd47.config'
+targeted	UNKNOWN STEP	2026-10-04T04:06:38.9675882Z Cleaning up orphan processes

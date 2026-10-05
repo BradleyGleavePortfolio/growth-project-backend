@@ -1,0 +1,4212 @@
+[
+ {
+  "repo": "backend",
+  "n": 707,
+  "title": "fix(trials): void every open and uncollectible invoice before a never-",
+  "head": "ffed434e",
+  "headfull": "ffed434eda9048d396c4921c22b1d41a1b84b464",
+  "base": "agent119/trials-split-4-tests",
+  "updated": "2026-10-04T23:18",
+  "size": 739,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "ffed434e",
+    "RC",
+    "2026-10-04T23:06",
+    5985426719
+   ],
+   "Opus": [
+    "ffed434e",
+    "RC",
+    "2026-10-04T23:18",
+    5985519108
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "RC",
+    5985426719
+   ],
+   "Opus": [
+    "RC",
+    5985519108
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 (OPENING, B-TR6-119, agent 119) \u2014 growth-project-backend#707 @ ffed434eda9048d396c4921c22b1d41a1b8",
+   "2026-10-04T22:57"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-04T22:50"
+ },
+ {
+  "repo": "backend",
+  "n": 706,
+  "title": "test(trials): round-10 regressions for the trial notice and conflict f",
+  "head": "3d95f96e",
+  "headfull": "3d95f96e555627d7dd5605a6004c0df633687208",
+  "base": "agent115/trials-split-3-checkout-webhook",
+  "updated": "2026-10-04T22:16",
+  "size": 940,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Opus": [
+    "3d95f96e",
+    "APPROVE",
+    "2026-10-04T22:08",
+    5984958823
+   ],
+   "Sol": [
+    "3d95f96e",
+    "APPROVE",
+    "2026-10-04T22:16",
+    5985038771
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5984958823
+   ],
+   "Sol": [
+    "APPROVE",
+    5985038771
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 2 (B-TR5-119, agent 119) \u2014 growth-project-backend#706 @ 3d95f96e555627d7dd5605a6004c0df633687208",
+   "2026-10-04T21:56"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-04T20:20"
+ },
+ {
+  "repo": "backend",
+  "n": 705,
+  "title": "feat(dunning-v2): D2c - a dispute pauses billing and ends access at on",
+  "head": "279ec167",
+  "headfull": "279ec1677d574b86e773248174eef57c1d2a237d",
+  "base": "agent119/dunning-split-2b-v1-marker-fixtures",
+  "updated": "2026-10-04T20:28",
+  "size": 1287,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "OPENING (B-DUNSPLIT-119, agent 119) \u2014 growth-project-backend#705 @ 279ec1677d574b86e773248174eef57c1d2a237d",
+   "2026-10-04T20:28"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-04T20:04"
+ },
+ {
+  "repo": "backend",
+  "n": 704,
+  "title": "refactor(dunning-v2): D2b - v1 dispute marker, env validation and fixt",
+  "head": "32d886bb",
+  "headfull": "32d886bb2f7cb71384b83e5f07adc5c8a7d7fb3b",
+  "base": "agent115/dunning-split-2-dunning-service",
+  "updated": "2026-10-04T23:46",
+  "size": 694,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "OPENING (B-DUNSPLIT-119, agent 119) \u2014 growth-project-backend#704 @ 276a9f60139ff33f197c235c6d9825e614ca97d7",
+   "2026-10-04T20:28"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-04T20:04"
+ },
+ {
+  "repo": "backend",
+  "n": 703,
+  "title": "test(money): coach Money fix-round specs for B-674-13/14 and B-676-5 (",
+  "head": "b16021ab",
+  "headfull": "b16021ab39c8e2fe4edc09b083a32ee8428c6af6",
+  "base": "agent115/money-split-4-coach-money-spec",
+  "updated": "2026-10-04T23:45",
+  "size": 838,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "OPENING (B-CM5-119, agent 119) \u2014 growth-project-backend#703 @ d60a6d58a577fb90fdd7b78463971c8617b30224",
+   "2026-10-04T20:14"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-04T19:50"
+ },
+ {
+  "repo": "backend",
+  "n": 702,
+  "title": "test(checkout): #661 round 7 boundary tests",
+  "head": "9ddda117",
+  "headfull": "9ddda117d89f72c8d4a7a5b58a2c7ba6173053a2",
+  "base": "agent/clinic/b-secrets-3",
+  "updated": "2026-10-04T23:39",
+  "size": 513,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "20d2eb4f",
+    "APPROVE",
+    "2026-10-04T17:01",
+    5982351152
+   ],
+   "Opus": [
+    "20d2eb4f",
+    "APPROVE",
+    "2026-10-04T17:08",
+    5982408645
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (OP-SIZE-118, operator agent 118) \u2014 growth-project-backend#702 @ 20d2eb4f696f5e9b4966000f88bd1",
+   "2026-10-04T17:00"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-04T07:43"
+ },
+ {
+  "repo": "backend",
+  "n": 693,
+  "title": "feat(push): push delivery, send-time quiet hours, emitter wiring (spli",
+  "head": "13417e7b",
+  "headfull": "13417e7be58b96b6fccf203f71ec3b1f1ac8bb20",
+  "base": "agent115/push-split-1-outbox-foundation",
+  "updated": "2026-10-03T20:46",
+  "size": 2382,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:41"
+ },
+ {
+  "repo": "backend",
+  "n": 692,
+  "title": "feat(push): outbox schema, quiet hours, preferences, Expo client (spli",
+  "head": "27156167",
+  "headfull": "27156167037d5c1be687c597ad349e5a151f5228",
+  "base": "main",
+  "updated": "2026-10-03T20:46",
+  "size": 815,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 17,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:41"
+ },
+ {
+  "repo": "backend",
+  "n": 691,
+  "title": "test(dunning): money-truth and lifecycle e2e (split D5 of #628)",
+  "head": "e0afe678",
+  "headfull": "e0afe6780e5954b20e88cfaefd63f12cd31d218d",
+  "base": "agent115/dunning-split-4-lockout-webhooks",
+  "updated": "2026-10-04T05:35",
+  "size": 2742,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 3 (restack, merge-only) (B-DUN-117, agent 117) \u2014 growth-project-backend#691 @ e0afe6780e5954b20e88cf",
+   "2026-10-04T05:20"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:14"
+ },
+ {
+  "repo": "backend",
+  "n": 690,
+  "title": "feat(dunning): billing endpoints, lockout guard, webhooks and wiring (",
+  "head": "06307883",
+  "headfull": "06307883100ec142aa2818fc30ee276cab26c1ec",
+  "base": "agent115/dunning-split-3-client-billing",
+  "updated": "2026-10-04T17:28",
+  "size": 2913,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "06307883",
+    "RC",
+    "2026-10-04T17:16",
+    5982476848
+   ],
+   "Opus": [
+    "06307883",
+    "APPROVE",
+    "2026-10-04T17:28",
+    5982575812
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "RC",
+    5982476848
+   ],
+   "Opus": [
+    "APPROVE",
+    5982575812
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 2 (restack, merge-only) (B-DUN-117, agent 117) \u2014 growth-project-backend#690 @ 06307883100ec142aa2818",
+   "2026-10-04T05:15"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:14"
+ },
+ {
+  "repo": "backend",
+  "n": 689,
+  "title": "feat(dunning): client billing service and reconciler (split D3 of #628",
+  "head": "bb992fed",
+  "headfull": "bb992fedf0095446f916f3261742bd262c3d94da",
+  "base": "agent115/dunning-split-2-dunning-service",
+  "updated": "2026-10-04T17:28",
+  "size": 2913,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "bb992fed",
+    "RC",
+    "2026-10-04T17:16",
+    5982476834
+   ],
+   "Opus": [
+    "bb992fed",
+    "RC",
+    "2026-10-04T17:28",
+    5982575687
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "RC",
+    5982476834
+   ],
+   "Opus": [
+    "RC",
+    5982575687
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 2 (restack, merge-only) (B-DUN-117, agent 117) \u2014 growth-project-backend#689 @ bb992fedf0095446f916f3",
+   "2026-10-04T05:20"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:14"
+ },
+ {
+  "repo": "backend",
+  "n": 688,
+  "title": "feat(dunning): dunning v2 service (split D2 of #628)",
+  "head": "5003e7e6",
+  "headfull": "5003e7e6abe87680484658c7f2c7433ab5fef357",
+  "base": "agent115/dunning-split-1-foundation",
+  "updated": "2026-10-04T23:47",
+  "size": 2440,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "b17f514c",
+    "RC",
+    "2026-10-04T17:01",
+    5982357473
+   ],
+   "Opus": [
+    "b17f514c",
+    "RC",
+    "2026-10-04T17:16",
+    5982479051
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 4 (B-DUNSPLIT-119, agent 119) \u2014 growth-project-backend#688 @ f29fc201b43a93b3a2f2e431b76b545110bff01",
+   "2026-10-04T20:29"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:14"
+ },
+ {
+  "repo": "backend",
+  "n": 687,
+  "title": "feat(dunning): schema, cadence, dispatcher, Stripe billing API (split ",
+  "head": "f3c7fd37",
+  "headfull": "f3c7fd37777ef1cde75ec5fb984edf5cb973f864",
+  "base": "main",
+  "updated": "2026-10-04T23:48",
+  "size": 2640,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "f8e47bf4",
+    "RC",
+    "2026-10-04T17:01",
+    5982357490
+   ],
+   "Opus": [
+    "f8e47bf4",
+    "RC",
+    "2026-10-04T17:16",
+    5982478903
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 3 (B-DUNSPLIT-119, agent 119) \u2014 growth-project-backend#687 @ c260a849ee31ecc7103d409783464fc1452751d",
+   "2026-10-04T20:29"
+  ],
+  "ci": {
+   "success": 17,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:14"
+ },
+ {
+  "repo": "backend",
+  "n": 677,
+  "title": "test(coach-money): CoachMoneyService unit spec (split M4 of #641)",
+  "head": "921299fe",
+  "headfull": "921299fe1e04005937c98e16fb4a07b6bfd568a7",
+  "base": "agent115/money-split-3-coach-money-api",
+  "updated": "2026-10-04T23:43",
+  "size": 2915,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "1f746547",
+    "APPROVE",
+    "2026-10-04T04:41",
+    5976650088
+   ],
+   "Opus": [
+    "4aaee4ed",
+    "APPROVE",
+    "2026-10-04T03:01",
+    5975993938
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 4 (restack, merge-only) (B-CM5-119, agent 119) \u2014 growth-project-backend#677 @ 6340993b6b96193b8a54fd",
+   "2026-10-04T20:14"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T19:40"
+ },
+ {
+  "repo": "backend",
+  "n": 676,
+  "title": "feat(coach-money): Money read API, payout reason, HTTPS onboarding ret",
+  "head": "296067fb",
+  "headfull": "296067fb95d7e0321c5bda15f62946e1ee2d5122",
+  "base": "agent115/money-split-1-refund-reversal",
+  "updated": "2026-10-04T23:43",
+  "size": 2984,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "ccd60bbc",
+    "RC",
+    "2026-10-04T17:45",
+    5982716659
+   ],
+   "Opus": [
+    "ccd60bbc",
+    "RC",
+    "2026-10-04T18:01",
+    5982843389
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 4 (B-CM5-119, agent 119) \u2014 growth-project-backend#676 @ ecaf75fd970b785468c95e459360152c64ced00c",
+   "2026-10-04T20:14"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T19:40"
+ },
+ {
+  "repo": "backend",
+  "n": 674,
+  "title": "fix(refunds): head-coach transfer reversal once, review and reconcile ",
+  "head": "9e8a3a6b",
+  "headfull": "9e8a3a6b31312c075e00e1bb01a7e69a9267e659",
+  "base": "main",
+  "updated": "2026-10-05T01:12",
+  "size": 2948,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "f9e21a87",
+    "RC",
+    "2026-10-04T17:45",
+    5982716289
+   ],
+   "Opus": [
+    "f9e21a87",
+    "RC",
+    "2026-10-04T18:01",
+    5982843273
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 4 (B-CM5-119, agent 119) \u2014 growth-project-backend#674 @ 8cc1780922c06bd264874e470b237b2058c203eb",
+   "2026-10-04T20:10"
+  ],
+  "ci": {
+   "success": 17,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T19:40"
+ },
+ {
+  "repo": "backend",
+  "n": 673,
+  "title": "feat(trials): trial checkout, webhook handling and conflict guard (spl",
+  "head": "dcf095b8",
+  "headfull": "dcf095b85f74478f44e1a090f2a93cbbd1c6d496",
+  "base": "agent115/trials-split-2-editor-notices",
+  "updated": "2026-10-04T23:06",
+  "size": 2999,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "dcf095b8",
+    "APPROVE",
+    "2026-10-04T23:06",
+    5985426913
+   ],
+   "Opus": [
+    "dcf095b8",
+    "APPROVE",
+    "2026-10-04T22:08",
+    5984958541
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5984958541
+   ],
+   "Sol": [
+    "APPROVE",
+    5985426913
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 11 (B-TR5-119, agent 119) \u2014 growth-project-backend#673 @ dcf095b85f74478f44e1a090f2a93cbbd1c6d496",
+   "2026-10-04T21:53"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T19:31"
+ },
+ {
+  "repo": "backend",
+  "n": 672,
+  "title": "feat(trials): coach trial setting, client trial offer, trial-ending no",
+  "head": "62c2c066",
+  "headfull": "62c2c066a9347dcf16ad45d010f5434e85ae1a60",
+  "base": "agent115/trials-split-1-model-rules",
+  "updated": "2026-10-04T21:09",
+  "size": 2968,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "62c2c066",
+    "APPROVE",
+    "2026-10-04T21:09",
+    5984411900
+   ],
+   "Opus": [
+    "62c2c066",
+    "APPROVE",
+    "2026-10-04T20:45",
+    5984213235
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5984213235
+   ],
+   "Sol": [
+    "APPROVE",
+    5984411900
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 10 (B-TR4-119, agent 119) \u2014 growth-project-backend#672 @ 62c2c066a9347dcf16ad45d010f5434e85ae1a60",
+   "2026-10-04T20:22"
+  ],
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T19:31"
+ },
+ {
+  "repo": "backend",
+  "n": 671,
+  "title": "feat(trials): trial data model, one-trial rule and usage ledger (split",
+  "head": "c75002c9",
+  "headfull": "c75002c9eef3ebc4dd7c41d537fc38028635e4dc",
+  "base": "main",
+  "updated": "2026-10-04T06:47",
+  "size": 2291,
+  "mstate": "dirty",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "c75002c9",
+    "APPROVE",
+    "2026-10-04T06:27",
+    5977306032
+   ],
+   "Opus": [
+    "c75002c9",
+    "APPROVE",
+    "2026-10-04T06:47",
+    5977434502
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "APPROVE",
+    5977306032
+   ],
+   "Opus": [
+    "APPROVE",
+    5977434502
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 7 (merge-only) (B-TR-117, agent 117) \u2014 growth-project-backend#671 @ c75002c9eef3ebc4dd7c41d537fc3802",
+   "2026-10-04T05:34"
+  ],
+  "ci": {
+   "success": 20,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T19:31"
+ },
+ {
+  "repo": "backend",
+  "n": 670,
+  "title": "test(roman): golden-set eval harness for live turns (split C3 of #651)",
+  "head": "fb671019",
+  "headfull": "fb67101934becfb8536664df008129061c013dde",
+  "base": "agent115/roman-split-c2-turn-fixes",
+  "updated": "2026-10-03T20:57",
+  "size": 1135,
+  "mstate": "unstable",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 9,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "build-and-test"
+  ],
+  "created": "2026-10-03T19:22"
+ },
+ {
+  "repo": "backend",
+  "n": 669,
+  "title": "fix(roman): live-turn findings B-651-1/4/5, OR-115-1/2, B-651-9 (split",
+  "head": "6386c00b",
+  "headfull": "6386c00b2bdbb2c120a5f173dea4753574d415e8",
+  "base": "agent115/roman-split-c1-live-turns",
+  "updated": "2026-10-03T19:37",
+  "size": 907,
+  "mstate": "unstable",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 9,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "build-and-test"
+  ],
+  "created": "2026-10-03T19:22"
+ },
+ {
+  "repo": "backend",
+  "n": 668,
+  "title": "feat(roman): wire grounding and guardrails into live turns (split C1 o",
+  "head": "fabc2268",
+  "headfull": "fabc2268ffde1e6dca3ea1a18d6bff49c69f7b6f",
+  "base": "agent115/roman-split-b-guardrails",
+  "updated": "2026-10-03T20:37",
+  "size": 2159,
+  "mstate": "unstable",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 9,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "build-and-test"
+  ],
+  "created": "2026-10-03T19:21"
+ },
+ {
+  "repo": "backend",
+  "n": 667,
+  "title": "feat(roman): client context core (split A1 of #651; inert)",
+  "head": "bacd83e1",
+  "headfull": "bacd83e10ff0e00dc5165dd223da8b4745e3c82a",
+  "base": "main",
+  "updated": "2026-10-03T19:26",
+  "size": 1832,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 15,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T19:21"
+ },
+ {
+  "repo": "backend",
+  "n": 666,
+  "title": "feat(roman): safety router and reply post-check, inert (#651 split 2/3",
+  "head": "0ec835ca",
+  "headfull": "0ec835ca1cc9697bde71e6c67ed627ea3a000691",
+  "base": "agent115/roman-split-a-context",
+  "updated": "2026-10-03T19:34",
+  "size": 1735,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T18:23"
+ },
+ {
+  "repo": "backend",
+  "n": 665,
+  "title": "feat(roman): client context service and coach context controller (spli",
+  "head": "eb7cb7a8",
+  "headfull": "eb7cb7a81e86d2a9113b3b65b7f9d011950c3ba5",
+  "base": "agent115/roman-split-a1-context-core",
+  "updated": "2026-10-03T19:35",
+  "size": 2282,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 10,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T18:20"
+ },
+ {
+  "repo": "backend",
+  "n": 661,
+  "title": "fix(payments): never return or keep client Stripe PaymentSheet credent",
+  "head": "bc399edd",
+  "headfull": "bc399edd5911c9c1e83e4bb1051fde05bfeda64d",
+  "base": "main",
+  "updated": "2026-10-04T23:41",
+  "size": 2849,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "f80f0088",
+    "APPROVE",
+    "2026-10-04T17:00",
+    5982350850
+   ],
+   "Opus": [
+    "f80f0088",
+    "APPROVE",
+    "2026-10-04T17:07",
+    5982407688
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "SIZE ASSESSMENT (operator agent 118) \u2014 growth-project-backend#661 @ f80f0088c98cd078cffa5dd217a8fdc84ad631b2",
+   "2026-10-04T17:09"
+  ],
+  "ci": {
+   "success": 18,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:31"
+ },
+ {
+  "repo": "backend",
+  "n": 660,
+  "title": "feat(messaging): one inbox, read-up-to, edit/delete, reply, pins, mute",
+  "head": "60556485",
+  "headfull": "6055648506036c4b649cc7958c50ff86c132e997",
+  "base": "main",
+  "updated": "2026-10-03T00:43",
+  "size": 3041,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 19,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "community-live-tests"
+  ],
+  "created": "2026-10-03T00:31"
+ },
+ {
+  "repo": "backend",
+  "n": 659,
+  "title": "feat(broadcasts): segmented, scheduled and recurring coach broadcasts,",
+  "head": "fa9a7cbd",
+  "headfull": "fa9a7cbd33c5f1c1d5108f3a3d57ea70f3177faf",
+  "base": "main",
+  "updated": "2026-10-03T02:24",
+  "size": 3929,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "fa9a7cbd",
+    "RC",
+    "2026-10-03T02:15",
+    5964501283
+   ],
+   "Sol": [
+    "fa9a7cbd",
+    "BLOCK",
+    "2026-10-03T02:24",
+    5964574829
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "RC",
+    5964501283
+   ],
+   "Sol": [
+    "BLOCK",
+    5964574829
+   ]
+  },
+  "last_evt": null,
+  "ci": {
+   "success": 20,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:29"
+ },
+ {
+  "repo": "backend",
+  "n": 658,
+  "title": "feat(invite-codes): coach code tools \u2014 create, rotate, revoke, QR, exa",
+  "head": "08534e17",
+  "headfull": "08534e17c686602415f0836abc66db0182aeea3f",
+  "base": "main",
+  "updated": "2026-10-03T02:18",
+  "size": 2565,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "08534e17",
+    "RC",
+    "2026-10-03T02:13",
+    5964473420
+   ],
+   "Sol": [
+    "08534e17",
+    "RC",
+    "2026-10-03T02:18",
+    5964522757
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "RC",
+    5964473420
+   ],
+   "Sol": [
+    "RC",
+    5964522757
+   ]
+  },
+  "last_evt": null,
+  "ci": {
+   "success": 20,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:29"
+ },
+ {
+  "repo": "backend",
+  "n": 657,
+  "title": "feat(coachless): featured-coach config, idempotent coach-code redempti",
+  "head": "c25960a8",
+  "headfull": "c25960a8b82ed4dd6bea0b7da9f1d77ce783078d",
+  "base": "main",
+  "updated": "2026-10-03T00:42",
+  "size": 3184,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 18,
+   "skipped": 1,
+   "failure": 2
+  },
+  "fails": [
+   "rls-live-tests",
+   "build-and-test"
+  ],
+  "created": "2026-10-03T00:28"
+ },
+ {
+  "repo": "backend",
+  "n": 656,
+  "title": "feat(packages): real free trials on recurring packages, one per client",
+  "head": "86223987",
+  "headfull": "86223987ec94511f2a146b62d99f87ed1b2758a8",
+  "base": "main",
+  "updated": "2026-10-03T19:31",
+  "size": 5611,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "b9939d02",
+    "RC",
+    "2026-10-03T18:18",
+    5972091723
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 5 (B-TRIALS-3, agent 115) \u2014 growth-project-backend#656 @ 86223987ec94511f2a146b62d99f87ed1b2758a8",
+   "2026-10-03T18:47"
+  ],
+  "ci": {
+   "success": 17,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:24"
+ },
+ {
+  "repo": "backend",
+  "n": 655,
+  "title": "feat(roman-adjust): approve-to-adjust recovery suggestions with coach ",
+  "head": "bf9120c1",
+  "headfull": "bf9120c1178c28b54256d41afed05a25578353f3",
+  "base": "main",
+  "updated": "2026-10-03T00:30",
+  "size": 2058,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 16,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "build-and-test"
+  ],
+  "created": "2026-10-03T00:21"
+ },
+ {
+  "repo": "backend",
+  "n": 654,
+  "title": "feat(checkout): native Stripe subscriptions and free trials through th",
+  "head": "02c48de7",
+  "headfull": "02c48de710f9f69bfc985336eb14249663bbb638",
+  "base": "agent/clinic/s-fee-coach-net",
+  "updated": "2026-10-03T19:48",
+  "size": 6090,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "02c48de7",
+    "APPROVE",
+    "2026-10-03T18:29",
+    5972187301
+   ],
+   "Sol": [
+    "795110b7",
+    "RC",
+    "2026-10-03T03:24",
+    5965039762
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5972187301
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 2 (B-RECUR-3, agent 115) \u2014 growth-project-backend#654 @ 02c48de710f9f69bfc985336eb14249663bbb638",
+   "2026-10-03T18:06"
+  ],
+  "ci": {
+   "success": 12,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:12"
+ },
+ {
+  "repo": "backend",
+  "n": 653,
+  "title": "feat(scheduling): S-SCHED-5 booking request auto-expiry (T4)",
+  "head": "17b2be25",
+  "headfull": "17b2be255b0087196b9c1c81cc38397330c56c75",
+  "base": "agent110/s-sched-lifecycle",
+  "updated": "2026-10-03T00:22",
+  "size": 1434,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 12,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:11"
+ },
+ {
+  "repo": "backend",
+  "n": 651,
+  "title": "feat(roman): data-aware live Roman turns: per-turn grounding, guardrai",
+  "head": "a8fa651c",
+  "headfull": "a8fa651c8f131b7d7f61076143671be350af9ce5",
+  "base": "main",
+  "updated": "2026-10-03T19:22",
+  "size": 8191,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "a8fa651c",
+    "RC",
+    "2026-10-03T02:57",
+    5964857917
+   ],
+   "Sol": [
+    "a8fa651c",
+    "RC",
+    "2026-10-03T03:03",
+    5964898255
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "RC",
+    5964857917
+   ],
+   "Sol": [
+    "RC",
+    5964898255
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 \u2014 growth-project-backend#651 @ 5a3a63029092c1b5ea5aa205b262a2a524e9c939",
+   "2026-10-03T02:19"
+  ],
+  "ci": {
+   "success": 15,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:10"
+ },
+ {
+  "repo": "backend",
+  "n": 650,
+  "title": "chore(flags): community core on (API, posts, messages, push, realtime)",
+  "head": "629712a0",
+  "headfull": "629712a0cf17ba5744abdedc66c83db3a26ee3d1",
+  "base": "main",
+  "updated": "2026-10-03T00:04",
+  "size": 10,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 15,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:00"
+ },
+ {
+  "repo": "backend",
+  "n": 648,
+  "title": "feat(notifications): deliver inbox notifications to devices via Expo p",
+  "head": "22de1182",
+  "headfull": "22de1182c3caef1f6e7da8550d74eaf66fb51344",
+  "base": "main",
+  "updated": "2026-10-03T20:41",
+  "size": 3197,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "81c52a12",
+    "RC",
+    "2026-10-02T23:44",
+    5963222971
+   ],
+   "Sol": [
+    "ab607b34",
+    "RC",
+    "2026-10-03T18:13",
+    5972046897
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 4 (B-NOTIF-6, agent 115) \u2014 growth-project-backend#648 @ 22de1182c3caef1f6e7da8550d74eaf66fb51344",
+   "2026-10-03T18:44"
+  ],
+  "ci": {
+   "success": 17,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-02T20:32"
+ },
+ {
+  "repo": "backend",
+  "n": 643,
+  "title": "chore(flags): BOOKING_REMINDERS_ENABLED -> on, reminders on at launch ",
+  "head": "f21b3c63",
+  "headfull": "f21b3c632a80037c852f91e5d41e33d31d99ef9e",
+  "base": "main",
+  "updated": "2026-10-02T20:36",
+  "size": 2,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "f21b3c63",
+    "RC",
+    "2026-10-02T19:47",
+    5960175016
+   ],
+   "Opus": [
+    "f21b3c63",
+    "RC",
+    "2026-10-02T19:47",
+    5960179586
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "RC",
+    5960175016
+   ],
+   "Opus": [
+    "RC",
+    5960179586
+   ]
+  },
+  "last_evt": null,
+  "ci": {
+   "success": 14,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-02T19:38"
+ },
+ {
+  "repo": "backend",
+  "n": 642,
+  "title": "chore(flags): GOOGLE_CLIENT_IDS -> github-secret, Google sign-in on da",
+  "head": "4fee3c02",
+  "headfull": "4fee3c0236eaa793f847a89e9393160b9f12a41c",
+  "base": "main",
+  "updated": "2026-10-03T18:03",
+  "size": 75,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "4fee3c02",
+    "APPROVE",
+    "2026-10-03T18:03",
+    5971958821
+   ],
+   "Sol": [
+    "4fee3c02",
+    "APPROVE",
+    "2026-10-03T18:01",
+    5971940347
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "APPROVE",
+    5971940347
+   ],
+   "Opus": [
+    "APPROVE",
+    5971958821
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 (B-DUNNING-7, agent 115) \u2014 growth-project-backend#642 @ 4fee3c0236eaa793f847a89e9393160b9f12a41c",
+   "2026-10-03T18:00"
+  ],
+  "ci": {
+   "success": 15,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-02T19:37"
+ },
+ {
+  "repo": "backend",
+  "n": 641,
+  "title": "feat(money): coach Money read model, truthful Connect status + refresh",
+  "head": "f60ed603",
+  "headfull": "f60ed603c4d2e8bb97b6dbd12408a975a0d2590a",
+  "base": "main",
+  "updated": "2026-10-03T19:40",
+  "size": 6738,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "02cd3f88",
+    "RC",
+    "2026-10-03T18:21",
+    5972121356
+   ],
+   "Sol": [
+    "02cd3f88",
+    "RC",
+    "2026-10-03T18:20",
+    5972111823
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 5 (B-COACH-5, agent 115) \u2014 growth-project-backend#641 @ f60ed603c4d2e8bb97b6dbd12408a975a0d2590a",
+   "2026-10-03T18:40"
+  ],
+  "ci": {
+   "success": 17,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-02T17:46"
+ },
+ {
+  "repo": "backend",
+  "n": 634,
+  "title": "feat(scheduling): S-SCHED-2 authoritative booking lifecycle, no double",
+  "head": "e18e8055",
+  "headfull": "e18e8055454b04856d2c5ab5568d0a7127b74939",
+  "base": "main",
+  "updated": "2026-10-03T18:21",
+  "size": 10664,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "3d989702",
+    "APPROVE",
+    "2026-10-03T17:59",
+    5971921481
+   ],
+   "Opus": [
+    "e18e8055",
+    "APPROVE",
+    "2026-10-03T18:21",
+    5972118900
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5972118900
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 5 (B-SCHED-ROMAN, agent 115) \u2014 growth-project-backend#634 @ 3d989702208fc9ee407196ac7c3046f92f6b8cc5",
+   "2026-10-03T17:48"
+  ],
+  "ci": {
+   "success": 20,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-02T06:13"
+ },
+ {
+  "repo": "backend",
+  "n": 628,
+  "title": "fix(dunning-v2): live-ready 10-day lockout + native card update, 1A pa",
+  "head": "dc47e0ef",
+  "headfull": "dc47e0efe2270e21a00ab8d038a9e7dbb415efe9",
+  "base": "main",
+  "updated": "2026-10-03T20:14",
+  "size": 12334,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "33e0696a",
+    "RC",
+    "2026-10-03T18:22",
+    5972127476
+   ],
+   "Sol": [
+    "33e0696a",
+    "RC",
+    "2026-10-03T18:20",
+    5972111414
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 8 (B-DUNNING-7, agent 115) \u2014 growth-project-backend#628 @ dc47e0efe2270e21a00ab8d038a9e7dbb415efe9",
+   "2026-10-03T18:52"
+  ],
+  "ci": {
+   "success": 17,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-01T22:20"
+ },
+ {
+  "repo": "backend",
+  "n": 627,
+  "title": "fix(billing): coach payout = price - actual Stripe fee - 2% (S-FEE)",
+  "head": "66162285",
+  "headfull": "66162285882d75d7619542c9aa581da5cc93145d",
+  "base": "main",
+  "updated": "2026-10-03T20:04",
+  "size": 14846,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "3a5338d7",
+    "APPROVE",
+    "2026-10-03T18:12",
+    5972040127
+   ],
+   "Sol": [
+    "3a5338d7",
+    "RC",
+    "2026-10-03T18:13",
+    5972047312
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 10 (B-FEE-9, agent 115) \u2014 growth-project-backend#627 @ 66162285882d75d7619542c9aa581da5cc93145d",
+   "2026-10-03T18:39"
+  ],
+  "ci": {
+   "success": 17,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-01T22:04"
+ },
+ {
+  "repo": "backend",
+  "n": 621,
+  "title": "chore(deps): bump @nestjs/common from 11.1.26 to 12.1.2",
+  "head": "982c32f6",
+  "headfull": "982c32f686779d1a671b2dee818390e5db575479",
+  "base": "main",
+  "updated": "2026-10-04T03:18",
+  "size": 74,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 7,
+   "skipped": 1,
+   "failure": 8
+  },
+  "fails": [
+   "danger",
+   "Schema parity (migrations match schema.prisma)",
+   "build-sbom",
+   "build-and-test",
+   "community-live-tests",
+   "mwb-3-live-tests",
+   "rls-live-tests",
+   "test-deploy-readiness"
+  ],
+  "created": "2026-10-01T12:12"
+ },
+ {
+  "repo": "backend",
+  "n": 620,
+  "title": "chore(deps): bump @supabase/supabase-js from 2.108.1 to 2.117.2",
+  "head": "bf88753a",
+  "headfull": "bf88753a68f1cdd798d623fd4592b915e2cab82b",
+  "base": "main",
+  "updated": "2026-10-04T03:18",
+  "size": 78,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 14,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "build-and-test"
+  ],
+  "created": "2026-10-01T12:11"
+ },
+ {
+  "repo": "backend",
+  "n": 619,
+  "title": "chore(deps): bump @nestjs/platform-express from 11.1.26 to 12.1.2",
+  "head": "483fa676",
+  "headfull": "483fa67691f1a85bf917124e12bcd3bf39d215d6",
+  "base": "main",
+  "updated": "2026-10-04T03:16",
+  "size": 16,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 7,
+   "skipped": 1,
+   "failure": 8
+  },
+  "fails": [
+   "Schema parity (migrations match schema.prisma)",
+   "community-live-tests",
+   "mwb-3-live-tests",
+   "test-deploy-readiness",
+   "build-sbom",
+   "build-and-test",
+   "danger",
+   "rls-live-tests"
+  ],
+  "created": "2026-10-01T12:10"
+ },
+ {
+  "repo": "backend",
+  "n": 618,
+  "title": "chore(deps): bump @nestjs/cli from 11.0.21 to 12.0.8",
+  "head": "a25cb523",
+  "headfull": "a25cb523cc446fa6fe8b4fc431659be34dcbf0c3",
+  "base": "main",
+  "updated": "2026-10-04T03:19",
+  "size": 3361,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 7,
+   "skipped": 1,
+   "failure": 8
+  },
+  "fails": [
+   "Schema parity (migrations match schema.prisma)",
+   "community-live-tests",
+   "mwb-3-live-tests",
+   "build-and-test",
+   "rls-live-tests",
+   "build-sbom",
+   "test-deploy-readiness",
+   "danger"
+  ],
+  "created": "2026-10-01T12:10"
+ },
+ {
+  "repo": "backend",
+  "n": 617,
+  "title": "chore(deps): bump posthog-node from 5.36.8 to 5.55.0",
+  "head": "75edcbc0",
+  "headfull": "75edcbc0540aa0c44b68ff0de92aff7aa6d83139",
+  "base": "main",
+  "updated": "2026-10-04T03:16",
+  "size": 26,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 15,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-01T12:09"
+ },
+ {
+  "repo": "backend",
+  "n": 616,
+  "title": "chore(deps): bump @aws-sdk/client-s3 from 3.1071.0 to 3.1144.0",
+  "head": "e60b837e",
+  "headfull": "e60b837efeeaf1ad090aed2336e0056ce7ee79ea",
+  "base": "main",
+  "updated": "2026-10-04T03:19",
+  "size": 621,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 15,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-01T12:09"
+ },
+ {
+  "repo": "backend",
+  "n": 615,
+  "title": "chore(deps): bump js-yaml from 4.3.2 to 5.4.2",
+  "head": "81d1ef34",
+  "headfull": "81d1ef34843bfe90ea87127a7c799e71032eae5e",
+  "base": "main",
+  "updated": "2026-10-04T03:18",
+  "size": 57,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 15,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-01T11:49"
+ },
+ {
+  "repo": "backend",
+  "n": 614,
+  "title": "chore(deps): bump ts-jest from 29.4.9 to 29.4.14",
+  "head": "c10f7002",
+  "headfull": "c10f70023ee72e6444af984c95e7882a008d6aef",
+  "base": "main",
+  "updated": "2026-10-04T03:16",
+  "size": 20,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 15,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-10-01T11:48"
+ },
+ {
+  "repo": "backend",
+  "n": 613,
+  "title": "chore(deps): bump @types/node from 26.0.0 to 26.6.3",
+  "head": "5c4e25b6",
+  "headfull": "5c4e25b61cd70f9c420d68a93ef7fb6b24ece0c7",
+  "base": "main",
+  "updated": "2026-10-04T03:12",
+  "size": 18,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 14,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "build-and-test"
+  ],
+  "created": "2026-10-01T11:48"
+ },
+ {
+  "repo": "backend",
+  "n": 612,
+  "title": "chore(deps): bump @nestjs/testing from 11.1.26 to 12.1.2",
+  "head": "b4e3ee44",
+  "headfull": "b4e3ee44cb8ddd0a47a7edc9ef9fcee1d403ed4f",
+  "base": "main",
+  "updated": "2026-10-04T03:16",
+  "size": 18,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 7,
+   "skipped": 1,
+   "failure": 8
+  },
+  "fails": [
+   "danger",
+   "rls-live-tests",
+   "build-and-test",
+   "community-live-tests",
+   "build-sbom",
+   "test-deploy-readiness",
+   "mwb-3-live-tests",
+   "Schema parity (migrations match schema.prisma)"
+  ],
+  "created": "2026-10-01T11:47"
+ },
+ {
+  "repo": "backend",
+  "n": 605,
+  "title": "test(roman): eval harness \u2014 G1\u2013G30 golden set, six CI layers, live run",
+  "head": "686d0888",
+  "headfull": "686d0888b0ff58e7de51c8659f1b113916b326cf",
+  "base": "main",
+  "updated": "2026-10-01T03:35",
+  "size": 12817,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 18,
+   "failure": 1,
+   "skipped": 1
+  },
+  "fails": [
+   "shellcheck (scripts/*.sh)"
+  ],
+  "created": "2026-09-30T20:31"
+ },
+ {
+  "repo": "backend",
+  "n": 603,
+  "title": "feat(roman): guardrail contract, deterministic safety router, post-che",
+  "head": "75c4a181",
+  "headfull": "75c4a1810fe56fff05ce767b47f01916a4dff3b9",
+  "base": "main",
+  "updated": "2026-10-01T03:29",
+  "size": 1547,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 13,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-30T20:12"
+ },
+ {
+  "repo": "backend",
+  "n": 602,
+  "title": "feat(roman): RomanClientContext builder + per-turn grounding injection",
+  "head": "bb5f13b0",
+  "headfull": "bb5f13b0c87de378df6411a7bc159c63ff1e20ea",
+  "base": "main",
+  "updated": "2026-10-01T03:27",
+  "size": 3702,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 16,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-30T19:56"
+ },
+ {
+  "repo": "backend",
+  "n": 601,
+  "title": "feat(roman): AI processing consent record + server-side enforcement (R",
+  "head": "d767f65c",
+  "headfull": "d767f65cef5d0ce84242c9e7f3179f36aeb27fec",
+  "base": "main",
+  "updated": "2026-10-01T16:15",
+  "size": 4042,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 16,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-30T19:32"
+ },
+ {
+  "repo": "backend",
+  "n": 598,
+  "title": "feat(roman): model config, boot probe, /health/roman and honest failur",
+  "head": "2c7b1de8",
+  "headfull": "2c7b1de8443b447e2b48cdad7cc4301f921db540",
+  "base": "main",
+  "updated": "2026-10-01T03:14",
+  "size": 2152,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 13,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-30T19:22"
+ },
+ {
+  "repo": "backend",
+  "n": 594,
+  "title": "CL: completeness closure record",
+  "head": "a48abf3e",
+  "headfull": "a48abf3e87356fa2b4f2bc5c95c584aad5ed3c9e",
+  "base": "integration/importer",
+  "updated": "2026-09-30T00:15",
+  "size": 308,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-30T00:14"
+ },
+ {
+  "repo": "backend",
+  "n": 593,
+  "title": "fix(rls): D8 coach-client tenancy on assignment_coach_manage (stacked ",
+  "head": "d3794475",
+  "headfull": "d3794475dd981ad390f74dd168e52e3725661b1d",
+  "base": "cand/x43/s8d3-schema",
+  "updated": "2026-09-30T04:18",
+  "size": 3513,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 13,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-29T18:15"
+ },
+ {
+  "repo": "backend",
+  "n": 592,
+  "title": "feat(ai): fail-closed importer.mapping capability with budgets and typ",
+  "head": "32ca797e",
+  "headfull": "32ca797eaa586814f4f09857f1a232da1ec6036e",
+  "base": "integration/importer",
+  "updated": "2026-09-29T19:47",
+  "size": 6249,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-29T15:33"
+ },
+ {
+  "repo": "backend",
+  "n": 591,
+  "title": "feat(scout): L1-core learn contract, validators and live prompt (pure)",
+  "head": "68a84d1d",
+  "headfull": "68a84d1d08573d0393316330389b6e4ed480d723",
+  "base": "integration/importer",
+  "updated": "2026-09-29T19:49",
+  "size": 11446,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-29T15:13"
+ },
+ {
+  "repo": "backend",
+  "n": 590,
+  "title": "FAM-0 (r11): every reachable family lands in TGP \u2014 condensed contract",
+  "head": "696abd73",
+  "headfull": "696abd73914187030c02a4d53335a9e922bec9a3",
+  "base": "integration/importer",
+  "updated": "2026-09-29T23:42",
+  "size": 350,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-29T14:56"
+ },
+ {
+  "repo": "backend",
+  "n": 589,
+  "title": "feat(scout): replay_terminal_enumeration evidence \u2014 proven per-family ",
+  "head": "263e8950",
+  "headfull": "263e8950c9f9307ccc78b0db818a761d574136e8",
+  "base": "integration/importer",
+  "updated": "2026-09-29T20:04",
+  "size": 6140,
+  "mstate": "unstable",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-28T21:32"
+ },
+ {
+  "repo": "backend",
+  "n": 587,
+  "title": "feat(scout): S8-D3 person-owned schema and RLS",
+  "head": "0a6b5657",
+  "headfull": "0a6b5657bb57331e06ce450f3ba1d6171e4e5fd1",
+  "base": "integration/importer",
+  "updated": "2026-09-30T04:18",
+  "size": 4977,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 13,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-28T21:07"
+ },
+ {
+  "repo": "backend",
+  "n": 584,
+  "title": "fix(feature-flags): allowlist from secret, app-exact grammar, jq verif",
+  "head": "f8ca6a3e",
+  "headfull": "f8ca6a3ebb0d9c41cda3b5f125325c4bcbf541a4",
+  "base": "integration/importer",
+  "updated": "2026-09-30T04:01",
+  "size": 1668,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-28T20:30"
+ },
+ {
+  "repo": "backend",
+  "n": 583,
+  "title": "fix(scripts): S12-B5 review closure \u2014 separate live RLS security verdi",
+  "head": "19a3c0af",
+  "headfull": "19a3c0af2080df08113daa1d0ca420400a9dd0fe",
+  "base": "integration/importer",
+  "updated": "2026-09-28T21:51",
+  "size": 633,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "failure": 1,
+   "skipped": 1
+  },
+  "fails": [
+   "check-rls-catalog.ts behavioral proof (throwaway PG)"
+  ],
+  "created": "2026-09-28T20:29"
+ },
+ {
+  "repo": "backend",
+  "n": 582,
+  "title": "fix(pilot): S12-B4 review closure \u2014 PII redaction, tenant-check scope,",
+  "head": "d3cb2aee",
+  "headfull": "d3cb2aee8ada3339cfa2dada7d95c4a8f927a743",
+  "base": "integration/importer",
+  "updated": "2026-09-28T20:55",
+  "size": 1057,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-28T20:29"
+ },
+ {
+  "repo": "backend",
+  "n": 581,
+  "title": "docs(decisions): L0 learn-and-remember record r9 \u2014 condensed contract",
+  "head": "0459df85",
+  "headfull": "0459df858cf98d65e1a6fe6671820d6c27c3202c",
+  "base": "integration/importer",
+  "updated": "2026-09-29T23:42",
+  "size": 350,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-28T20:15"
+ },
+ {
+  "repo": "backend",
+  "n": 580,
+  "title": "Add environment key gap report",
+  "head": "3252d914",
+  "headfull": "3252d914719177ee25f41609ca2eb9da7bb2d4d7",
+  "base": "integration/importer",
+  "updated": "2026-09-28T20:16",
+  "size": 581,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-28T20:15"
+ },
+ {
+  "repo": "backend",
+  "n": 577,
+  "title": "feat(scout): S8-D2 imported people on the coach roster",
+  "head": "96b36ebc",
+  "headfull": "96b36ebcf1be0b8aac661bf39b4330d1b5ada604",
+  "base": "integration/importer",
+  "updated": "2026-09-28T20:27",
+  "size": 1660,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-28T20:06"
+ },
+ {
+  "repo": "backend",
+  "n": 574,
+  "title": "test(scout): historical rls-g2 lanes expect the v3 roster/entities cur",
+  "head": "2bd2d85d",
+  "headfull": "2bd2d85d03bd9e25c220ea482759ab8424cb7eaa",
+  "base": "integration/importer",
+  "updated": "2026-09-27T22:08",
+  "size": 211,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-27T22:07"
+ },
+ {
+  "repo": "backend",
+  "n": 529,
+  "title": "G2 T/Q0: transitional provenance and cursor compatibility",
+  "head": "d7404cd4",
+  "headfull": "d7404cd49578647cf72bb633819d8e86ffc3da3a",
+  "base": "agent/builder/g2-e-ledger-platform",
+  "updated": "2026-09-19T05:19",
+  "size": 1454,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-19T05:17"
+ },
+ {
+  "repo": "backend",
+  "n": 528,
+  "title": "WIP: G2-E nullable ledger platform expansion \u2014 unreviewed, not merge-r",
+  "head": "8644715c",
+  "headfull": "8644715c429e7dde1dfeb71f7ad42b1bd9121eaf",
+  "base": "agent/orchestrator/backend-repair-r3",
+  "updated": "2026-09-18T22:40",
+  "size": 692,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 11,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-18T22:38"
+ },
+ {
+  "repo": "backend",
+  "n": 527,
+  "title": "Align backend volume controls with canonical policy",
+  "head": "92777d94",
+  "headfull": "92777d94d41c9d70150854e0180b90eba26357e8",
+  "base": "agent/orchestrator/backend-repair-r3",
+  "updated": "2026-09-18T22:27",
+  "size": 335,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-18T22:18"
+ },
+ {
+  "repo": "backend",
+  "n": 526,
+  "title": "feat(importer): durable setup recovery; rollback-safety repair",
+  "head": "881c4c79",
+  "headfull": "881c4c791727adef8d423931e1cca83a0ffbb9c9",
+  "base": "agent/orchestrator/backend-repair-r3",
+  "updated": "2026-09-18T22:06",
+  "size": 1701,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 11,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-18T21:38"
+ },
+ {
+  "repo": "backend",
+  "n": 525,
+  "title": "fix(importer): continue preserved backend reliability repairs",
+  "head": "925780e0",
+  "headfull": "925780e0a1906593e5383c618311b6b17364b8dc",
+  "base": "fix/op80-backend-dependency-repair",
+  "updated": "2026-09-18T20:19",
+  "size": 4677,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 8,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-09-18T19:26"
+ },
+ {
+  "repo": "backend",
+  "n": 522,
+  "title": "fix(importer): include entity_type in ScoutIngestEntity idempotency ke",
+  "head": "e045cfc5",
+  "headfull": "e045cfc5e70124061b13e5dc4f4f4efb6132cceb",
+  "base": "main",
+  "updated": "2026-07-27T13:36",
+  "size": 647,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 15,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "LOC budget (R100.A3)"
+  ],
+  "created": "2026-07-27T13:33"
+ },
+ {
+  "repo": "backend",
+  "n": 491,
+  "title": "chore(backlog): file BL-DATA-CAPTURE \u2014 event-first data capture founda",
+  "head": "f81f0227",
+  "headfull": "f81f0227cfcfe3557407f2c4051727d981bff332",
+  "base": "main",
+  "updated": "2026-06-27T06:30",
+  "size": 415,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 10,
+   "failure": 1
+  },
+  "fails": [
+   "build-and-test"
+  ],
+  "created": "2026-06-27T03:04"
+ },
+ {
+  "repo": "backend",
+  "n": 475,
+  "title": "chore(ci): bump actions/upload-artifact from 4.4.3 to 7.0.1",
+  "head": "5505569e",
+  "headfull": "5505569e55ce52255256bf2ef21f5557c85912bb",
+  "base": "main",
+  "updated": "2026-10-01T17:38",
+  "size": 4,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 16,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-06-25T11:44"
+ },
+ {
+  "repo": "backend",
+  "n": 474,
+  "title": "chore(ci): bump actions/github-script from 8.0.0 to 9.0.0",
+  "head": "78f8a546",
+  "headfull": "78f8a546808ef2dbb6400cbc14d88db632722417",
+  "base": "main",
+  "updated": "2026-10-01T17:38",
+  "size": 4,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 16,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-06-25T11:44"
+ },
+ {
+  "repo": "backend",
+  "n": 473,
+  "title": "chore(ci): bump pascalgn/size-label-action from 0.5.4 to 0.5.7",
+  "head": "e2082c25",
+  "headfull": "e2082c2596dfaf500239d4dfeb6c7b042c1980c1",
+  "base": "main",
+  "updated": "2026-10-01T17:38",
+  "size": 2,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 14
+  },
+  "fails": [],
+  "created": "2026-06-25T11:44"
+ },
+ {
+  "repo": "backend",
+  "n": 472,
+  "title": "chore(ci): bump actions/checkout from 4 to 7",
+  "head": "2b1b5507",
+  "headfull": "2b1b55076621dd36f3fe89ddfc3d75b3d1b0dd16",
+  "base": "main",
+  "updated": "2026-10-01T17:38",
+  "size": 38,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 19,
+   "skipped": 1
+  },
+  "fails": [],
+  "created": "2026-06-25T11:44"
+ },
+ {
+  "repo": "backend",
+  "n": 471,
+  "title": "chore(ci): bump googleapis/release-please-action from 4.4.1 to 5.0.0",
+  "head": "be525ea8",
+  "headfull": "be525ea8327b2aa8851a42f3125074a3d844ae2f",
+  "base": "main",
+  "updated": "2026-10-01T17:38",
+  "size": 2,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 14
+  },
+  "fails": [],
+  "created": "2026-06-25T11:43"
+ },
+ {
+  "repo": "backend",
+  "n": 428,
+  "title": "feat(coach): custom-exercise API \u2014 DTO + service + controller (FEATURE",
+  "head": "988517ad",
+  "headfull": "988517ad9004c80b50d249c4e15fd93600c595f0",
+  "base": "feat/coach-custom-exercise-data",
+  "updated": "2026-06-24T17:58",
+  "size": 1252,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 3,
+   "failure": 1
+  },
+  "fails": [
+   "build-and-test"
+  ],
+  "created": "2026-06-17T07:27"
+ },
+ {
+  "repo": "backend",
+  "n": 427,
+  "title": "feat(coach): custom-exercise storage layer \u2014 schema + RLS migration + ",
+  "head": "592f2f8b",
+  "headfull": "592f2f8b4bf44d265f4353165bd1cf8f60e5df5c",
+  "base": "main",
+  "updated": "2026-06-24T18:00",
+  "size": 513,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 10,
+   "skipped": 1,
+   "failure": 1
+  },
+  "fails": [
+   "Forward migration applies cleanly"
+  ],
+  "created": "2026-06-17T07:26"
+ },
+ {
+  "repo": "mobile",
+  "n": 369,
+  "title": "fix(health): durable sign-out revocation of on-device health consent (",
+  "head": "3252ec79",
+  "headfull": "3252ec79cd9ab1f28165a1913d8ae3096b590d4a",
+  "base": "agent115/wear-split-6-retire-samsung",
+  "updated": "2026-10-04T23:42",
+  "size": 1205,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "35717bfe",
+    "RC",
+    "2026-10-04T23:15",
+    5985494019
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 1 (B-HC9-119, agent 119) \u2014 growth-project-mobile#369 @ 3252ec79cd9ab1f28165a1913d8ae3096b590d4a",
+   "2026-10-04T23:42"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-04T22:58"
+ },
+ {
+  "repo": "mobile",
+  "n": 367,
+  "title": "feat(scheduling): client Calendar screens; retire booking request (spl",
+  "head": "6418e759",
+  "headfull": "6418e759813065dc353720533dfd5c9b5a51ceb3",
+  "base": "agent115/sched-split-2-coach-controls",
+  "updated": "2026-10-03T21:34",
+  "size": 2294,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:34"
+ },
+ {
+  "repo": "mobile",
+  "n": 366,
+  "title": "feat(scheduling): coach scheduling controls and tutorial calendar step",
+  "head": "fa7744cc",
+  "headfull": "fa7744cc237418a90239279541450ce2a8dc5959",
+  "base": "agent115/sched-split-1-scheduling-data",
+  "updated": "2026-10-03T21:34",
+  "size": 1680,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:34"
+ },
+ {
+  "repo": "mobile",
+  "n": 365,
+  "title": "feat(scheduling): scheduling API, errors, calendar time, phone calenda",
+  "head": "cceeb33a",
+  "headfull": "cceeb33a71982d44da40e75714332f59844e45fc",
+  "base": "main",
+  "updated": "2026-10-03T21:34",
+  "size": 2025,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T21:34"
+ },
+ {
+  "repo": "mobile",
+  "n": 364,
+  "title": "refactor(wearables): retire Samsung Health; ingest contract test (spli",
+  "head": "1266038c",
+  "headfull": "1266038cd311f3dcfd8e472c04e3241a3061866b",
+  "base": "agent115/wear-split-5-sheet-race-tests",
+  "updated": "2026-10-04T22:38",
+  "size": 2937,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "1266038c",
+    "APPROVE",
+    "2026-10-04T22:38",
+    5985221349
+   ],
+   "Opus": [
+    "1266038c",
+    "APPROVE",
+    "2026-10-04T22:37",
+    5985217588
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5985217588
+   ],
+   "Sol": [
+    "APPROVE",
+    5985221349
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 5 (restack, merge-only) (B-HC7-119, agent 119) \u2014 growth-project-mobile#364 @ 1266038cd311f3dcfd8e472",
+   "2026-10-04T22:26"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:29"
+ },
+ {
+  "repo": "mobile",
+  "n": 363,
+  "title": "test(wearables): connect sheet race and identity suites (split H5 of #",
+  "head": "5266d658",
+  "headfull": "5266d6587cdccb4f01d9a3f33bb1c80a402be747",
+  "base": "agent115/wear-split-4-connect-ui",
+  "updated": "2026-10-04T22:38",
+  "size": 1944,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "5266d658",
+    "APPROVE",
+    "2026-10-04T22:38",
+    5985221184
+   ],
+   "Opus": [
+    "5266d658",
+    "APPROVE",
+    "2026-10-04T22:37",
+    5985217271
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5985217271
+   ],
+   "Sol": [
+    "APPROVE",
+    5985221184
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 5 (B-HC7-119, agent 119) \u2014 growth-project-mobile#363 @ 5266d6587cdccb4f01d9a3f33bb1c80a402be747",
+   "2026-10-04T22:26"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:29"
+ },
+ {
+  "repo": "mobile",
+  "n": 362,
+  "title": "feat(wearables): connect sheet and wearables screens (split H4 of #317",
+  "head": "261e7d4c",
+  "headfull": "261e7d4c37429c65bf8e84468c5521380ff5b0cc",
+  "base": "agent115/wear-split-3-ondevice-sync-copy",
+  "updated": "2026-10-04T22:40",
+  "size": 2983,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "261e7d4c",
+    "RC",
+    "2026-10-04T22:40",
+    5985235823
+   ],
+   "Opus": [
+    "261e7d4c",
+    "APPROVE",
+    "2026-10-04T22:37",
+    5985217014
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5985217014
+   ],
+   "Sol": [
+    "RC",
+    5985235823
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 5 (B-HC7-119, agent 119) \u2014 growth-project-mobile#362 @ 261e7d4c37429c65bf8e84468c5521380ff5b0cc",
+   "2026-10-04T22:26"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:29"
+ },
+ {
+  "repo": "mobile",
+  "n": 361,
+  "title": "feat(wearables): on-device sync, copy, disconnect dialog (split H3 of ",
+  "head": "574b32a8",
+  "headfull": "574b32a8ab9f2c36986c160de257340fa71cfe52",
+  "base": "agent115/wear-split-2-platform-sync",
+  "updated": "2026-10-04T17:17",
+  "size": 1793,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "574b32a8",
+    "APPROVE",
+    "2026-10-04T17:12",
+    5982441393
+   ],
+   "Opus": [
+    "574b32a8",
+    "APPROVE",
+    "2026-10-04T17:17",
+    5982484292
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "APPROVE",
+    5982441393
+   ],
+   "Opus": [
+    "APPROVE",
+    5982484292
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 (restack, merge-only; B-W2-117, agent 117) \u2014 growth-project-mobile#361 @ 574b32a8ab9f2c36986c160de",
+   "2026-10-04T05:35"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:29"
+ },
+ {
+  "repo": "mobile",
+  "n": 360,
+  "title": "feat(wearables): HealthKit and Health Connect sync services (split H2 ",
+  "head": "fde1875e",
+  "headfull": "fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5",
+  "base": "agent115/wear-split-1-ingest-foundation",
+  "updated": "2026-10-04T17:17",
+  "size": 2812,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Opus": [
+    "fde1875e",
+    "APPROVE",
+    "2026-10-04T17:17",
+    5982484127
+   ],
+   "Sol": [
+    "fde1875e",
+    "APPROVE",
+    "2026-10-04T17:12",
+    5982441210
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "APPROVE",
+    5982441210
+   ],
+   "Opus": [
+    "APPROVE",
+    5982484127
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 (B-W2-117, agent 117) \u2014 growth-project-mobile#360 @ fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5",
+   "2026-10-04T05:29"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:29"
+ },
+ {
+  "repo": "mobile",
+  "n": 359,
+  "title": "feat(wearables): on-device state, session fence, ingest batching (spli",
+  "head": "e0f3d2a7",
+  "headfull": "e0f3d2a75bf6e462a53e7c0ad4f18e388e72189d",
+  "base": "main",
+  "updated": "2026-10-04T03:53",
+  "size": 1276,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {
+   "Opus": [
+    "e0f3d2a7",
+    "APPROVE",
+    "2026-10-04T03:47",
+    5976279359
+   ],
+   "Sol": [
+    "e0f3d2a7",
+    "APPROVE",
+    "2026-10-04T03:53",
+    5976316854
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5976279359
+   ],
+   "Sol": [
+    "APPROVE",
+    5976316854
+   ]
+  },
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#359 @ e0f3d2a75bf6e462a53e7c0ad4f18e388e72189d",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T21:29"
+ },
+ {
+  "repo": "mobile",
+  "n": 358,
+  "title": "feat(programs): assign, history, packages, Programs tab (split G4 of #",
+  "head": "4dcf0aff",
+  "headfull": "4dcf0aff2644ff54fc5fe4de2c97751d7ac7cf94",
+  "base": "agent115/programs-split-3-program-editor",
+  "updated": "2026-10-04T02:26",
+  "size": 1323,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#358 @ 4dcf0aff2644ff54fc5fe4de2c97751d7ac7cf94",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:19"
+ },
+ {
+  "repo": "mobile",
+  "n": 357,
+  "title": "feat(programs): library, form, editor, pickers (split G3 of #328)",
+  "head": "b364b9ea",
+  "headfull": "b364b9eaaedfb6d297f55a40e4b6a15ac4d2a381",
+  "base": "agent115/programs-split-2-builder-undo",
+  "updated": "2026-10-04T02:26",
+  "size": 2421,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#357 @ b364b9eaaedfb6d297f55a40e4b6a15ac4d2a381",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:19"
+ },
+ {
+  "repo": "mobile",
+  "n": 356,
+  "title": "feat(workout-builder): undo history and autosave wiring (split G2 of #",
+  "head": "40ee678a",
+  "headfull": "40ee678adf7a70bdfa18c49cafdbd64a2dc589a5",
+  "base": "agent115/programs-split-1-data",
+  "updated": "2026-10-04T02:26",
+  "size": 1501,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#356 @ 40ee678adf7a70bdfa18c49cafdbd64a2dc589a5",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:19"
+ },
+ {
+  "repo": "mobile",
+  "n": 355,
+  "title": "feat(programs): programs API, error mapping, autosave, builder access ",
+  "head": "902c64a6",
+  "headfull": "902c64a64156255ce9ce54147db896ac2142a954",
+  "base": "main",
+  "updated": "2026-10-04T02:26",
+  "size": 1716,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#355 @ 902c64a64156255ce9ce54147db896ac2142a954",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T21:19"
+ },
+ {
+  "repo": "mobile",
+  "n": 354,
+  "title": "test(dunning): native card update suite (split L3 of #322)",
+  "head": "f084cc0f",
+  "headfull": "f084cc0f8b1dbd4768d2ca168f0b49a90dc39cfe",
+  "base": "agent115/lockout-split-2-lockout-screens",
+  "updated": "2026-10-04T17:40",
+  "size": 1119,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 1 (restack, merge-only) (B-LOCK-118, agent 118) \u2014 growth-project-mobile#354 @ f084cc0f8b1dbd4768d2ca",
+   "2026-10-04T17:40"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:05"
+ },
+ {
+  "repo": "mobile",
+  "n": 353,
+  "title": "feat(dunning): lockout screen, banner, Update card screen (split L2 of",
+  "head": "05d84f27",
+  "headfull": "05d84f27261f1f764214be5a379785ba8f690d3e",
+  "base": "agent115/lockout-split-1-dunning-data",
+  "updated": "2026-10-04T19:57",
+  "size": 2520,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "05d84f27",
+    "RC",
+    "2026-10-04T19:52",
+    5983779129
+   ],
+   "Opus": [
+    "05d84f27",
+    "RC",
+    "2026-10-04T19:57",
+    5983819833
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "RC",
+    5983779129
+   ],
+   "Opus": [
+    "RC",
+    5983819833
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 (B-LOCK-118, agent 118) \u2014 growth-project-mobile#353 @ 05d84f27261f1f764214be5a379785ba8f690d3e",
+   "2026-10-04T17:40"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T21:05"
+ },
+ {
+  "repo": "mobile",
+  "n": 352,
+  "title": "feat(dunning): dunning API, update-card flow, error copy (split L1 of ",
+  "head": "ac244d22",
+  "headfull": "ac244d22e107e93209a5e1d206d2951d3392fe38",
+  "base": "main",
+  "updated": "2026-10-04T19:57",
+  "size": 2341,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "ac244d22",
+    "RC",
+    "2026-10-04T19:52",
+    5983776115
+   ],
+   "Opus": [
+    "ac244d22",
+    "RC",
+    "2026-10-04T19:57",
+    5983819724
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "RC",
+    5983776115
+   ],
+   "Opus": [
+    "RC",
+    5983819724
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 (B-LOCK-118, agent 118) \u2014 growth-project-mobile#352 @ ac244d22e107e93209a5e1d206d2951d3392fe38",
+   "2026-10-04T17:40"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T21:05"
+ },
+ {
+  "repo": "mobile",
+  "n": 351,
+  "title": "refactor(money): retire Earnings and Business metrics (split N4 of #33",
+  "head": "352d768e",
+  "headfull": "352d768ef2a72c59458286f9274bec3ad132e0c4",
+  "base": "agent115/cmoney-split-3-money-tests",
+  "updated": "2026-10-04T02:26",
+  "size": 1851,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#351 @ 352d768ef2a72c59458286f9274bec3ad132e0c4",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:55"
+ },
+ {
+  "repo": "mobile",
+  "n": 350,
+  "title": "test(money): Money behaviour suite (split N3 of #332)",
+  "head": "6fb21216",
+  "headfull": "6fb21216ce40f92ae0369034bfb6268e7c026bac",
+  "base": "agent115/cmoney-split-2-money-screens",
+  "updated": "2026-10-04T02:26",
+  "size": 1722,
+  "mstate": "unstable",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#350 @ 6fb21216ce40f92ae0369034bfb6268e7c026bac",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "failure": 1
+  },
+  "fails": [
+   "Typecheck, lint, test"
+  ],
+  "created": "2026-10-03T20:55"
+ },
+ {
+  "repo": "mobile",
+  "n": 349,
+  "title": "feat(money): Money page, charges, Home Money card, Settings row (split",
+  "head": "35aa8163",
+  "headfull": "35aa81634d377acebf55d1b497abadc4b7b8e7db",
+  "base": "agent115/cmoney-split-1-money-data",
+  "updated": "2026-10-04T02:26",
+  "size": 2587,
+  "mstate": "unstable",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#349 @ 35aa81634d377acebf55d1b497abadc4b7b8e7db",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "failure": 1
+  },
+  "fails": [
+   "Typecheck, lint, test"
+  ],
+  "created": "2026-10-03T20:55"
+ },
+ {
+  "repo": "mobile",
+  "n": 348,
+  "title": "feat(money): Money API client, copy, head-coach role (split N1 of #332",
+  "head": "90501f84",
+  "headfull": "90501f847e03cf4cc1071503436acdd459643103",
+  "base": "agent115/wizard-split-3-wizard-navigator",
+  "updated": "2026-10-04T02:26",
+  "size": 1343,
+  "mstate": "dirty",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "READY FOR AUDIT (operator 116) \u2014 growth-project-mobile#348 @ 90501f847e03cf4cc1071503436acdd459643103",
+   "2026-10-04T02:26"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:55"
+ },
+ {
+  "repo": "mobile",
+  "n": 347,
+  "title": "feat(coach-setup): wizard navigator and package edit screen (split W3 ",
+  "head": "8437fb94",
+  "headfull": "8437fb94aa031b906e26f33f734097d9af2f9bc5",
+  "base": "agent115/wizard-split-2-setup-components",
+  "updated": "2026-10-04T22:52",
+  "size": 2592,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 2 (restack, merge-only) (B-WIZ2-119, agent 119) \u2014 growth-project-mobile#347 @ 8437fb94aa031b906e26f3",
+   "2026-10-04T22:52"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:49"
+ },
+ {
+  "repo": "mobile",
+  "n": 346,
+  "title": "feat(coach-setup): checklist, first package, get-paid, invite, setup s",
+  "head": "26cf23b7",
+  "headfull": "26cf23b7987c866615ab9a4b2f95a10e6e318f40",
+  "base": "agent115/wizard-split-1-setup-data",
+  "updated": "2026-10-04T22:52",
+  "size": 2873,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "2baea5b8",
+    "RC",
+    "2026-10-04T19:59",
+    5983834774
+   ],
+   "Opus": [
+    "2baea5b8",
+    "APPROVE",
+    "2026-10-04T19:59",
+    5983832366
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 2 (B-WIZ2-119, agent 119) \u2014 growth-project-mobile#346 @ 26cf23b7987c866615ab9a4b2f95a10e6e318f40",
+   "2026-10-04T22:52"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:49"
+ },
+ {
+  "repo": "mobile",
+  "n": 345,
+  "title": "feat(coach-setup): setup API, create intent, Connect copy, QR (split W",
+  "head": "ed29833c",
+  "headfull": "ed29833cb2d5c597f0be3a557877bd3cf29d85a3",
+  "base": "main",
+  "updated": "2026-10-04T22:48",
+  "size": 2726,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "97c9005e",
+    "RC",
+    "2026-10-04T19:59",
+    5983834812
+   ],
+   "Opus": [
+    "97c9005e",
+    "APPROVE",
+    "2026-10-04T19:59",
+    5983832209
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 2 (B-WIZ2-119, agent 119) \u2014 growth-project-mobile#345 @ ed29833cb2d5c597f0be3a557877bd3cf29d85a3",
+   "2026-10-04T22:48"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T20:49"
+ },
+ {
+  "repo": "mobile",
+  "n": 344,
+  "title": "feat(payments): client package screens and your-plans panel (split S3 ",
+  "head": "88659e21",
+  "headfull": "88659e21806ace4fc0c883d624de1abc07413b6d",
+  "base": "agent115/sheet-split-2-purchase-hook-sheet",
+  "updated": "2026-10-04T22:26",
+  "size": 2973,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "88659e21",
+    "APPROVE",
+    "2026-10-04T22:26",
+    5985129073
+   ],
+   "Opus": [
+    "88659e21",
+    "APPROVE",
+    "2026-10-04T22:19",
+    5985073660
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5985073660
+   ],
+   "Sol": [
+    "APPROVE",
+    5985129073
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 6 (B-SHEET6-119, agent 119) \u2014 growth-project-mobile#344 @ 88659e21806ace4fc0c883d624de1abc07413b6d",
+   "2026-10-04T22:11"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:45"
+ },
+ {
+  "repo": "mobile",
+  "n": 343,
+  "title": "feat(payments): purchase hook and package selection sheet (split S2 of",
+  "head": "691e0cf0",
+  "headfull": "691e0cf02a48db3e2d62f7c502673d9f1ef62215",
+  "base": "agent115/sheet-split-1-payment-core",
+  "updated": "2026-10-04T21:15",
+  "size": 2935,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "691e0cf0",
+    "APPROVE",
+    "2026-10-04T21:15",
+    5984457482
+   ],
+   "Opus": [
+    "691e0cf0",
+    "APPROVE",
+    "2026-10-04T21:14",
+    5984450738
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5984450738
+   ],
+   "Sol": [
+    "APPROVE",
+    5984457482
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 3 (B-SHEET4-119, agent 119) \u2014 growth-project-mobile#343 @ 691e0cf02a48db3e2d62f7c502673d9f1ef62215",
+   "2026-10-04T20:55"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T20:45"
+ },
+ {
+  "repo": "mobile",
+  "n": 342,
+  "title": "feat(payments): payment core, plan terms, wallet config (split S1 of #",
+  "head": "e3226f3b",
+  "headfull": "e3226f3b50a1f609aea7805600ec124324cd12aa",
+  "base": "main",
+  "updated": "2026-10-04T21:14",
+  "size": 2207,
+  "mstate": "clean",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "e3226f3b",
+    "APPROVE",
+    "2026-10-04T21:12",
+    5984430347
+   ],
+   "Opus": [
+    "e3226f3b",
+    "APPROVE",
+    "2026-10-04T21:14",
+    5984450490
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "APPROVE",
+    5984430347
+   ],
+   "Opus": [
+    "APPROVE",
+    5984450490
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 3 (B-SHEET4-119, agent 119) \u2014 growth-project-mobile#342 @ e3226f3b50a1f609aea7805600ec124324cd12aa",
+   "2026-10-04T20:55"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T20:45"
+ },
+ {
+  "repo": "mobile",
+  "n": 341,
+  "title": "feat(notifications): device zone via PUT /notifications/timezone, book",
+  "head": "7c791bb3",
+  "headfull": "7c791bb39979eb16481ce71a85de652b41368a3a",
+  "base": "main",
+  "updated": "2026-10-03T18:26",
+  "size": 1966,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "7c791bb3",
+    "RC",
+    "2026-10-03T18:24",
+    5972146496
+   ],
+   "Opus": [
+    "7c791bb3",
+    "RC",
+    "2026-10-03T18:26",
+    5972160274
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "RC",
+    5972146496
+   ],
+   "Opus": [
+    "RC",
+    5972160274
+   ]
+  },
+  "last_evt": null,
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T18:00"
+ },
+ {
+  "repo": "mobile",
+  "n": 340,
+  "title": "feat(money): export the tax CSV as a real .csv file attachment (OR-114",
+  "head": "2e77dcb6",
+  "headfull": "2e77dcb6171478a8e4acf5e7937d96a346220549",
+  "base": "agent/clinic/s-coach-money-mob",
+  "updated": "2026-10-03T20:55",
+  "size": 700,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "858c40f2",
+    "RC",
+    "2026-10-03T18:10",
+    5972020669
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 1 (B-COACH-5, agent 115) \u2014 growth-project-mobile#340 @ 2e77dcb6171478a8e4acf5e7937d96a346220549",
+   "2026-10-03T18:42"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T17:50"
+ },
+ {
+  "repo": "mobile",
+  "n": 339,
+  "title": "fix(copy): impersonal voice across shipped copy with a repo-wide voice",
+  "head": "8165ca95",
+  "headfull": "8165ca9560d2bcd35f92b1cd8468e6c998aa552a",
+  "base": "main",
+  "updated": "2026-10-03T18:15",
+  "size": 698,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "8165ca95",
+    "RC",
+    "2026-10-03T18:15",
+    5972066633
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "RC",
+    5972066633
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 (B-MOB-A, agent 115) \u2014 growth-project-mobile#339 @ 8165ca9560d2bcd35f92b1cd8468e6c998aa552a",
+   "2026-10-03T18:11"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T17:37"
+ },
+ {
+  "repo": "mobile",
+  "n": 338,
+  "title": "feat(packages): coach sets a free trial of 0 to 30 days on renewing pa",
+  "head": "48b5e6b5",
+  "headfull": "48b5e6b5434fc5db207dcb14d97e5208a3d4b16f",
+  "base": "main",
+  "updated": "2026-10-03T19:31",
+  "size": 581,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "48b5e6b5",
+    "APPROVE",
+    "2026-10-03T18:07",
+    5971998080
+   ],
+   "Opus": [
+    "48b5e6b5",
+    "APPROVE",
+    "2026-10-03T18:16",
+    5972079998
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "APPROVE",
+    5971998080
+   ],
+   "Opus": [
+    "APPROVE",
+    5972079998
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 2 (B-TRIALS-3, agent 115) \u2014 growth-project-mobile#338 @ 48b5e6b5434fc5db207dcb14d97e5208a3d4b16f",
+   "2026-10-03T18:10"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T02:17"
+ },
+ {
+  "repo": "mobile",
+  "n": 337,
+  "title": "feat(roman): coach approve-to-adjust suggestion cards in the Action Qu",
+  "head": "63be1013",
+  "headfull": "63be101394d996bd4475a8ad86c400925997092c",
+  "base": "main",
+  "updated": "2026-10-03T00:23",
+  "size": 1052,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 3,
+   "failure": 1
+  },
+  "fails": [
+   "Typecheck, lint, test"
+  ],
+  "created": "2026-10-03T00:23"
+ },
+ {
+  "repo": "mobile",
+  "n": 336,
+  "title": "feat(calendar): S-SCHED-5 request auto-expiry states and copy (T3)",
+  "head": "e043bb44",
+  "headfull": "e043bb4471983886b10f71ef8e5bbf8f505f077b",
+  "base": "agent110/s-sched-mobile",
+  "updated": "2026-10-03T00:14",
+  "size": 199,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-03T00:14"
+ },
+ {
+  "repo": "mobile",
+  "n": 335,
+  "title": "feat(reach): reachability map, wire working screens, coach consultatio",
+  "head": "641fe891",
+  "headfull": "641fe8914853cca6a2dab76ac90230bbcd525504",
+  "base": "main",
+  "updated": "2026-10-03T18:23",
+  "size": 2257,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "641fe891",
+    "APPROVE",
+    "2026-10-03T18:14",
+    5972055988
+   ],
+   "Opus": [
+    "641fe891",
+    "APPROVE",
+    "2026-10-03T18:23",
+    5972139245
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "APPROVE",
+    5972055988
+   ],
+   "Opus": [
+    "APPROVE",
+    5972139245
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 1 (B-MOB-B, agent 115) \u2014 growth-project-mobile#335 @ 641fe8914853cca6a2dab76ac90230bbcd525504",
+   "2026-10-03T18:09"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-03T00:12"
+ },
+ {
+  "repo": "mobile",
+  "n": 334,
+  "title": "feat(payments): renewing plans and one-time packages through one nativ",
+  "head": "d466fd15",
+  "headfull": "d466fd1522182f040c9b341e51947e57b62cdca8",
+  "base": "main",
+  "updated": "2026-10-03T20:45",
+  "size": 6202,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "0629d506",
+    "APPROVE",
+    "2026-10-03T02:52",
+    5964822138
+   ],
+   "Sol": [
+    "78ba9bc9",
+    "APPROVE",
+    "2026-10-03T18:17",
+    5972086092
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 3 (B-RECUR-3, agent 115) \u2014 growth-project-mobile#334 @ 04104c2eb722e721101226e057a0701c84fe15ed",
+   "2026-10-03T18:08"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-02T22:57"
+ },
+ {
+  "repo": "mobile",
+  "n": 332,
+  "title": "feat(money): coach Money page and Home Money card, retire Earnings and",
+  "head": "90701485",
+  "headfull": "90701485330ef94863ee1220463261433989f1fe",
+  "base": "agent/clinic/s-coach-wizard",
+  "updated": "2026-10-03T20:55",
+  "size": 7503,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "6c193c80",
+    "APPROVE",
+    "2026-10-03T03:38",
+    5965141370
+   ],
+   "Opus": [
+    "6c193c80",
+    "RC",
+    "2026-10-03T17:34",
+    5971707222
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 3 (B-COACH-5, agent 115) \u2014 growth-project-mobile#332 @ 90701485330ef94863ee1220463261433989f1fe",
+   "2026-10-03T18:42"
+  ],
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-10-02T20:17"
+ },
+ {
+  "repo": "mobile",
+  "n": 331,
+  "title": "feat(roman): your conversations with Roman, list, open and delete (T4)",
+  "head": "5b58a121",
+  "headfull": "5b58a1218acb1f5ba15cada8b8eaf8b78c75a058",
+  "base": "main",
+  "updated": "2026-10-03T18:30",
+  "size": 5067,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "c621770f",
+    "RC",
+    "2026-10-03T18:19",
+    5972101193
+   ],
+   "Sol": [
+    "5b58a121",
+    "BLOCK",
+    "2026-10-03T18:30",
+    5972195886
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "BLOCK",
+    5972195886
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 2 (B-MOB-A, agent 115) \u2014 growth-project-mobile#331 @ c621770f262f3b04e734f3c34fde8342e51ca84c",
+   "2026-10-03T18:05"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-02T20:16"
+ },
+ {
+  "repo": "mobile",
+  "n": 329,
+  "title": "feat(coach): setup wizard with Stripe Express onboarding, first packag",
+  "head": "fc7fe73f",
+  "headfull": "fc7fe73f81613b4d006b144fb5c4d9b80d5c1908",
+  "base": "main",
+  "updated": "2026-10-03T20:49",
+  "size": 6392,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "3a90f28a",
+    "BLOCK",
+    "2026-10-03T02:38",
+    5964724319
+   ],
+   "Sol": [
+    "fc7fe73f",
+    "BLOCK",
+    "2026-10-03T18:20",
+    5972109610
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "BLOCK",
+    5972109610
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 5 (B-COACH-5, agent 115) \u2014 growth-project-mobile#329 @ fc7fe73f81613b4d006b144fb5c4d9b80d5c1908",
+   "2026-10-03T18:20"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-02T18:04"
+ },
+ {
+  "repo": "mobile",
+  "n": 328,
+  "title": "feat(programs): coach Programs tab - build once, assign to many, add t",
+  "head": "fb76721f",
+  "headfull": "fb76721fa21476cf36595fcd861a6b5a07630516",
+  "base": "main",
+  "updated": "2026-10-03T21:19",
+  "size": 6961,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "fb76721f",
+    "APPROVE",
+    "2026-10-03T18:22",
+    5972129377
+   ],
+   "Sol": [
+    "fb76721f",
+    "APPROVE",
+    "2026-10-03T18:23",
+    5972137276
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5972129377
+   ],
+   "Sol": [
+    "APPROVE",
+    5972137276
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 4 (S-MWB-4, agent 114) \u2014 growth-project-mobile#328 @ dd34763321c4b2c09e2f54547671f416fe050dbb",
+   "2026-10-03T02:36"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-02T17:22"
+ },
+ {
+  "repo": "mobile",
+  "n": 325,
+  "title": "S-SCHED: native Calendar, coach controls, welcome call and lifecycle c",
+  "head": "7566d38f",
+  "headfull": "7566d38f4eb15a5f6bd8c3491bf17dbc6a8931e8",
+  "base": "main",
+  "updated": "2026-10-03T21:35",
+  "size": 5999,
+  "mstate": "dirty",
+  "draft": true,
+  "lens": {
+   "Sol": [
+    "7566d38f",
+    "APPROVE",
+    "2026-10-03T17:22",
+    5971606908
+   ],
+   "Opus": [
+    "7566d38f",
+    "APPROVE",
+    "2026-10-03T17:22",
+    5971610639
+   ]
+  },
+  "atHead": {
+   "Sol": [
+    "APPROVE",
+    5971606908
+   ],
+   "Opus": [
+    "APPROVE",
+    5971610639
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 5 \u2014 growth-project-mobile#325 (S-OP114-325) @ 7566d38f4eb15a5f6bd8c3491bf17dbc6a8931e8 \u2014 READY FOR A",
+   "2026-10-03T05:00"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-02T04:46"
+ },
+ {
+  "repo": "mobile",
+  "n": 322,
+  "title": "feat(dunning): payment lockout + Days 0-9 banner + native Update card ",
+  "head": "23435ec2",
+  "headfull": "23435ec2c099aa5e25c8c0737d92662b73c83855",
+  "base": "main",
+  "updated": "2026-10-03T21:05",
+  "size": 4623,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "23435ec2",
+    "APPROVE",
+    "2026-10-03T02:46",
+    5964778187
+   ],
+   "Sol": [
+    "23435ec2",
+    "APPROVE",
+    "2026-10-03T02:56",
+    5964847392
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5964778187
+   ],
+   "Sol": [
+    "APPROVE",
+    5964847392
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 6 (S-DUNNING-R6, agent 114) \u2014 growth-project-mobile#322 @ 23435ec2c099aa5e25c8c0737d92662b73c83855",
+   "2026-10-03T02:32"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-01T23:01"
+ },
+ {
+  "repo": "mobile",
+  "n": 321,
+  "title": "feat(packages): editor shows the $19.99 minimum or free rule inline (S",
+  "head": "4f5b058d",
+  "headfull": "4f5b058d2ec6d22c468eaef0d3db3238978d9465",
+  "base": "main",
+  "updated": "2026-10-03T20:04",
+  "size": 1847,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "4f5b058d",
+    "APPROVE",
+    "2026-10-02T21:54",
+    5962087925
+   ],
+   "Opus": [
+    "4f5b058d",
+    "APPROVE",
+    "2026-10-02T21:52",
+    5962061907
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5962061907
+   ],
+   "Sol": [
+    "APPROVE",
+    5962087925
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 6 (B-FEE-R6) \u2014 growth-project-mobile#321 @ 1413edb7c81a7a4b9807dec79bb5c3838401d4cd",
+   "2026-10-02T20:13"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-01T22:29"
+ },
+ {
+  "repo": "mobile",
+  "n": 317,
+  "title": "fix(wearables): S14 [T4] Apple Health / Health Connect connect, 30-day",
+  "head": "d0407b62",
+  "headfull": "d0407b625e1d2bc63ebe9d063296bc85461842ed",
+  "base": "main",
+  "updated": "2026-10-04T01:45",
+  "size": 11860,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Sol": [
+    "d0407b62",
+    "RC",
+    "2026-10-03T18:28",
+    5972176395
+   ],
+   "Opus": [
+    "d0407b62",
+    "APPROVE",
+    "2026-10-03T18:26",
+    5972163241
+   ]
+  },
+  "atHead": {
+   "Opus": [
+    "APPROVE",
+    5972163241
+   ],
+   "Sol": [
+    "RC",
+    5972176395
+   ]
+  },
+  "last_evt": [
+   "FIX ROUND 6 (B-MOB-B, agent 115) \u2014 growth-project-mobile#317 @ 82137c312e957cb05eedeaebf86fcd95029f2bde",
+   "2026-10-03T18:08"
+  ],
+  "ci": {
+   "success": 3,
+   "failure": 1
+  },
+  "fails": [
+   "Typecheck, lint, test"
+  ],
+  "created": "2026-10-01T17:05"
+ },
+ {
+  "repo": "mobile",
+  "n": 312,
+  "title": "feat(notifications): C05 item 7 workout reminders toggle in Settings >",
+  "head": "8016a79e",
+  "headfull": "8016a79e478c1a02403dcdcbb6423c24622aa410",
+  "base": "main",
+  "updated": "2026-10-04T02:28",
+  "size": 1104,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {
+   "Opus": [
+    "f8375ca6",
+    "APPROVE",
+    "2026-10-03T18:04",
+    5971962014
+   ],
+   "Sol": [
+    "f8375ca6",
+    "APPROVE",
+    "2026-10-03T18:07",
+    5971998176
+   ]
+  },
+  "atHead": {},
+  "last_evt": [
+   "FIX ROUND 3 (merge-only) (B-NOTIF-6, agent 115) \u2014 growth-project-mobile#312 @ f8375ca66bf11b2cbb721619c90ab10f",
+   "2026-10-03T17:59"
+  ],
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-10-01T02:50"
+ },
+ {
+  "repo": "mobile",
+  "n": 302,
+  "title": "fix(import): no_usable_result reason with truthful Roman copy; journey",
+  "head": "8ca60030",
+  "headfull": "8ca600303a769ccd9f8d458e30ca6f7c70b6c7ed",
+  "base": "main",
+  "updated": "2026-09-30T00:52",
+  "size": 183,
+  "mstate": "behind",
+  "draft": true,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-09-30T00:21"
+ },
+ {
+  "repo": "mobile",
+  "n": 286,
+  "title": "chore(deps): bump actions/setup-node from 6 to 7",
+  "head": "7dfd8c6d",
+  "headfull": "7dfd8c6dd8fc3f84f6c03c57872574f7f7ad9410",
+  "base": "main",
+  "updated": "2026-07-16T02:04",
+  "size": 2,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-07-16T02:04"
+ },
+ {
+  "repo": "mobile",
+  "n": 283,
+  "title": "Fix orphaned pending invite code by unifying on one user-scoped key",
+  "head": "5437e31c",
+  "headfull": "5437e31c460d5f93c11a9c30b14fcfc1c889cb23",
+  "base": "main",
+  "updated": "2026-07-13T13:29",
+  "size": 791,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-07-11T16:14"
+ },
+ {
+  "repo": "mobile",
+  "n": 282,
+  "title": "chore(deps-dev): bump the dev-dependencies group across 1 directory wi",
+  "head": "95c84b03",
+  "headfull": "95c84b0347927d92888b7edcf2a2899100b98cf5",
+  "base": "main",
+  "updated": "2026-09-17T02:06",
+  "size": 248,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 3,
+   "failure": 1
+  },
+  "fails": [
+   "Typecheck, lint, test"
+  ],
+  "created": "2026-07-02T02:05"
+ },
+ {
+  "repo": "mobile",
+  "n": 281,
+  "title": "chore(deps): bump crisp-sdk-react-native from 0.2.1 to 0.3.1",
+  "head": "2b5631c7",
+  "headfull": "2b5631c72e0dd7aa870943b6547b42f6b2f971a5",
+  "base": "main",
+  "updated": "2026-06-25T02:06",
+  "size": 10,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-06-25T02:06"
+ },
+ {
+  "repo": "mobile",
+  "n": 280,
+  "title": "chore(deps): bump react-native-worklets from 0.8.3 to 0.10.0",
+  "head": "9a670483",
+  "headfull": "9a670483e8cf7281b22f8ec2f0d3e117213fd52e",
+  "base": "main",
+  "updated": "2026-06-25T02:06",
+  "size": 67,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "failure": 1
+  },
+  "fails": [
+   "Typecheck, lint, test"
+  ],
+  "created": "2026-06-25T02:06"
+ },
+ {
+  "repo": "mobile",
+  "n": 279,
+  "title": "chore(deps): bump @sentry/react-native from 7.11.0 to 8.14.1",
+  "head": "a9169bff",
+  "headfull": "a9169bff0f6b3b3da3fbbdce5c8dee10cb3a8c8c",
+  "base": "main",
+  "updated": "2026-06-25T02:06",
+  "size": 244,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-06-25T02:06"
+ },
+ {
+  "repo": "mobile",
+  "n": 278,
+  "title": "chore(deps): bump the react-navigation group across 1 directory with 3",
+  "head": "9668dcba",
+  "headfull": "9668dcba11271f4368f5725bce273f2612a17e58",
+  "base": "main",
+  "updated": "2026-09-17T02:06",
+  "size": 71,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 4
+  },
+  "fails": [],
+  "created": "2026-06-25T02:06"
+ },
+ {
+  "repo": "mobile",
+  "n": 276,
+  "title": "chore(deps): bump actions/checkout from 6 to 7",
+  "head": "e871efba",
+  "headfull": "e871efba885b11b2f7caad191989b11f8bd83058",
+  "base": "main",
+  "updated": "2026-06-25T02:04",
+  "size": 2,
+  "mstate": "behind",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-06-25T02:04"
+ },
+ {
+  "repo": "mobile",
+  "n": 265,
+  "title": "feat(coach): custom-exercise composer + builder wiring (flag off)",
+  "head": "3b62ab0b",
+  "headfull": "3b62ab0b31471c045e875d4fa3d98a1e035f33fe",
+  "base": "feat/custom-exercise-data-layer",
+  "updated": "2026-06-17T06:53",
+  "size": 508,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-06-17T06:53"
+ },
+ {
+  "repo": "mobile",
+  "n": 264,
+  "title": "feat(coach): custom-exercise data layer \u2014 API client + library hook (f",
+  "head": "77f29c67",
+  "headfull": "77f29c6782e80f38d520f2f725eeb03353ff7a78",
+  "base": "fix/pr253-r81-rebuild",
+  "updated": "2026-06-17T06:53",
+  "size": 824,
+  "mstate": "clean",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-06-17T06:53"
+ },
+ {
+  "repo": "mobile",
+  "n": 262,
+  "title": "fix(workout-builder): R81 rebuild \u2014 MWB EW2 undo with D7B canonical de",
+  "head": "f6f1478e",
+  "headfull": "f6f1478e248fa2260cb2f4acc392ced9cafff140",
+  "base": "main",
+  "updated": "2026-06-15T17:41",
+  "size": 2718,
+  "mstate": "dirty",
+  "draft": false,
+  "lens": {},
+  "atHead": {},
+  "last_evt": null,
+  "ci": {
+   "success": 1
+  },
+  "fails": [],
+  "created": "2026-06-15T17:41"
+ }
+]

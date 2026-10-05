@@ -1,0 +1,3279 @@
+diff --git a/src/email/email.service.ts b/src/email/email.service.ts
+index 228bb313..8090ce48 100644
+--- a/src/email/email.service.ts
++++ b/src/email/email.service.ts
+@@ -5,6 +5,7 @@ import {
+   Logger,
+ } from '@nestjs/common';
+ import { ConfigService } from '@nestjs/config';
++import { createHash } from 'crypto';
+ import * as fs from 'fs';
+ import * as path from 'path';
+ import * as Handlebars from 'handlebars';
+@@ -25,6 +26,8 @@ interface EmailTransport {
+     subject: string;
+     html: string;
+     replyTo?: string;
++    signal?: AbortSignal;
++    idempotencyKey?: string;
+   }): Promise<{ providerMessageId: string }>;
+ }
+ 
+@@ -62,6 +65,8 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
+   'payment-final-notice':
+     "A second heads-up — subscription ends {{cancellation_date}} if payment doesn't go through",
+   'payment-recovered': "You're all set — payment received",
++  // B-TRIALS (OR-113-2) — plain and exact: the date, no urgency.
++  'trial-ending': 'Your free trial ends on {{trial_end_date}}',
+ };
+ 
+ // EmailService is the single entry point for sending transactional email.
+@@ -134,6 +139,9 @@ export class EmailService {
+       );
+     }
+ 
++    // B-672-4 — an aborted caller sends nothing and burns no key.
++    if (input.signal?.aborted) return this._aborted(input.idempotencyKey);
++
+     // Idempotency: try to INSERT a 'sending' row. On unique violation
+     // (P2002) the same key was already used — return 'skipped'. The row
+     // is updated to 'sent' / 'failed' / 'logged' once the transport
+@@ -203,6 +211,10 @@ export class EmailService {
+       };
+     }
+ 
++    if (input.signal?.aborted) {
++      await this._finalize(logRow.id, 'failed', null, 'aborted');
++      return this._aborted(input.idempotencyKey);
++    }
+     try {
+       const { providerMessageId } = await this.transport.send({
+         from,
+@@ -210,6 +222,8 @@ export class EmailService {
+         subject,
+         html,
+         replyTo: input.replyTo,
++        signal: input.signal,
++        idempotencyKey: this._providerKey(input, from, subject, html),
+       });
+       await this._finalize(logRow.id, 'sent', providerMessageId, null);
+       this.logger.log(
+@@ -237,6 +251,19 @@ export class EmailService {
+ 
+   // ── internal ────────────────────────────────────────────────────────────
+ 
++  private _aborted(idempotencyKey: string): SendEmailResult {
++    return { status: 'failed', providerMessageId: null, idempotencyKey, error: 'aborted' };
++  }
++
++  // B-672-4 — the caller's stable key plus a hash of the rendered message
++  // (Resend allows 1-256 characters).
++  private _providerKey(input: SendEmailInput, ...content: string[]): string | undefined {
++    if (!input.providerIdempotencyKey) return undefined;
++    const message = JSON.stringify([...content, input.to, input.replyTo ?? null]);
++    const digest = createHash('sha256').update(message).digest('hex').slice(0, 32);
++    return `${input.providerIdempotencyKey.slice(0, 200)}:${digest}`;
++  }
++
+   private async _finalize(
+     rowId: string,
+     status: 'sent' | 'failed' | 'logged',
+@@ -335,6 +362,8 @@ class ResendTransport implements EmailTransport {
+     subject: string;
+     html: string;
+     replyTo?: string;
++    signal?: AbortSignal;
++    idempotencyKey?: string;
+   }): Promise<{ providerMessageId: string }> {
+     const body: Record<string, unknown> = {
+       from: args.from,
+@@ -349,8 +378,10 @@ class ResendTransport implements EmailTransport {
+       headers: {
+         Authorization: `Bearer ${this.apiKey}`,
+         'Content-Type': 'application/json',
++        ...(args.idempotencyKey ? { 'Idempotency-Key': args.idempotencyKey } : {}),
+       },
+       body: JSON.stringify(body),
++      ...(args.signal ? { signal: args.signal } : {}),
+     });
+     if (!res.ok) {
+       const text = await res.text().catch(() => '<no body>');
+diff --git a/src/email/email.types.ts b/src/email/email.types.ts
+index f203c1f6..112121d3 100644
+--- a/src/email/email.types.ts
++++ b/src/email/email.types.ts
+@@ -26,6 +26,8 @@ export const EmailTemplateKey = {
+   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
+   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
+   PAYMENT_RECOVERED: 'payment-recovered',
++  // B-TRIALS (OR-113-2) — free trial ends in three days (date + amount).
++  TRIAL_ENDING: 'trial-ending',
+ } as const;
+ export type EmailTemplateKey =
+   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
+@@ -49,6 +51,13 @@ export interface SendEmailInput {
+   from?: string;
+   // Optional reply-to header; falls back to provider default if unset.
+   replyTo?: string;
++  // B-672-4 (trials) — optional abort, checked before the log row and the
++  // transport and passed to the provider request.
++  signal?: AbortSignal;
++  // B-672-4 (trials) — stable across retries of one message: sent to the
++  // provider (Resend Idempotency-Key, 24 h) with a hash of the rendered
++  // content, so the same message is not delivered twice.
++  providerIdempotencyKey?: string;
+ }
+ 
+ export interface SendEmailResult {
+diff --git a/src/email/templates/trial-ending.hbs b/src/email/templates/trial-ending.hbs
+new file mode 100644
+index 00000000..9b5ca36c
+--- /dev/null
++++ b/src/email/templates/trial-ending.hbs
+@@ -0,0 +1,37 @@
++<html lang='en'>
++  <body
++    style='font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;'
++  >
++    <h1 style='font-size: 22px; margin: 0 0 16px;'>Your free trial ends on {{trial_end_date}}</h1>
++    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}},</p>
++    {{#if will_charge}}
++      <p>Your free trial of
++        <strong>{{plan_name}}</strong>{{#if coach_name}} with {{coach_name}}{{/if}}
++        ends on
++        <strong>{{trial_end_date}}</strong>. Your card will be charged
++        <strong>{{amount_display}}</strong>
++        then, and the plan continues
++        {{cadence}}.</p>
++      <p>Nothing to do if you would like to keep going. If not, cancel anytime before
++        {{trial_end_date}}
++        in the app under Your plan, and your card will not be charged.</p>
++    {{else if no_card}}
++      <p>Your free trial of
++        <strong>{{plan_name}}</strong>{{#if coach_name}} with {{coach_name}}{{/if}}
++        ends on
++        <strong>{{trial_end_date}}</strong>. No card is saved on the plan, so nothing will be
++        charged and your plan ends then.</p>
++      <p>You can start the plan again anytime from the app.</p>
++    {{else}}
++      <p>Your free trial of
++        <strong>{{plan_name}}</strong>{{#if coach_name}} with {{coach_name}}{{/if}}
++        ends on
++        <strong>{{trial_end_date}}</strong>. You cancelled during the trial, so your card will not
++        be charged and your plan ends then.</p>
++      <p>You can start the plan again anytime from the app.</p>
++    {{/if}}
++    <hr style='border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;' />
++    <p style='font-size: 12px; color: #888;'>You are receiving this because you started a free trial
++      in The Growth Project app.</p>
++  </body>
++</html>
+\ No newline at end of file
+diff --git a/src/notifications/notification-kind.ts b/src/notifications/notification-kind.ts
+index cc220e05..5d0caf77 100644
+--- a/src/notifications/notification-kind.ts
++++ b/src/notifications/notification-kind.ts
+@@ -128,6 +128,16 @@ export const NotificationKind = {
+   // category like other coach-targeted kinds.
+   // Payload: { amount: number; currency: string; clientId: string }.
+   FIRST_PAYMENT: 'first_payment',
++
++  // ── B-TRIALS (OR-113-2) — free trial ending ───────────────────────────────
++  // Client: their free trial ends in three days and the card on file will be
++  // charged then (or, after a cancel, that nothing will be charged). Emitted
++  // once per (purchase, trial end) from the customer.subscription.trial_will_end
++  // webhook (PackageTrialNotice ledger). A billing notice, not marketing: no
++  // NotificationPreferences columns, so it is not opt-out-able per kind (a
++  // global mute still applies). Payload: { purchase_id, package_id,
++  // trial_ends_at, amount_cents, currency, will_charge }.
++  TRIAL_ENDING: 'trial_ending',
+ } as const;
+ 
+ export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];
+diff --git a/src/notifications/notifications.service.ts b/src/notifications/notifications.service.ts
+index 0e37152b..6484854a 100644
+--- a/src/notifications/notifications.service.ts
++++ b/src/notifications/notifications.service.ts
+@@ -872,6 +872,10 @@ export class NotificationsService {
+     // this branch FIRST_PAYMENT would silently short-circuit on the 'digest'
+     // false defaults (the PR-10 R1 P2 silent-drop bug, 50-Failures #36).
+     if (kind.startsWith('first_payment')) return 'first_payment';
++    // B-TRIALS (OR-113-2) — TRIAL_ENDING is a billing notice with no prefs
++    // columns (same reasoning as FIRST_PAYMENT): a dedicated prefix keeps it
++    // off the 'digest' false defaults so the in-app row is always written.
++    if (kind.startsWith('trial_ending')) return 'trial_ending';
+     if (kind.startsWith('fasting')) return 'fasting';
+     if (kind.includes('digest')) return 'digest';
+     return 'digest'; // safe default — falls back to digest prefs
+diff --git a/src/packages/packages.controller.ts b/src/packages/packages.controller.ts
+index ef996b27..8e41d6cb 100644
+--- a/src/packages/packages.controller.ts
++++ b/src/packages/packages.controller.ts
+@@ -28,6 +28,7 @@ import { PackagesService } from './packages.service';
+ import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
+ import { PackageValidationFilter } from './package-validation.filter';
+ import { PackageIdempotencyFilter } from './package-idempotency.filter';
++import { TrialUsageService } from './trials/trial-usage.service';
+ 
+ // Coach-facing CRUD for offers / packages. Coach owns their catalog and
+ // can list / create / update / archive their own rows. OWNER (platform
+@@ -115,6 +116,7 @@ export class CoachPackagesController {
+       description: body.description,
+       amount_cents: body.amount_cents,
+       currency: body.currency,
++      trial_days: body.trial_days,
+       billing_type: body.billing_type as 'one_time' | 'recurring',
+       interval: body.billing_interval as 'week' | 'month' | 'year' | null | undefined,
+       interval_count: body.billing_interval_count,
+@@ -149,6 +151,7 @@ export class CoachPackagesController {
+       recurring_amount_cents: body.recurring_amount_cents,
+       recurring_interval: body.recurring_interval as 'week' | 'month' | 'year' | null | undefined,
+       recurring_interval_count: body.recurring_interval_count,
++      trial_days: body.trial_days,
+       is_active: body.is_active,
+     });
+   }
+@@ -194,6 +197,8 @@ export class ClientPackagesController {
+   constructor(
+     private packages: PackagesService,
+     private prisma: PrismaService,
++    // B-TRIALS (OR-113-2) — per-client trial eligibility on the buy-side reads.
++    private trials: TrialUsageService,
+   ) {}
+ 
+   // GET /v1/clients/me/coach — returns the current client's coach profile.
+@@ -250,7 +255,11 @@ export class ClientPackagesController {
+       return { packages: [] };
+     }
+     const rows = await this.packages.listPublicForCoach(coachId);
+-    return { packages: rows };
++    // B-TRIALS — each package carries trial_offer for THIS client, so the
++    // sheet shows "7-day free trial, then $49 per month" only when the client
++    // would really get it (one free trial per client per coach).
++    const offers = await this.trials.offersForClient(req.user.id, rows);
++    return { packages: rows.map((row) => ({ ...row, trial_offer: offers.get(row.id) })) };
+   }
+ 
+   // Student fetches one of their assigned coach's offers for the purchase
+@@ -276,6 +285,7 @@ export class ClientPackagesController {
+         message: 'Package not available',
+       });
+     }
+-    return row;
++    const offers = await this.trials.offersForClient(req.user.id, [row]);
++    return { ...row, trial_offer: offers.get(row.id) };
+   }
+ }
+diff --git a/src/packages/packages.dto.ts b/src/packages/packages.dto.ts
+index 759090ae..24dac2bf 100644
+--- a/src/packages/packages.dto.ts
++++ b/src/packages/packages.dto.ts
+@@ -78,6 +78,17 @@ export class CreatePackageDto {
+   @Min(1)
+   recurring_interval_count?: number;
+ 
++  // B-TRIALS (OR-113-2) — free trial length in days for a RECURRING package
++  // (0 = no trial; 3, 7, 14 or 30 are the recommended presets). Shape only
++  // here; PackagesService refuses an out-of-range value with
++  // PACKAGE_TRIAL_DAYS_OUT_OF_RANGE and a trial on a one-time, combo or free
++  // package with PACKAGE_TRIAL_REQUIRES_RECURRING / PACKAGE_TRIAL_NOT_ON_FREE.
++  @IsOptional()
++  @IsInt({
++    message: 'trial_days must be a whole number of days, for example 7, or 0 for no trial.',
++  })
++  trial_days?: number;
++
+   @IsOptional()
+   @IsBoolean()
+   is_active?: boolean;
+@@ -156,6 +167,13 @@ export class UpdatePackageDto {
+   @Min(1)
+   recurring_interval_count?: number | null;
+ 
++  // B-TRIALS — free trial days; null or 0 clears the trial. See CreatePackageDto.
++  @IsOptional()
++  @IsInt({
++    message: 'trial_days must be a whole number of days, for example 7, or 0 for no trial.',
++  })
++  trial_days?: number | null;
++
+   @IsOptional()
+   @IsBoolean()
+   is_active?: boolean;
+diff --git a/src/packages/packages.module.ts b/src/packages/packages.module.ts
+index f55928e8..e639fc94 100644
+--- a/src/packages/packages.module.ts
++++ b/src/packages/packages.module.ts
+@@ -12,6 +12,9 @@ import { DripDispatcherCron } from './drip-dispatcher.cron';
+ import { DripTriggerService } from './drip-trigger.service';
+ import { MilestoneService } from './milestone.service';
+ import { NotificationsModule } from '../notifications/notifications.module';
++import { TrialNoticeService } from './trials/trial-notice.service';
++import { TrialUsageService } from './trials/trial-usage.service';
++import { TrialCheckoutCapability } from './trials/trial-checkout-capability';
+ 
+ // CoachPackage CRUD. Exports PackagesService so CheckoutModule (Phase 3)
+ // can read packages and cache Stripe Price ids back onto rows after lazy
+@@ -46,6 +49,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
+   ],
+   providers: [
+     PackagesService,
++    // B-TRIALS (OR-113-2) — one-trial-per-coach ledger + trial-ending notice.
++    TrialUsageService,
++    TrialNoticeService,
++    TrialCheckoutCapability,
+     PackageContentsService,
+     PackagePushService,
+     PurchaseFanoutService,
+@@ -55,6 +62,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
+   ],
+   exports: [
+     PackagesService,
++    TrialUsageService,
++    TrialNoticeService,
++    TrialCheckoutCapability,
+     PackageContentsService,
+     PackagePushService,
+     PurchaseFanoutService,
+diff --git a/src/packages/packages.service.ts b/src/packages/packages.service.ts
+index e0d63417..150a055c 100644
+--- a/src/packages/packages.service.ts
++++ b/src/packages/packages.service.ts
+@@ -13,6 +13,7 @@ import type { CoachPackage } from '@prisma/client';
+ import { PrismaService } from '../prisma.service';
+ import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
+ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
++import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
+ 
+ // CoachPackage CRUD. Owns coach offers / packages.
+ //
+@@ -61,6 +62,8 @@ export interface CreatePackageInput {
+   recurring_amount_cents?: number | null;
+   recurring_interval?: 'week' | 'month' | 'year' | null;
+   recurring_interval_count?: number | null;
++  // B-TRIALS (OR-113-2) — free trial days (recurring packages only).
++  trial_days?: number;
+ }
+ 
+ /**
+@@ -148,6 +151,8 @@ export interface UpdatePackageInput {
+   recurring_amount_cents?: number | null;
+   recurring_interval?: 'week' | 'month' | 'year' | null;
+   recurring_interval_count?: number | null;
++  // B-TRIALS — null or 0 = no trial.
++  trial_days?: number | null;
+   is_active?: boolean;
+ }
+ 
+@@ -387,6 +392,7 @@ export class PackagesService {
+           input.recurring_amount_cents != null ? (input.recurring_interval ?? 'month') : null,
+         recurring_interval_count:
+           input.recurring_amount_cents != null ? (input.recurring_interval_count ?? 1) : null,
++        trial_days: input.trial_days ?? TRIAL_DAYS_NONE,
+         // PR-6 — new packages start as DRAFT (not purchasable). The
+         // coach must explicitly call POST :id/publish to make it live.
+         published_at: null,
+@@ -424,6 +430,11 @@ export class PackagesService {
+     if (input.recurring_interval_count !== undefined)
+       data.recurring_interval_count = input.recurring_interval_count;
+     if (input.is_active != null) data.is_active = input.is_active;
++    // B-TRIALS (OR-113-2) — null clears the trial. A package that stops being
++    // a plain paid recurring plan (switched to one-time, made free, or given a
++    // one-time companion) drops its trial in the same PATCH unless the coach
++    // sent trial_days explicitly, in which case the rules below decide.
++    if (input.trial_days !== undefined) data.trial_days = input.trial_days ?? TRIAL_DAYS_NONE;
+ 
+     // Validate the merged shape. B-629-4: a key present in `data` wins, even
+     // when its value is null (`??` used to fall back to the stored interval,
+@@ -463,6 +474,23 @@ export class PackagesService {
+         enforceRecurringMinimum: recurringConfigChanged(row, data),
+       },
+     );
++    if (!('trial_days' in data) && (row.trial_days ?? TRIAL_DAYS_NONE) > TRIAL_DAYS_NONE) {
++      const stillTrialable =
++        merged('billing_type') === 'recurring' &&
++        (merged('amount_cents') as number) > 0 &&
++        merged('recurring_amount_cents') == null &&
++        merged('recurring_interval') == null &&
++        merged('recurring_interval_count') == null;
++      if (!stillTrialable) data.trial_days = TRIAL_DAYS_NONE;
++    }
++    assertValidTrial({
++      trial_days: (merged('trial_days') as number | null | undefined) ?? TRIAL_DAYS_NONE,
++      amount_cents: merged('amount_cents') as number,
++      billing_type: merged('billing_type') as string,
++      recurring_amount_cents: merged('recurring_amount_cents') as number | null,
++      recurring_interval: merged('recurring_interval') as string | null,
++      recurring_interval_count: merged('recurring_interval_count') as number | null,
++    });
+ 
+     // If price-shaping fields changed, clear the cached Stripe Price id so
+     // the next checkout mints a fresh one. The Stripe Product is kept (the
+@@ -645,6 +673,7 @@ export class PackagesService {
+         enforceRecurringMinimum: !hasBeenOnSale(row),
+       },
+     );
++    assertValidTrial({ ...row, trial_days: row.trial_days ?? TRIAL_DAYS_NONE });
+     // TODO(PR-8): once content-attach lands, gate sellable packages
+     // here on `is_sellable === false || contents.length > 0`. Allowed
+     // for now so the editor flow ships before PR-8.
+@@ -833,6 +862,11 @@ export class PackagesService {
+       recurring_amount_cents?: number | null;
+       recurring_interval?: string | null;
+       recurring_interval_count?: number | null;
++      // B-TRIALS: present on create input only. Validated here, after the
++      // price, so every create path (create, and an Idempotency-Key create
++      // that builds its own data) applies the trial rules. update and
++      // publish check the merged trial separately.
++      trial_days?: number | null;
+     },
+     opts: PricingFloorOptions = ENFORCE_ALL_FLOORS,
+   ) {
+@@ -995,5 +1029,8 @@ export class PackagesService {
+         });
+       }
+     }
++    if (input.trial_days != null) {
++      assertValidTrial({ ...input, trial_days: input.trial_days });
++    }
+   }
+ }
+diff --git a/src/packages/trials/trial-notice.service.ts b/src/packages/trials/trial-notice.service.ts
+new file mode 100644
+index 00000000..d5755e05
+--- /dev/null
++++ b/src/packages/trials/trial-notice.service.ts
+@@ -0,0 +1,1136 @@
++import { randomUUID } from 'crypto';
++import { Injectable, Logger, Optional } from '@nestjs/common';
++import { Cron } from '@nestjs/schedule';
++import type { ClientPurchase, PackageTrialNotice, Prisma } from '@prisma/client';
++import { EmailService } from '../../email/email.service';
++import { EmailTemplateKey } from '../../email/email.types';
++import { NotificationKind } from '../../notifications/notification-kind';
++import { formatClock } from '../../notifications/local-time';
++import { NotificationsService } from '../../notifications/notifications.service';
++import { resolveRecipientTimeZoneWithSource } from '../../notifications/recipient-timezone';
++import { PrismaService } from '../../prisma.service';
++import {
++  chargeLabel,
++  formatTrialAmount,
++  formatTrialDate,
++  trialEndingCopy,
++  trialNoChargeReason,
++  willChargeCard,
++  type TrialEndingCopy,
++  type TrialEndingCopyInput,
++} from './trial-copy';
++
++import { trialErrorClass, trialPushCode } from './trial-diagnostics';
++
++export { willChargeCard } from './trial-copy';
++
++// B-TRIALS (OR-113-2) — "your free trial ends soon" notice.
++//
++// Stripe sends customer.subscription.trial_will_end three days before a
++// trial ends (or right away for a trial of three days or less). The webhook
++// calls recordTrialWillEnd() INSIDE its transaction:
++//   * one PackageTrialNotice row per (purchase, trial end) — the unique index
++//     makes a redelivered event, or a second event for the same trial end, a
++//     no-op (INSERT ... ON CONFLICT DO NOTHING, safe inside the tx);
++//   * the in-app notification row, committed or rolled back with it.
++// Push and email are HTTP calls, so they run AFTER the transaction commits
++// (deliver()), and sweep() retries anything undelivered every 10 minutes
++// until it is delivered, hits the attempt cap, or the trial has ended.
++
++//
++// B-TRIALS-3 (agent 115) — fix round for Sol B-656-2/3/4/5:
++//   * the notice no longer depends on the trial_will_end event alone: it is
++//     also recorded when a trial starts inside the warning window
++//     (recordIfDue, from the webhook) and by the reconciler in sweep()
++//     (started trials ending within TRIAL_NOTICE_LEAD_MS without a notice).
++//     A one-day trial whose only trial_will_end event arrived before the card
++//     was saved is noticed once the card is saved (B-656-3);
++//   * every channel claim is an exclusive lease (fresh token + expiry) and the
++//     outcome is written only by the token holder, so a stale or slow caller
++//     can never send twice in parallel or overwrite a delivered state
++//     (B-656-2). The lease is released only once the send has really
++//     stopped (B-TR2-117, below). Delivery is honestly at-least-once: a
++//     process that dies after the provider accepted the message but before
++//     the outcome write is retried after the lease expires;
++//   * push re-reads the client's notification preferences at delivery: a
++//     global mute records push_status 'suppressed' and sends nothing. The
++//     email is a billing notice about an upcoming card charge and is sent
++//     regardless of the push mute (B-656-4);
++//   * the copy says what will really happen: a card is charged only when the
++//     subscription or the customer still holds a payment method; a client who
++//     removed the card mid-trial is told nothing will be charged (B-656-5).
++//
++// B-T12-116 (agent 116) — fix round 6 for Sol B-672-1/2 and Opus B-672-1,
++// C-672-1/2/3/5/6:
++//   * every channel claim takes its eligibility and its lease from a fresh
++//     clock at the claim (the caller's start time plus the time elapsed
++//     since), never the sweep's start time, so a row reached late in a slow
++//     sweep holds a full lease; a claim whose preparation already used up
++//     the room for the bounded transport sends nothing and gives its
++//     attempt back (B-672-1 Sol, C-672-1 Opus);
++//   * a notice whose purchase was cancelled or is gone is settled 'skipped'
++//     (terminal) on both channels, and the retry sweep pages by
++//     (created_at, id) with a resumable cursor, so no prefix of skipped,
++//     unknown-card or leased rows hides a later notice (B-672-2, C-672-2);
++//   * the trial end is written in main's recipient time zone
++//     (resolveRecipientTimeZone: a stamped preference, else the coach's
++//     zone) (B-672-1 Opus; the label rule is C-672-7, below);
++//   * "plus any tax" when the subscription has Stripe automatic tax
++//     (C-672-5, operator ruling 2026-10-03).
++//
++// B-TR2-117 (agent 117) — fix round 8 (Sol B-672-3/4, Opus C-672-7/8/9):
++//   * a channel is sent only while the notice describes the purchase's current
++//     started, unended trial (claim and send re-check the end); else it is
++//     retired with no attempt spent, and reopened by the reconciler if a stale
++//     purchase row caused it;
++//   * sends are aborted at the timeout (down to the email fetch); the lease is
++//     released only once a send stopped; the provider key dedups a retry;
++//   * C-672-7 (ruling): a zone that is not the client's own names the time
++//     and the zone ("Oct 13 at 12:30 AM EDT"), never a bare date.
++//
++// B-TR3-118 (agent 118) — Sol B-672-3: a channel's copy is built at its
++// admission, after the claim and the preference read, from the purchase read
++// last; a trial extended, cancelled, converted or ended meanwhile is never
++// sent on the older snapshot (admit()).
++
++export const TRIAL_NOTICE_MAX_ATTEMPTS = 5;
++/** Stripe's default trial_will_end lead: three days before the trial end. */
++export const TRIAL_NOTICE_LEAD_MS = 3 * 24 * 60 * 60 * 1000;
++/** A channel claim expires after this; the transport is bounded below it. */
++export const TRIAL_NOTICE_LEASE_MS = 2 * 60 * 1000;
++export const TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS = 30 * 1000;
++/** B-672-4 — how long an aborted send gets to stop before its lease is held. */
++export const TRIAL_NOTICE_ABORT_GRACE_MS = 5 * 1000;
++const RECONCILE_BATCH = 100;
++/** Pages one reconcile sweep reads before it resumes on the next sweep. */
++export const RECONCILE_MAX_PAGES = 50;
++/**
++ * Mobile route the notice should open (Your plan: trial end date + cancel).
++ * C-672-3 — mobile main's push-tap router (CLIENT_PUSH_ROUTES) does not list
++ * this route yet, so a tap opens Notification Center until the mobile trials
++ * piece adds it; the in-app row's deep link (tgp://plan) is unaffected.
++ */
++export const TRIAL_ACTION_SCREEN = 'ClientPackages';
++/** Give the post-commit delivery a head start before the sweeper retries. */
++const SWEEP_MIN_AGE_MS = 2 * 60 * 1000;
++const SWEEP_BATCH = 50;
++/** B-672-2 — pages one retry sweep reads before it resumes from its cursor. */
++export const SWEEP_MAX_PAGES = 20;
++/** B-672-2 — a sweep stops paging after this and resumes next time. */
++export const SWEEP_BUDGET_MS = 8 * 60 * 1000;
++
++type Tx = Prisma.TransactionClient | PrismaService;
++type Channel = 'push' | 'email';
++
++export type TrialNoticeSource = 'trial_will_end' | 'trial_start' | 'sweep';
++
++/** B-672-3 — why a notice is retired instead of sent. */
++export type TrialNoticeSkipCode =
++  | 'purchase_canceled'
++  | 'purchase_missing'
++  | 'trial_ended'
++  | 'trial_not_started'
++  | 'trial_superseded';
++
++/** B-672-3 — retirements an out-of-order event can cause; see reopen(). */
++const REOPENABLE_SKIPS = new Set([
++  'skip:trial_ended',
++  'skip:trial_not_started',
++  'skip:trial_superseded',
++]);
++
++/**
++ * B-672-3 — does the notice still describe the purchase's current trial at
++ * `at`? null when it does, else the code the notice is retired with.
++ */
++export function trialNoticeSkipCode(
++  notice: { trial_ends_at: Date },
++  purchase: { status: string; entitlement_active: boolean; trial_ends_at: Date | null } | null,
++  at: Date,
++): TrialNoticeSkipCode | null {
++  if (!purchase) return 'purchase_missing';
++  if (purchase.status === 'canceled') return 'purchase_canceled';
++  const end = notice.trial_ends_at.getTime();
++  if (end <= at.getTime() || purchase.status !== 'trialing') return 'trial_ended';
++  if (!purchase.entitlement_active) return 'trial_not_started';
++  if (purchase.trial_ends_at?.getTime() !== end) return 'trial_superseded';
++  return null;
++}
++
++/** C-672-7 — the zone a trial end is written in, and whether it is the client's. */
++export type TrialNoticeZone = { timeZone: string | null; own: boolean };
++
++/**
++ * C-672-7 (operator ruling) — "Oct 12" in the client's own zone; in any other
++ * zone (the coach's, else UTC) the date alone can be a day off, so the time
++ * and the zone are named: "Oct 13 at 12:30 AM EDT".
++ */
++export function trialEndLabel(end: Date, zone: TrialNoticeZone): string {
++  const tz = zone.timeZone || 'UTC';
++  const date = formatTrialDate(end, tz);
++  return zone.own && zone.timeZone ? date : `${date} at ${formatClock(end, tz)}`;
++}
++
++/** The trial-ending copy with the C-672-7 end label (in-app, push, email lead). */
++export function trialNoticeCopy(
++  input: Omit<TrialEndingCopyInput, 'timeZone'>,
++  zone: TrialNoticeZone,
++): TrialEndingCopy {
++  const copy = trialEndingCopy({ ...input, timeZone: zone.timeZone || 'UTC' });
++  const label = trialEndLabel(input.trialEndsAt, zone);
++  // Every trial-ending body opens with "Your free trial ends on <date>."
++  const body = copy.body.replace(`ends on ${copy.dateLabel}.`, `ends on ${label}.`);
++  return { ...copy, dateLabel: label, body };
++}
++
++type NoticePurchase = Pick<
++  ClientPurchase,
++  'id' | 'client_user_id' | 'package_id' | 'amount_cents' | 'currency'
++>;
++
++/** What a channel delivery reads of the purchase (B-672-3: trial truth too). */
++const DELIVERY_PURCHASE_SELECT = {
++  id: true,
++  cancel_at_period_end: true,
++  card_on_file: true,
++  status: true,
++  entitlement_active: true,
++  trial_ends_at: true,
++  package: { select: { name: true, interval: true, interval_count: true } },
++  coach: { select: { name: true } },
++  client: { select: { email: true, name: true } },
++} as const satisfies Prisma.ClientPurchaseSelect;
++type DeliveryPurchase = Prisma.ClientPurchaseGetPayload<{
++  select: typeof DELIVERY_PURCHASE_SELECT;
++}>;
++/** B-672-3 — the purchase truth, card state and copy one channel is sent on. */
++type Prepared = { purchase: DeliveryPurchase; cardOnFile: boolean; copy: TrialEndingCopy };
++
++export interface RecordTrialNoticeArgs {
++  purchase: NoticePurchase;
++  trialEndsAt: Date;
++  amountCents: number;
++  currency: string;
++  cancelAtPeriodEnd: boolean;
++  /** A payment method will really be charged at the trial end. */
++  cardOnFile: boolean;
++  /** C-672-5 — Stripe may add tax at the trial end (automatic tax). */
++  taxMayApply?: boolean;
++  source: TrialNoticeSource;
++  eventId?: string | null;
++  now?: Date;
++}
++
++/** True when the subscription itself holds a payment method. */
++export function subscriptionHasPaymentMethod(sub: {
++  default_payment_method?: unknown;
++  default_source?: unknown;
++}): boolean {
++  if (hasSavedPaymentMethod(sub)) return true;
++  const src = sub?.default_source;
++  if (typeof src === 'string') return src.length > 0;
++  return !!(src && typeof src === 'object' && typeof (src as { id?: unknown }).id === 'string');
++}
++
++/** The Stripe subscription fields the notice reads (2024-09-30.acacia). */
++export interface TrialWillEndSubscription {
++  id?: string;
++  status?: string;
++  trial_end?: number | null;
++  cancel_at_period_end?: boolean;
++  default_payment_method?: unknown;
++  default_source?: unknown;
++  /** C-672-5 — Stripe automatic tax on the subscription's invoices. */
++  automatic_tax?: { enabled?: boolean | null } | null;
++  items?: {
++    data?: Array<{
++      quantity?: number | null;
++      price?: { unit_amount?: number | null; currency?: string | null } | null;
++    }>;
++  } | null;
++}
++
++/** True when the subscription has a saved card (the trial truly started). */
++export function hasSavedPaymentMethod(sub: { default_payment_method?: unknown }): boolean {
++  const pm = sub?.default_payment_method;
++  if (typeof pm === 'string') return pm.length > 0;
++  return !!(pm && typeof pm === 'object' && typeof (pm as { id?: unknown }).id === 'string');
++}
++
++/** C-672-5 — Stripe may add tax to the trial-end invoice. */
++export function subscriptionTaxMayApply(sub: TrialWillEndSubscription): boolean {
++  return sub.automatic_tax?.enabled === true;
++}
++
++/** What the card will be charged when the trial ends, from Stripe's own items. */
++export function upcomingChargeCents(sub: TrialWillEndSubscription, fallbackCents: number): number {
++  const items = sub.items?.data ?? [];
++  let total = 0;
++  let priced = false;
++  for (const item of items) {
++    const unit = item?.price?.unit_amount;
++    if (typeof unit === 'number' && Number.isFinite(unit)) {
++      total += unit * (typeof item.quantity === 'number' ? item.quantity : 1);
++      priced = true;
++    }
++  }
++  return priced ? total : fallbackCents;
++}
++
++@Injectable()
++export class TrialNoticeService {
++  private readonly logger = new Logger(TrialNoticeService.name);
++  /** B-656-3 — keyset position when a reconcile sweep hit the page cap. */
++  private reconcileCursor: { endsAt: Date; id: string } | null = null;
++  /** B-672-2 — keyset position when a retry sweep hit its page/time budget. */
++  private sweepCursor: { createdAt: Date; id: string } | null = null;
++  /** B-672-4 — sends still running in this process, by `<notice>:<channel>`. */
++  private readonly running = new Map<string, Promise<void>>();
++
++  constructor(
++    private readonly prisma: PrismaService,
++    private readonly notifications: NotificationsService,
++    @Optional() private readonly email?: EmailService,
++  ) {}
++
++  /**
++   * customer.subscription.trial_will_end, inside the webhook transaction.
++   * Returns the notice id to deliver after commit, or null when nothing is
++   * recorded now (already noticed for this trial end, trial over, not
++   * trialing, or the trial has not started yet).
++   */
++  async recordTrialWillEnd(
++    tx: Tx,
++    args: {
++      purchase: NoticePurchase & Pick<ClientPurchase, 'entitlement_active'>;
++      sub: TrialWillEndSubscription;
++      eventId: string;
++      now?: Date;
++    },
++  ): Promise<string | null> {
++    const now = args.now ?? new Date();
++    const { purchase, sub } = args;
++    const trialEndsAt =
++      typeof sub.trial_end === 'number' && Number.isFinite(sub.trial_end)
++        ? new Date(sub.trial_end * 1000)
++        : null;
++    if (sub.status !== 'trialing' || !trialEndsAt || trialEndsAt.getTime() <= now.getTime()) {
++      return null;
++    }
++    // B-656-3 — the trial has not started (card not saved yet, or this
++    // purchase lost the one-trial race): no access, nothing to warn about
++    // yet. The notice is not lost: the trial start (recordIfDue) or the
++    // reconciler records it as soon as the trial really starts.
++    if (!purchase.entitlement_active) return null;
++    // B-656-5 — card authority is tri-state; unknown (a failed read) never
++    // becomes "no card". The reconciler records it once the read succeeds.
++    const cardOnFile = await this.cardAuthority(
++      subscriptionHasPaymentMethod(sub),
++      purchase.client_user_id,
++      tx,
++    );
++    if (cardOnFile === null) return null;
++    return this.recordNotice(tx, {
++      purchase,
++      trialEndsAt,
++      amountCents: upcomingChargeCents(sub, purchase.amount_cents),
++      currency: (sub.items?.data?.[0]?.price?.currency ?? purchase.currency ?? 'usd').toLowerCase(),
++      cancelAtPeriodEnd: !!sub.cancel_at_period_end,
++      cardOnFile,
++      taxMayApply: subscriptionTaxMayApply(sub),
++      source: 'trial_will_end',
++      eventId: args.eventId,
++      now,
++    });
++  }
++
++  /**
++   * B-656-3 — the trial just started (card saved, access granted) inside the
++   * warning window: record the notice now, on the webhook transaction, rather
++   * than waiting for a trial_will_end event that may already have been sent.
++   */
++  async recordIfDue(
++    tx: Tx,
++    args: {
++      purchase: NoticePurchase;
++      sub: TrialWillEndSubscription;
++      trialEndsAt: Date | null;
++      eventId?: string | null;
++      now?: Date;
++    },
++  ): Promise<string | null> {
++    const now = args.now ?? new Date();
++    const end = args.trialEndsAt;
++    if (!end) return null;
++    const left = end.getTime() - now.getTime();
++    if (left <= 0 || left > TRIAL_NOTICE_LEAD_MS) return null;
++    const cardOnFile = await this.cardAuthority(
++      subscriptionHasPaymentMethod(args.sub),
++      args.purchase.client_user_id,
++      tx,
++    );
++    if (cardOnFile === null) return null; // unknown: the reconciler records it
++    return this.recordNotice(tx, {
++      purchase: args.purchase,
++      trialEndsAt: end,
++      amountCents: upcomingChargeCents(args.sub, args.purchase.amount_cents),
++      currency: (
++        args.sub.items?.data?.[0]?.price?.currency ??
++        args.purchase.currency ??
++        'usd'
++      ).toLowerCase(),
++      cancelAtPeriodEnd: !!args.sub.cancel_at_period_end,
++      cardOnFile,
++      taxMayApply: subscriptionTaxMayApply(args.sub),
++      source: 'trial_start',
++      eventId: args.eventId ?? null,
++      now,
++    });
++  }
++
++  /**
++   * One notice per (purchase, trial end): the ledger row and the in-app row,
++   * on the caller's transaction. Returns the notice id when this call wrote
++   * it, else null (already recorded).
++   */
++  async recordNotice(tx: Tx, args: RecordTrialNoticeArgs): Promise<string | null> {
++    const { purchase, trialEndsAt } = args;
++    const created = await tx.packageTrialNotice.createMany({
++      data: [
++        {
++          purchase_id: purchase.id,
++          client_user_id: purchase.client_user_id,
++          trial_ends_at: trialEndsAt,
++          amount_cents: args.amountCents,
++          currency: args.currency,
++          stripe_event_id: args.eventId ?? null,
++          source: args.source,
++          tax_may_apply: args.taxMayApply === true,
++        },
++      ],
++      skipDuplicates: true,
++    });
++    if (created.count === 0) return null;
++    const notice = await tx.packageTrialNotice.findUnique({
++      where: {
++        purchase_id_trial_ends_at: { purchase_id: purchase.id, trial_ends_at: trialEndsAt },
++      },
++      select: { id: true },
++    });
++    if (!notice) return null;
++
++    const copy = trialNoticeCopy(
++      {
++        trialEndsAt,
++        amountCents: args.amountCents,
++        currency: args.currency,
++        cancelAtPeriodEnd: args.cancelAtPeriodEnd,
++        cardOnFile: args.cardOnFile,
++        taxMayApply: args.taxMayApply === true,
++      },
++      await this.noticeZone(purchase.client_user_id, tx),
++    );
++    // Global mute / per-kind prefs are enforced inside createNotification.
++    await this.notifications.createNotification(
++      {
++        user_id: purchase.client_user_id,
++        kind: NotificationKind.TRIAL_ENDING,
++        body: copy.body,
++        deep_link: 'tgp://plan',
++        channel: 'inapp',
++        payload: {
++          actionScreen: TRIAL_ACTION_SCREEN,
++          purchase_id: purchase.id,
++          package_id: purchase.package_id,
++          trial_ends_at: trialEndsAt.toISOString(),
++          amount_cents: args.amountCents,
++          currency: args.currency,
++          will_charge: trialNoChargeReason(args) === null,
++          card_on_file: args.cardOnFile,
++        },
++      },
++      tx,
++    );
++    return notice.id;
++  }
++
++  /**
++   * Deliver push + email for a recorded notice. Never throws. Every claim
++   * reads a fresh clock from `now` (B-672-1). Each channel is checked before
++   * its claim (a retired notice spends no claim) and prepared again at its
++   * admission, which builds the copy that is sent (B-672-3).
++   */
++  async deliver(noticeId: string, now: Date = new Date()): Promise<void> {
++    const clock = elapsedClock(now);
++    try {
++      const notice = await this.prisma.packageTrialNotice.findUnique({ where: { id: noticeId } });
++      if (!notice) return;
++      if (channelOpen(notice, 'push')) {
++        if (!(await this.prepare(notice, clock))) return;
++        await this.deliverPush(notice, clock);
++      }
++      if (!channelOpen(notice, 'email') || !this.email) return;
++      if (!(await this.prepare(notice, clock))) return;
++      await this.deliverEmail(notice, clock);
++    } catch (err) {
++      this.logger.error(`trial notice delivery failed notice=${noticeId}: ${trialErrorClass(err)}`);
++    }
++  }
++
++  /**
++   * B-672-3 — the truth one channel is sent on: the notice must describe the
++   * purchase's current started, unended trial (else it is retired) and the
++   * card state must be known (else it stays pending). null: send nothing.
++   * B-TR3-118: the zone and the customer card are read first and the purchase
++   * last, so no read of this preparation can outdate the purchase truth.
++   */
++  private async prepare(notice: PackageTrialNotice, clock: () => Date): Promise<Prepared | null> {
++    const zone = await this.noticeZone(notice.client_user_id);
++    const customerCard = await this.customerHasDefaultCard(notice.client_user_id);
++    const purchase = await this.prisma.clientPurchase.findUnique({
++      where: { id: notice.purchase_id },
++      select: DELIVERY_PURCHASE_SELECT,
++    });
++    const skip = trialNoticeSkipCode(notice, purchase, clock());
++    if (skip || !purchase) {
++      await this.settleSkipped(notice.id, skip ?? 'purchase_missing');
++      return null;
++    }
++    // B-656-5 — the truth at delivery time (the card may have been removed
++    // or replaced since the notice was recorded).
++    const cardOnFile = willChargeCard(purchase.card_on_file, customerCard);
++    if (cardOnFile === null) {
++      // Unknown card state (the read failed): send nothing rather than a
++      // wrong promise; the channels stay pending and the sweep retries.
++      this.logger.warn(
++        `trial notice delivery deferred notice=${notice.id} code=card_state_unknown`,
++      );
++      return null;
++    }
++    const copy = trialNoticeCopy(
++      {
++        trialEndsAt: notice.trial_ends_at,
++        amountCents: notice.amount_cents,
++        currency: notice.currency,
++        cancelAtPeriodEnd: purchase.cancel_at_period_end,
++        cardOnFile,
++        taxMayApply: notice.tax_may_apply,
++      },
++      zone,
++    );
++    return { purchase, cardOnFile, copy };
++  }
++
++  /**
++   * Every 10 minutes: record notices that are due but missing (B-656-3), then
++   * retry undelivered channels. Multi-replica safe (unique notice key and
++   * per-channel leases).
++   */
++  @Cron('*/10 * * * *', { name: 'trial-notice-sweep', timeZone: 'UTC' })
++  async sweep(now: Date = new Date()): Promise<number> {
++    const clock = elapsedClock(now);
++    let reconciled = 0;
++    try {
++      reconciled = await this.reconcileDue(now);
++    } catch (err) {
++      // A reconcile failure never blocks the delivery retries below.
++      this.logger.error(`trial notice reconcile errored: ${trialErrorClass(err)}`);
++    }
++    // B-672-2 — keyset paging on (created_at, id): rows that stay pending
++    // (unknown card, a live lease elsewhere) never hold back the rows after
++    // them. A sweep that hits its page or time budget resumes from its
++    // cursor next time; a sweep that reaches the end starts over next time.
++    let cursor = this.sweepCursor;
++    this.sweepCursor = null;
++    let handled = 0;
++    for (let page = 0; page < SWEEP_MAX_PAGES; page += 1) {
++      const at = clock();
++      const due = await this.prisma.packageTrialNotice.findMany({
++        where: {
++          AND: [
++            {
++              trial_ends_at: { gt: at },
++              created_at: { lt: new Date(at.getTime() - SWEEP_MIN_AGE_MS) },
++              OR: [
++                { push_status: 'pending', push_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS } },
++                { email_status: 'pending', email_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS } },
++              ],
++            },
++            ...(cursor
++              ? [
++                  {
++                    OR: [
++                      { created_at: { gt: cursor.createdAt } },
++                      { created_at: cursor.createdAt, id: { gt: cursor.id } },
++                    ],
++                  },
++                ]
++              : []),
++          ],
++        },
++        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
++        take: SWEEP_BATCH,
++        select: { id: true, created_at: true },
++      });
++      for (const row of due) await this.deliver(row.id, clock());
++      handled += due.length;
++      if (due.length < SWEEP_BATCH) return reconciled + handled;
++      const last = due[due.length - 1];
++      cursor = { createdAt: last.created_at, id: last.id };
++      if (clock().getTime() - now.getTime() >= SWEEP_BUDGET_MS) break;
++    }
++    this.sweepCursor = cursor;
++    this.logger.warn('trial notice sweep hit its page or time budget; resumes next sweep');
++    return reconciled + handled;
++  }
++
++  /**
++   * B-656-3 — started trials (trialing with access) that end within the
++   * warning window and have no notice for that trial end yet. Covers a
++   * trial_will_end event that arrived before the card was saved, a trial
++   * that started on a code path without the start hook, and a webhook
++   * endpoint that is missing the event. Returns how many it recorded.
++   */
++  async reconcileDue(now: Date = new Date()): Promise<number> {
++    const clock = elapsedClock(now);
++    const horizon = new Date(now.getTime() + TRIAL_NOTICE_LEAD_MS);
++    // B-656-3 — keyset paging on (trial_ends_at, id): already-noticed rows
++    // never hold back a due trial behind them. A sweep that hits the page cap
++    // resumes from its cursor next time instead of rereading the first pages.
++    let cursor = this.reconcileCursor;
++    this.reconcileCursor = null;
++    let recorded = 0;
++    for (let page = 0; page < RECONCILE_MAX_PAGES; page += 1) {
++      const candidates = await this.prisma.clientPurchase.findMany({
++        where: {
++          AND: [
++            {
++              status: 'trialing',
++              entitlement_active: true,
++              trial_ends_at: { gt: now, lte: horizon },
++            },
++            ...(cursor
++              ? [
++                  {
++                    OR: [
++                      { trial_ends_at: { gt: cursor.endsAt } },
++                      { trial_ends_at: cursor.endsAt, id: { gt: cursor.id } },
++                    ],
++                  },
++                ]
++              : []),
++          ],
++        },
++        orderBy: [{ trial_ends_at: 'asc' }, { id: 'asc' }],
++        take: RECONCILE_BATCH,
++        select: {
++          id: true,
++          client_user_id: true,
++          package_id: true,
++          amount_cents: true,
++          currency: true,
++          cancel_at_period_end: true,
++          card_on_file: true,
++          trial_ends_at: true,
++        },
++      });
++      if (candidates.length === 0) return recorded;
++      recorded += await this.reconcilePage(candidates, now, clock);
++      const last = candidates[candidates.length - 1];
++      if (candidates.length < RECONCILE_BATCH || !last.trial_ends_at) return recorded;
++      cursor = { endsAt: last.trial_ends_at, id: last.id };
++    }
++    this.reconcileCursor = cursor;
++    this.logger.warn(
++      `trial notice reconcile hit the page cap (${RECONCILE_MAX_PAGES}); resumes next sweep`,
++    );
++    return recorded;
++  }
++
++  private async reconcilePage(
++    candidates: Array<
++      NoticePurchase &
++        Pick<ClientPurchase, 'cancel_at_period_end' | 'card_on_file' | 'trial_ends_at'>
++    >,
++    now: Date,
++    clock: () => Date,
++  ): Promise<number> {
++    const existing = await this.prisma.packageTrialNotice.findMany({
++      where: { purchase_id: { in: candidates.map((c) => c.id) } },
++      select: { id: true, purchase_id: true, trial_ends_at: true, last_error: true },
++    });
++    const have = new Map(existing.map((n) => [`${n.purchase_id}:${n.trial_ends_at.getTime()}`, n]));
++    let recorded = 0;
++    for (const p of candidates) {
++      const end = p.trial_ends_at;
++      if (!end) continue;
++      const prior = have.get(`${p.id}:${end.getTime()}`);
++      try {
++        if (prior) {
++          // B-672-3 — retired while the purchase row disagreed (out of order).
++          if (await this.reopen(prior.id, prior.last_error)) {
++            recorded += 1;
++            await this.deliver(prior.id, clock());
++          }
++          continue;
++        }
++        const cardOnFile = await this.cardAuthority(p.card_on_file, p.client_user_id);
++        if (cardOnFile === null) continue; // unknown: retried next sweep
++        // A concurrent writer may record the same notice: the unique
++        // (purchase_id, trial_ends_at) makes the second insert a no-op.
++        const id = await this.prisma.$transaction((tx) =>
++          this.recordNotice(tx, {
++            purchase: p,
++            trialEndsAt: end,
++            amountCents: p.amount_cents,
++            currency: (p.currency || 'usd').toLowerCase(),
++            cancelAtPeriodEnd: p.cancel_at_period_end,
++            cardOnFile,
++            source: 'sweep',
++            now,
++          }),
++        );
++        if (id) {
++          recorded += 1;
++          await this.deliver(id, clock());
++        }
++      } catch (err) {
++        this.logger.error(
++          `trial notice reconcile failed purchase=${p.id}: ${trialErrorClass(err)}`,
++        );
++      }
++    }
++    return recorded;
++  }
++
++  private async deliverPush(notice: PackageTrialNotice, clock: () => Date): Promise<void> {
++    // B-672-4 — never a second push of this notice while one is still running here.
++    if (this.running.has(`${notice.id}:push`)) return;
++    const lease = await this.claim(notice.id, 'push', clock());
++    if (!lease) return;
++    let status: 'delivered' | 'no_token' | 'suppressed' | 'pending' | 'failed';
++    let error: string | null = null;
++    // B-656-4 — the client's preferences at delivery time (a mute set after
++    // the notice was recorded still applies).
++    const prefs = await this.notifications.getPreferences(notice.client_user_id);
++    // B-672-1 / B-672-3 — the preference read may have used up the lease, run
++    // past the trial end or outlived the purchase truth: the copy is built now.
++    const ready = await this.admit(notice, 'push', lease, clock);
++    if (!ready) return;
++    let sent: Bounded<PushOutcome> | null = null;
++    if ((prefs as Record<string, unknown>).muted === true) {
++      status = 'suppressed';
++    } else {
++      sent = await this.bounded(`${notice.id}:push`, (signal) =>
++        this.notifications.pushToUser(
++          notice.client_user_id,
++          ready.copy.title,
++          ready.copy.body,
++          {
++            kind: NotificationKind.TRIAL_ENDING,
++            purchase_id: notice.purchase_id,
++            deep_link: 'tgp://plan',
++            // Your plan, where the trial end date and the cancel path live,
++            // once the app's push-tap router lists it (C-672-3, see above).
++            actionScreen: TRIAL_ACTION_SCREEN,
++          },
++          signal,
++        ),
++      );
++      const result = sent.result;
++      if (result === TIMED_OUT) {
++        status = lease.attempt >= TRIAL_NOTICE_MAX_ATTEMPTS ? 'failed' : 'pending';
++        error = 'push:timeout';
++      } else if (result.delivered) {
++        status = 'delivered';
++      } else if (result.code === 'no-token' || result.code === 'invalid-token') {
++        status = 'no_token';
++        error = `push:${trialPushCode(result.code)}`;
++      } else {
++        status = lease.attempt >= TRIAL_NOTICE_MAX_ATTEMPTS ? 'failed' : 'pending';
++        error = `push:${trialPushCode(result.code)}`;
++      }
++    }
++    const outcome = { push_status: status, ...(error ? { last_error: error } : {}) };
++    if (sent && !sent.stopped) {
++      await this.holdLease(notice.id, 'push', lease.token, outcome, sent.done, clock);
++      return;
++    }
++    await this.complete(notice.id, 'push', lease.token, outcome);
++  }
++
++  private async deliverEmail(notice: PackageTrialNotice, clock: () => Date): Promise<void> {
++    const mailer = this.email;
++    if (!mailer) return;
++    // B-672-4 — never a second email of this notice while one is still running here.
++    if (this.running.has(`${notice.id}:email`)) return;
++    const lease = await this.claim(notice.id, 'email', clock());
++    if (!lease) return;
++    // B-672-3 — the copy is built at admission, from the purchase as it is now.
++    const ready = await this.admit(notice, 'email', lease, clock);
++    if (!ready) return;
++    const { purchase, copy } = ready;
++    const to = purchase.client?.email;
++    if (!to) {
++      await this.complete(notice.id, 'email', lease.token, { email_status: 'no_email' });
++      return;
++    }
++    const pkg = purchase.package;
++    const reason = trialNoChargeReason({
++      cancelAtPeriodEnd: purchase.cancel_at_period_end,
++      cardOnFile: ready.cardOnFile,
++    });
++    // Attempt 1 keeps the original key; every later attempt gets its own key
++    // (EmailService treats a reused key as already sent) and starts only once
++    // the earlier send stopped (B-672-4). The provider key is the same on every
++    // attempt, so the same message is not delivered twice; changed content is new.
++    const baseKey = `trial-ending:${notice.purchase_id}:${notice.trial_ends_at.getTime()}`;
++    const idempotencyKey = lease.attempt === 1 ? baseKey : `${baseKey}:a${lease.attempt}`;
++    let status: 'sent' | 'pending' | 'failed' = 'pending';
++    let error: string | null = null;
++    let sent: Bounded<Awaited<ReturnType<EmailService['send']>>> | null = null;
++    try {
++      sent = await this.bounded(`${notice.id}:email`, (signal) =>
++        mailer.send({
++          to,
++          template: EmailTemplateKey.TRIAL_ENDING,
++          idempotencyKey,
++          providerIdempotencyKey: baseKey,
++          signal,
++          data: {
++            recipient_name: firstName(purchase.client?.name),
++            plan_name: pkg?.name ?? 'your plan',
++            coach_name: purchase.coach?.name ?? null,
++            trial_end_date: copy.dateLabel,
++            amount_display: chargeLabel(
++              formatTrialAmount(notice.amount_cents, notice.currency),
++              notice.tax_may_apply,
++            ),
++            cadence: cadenceLabel(pkg?.interval, pkg?.interval_count),
++            will_charge: reason === null,
++            no_card: reason === 'no_card',
++          },
++        }),
++      );
++      const res = sent.result;
++      if (res === TIMED_OUT) error = 'email:timeout';
++      else if (res.status === 'failed') error = `email:${res.error ? 'provider_failed' : 'failed'}`;
++      else status = 'sent';
++    } catch (err) {
++      error = `email:${trialErrorClass(err)}`;
++    }
++    if (status !== 'sent' && lease.attempt >= TRIAL_NOTICE_MAX_ATTEMPTS) status = 'failed';
++    const outcome = { email_status: status, ...(error ? { last_error: error } : {}) };
++    if (sent && !sent.stopped) {
++      await this.holdLease(notice.id, 'email', lease.token, outcome, sent.done, clock);
++      return;
++    }
++    await this.complete(notice.id, 'email', lease.token, outcome);
++  }
++
++  /**
++   * B-656-2 — exclusive claim on one channel: pending, under the attempt cap,
++   * and no live lease. Returns the lease token and this attempt's number.
++   */
++  private async claim(
++    noticeId: string,
++    channel: Channel,
++    now: Date,
++  ): Promise<{ token: string; attempt: number; until: Date } | null> {
++    const token = randomUUID();
++    const until = new Date(now.getTime() + TRIAL_NOTICE_LEASE_MS);
++    const where: Prisma.PackageTrialNoticeWhereInput =
++      channel === 'push'
++        ? {
++            id: noticeId,
++            push_status: 'pending',
++            push_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS },
++            // B-672-3 — never admitted once the trial has ended.
++            trial_ends_at: { gt: now },
++            OR: [{ push_lease_until: null }, { push_lease_until: { lt: now } }],
++          }
++        : {
++            id: noticeId,
++            email_status: 'pending',
++            email_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS },
++            trial_ends_at: { gt: now },
++            OR: [{ email_lease_until: null }, { email_lease_until: { lt: now } }],
++          };
++    const data: Prisma.PackageTrialNoticeUpdateManyMutationInput =
++      channel === 'push'
++        ? { push_attempts: { increment: 1 }, push_lease_token: token, push_lease_until: until }
++        : { email_attempts: { increment: 1 }, email_lease_token: token, email_lease_until: until };
++    const claimed = await this.prisma.packageTrialNotice.updateMany({ where, data });
++    if (claimed.count !== 1) return null;
++    const row = await this.prisma.packageTrialNotice.findUnique({
++      where: { id: noticeId },
++      select: {
++        push_attempts: true,
++        email_attempts: true,
++        push_lease_token: true,
++        email_lease_token: true,
++      },
++    });
++    const held = channel === 'push' ? row?.push_lease_token : row?.email_lease_token;
++    if (!row || held !== token) return null;
++    return {
++      token,
++      attempt: channel === 'push' ? row.push_attempts : row.email_attempts,
++      until,
++    };
++  }
++
++  /**
++   * The last check before a send, after the claim and any preference read
++   * (fenced; a refused claim gives its attempt back). B-672-3 (B-TR3-118): the
++   * notice is prepared again here and only this copy is sent; a notice that no
++   * longer describes the current trial retires, an unknown card stays pending.
++   * B-672-1: the lease must still cover the bounded transport and its abort
++   * grace (else retried later).
++   */
++  private async admit(
++    notice: PackageTrialNotice,
++    channel: Channel,
++    lease: { token: string; until: Date },
++    clock: () => Date,
++  ): Promise<Prepared | null> {
++    const ready = await this.prepare(notice, clock);
++    const room =
++      lease.until.getTime() - TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS - TRIAL_NOTICE_ABORT_GRACE_MS;
++    if (ready && clock().getTime() < room) return ready;
++    const why = ready ? { last_error: `${channel}:lease_exhausted` } : {};
++    await this.complete(
++      notice.id,
++      channel,
++      lease.token,
++      channel === 'push'
++        ? { push_attempts: { increment: -1 }, ...why }
++        : { email_attempts: { increment: -1 }, ...why },
++    );
++    return null;
++  }
++
++  /** B-672-2 / B-672-3 — retire every still-pending channel ('skipped'; see reopen()). */
++  private async settleSkipped(noticeId: string, code: TrialNoticeSkipCode): Promise<void> {
++    const last_error = `skip:${code}`;
++    await this.prisma.packageTrialNotice.updateMany({
++      where: { id: noticeId, push_status: 'pending' },
++      data: { push_status: 'skipped', last_error },
++    });
++    await this.prisma.packageTrialNotice.updateMany({
++      where: { id: noticeId, email_status: 'pending' },
++      data: { email_status: 'skipped', last_error },
++    });
++  }
++
++  /** B-672-3 — the reconciler found the notice current again: reopen what a REOPENABLE_SKIPS retirement settled. */
++  private async reopen(noticeId: string, lastError: string | null): Promise<boolean> {
++    if (!lastError || !REOPENABLE_SKIPS.has(lastError)) return false;
++    const push = await this.prisma.packageTrialNotice.updateMany({
++      where: { id: noticeId, push_status: 'skipped', last_error: lastError },
++      data: { push_status: 'pending' },
++    });
++    const email = await this.prisma.packageTrialNotice.updateMany({
++      where: { id: noticeId, email_status: 'skipped', last_error: lastError },
++      data: { email_status: 'pending' },
++    });
++    if (push.count + email.count === 0) return false;
++    await this.prisma.packageTrialNotice.updateMany({
++      where: { id: noticeId, last_error: lastError },
++      data: { last_error: null },
++    });
++    return true;
++  }
++
++  /**
++   * B-672-4 — one send, really bounded: aborted at the transport timeout,
++   * then given the abort grace to stop (`stopped`); `done` settles when it
++   * has ended. While it runs this process starts no other send of `key`.
++   */
++  private async bounded<T>(
++    key: string,
++    start: (signal: AbortSignal) => Promise<T>,
++  ): Promise<Bounded<T>> {
++    const controller = new AbortController();
++    const op = Promise.resolve().then(() => start(controller.signal));
++    const done = op.then(
++      () => undefined,
++      () => undefined,
++    );
++    this.running.set(key, done);
++    void done.then(() => {
++      if (this.running.get(key) === done) this.running.delete(key);
++    });
++    const result = await withTimeout(op, TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS, () =>
++      controller.abort(),
++    );
++    if (result !== TIMED_OUT) return { result, stopped: true, done };
++    const stopped = (await withTimeout(done, TRIAL_NOTICE_ABORT_GRACE_MS)) !== TIMED_OUT;
++    return { result, stopped, done };
++  }
++
++  /**
++   * B-672-4 — the send ignored its abort and may still reach the provider:
++   * write the outcome but keep the lease, renewed while the send runs, so no
++   * replica starts another attempt; release it once the send has ended.
++   */
++  private async holdLease(
++    noticeId: string,
++    channel: Channel,
++    token: string,
++    outcome: Prisma.PackageTrialNoticeUpdateManyMutationInput,
++    done: Promise<void>,
++    clock: () => Date,
++  ): Promise<void> {
++    const where =
++      channel === 'push'
++        ? { id: noticeId, push_lease_token: token }
++        : { id: noticeId, email_lease_token: token };
++    const renew = (data: Prisma.PackageTrialNoticeUpdateManyMutationInput) => {
++      const until = new Date(clock().getTime() + TRIAL_NOTICE_LEASE_MS);
++      const lease = channel === 'push' ? { push_lease_until: until } : { email_lease_until: until };
++      return this.prisma.packageTrialNotice.updateMany({ where, data: { ...data, ...lease } });
++    };
++    const failed = (step: string) => (err: unknown) =>
++      this.logger.warn(
++        `trial notice ${channel} lease ${step} failed notice=${noticeId}: ${trialErrorClass(err)}`,
++      );
++    await renew(outcome);
++    this.logger.warn(
++      `trial notice ${channel} still running after abort notice=${noticeId}; lease held`,
++    );
++    const timer = setInterval(
++      () => void renew({}).catch(failed('renew')),
++      TRIAL_NOTICE_LEASE_MS / 2,
++    );
++    timer.unref?.();
++    void done
++      .then(() => {
++        clearInterval(timer);
++        return this.complete(noticeId, channel, token, {});
++      })
++      .catch(failed('release'));
++  }
++
++  /** Fenced outcome: only the current lease holder may write it. */
++  private async complete(
++    noticeId: string,
++    channel: Channel,
++    token: string,
++    data: Prisma.PackageTrialNoticeUpdateManyMutationInput,
++  ): Promise<boolean> {
++    const res = await this.prisma.packageTrialNotice.updateMany({
++      where:
++        channel === 'push'
++          ? { id: noticeId, push_lease_token: token }
++          : { id: noticeId, email_lease_token: token },
++      data:
++        channel === 'push'
++          ? { ...data, push_lease_token: null, push_lease_until: null }
++          : { ...data, email_lease_token: null, email_lease_until: null },
++    });
++    if (res.count !== 1) {
++      this.logger.warn(`trial notice ${channel} outcome dropped (lease lost) notice=${noticeId}`);
++      return false;
++    }
++    return true;
++  }
++
++  /**
++   * B-656-5 — will the trial end charge a card? true / false, or null when
++   * it cannot be known right now (the customer read failed). The customer
++   * default is read only when the subscription itself has no card.
++   */
++  private async cardAuthority(
++    subscriptionCard: boolean | null | undefined,
++    userId: string,
++    tx?: Tx,
++  ): Promise<boolean | null> {
++    if (subscriptionCard === true) return true;
++    return willChargeCard(subscriptionCard, await this.customerHasDefaultCard(userId, tx));
++  }
++
++  /**
++   * The client's customer-level default card (Stripe invoice default):
++   * true / false, or null when the read failed (unknown, never "no card").
++   */
++  private async customerHasDefaultCard(userId: string, tx?: Tx): Promise<boolean | null> {
++    const db = tx ?? this.prisma;
++    try {
++      const row = await db.connectCustomer.findUnique({
++        where: { client_user_id: userId },
++        select: { default_payment_method_id: true },
++      });
++      return !!row?.default_payment_method_id;
++    } catch (err) {
++      this.logger.warn(`trial notice card lookup failed: ${trialErrorClass(err)}`);
++      return null;
++    }
++  }
++
++  /** Main's recipient zone rule (B-672-1 Opus); C-672-7 `own`: it is the client's own zone. */
++  private async noticeZone(userId: string, tx?: Tx): Promise<TrialNoticeZone> {
++    const zone = await resolveRecipientTimeZoneWithSource(tx ?? this.prisma, userId);
++    return {
++      timeZone: zone?.timeZone ?? null,
++      own: zone?.source === 'recipient' || zone?.source === 'own_coach_profile',
++    };
++  }
++}
++
++/** The channel is still owed (pending, under the attempt cap). */
++function channelOpen(notice: PackageTrialNotice, channel: Channel): boolean {
++  return channel === 'push'
++    ? notice.push_status === 'pending' && notice.push_attempts < TRIAL_NOTICE_MAX_ATTEMPTS
++    : notice.email_status === 'pending' && notice.email_attempts < TRIAL_NOTICE_MAX_ATTEMPTS;
++}
++
++function firstName(name: string | null | undefined): string | null {
++  const first = (name ?? '').trim().split(/\s+/)[0];
++  return first ? first : null;
++}
++
++/** "monthly", "every 3 months", "yearly", "weekly". */
++export function cadenceLabel(interval?: string | null, count?: number | null): string {
++  const n = count && count > 1 ? count : 1;
++  const unit = interval === 'week' || interval === 'year' ? interval : 'month';
++  if (n === 1) return unit === 'week' ? 'weekly' : unit === 'year' ? 'yearly' : 'monthly';
++  return `every ${n} ${unit}s`;
++}
++
++/**
++ * B-672-1 — a clock that starts at `start` (the caller's notion of now, so
++ * tests and replays can pin it) and advances with real elapsed time.
++ */
++function elapsedClock(start: Date): () => Date {
++  const wallAtStart = Date.now();
++  return () => new Date(start.getTime() + (Date.now() - wallAtStart));
++}
++
++const TIMED_OUT = Symbol('trial-notice-timeout');
++
++/** B-672-4 — a bounded send: its result, whether it stopped, when it ends. */
++type Bounded<T> = { result: T | typeof TIMED_OUT; stopped: boolean; done: Promise<void> };
++type PushOutcome = Awaited<ReturnType<NotificationsService['pushToUser']>>;
++
++/** Resolve the promise, or TIMED_OUT after ms (calling onTimeout once). */
++async function withTimeout<T>(
++  promise: Promise<T>,
++  ms: number,
++  onTimeout?: () => void,
++): Promise<T | typeof TIMED_OUT> {
++  let timer: NodeJS.Timeout | undefined;
++  try {
++    return await Promise.race([
++      promise,
++      new Promise<typeof TIMED_OUT>((resolve) => {
++        timer = setTimeout(() => {
++          onTimeout?.();
++          resolve(TIMED_OUT);
++        }, ms);
++      }),
++    ]);
++  } finally {
++    if (timer) clearTimeout(timer);
++  }
++}
+diff --git a/test/b-trials-one-trial-rule.spec.ts b/test/b-trials-one-trial-rule.spec.ts
+index f41eaf01..e192a01d 100644
+--- a/test/b-trials-one-trial-rule.spec.ts
++++ b/test/b-trials-one-trial-rule.spec.ts
+@@ -10,6 +10,7 @@ import {
+   SUBSCRIPTION_CHECKOUT_OWNER,
+   TrialCheckoutCapability,
+ } from '../src/packages/trials/trial-checkout-capability';
++import { PackagesModule } from '../src/packages/packages.module';
+ import { makeTrialUsageTable, stub } from './utils/trial-fakes';
+ 
+ function setup(opts: { checkoutReady?: boolean } = {}) {
+@@ -284,6 +285,13 @@ describe('B-TRIALS-2 — a trial is advertised only when a checkout honors it (#
+     );
+   });
+ 
++  it('PackagesModule provides and exports one capability instance for CheckoutModule to register with', () => {
++    const providers = Reflect.getMetadata('providers', PackagesModule) as unknown[];
++    const exported = Reflect.getMetadata('exports', PackagesModule) as unknown[];
++    expect(providers).toContain(TrialCheckoutCapability);
++    expect(exported).toContain(TrialCheckoutCapability);
++  });
++
+   it('hasStarted is true only for a started trial on that purchase', async () => {
+     const { service, db } = setup();
+     await service.reserve(db, { ...base, purchaseId: 'pur-1' });
+diff --git a/test/b-trials-package-rules.spec.ts b/test/b-trials-package-rules.spec.ts
+new file mode 100644
+index 00000000..591a3d28
+--- /dev/null
++++ b/test/b-trials-package-rules.spec.ts
+@@ -0,0 +1,406 @@
++// B-TRIALS (OR-113-2) — package trial rules: validation, DTO shape, update
++// semantics and the client read model. Every case here failed before the
++// change (no trial_days anywhere: the DTO rejected the field as unknown, the
++// service ignored it, and the client reads had no trial_offer).
++import { BadRequestException } from '@nestjs/common';
++import { plainToInstance } from 'class-transformer';
++import { validate } from 'class-validator';
++import * as fs from 'fs';
++import * as path from 'path';
++import { CreatePackageDto, UpdatePackageDto } from '../src/packages/packages.dto';
++import { PackagesService } from '../src/packages/packages.service';
++import {
++  assertValidTrial,
++  stripeTrialParams,
++  TRIAL_DAY_PRESETS,
++  TRIAL_DAYS_MAX,
++  TrialErrorCode,
++} from '../src/packages/trials/trial-rules';
++import { ClientPackagesController } from '../src/packages/packages.controller';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import {
++  SUBSCRIPTION_CHECKOUT_OWNER,
++  TrialCheckoutCapability,
++} from '../src/packages/trials/trial-checkout-capability';
++import { makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++type PkgRow = Record<string, unknown> & { id: string };
++
++function codeOf(fn: () => unknown): string | undefined {
++  try {
++    fn();
++  } catch (err) {
++    if (err instanceof BadRequestException) {
++      return (err.getResponse() as { code?: string }).code;
++    }
++    throw err;
++  }
++  return undefined;
++}
++
++async function asyncCodeOf(p: Promise<unknown>): Promise<string | undefined> {
++  try {
++    await p;
++  } catch (err) {
++    const res = (err as { getResponse?: () => unknown }).getResponse?.();
++    return (res as { code?: string } | undefined)?.code;
++  }
++  return undefined;
++}
++
++function makePrisma() {
++  const rows: PkgRow[] = [];
++  const prisma = {
++    rows,
++    $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)),
++    $queryRaw: jest.fn(async () => []),
++    coachPackage: {
++      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++        const row: PkgRow = {
++          id: `pkg-${rows.length + 1}`,
++          interval_count: 1,
++          duration_periods: null,
++          stripe_price_id: null,
++          recurring_amount_cents: null,
++          recurring_interval: null,
++          recurring_interval_count: null,
++          recurring_stripe_price_id: null,
++          published_at: null,
++          first_published_at: null,
++          archived_at: null,
++          trial_days: 0,
++          ...data,
++        };
++        rows.push(row);
++        return { ...row };
++      }),
++      findFirst: jest.fn(async ({ where }: { where: { id: string } }) => {
++        const row = rows.find((r) => r.id === where.id);
++        return row ? { ...row } : null;
++      }),
++      update: jest.fn(
++        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
++          const row = rows.find((r) => r.id === where.id);
++          if (!row) throw new Error('not found');
++          Object.assign(row, data);
++          return { ...row };
++        },
++      ),
++    },
++    clientPurchase: { count: jest.fn(async () => 0) },
++  };
++  return prisma;
++}
++
++function makeService() {
++  const prisma = makePrisma();
++  const sub = { getHeadCoachIdForSubCoach: jest.fn(async () => null) };
++  // The service only touches the members the stub provides.
++  const service = new PackagesService(
++    stub<ConstructorParameters<typeof PackagesService>[0]>(prisma),
++    stub<ConstructorParameters<typeof PackagesService>[1]>(sub),
++  );
++  return { prisma, service };
++}
++
++const monthly = {
++  name: 'GP Monthly',
++  amount_cents: 4900,
++  billing_type: 'recurring' as const,
++  interval: 'month' as const,
++};
++
++describe('B-TRIALS — assertValidTrial', () => {
++  it('accepts 0 (no trial) on any package, and 1..30 on a paid recurring package', () => {
++    expect(
++      codeOf(() => assertValidTrial({ trial_days: 0, amount_cents: 0, billing_type: 'one_time' })),
++    ).toBeUndefined();
++    for (const d of [1, ...TRIAL_DAY_PRESETS, TRIAL_DAYS_MAX]) {
++      expect(
++        codeOf(() =>
++          assertValidTrial({ trial_days: d, amount_cents: 4900, billing_type: 'recurring' }),
++        ),
++      ).toBeUndefined();
++    }
++  });
++
++  it('refuses out-of-range and fractional lengths with PACKAGE_TRIAL_DAYS_OUT_OF_RANGE', () => {
++    for (const d of [-1, 31, 90, 2.5, Number.NaN]) {
++      expect(
++        codeOf(() =>
++          assertValidTrial({ trial_days: d, amount_cents: 4900, billing_type: 'recurring' }),
++        ),
++      ).toBe(TrialErrorCode.OUT_OF_RANGE);
++    }
++  });
++
++  it('refuses a trial on one-time and one-time + recurring combo packages', () => {
++    expect(
++      codeOf(() =>
++        assertValidTrial({ trial_days: 7, amount_cents: 4900, billing_type: 'one_time' }),
++      ),
++    ).toBe(TrialErrorCode.REQUIRES_RECURRING);
++    expect(
++      codeOf(() =>
++        assertValidTrial({
++          trial_days: 7,
++          amount_cents: 9900,
++          billing_type: 'one_time',
++          recurring_amount_cents: 4900,
++          recurring_interval: 'month',
++        }),
++      ),
++    ).toBe(TrialErrorCode.REQUIRES_RECURRING);
++  });
++
++  it('refuses a trial on a free package', () => {
++    expect(
++      codeOf(() => assertValidTrial({ trial_days: 7, amount_cents: 0, billing_type: 'one_time' })),
++    ).toBe(TrialErrorCode.NOT_ON_FREE);
++  });
++
++  it('every refusal message is Quiet Luxury copy (no exclamation marks, no first person)', () => {
++    const shapes = [
++      { trial_days: 31, amount_cents: 4900, billing_type: 'recurring' },
++      { trial_days: 7, amount_cents: 4900, billing_type: 'one_time' },
++      { trial_days: 7, amount_cents: 0, billing_type: 'one_time' },
++      {
++        trial_days: 7,
++        amount_cents: 9900,
++        billing_type: 'one_time',
++        recurring_amount_cents: 4900,
++        recurring_interval: 'month',
++      },
++    ];
++    for (const shape of shapes) {
++      try {
++        assertValidTrial(shape);
++        throw new Error('expected a refusal');
++      } catch (err) {
++        const msg = ((err as BadRequestException).getResponse() as { message: string }).message;
++        expect(msg).not.toMatch(/!/);
++        expect(msg).not.toMatch(/\b(we|us|our)\b/i);
++        expect(msg.length).toBeGreaterThan(20);
++      }
++    }
++  });
++});
++
++describe('B-TRIALS — stripeTrialParams (contract for the subscription creator)', () => {
++  it('sends trial_period_days and cancels at trial end when no card was saved', () => {
++    expect(stripeTrialParams(7)).toEqual({
++      trial_period_days: '7',
++      'trial_settings[end_behavior][missing_payment_method]': 'cancel',
++      'payment_settings[save_default_payment_method]': 'on_subscription',
++    });
++    expect(stripeTrialParams(0)).toEqual({});
++  });
++});
++
++describe('B-TRIALS — package DTOs accept trial_days', () => {
++  const opts = { whitelist: true, forbidNonWhitelisted: true };
++  it('a whole number of days validates on create and update; text does not', async () => {
++    const body = {
++      name: 'GP Monthly',
++      amount_cents: 4900,
++      billing_type: 'recurring',
++      billing_interval: 'month',
++    };
++    const ok = plainToInstance(CreatePackageDto, { ...body, trial_days: 7 });
++    expect(await validate(ok, opts)).toHaveLength(0);
++    const bad = plainToInstance(CreatePackageDto, { ...body, trial_days: 'seven' });
++    const errs = await validate(bad, opts);
++    expect(errs.map((e) => e.property)).toContain('trial_days');
++    const patch = plainToInstance(UpdatePackageDto, { trial_days: 14 });
++    expect(await validate(patch, opts)).toHaveLength(0);
++  });
++});
++
++describe('B-TRIALS — PackagesService', () => {
++  it('create stores trial_days on a recurring package', async () => {
++    const { service, prisma } = makeService();
++    const row = await service.create('coach-1', { ...monthly, trial_days: 7 });
++    expect(row.trial_days).toBe(7);
++    expect(prisma.coachPackage.create.mock.calls[0][0].data.trial_days).toBe(7);
++  });
++
++  it('create defaults to no trial', async () => {
++    const { service } = makeService();
++    const row = await service.create('coach-1', monthly);
++    expect(row.trial_days).toBe(0);
++  });
++
++  it('create refuses a trial on a one-time package with a coded 400', async () => {
++    const { service } = makeService();
++    expect(
++      await asyncCodeOf(
++        service.create('coach-1', {
++          name: 'Program',
++          amount_cents: 9900,
++          billing_type: 'one_time',
++          trial_days: 7,
++        }),
++      ),
++    ).toBe(TrialErrorCode.REQUIRES_RECURRING);
++  });
++
++  it('update sets a trial without tripping the pricing lock or clearing the Stripe price', async () => {
++    const { service, prisma } = makeService();
++    const created = await service.create('coach-1', monthly);
++    prisma.rows[0].stripe_price_id = 'price_123';
++    const row = await service.update('coach-1', created.id, { trial_days: 14 });
++    expect(row.trial_days).toBe(14);
++    expect(row.stripe_price_id).toBe('price_123');
++    expect(prisma.$transaction).not.toHaveBeenCalled();
++    expect(prisma.clientPurchase.count).not.toHaveBeenCalled();
++  });
++
++  it('update refuses 31 days', async () => {
++    const { service } = makeService();
++    const created = await service.create('coach-1', monthly);
++    expect(await asyncCodeOf(service.update('coach-1', created.id, { trial_days: 31 }))).toBe(
++      TrialErrorCode.OUT_OF_RANGE,
++    );
++  });
++
++  it('switching a trial package to one-time drops the trial in the same PATCH', async () => {
++    const { service } = makeService();
++    const created = await service.create('coach-1', { ...monthly, trial_days: 7 });
++    const row = await service.update('coach-1', created.id, { billing_type: 'one_time' });
++    expect(row.billing_type).toBe('one_time');
++    expect(row.trial_days).toBe(0);
++  });
++
++  it('switching to one-time while explicitly keeping a trial is refused', async () => {
++    const { service } = makeService();
++    const created = await service.create('coach-1', { ...monthly, trial_days: 7 });
++    expect(
++      await asyncCodeOf(
++        service.update('coach-1', created.id, { billing_type: 'one_time', trial_days: 7 }),
++      ),
++    ).toBe(TrialErrorCode.REQUIRES_RECURRING);
++  });
++
++  it('null clears the trial', async () => {
++    const { service } = makeService();
++    const created = await service.create('coach-1', { ...monthly, trial_days: 7 });
++    const row = await service.update('coach-1', created.id, { trial_days: null });
++    expect(row.trial_days).toBe(0);
++  });
++
++  it('publish re-checks the trial rule on the stored row', async () => {
++    const { service, prisma } = makeService();
++    const created = await service.create('coach-1', monthly);
++    prisma.rows[0].trial_days = 45; // a row that slipped past (defence in depth)
++    expect(await asyncCodeOf(service.publish('coach-1', created.id))).toBe(
++      TrialErrorCode.OUT_OF_RANGE,
++    );
++  });
++});
++
++describe('B-TRIALS — client package reads carry trial_offer for this client', () => {
++  function build(started: Array<{ client: string; coach: string }>) {
++    const table = makeTrialUsageTable();
++    for (const s of started) {
++      table.rows.push({
++        id: `u-${s.client}`,
++        client_user_id: s.client,
++        coach_user_id: s.coach,
++        package_id: 'pkg-old',
++        purchase_id: `pur-${s.client}`,
++        trial_days: 7,
++        status: 'started',
++        reserved_at: new Date(),
++      });
++    }
++    const prisma = { packageTrialUsage: table };
++    // The #654 subscription checkout registers itself at boot.
++    const capability = new TrialCheckoutCapability();
++    capability.register(SUBSCRIPTION_CHECKOUT_OWNER);
++    const trials = new TrialUsageService(
++      stub<ConstructorParameters<typeof TrialUsageService>[0]>(prisma),
++      capability,
++    );
++    const pkg = {
++      id: 'pkg-1',
++      coach_id: 'coach-1',
++      trial_days: 7,
++      is_active: true,
++      archived_at: null,
++      published_at: new Date(),
++    };
++    const packages = {
++      listPublicForCoach: jest.fn(async () => [pkg]),
++      getById: jest.fn(async () => pkg),
++    };
++    const controller = new ClientPackagesController(
++      stub<ConstructorParameters<typeof ClientPackagesController>[0]>(packages),
++      {} as ConstructorParameters<typeof ClientPackagesController>[1],
++      trials,
++    );
++    return controller;
++  }
++  const req = (id: string) =>
++    stub<Parameters<ClientPackagesController['list']>[0]>({ user: { id, coach_id: 'coach-1' } });
++
++  it('a new client sees the trial as available', async () => {
++    const res = await build([]).list(req('client-1'));
++    expect(res.packages[0].trial_offer).toEqual({
++      trial_days: 7,
++      available: true,
++      reason: 'offered',
++    });
++  });
++
++  it('a client who already had a trial with this coach sees it as used (list and detail)', async () => {
++    const controller = build([{ client: 'client-1', coach: 'coach-1' }]);
++    const list = await controller.list(req('client-1'));
++    expect(list.packages[0].trial_offer).toEqual({
++      trial_days: 7,
++      available: false,
++      reason: 'already_used',
++    });
++    const detail = await controller.detail(req('client-1'), 'pkg-1');
++    expect(detail.trial_offer?.available).toBe(false);
++  });
++});
++
++describe('B-TRIALS — migration', () => {
++  const sql = fs.readFileSync(
++    path.join(__dirname, '../prisma/migrations/20270228000000_package_free_trials/migration.sql'),
++    'utf8',
++  );
++  it('adds trial_days with default 0 and the database CHECK mirroring the service rules', () => {
++    expect(sql).toMatch(
++      /ALTER TABLE "CoachPackage" ADD COLUMN "trial_days" INTEGER NOT NULL DEFAULT 0;/,
++    );
++    expect(sql).toMatch(/"trial_days" BETWEEN 0 AND 30/);
++    expect(sql).toMatch(/"billing_type" = 'recurring'/);
++  });
++  it('shares ClientPurchase.trial_days with B-RECUR (#654) without a conflicting definition', () => {
++    expect(sql).toContain(
++      'ALTER TABLE "ClientPurchase" ADD COLUMN IF NOT EXISTS "trial_days" INTEGER;',
++    );
++    expect(sql).not.toMatch(/ClientPurchase_trial_days/);
++    const down = fs.readFileSync(
++      path.join(__dirname, '../prisma/migrations/20270228000000_package_free_trials/down.sql'),
++      'utf8',
++    );
++    expect(down).not.toMatch(/"ClientPurchase"[^;]*"trial_days"/);
++    expect(down).toContain('ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "trial_ends_at";');
++  });
++
++  it('enforces one trial per client per coach with a unique index', () => {
++    expect(sql).toMatch(
++      /CREATE UNIQUE INDEX "PackageTrialUsage_client_user_id_coach_user_id_key" ON "PackageTrialUsage"\("client_user_id", "coach_user_id"\);/,
++    );
++    expect(sql).toMatch(/CREATE UNIQUE INDEX "PackageTrialNotice_purchase_id_trial_ends_at_key"/);
++  });
++  it('enables RLS with anon deny on both new tables and leaves CoachPackage policies alone', () => {
++    for (const t of ['PackageTrialUsage', 'PackageTrialNotice']) {
++      expect(sql).toContain(`ALTER TABLE "${t}" ENABLE ROW LEVEL SECURITY;`);
++      expect(sql).toContain(`REVOKE ALL ON TABLE "${t}" FROM anon;`);
++    }
++    expect(sql).not.toMatch(/POLICY[^;]*ON "CoachPackage"/);
++  });
++});
+diff --git a/test/b-trials-t2-fix-round-6.spec.ts b/test/b-trials-t2-fix-round-6.spec.ts
+new file mode 100644
+index 00000000..e2f99f66
+--- /dev/null
++++ b/test/b-trials-t2-fix-round-6.spec.ts
+@@ -0,0 +1,463 @@
++// B-T12-116 (trials T2 fix round 6) — regressions for the audit findings on
++// backend #672 @ e06b5b13, run against the real TrialNoticeService over the
++// constraint-aware in-memory tables (test/utils/trial-fakes.ts):
++//   B-672-1 (Sol) / C-672-1 (Opus)  a channel claim takes its lease from a
++//       fresh clock at the claim, never the sweep's start time, so a row
++//       reached late in a slow sweep is not claimed with an expiring lease
++//       that a second replica can take while the first send is in flight;
++//       a claim whose preparation used up its lease sends nothing;
++//   B-672-2 (Sol) / C-672-2 (Opus)  notices for cancelled or missing
++//       purchases are settled 'skipped', and the retry sweep pages by
++//       (created_at, id), so no prefix of skipped, unknown-card or leased
++//       rows can hide a later healthy notice;
++//   B-672-1 (Opus)  the trial-end date uses main's recipient time-zone rule
++//       (resolveRecipientTimeZone: a stamped preference, else the coach's
++//       zone); since fix round 8 (C-672-7 ruling) a zone that is not the
++//       client's own names the time and the zone, never a bare date;
++//   C-672-5 (Opus, operator ruling)  "plus any tax" when Stripe may add tax.
++import { TrialNoticeService } from '../src/packages/trials/trial-notice.service';
++import { makeTable, makeTrialNoticeTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const END = new Date('2026-10-12T17:00:00Z');
++const TICK = 29_000;
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((r) => {
++    resolve = r;
++  });
++  return { promise, resolve };
++}
++
++interface WorldOpts {
++  prefs?: { timezone: string; timezone_updated_at: Date | null } | null;
++  coachZone?: string | null;
++}
++
++function build(opts: WorldOpts = {}) {
++  const purchases = makeTable([['id']], () => ({}));
++  const notices = makeTrialNoticeTable();
++  const customer = {
++    findUnique: jest.fn(
++      async (_args: {
++        where: { client_user_id: string };
++      }): Promise<{ default_payment_method_id: string | null } | null> => ({
++        default_payment_method_id: null,
++      }),
++    ),
++  };
++  const notifications = {
++    createNotification: jest.fn(async (input: Record<string, unknown>) => ({
++      id: 'inapp',
++      ...input,
++    })),
++    getPreferences: jest.fn(async (_userId: string): Promise<Record<string, unknown>> => ({
++      muted: false,
++    })),
++    pushToUser: jest.fn(async (..._args: unknown[]) => ({ delivered: true, code: 'delivered' })),
++  };
++  const email = {
++    send: jest.fn(async (_input: Record<string, unknown>) => ({ status: 'sent' })),
++  };
++  const prefs = opts.prefs === undefined ? null : opts.prefs;
++  const prisma = {
++    packageTrialNotice: notices,
++    clientPurchase: {
++      findMany: purchases.findMany,
++      findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
++        const p = purchases.rows.find((row) => row.id === where.id);
++        return p
++          ? {
++              ...p,
++              package: { name: 'Monthly', interval: 'month', interval_count: 1 },
++              coach: { name: 'Coach' },
++              client: { name: 'Client', email: 'client@example.test' },
++            }
++          : null;
++      }),
++    },
++    connectCustomer: customer,
++    notificationPreferences: { findUnique: jest.fn(async () => prefs) },
++    coachProfile: {
++      findUnique: jest.fn(async ({ where }: { where: { user_id: string } }) =>
++        where.user_id === 'coach-a' && opts.coachZone ? { timezone: opts.coachZone } : null,
++      ),
++    },
++    user: {
++      findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
++        where.id.startsWith('client') ? { coach_id: 'coach-a' } : null,
++      ),
++    },
++    coachingSession: { findUnique: jest.fn(async () => null) },
++    $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)),
++  };
++  const makeService = () =>
++    new TrialNoticeService(
++      stub<ConstructorParameters<typeof TrialNoticeService>[0]>(prisma),
++      stub<ConstructorParameters<typeof TrialNoticeService>[1]>(notifications),
++      stub<ConstructorParameters<typeof TrialNoticeService>[2]>(email),
++    );
++  const service = makeService();
++  const add = (id: string, extra: Record<string, unknown> = {}) => {
++    const row = {
++      id,
++      client_user_id: 'client-a',
++      coach_user_id: 'coach-a',
++      package_id: 'pkg-a',
++      amount_cents: 4900,
++      currency: 'usd',
++      status: 'trialing',
++      entitlement_active: true,
++      card_on_file: true,
++      cancel_at_period_end: false,
++      trial_ends_at: END,
++      ...extra,
++    };
++    purchases.rows.push(row);
++    return row;
++  };
++  const enqueue = async (purchaseId: string, extra: Record<string, unknown> = {}) => {
++    await notices.createMany({
++      data: [
++        {
++          id: `notice-${purchaseId}`,
++          purchase_id: purchaseId,
++          client_user_id: 'client-a',
++          trial_ends_at: END,
++          amount_cents: 4900,
++          currency: 'usd',
++          created_at: new Date(NOW.getTime() - 600_000),
++          ...extra,
++        },
++      ],
++      skipDuplicates: true,
++    });
++    return `notice-${purchaseId}`;
++  };
++  const pushesFor = (purchaseId: string) =>
++    notifications.pushToUser.mock.calls.filter(
++      (args) => (args[3] as { purchase_id?: string } | undefined)?.purchase_id === purchaseId,
++    );
++  return {
++    purchases,
++    notices,
++    customer,
++    notifications,
++    email,
++    prisma,
++    service,
++    makeService,
++    add,
++    enqueue,
++    pushesFor,
++  };
++}
++
++type World = ReturnType<typeof build>;
++const tx = (w: World) => stub<Parameters<TrialNoticeService['recordNotice']>[0]>(w.prisma);
++const sub = (extra: Record<string, unknown> = {}) =>
++  stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['sub']>({
++    status: 'trialing',
++    trial_end: END.getTime() / 1000,
++    default_payment_method: 'pm_1',
++    items: { data: [{ quantity: 1, price: { unit_amount: 4900, currency: 'usd' } }] },
++    ...extra,
++  });
++const purchaseArg = (p: Record<string, unknown>) =>
++  stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(p);
++
++afterEach(() => {
++  jest.restoreAllMocks();
++  jest.useRealTimers();
++});
++
++describe('B-672-1 (Sol) — channel leases start at the claim, not at the sweep', () => {
++  it('push: after two slow rows, a replica cannot claim the third push while it is in flight', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    jest.setSystemTime(NOW);
++    const w = build();
++    for (const id of ['p-1', 'p-2', 'p-3']) {
++      w.add(id);
++      await w.enqueue(id);
++    }
++    const entered = deferred<void>();
++    const held = deferred<{ delivered: boolean; code: string }>();
++    let pushCalls = 0;
++    let emailCalls = 0;
++    w.notifications.pushToUser.mockImplementation(async () => {
++      pushCalls += 1;
++      if (pushCalls < 3) jest.setSystemTime(new Date(Date.now() + TICK));
++      if (pushCalls === 3) {
++        entered.resolve();
++        return held.promise;
++      }
++      return { delivered: true, code: 'delivered' };
++    });
++    w.email.send.mockImplementation(async () => {
++      emailCalls += 1;
++      if (emailCalls < 3) jest.setSystemTime(new Date(Date.now() + TICK));
++      return { status: 'sent' };
++    });
++    const sweep = w.service.sweep(NOW);
++    await entered.promise;
++    expect(Date.now() - NOW.getTime()).toBe(116_000);
++    jest.setSystemTime(new Date(Date.now() + 5000));
++    await w.makeService().deliver('notice-p-3');
++    held.resolve({ delivered: true, code: 'delivered' });
++    await sweep;
++    expect(w.pushesFor('p-3')).toHaveLength(1);
++    expect(w.notices.rows[2]).toMatchObject({ push_status: 'delivered', push_attempts: 1 });
++  });
++
++  it('email: after slow earlier rows, a replica cannot claim the third email while it is in flight', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    jest.setSystemTime(NOW);
++    const w = build();
++    for (const id of ['p-1', 'p-2', 'p-3']) {
++      w.add(id);
++      await w.enqueue(id);
++    }
++    const entered = deferred<void>();
++    const held = deferred<{ status: string }>();
++    let pushCalls = 0;
++    let emailCalls = 0;
++    w.notifications.pushToUser.mockImplementation(async () => {
++      pushCalls += 1;
++      if (pushCalls < 3) jest.setSystemTime(new Date(Date.now() + TICK));
++      return { delivered: true, code: 'delivered' };
++    });
++    w.email.send.mockImplementation(async () => {
++      emailCalls += 1;
++      if (emailCalls < 3) jest.setSystemTime(new Date(Date.now() + TICK));
++      if (emailCalls === 3) {
++        entered.resolve();
++        return held.promise;
++      }
++      return { status: 'sent' };
++    });
++    const sweep = w.service.sweep(NOW);
++    await entered.promise;
++    jest.setSystemTime(new Date(Date.now() + 5000));
++    await w.makeService().deliver('notice-p-3');
++    held.resolve({ status: 'sent' });
++    await sweep;
++    const third = w.email.send.mock.calls.filter((c) =>
++      String(c[0].idempotencyKey).startsWith('trial-ending:p-3:'),
++    );
++    expect(third).toHaveLength(1);
++    expect(w.notices.rows[2]).toMatchObject({ email_status: 'sent', email_attempts: 1 });
++  });
++
++  it('a claim whose preparation used up its lease sends nothing and gives the attempt back', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    jest.setSystemTime(NOW);
++    const w = build();
++    w.add('p-1');
++    const id = await w.enqueue('p-1');
++    // The preference read after the claim stalls for 100 s of a 120 s lease:
++    // less than the 30 s transport bound is left, so the push is not sent.
++    w.notifications.getPreferences.mockImplementationOnce(async () => {
++      jest.setSystemTime(new Date(Date.now() + 100_000));
++      return { muted: false };
++    });
++    await w.service.deliver(id);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.notices.rows[0]).toMatchObject({
++      push_status: 'pending',
++      push_attempts: 0,
++      push_lease_token: null,
++      push_lease_until: null,
++    });
++    await w.service.deliver(id);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.notices.rows[0]).toMatchObject({ push_status: 'delivered', push_attempts: 1 });
++  });
++});
++
++describe('B-672-2 (Sol) — inapplicable notices settle; the retry sweep is fair', () => {
++  it('50 cancelled purchases ahead of a healthy notice: the healthy one is delivered, the 50 are skipped', async () => {
++    const w = build();
++    for (let i = 0; i < 51; i += 1) {
++      const id = `p-${String(i).padStart(4, '0')}`;
++      w.add(id, i < 50 ? { status: 'canceled', entitlement_active: false } : {});
++      await w.enqueue(id, { created_at: new Date(NOW.getTime() - 600_000 + i * 1000) });
++    }
++    await w.service.sweep(NOW);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.notices.rows[50]).toMatchObject({ push_status: 'delivered', email_status: 'sent' });
++    for (const row of w.notices.rows.slice(0, 50)) {
++      expect(row).toMatchObject({
++        push_status: 'skipped',
++        email_status: 'skipped',
++        last_error: 'skip:purchase_canceled',
++      });
++    }
++    // Settled rows never come back: a later sweep sends nothing new.
++    await w.service.sweep(new Date(NOW.getTime() + 600_000));
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.email.send).toHaveBeenCalledTimes(1);
++  });
++
++  it('a notice whose purchase is gone is skipped', async () => {
++    const w = build();
++    const id = await w.enqueue('p-gone');
++    await w.service.deliver(id, NOW);
++    expect(w.notices.rows[0]).toMatchObject({
++      push_status: 'skipped',
++      email_status: 'skipped',
++      last_error: 'skip:purchase_missing',
++    });
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++  });
++
++  it('more than a page of unknown-card notices cannot hide a later healthy one, and they stay retryable', async () => {
++    const w = build();
++    for (let i = 0; i < 120; i += 1) {
++      const id = `p-${String(i).padStart(4, '0')}`;
++      w.add(id, { client_user_id: 'client-unknown', card_on_file: false });
++      await w.enqueue(id, {
++        client_user_id: 'client-unknown',
++        created_at: new Date(NOW.getTime() - 600_000 + i),
++      });
++    }
++    w.add('p-late');
++    await w.enqueue('p-late', { created_at: new Date(NOW.getTime() - 300_000) });
++    w.customer.findUnique.mockImplementation(async ({ where }) => {
++      if (where.client_user_id === 'client-unknown') throw new Error('connection reset');
++      return { default_payment_method_id: 'pm_1' };
++    });
++    await w.service.sweep(NOW);
++    expect(w.pushesFor('p-late')).toHaveLength(1);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    const unknown = w.notices.rows.filter((r) => r.client_user_id === 'client-unknown');
++    expect(unknown).toHaveLength(120);
++    for (const row of unknown) {
++      expect(row).toMatchObject({
++        push_status: 'pending',
++        push_attempts: 0,
++        email_status: 'pending',
++        email_attempts: 0,
++      });
++    }
++  });
++
++  it('more than a page of live-leased notices cannot hide a later healthy one', async () => {
++    const w = build();
++    const leaseUntil = new Date(NOW.getTime() + 60_000);
++    for (let i = 0; i < 120; i += 1) {
++      const id = `p-${String(i).padStart(4, '0')}`;
++      w.add(id);
++      await w.enqueue(id, {
++        created_at: new Date(NOW.getTime() - 600_000 + i),
++        push_attempts: 1,
++        push_lease_token: `held-${i}`,
++        push_lease_until: leaseUntil,
++        email_attempts: 1,
++        email_lease_token: `held-e-${i}`,
++        email_lease_until: leaseUntil,
++      });
++    }
++    w.add('p-late');
++    await w.enqueue('p-late', { created_at: new Date(NOW.getTime() - 300_000) });
++    await w.service.sweep(NOW);
++    expect(w.pushesFor('p-late')).toHaveLength(1);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('B-672-1 (Opus) — the trial-end date follows the recipient time-zone rule', () => {
++  // 2026-10-13T01:30Z is 9:30 pm on Oct 12 in New York.
++  const LATE_EVENING_ET = new Date('2026-10-13T01:30:00Z');
++
++  async function recordAndDeliver(w: World, end: Date) {
++    const p = w.add('p-1', { trial_ends_at: end });
++    const id = await w.service.recordTrialWillEnd(tx(w), {
++      purchase: purchaseArg(p),
++      sub: sub({ trial_end: end.getTime() / 1000 }),
++      eventId: 'evt-1',
++      now: NOW,
++    });
++    expect(id).toEqual(expect.any(String));
++    await w.service.deliver(id as string, NOW);
++    return {
++      inapp: String(w.notifications.createNotification.mock.calls[0][0].body),
++      push: String(w.notifications.pushToUser.mock.calls[0][2]),
++      email: w.email.send.mock.calls[0][0].data as Record<string, unknown>,
++    };
++  }
++
++  it("no preference row: the coach's zone names the time and the zone on every channel", async () => {
++    const w = build({ prefs: null, coachZone: 'America/New_York' });
++    const out = await recordAndDeliver(w, LATE_EVENING_ET);
++    expect(out.inapp).toContain('ends on Oct 12 at 9:30 PM EDT.');
++    expect(out.push).toContain('ends on Oct 12 at 9:30 PM EDT.');
++    expect(out.email.trial_end_date).toBe('Oct 12 at 9:30 PM EDT');
++  });
++
++  it("an unstamped default row is not the client's zone: the coach's zone wins (Oct 11 in Hawaii)", async () => {
++    const w = build({
++      prefs: { timezone: 'America/Los_Angeles', timezone_updated_at: null },
++      coachZone: 'Pacific/Honolulu',
++    });
++    const out = await recordAndDeliver(w, new Date('2026-10-12T08:00:00Z'));
++    expect(out.inapp).toContain('ends on Oct 11 at 10:00 PM HST.');
++    expect(out.push).toContain('ends on Oct 11 at 10:00 PM HST.');
++    expect(out.email.trial_end_date).toBe('Oct 11 at 10:00 PM HST');
++  });
++
++  it("a stamped preference is the client's own zone", async () => {
++    const w = build({
++      prefs: { timezone: 'Asia/Tokyo', timezone_updated_at: new Date('2026-10-01T00:00:00Z') },
++      coachZone: 'America/New_York',
++    });
++    const out = await recordAndDeliver(w, LATE_EVENING_ET);
++    expect(out.inapp).toContain('ends on Oct 13.');
++    expect(out.email.trial_end_date).toBe('Oct 13');
++  });
++
++  it('no usable zone at all: the end is named in UTC with the time, true everywhere', async () => {
++    const w = build({ prefs: null, coachZone: null });
++    const out = await recordAndDeliver(w, LATE_EVENING_ET);
++    expect(out.inapp).toContain('ends on Oct 13 at 1:30 AM UTC.');
++    expect(out.push).toContain('ends on Oct 13 at 1:30 AM UTC.');
++    expect(out.email.trial_end_date).toBe('Oct 13 at 1:30 AM UTC');
++  });
++});
++
++describe('C-672-5 — "plus any tax" when Stripe may add tax at the trial end', () => {
++  it('automatic tax on the subscription: in-app, push and email name the tax', async () => {
++    const w = build({ prefs: null, coachZone: 'America/New_York' });
++    const p = w.add('p-1');
++    const id = await w.service.recordTrialWillEnd(tx(w), {
++      purchase: purchaseArg(p),
++      sub: sub({ automatic_tax: { enabled: true } }),
++      eventId: 'evt-1',
++      now: NOW,
++    });
++    expect(w.notices.rows[0]).toMatchObject({ tax_may_apply: true });
++    await w.service.deliver(id as string, NOW);
++    const line = 'Your card will be charged $49 plus any tax then.';
++    expect(String(w.notifications.createNotification.mock.calls[0][0].body)).toContain(line);
++    expect(String(w.notifications.pushToUser.mock.calls[0][2])).toContain(line);
++    expect(w.email.send.mock.calls[0][0].data).toMatchObject({
++      amount_display: '$49 plus any tax',
++    });
++  });
++
++  it('control: no automatic tax keeps the exact charge line', async () => {
++    const w = build({ prefs: null, coachZone: 'America/New_York' });
++    const p = w.add('p-1');
++    const id = await w.service.recordTrialWillEnd(tx(w), {
++      purchase: purchaseArg(p),
++      sub: sub(),
++      eventId: 'evt-1',
++      now: NOW,
++    });
++    await w.service.deliver(id as string, NOW);
++    expect(String(w.notifications.pushToUser.mock.calls[0][2])).toBe(
++      'Your free trial ends on Oct 12 at 1:00 PM EDT. Your card will be charged $49 then. Cancel anytime before.',
++    );
++    expect(w.email.send.mock.calls[0][0].data).toMatchObject({ amount_display: '$49' });
++  });
++});
+diff --git a/test/b-trials-t2-fix-round-8.spec.ts b/test/b-trials-t2-fix-round-8.spec.ts
+new file mode 100644
+index 00000000..32d540bf
+--- /dev/null
++++ b/test/b-trials-t2-fix-round-8.spec.ts
+@@ -0,0 +1,361 @@
++// B-TR2-117 (trials T2 fix round 8, agent 117) — regressions for #672 @ 6ce54002 on the real
++// TrialNoticeService (and the real EmailService over an intercepted fetch; nothing leaves):
++//   B-672-3 (Sol) / C-672-8 (Opus) only the current started, unended trial gets its notice;
++//   B-672-4 (Sol) / C-672-9 (Opus) a send is aborted at the timeout and no retry overlaps it;
++//   C-672-7 (Opus, operator ruling) a zone that is not the client's own names time and zone.
++import { EmailService } from '../src/email/email.service';
++import { EmailTemplateKey } from '../src/email/email.types';
++import { TrialNoticeService } from '../src/packages/trials/trial-notice.service';
++import { makeTable, makeTrialNoticeTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const END = new Date('2026-10-12T17:00:00Z');
++type C = ConstructorParameters<typeof TrialNoticeService>;
++type E = ConstructorParameters<typeof EmailService>;
++type Will = Parameters<TrialNoticeService['recordTrialWillEnd']>;
++
++function deferred<T = void>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((r) => (resolve = r));
++  return { promise, resolve };
++}
++
++const RELATIONS = {
++  package: { name: 'Monthly', interval: 'month', interval_count: 1 },
++  coach: { name: 'Coach' },
++  client: { name: 'Client', email: 'client@example.test' },
++};
++const PURCHASE = { client_user_id: 'client-a', coach_user_id: 'coach-a', package_id: 'pkg-a' };
++const TRIAL = { status: 'trialing', entitlement_active: true, card_on_file: true };
++const MONEY = { amount_cents: 4900, currency: 'usd', trial_ends_at: END };
++const LA = { timezone: 'America/Los_Angeles', timezone_updated_at: NOW };
++
++function build(zone: 'client' | 'coach' | 'none' = 'client') {
++  const purchases = makeTable([['id']], () => ({}));
++  const notices = makeTrialNoticeTable();
++  const notifications = {
++    createNotification: jest.fn(async (input: Record<string, unknown>) => ({ id: 'n', ...input })),
++    getPreferences: jest.fn(async (): Promise<Record<string, unknown>> => ({ muted: false })),
++    pushToUser: jest.fn(async (..._args: unknown[]) => ({ delivered: true, code: 'delivered' })),
++  };
++  const email = { send: jest.fn(async (_input: Record<string, unknown>) => ({ status: 'sent' })) };
++  const find = async ({ where }: { where: { id: string } }) =>
++    purchases.rows.filter((r) => r.id === where.id).map((r) => ({ ...r, ...RELATIONS }))[0] ?? null;
++  const coachZone = async (a: { where: { user_id: string } }) =>
++    a.where.user_id === 'coach-a' && zone !== 'none' ? { timezone: 'America/New_York' } : null;
++  const prisma = {
++    packageTrialNotice: notices,
++    clientPurchase: { findMany: purchases.findMany, findUnique: jest.fn(find) },
++    connectCustomer: { findUnique: jest.fn(async () => ({ default_payment_method_id: null })) },
++    notificationPreferences: { findUnique: jest.fn(async () => (zone === 'client' ? LA : null)) },
++    coachProfile: { findUnique: jest.fn(coachZone) },
++    user: { findUnique: jest.fn(async () => ({ coach_id: 'coach-a' })) },
++    coachingSession: { findUnique: jest.fn(async () => null) },
++    $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)),
++  };
++  const make = (mailer: unknown = email) =>
++    new TrialNoticeService(stub<C[0]>(prisma), stub<C[1]>(notifications), stub<C[2]>(mailer));
++  const add = (id: string, extra: Record<string, unknown> = {}) => {
++    const row = { id, ...PURCHASE, ...TRIAL, ...MONEY, cancel_at_period_end: false, ...extra };
++    purchases.rows.push(row);
++    return row;
++  };
++  const enqueue = async (purchaseId: string, extra: Record<string, unknown> = {}) => {
++    const id = (extra.id as string | undefined) ?? `notice-${purchaseId}`;
++    const created_at = new Date(NOW.getTime() - 600_000);
++    const base = { purchase_id: purchaseId, client_user_id: 'client-a', ...MONEY, created_at };
++    await notices.createMany({ data: [{ ...base, ...extra, id }] });
++    return id;
++  };
++  const row = (id: string) => notices.rows.find((r) => r.id === id) as Record<string, unknown>;
++  return {
++    purchases,
++    notices,
++    notifications,
++    email,
++    prisma,
++    service: make(),
++    make,
++    add,
++    enqueue,
++    row,
++  };
++}
++
++const pushText = (w: ReturnType<typeof build>, i = 0) =>
++  String(w.notifications.pushToUser.mock.calls[i][2]);
++const retired = (code: string) => ({
++  ...{ push_status: 'skipped', email_status: 'skipped', push_attempts: 0, email_attempts: 0 },
++  last_error: `skip:${code}`,
++});
++const fakeTime = () => {
++  jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++  jest.setSystemTime(NOW);
++};
++
++/** Real EmailService (Resend transport) over an intercepted fetch; the first request hangs. */
++function realEmail(opts: { honorAbort: boolean }) {
++  let seq = 0;
++  const log = {
++    create: jest.fn(async () => ({ id: `log-${++seq}` })),
++    update: jest.fn(async () => ({})),
++  };
++  const env: Record<string, string> = { EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 'synthetic' };
++  env.EMAIL_FROM_ADDRESS = 'test@example.test';
++  const svc = new EmailService(
++    stub<E[0]>({ emailSendLog: log }),
++    stub<E[1]>({ get: (k: string) => env[k] }),
++  );
++  const calls: Array<{ signal?: AbortSignal | null; key?: string }> = [];
++  const entered = deferred();
++  const held = deferred();
++  let inFlight = 0;
++  let peak = 0;
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
++    const headers = (init?.headers ?? {}) as Record<string, string>;
++    calls.push({ signal: init?.signal, key: headers['Idempotency-Key'] });
++    peak = Math.max(peak, (inFlight += 1));
++    try {
++      if (calls.length === 1) {
++        entered.resolve();
++        await new Promise<void>((resolve, reject) => {
++          void held.promise.then(resolve);
++          if (opts.honorAbort)
++            init?.signal?.addEventListener('abort', () => reject(new Error('abort')));
++        });
++      }
++      return new Response(JSON.stringify({ id: `msg-${calls.length}` }), { status: 200 });
++    } finally {
++      inFlight -= 1;
++    }
++  });
++  return { log, svc, calls, entered, release: () => held.resolve(), peak: () => peak };
++}
++
++const flush = async () => {
++  for (let i = 0; i < 20; i += 1) await new Promise<void>((r) => setImmediate(r));
++};
++
++afterEach(() => {
++  jest.restoreAllMocks();
++  jest.useRealTimers();
++});
++
++describe('B-672-3 / C-672-8 — only the current started, unended trial gets its notice', () => {
++  it('the trial end moved: the old notice is retired unsent; the new end is delivered', async () => {
++    const w = build();
++    const later = new Date('2026-10-14T17:00:00Z');
++    w.add('p', { trial_ends_at: later });
++    const old = await w.enqueue('p');
++    const current = await w.enqueue('p', { id: 'notice-new', trial_ends_at: later });
++    await w.service.deliver(old, NOW);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.email.send).not.toHaveBeenCalled();
++    expect(w.row(old)).toMatchObject(retired('trial_superseded'));
++    await w.service.deliver(current, NOW);
++    expect(pushText(w)).toContain('ends on Oct 14.');
++    expect(w.email.send.mock.calls[0][0].data).toMatchObject({ trial_end_date: 'Oct 14' });
++  });
++
++  it('paid early, never started, cancelled: nothing sent (controls: cancel-at-end, no card)', async () => {
++    const w = build();
++    w.add('p-paid', { status: 'active' });
++    w.add('p-nostart', { entitlement_active: false });
++    w.add('p-cancel', { status: 'canceled', entitlement_active: false });
++    w.add('p-cxl', { cancel_at_period_end: true });
++    w.add('p-nocard', { card_on_file: false });
++    for (const p of ['p-paid', 'p-nostart', 'p-cancel', 'p-cxl', 'p-nocard']) {
++      await w.service.deliver(await w.enqueue(p), NOW);
++    }
++    expect(w.row('notice-p-paid')).toMatchObject(retired('trial_ended'));
++    expect(w.row('notice-p-nostart')).toMatchObject(retired('trial_not_started'));
++    expect(w.row('notice-p-cancel')).toMatchObject(retired('purchase_canceled'));
++    expect(pushText(w, 0)).toContain('Your card will not be charged');
++    expect(pushText(w, 1)).toContain('No card is saved, so nothing will be charged');
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(2);
++    expect(w.email.send).toHaveBeenCalledTimes(2);
++  });
++
++  it('a bounded push that runs past the trial end: the email is not sent after the trial is over', async () => {
++    fakeTime();
++    const w = build();
++    const end = new Date(NOW.getTime() + 20_000);
++    w.add('p', { trial_ends_at: end });
++    const id = await w.enqueue('p', { trial_ends_at: end });
++    w.notifications.pushToUser.mockImplementationOnce(async () => {
++      jest.setSystemTime(new Date(NOW.getTime() + 29_000));
++      return { delivered: true, code: 'delivered' };
++    });
++    await w.service.deliver(id);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.email.send).not.toHaveBeenCalled();
++    expect(w.row(id)).toMatchObject({ email_status: 'skipped', email_attempts: 0 });
++  });
++
++  it('retired rows spend no attempt and never come back to the retry sweep', async () => {
++    const w = build();
++    for (let i = 0; i < 60; i += 1) {
++      const p = `p-${String(i).padStart(3, '0')}`;
++      w.add(p, { trial_ends_at: new Date('2026-10-14T17:00:00Z') });
++      await w.enqueue(p, { created_at: new Date(NOW.getTime() - 600_000 + i) });
++    }
++    w.add('p-ok');
++    await w.enqueue('p-ok', { created_at: new Date(NOW.getTime() - 300_000) });
++    await w.service.sweep(NOW);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.notices.rows.slice(0, 60)).toEqual(
++      Array(60).fill(expect.objectContaining(retired('trial_superseded'))),
++    );
++    const reads = w.prisma.clientPurchase.findUnique.mock.calls.length;
++    await w.service.sweep(new Date(NOW.getTime() + 600_000));
++    expect(w.prisma.clientPurchase.findUnique.mock.calls.length).toBe(reads);
++  });
++
++  it('out of order: a notice retired against a stale purchase row is reopened once the row catches up, and sent once', async () => {
++    const w = build();
++    const moved = new Date('2026-10-11T17:00:00Z');
++    w.add('p', { trial_ends_at: END }); // the subscription.updated for the new end is still in flight
++    const id = await w.enqueue('p', { trial_ends_at: moved });
++    await w.service.deliver(id, NOW);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.row(id)).toMatchObject(retired('trial_superseded'));
++    w.purchases.rows[0].trial_ends_at = moved;
++    expect(await w.service.reconcileDue(NOW)).toBe(1);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(pushText(w)).toContain('ends on Oct 11.');
++    expect(w.row(id)).toMatchObject({ email_status: 'sent', last_error: null });
++    expect(await w.service.reconcileDue(NOW)).toBe(0);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('B-672-4 / C-672-9 — a send is really bounded, and a retry never overlaps it', () => {
++  it('stalled provider: aborted at the timeout, the lease freed only after the fetch stopped, one provider key', async () => {
++    fakeTime();
++    const w = build();
++    w.add('p');
++    const id = await w.enqueue('p', { push_status: 'delivered' });
++    const mail = realEmail({ honorAbort: true });
++    const svc = w.make(mail.svc);
++    const first = svc.deliver(id);
++    await mail.entered.promise;
++    await jest.advanceTimersByTimeAsync(30_001);
++    await first;
++    expect(mail.calls[0].signal?.aborted).toBe(true);
++    expect(w.row(id)).toMatchObject({ email_attempts: 1, email_lease_token: null });
++    await svc.deliver(id);
++    expect(w.row(id)).toMatchObject({ email_status: 'sent', email_attempts: 2 });
++    expect(mail.calls).toHaveLength(2);
++    expect(mail.peak()).toBe(1);
++    expect(mail.calls[0].key).toMatch(/^trial-ending:p:\d+:[0-9a-f]{32}$/);
++    expect(mail.calls[1].key).toBe(mail.calls[0].key);
++  });
++
++  it('a request that ignores its abort keeps the lease until it ends: no second send here or on a replica', async () => {
++    fakeTime();
++    const w = build();
++    w.add('p');
++    const id = await w.enqueue('p', { push_status: 'delivered' });
++    const mail = realEmail({ honorAbort: false });
++    const svc = w.make(mail.svc);
++    const first = svc.deliver(id);
++    await mail.entered.promise;
++    await jest.advanceTimersByTimeAsync(35_001);
++    await first;
++    expect(w.row(id).email_lease_token).toEqual(expect.any(String));
++    await svc.deliver(id);
++    await w.make(mail.svc).deliver(id);
++    await jest.advanceTimersByTimeAsync(200_000); // past the first lease: renewed while it runs
++    await w.make(mail.svc).deliver(id);
++    expect(mail.calls).toHaveLength(1);
++    mail.release();
++    await flush();
++    expect(w.row(id)).toMatchObject({ email_lease_token: null });
++    await svc.deliver(id);
++    expect(mail.calls).toHaveLength(2);
++    expect(mail.peak()).toBe(1);
++  });
++
++  it('a hung push that ignores its abort keeps the push lease until it ends', async () => {
++    fakeTime();
++    const w = build();
++    w.add('p');
++    const id = await w.enqueue('p', { email_status: 'sent' });
++    const gate = deferred<{ delivered: boolean; code: string }>();
++    w.notifications.pushToUser.mockImplementationOnce(() => gate.promise);
++    const first = w.service.deliver(id);
++    await flush();
++    await jest.advanceTimersByTimeAsync(35_001);
++    await first;
++    expect(w.row(id)).toMatchObject({ push_status: 'pending', last_error: 'push:timeout' });
++    expect(w.row(id).push_lease_token).toEqual(expect.any(String));
++    await w.service.deliver(id);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    gate.resolve({ delivered: true, code: 'delivered' });
++    await flush();
++    expect(w.row(id)).toMatchObject({ push_lease_token: null, push_lease_until: null });
++  });
++
++  it('preparation that leaves less than the transport bound plus the abort grace sends nothing', async () => {
++    fakeTime();
++    const w = build();
++    w.add('p');
++    const id = await w.enqueue('p', { email_status: 'sent' });
++    w.notifications.getPreferences.mockImplementationOnce(async () => {
++      jest.setSystemTime(new Date(Date.now() + 86_000)); // 34 s of the 120 s lease left
++      return { muted: false };
++    });
++    await w.service.deliver(id);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.row(id)).toMatchObject({ push_attempts: 0, push_lease_token: null });
++  });
++
++  it('EmailService: an aborted caller burns no key and makes no request; the provider key follows the content', async () => {
++    const mail = realEmail({ honorAbort: true });
++    mail.release();
++    const send = (signal?: AbortSignal, name = 'Ana') =>
++      mail.svc.send({
++        to: 'client@example.test',
++        template: EmailTemplateKey.TRIAL_ENDING,
++        idempotencyKey: `k-${name}-${mail.calls.length}`,
++        providerIdempotencyKey: 'trial-ending:p:1',
++        signal,
++        data: { recipient_name: name, trial_end_date: 'Oct 12', will_charge: true },
++      });
++    const controller = new AbortController();
++    controller.abort();
++    expect(await send(controller.signal)).toMatchObject({ status: 'failed', error: 'aborted' });
++    expect(mail.log.create).not.toHaveBeenCalled();
++    expect(mail.calls).toHaveLength(0);
++    await send();
++    await send();
++    await send(undefined, 'Bo');
++    expect(mail.calls[1].key).toBe(mail.calls[0].key);
++    expect(mail.calls[2].key).not.toBe(mail.calls[0].key);
++  });
++});
++
++describe("C-672-7 — a zone that is not the client's own names the time and the zone", () => {
++  // 2026-10-13T04:30Z = 9:30 pm Oct 12 in Los Angeles, 12:30 am Oct 13 in New York.
++  const end = new Date('2026-10-13T04:30:00Z');
++  it.each([
++    ['client', 'Oct 12'],
++    ['coach', 'Oct 13 at 12:30 AM EDT'],
++    ['none', 'Oct 13 at 4:30 AM UTC'],
++  ] as const)('zone known from %s: "%s" on every channel', async (zone, label) => {
++    const w = build(zone);
++    const p = w.add('p', { trial_ends_at: end });
++    const sub = {
++      status: 'trialing',
++      trial_end: end.getTime() / 1000,
++      default_payment_method: 'pm',
++    };
++    const args = { purchase: stub<Will[1]['purchase']>(p), sub, eventId: 'evt-1', now: NOW };
++    const id = await w.service.recordTrialWillEnd(stub<Will[0]>(w.prisma), args);
++    await w.service.deliver(id as string, NOW);
++    const line = `Your free trial ends on ${label}. Your card will be charged $49 then.`;
++    expect(String(w.notifications.createNotification.mock.calls[0][0].body)).toContain(line);
++    expect(pushText(w)).toContain(line);
++    expect(w.email.send.mock.calls[0][0].data).toMatchObject({ trial_end_date: label });
++  });
++});
+diff --git a/test/b-trials-t2-idempotent-create-http.spec.ts b/test/b-trials-t2-idempotent-create-http.spec.ts
+new file mode 100644
+index 00000000..8d718ec2
+--- /dev/null
++++ b/test/b-trials-t2-idempotent-create-http.spec.ts
+@@ -0,0 +1,417 @@
++/**
++ * B-TR-117 (agent 117) — trials T2 x coach M2 (#675) composed behaviour.
++ *
++ * #675 (merged into main) made POST /v1/coach/packages idempotent per
++ * `Idempotency-Key` (createIdempotent, createData, request fingerprint).
++ * Trials T2 adds `trial_days` to the same create path (DTO, controller input,
++ * createData, trial rules inside assertValidPricing). Both changed
++ * packages.controller.ts and packages.service.ts; the second to merge
++ * carries both behaviours. This spec pins the composition over real HTTP:
++ * the production ValidationPipe options and global HttpExceptionFilter (as
++ * src/main.ts registers them), the real CoachPackagesController with its own
++ * filters, and the real PackagesService on an in-memory CoachPackage table
++ * and idempotency ledger (unique on user_id + route_key + idempotency_key; a
++ * failed transaction rolls back).
++ *
++ * It fails on either one-sided resolution: without #675 the key is ignored
++ * (no replay, a second package); without the T2 create wiring the trial is
++ * refused by the DTO or never stored.
++ */
++import 'reflect-metadata';
++import { randomUUID } from 'node:crypto';
++import * as http from 'node:http';
++import type { AddressInfo } from 'node:net';
++import {
++  type CanActivate,
++  type ExecutionContext,
++  type INestApplication,
++  UnauthorizedException,
++  ValidationPipe,
++} from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import { Prisma } from '@prisma/client';
++import { JwtAuthGuard } from '../src/auth/auth.guard';
++import { SubscriptionGuard } from '../src/billing/subscription.guard';
++import { CoachOrOwnerGuard } from '../src/common/guards/coach-or-owner.guard';
++import { HttpExceptionFilter } from '../src/filters/http-exception.filter';
++import { CoachPackagesController } from '../src/packages/packages.controller';
++import { PackagesService } from '../src/packages/packages.service';
++import type { PrismaService } from '../src/prisma.service';
++import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
++
++type Row = Record<string, unknown>;
++
++const asPrisma = (m: object): PrismaService => m as PrismaService;
++const asScope = (m: object): SubCoachScopeService => m as SubCoachScopeService;
++
++function p2002(): Prisma.PrismaClientKnownRequestError {
++  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
++    code: 'P2002',
++    clientVersion: 'test',
++  });
++}
++
++function makeDb() {
++  let packages: Row[] = [];
++  let ledger: Row[] = [];
++  const matches = (r: Row, where: Row) => Object.entries(where).every(([k, v]) => r[k] === v);
++  const sameKey = (a: Row, b: Row) =>
++    a.user_id === b.user_id &&
++    a.route_key === b.route_key &&
++    a.idempotency_key === b.idempotency_key;
++  const db = {
++    packages: () => packages,
++    ledger: () => ledger,
++    coachPackage: {
++      findFirst: async ({ where }: { where: Row }) => {
++        const r = packages.find((x) => matches(x, where));
++        return r ? { ...r } : null;
++      },
++      create: async ({ data }: { data: Row }) => {
++        const now = new Date();
++        const row: Row = {
++          id: randomUUID(),
++          is_active: true,
++          archived_at: null,
++          first_published_at: null,
++          stripe_price_id: null,
++          stripe_product_id: null,
++          recurring_stripe_price_id: null,
++          created_at: now,
++          updated_at: now,
++          ...data,
++        };
++        packages.push(row);
++        return { ...row };
++      },
++      update: async ({ where, data }: { where: Row; data: Row }) => {
++        const row = packages.find((x) => matches(x, where));
++        if (!row) throw new Error('package row not found');
++        Object.assign(row, data, { updated_at: new Date() });
++        return { ...row };
++      },
++    },
++    // Live buyers the archive guard and the pricing lock count (none here).
++    clientPurchase: { count: async () => 0 },
++    // The pricing lock's row lock (SELECT ... FOR UPDATE).
++    $queryRaw: async () => [],
++    workoutBuilderIdempotencyKey: {
++      create: async ({ data }: { data: Row }) => {
++        if (ledger.some((r) => sameKey(r, data))) throw p2002();
++        const row: Row = { ...data, id: randomUUID() };
++        ledger.push(row);
++        return { ...row };
++      },
++      update: async ({ where, data }: { where: { id: string }; data: Row }) => {
++        const r = ledger.find((x) => x.id === where.id);
++        if (!r) throw new Error('ledger row not found');
++        Object.assign(r, data);
++        return { ...r };
++      },
++      findUnique: async ({
++        where,
++      }: {
++        where: { WorkoutBuilderIdempotencyKey_user_route_key_key: Row };
++      }) => {
++        const r = ledger.find((x) =>
++          sameKey(x, where.WorkoutBuilderIdempotencyKey_user_route_key_key),
++        );
++        return r ? { ...r } : null;
++      },
++    },
++    // Sequential requests only: a failed callback restores both tables.
++    $transaction: async <T>(cb: (tx: object) => Promise<T>): Promise<T> => {
++      const pkgs = packages.map((r) => ({ ...r }));
++      const led = ledger.map((r) => ({ ...r }));
++      try {
++        return await cb(db);
++      } catch (err) {
++        packages = pkgs;
++        ledger = led;
++        throw err;
++      }
++    },
++  };
++  return db;
++}
++
++const H_USER = 'x-test-user';
++
++class HeaderAuthGuard implements CanActivate {
++  canActivate(ctx: ExecutionContext): boolean {
++    const req = ctx.switchToHttp().getRequest();
++    const id = req.headers[H_USER];
++    if (typeof id !== 'string' || !id) throw new UnauthorizedException();
++    req.user = { id, role: 'coach' };
++    return true;
++  }
++}
++
++interface HttpResult {
++  status: number;
++  headers: http.IncomingHttpHeaders;
++  body: Row;
++}
++
++const PATH = '/v1/coach/packages';
++// A paid monthly plan: the only shape a free trial is allowed on.
++const PLAN = {
++  name: 'North coaching',
++  description: 'Coaching for strength.',
++  amount_cents: 4900,
++  currency: 'usd',
++  billing_type: 'recurring',
++  billing_interval: 'month',
++  billing_interval_count: 1,
++};
++
++describe('B-TR-117 trials x #675: an Idempotency-Key create carries the free trial (HTTP)', () => {
++  let app: INestApplication;
++  let db: ReturnType<typeof makeDb>;
++  let svc: PackagesService;
++  let baseUrl: string;
++  // sub-coach id -> head coach id (what SubCoachScopeService answers).
++  let heads: Record<string, string>;
++
++  function call(
++    method: string,
++    path: string,
++    opts: { user?: string; key?: string; body?: unknown } = {},
++  ): Promise<HttpResult> {
++    return new Promise((resolve, reject) => {
++      const payload = opts.body === undefined ? undefined : JSON.stringify(opts.body);
++      const headers: Record<string, string> = { [H_USER]: opts.user ?? 'coach-1' };
++      if (opts.key) headers['idempotency-key'] = opts.key;
++      if (payload !== undefined) {
++        headers['content-type'] = 'application/json';
++        headers['content-length'] = Buffer.byteLength(payload).toString();
++      }
++      const req = http.request(`${baseUrl}${path}`, { method, headers }, (res) => {
++        let data = '';
++        res.on('data', (c) => (data += c));
++        res.on('end', () =>
++          resolve({
++            status: res.statusCode ?? 0,
++            headers: res.headers,
++            body: data.length ? JSON.parse(data) : {},
++          }),
++        );
++      });
++      req.on('error', reject);
++      if (payload !== undefined) req.write(payload);
++      req.end();
++    });
++  }
++
++  const post = (key: string | undefined, body: unknown, user?: string) =>
++    call('POST', PATH, { key, body, user });
++
++  beforeEach(async () => {
++    db = makeDb();
++    heads = {};
++    svc = new PackagesService(
++      asPrisma(db),
++      asScope({ getHeadCoachIdForSubCoach: async (id: string) => heads[id] ?? null }),
++    );
++    const allow: CanActivate = { canActivate: () => true };
++    const moduleRef = await Test.createTestingModule({
++      controllers: [CoachPackagesController],
++      providers: [{ provide: PackagesService, useValue: svc }],
++    })
++      .overrideGuard(JwtAuthGuard)
++      .useClass(HeaderAuthGuard)
++      .overrideGuard(CoachOrOwnerGuard)
++      .useValue(allow)
++      .overrideGuard(SubscriptionGuard)
++      .useValue(allow)
++      .compile();
++    app = moduleRef.createNestApplication({ logger: false });
++    app.useGlobalPipes(
++      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
++    );
++    app.useGlobalFilters(new HttpExceptionFilter());
++    await app.listen(0, '127.0.0.1');
++    const addr = app.getHttpServer().address() as AddressInfo;
++    baseUrl = `http://127.0.0.1:${addr.port}`;
++  });
++
++  afterEach(async () => {
++    await app.close();
++  });
++
++  it('a keyed create stores the trial, and the retry replays that same package with its trial', async () => {
++    const a = await post('key-trial-http-01', { ...PLAN, trial_days: 7 });
++    expect(a.status).toBe(201);
++    expect(a.headers['idempotent-replayed']).toBeUndefined();
++    expect(a.body).toMatchObject({ trial_days: 7, billing_type: 'recurring', coach_id: 'coach-1' });
++    const b = await post('key-trial-http-01', { ...PLAN, trial_days: 7 });
++    expect(b.status).toBe(201);
++    expect(b.headers['idempotent-replayed']).toBe('true');
++    expect(b.body).toMatchObject({ id: a.body.id, trial_days: 7 });
++    expect(db.packages()).toHaveLength(1);
++    expect(db.packages()[0].trial_days).toBe(7);
++    expect(db.ledger()).toHaveLength(1);
++    expect(db.ledger()[0]).toMatchObject({
++      status: 'completed',
++      response_json: { package_id: a.body.id },
++    });
++  });
++
++  it('the same key with another trial length is different details: 422 names the package, which the app PATCHes', async () => {
++    const first = await post('key-trial-http-02', { ...PLAN, trial_days: 7 });
++    expect(first.status).toBe(201);
++    const r = await post('key-trial-http-02', { ...PLAN, trial_days: 14 });
++    expect(r.status).toBe(422);
++    expect(r.body).toMatchObject({
++      statusCode: 422,
++      code: 'IDEMPOTENCY_KEY_REUSED',
++      package_id: first.body.id,
++    });
++    expect(db.packages()).toHaveLength(1);
++    expect(db.packages()[0].trial_days).toBe(7);
++    // The app adopts the named package and saves the coach's current trial.
++    const patched = await call('PATCH', `${PATH}/${String(r.body.package_id)}`, {
++      body: { trial_days: 14 },
++    });
++    expect(patched.status).toBe(200);
++    expect(patched.body).toMatchObject({ id: first.body.id, trial_days: 14 });
++    expect(db.packages()).toHaveLength(1);
++  });
++
++  it('adding or removing a trial on a key that already made a package is different details, never a second package', async () => {
++    const plain = await post('key-trial-http-03', PLAN);
++    expect(plain.status).toBe(201);
++    expect(plain.body.trial_days).toBe(0);
++    const added = await post('key-trial-http-03', { ...PLAN, trial_days: 7 });
++    expect(added.status).toBe(422);
++    expect(added.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED', package_id: plain.body.id });
++
++    const trial = await post('key-trial-http-04', { ...PLAN, trial_days: 30 });
++    expect(trial.status).toBe(201);
++    const removed = await post('key-trial-http-04', PLAN);
++    expect(removed.status).toBe(422);
++    expect(removed.body).toMatchObject({
++      code: 'IDEMPOTENCY_KEY_REUSED',
++      package_id: trial.body.id,
++    });
++    expect(db.packages()).toHaveLength(2);
++  });
++
++  it('no trial, trial_days 0 and trial_days null are one normalised row: one key replays across all three', async () => {
++    const a = await post('key-trial-http-05', PLAN);
++    expect(a.status).toBe(201);
++    for (const body of [{ ...PLAN, trial_days: 0 }, { ...PLAN, trial_days: null }, PLAN]) {
++      const r = await post('key-trial-http-05', body);
++      expect(r.status).toBe(201);
++      expect(r.headers['idempotent-replayed']).toBe('true');
++      expect(r.body).toMatchObject({ id: a.body.id, trial_days: 0 });
++    }
++    expect(db.packages()).toHaveLength(1);
++  });
++
++  it('C-675-2 with the real column: a key the pre-trials server claimed still replays after the trials deploy', async () => {
++    // The pre-trials server (main with #675, before this stack) built the
++    // same create data without the trial column. Reproduce it exactly by
++    // removing that one column, claim a key, then restore the real builder.
++    const real = Reflect.get(svc, 'createData') as (coach: string, input: Row) => Row;
++    expect(typeof real).toBe('function');
++    Reflect.set(svc, 'createData', function (this: PackagesService, coach: string, input: Row) {
++      const { trial_days: _dropped, ...preTrials } = real.call(this, coach, input);
++      return preTrials;
++    });
++    const before = await post('key-trial-http-06', PLAN);
++    expect(before.status).toBe(201);
++    expect(before.body).not.toHaveProperty('trial_days');
++    Reflect.deleteProperty(svc, 'createData');
++    expect(Reflect.get(svc, 'createData')).toBe(real);
++
++    for (const body of [PLAN, { ...PLAN, trial_days: 0 }]) {
++      const r = await post('key-trial-http-06', body);
++      expect(r.status).toBe(201);
++      expect(r.headers['idempotent-replayed']).toBe('true');
++      expect(r.body.id).toBe(before.body.id);
++    }
++    // A real trial is a different package than the one that key made.
++    const trial = await post('key-trial-http-06', { ...PLAN, trial_days: 7 });
++    expect(trial.status).toBe(422);
++    expect(trial.body).toMatchObject({
++      code: 'IDEMPOTENCY_KEY_REUSED',
++      package_id: before.body.id,
++    });
++    expect(db.packages()).toHaveLength(1);
++  });
++
++  it('the trial rules refuse before the key is claimed: a refused trial burns no key', async () => {
++    const r = await post('key-trial-http-07', { ...PLAN, trial_days: 45 });
++    expect(r.status).toBe(400);
++    expect(r.body).toMatchObject({ statusCode: 400, code: 'PACKAGE_TRIAL_DAYS_OUT_OF_RANGE' });
++    expect(String(r.body.message)).toMatch(/1 to 30/);
++    expect(db.packages()).toHaveLength(0);
++    expect(db.ledger()).toHaveLength(0);
++    // The coach fixes the length and saves with the SAME key: a fresh create.
++    const fixed = await post('key-trial-http-07', { ...PLAN, trial_days: 14 });
++    expect(fixed.status).toBe(201);
++    expect(fixed.headers['idempotent-replayed']).toBeUndefined();
++    expect(fixed.body.trial_days).toBe(14);
++    expect(db.packages()).toHaveLength(1);
++  });
++
++  it('a keyed trial on a one-time or a free package is refused with its own code and writes nothing', async () => {
++    const oneTime = await post('key-trial-http-08', {
++      name: 'Single session',
++      amount_cents: 4900,
++      billing_type: 'one_time',
++      trial_days: 7,
++    });
++    expect(oneTime.status).toBe(400);
++    expect(oneTime.body).toMatchObject({ code: 'PACKAGE_TRIAL_REQUIRES_RECURRING' });
++    // A free package is one-time by rule (S-FEE); the trial is what is refused.
++    const free = await post('key-trial-http-09', {
++      name: 'Free intro call',
++      amount_cents: 0,
++      billing_type: 'one_time',
++      trial_days: 7,
++    });
++    expect(free.status).toBe(400);
++    expect(free.body).toMatchObject({ code: 'PACKAGE_TRIAL_NOT_ON_FREE' });
++    for (const r of [oneTime, free]) {
++      expect(String(r.body.message)).not.toMatch(/\b(we|our|us)\b/i);
++      expect(String(r.body.message)).not.toContain('!');
++    }
++    expect(db.packages()).toHaveLength(0);
++    expect(db.ledger()).toHaveLength(0);
++  });
++
++  it('a fractional trial is a PACKAGE_INVALID 400 that names trial_days (the DTO accepts the field) and burns no key', async () => {
++    const r = await post('key-trial-http-10', { ...PLAN, trial_days: 7.5 });
++    expect(r.status).toBe(400);
++    expect(r.body).toMatchObject({ code: 'PACKAGE_INVALID' });
++    expect(String(r.body.message)).toMatch(/trial_days must be a whole number/);
++    expect(String(r.body.message)).not.toMatch(/Remove trial_days/);
++    expect(db.ledger()).toHaveLength(0);
++  });
++
++  it('without a key (older clients) the trial is stored and no key is written', async () => {
++    const r = await post(undefined, { ...PLAN, trial_days: 3 });
++    expect(r.status).toBe(201);
++    expect(r.headers['idempotent-replayed']).toBeUndefined();
++    expect(r.body.trial_days).toBe(3);
++    expect(db.ledger()).toHaveLength(0);
++  });
++
++  it("a sub-coach's keyed trial create lands on the head coach's catalog; the key stays the sub-coach's", async () => {
++    heads['sub-1'] = 'coach-1';
++    const a = await post('key-trial-http-11', { ...PLAN, trial_days: 7 }, 'sub-1');
++    expect(a.status).toBe(201);
++    expect(a.body).toMatchObject({ coach_id: 'coach-1', trial_days: 7 });
++    expect(db.ledger()[0]).toMatchObject({ user_id: 'sub-1' });
++    // The head coach's own key space is separate: the same key is a new create.
++    const head = await post('key-trial-http-11', { ...PLAN, trial_days: 7 }, 'coach-1');
++    expect(head.status).toBe(201);
++    expect(head.headers['idempotent-replayed']).toBeUndefined();
++    expect(head.body.id).not.toBe(a.body.id);
++    const again = await post('key-trial-http-11', { ...PLAN, trial_days: 7 }, 'sub-1');
++    expect(again.headers['idempotent-replayed']).toBe('true');
++    expect(again.body.id).toBe(a.body.id);
++  });
++});

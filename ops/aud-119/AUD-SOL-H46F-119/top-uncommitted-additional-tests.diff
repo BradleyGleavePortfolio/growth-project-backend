@@ -1,0 +1,53 @@
+diff --git a/src/services/__tests__/authActions.restartGrant.sol119f.test.ts b/src/services/__tests__/authActions.restartGrant.sol119f.test.ts
+index dc56e40..da6a98a 100644
+--- a/src/services/__tests__/authActions.restartGrant.sol119f.test.ts
++++ b/src/services/__tests__/authActions.restartGrant.sol119f.test.ts
+@@ -22,6 +22,8 @@ import {
+ } from '../health/onDeviceState';
+ import { OnDeviceSessionChangedError } from '../health/sessionFence';
+ import type { WearableConnection } from '../../api/wearablesConnectionsApi';
++import { clearUserCache } from '../../lib/userCache';
++import { clearAllStorage } from '../../storage/mmkv';
+ 
+ jest.mock('../api', () => ({
+   usersApi: { updatePushToken: jest.fn(async () => ({ data: {} })) },
+@@ -184,6 +186,39 @@ it('restart control: successful actual signOut removes grants from a fresh app l
+   expect(syncHealthConnect).not.toHaveBeenCalled();
+ });
+ 
++it.each(['clearUserCache', 'clearAllStorage', 'none'] as const)(
++  '%s rejection: actual signOut must still wait for the held native health write',
++  async (operation) => {
++    await recordLocalAuthorization(scope);
++    const invoked = deferred();
++    const commit = deferred();
++    const set = AsyncStorage.setItem.bind(AsyncStorage);
++    jest.spyOn(AsyncStorage, 'setItem').mockImplementationOnce(async (key, value) => {
++      invoked.resolve();
++      await commit.promise;
++      await set(key, value);
++    });
++    const writing = recordLocalAuthorization(scope);
++    await invoked.promise;
++    if (operation === 'clearUserCache') {
++      jest.mocked(clearUserCache).mockRejectedValueOnce(new Error('synthetic user-cache removal failure'));
++    } else if (operation === 'clearAllStorage') {
++      jest.mocked(clearAllStorage).mockRejectedValueOnce(new Error('synthetic namespace removal failure'));
++    }
++    let finished = false;
++    const signingOut = signOut(scope.userId).then(() => { finished = true; });
++    for (let i = 0; i < 30; i += 1) await tick();
++    const completedBeforeCommit = finished;
++    // Always release, even when asserting the invariant will fail.
++    commit.resolve();
++    await Promise.all([writing, signingOut]);
++    await retireOnDeviceState();
++    expect(completedBeforeCommit).toBe(false);
++    expect(finished).toBe(true);
++    expect(await getLocalAuthorization(scope.userId, scope.source)).toBeNull();
++  },
++);
++
+ it.each(['in-flight native grant', 'queued grant behind native progress'] as const)(
+   '%s: completed signOut must require a new Connect after same-account login',
+   async (mode) => {

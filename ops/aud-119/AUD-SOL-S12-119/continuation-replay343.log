@@ -1,0 +1,565 @@
+﻿2026-10-04T20:16:58.9137502Z Current runner version: '2.337.0'
+2026-10-04T20:16:58.9164540Z ##[group]Runner Image Provisioner
+2026-10-04T20:16:58.9165474Z Hosted Compute Agent
+2026-10-04T20:16:58.9166147Z Version: 20260901.588
+2026-10-04T20:16:58.9166879Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T20:16:58.9167651Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T20:16:58.9168397Z Worker ID: {0dfd6d13-2b2c-49e9-94e7-48e5f326ec44}
+2026-10-04T20:16:58.9169170Z Azure Region: westus
+2026-10-04T20:16:58.9169820Z ##[endgroup]
+2026-10-04T20:16:58.9171553Z ##[group]Operating System
+2026-10-04T20:16:58.9172220Z Ubuntu
+2026-10-04T20:16:58.9172742Z 24.04.5
+2026-10-04T20:16:58.9173922Z LTS
+2026-10-04T20:16:58.9174566Z ##[endgroup]
+2026-10-04T20:16:58.9175198Z ##[group]Runner Image
+2026-10-04T20:16:58.9175822Z Image: ubuntu-24.04
+2026-10-04T20:16:58.9176392Z Version: 20260927.320.1
+2026-10-04T20:16:58.9177865Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T20:16:58.9179603Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T20:16:58.9180634Z ##[endgroup]
+2026-10-04T20:16:58.9181854Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T20:16:58.9184663Z Contents: read
+2026-10-04T20:16:58.9185627Z Metadata: read
+2026-10-04T20:16:58.9186300Z Packages: read
+2026-10-04T20:16:58.9186866Z ##[endgroup]
+2026-10-04T20:16:58.9189222Z Secret source: Actions
+2026-10-04T20:16:58.9190312Z Cache mode: write
+2026-10-04T20:16:58.9191297Z Prepare workflow directory
+2026-10-04T20:16:58.9554906Z Prepare all required actions
+2026-10-04T20:16:58.9608342Z Getting action download info
+2026-10-04T20:16:59.3194940Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T20:16:59.4476658Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T20:16:59.6736023Z Complete job name: targeted
+2026-10-04T20:16:59.7548230Z ##[group]Run actions/checkout@v6
+2026-10-04T20:16:59.7549186Z with:
+2026-10-04T20:16:59.7549762Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:16:59.7554038Z   token: ***
+2026-10-04T20:16:59.7554489Z   ssh-strict: true
+2026-10-04T20:16:59.7554930Z   ssh-user: git
+2026-10-04T20:16:59.7555385Z   persist-credentials: true
+2026-10-04T20:16:59.7555869Z   clean: true
+2026-10-04T20:16:59.7556321Z   sparse-checkout-cone-mode: true
+2026-10-04T20:16:59.7556843Z   fetch-depth: 1
+2026-10-04T20:16:59.7557272Z   fetch-tags: false
+2026-10-04T20:16:59.7557723Z   show-progress: true
+2026-10-04T20:16:59.7558170Z   lfs: false
+2026-10-04T20:16:59.7558579Z   submodules: false
+2026-10-04T20:16:59.7559037Z   set-safe-directory: true
+2026-10-04T20:16:59.7559543Z   allow-unsafe-pr-checkout: false
+2026-10-04T20:16:59.7560372Z ##[endgroup]
+2026-10-04T20:16:59.8625851Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:16:59.8628267Z ##[group]Getting Git version info
+2026-10-04T20:16:59.8629186Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T20:16:59.8630426Z [command]/usr/bin/git version
+2026-10-04T20:16:59.8724181Z git version 2.55.0
+2026-10-04T20:16:59.8749952Z ##[endgroup]
+2026-10-04T20:16:59.8765709Z Temporarily overriding HOME='/home/runner/work/_temp/c895da22-5c9b-4e90-9952-069a0d83f71c' before making global git config changes
+2026-10-04T20:16:59.8771507Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:16:59.8774152Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:16:59.8829739Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T20:16:59.8834714Z ##[group]Determining repository object format
+2026-10-04T20:16:59.8837611Z ##[endgroup]
+2026-10-04T20:16:59.8839029Z ##[group]Initializing the repository
+2026-10-04T20:16:59.8843488Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:16:59.8961039Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T20:16:59.8962875Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T20:16:59.8964702Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T20:16:59.8965905Z hint: call:
+2026-10-04T20:16:59.8966560Z hint:
+2026-10-04T20:16:59.8967368Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T20:16:59.8968567Z hint:
+2026-10-04T20:16:59.8969251Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T20:16:59.8970336Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T20:16:59.8971198Z hint:
+2026-10-04T20:16:59.8971666Z hint: 	git branch -m <name>
+2026-10-04T20:16:59.8972262Z hint:
+2026-10-04T20:16:59.8973282Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T20:16:59.8975517Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-04T20:16:59.8978062Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:16:59.9027197Z ##[endgroup]
+2026-10-04T20:16:59.9028048Z ##[group]Disabling automatic garbage collection
+2026-10-04T20:16:59.9031361Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T20:16:59.9067018Z ##[endgroup]
+2026-10-04T20:16:59.9068562Z ##[group]Setting up auth
+2026-10-04T20:16:59.9069295Z Removing SSH command configuration
+2026-10-04T20:16:59.9075257Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:16:59.9110908Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:16:59.9506035Z Removing HTTP extra header
+2026-10-04T20:16:59.9512829Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:16:59.9548329Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:16:59.9786002Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:16:59.9791598Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:16:59.9831223Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:17:00.0104996Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T20:17:00.0142237Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:17:00.0181016Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:17:00.0221913Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:17:00.0273982Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:17:00.0314421Z ##[endgroup]
+2026-10-04T20:17:00.0315472Z ##[group]Fetching the repository
+2026-10-04T20:17:00.0324499Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +91794f95487010417f105d42c91ed7469b923a74:refs/remotes/origin/audit/AUD-SOL-S12B-119/343-reverify
+2026-10-04T20:17:01.1443534Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:17:01.1446846Z  * [new ref]         91794f95487010417f105d42c91ed7469b923a74 -> origin/audit/AUD-SOL-S12B-119/343-reverify
+2026-10-04T20:17:01.1454544Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-S12B-119/343-reverify
+2026-10-04T20:17:01.1484154Z   origin/audit/AUD-SOL-S12B-119/343-reverify
+2026-10-04T20:17:01.1496987Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-S12B-119/343-reverify
+2026-10-04T20:17:01.1526292Z 91794f95487010417f105d42c91ed7469b923a74
+2026-10-04T20:17:01.1536660Z ##[endgroup]
+2026-10-04T20:17:01.1538537Z ##[group]Determining the checkout info
+2026-10-04T20:17:01.1540674Z ##[endgroup]
+2026-10-04T20:17:01.1542115Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T20:17:01.1600243Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T20:17:01.1634088Z ##[group]Checking out the ref
+2026-10-04T20:17:01.1641098Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-S12B-119/343-reverify refs/remotes/origin/audit/AUD-SOL-S12B-119/343-reverify
+2026-10-04T20:17:01.2735300Z Switched to a new branch 'audit/AUD-SOL-S12B-119/343-reverify'
+2026-10-04T20:17:01.2739597Z branch 'audit/AUD-SOL-S12B-119/343-reverify' set up to track 'origin/audit/AUD-SOL-S12B-119/343-reverify'.
+2026-10-04T20:17:01.2751039Z ##[endgroup]
+2026-10-04T20:17:01.2798913Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T20:17:01.2826456Z 91794f95487010417f105d42c91ed7469b923a74
+2026-10-04T20:17:01.3228005Z ##[group]Run actions/setup-node@v6
+2026-10-04T20:17:01.3229290Z with:
+2026-10-04T20:17:01.3230244Z   node-version: 22.13
+2026-10-04T20:17:01.3231279Z   cache: npm
+2026-10-04T20:17:01.3232256Z   check-latest: false
+2026-10-04T20:17:01.3241115Z   token: ***
+2026-10-04T20:17:01.3242155Z   package-manager-cache: true
+2026-10-04T20:17:01.3243492Z ##[endgroup]
+2026-10-04T20:17:01.4758401Z Attempting to download 22.13...
+2026-10-04T20:17:02.2236704Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-04T20:17:02.6992814Z Extracting ...
+2026-10-04T20:17:02.7114396Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/105a7d48-55f1-4d82-9716-945bedebd8b3 -f /home/runner/work/_temp/7c434f01-e9d9-4cc2-8f0e-7e5d25a1c225
+2026-10-04T20:17:03.8927754Z Adding to the cache ...
+2026-10-04T20:17:05.9523461Z ##[group]Environment details
+2026-10-04T20:17:06.1885518Z node: v22.13.1
+2026-10-04T20:17:06.1886003Z npm: 10.9.2
+2026-10-04T20:17:06.1886336Z yarn: 1.22.22
+2026-10-04T20:17:06.1887065Z ##[endgroup]
+2026-10-04T20:17:06.1907364Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-04T20:17:06.2857360Z /home/runner/.npm
+2026-10-04T20:17:06.5325836Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T20:17:07.8059182Z Received 0 of 241027159 (0.0%), 0.0 MBs/sec
+2026-10-04T20:17:08.8063985Z Received 130023424 of 241027159 (53.9%), 61.9 MBs/sec
+2026-10-04T20:17:09.5592719Z Received 241027159 of 241027159 (100.0%), 83.4 MBs/sec
+2026-10-04T20:17:09.5594852Z Cache Size: ~230 MB (241027159 B)
+2026-10-04T20:17:09.5666949Z [command]/usr/bin/tar -xf /home/runner/work/_temp/195a25bb-c8ed-4056-a636-e2f6e0287cc8/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-04T20:17:10.2138747Z Cache restored successfully
+2026-10-04T20:17:10.2259340Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T20:17:10.2486442Z ##[group]Run npm ci
+2026-10-04T20:17:10.2486814Z [36;1mnpm ci[0m
+2026-10-04T20:17:10.2752893Z shell: /usr/bin/bash -e {0}
+2026-10-04T20:17:10.2753635Z ##[endgroup]
+2026-10-04T20:17:15.7154269Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T20:17:15.9480294Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-04T20:17:15.9668639Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-04T20:17:15.9721297Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-04T20:17:15.9937356Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-04T20:17:16.1488643Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-04T20:17:16.1539604Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:17:16.1550470Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:17:16.1577753Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:17:16.1582927Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:17:16.1605568Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:17:16.2012153Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:17:16.2429953Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-04T20:17:16.7302171Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-04T20:17:17.5912648Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-04T20:17:21.4858679Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-04T20:18:14.7230968Z 
+2026-10-04T20:18:14.7232562Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-04T20:18:14.7233810Z 
+2026-10-04T20:18:14.7234192Z 187 packages are looking for funding
+2026-10-04T20:18:14.7234787Z   run `npm fund` for details
+2026-10-04T20:18:15.1348864Z 
+2026-10-04T20:18:15.1350140Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-04T20:18:15.1350592Z 
+2026-10-04T20:18:15.1351168Z To address issues that do not require attention, run:
+2026-10-04T20:18:15.1352481Z   npm audit fix
+2026-10-04T20:18:15.1352828Z 
+2026-10-04T20:18:15.1353736Z To address all issues (including breaking changes), run:
+2026-10-04T20:18:15.1354651Z   npm audit fix --force
+2026-10-04T20:18:15.1355010Z 
+2026-10-04T20:18:15.1355839Z Run `npm audit` for details.
+2026-10-04T20:18:15.3402786Z ##[group]Run set -euo pipefail
+2026-10-04T20:18:15.3403484Z [36;1mset -euo pipefail[0m
+2026-10-04T20:18:15.3403960Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T20:18:15.3404547Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T20:18:15.3404982Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T20:18:15.3405312Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-04T20:18:15.3475071Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T20:18:15.3475554Z ##[endgroup]
+2026-10-04T20:18:15.3592500Z specs: src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx src/hooks/__tests__/usePackagePurchase.boundary.test.tsx src/components/__tests__/PackageSelectionSheet.payment.test.tsx
+2026-10-04T20:18:21.9274544Z PASS src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx
+2026-10-04T20:18:21.9385361Z PASS src/hooks/__tests__/usePackagePurchase.boundary.test.tsx
+2026-10-04T20:18:22.2478473Z FAIL src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx
+2026-10-04T20:18:22.2480646Z   ● one-time logout: rejected sheet initialization cannot publish the old account notice
+2026-10-04T20:18:22.2486197Z 
+2026-10-04T20:18:22.2486988Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:18:22.2487733Z 
+2026-10-04T20:18:22.2495466Z     - Expected  -  2
+2026-10-04T20:18:22.2496617Z     + Received  + 14
+2026-10-04T20:18:22.2496884Z 
+2026-10-04T20:18:22.2497072Z     - ObjectContaining {
+2026-10-04T20:18:22.2497498Z     -   "notice": null,
+2026-10-04T20:18:22.2497887Z     + Object {
+2026-10-04T20:18:22.2498316Z     +   "alreadyActive": null,
+2026-10-04T20:18:22.2498782Z     +   "checking": false,
+2026-10-04T20:18:22.2499212Z     +   "notice": Object {
+2026-10-04T20:18:22.2499721Z     +     "cause": "stripe_sheet_init_threw",
+2026-10-04T20:18:22.2501633Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 2ef97400.",
+2026-10-04T20:18:22.2503544Z     +     "openPlan": true,
+2026-10-04T20:18:22.2504024Z     +     "reference": "2ef97400",
+2026-10-04T20:18:22.2504497Z     +     "support": true,
+2026-10-04T20:18:22.2504915Z     +   },
+2026-10-04T20:18:22.2505275Z         "packageId": null,
+2026-10-04T20:18:22.2505701Z         "phase": "idle",
+2026-10-04T20:18:22.2506131Z     +   "priceChange": null,
+2026-10-04T20:18:22.2506574Z     +   "saleKind": null,
+2026-10-04T20:18:22.2507001Z     +   "slowMessage": null,
+2026-10-04T20:18:22.2507508Z     +   "success": null,
+2026-10-04T20:18:22.2507899Z       }
+2026-10-04T20:18:22.2508084Z 
+2026-10-04T20:18:22.2508533Z     [0m [90m 79 |[39m   })[33m;[39m
+2026-10-04T20:18:22.2509537Z      [90m 80 |[39m   expect(mockPresent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2512337Z     [31m[1m>[22m[39m[90m 81 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate)[33m.[39mtoEqual(expect[33m.[39mobjectContaining({ phase[33m:[39m [32m'idle'[39m[33m,[39m packageId[33m:[39m [36mnull[39m[33m,[39m notice[33m:[39m [36mnull[39m }))[33m;[39m
+2026-10-04T20:18:22.2514659Z      [90m    |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:18:22.2515404Z      [90m 82 |[39m })[33m;[39m
+2026-10-04T20:18:22.2515902Z      [90m 83 |[39m
+2026-10-04T20:18:22.2517262Z      [90m 84 |[39m it([32m'control: fulfilled initialization after logout is correctly retired'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:18:22.2518213Z 
+2026-10-04T20:18:22.2518720Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:81:34)
+2026-10-04T20:18:22.2519922Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2521030Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2522408Z 
+2026-10-04T20:18:22.2538320Z   ● one-time login: rejected sheet initialization cannot publish the old account notice
+2026-10-04T20:18:22.2538721Z 
+2026-10-04T20:18:22.2538919Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:18:22.2539166Z 
+2026-10-04T20:18:22.2539272Z     - Expected  -  2
+2026-10-04T20:18:22.2539500Z     + Received  + 14
+2026-10-04T20:18:22.2539631Z 
+2026-10-04T20:18:22.2539730Z     - ObjectContaining {
+2026-10-04T20:18:22.2539976Z     -   "notice": null,
+2026-10-04T20:18:22.2540196Z     + Object {
+2026-10-04T20:18:22.2540431Z     +   "alreadyActive": null,
+2026-10-04T20:18:22.2540698Z     +   "checking": false,
+2026-10-04T20:18:22.2540933Z     +   "notice": Object {
+2026-10-04T20:18:22.2541212Z     +     "cause": "stripe_sheet_init_threw",
+2026-10-04T20:18:22.2542232Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 1255cb6b.",
+2026-10-04T20:18:22.2543438Z     +     "openPlan": true,
+2026-10-04T20:18:22.2543926Z     +     "reference": "1255cb6b",
+2026-10-04T20:18:22.2544375Z     +     "support": true,
+2026-10-04T20:18:22.2544762Z     +   },
+2026-10-04T20:18:22.2545113Z         "packageId": null,
+2026-10-04T20:18:22.2545531Z         "phase": "idle",
+2026-10-04T20:18:22.2545946Z     +   "priceChange": null,
+2026-10-04T20:18:22.2546372Z     +   "saleKind": null,
+2026-10-04T20:18:22.2546803Z     +   "slowMessage": null,
+2026-10-04T20:18:22.2547221Z     +   "success": null,
+2026-10-04T20:18:22.2547606Z       }
+2026-10-04T20:18:22.2547790Z 
+2026-10-04T20:18:22.2548177Z     [0m [90m 79 |[39m   })[33m;[39m
+2026-10-04T20:18:22.2549160Z      [90m 80 |[39m   expect(mockPresent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2551678Z     [31m[1m>[22m[39m[90m 81 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate)[33m.[39mtoEqual(expect[33m.[39mobjectContaining({ phase[33m:[39m [32m'idle'[39m[33m,[39m packageId[33m:[39m [36mnull[39m[33m,[39m notice[33m:[39m [36mnull[39m }))[33m;[39m
+2026-10-04T20:18:22.2553794Z      [90m    |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:18:22.2554408Z      [90m 82 |[39m })[33m;[39m
+2026-10-04T20:18:22.2554897Z      [90m 83 |[39m
+2026-10-04T20:18:22.2555774Z      [90m 84 |[39m it([32m'control: fulfilled initialization after logout is correctly retired'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:18:22.2556291Z 
+2026-10-04T20:18:22.2556574Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:81:34)
+2026-10-04T20:18:22.2557241Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2557945Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2558239Z 
+2026-10-04T20:18:22.2558635Z   ● renewing logout: rejected sheet initialization cannot publish the old account notice
+2026-10-04T20:18:22.2558980Z 
+2026-10-04T20:18:22.2559163Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:18:22.2559393Z 
+2026-10-04T20:18:22.2559489Z     - Expected  -  2
+2026-10-04T20:18:22.2559716Z     + Received  + 14
+2026-10-04T20:18:22.2559842Z 
+2026-10-04T20:18:22.2559945Z     - ObjectContaining {
+2026-10-04T20:18:22.2560182Z     -   "notice": null,
+2026-10-04T20:18:22.2560404Z     + Object {
+2026-10-04T20:18:22.2560634Z     +   "alreadyActive": null,
+2026-10-04T20:18:22.2560889Z     +   "checking": false,
+2026-10-04T20:18:22.2561124Z     +   "notice": Object {
+2026-10-04T20:18:22.2561396Z     +     "cause": "stripe_sheet_init_threw",
+2026-10-04T20:18:22.2562984Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 01df0c00.",
+2026-10-04T20:18:22.2565402Z     +     "openPlan": true,
+2026-10-04T20:18:22.2565922Z     +     "reference": "01df0c00",
+2026-10-04T20:18:22.2566360Z     +     "support": true,
+2026-10-04T20:18:22.2566745Z     +   },
+2026-10-04T20:18:22.2567082Z         "packageId": null,
+2026-10-04T20:18:22.2567484Z         "phase": "idle",
+2026-10-04T20:18:22.2567892Z     +   "priceChange": null,
+2026-10-04T20:18:22.2568317Z     +   "saleKind": null,
+2026-10-04T20:18:22.2568730Z     +   "slowMessage": null,
+2026-10-04T20:18:22.2569144Z     +   "success": null,
+2026-10-04T20:18:22.2569512Z       }
+2026-10-04T20:18:22.2569619Z 
+2026-10-04T20:18:22.2569859Z     [0m [90m 79 |[39m   })[33m;[39m
+2026-10-04T20:18:22.2570423Z      [90m 80 |[39m   expect(mockPresent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2571906Z     [31m[1m>[22m[39m[90m 81 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate)[33m.[39mtoEqual(expect[33m.[39mobjectContaining({ phase[33m:[39m [32m'idle'[39m[33m,[39m packageId[33m:[39m [36mnull[39m[33m,[39m notice[33m:[39m [36mnull[39m }))[33m;[39m
+2026-10-04T20:18:22.2573025Z      [90m    |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:18:22.2573801Z      [90m 82 |[39m })[33m;[39m
+2026-10-04T20:18:22.2574080Z      [90m 83 |[39m
+2026-10-04T20:18:22.2574812Z      [90m 84 |[39m it([32m'control: fulfilled initialization after logout is correctly retired'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:18:22.2575326Z 
+2026-10-04T20:18:22.2575599Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:81:34)
+2026-10-04T20:18:22.2576216Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2576807Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2577097Z 
+2026-10-04T20:18:22.2577467Z   ● renewing login: rejected sheet initialization cannot publish the old account notice
+2026-10-04T20:18:22.2577835Z 
+2026-10-04T20:18:22.2578014Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:18:22.2578247Z 
+2026-10-04T20:18:22.2578347Z     - Expected  -  2
+2026-10-04T20:18:22.2578569Z     + Received  + 14
+2026-10-04T20:18:22.2578697Z 
+2026-10-04T20:18:22.2578794Z     - ObjectContaining {
+2026-10-04T20:18:22.2579071Z     -   "notice": null,
+2026-10-04T20:18:22.2579291Z     + Object {
+2026-10-04T20:18:22.2579525Z     +   "alreadyActive": null,
+2026-10-04T20:18:22.2579784Z     +   "checking": false,
+2026-10-04T20:18:22.2580014Z     +   "notice": Object {
+2026-10-04T20:18:22.2580295Z     +     "cause": "stripe_sheet_init_threw",
+2026-10-04T20:18:22.2581305Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference b67db305.",
+2026-10-04T20:18:22.2582161Z     +     "openPlan": true,
+2026-10-04T20:18:22.2582439Z     +     "reference": "b67db305",
+2026-10-04T20:18:22.2582716Z     +     "support": true,
+2026-10-04T20:18:22.2582943Z     +   },
+2026-10-04T20:18:22.2583461Z         "packageId": null,
+2026-10-04T20:18:22.2583714Z         "phase": "idle",
+2026-10-04T20:18:22.2583955Z     +   "priceChange": null,
+2026-10-04T20:18:22.2584195Z     +   "saleKind": null,
+2026-10-04T20:18:22.2584425Z     +   "slowMessage": null,
+2026-10-04T20:18:22.2584662Z     +   "success": null,
+2026-10-04T20:18:22.2584878Z       }
+2026-10-04T20:18:22.2584985Z 
+2026-10-04T20:18:22.2585156Z     [0m [90m 79 |[39m   })[33m;[39m
+2026-10-04T20:18:22.2585711Z      [90m 80 |[39m   expect(mockPresent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2587361Z     [31m[1m>[22m[39m[90m 81 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate)[33m.[39mtoEqual(expect[33m.[39mobjectContaining({ phase[33m:[39m [32m'idle'[39m[33m,[39m packageId[33m:[39m [36mnull[39m[33m,[39m notice[33m:[39m [36mnull[39m }))[33m;[39m
+2026-10-04T20:18:22.2588675Z      [90m    |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:18:22.2589060Z      [90m 82 |[39m })[33m;[39m
+2026-10-04T20:18:22.2589335Z      [90m 83 |[39m
+2026-10-04T20:18:22.2590066Z      [90m 84 |[39m it([32m'control: fulfilled initialization after logout is correctly retired'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:18:22.2590575Z 
+2026-10-04T20:18:22.2590853Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:81:34)
+2026-10-04T20:18:22.2591477Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2592075Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2592377Z 
+2026-10-04T20:18:22.2592674Z   ● one-time logout: rejected initStripe is also fenced before publishing
+2026-10-04T20:18:22.2592970Z 
+2026-10-04T20:18:22.2593595Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:18:22.2593962Z 
+2026-10-04T20:18:22.2594078Z     - Expected  -  2
+2026-10-04T20:18:22.2594299Z     + Received  + 14
+2026-10-04T20:18:22.2594429Z 
+2026-10-04T20:18:22.2594528Z     - ObjectContaining {
+2026-10-04T20:18:22.2594785Z     -   "notice": null,
+2026-10-04T20:18:22.2595005Z     + Object {
+2026-10-04T20:18:22.2595241Z     +   "alreadyActive": null,
+2026-10-04T20:18:22.2595489Z     +   "checking": false,
+2026-10-04T20:18:22.2595724Z     +   "notice": Object {
+2026-10-04T20:18:22.2595996Z     +     "cause": "stripe_sheet_init_threw",
+2026-10-04T20:18:22.2596993Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 3d54a25b.",
+2026-10-04T20:18:22.2597860Z     +     "openPlan": true,
+2026-10-04T20:18:22.2598124Z     +     "reference": "3d54a25b",
+2026-10-04T20:18:22.2598376Z     +     "support": true,
+2026-10-04T20:18:22.2598612Z     +   },
+2026-10-04T20:18:22.2598809Z         "packageId": null,
+2026-10-04T20:18:22.2599037Z         "phase": "idle",
+2026-10-04T20:18:22.2599268Z     +   "priceChange": null,
+2026-10-04T20:18:22.2599503Z     +   "saleKind": null,
+2026-10-04T20:18:22.2599734Z     +   "slowMessage": null,
+2026-10-04T20:18:22.2599971Z     +   "success": null,
+2026-10-04T20:18:22.2600187Z       }
+2026-10-04T20:18:22.2600294Z 
+2026-10-04T20:18:22.2600723Z     [0m [90m 120 |[39m   expect(mockInitSheet)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2601449Z      [90m 121 |[39m   expect(mockPresent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2602918Z     [31m[1m>[22m[39m[90m 122 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate)[33m.[39mtoEqual(expect[33m.[39mobjectContaining({ phase[33m:[39m [32m'idle'[39m[33m,[39m packageId[33m:[39m [36mnull[39m[33m,[39m notice[33m:[39m [36mnull[39m }))[33m;[39m
+2026-10-04T20:18:22.2604228Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:18:22.2604620Z      [90m 123 |[39m })[33m;[39m
+2026-10-04T20:18:22.2604896Z      [90m 124 |[39m
+2026-10-04T20:18:22.2605649Z      [90m 125 |[39m it([32m'archived package on a same-key retry cannot undo an unknown native outcome'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:18:22.2606174Z 
+2026-10-04T20:18:22.2606453Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:122:34)
+2026-10-04T20:18:22.2607075Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2607669Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2607960Z 
+2026-10-04T20:18:22.2608261Z   ● one-time login: rejected initStripe is also fenced before publishing
+2026-10-04T20:18:22.2608550Z 
+2026-10-04T20:18:22.2608727Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:18:22.2609239Z 
+2026-10-04T20:18:22.2609344Z     - Expected  -  2
+2026-10-04T20:18:22.2609563Z     + Received  + 14
+2026-10-04T20:18:22.2609691Z 
+2026-10-04T20:18:22.2609792Z     - ObjectContaining {
+2026-10-04T20:18:22.2610028Z     -   "notice": null,
+2026-10-04T20:18:22.2610243Z     + Object {
+2026-10-04T20:18:22.2610474Z     +   "alreadyActive": null,
+2026-10-04T20:18:22.2610729Z     +   "checking": false,
+2026-10-04T20:18:22.2610956Z     +   "notice": Object {
+2026-10-04T20:18:22.2611232Z     +     "cause": "stripe_sheet_init_threw",
+2026-10-04T20:18:22.2612228Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 4670d071.",
+2026-10-04T20:18:22.2613355Z     +     "openPlan": true,
+2026-10-04T20:18:22.2613656Z     +     "reference": "4670d071",
+2026-10-04T20:18:22.2613917Z     +     "support": true,
+2026-10-04T20:18:22.2614139Z     +   },
+2026-10-04T20:18:22.2614343Z         "packageId": null,
+2026-10-04T20:18:22.2614577Z         "phase": "idle",
+2026-10-04T20:18:22.2614811Z     +   "priceChange": null,
+2026-10-04T20:18:22.2615050Z     +   "saleKind": null,
+2026-10-04T20:18:22.2615289Z     +   "slowMessage": null,
+2026-10-04T20:18:22.2615519Z     +   "success": null,
+2026-10-04T20:18:22.2615732Z       }
+2026-10-04T20:18:22.2615836Z 
+2026-10-04T20:18:22.2616262Z     [0m [90m 120 |[39m   expect(mockInitSheet)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2616977Z      [90m 121 |[39m   expect(mockPresent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2618438Z     [31m[1m>[22m[39m[90m 122 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate)[33m.[39mtoEqual(expect[33m.[39mobjectContaining({ phase[33m:[39m [32m'idle'[39m[33m,[39m packageId[33m:[39m [36mnull[39m[33m,[39m notice[33m:[39m [36mnull[39m }))[33m;[39m
+2026-10-04T20:18:22.2619579Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:18:22.2620002Z      [90m 123 |[39m })[33m;[39m
+2026-10-04T20:18:22.2620276Z      [90m 124 |[39m
+2026-10-04T20:18:22.2621019Z      [90m 125 |[39m it([32m'archived package on a same-key retry cannot undo an unknown native outcome'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:18:22.2621541Z 
+2026-10-04T20:18:22.2621813Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:122:34)
+2026-10-04T20:18:22.2622432Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2623163Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2623459Z 
+2026-10-04T20:18:22.2623769Z   ● renewing logout: rejected initStripe is also fenced before publishing
+2026-10-04T20:18:22.2624063Z 
+2026-10-04T20:18:22.2624233Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:18:22.2624471Z 
+2026-10-04T20:18:22.2624573Z     - Expected  -  2
+2026-10-04T20:18:22.2624794Z     + Received  + 14
+2026-10-04T20:18:22.2624920Z 
+2026-10-04T20:18:22.2625015Z     - ObjectContaining {
+2026-10-04T20:18:22.2625256Z     -   "notice": null,
+2026-10-04T20:18:22.2625468Z     + Object {
+2026-10-04T20:18:22.2625695Z     +   "alreadyActive": null,
+2026-10-04T20:18:22.2625944Z     +   "checking": false,
+2026-10-04T20:18:22.2626167Z     +   "notice": Object {
+2026-10-04T20:18:22.2626444Z     +     "cause": "stripe_sheet_init_threw",
+2026-10-04T20:18:22.2627433Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference a72d2219.",
+2026-10-04T20:18:22.2628285Z     +     "openPlan": true,
+2026-10-04T20:18:22.2628543Z     +     "reference": "a72d2219",
+2026-10-04T20:18:22.2628806Z     +     "support": true,
+2026-10-04T20:18:22.2629181Z     +   },
+2026-10-04T20:18:22.2629484Z         "packageId": null,
+2026-10-04T20:18:22.2629721Z         "phase": "idle",
+2026-10-04T20:18:22.2629951Z     +   "priceChange": null,
+2026-10-04T20:18:22.2630191Z     +   "saleKind": null,
+2026-10-04T20:18:22.2630421Z     +   "slowMessage": null,
+2026-10-04T20:18:22.2630651Z     +   "success": null,
+2026-10-04T20:18:22.2630863Z       }
+2026-10-04T20:18:22.2630968Z 
+2026-10-04T20:18:22.2631372Z     [0m [90m 120 |[39m   expect(mockInitSheet)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2632089Z      [90m 121 |[39m   expect(mockPresent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2633870Z     [31m[1m>[22m[39m[90m 122 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate)[33m.[39mtoEqual(expect[33m.[39mobjectContaining({ phase[33m:[39m [32m'idle'[39m[33m,[39m packageId[33m:[39m [36mnull[39m[33m,[39m notice[33m:[39m [36mnull[39m }))[33m;[39m
+2026-10-04T20:18:22.2635067Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:18:22.2635458Z      [90m 123 |[39m })[33m;[39m
+2026-10-04T20:18:22.2635736Z      [90m 124 |[39m
+2026-10-04T20:18:22.2636494Z      [90m 125 |[39m it([32m'archived package on a same-key retry cannot undo an unknown native outcome'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:18:22.2637021Z 
+2026-10-04T20:18:22.2637289Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:122:34)
+2026-10-04T20:18:22.2637914Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2638502Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2638799Z 
+2026-10-04T20:18:22.2639091Z   ● renewing login: rejected initStripe is also fenced before publishing
+2026-10-04T20:18:22.2639381Z 
+2026-10-04T20:18:22.2639554Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:18:22.2639787Z 
+2026-10-04T20:18:22.2639890Z     - Expected  -  2
+2026-10-04T20:18:22.2640107Z     + Received  + 14
+2026-10-04T20:18:22.2640234Z 
+2026-10-04T20:18:22.2640334Z     - ObjectContaining {
+2026-10-04T20:18:22.2640566Z     -   "notice": null,
+2026-10-04T20:18:22.2640780Z     + Object {
+2026-10-04T20:18:22.2641017Z     +   "alreadyActive": null,
+2026-10-04T20:18:22.2641262Z     +   "checking": false,
+2026-10-04T20:18:22.2641487Z     +   "notice": Object {
+2026-10-04T20:18:22.2641761Z     +     "cause": "stripe_sheet_init_threw",
+2026-10-04T20:18:22.2642750Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 9d6a3098.",
+2026-10-04T20:18:22.2643841Z     +     "openPlan": true,
+2026-10-04T20:18:22.2644122Z     +     "reference": "9d6a3098",
+2026-10-04T20:18:22.2644380Z     +     "support": true,
+2026-10-04T20:18:22.2644596Z     +   },
+2026-10-04T20:18:22.2644804Z         "packageId": null,
+2026-10-04T20:18:22.2645030Z         "phase": "idle",
+2026-10-04T20:18:22.2645257Z     +   "priceChange": null,
+2026-10-04T20:18:22.2645499Z     +   "saleKind": null,
+2026-10-04T20:18:22.2645725Z     +   "slowMessage": null,
+2026-10-04T20:18:22.2645953Z     +   "success": null,
+2026-10-04T20:18:22.2646166Z       }
+2026-10-04T20:18:22.2646275Z 
+2026-10-04T20:18:22.2646693Z     [0m [90m 120 |[39m   expect(mockInitSheet)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2647400Z      [90m 121 |[39m   expect(mockPresent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:18:22.2648856Z     [31m[1m>[22m[39m[90m 122 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate)[33m.[39mtoEqual(expect[33m.[39mobjectContaining({ phase[33m:[39m [32m'idle'[39m[33m,[39m packageId[33m:[39m [36mnull[39m[33m,[39m notice[33m:[39m [36mnull[39m }))[33m;[39m
+2026-10-04T20:18:22.2650183Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:18:22.2650689Z      [90m 123 |[39m })[33m;[39m
+2026-10-04T20:18:22.2650962Z      [90m 124 |[39m
+2026-10-04T20:18:22.2651707Z      [90m 125 |[39m it([32m'archived package on a same-key retry cannot undo an unknown native outcome'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:18:22.2652232Z 
+2026-10-04T20:18:22.2652507Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:122:34)
+2026-10-04T20:18:22.2653423Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2654040Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2654339Z 
+2026-10-04T20:18:22.2654670Z   ● archived package on a same-key retry cannot undo an unknown native outcome
+2026-10-04T20:18:22.2654975Z 
+2026-10-04T20:18:22.2655117Z     expect(received).not.toMatch(expected)
+2026-10-04T20:18:22.2655314Z 
+2026-10-04T20:18:22.2655597Z     Expected pattern: not /nothing was charged|not charged|did not go through/i
+2026-10-04T20:18:22.2656864Z     Received string:      "This plan is no longer offered, so nothing was charged. Pull down to see your coach’s current plans, or message your coach."
+2026-10-04T20:18:22.2657398Z 
+2026-10-04T20:18:22.2658318Z     [0m [90m 132 |[39m   [36mconst[39m keys [33m=[39m mockPost[33m.[39mmock[33m.[39mcalls[33m.[39mmap(([[33m,[39m body]) [33m=>[39m (body [36mas[39m { idempotency_key[33m:[39m string })[33m.[39midempotency_key)[33m;[39m
+2026-10-04T20:18:22.2659381Z      [90m 133 |[39m   expect(keys[[35m1[39m])[33m.[39mtoBe(keys[[35m0[39m])[33m;[39m
+2026-10-04T20:18:22.2660677Z     [31m[1m>[22m[39m[90m 134 |[39m   expect(h[33m.[39mresult[33m.[39mcurrent[33m.[39mstate[33m.[39mnotice[33m?[39m[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/nothing was charged|not charged|did not go through/i[39m)[33m;[39m
+2026-10-04T20:18:22.2661751Z      [90m     |[39m                                                      [31m[1m^[22m[39m
+2026-10-04T20:18:22.2662156Z      [90m 135 |[39m })[33m;[39m
+2026-10-04T20:18:22.2662434Z      [90m 136 |[39m[0m
+2026-10-04T20:18:22.2662577Z 
+2026-10-04T20:18:22.2662881Z       at Object.toMatch (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:134:54)
+2026-10-04T20:18:22.2663893Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:18:22.2664484Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:18:22.2664774Z 
+2026-10-04T20:18:28.0840684Z PASS src/components/__tests__/PackageSelectionSheet.payment.test.tsx (10.69 s)
+2026-10-04T20:18:28.1491633Z 
+2026-10-04T20:18:28.1503503Z Test Suites: 1 failed, 3 passed, 4 total
+2026-10-04T20:18:28.1504472Z Tests:       9 failed, 45 passed, 54 total
+2026-10-04T20:18:28.1505005Z Snapshots:   0 total
+2026-10-04T20:18:28.1505387Z Time:        11.549 s
+2026-10-04T20:18:28.1507698Z Ran all test suites matching /src\/hooks\/__tests__\/audSolS12119.nativeRejection.test.tsx|src\/hooks\/__tests__\/usePackagePurchase.sheet2.test.tsx|src\/hooks\/__tests__\/usePackagePurchase.boundary.test.tsx|src\/components\/__tests__\/PackageSelectionSheet.payment.test.tsx/i.
+2026-10-04T20:18:28.1687908Z ##[error]Process completed with exit code 1.
+2026-10-04T20:18:28.1840968Z Post job cleanup.
+2026-10-04T20:18:28.2723239Z [command]/usr/bin/git version
+2026-10-04T20:18:28.2763896Z git version 2.55.0
+2026-10-04T20:18:28.2806107Z Temporarily overriding HOME='/home/runner/work/_temp/c725a515-fa6e-4f31-ab54-021f3cf4bb66' before making global git config changes
+2026-10-04T20:18:28.2807749Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:18:28.2812924Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:18:28.2846911Z Removing SSH command configuration
+2026-10-04T20:18:28.2853738Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:18:28.2892883Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:18:28.3127121Z Removing HTTP extra header
+2026-10-04T20:18:28.3133574Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:18:28.3171036Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:18:28.3394373Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:18:28.3402587Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:18:28.3434282Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T20:18:28.3435382Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T20:18:28.3436115Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:18:28.3436657Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:18:28.3444969Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T20:18:28.3467768Z /home/runner/work/_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:18:28.3480209Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:18:28.3516556Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T20:18:28.3540101Z /home/runner/work/_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:18:28.3549983Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:18:28.3583849Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:18:28.3606093Z /github/runner_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:18:28.3614305Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:18:28.3646706Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:18:28.3667534Z /github/runner_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:18:28.3675897Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config
+2026-10-04T20:18:28.3718306Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:18:28.3940832Z Removing credentials config '/home/runner/work/_temp/git-credentials-3db2b671-0724-487f-836c-b47d7ee221c9.config'
+2026-10-04T20:18:28.4111234Z Cleaning up orphan processes

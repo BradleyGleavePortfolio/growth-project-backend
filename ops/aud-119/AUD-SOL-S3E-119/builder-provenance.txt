@@ -1,0 +1,20 @@
+0975e6698b0b887ac26b7edec57d53e741db0cb8
+24208541646db1e34a863ff3534e81979ec694a0
+Bradley Gleave <bradley@bradleytgpcoaching.com>
+Bradley Gleave <bradley@bradleytgpcoaching.com>
+ci: lens probes (never push to PR)
+ebe2fb5e2bbc9f8a30a7675d60d85c0605e9f10a
+88659e21806ace4fc0c883d624de1abc07413b6d
+Bradley Gleave <bradley@bradleytgpcoaching.com>
+Bradley Gleave <bradley@bradleytgpcoaching.com>
+ci: lens probes (never push to PR)
+24208541646db1e34a863ff3534e81979ec694a0
+bc4387ac9f1a35d8ad6746d8ece3cda75fe89ab4
+Bradley Gleave <bradley@bradleytgpcoaching.com>
+Bradley Gleave <bradley@bradleytgpcoaching.com>
+test(plans): a cancel receipt survives a newer read only when its access end and trial or paid kind agree (B-344-3)
+88659e21806ace4fc0c883d624de1abc07413b6d
+24208541646db1e34a863ff3534e81979ec694a0
+Bradley Gleave <bradley@bradleytgpcoaching.com>
+Bradley Gleave <bradley@bradleytgpcoaching.com>
+fix(plans): a cancel receipt stands only while a newer read has the same access end and trial or paid kind (B-344-3)

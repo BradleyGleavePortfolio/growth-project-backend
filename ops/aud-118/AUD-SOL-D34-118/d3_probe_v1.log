@@ -1,0 +1,71 @@
+targeted	Targeted jest	﻿2026-10-04T17:07:06.3790535Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T17:07:06.3790928Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T17:07:06.3791322Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T17:07:06.3791821Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T17:07:06.3792196Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T17:07:06.3792493Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T17:07:06.3855698Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T17:07:06.3856065Z env:
+targeted	Targeted jest	2026-10-04T17:07:06.3856316Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T17:07:06.3856676Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T17:07:06.3857007Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T17:07:06.3953288Z specs: test/aud-sol-d34-118-d3.spec.ts test/dunning-d3-fix-round.spec.ts
+targeted	Targeted jest	2026-10-04T17:07:19.9268618Z PASS test/dunning-d3-fix-round.spec.ts (12.484 s)
+targeted	Targeted jest	2026-10-04T17:07:20.6238910Z FAIL test/aud-sol-d34-118-d3.spec.ts
+targeted	Targeted jest	2026-10-04T17:07:20.6241321Z   ● AUD-SOL-D34-118 #689 prior controls and new interleavings › D3 residual B-689-1: a dispute arriving after the locked check but before v1 survives
+targeted	Targeted jest	2026-10-04T17:07:20.6242326Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6242691Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T17:07:20.6243116Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6243289Z     Expected: "active"
+targeted	Targeted jest	2026-10-04T17:07:20.6243731Z     Received: "resolved"
+targeted	Targeted jest	2026-10-04T17:07:20.6244005Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6244391Z     ^[[0m ^[[90m 227 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6246058Z      ^[[90m 228 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mconfirmCardUpdate(^[[32m'client'^[[39m^[[33m,^[[39m si^[[33m.^[[39mid^[[33m,^[[39m si^[[33m.^[[39mapproved)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6249271Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 229 |^[[39m     expect(w^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'dunningState'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'state'^[[39m })^[[33m?^[[39m^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'active'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6251524Z      ^[[90m     |^[[39m                                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6253264Z      ^[[90m 230 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mv2^[[33m.^[[39misDisputeCycleOpen(^[[32m'purchase'^[[39m))^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6254468Z      ^[[90m 231 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6255172Z      ^[[90m 232 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T17:07:20.6255427Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6255834Z       at Object.<anonymous> (test/aud-sol-d34-118-d3.spec.ts:229:66)
+targeted	Targeted jest	2026-10-04T17:07:20.6256310Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6257513Z   ● AUD-SOL-D34-118 #689 prior controls and new interleavings › D3 residual B-689-4: a dispute arriving during the period lookup makes cancel immediate
+targeted	Targeted jest	2026-10-04T17:07:20.6258517Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6258856Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T17:07:20.6259289Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6259472Z     Expected: "ended"
+targeted	Targeted jest	2026-10-04T17:07:20.6260147Z     Received: "scheduled"
+targeted	Targeted jest	2026-10-04T17:07:20.6260465Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6260805Z     ^[[0m ^[[90m 242 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6262456Z      ^[[90m 243 |^[[39m     ^[[36mconst^[[39m result ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mcancelPlan(^[[32m'client'^[[39m^[[33m,^[[39m ^[[32m'purchase'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6264452Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 244 |^[[39m     expect(result^[[33m.^[[39moutcome)^[[33m.^[[39mtoBe(^[[32m'ended'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6265690Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6267451Z      ^[[90m 245 |^[[39m     expect(w^[[33m.^[[39mstripe^[[33m.^[[39msubs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_client'^[[39m)^[[33m?^[[39m^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6270508Z      ^[[90m 246 |^[[39m     expect(w^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'clientPurchase'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'purchase'^[[39m })^[[33m?^[[39m^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6272803Z      ^[[90m 247 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T17:07:20.6273189Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6273617Z       at Object.<anonymous> (test/aud-sol-d34-118-d3.spec.ts:244:28)
+targeted	Targeted jest	2026-10-04T17:07:20.6274145Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6275415Z   ● AUD-SOL-D34-118 #689 prior controls and new interleavings › D3 out-of-band 2A: an active-provider status does not hide an unresolved dispute cycle
+targeted	Targeted jest	2026-10-04T17:07:20.6276468Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6276815Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T17:07:20.6277254Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6277458Z     Expected: "canceled"
+targeted	Targeted jest	2026-10-04T17:07:20.6277903Z     Received: "active"
+targeted	Targeted jest	2026-10-04T17:07:20.6278164Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6278525Z     ^[[0m ^[[90m 257 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6279532Z      ^[[90m 258 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mreconcile()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6281932Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 259 |^[[39m     expect(w^[[33m.^[[39mstripe^[[33m.^[[39msubs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_client'^[[39m)^[[33m?^[[39m^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6283648Z      ^[[90m     |^[[39m                                                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6285509Z      ^[[90m 260 |^[[39m     expect(w^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'clientPurchase'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'purchase'^[[39m })^[[33m?^[[39m^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6286922Z      ^[[90m 261 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T17:07:20.6287239Z      ^[[90m 262 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T17:07:20.6287590Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6287827Z       at Object.<anonymous> (test/aud-sol-d34-118-d3.spec.ts:259:53)
+targeted	Targeted jest	2026-10-04T17:07:20.6288106Z 
+targeted	Targeted jest	2026-10-04T17:07:20.6288295Z Test Suites: 1 failed, 1 passed, 2 total
+targeted	Targeted jest	2026-10-04T17:07:20.6288657Z Tests:       3 failed, 25 passed, 28 total
+targeted	Targeted jest	2026-10-04T17:07:20.6288956Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T17:07:20.6289199Z Time:        13.423 s
+targeted	Targeted jest	2026-10-04T17:07:20.6289731Z Ran all test suites matching test/aud-sol-d34-118-d3.spec.ts|test/dunning-d3-fix-round.spec.ts.
+targeted	Targeted jest	2026-10-04T17:07:20.9209154Z ##[error]Process completed with exit code 1.

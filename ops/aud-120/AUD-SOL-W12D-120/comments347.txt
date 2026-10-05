@@ -1,0 +1,58 @@
+
+COMMENT 5975774011 https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/347#issuecomment-5975774011
+READY FOR AUDIT (operator 116) — growth-project-mobile#347 @ ea2c72d1b37b33ecf418c3ff1e198ebb2566c622
+
+Piece S3 of the coach setup split of #329 (3 pieces: #345 -> #346 -> #347). Base `agent115/wizard-split-2-setup-components`. T4 (max-tier rule).
+Checks at this head (latest run per check, 1 checks): all green. CodeQL, danger, banned casts and build-sbom run only when the stack lands on main.
+Land rule: Land as one (rule 11) after backend coach money #674-#677 + #675 is deployed; then #348-#351.
+
+SIZE ASSESSMENT (operator 116, MODEL_ROUTING 8.2) — growth-project-mobile#347 @ ea2c72d1b37b33ecf418c3ff1e198ebb2566c622
+- Lines: 2592 changed (source 1331 / tests 1261 / migrations 0 / docs 0; excluded 0); 6 files. Under the 3,000 hard limit.
+- Seams (largest areas): `src/components/coach` 1027, `src/navigation/CoachWizardNavigator.tsx` 844, `src/screens/coach` 487, `src/__tests__/CoachPackageEditScreen.idempotency.test.tsx` 231, `src/__tests__/CoachPackageContentsScreen.test.tsx` 3.
+- Coupling: code piece with its own tests; the piece boundaries, dependency direction (no piece imports a later piece) and per-piece tests are stated in the PR body.
+- Decision: KEEP. This is already one logical piece of the owner-ordered split of #329. Cutting it further would separate code from the tests that prove it, and would add a restack round to every later piece without making any line easier to audit. Fix rounds must keep it under 3,000.
+
+COMMENT 5982583482 https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/347#issuecomment-5982583482
+FIX ROUND 1 (restack, merge-only) (B-WIZ-118, agent 118) — growth-project-mobile#347 @ 3beab16088b7eae1fa08851f9742041bb6e0431f
+
+Merged the new #346 head into this piece, merge commits only, no conflicts and no content edits here:
+- `5e0689e4` merges #346 `10e278b6`; `3beab160` merges #346 `2baea5b8` (which carries #345 `97c9005e`).
+- This piece's own diff against its base is unchanged: 2,308+ / 284- (2,592 lines, same as `ea2c72d1`), in the 1,500-3,000 band (operator SIZE ASSESSMENT stands).
+
+| What came in from below | Effect on W3 |
+|---|---|
+| #345: cadence PATCH + answer check, `isLive` / `PackageCreateStoppedError`, content-free referenced reports, legacy status and no-refresh fallbacks | none needed to compile: `isLive` is optional; W3 tests coachSetup, coachSetupRound2, CoachPackageEditScreen idempotency and lockPreview, CoachPackageContentsScreen pass locally at this head (191 tests across the coach setup and package suites) |
+| #346: form and Get paid lifecycle fences, archived recovery, copy fixes | the wizard's package step uses FirstPackageForm, so it inherits the B-329-5 fences |
+
+Not fixed here (content in this piece; listed for the operator and the W3 owner, see ops/reports/B-WIZ-118.md):
+- src/screens/coach/payments/CoachPackageEditScreen.tsx:261 calls `createPackageOnce` without `isLive` (pass the editor's owner/mount check); :608 "It will not be made twice." (narrow as in W2).
+- src/navigation/CoachWizardNavigator.tsx:343 "Stripe, our payments partner" (same rule as B-346-1).
+
+Checks at this head: Typecheck, lint, test pass.
+
+READY FOR AUDIT
+
+
+COMMENT 5985325378 https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/347#issuecomment-5985325378
+FIX ROUND 2 (restack, merge-only) (B-WIZ2-119, agent 119) — growth-project-mobile#347 @ 8437fb94aa031b906e26f33f734097d9af2f9bc5
+
+Builder B-WIZ2-119 (Claude Opus 5.5). Start head `3beab16088b7eae1fa08851f9742041bb6e0431f`. One commit: `8437fb94` merges #346 head `26cf23b7987c866615ab9a4b2f95a10e6e318f40` (which carries #345 `ed29833c`). The merge was clean, with no conflict hunks and no content edits. W3's own diff against W2 is unchanged: 6 files, +2,308 / -284 = 2,592, the same as at `3beab160`. W3 findings are not touched in this round; W3 needs its own fix round (see the follow-ups below).
+
+Behaviour that W3 inherits from below:
+- #345 B-345-1: a create that is retired after its write-ahead saved no longer removes that intent. This covers the editor scope that `CoachPackageEditScreen` uses through `createPackageOnce`. The intent stays on disk, and the same account re-sends the same key.
+- #346 B-346-3: `FirstPackageForm` waits for hydration before taking edits, and a tap waits for hydration, then submits the package exactly as shown.
+
+Lane at `8437fb94` (W1 + W2 + W3 suites and all lens probes): [run 37241071015](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37241071015): 151 / 151. It includes `coachSetup.test.tsx`, `coachSetupRound2.test.tsx`, `CoachPackageEditScreen.idempotency.test.tsx` and `CoachPackageContentsScreen.test.tsx`.
+
+W3 items still open for its own round (from B-WIZ-118 and the W12-119 lenses; not fixed here):
+- `src/screens/coach/payments/CoachPackageEditScreen.tsx:261`: `createPackageOnce` is called without `isLive`.
+- `CoachPackageEditScreen.tsx:608`: "It will not be made twice." needs narrowing.
+- `src/navigation/CoachWizardNavigator.tsx:343`: "our payments partner" is first person.
+- `CoachWizardNavigator.tsx:130-140` and `:622-629`: awaits without an owner re-check.
+
+Size: 2,592, grandfathered, under the 3,000 ceiling.
+
+Required checks at `8437fb94`: Typecheck, lint, test: success (https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37241252458/job/111550253402). Analyze and CodeQL run only on the main-based piece (#345, green at `ed29833c`); this stacked piece has none, and none are claimed.
+
+READY FOR AUDIT
+

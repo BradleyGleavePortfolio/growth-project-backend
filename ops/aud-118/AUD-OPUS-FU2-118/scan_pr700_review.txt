@@ -1,0 +1,182 @@
+storefront/storefront.service.ts:145 ['reason'] :: connectAccount.charges_enabled connectAccount.payouts_enabled connectAccount.details_submitted connectAccount.disabled_reason ?? STR ,
+storefront/guest-checkout.service.ts:268 ['reason'] :: connectAccount.charges_enabled connectAccount.payouts_enabled connectAccount.details_submitted connectAccount.disabled_reason ?? STR ,
+storefront/guest-checkout.service.ts:292 ['reason'] :: connectAccount.stripe_account_id live.disabled_reason ?? STR ,
+storefront/guest-checkout.service.ts:1443 ['reason'] :: paymentIntentId reason ?? STR ,
+storefront/guest-checkout.service.ts:1796 ['title'] :: entitledPurchaseId (err as Error).message ,
+storefront/webview-detect.middleware.ts:202 ['req'] :: matched req.path
+exercise-catalog/exercise-video-provider.service.ts:450 ['name'] :: provider.name exerciseName , err,
+community/search/community-search.service.ts:147 ['query'] :: { event: STR , workspace_id: workspaceId, user_id: user.id, term_length: query.q.length, kind: query.kind ?? null, result_count: results.length, took_ms: tookMs, }
+community/realtime/community-realtime.service.ts:152 ['message'] :: channel event meta.channelKind message ,
+community/ack/ack-flag.guard.ts:31 ['req'] :: req.user?.id ?? STR ,
+community/ai-triage/ai-triage-flag.guard.ts:33 ['req'] :: req.user?.id ?? STR ,
+community/wearable-prompts/degraded-connector-fallback.service.ts:82 ['reason'] :: { event: STR , workspace_id: workspaceId, coach_id: coachId, client_id: clientId, reason, }
+community/classroom/community-classroom.service.ts:119 ['message'] :: asset.id asset.kind message ,
+community/notifications/community-notifications.service.ts:244 ['recipient'] :: kind recipientId result.code ,
+community/notifications/community-notifications.service.ts:258 ['message', 'recipient'] :: kind recipientId message ,
+community/voice/community-voice.service.ts:401 ['reason'] :: keyCheck.reason
+data-export/data-export.service.ts:685 ['reason'] :: STR , { level: STR , tags: { code, reason: r.reason, stage: STR }, extra: { export_id: r.export_id, attempts: r.attempts + 1 }, }
+data-export/data-export.service.ts:1386 ['reason'] :: STR , { level: STR , tags: { code, reason, stage: STR , recorded: String(recorded) }, extra: { export_id: exportId }, }
+connect/fees/transfer-orchestrator.service.ts:153 ['message'] :: row.purchase_id attemptCount message ,
+admin/federation/finance-admin.client.ts:166 ['reason'] :: path lastDegraded?.kind === STR ? lastDegraded.reason : STR ,
+talent-marketplace/connect-adapter.service.ts:197 ['name'] :: op kind correlationId name this.redact(err) ,
+talent-marketplace/admin-applications.service.ts:134 ['note', 'request'] :: { event: STR , owner_id: ownerId, application_id: applicationId, decision: result.decision, note_length: result.note?.length ?? 0, replayed: result.replayed, result_status: result.status, ...(requestI
+talent-marketplace/admin-moderation.service.ts:129 ['note', 'request'] :: { event: STR , owner_id: ownerId, listing_id: listingId, decision: result.decision, note_length: result.note?.length ?? 0, replayed: result.replayed, result_status: result.status, ...(requestId ? { re
+ptm/ptm.service.ts:55 ['input'] :: input.userId input.signalType msg ,
+ptm/ptm.scheduler.ts:58 ['message'] :: message
+email/email.service.ts:158 ['input'] :: input.idempotencyKey ,
+email/email.service.ts:199 ['input'] :: logRow.id input.template input.idempotencyKey ,
+email/email.service.ts:219 ['input', 'message'] :: input.template logRow.id providerMessageId ,
+email/email.service.ts:233 ['input'] :: input.template logRow.id msg ,
+audit/audit.service.ts:235 ['input'] :: input.action msg ,
+landing-pages/crm/lead-sync.processor.ts:101 ['message'] :: safeErrorMessage(err)
+landing-pages/crm/lead-sync.processor.ts:169 ['message'] :: lead.id safeErrorMessage(err) ,
+landing-pages/crm/lead-sync.processor.ts:345 ['message'] :: leadId safeErrorMessage(err) ,
+scheduling/scheduling-webhook.controller.ts:60 ['body', 'payload'] :: payloadShape(body) ,
+scheduling/scheduling-webhook.controller.ts:84 ['body', 'payload'] :: payloadShape(body) ,
+scheduling/google-calendar/google-calendar-webhook.controller.ts:141 ['message'] :: channelId resourceState messageNumber ,
+scheduling/google-calendar/google-calendar.service.ts:316 ['message'] :: connection.id message ,
+scheduling/google-calendar/google-calendar.service.ts:455 ['message'] :: action connection.id message ,
+scheduling/providers/google-meet.adapter.ts:28 ['input'] :: input.idempotencyKey ,
+scheduling/providers/zoom-video.adapter.ts:22 ['input'] :: input.idempotencyKey ,
+scheduling/providers/google-calendar.adapter.ts:33 ['input'] :: input.idempotencyKey ,
+scheduling/jobs/reminder.job.ts:210 ['name'] :: session.id userId kind (err as Error).name ,
+checkout/dunning.service.ts:1281 ['stringify'] :: JSON.stringify({ event, ...fields })
+checkout/dunning.service.ts:1283 ['stringify'] :: event JSON.stringify({ event })
+checkout/dunning-v2/dunning-lockout.scheduler.ts:44 ['message'] :: message
+users/gdpr-scrub.service.ts:175 ['message'] :: c.user_id message ,
+users/gdpr-scrub.scheduler.ts:48 ['message'] :: message
+users/account.service.ts:113 ['message'] :: userId message
+wearables/ingestion/ingestion.service.ts:80 ['message'] :: { msg: STR , user_id: samples[0]?.userId, provider: samples[0]?.provider, submitted_count: samples.length, error_message: (err as Error)?.message ?? String(err), }
+wearables/ingestion/ingestion.service.ts:167 ['message'] :: { msg: STR , user_id: samples[0]?.userId, provider: samples[0]?.provider, submitted_count: samples.length, connection_count: connectionIds.length, error_code: (err as { code?: string })?.code ?? STR ,
+wearables/connectors/polar/polar.connector.ts:596 ['message'] :: { msg: STR , op, provider: STR , user_id_hash: conn?.user_id ? userHash(conn.user_id) : undefined, error_class: err instanceof Error ? err.name : STR , error_message: message, }
+wearables/connectors/polar/polar.connector.ts:616 ['message', 'name'] :: { msg: STR , op, provider: STR , user_id_hash: conn?.user_id ? userHash(conn.user_id) : undefined, error_class: markErr instanceof Error ? markErr.name : STR , error_message: redactErrorMessage(markEr
+wearables/connectors/polar/polar-webhook.controller.ts:175 ['message'] :: { msg: STR , provider: STR , event_type: event.event, user_id_hash: this.hash(externalAccountId), error_class: err instanceof Error ? err.name : STR , error_message: redactErrorMessage(err), }
+wearables/connectors/oura/oura.connector.ts:546 ['message'] :: { msg: STR , op, provider: STR , error_message: message, }
+wearables/connectors/oura/oura-webhook.controller.ts:180 ['message'] :: { msg: STR , provider: STR , data_type: event.data_type, error_message: (err as Error)?.message ?? String(err), }
+wearables/connectors/withings/withings.connector.ts:645 ['message'] :: { msg: STR , op, provider: STR , error_message: message, }
+wearables/connectors/withings/withings.connector.ts:663 ['message', 'name'] :: { msg: STR , op, provider: STR , conn_id: conn.id, error_class: (markErr as Error)?.name ?? typeof markErr, error_message: redactErrorMessage(markErr), }
+wearables/connectors/withings/withings-webhook.controller.ts:122 ['reason', 'stringify'] :: JSON.stringify({ msg: STR , reason: STR , }),
+wearables/connectors/withings/withings-webhook.controller.ts:222 ['message', 'name'] :: { msg: STR , provider: STR , conn_id: connection.id, appli: event.appli, error_class: (markErr as Error)?.name ?? typeof markErr, error_message: redactErrorMessage(markErr), }
+wearables/connectors/withings/withings-webhook.controller.ts:232 ['message', 'name'] :: { msg: STR , provider: STR , appli: event.appli, error_class: (err as Error)?.name ?? typeof err, error_message: safeError, }
+wearables/connectors/whoop/whoop-webhook.controller.ts:113 ['reason'] :: reason
+wearables/connectors/whoop/whoop-webhook.controller.ts:132 ['payload'] :: { msg: STR , provider_event_id: payload.id, type: payload.type, }
+wearables/connectors/whoop/whoop-webhook.controller.ts:155 ['payload'] :: { msg: STR , provider_event_id: payload.id, type: payload.type, trace_id: payload.trace_id, user_hash: hashWhoopUserId(payload.user_id), }
+wearables/connectors/whoop/whoop-webhook.controller.ts:190 ['payload'] :: { msg: STR , provider_event_id: payload.id, type: payload.type, trace_id: payload.trace_id, user_hash: hashWhoopUserId(payload.user_id), connections_disconnected: count, }
+wearables/connectors/fitbit/fitbit.connector.ts:592 ['message'] :: { msg: STR , op, provider: STR , error_message: message, }
+wearables/connectors/fitbit/fitbit.connector.ts:609 ['message', 'name'] :: { msg: STR , op, provider: STR , conn_id: conn.id, error_class: (markErr as { constructor?: { name?: string } }) ?.constructor?.name, error_message: redactErrorMessage(markErr), }
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:246 ['message', 'name'] :: { msg: STR , provider: STR , collection_type: notification.collectionType, user_hash: userHash, error_class: (markErr as { constructor?: { name?: string } }) ?.constructor?.name, error_message: redact
+wearables/connectors/fitbit/fitbit-webhook.controller.ts:256 ['message'] :: { msg: STR , provider: STR , collection_type: notification.collectionType, user_hash: userHash, error_message: safeMessage, }
+wearables/connectors/strava/strava-webhook.controller.ts:258 ['reason', 'stringify'] :: JSON.stringify({ msg: STR , reason: STR , }),
+wearables/connectors/strava/strava-webhook.controller.ts:267 ['body'] :: body.subscription_id ,
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:164 ['message', 'name'] :: { msg: STR , provider: STR , conn_id: connection.id, event_type: event.event_type, user_hash: this.hash(userId), error_class: (markErr as Error)?.name ?? STR , redacted_message: redactErrorMessage(mar
+wearables/connectors/wahoo/wahoo-webhook.controller.ts:174 ['name'] :: { msg: STR , provider: STR , event_type: event.event_type, user_hash: this.hash(userId), error_class: (err as Error)?.name ?? STR , }
+wearables/connectors/wahoo/wahoo.connector.ts:460 ['name'] :: { msg: STR , provider: STR , op: label, error_class: (err as Error)?.name ?? STR , }
+wearables/connectors/wahoo/wahoo.connector.ts:556 ['message'] :: { msg: STR , op, provider: STR , user_hash: conn?.user_id ? hashForLog(conn.user_id) : STR , error_message: message, }
+wearables/connectors/wahoo/wahoo.connector.ts:573 ['message', 'name'] :: { msg: STR , op, provider: STR , conn_id: conn.id, user_hash: conn?.user_id ? hashForLog(conn.user_id) : STR , error_class: (markErr as Error)?.name ?? STR , error_message: redactErrorMessage(markErr)
+wearables/connectors/garmin/garmin-webhook.controller.ts:211 ['message'] :: { msg: STR , provider: STR , type: event.type, conn_id: connection.id, user_hash: hashGarminUserId(summary.userId), error_code: markRedacted.error_code, error_class: markRedacted.error_class, error_me
+wearables/connectors/garmin/garmin-webhook.controller.ts:222 ['message'] :: { msg: STR , provider: STR , type: event.type, user_hash: hashGarminUserId(summary.userId), error_code: redacted.error_code, error_class: redacted.error_class, error_message: redacted.redacted_message
+wearables/preferences/preferences.service.ts:81 ['subject'] :: { event: STR , subject_user_id: effectiveUserId, actor_user_id: callerId, on_behalf_of: effectiveUserId !== callerId, metric: row.metric, preferred_provider: row.preferred_provider, }
+wearables/preferences/preferences.service.ts:119 ['subject'] :: { event: STR , subject_user_id: effectiveUserId, actor_user_id: callerId, on_behalf_of: effectiveUserId !== callerId, metric, existed: count > 0, }
+wearables/samples/wearable-samples.service.ts:170 ['reason'] :: { event: STR , reason: err instanceof Error ? err.message : STR , }
+wearables/samples/wearable-samples.service.ts:178 ['reason'] :: { event: STR , reason: err instanceof Error ? err.message : STR , }
+wearables/samples/wearable-samples.service.ts:297 ['query', 'subject'] :: { event: STR , user_id: subjectUserId, bucket: query.bucket, metric: query.metric ?? null, window_days: windowDays, granularity: query.granularity, preferred_only: query.preferredOnly, sample_count: s
+wearables/insights/wearable-insights.service.ts:177 ['subject'] :: audience subjectUserId bucket ,
+wearables/insights/wearable-insights.service.ts:199 ['subject'] :: audience subjectUserId (err as Error).message ,
+wearables/insights/wearable-insights.service.ts:225 ['subject'] :: audience subjectUserId ,
+wearables/insights/wearable-insights.service.ts:239 ['reason', 'subject'] :: audience subjectUserId guarded.reason ,
+wearables/insights/wearable-insights.service.ts:257 ['subject'] :: audience subjectUserId (err as Error).message ,
+account-deletion/account-deletion.service.ts:618 ['reason'] :: candidate.id result.reason ,
+filters/throttler-exception.filter.ts:74 ['message'] :: { message: STR , userId, ip, path, method, limit: STR , ttl: ThrottlerExceptionFilter.RETRY_AFTER_SECONDS, }
+filters/http-exception.filter.ts:64 ['diagnos', 'message', 'request'] :: request.method diagnosticPath diagnostic.message , diagnostic.stack,
+filters/http-exception.filter.ts:76 ['request'] :: STR , request.method
+filters/http-exception.filter.ts:77 ['diagnos'] :: STR , diagnosticPath
+filters/http-exception.filter.ts:79 ['request'] :: STR , sentryReq.requestId
+filters/http-exception.filter.ts:80 ['diagnos'] :: diagnostic
+packages/drip-trigger.service.ts:194 ['input'] :: input.buyerUserId input.assetType input.assetId flippedIds.length flippedIds.join( STR ) ,
+packages/drip-trigger.service.ts:200 ['input'] :: input.buyerUserId input.assetType input.assetId (err as Error).message ,
+packages/drip-trigger.service.ts:244 ['input'] :: input.buyerUserId input.milestoneKey flippedIds.length flippedIds.join( STR ) ,
+packages/drip-trigger.service.ts:250 ['input'] :: input.buyerUserId input.milestoneKey (err as Error).message ,
+packages/drip-dispatcher.cron.ts:595 ['reason'] :: drop.id nextAttempt MAX_ATTEMPTS nextRetryAt.toISOString() reason ,
+packages/drip-dispatcher.cron.ts:612 ['content', 'reason'] :: drop.id purchase.client_user_id purchase.coach_user_id purchase.package_id drop.content_id drop.asset_type nextAttempt MAX_ATTEMPTS reason ,
+packages/purchase-fanout.service.ts:586 ['reason'] :: clientPurchaseId reason ,
+packages/purchase-fanout.service.ts:604 ['reason'] :: result.count clientPurchaseId reason ,
+packages/purchase-fanout.service.ts:608 ['reason'] :: clientPurchaseId reason ,
+packages/package-contents.service.ts:722 ['content'] :: packageId contentId result.drops_updated result.buyers_affected skipped_delivered ,
+packages/asset-resolvers/workout.resolver.ts:166 ['input'] :: input.clientId input.assetId ,
+packages/asset-resolvers/auto-message.resolver.ts:130 ['input'] :: input.clientId ,
+packages/asset-resolvers/auto-message.resolver.ts:153 ['content'] :: purchaseId contentId (err as Error).message ,
+packages/asset-resolvers/media-asset.resolver.ts:142 ['input'] :: input.clientId input.assetId ,
+onboarding/onboarding.service.ts:949 ['name'] :: clientId releaseErr instanceof Error ? releaseErr.name : STR ,
+macros/macros.service.ts:95 ['calorie', 'dto'] :: coachId clientId dto.calories_kcal ,
+workout-builder/program-delivery.service.ts:296 ['input'] :: master.id programId input.clientId planRows.length input.source ,
+observability/process-errors.ts:11 ['diagnos'] :: diagnostic
+common/cors-origins.ts:46 ['message'] :: parsed.message ,
+common/feature-flag/pilot-coach-allowlist.guard.ts:66 ['message'] :: message
+common/feature-flag/pilot-coach-allowlist.guard.ts:86 ['message'] :: message
+coach/coach-effectiveness.scheduler.ts:63 ['message'] :: message ,
+coach/brief/coach-brief.service.ts:1439 ['message'] :: errorMessageOf(err) ,
+coach/brief/coach-brief.service.ts:1481 ['name'] :: violation safeCoachName ,
+coach/brief/coach-brief.service.ts:1501 ['name'] :: violation2 safeCoachName ,
+coach/brief/coach-brief.service.ts:1505 ['name'] :: safeCoachName secondAttempt.error ,
+coach/brief/coach-brief.service.ts:1510 ['name'] :: safeCoachName firstAttempt.error ,
+coach/brief/coach-brief.service.ts:1832 ['message'] :: coachId errorMessageOf(err) ,
+coach/brief/coach-brief.service.ts:1854 ['message'] :: coachId briefDate errorMessageOf(err) errorMessageOf(cleanupErr) ,
+coach/brief/coach-brief.scheduler.ts:110 ['message'] :: errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:120 ['message'] :: cronExpr errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:145 ['message'] :: errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:155 ['message'] :: errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:421 ['message'] :: prefs.coach_id briefDate errorMessageOf(err) ,
+coach/brief/coach-brief.scheduler.ts:457 ['message'] :: prefs.coach_id errorMessageOf(err) ,
+coach/practice-type/practice-type.service.ts:110 ['reason'] :: coachId outcome.reason ,
+auth/auth.service.ts:421 ['reason', 'request'] :: supabaseUserId reason + createdByThisRequest ,
+auth/auth.service.ts:879 ['message'] :: linkError?.message ?? STR ,
+auth/auth.service.ts:897 ['message'] :: otpError?.message ?? STR ,
+auth/auth.service.ts:1215 ['message'] :: signInError?.message ?? STR ,
+auth/auth.service.ts:2030 ['message'] :: user.id signInError?.message ?? STR ,
+ai/gateway/ai-gateway.service.ts:164 ['req', 'request', 'subject'] :: { event: STR , capability: req.capability, requesterId: req.requester.id, requesterRole: req.requester.role, subjectUserId: req.subjectUserId ?? null, ip: req.ip ?? null, }, req.capability req.request
+ai/gateway/ai-gateway.service.ts:369 ['req'] :: req.capability (err as Error).message ,
+ai/gateway/ai-gateway.service.ts:480 ['req'] :: req.capability msg
+ai/gateway/providers/provider-registry.ts:28 ['name'] :: name
+ai/gateway/materialisers/assign-workout.materialiser.ts:117 ['request'] :: { event: STR , capability: this.capability, draftId: draft.id, requesterId: draft.requester_id, requesterRole: requester?.role ?? null, }, STR ,
+ai/gateway/materialisers/create-workout-plan.materialiser.ts:156 ['payload', 'request'] :: { event: STR , capability: this.capability, draftId: draft.id, requesterId: draft.requester_id, targetClientId: payload.target_client_id, }, STR ,
+ai/gateway/materialisers/send-notification.materialiser.ts:103 ['request'] :: { event: STR , capability: this.capability, draftId: draft.id, requesterId: draft.requester_id, requesterRole: requester?.role ?? null, }, STR ,
+ai/gateway/materialisers/assign-meal-plan.materialiser.ts:98 ['request'] :: { event: STR , capability: this.capability, draftId: draft.id, requesterId: draft.requester_id, requesterRole: requester?.role ?? null, }, STR ,
+ai/gateway/materialisers/edit-workout-plan.materialiser.ts:418 ['request'] :: { event: STR , capability: this.capability, planId, requesterId, clientId: a.client_id, }, STR ,
+ai/adapters/anthropic.adapter.ts:200 ['message'] :: errorMessageOf(err) ,
+ai/adapters/anthropic.adapter.ts:266 ['message'] :: errorMessageOf(err)
+ai/coach/coach-ai.service.ts:413 ['calorie'] :: day.day day.daily_totals.calories target Math.round(drift * 100) ,
+roman/roman-erasure.sweep.ts:112 ['diagnos'] :: diagnostic, { tags: { job: STR , trigger }, }
+roman/roman-erasure.sweep.ts:115 ['diagnos'] :: trigger String(diagnostic)
+roman/roman-erasure.sweep.ts:124 ['diagnos'] :: trigger String(safeDiagnostic(err)) ,
+roman/roman.service.ts:219 ['diagnos'] :: surface String(safeDiagnostic(eraseErr)) ,
+roman/roman.service.ts:423 ['diagnos'] :: logLine String(diagnostic)
+roman/roman.service.ts:424 ['diagnos'] :: diagnostic, { tags: { feature: STR , op: meta.op , stage: meta.stage }, }
+roman/roman.service.ts:639 ['diagnos'] :: row.id diagnostic
+invite-grant/invite-grant.service.ts:448 ['input'] :: input.clientUserId pkg.id input.source ,
+invite-grant/invite-grant.service.ts:709 ['input'] :: status input.clientUserId input.coachUserId packageId binding.code detail ,
+ai-credits/coach-ai-budget.service.ts:419 ['reason'] :: { event: STR , coachId: args.coachId, displayedCents: args.displayedCents, actorOwnerId: args.actorOwnerId, reason: args.reason, purchaseId: purchase.id, }, STR ,
+ai-credits/coach-ai-budget.service.ts:470 ['reason'] :: { event: STR , purchaseId: purchase.id, coachId: purchase.coach_user_id, paidCents: purchase.paid_cents, actorOwnerId: args.actorOwnerId, reason: args.reason, }, STR ,
+secrets/secrets.service.ts:232 ['name'] :: secretName ,
+secrets/secrets.service.ts:245 ['name'] :: secretName rotatedByUserId ,
+notifications/notifications.service.ts:437 ['input'] :: input.user_id input.kind
+notifications/notifications.service.ts:582 ['payload'] :: coachId payload.alertId payload.alertType payload.severity category ,
+notifications/recipient-timezone.ts:88 ['name', 'recipient'] :: recipientUserId (err as Error).name ,
+notifications/emitters/message-received.emitter.ts:51 ['recipient'] :: recipientUserId (err as Error).message ,
+notifications/emitters/coach-alert.emitter.ts:72 ['payload'] :: payload.coachId (err as Error).message ,
+notifications/emitters/checkin-submitted.emitter.ts:63 ['payload'] :: payload.coachId (err as Error).message ,
+throttler/throttler.config.ts:609 ['message', 'name'] :: { message: STR , throttler: name, error: err instanceof Error ? err.message : String(err), }
+throttler/throttler.config.ts:679 ['name'] :: throttlers .map((t) => t.name) .join( STR ) ,
+billing/subscription.guard.ts:248 ['reason'] :: enforce ? STR : STR coachId currentState reason method route ,
+billing/billing.service.ts:1348 ['reason'] :: event.id transfer.id coachId ?? STR amountCents failureReason ?? STR ,
+billing/billing.service.ts:1500 ['reason'] :: event.type event.id payout.id accountId coachId amountCents failureReason ?? STR ,
+billing/owner-billing.controller.ts:342 ['req'] :: req.user.id coachId immediately ? STR : STR status ,
+scout/scout.service.ts:295 ['dto'] :: coachId dto.intent_id err instanceof Error ? err.name : STR ,
+scout/scout-reconstruct.service.ts:133 ['stringify'] :: JSON.stringify(summary)
+scout/scout-reconstruct.service.ts:135 ['stringify'] :: JSON.stringify(summary)
+scout/scout-reconstruct.service.ts:220 ['stringify'] :: JSON.stringify(summary)
+scout/scout-reconstruct.service.ts:222 ['stringify'] :: JSON.stringify(summary)
+scout/scout-reconstruct.service.ts:406 ['stringify'] :: JSON.stringify({ intent_id: intentId, coach_id: coachId, staged, max: RECONSTRUCT_MAX_ROWS, }) ,
+engagement/coach-welcome.service.ts:343 ['reason'] :: job.id reason
+engagement/coach-welcome.service.ts:457 ['reason'] :: job.id reason
+engagement/coach-welcome.service.ts:470 ['reason'] :: job.id attempt reason
+insights/holistic-insights.service.ts:78 ['reason'] :: userId reason

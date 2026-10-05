@@ -1,0 +1,193 @@
+diff --git a/src/screens/settings/DeleteAccountScreen.tsx b/src/screens/settings/DeleteAccountScreen.tsx
+index 8caccf4b..588205c7 100644
+--- a/src/screens/settings/DeleteAccountScreen.tsx
++++ b/src/screens/settings/DeleteAccountScreen.tsx
+@@ -17,7 +17,8 @@
+  *     the server can revoke Sign in with Apple tokens.
+  *  4. Timing copy uses the server's grace_days, purge_after and completes_by.
+  *     Apple copy says access was removed only when the server reports
+- *     `revoked`; otherwise it explains how to remove the app from Apple ID.
++ *     `revoked`; otherwise it explains how to remove the app from the
++ *     person's Apple Account (APPLE_FALLBACK).
+  *
+  * Copy rules: every claim must match the backend erasure manifest
+  * (src/account-deletion/account-deletion.manifest.ts). No emoji, no
+@@ -84,8 +85,21 @@ export const KEPT_RECORDS: readonly string[] = [
+ export const BILLING_NOTE =
+   'Any subscription or payment plan you have, as a client or as a coach, is cancelled when the deletion completes, and scheduled reminders and emails stop. Until then it stays active.';
+ 
++// The steps are Apple's (Apple Support 102571) and match the backend's
++// SIGN_IN_WITH_APPLE_DELETION_TEXT (#611, C-611-18). Settings > your name >
++// Sign in with Apple is the iOS 18 and later path; the app supports iOS 16.4
++// and later, so earlier versions get the account.apple.com steps, which do not
++// depend on the iOS version. "Apple Account" is Apple's current name for what
++// it used to call the Apple ID (B-PRIV-FU-117).
+ export const APPLE_FALLBACK =
+-  'You can also remove this app from your Apple ID yourself: on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose this app and stop using it with your Apple ID.';
++  'You can also remove this app from your Apple Account yourself. ' +
++  'On an iPhone with iOS 18 or later, open Settings, tap your name, then Sign in with Apple, choose this app, tap Delete and follow the steps on screen to confirm. ' +
++  'On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose this app and stop using Sign in with Apple for it.';
++
++// Shown on the form. True whatever the server reports: after confirming, the
++// status view shows either Apple's confirmation or APPLE_FALLBACK.
++export const APPLE_FORM_NOTE =
++  'If you signed in with Apple, after you confirm you will see whether Apple removed this app’s access to your Apple Account, and how to remove it yourself if not.';
+ 
+ interface DeleteAccountScreenProps {
+   navigation: NavigationProp<ParamListBase>;
+@@ -447,7 +461,7 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+           {appleOutcome === 'revoked' ? (
+             <View style={styles.card}>
+               <Text style={styles.bodyText} testID="apple-revoked">
+-                Apple confirmed that this app no longer has access to your Apple ID.
++                Apple confirmed that this app no longer has access to your Apple Account.
+               </Text>
+             </View>
+           ) : null}
+@@ -560,9 +574,11 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+ 
+         <Text style={styles.sectionHeading}>Permanently deleted</Text>
+         {deletedList}
+-        <Text style={[styles.bodyText, { marginTop: 8, fontSize: 13, color: colors.textMuted }]}>
+-          If you signed in with Apple, we also ask Apple to remove this app&apos;s access to your
+-          Apple ID. You will see whether that worked, and how to do it yourself if it did not.
++        <Text
++          style={[styles.bodyText, { marginTop: 8, fontSize: 13, color: colors.textMuted }]}
++          testID="apple-note"
++        >
++          {APPLE_FORM_NOTE}
+         </Text>
+ 
+         <Text style={styles.sectionHeading}>What is kept</Text>
+diff --git a/src/screens/settings/README.md b/src/screens/settings/README.md
+index 11dc8648..4a45131c 100644
+--- a/src/screens/settings/README.md
++++ b/src/screens/settings/README.md
+@@ -19,8 +19,9 @@ In-app account deletion for both roles (Apple App Review 5.1.1(v); GDPR Art. 17;
+ 3. The user types `DELETE` (case-insensitive) or their account email, then **re-authenticates**:
+    - password, or
+    - on iOS when available, the native Sign in with Apple sheet (`reauthenticateWithApple()` in `src/utils/appleAuth.ts`; requests no scopes and does NOT create a new session).
+-4. `POST /auth/recent-auth-token` (`{ password }` or `{ provider: 'apple', provider_token }`) returns a short-lived single-use token; `POST /me/delete-account` with header `X-Recent-Auth-Token` schedules the deletion **in the same request** (the 14-day grace period starts now). Apple users also send `apple_authorization_code` so the server revokes their Sign in with Apple tokens. The request is idempotent on the server.
++4. `POST /auth/recent-auth-token` (`{ password }` or `{ provider: 'apple', provider_token }`) returns a short-lived single-use token; `POST /me/delete-account` with header `X-Recent-Auth-Token` schedules the deletion **in the same request** (the 14-day grace period starts now). Apple users also send `apple_authorization_code` so the server can revoke their Sign in with Apple tokens; the response's `apple_revocation` says whether it did. The request is idempotent on the server.
+ 5. **Status view:** the exact permanent-deletion date (`purge_after`), the deleted-data list, **Keep my account** (`POST /me/delete-account/cancel`, after a confirm alert) while `cancellable`, and Sign out. The user is not signed out automatically; the account stays usable during the grace period.
++   - Apple copy: the view says Apple removed the app's access to the Apple Account only when `apple_revocation` is `revoked`. Otherwise an Apple account sees `APPLE_FALLBACK`: Apple's own steps (Apple Support 102571), Settings > your name > Sign in with Apple on iOS 18 or later, and account.apple.com > Sign-In & Security on earlier iOS versions (the app supports iOS 16.4 and later) or any other device. It matches the backend's `SIGN_IN_WITH_APPLE_DELETION_TEXT`. Apple's current name is "Apple Account", not "Apple ID".
+ 
+ Errors: 401 on re-auth shows "That password is not correct" / "Apple could not confirm it is you"; 429 shows a wait-a-minute message; other failures show the server message. The re-auth request is sent with `skipAuthRefresh` so a wrong password is not replayed by the 401 refresh interceptor against the 5/min throttle.
+ 
+@@ -66,7 +67,8 @@ The screen is scanned by `src/__tests__/quietLuxuryDoctrine.test.ts`. It contain
+ Coverage:
+ - Request form: lists and grace copy, no email/support promises, doctrine tokens, DELETE/email gate plus password requirement, Apple option hidden when unavailable
+ - Password re-auth: token minted then deletion scheduled with it, date shown, no auto sign-out; 401 wrong password, 429, scheduling failure stays on form
+-- Apple re-auth: identity token proof, authorization code forwarded, silent cancel
++- Apple re-auth: identity token proof, authorization code forwarded, silent cancel; "Apple Account" on every view, no first person in the form's Apple note
++- `APPLE_FALLBACK`: pinned word for word, iOS 18 qualifier before the iPhone steps, web steps for earlier versions
+ - Status view: scheduled date, cancel returns to the form, cancel hidden when not cancellable, sign out
+ - Navigation: back and "Cancel — keep my account"
+ 
+diff --git a/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx b/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
+index fd1212b6..7ac22fdf 100644
+--- a/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
++++ b/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
+@@ -73,7 +73,7 @@ jest.mock('expo-font', () => ({ isLoaded: () => true, loadAsync: jest.fn() }));
+ 
+ // ─── Import after mocks ────────────────────────────────────────────────────────
+ 
+-import DeleteAccountScreen from '../DeleteAccountScreen';
++import DeleteAccountScreen, { APPLE_FALLBACK } from '../DeleteAccountScreen';
+ import { deletionApi } from '../../../services/api';
+ import { signOut } from '../../../services/authActions';
+ import { useCurrentUser } from '../../../hooks/useCurrentUser';
+@@ -395,7 +395,7 @@ describe('DeleteAccountScreen', () => {
+     });
+ 
+     it.each(['not_configured', 'exchange_failed', 'revoke_failed', 'not_requested'])(
+-      'outcome %s: no revocation claim, shows the Apple ID settings fallback',
++      'outcome %s: no revocation claim, shows the Apple Account settings fallback',
+       async (outcome) => {
+         const utils = await confirmWithApple(outcome);
+         expect(utils.queryByTestId('apple-revoked')).toBeNull();
+@@ -404,6 +404,37 @@ describe('DeleteAccountScreen', () => {
+       },
+     );
+ 
++    // B-PRIV-FU-117 (agent 117): the copy uses Apple's current name, "Apple
++    // Account", on every view, and the form's Apple note has no first person.
++    it.each(['revoked', 'not_configured', 'revoke_failed'])(
++      'outcome %s: the scheduled view says Apple Account, never Apple ID',
++      async (outcome) => {
++        const utils = await confirmWithApple(outcome);
++        const json = JSON.stringify(utils.toJSON());
++        expect(json).not.toMatch(/Apple ID/);
++        expect(json).toMatch(/your Apple Account/);
++      },
++    );
++
++    it('the revoked view names the Apple Account', async () => {
++      const utils = await confirmWithApple('revoked');
++      expect(utils.getByTestId('apple-revoked').props.children).toBe(
++        'Apple confirmed that this app no longer has access to your Apple Account.',
++      );
++    });
++
++    it('the form says Apple Account, and its Apple note has no first person', async () => {
++      const utils = await renderScreen();
++      await waitFor(() => utils.getByTestId('apple-confirm-button'));
++      expect(JSON.stringify(utils.toJSON())).not.toMatch(/Apple ID/);
++      const note = utils.getByTestId('apple-note');
++      const text = [note.props.children].flat().join('');
++      expect(text).toBe(
++        'If you signed in with Apple, after you confirm you will see whether Apple removed this app’s access to your Apple Account, and how to remove it yourself if not.',
++      );
++      expect(text).not.toMatch(/\b(we|our|us)\b/i);
++    });
++
+     it('hides the password field for an Apple-only account', async () => {
+       const utils = await renderScreen();
+       await waitFor(() => utils.getByTestId('apple-confirm-button'));
+@@ -628,3 +659,46 @@ describe('DeleteAccountScreen', () => {
+     });
+   });
+ });
++
++// B-PRIV-FU-117 (agent 117): the removal steps are Apple's own (Apple Support
++// 102571, https://support.apple.com/en-us/102571) and match the backend's
++// SIGN_IN_WITH_APPLE_DELETION_TEXT (#611, C-611-18). The iPhone path
++// (Settings > your name > Sign in with Apple) is the iOS 18 and later one;
++// the app supports iOS 16.4 and later, so earlier versions get the
++// account.apple.com steps, which do not depend on the iOS version.
++describe('APPLE_FALLBACK: Apple’s current names and steps (B-PRIV-FU-117)', () => {
++  it('is pinned word for word', () => {
++    expect(APPLE_FALLBACK).toBe(
++      'You can also remove this app from your Apple Account yourself. ' +
++        'On an iPhone with iOS 18 or later, open Settings, tap your name, then Sign in with Apple, choose this app, tap Delete and follow the steps on screen to confirm. ' +
++        'On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose this app and stop using Sign in with Apple for it.',
++    );
++  });
++
++  it('says iOS 18 or later before the first iPhone step', () => {
++    const iphone = APPLE_FALLBACK.split('. ').find((sentence) => sentence.includes('open Settings'));
++    expect(iphone).toBeDefined();
++    expect(iphone?.indexOf('iOS 18 or later')).toBeGreaterThanOrEqual(0);
++    expect(iphone?.indexOf('iOS 18 or later')).toBeLessThan(iphone?.indexOf('open Settings') ?? -1);
++    // Sign-In & Security is the web menu, not an iPhone step.
++    expect(iphone).not.toMatch(/Sign-In & Security/);
++  });
++
++  it('gives earlier iOS versions and other devices the web steps', () => {
++    // Match the phrase, not a bare host name (CodeQL js/incomplete-url-substring-sanitization).
++    const web = APPLE_FALLBACK.split('. ').filter((sentence) =>
++      sentence.includes('sign in at account.apple.com, go to'),
++    );
++    expect(web).toHaveLength(1);
++    expect(web[0]).toMatch(/^On an earlier version of iOS, or on any other device, /);
++    expect(web[0]).toMatch(/Sign-In & Security/);
++    expect(web[0]).not.toMatch(/Settings,/);
++  });
++
++  it('uses no old Apple names, no first person and no exclamation mark', () => {
++    expect(APPLE_FALLBACK).not.toMatch(/Apple ID/);
++    expect(APPLE_FALLBACK).not.toMatch(/Password (and|&) Security|Apps Using/);
++    expect(APPLE_FALLBACK).not.toMatch(/\b(we|our|us)\b/i);
++    expect(APPLE_FALLBACK).not.toMatch(/!/);
++  });
++});

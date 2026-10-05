@@ -1,0 +1,338 @@
+﻿2026-10-04T17:46:27.3209252Z Current runner version: '2.337.0'
+2026-10-04T17:46:27.3235813Z ##[group]Runner Image Provisioner
+2026-10-04T17:46:27.3236770Z Hosted Compute Agent
+2026-10-04T17:46:27.3237459Z Version: 20260901.588
+2026-10-04T17:46:27.3238147Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T17:46:27.3238929Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T17:46:27.3239803Z Worker ID: {154feec9-ed89-42cf-a86c-532eb58bc360}
+2026-10-04T17:46:27.3240902Z Azure Region: westcentralus
+2026-10-04T17:46:27.3241618Z ##[endgroup]
+2026-10-04T17:46:27.3243355Z ##[group]Operating System
+2026-10-04T17:46:27.3244008Z Ubuntu
+2026-10-04T17:46:27.3244708Z 24.04.5
+2026-10-04T17:46:27.3245258Z LTS
+2026-10-04T17:46:27.3245797Z ##[endgroup]
+2026-10-04T17:46:27.3246368Z ##[group]Runner Image
+2026-10-04T17:46:27.3246969Z Image: ubuntu-24.04
+2026-10-04T17:46:27.3247602Z Version: 20260927.320.1
+2026-10-04T17:46:27.3248872Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T17:46:27.3250698Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T17:46:27.3251675Z ##[endgroup]
+2026-10-04T17:46:27.3253042Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T17:46:27.3255287Z Contents: read
+2026-10-04T17:46:27.3257179Z Metadata: read
+2026-10-04T17:46:27.3257800Z Packages: read
+2026-10-04T17:46:27.3258345Z ##[endgroup]
+2026-10-04T17:46:27.3261530Z Secret source: Actions
+2026-10-04T17:46:27.3262577Z Cache mode: write
+2026-10-04T17:46:27.3263701Z Prepare workflow directory
+2026-10-04T17:46:27.3678929Z Prepare all required actions
+2026-10-04T17:46:27.3728448Z Getting action download info
+2026-10-04T17:46:27.6882245Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T17:46:27.8043846Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T17:46:28.0321812Z Complete job name: targeted
+2026-10-04T17:46:28.1124412Z ##[group]Run actions/checkout@v6
+2026-10-04T17:46:28.1125341Z with:
+2026-10-04T17:46:28.1125916Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:46:28.1129821Z   token: ***
+2026-10-04T17:46:28.1130258Z   ssh-strict: true
+2026-10-04T17:46:28.1130922Z   ssh-user: git
+2026-10-04T17:46:28.1131376Z   persist-credentials: true
+2026-10-04T17:46:28.1131868Z   clean: true
+2026-10-04T17:46:28.1132312Z   sparse-checkout-cone-mode: true
+2026-10-04T17:46:28.1132827Z   fetch-depth: 1
+2026-10-04T17:46:28.1133258Z   fetch-tags: false
+2026-10-04T17:46:28.1133697Z   show-progress: true
+2026-10-04T17:46:28.1134133Z   lfs: false
+2026-10-04T17:46:28.1134546Z   submodules: false
+2026-10-04T17:46:28.1134998Z   set-safe-directory: true
+2026-10-04T17:46:28.1135515Z   allow-unsafe-pr-checkout: false
+2026-10-04T17:46:28.1136310Z ##[endgroup]
+2026-10-04T17:46:28.2151398Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:46:28.2153575Z ##[group]Getting Git version info
+2026-10-04T17:46:28.2154646Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T17:46:28.2155909Z [command]/usr/bin/git version
+2026-10-04T17:46:28.2221075Z git version 2.55.0
+2026-10-04T17:46:28.2247240Z ##[endgroup]
+2026-10-04T17:46:28.2264789Z Temporarily overriding HOME='/home/runner/work/_temp/e853157f-6423-402f-b2fd-1140dd8006f4' before making global git config changes
+2026-10-04T17:46:28.2271422Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:46:28.2272799Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:46:28.2323510Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T17:46:28.2328214Z ##[group]Determining repository object format
+2026-10-04T17:46:28.2331077Z ##[endgroup]
+2026-10-04T17:46:28.2331864Z ##[group]Initializing the repository
+2026-10-04T17:46:28.2336295Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:46:28.2434156Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T17:46:28.2435888Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T17:46:28.2436883Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T17:46:28.2437627Z hint: call:
+2026-10-04T17:46:28.2438044Z hint:
+2026-10-04T17:46:28.2438580Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T17:46:28.2439194Z hint:
+2026-10-04T17:46:28.2439778Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T17:46:28.2441126Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T17:46:28.2442147Z hint:
+2026-10-04T17:46:28.2442891Z hint: 	git branch -m <name>
+2026-10-04T17:46:28.2443652Z hint:
+2026-10-04T17:46:28.2444352Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T17:46:28.2445507Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-04T17:46:28.2447912Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:46:28.2499768Z ##[endgroup]
+2026-10-04T17:46:28.2500996Z ##[group]Disabling automatic garbage collection
+2026-10-04T17:46:28.2504620Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T17:46:28.2537948Z ##[endgroup]
+2026-10-04T17:46:28.2539305Z ##[group]Setting up auth
+2026-10-04T17:46:28.2540132Z Removing SSH command configuration
+2026-10-04T17:46:28.2546794Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:46:28.2583597Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:46:28.2941504Z Removing HTTP extra header
+2026-10-04T17:46:28.2950166Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:46:28.2991159Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:46:28.3222771Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:46:28.3229209Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:46:28.3266006Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:46:28.3513460Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T17:46:28.3567813Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:46:28.3607711Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:46:28.3649173Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:46:28.3693586Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:46:28.3740712Z ##[endgroup]
+2026-10-04T17:46:28.3742475Z ##[group]Fetching the repository
+2026-10-04T17:46:28.3752646Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +27ce3e9dbfeb685bffc350ee3c733fce30965e33:refs/remotes/origin/audit/AUD-OPUS-SH3-118/344-plans
+2026-10-04T17:46:30.1139711Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:46:30.1141538Z  * [new ref]         27ce3e9dbfeb685bffc350ee3c733fce30965e33 -> origin/audit/AUD-OPUS-SH3-118/344-plans
+2026-10-04T17:46:30.1155641Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-SH3-118/344-plans
+2026-10-04T17:46:30.1181369Z   origin/audit/AUD-OPUS-SH3-118/344-plans
+2026-10-04T17:46:30.1198195Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-SH3-118/344-plans
+2026-10-04T17:46:30.1215931Z 27ce3e9dbfeb685bffc350ee3c733fce30965e33
+2026-10-04T17:46:30.1220781Z ##[endgroup]
+2026-10-04T17:46:30.1222206Z ##[group]Determining the checkout info
+2026-10-04T17:46:30.1223279Z ##[endgroup]
+2026-10-04T17:46:30.1227319Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T17:46:30.1282748Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T17:46:30.1316073Z ##[group]Checking out the ref
+2026-10-04T17:46:30.1322073Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-SH3-118/344-plans refs/remotes/origin/audit/AUD-OPUS-SH3-118/344-plans
+2026-10-04T17:46:30.2397996Z Switched to a new branch 'audit/AUD-OPUS-SH3-118/344-plans'
+2026-10-04T17:46:30.2403550Z branch 'audit/AUD-OPUS-SH3-118/344-plans' set up to track 'origin/audit/AUD-OPUS-SH3-118/344-plans'.
+2026-10-04T17:46:30.2413154Z ##[endgroup]
+2026-10-04T17:46:30.2459210Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T17:46:30.2484789Z 27ce3e9dbfeb685bffc350ee3c733fce30965e33
+2026-10-04T17:46:30.2794753Z ##[group]Run actions/setup-node@v6
+2026-10-04T17:46:30.2795428Z with:
+2026-10-04T17:46:30.2795894Z   node-version: 22.13
+2026-10-04T17:46:30.2796396Z   cache: npm
+2026-10-04T17:46:30.2796856Z   check-latest: false
+2026-10-04T17:46:30.2800819Z   token: ***
+2026-10-04T17:46:30.2801328Z   package-manager-cache: true
+2026-10-04T17:46:30.2801883Z ##[endgroup]
+2026-10-04T17:46:30.4283873Z Attempting to download 22.13...
+2026-10-04T17:46:31.5286519Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-04T17:46:32.2527495Z Extracting ...
+2026-10-04T17:46:32.2664520Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/c1396efa-7fd2-4b61-9ed1-a96f351d10f1 -f /home/runner/work/_temp/d916d9e4-a0f2-4667-b75d-2a56ee06de26
+2026-10-04T17:46:33.4254306Z Adding to the cache ...
+2026-10-04T17:46:35.6371410Z ##[group]Environment details
+2026-10-04T17:46:35.8645643Z node: v22.13.1
+2026-10-04T17:46:35.8646194Z npm: 10.9.2
+2026-10-04T17:46:35.8646502Z yarn: 1.22.22
+2026-10-04T17:46:35.8652189Z ##[endgroup]
+2026-10-04T17:46:35.8673023Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-04T17:46:35.9687229Z /home/runner/.npm
+2026-10-04T17:46:36.1622924Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T17:46:37.3851287Z Received 37748736 of 241027159 (15.7%), 36.0 MBs/sec
+2026-10-04T17:46:38.3848047Z Received 201326592 of 241027159 (83.5%), 96.0 MBs/sec
+2026-10-04T17:46:38.6139431Z Received 241027159 of 241027159 (100.0%), 103.1 MBs/sec
+2026-10-04T17:46:38.6140941Z Cache Size: ~230 MB (241027159 B)
+2026-10-04T17:46:38.6199016Z [command]/usr/bin/tar -xf /home/runner/work/_temp/c402e334-dc70-4a7c-bee2-373332f55f9e/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-04T17:46:39.3048222Z Cache restored successfully
+2026-10-04T17:46:39.3164793Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T17:46:39.3388092Z ##[group]Run npm ci
+2026-10-04T17:46:39.3388455Z npm ci
+2026-10-04T17:46:39.3649262Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:46:39.3649614Z ##[endgroup]
+2026-10-04T17:46:44.7484174Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T17:46:44.9762842Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-04T17:46:44.9792110Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-04T17:46:44.9812158Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-04T17:46:44.9924508Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-04T17:46:45.1477923Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-04T17:46:45.1517129Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:46:45.1521834Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:46:45.1544868Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:46:45.1549263Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:46:45.1595509Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:46:45.2040241Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:46:45.2646991Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-04T17:46:45.7593461Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-04T17:46:46.6288948Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-04T17:46:50.6284871Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-04T17:47:43.5644757Z 
+2026-10-04T17:47:43.5645727Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-04T17:47:43.5646351Z 
+2026-10-04T17:47:43.5646716Z 187 packages are looking for funding
+2026-10-04T17:47:43.5647362Z   run `npm fund` for details
+2026-10-04T17:47:43.9606365Z 
+2026-10-04T17:47:43.9608123Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-04T17:47:43.9608618Z 
+2026-10-04T17:47:43.9608921Z To address issues that do not require attention, run:
+2026-10-04T17:47:43.9609950Z   npm audit fix
+2026-10-04T17:47:43.9610328Z 
+2026-10-04T17:47:43.9611187Z To address all issues (including breaking changes), run:
+2026-10-04T17:47:43.9611772Z   npm audit fix --force
+2026-10-04T17:47:43.9612010Z 
+2026-10-04T17:47:43.9612562Z Run `npm audit` for details.
+2026-10-04T17:47:44.1598176Z ##[group]Run set -euo pipefail
+2026-10-04T17:47:44.1598531Z set -euo pipefail
+2026-10-04T17:47:44.1598925Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T17:47:44.1599421Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T17:47:44.1599791Z echo "specs: ${SPECS[*]}"
+2026-10-04T17:47:44.1600056Z npx jest --ci "${SPECS[@]}"
+2026-10-04T17:47:44.1667715Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T17:47:44.1668109Z ##[endgroup]
+2026-10-04T17:47:44.1776590Z specs: src/components/__tests__/audOpusSH3118.yourPlans.probe.test.tsx
+2026-10-04T17:47:49.2754882Z FAIL src/components/__tests__/audOpusSH3118.yourPlans.probe.test.tsx
+2026-10-04T17:47:49.2759327Z   B-344-1 End my plan during dunning (owner ruling 2A: access ends now)
+2026-10-04T17:47:49.2762233Z     ✕ the confirmation for a past_due plan does not promise access until the period end (1198 ms)
+2026-10-04T17:47:49.2764077Z     ✕ after the backend ends the plan now (outcome ended), the panel tells the client it ended (9 ms)
+2026-10-04T17:47:49.2765671Z   B-344-2 a failed plan action says what happened to the plan, with a working next action
+2026-10-04T17:47:49.2767309Z     ✕ an unknown failure (Stripe error on cancel) offers Email support with a reference (8 ms)
+2026-10-04T17:47:49.2768921Z     ✕ offline: the copy is about the plan change, not a payment that did not start (5 ms)
+2026-10-04T17:47:49.2771329Z     ✕ recurring deployed without the cancel route (bare Nest 404): the copy says the plan did not change, not that the result is unconfirmed (5 ms)
+2026-10-04T17:47:49.2772916Z   controls (expected to pass at the PR head)
+2026-10-04T17:47:49.2774295Z     ✓ today's production backend (no GET /v1/checkout/subscriptions, bare 404): the panel stays hidden (2 ms)
+2026-10-04T17:47:49.2775800Z     ✓ an active plan keeps the period-end confirmation (3 ms)
+2026-10-04T17:47:49.2777423Z     ✓ a past_due plan shows the past-due line and still offers End my plan (can_cancel from the backend) (2 ms)
+2026-10-04T17:47:49.2778788Z     ✓ PLAN_ALREADY_ENDED on Keep my plan gets its own copy (8 ms)
+2026-10-04T17:47:49.2779290Z 
+2026-10-04T17:47:49.2780917Z   ● B-344-1 End my plan during dunning (owner ruling 2A: access ends now) › the confirmation for a past_due plan does not promise access until the period end
+2026-10-04T17:47:49.2781943Z 
+2026-10-04T17:47:49.2782250Z     expect(received).not.toMatch(expected)
+2026-10-04T17:47:49.2782630Z 
+2026-10-04T17:47:49.2782915Z     Expected pattern: not /stays active until/
+2026-10-04T17:47:49.2784017Z     Received string:      "Your plan stays active until November 2, 2026, and nothing more is charged after that."
+2026-10-04T17:47:49.2784790Z 
+2026-10-04T17:47:49.2785869Z       85 |     await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
+2026-10-04T17:47:49.2787908Z       86 |     const body = String(alertSpy.mock.calls[0][1]);
+2026-10-04T17:47:49.2789729Z     > 87 |     expect(body).not.toMatch(/stays active until/);
+2026-10-04T17:47:49.2791149Z          |                      ^
+2026-10-04T17:47:49.2792007Z       88 |     alertSpy.mockRestore();
+2026-10-04T17:47:49.2792791Z       89 |   });
+2026-10-04T17:47:49.2793390Z       90 |
+2026-10-04T17:47:49.2793680Z 
+2026-10-04T17:47:49.2794301Z       at Object.toMatch (src/components/__tests__/audOpusSH3118.yourPlans.probe.test.tsx:87:22)
+2026-10-04T17:47:49.2795618Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:47:49.2796793Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:47:49.2797890Z 
+2026-10-04T17:47:49.2799576Z   ● B-344-1 End my plan during dunning (owner ruling 2A: access ends now) › after the backend ends the plan now (outcome ended), the panel tells the client it ended
+2026-10-04T17:47:49.2801014Z 
+2026-10-04T17:47:49.2801313Z     expect(received).toMatch(expected)
+2026-10-04T17:47:49.2801670Z 
+2026-10-04T17:47:49.2801899Z     Expected pattern: /ended/i
+2026-10-04T17:47:49.2802568Z     Received string:  ""
+2026-10-04T17:47:49.2802857Z 
+2026-10-04T17:47:49.2804861Z       109 |     await waitFor(() => expect(mockGet.mock.calls.filter((c) => c[0] === '/v1/checkout/subscriptions').length).toBe(2));
+2026-10-04T17:47:49.2807158Z       110 |     // Some confirmation of what happened must remain on screen.
+2026-10-04T17:47:49.2808659Z     > 111 |     expect(allText(r)).toMatch(/ended/i);
+2026-10-04T17:47:49.2809879Z           |                        ^
+2026-10-04T17:47:49.2811234Z       112 |     alertSpy.mockRestore();
+2026-10-04T17:47:49.2812096Z       113 |   });
+2026-10-04T17:47:49.2812743Z       114 | });
+2026-10-04T17:47:49.2813080Z 
+2026-10-04T17:47:49.2813759Z       at Object.toMatch (src/components/__tests__/audOpusSH3118.yourPlans.probe.test.tsx:111:24)
+2026-10-04T17:47:49.2815016Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:47:49.2816104Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:47:49.2816677Z 
+2026-10-04T17:47:49.2818203Z   ● B-344-2 a failed plan action says what happened to the plan, with a working next action › an unknown failure (Stripe error on cancel) offers Email support with a reference
+2026-10-04T17:47:49.2819323Z 
+2026-10-04T17:47:49.2819612Z     expect(received).toBeTruthy()
+2026-10-04T17:47:49.2819914Z 
+2026-10-04T17:47:49.2820024Z     Received: null
+2026-10-04T17:47:49.2820165Z 
+2026-10-04T17:47:49.2821042Z       125 |     await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
+2026-10-04T17:47:49.2821989Z       126 |     expect(allText(r)).toMatch(/req-7f3a/);
+2026-10-04T17:47:49.2822841Z     > 127 |     expect(r.queryByText('Email support')).toBeTruthy();
+2026-10-04T17:47:49.2823545Z           |                                            ^
+2026-10-04T17:47:49.2824159Z       128 |     alertSpy.mockRestore();
+2026-10-04T17:47:49.2824654Z       129 |   });
+2026-10-04T17:47:49.2824961Z       130 |
+2026-10-04T17:47:49.2825106Z 
+2026-10-04T17:47:49.2825486Z       at Object.toBeTruthy (src/components/__tests__/audOpusSH3118.yourPlans.probe.test.tsx:127:44)
+2026-10-04T17:47:49.2826192Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:47:49.2826815Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:47:49.2827113Z 
+2026-10-04T17:47:49.2827830Z   ● B-344-2 a failed plan action says what happened to the plan, with a working next action › offline: the copy is about the plan change, not a payment that did not start
+2026-10-04T17:47:49.2828424Z 
+2026-10-04T17:47:49.2828570Z     expect(received).not.toMatch(expected)
+2026-10-04T17:47:49.2828767Z 
+2026-10-04T17:47:49.2828931Z     Expected pattern: not /payment did not start/
+2026-10-04T17:47:49.2835814Z     Received string:      "{\"type\":\"View\",\"props\":{\"style\":{\"marginBottom\":16,\"gap\":8},\"testID\":\"your-plans\"},\"children\":[{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":13,\"fontWeight\":\"600\",\"color\":\"#6B675F\",\"letterSpacing\":0.5,\"textTransform\":\"uppercase\"},\"accessibilityRole\":\"header\"},\"children\":[\"Your plans\"]},{\"type\":\"View\",\"props\":{\"style\":{\"backgroundColor\":\"#FFFDF8\",\"borderRadius\":12,\"borderWidth\":1,\"borderColor\":\"#DCD5CC\",\"padding\":14,\"gap\":4},\"testID\":\"your-plan-0f0e0d0c-0b0a-4908-8706-050403020100\"},\"children\":[{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":16,\"fontWeight\":\"600\",\"color\":\"#1A1A18\"}},\"children\":[\"Monthly coaching\"]},{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":13,\"lineHeight\":19,\"color\":\"#6B675F\"}},\"children\":[\"Next charge of $99.00 a month on November 2, 2026.\"]},{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":13,\"lineHeight\":19,\"color\":\"#B91C1C\"},\"accessibilityRole\":\"alert\",\"testID\":\"your-plan-error\"},\"children\":[\"This phone is offline, so the payment did not start and nothing was charged. Check your connection, then start again.\"]},{\"type\":\"View\",\"props\":{\"accessibilityRole\":\"button\",\"accessibilityLabel\":\"End my plan, Monthly coaching\",\"testID\":\"your-plan-end-0f0e0d0c-0b0a-4908-8706-050403020100\",\"accessible\":true,\"accessibilityState\":{\"busy\":false,\"disabled\":false},\"focusable\":true,\"accessibilityValue\":{},\"style\":{\"minHeight\":44,\"justifyContent\":\"center\",\"alignSelf\":\"flex-start\"},\"collapsable\":false},\"children\":[{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":13,\"fontWeight\":\"600\",\"color\":\"#4A0404\",\"textDecorationLine\":\"underline\"}},\"children\":[\"End my plan\"]}]}]}]}"
+2026-10-04T17:47:49.2841677Z 
+2026-10-04T17:47:49.2842286Z       138 |     await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
+2026-10-04T17:47:49.2843387Z       139 |     await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
+2026-10-04T17:47:49.2844437Z     > 140 |     expect(allText(r)).not.toMatch(/payment did not start/);
+2026-10-04T17:47:49.2845113Z           |                            ^
+2026-10-04T17:47:49.2845603Z       141 |     alertSpy.mockRestore();
+2026-10-04T17:47:49.2846010Z       142 |   });
+2026-10-04T17:47:49.2846300Z       143 |
+2026-10-04T17:47:49.2846478Z 
+2026-10-04T17:47:49.2846826Z       at Object.toMatch (src/components/__tests__/audOpusSH3118.yourPlans.probe.test.tsx:140:28)
+2026-10-04T17:47:49.2847578Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:47:49.2848186Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:47:49.2848485Z 
+2026-10-04T17:47:49.2849458Z   ● B-344-2 a failed plan action says what happened to the plan, with a working next action › recurring deployed without the cancel route (bare Nest 404): the copy says the plan did not change, not that the result is unconfirmed
+2026-10-04T17:47:49.2850269Z 
+2026-10-04T17:47:49.2850550Z     expect(received).not.toMatch(expected)
+2026-10-04T17:47:49.2850758Z 
+2026-10-04T17:47:49.2850913Z     Expected pattern: not /not confirmed yet/
+2026-10-04T17:47:49.2857934Z     Received string:      "{\"type\":\"View\",\"props\":{\"style\":{\"marginBottom\":16,\"gap\":8},\"testID\":\"your-plans\"},\"children\":[{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":13,\"fontWeight\":\"600\",\"color\":\"#6B675F\",\"letterSpacing\":0.5,\"textTransform\":\"uppercase\"},\"accessibilityRole\":\"header\"},\"children\":[\"Your plans\"]},{\"type\":\"View\",\"props\":{\"style\":{\"backgroundColor\":\"#FFFDF8\",\"borderRadius\":12,\"borderWidth\":1,\"borderColor\":\"#DCD5CC\",\"padding\":14,\"gap\":4},\"testID\":\"your-plan-0f0e0d0c-0b0a-4908-8706-050403020100\"},\"children\":[{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":16,\"fontWeight\":\"600\",\"color\":\"#1A1A18\"}},\"children\":[\"Monthly coaching\"]},{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":13,\"lineHeight\":19,\"color\":\"#6B675F\"}},\"children\":[\"Next charge of $99.00 a month on November 2, 2026.\"]},{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":13,\"lineHeight\":19,\"color\":\"#B91C1C\"},\"accessibilityRole\":\"alert\",\"testID\":\"your-plan-error\"},\"children\":[\"This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference req-7f3a.\",\" Reference req-7f3a.\"]},{\"type\":\"View\",\"props\":{\"accessibilityRole\":\"button\",\"accessibilityLabel\":\"End my plan, Monthly coaching\",\"testID\":\"your-plan-end-0f0e0d0c-0b0a-4908-8706-050403020100\",\"accessible\":true,\"accessibilityState\":{\"busy\":false,\"disabled\":false},\"focusable\":true,\"accessibilityValue\":{},\"style\":{\"minHeight\":44,\"justifyContent\":\"center\",\"alignSelf\":\"flex-start\"},\"collapsable\":false},\"children\":[{\"type\":\"Text\",\"props\":{\"style\":{\"fontSize\":13,\"fontWeight\":\"600\",\"color\":\"#4A0404\",\"textDecorationLine\":\"underline\"}},\"children\":[\"End my plan\"]}]}]}]}"
+2026-10-04T17:47:49.2864066Z 
+2026-10-04T17:47:49.2864662Z       151 |     await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
+2026-10-04T17:47:49.2865756Z       152 |     await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
+2026-10-04T17:47:49.2866782Z     > 153 |     expect(allText(r)).not.toMatch(/not confirmed yet/);
+2026-10-04T17:47:49.2867449Z           |                            ^
+2026-10-04T17:47:49.2867918Z       154 |     alertSpy.mockRestore();
+2026-10-04T17:47:49.2868316Z       155 |   });
+2026-10-04T17:47:49.2868645Z       156 | });
+2026-10-04T17:47:49.2868823Z 
+2026-10-04T17:47:49.2869161Z       at Object.toMatch (src/components/__tests__/audOpusSH3118.yourPlans.probe.test.tsx:153:28)
+2026-10-04T17:47:49.2869993Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:47:49.2870728Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:47:49.2871036Z 
+2026-10-04T17:47:49.2871186Z Test Suites: 1 failed, 1 total
+2026-10-04T17:47:49.2871513Z Tests:       5 failed, 4 passed, 9 total
+2026-10-04T17:47:49.2871805Z Snapshots:   0 total
+2026-10-04T17:47:49.2872039Z Time:        3.896 s
+2026-10-04T17:47:49.2872577Z Ran all test suites matching /src\/components\/__tests__\/audOpusSH3118.yourPlans.probe.test.tsx/i.
+2026-10-04T17:47:49.4174546Z ##[error]Process completed with exit code 1.
+2026-10-04T17:47:49.4330788Z Post job cleanup.
+2026-10-04T17:47:49.5221339Z [command]/usr/bin/git version
+2026-10-04T17:47:49.5262566Z git version 2.55.0
+2026-10-04T17:47:49.5305731Z Temporarily overriding HOME='/home/runner/work/_temp/feaaf921-14cc-4f73-b428-258c6cb88a53' before making global git config changes
+2026-10-04T17:47:49.5306673Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:47:49.5312080Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:47:49.5351659Z Removing SSH command configuration
+2026-10-04T17:47:49.5359608Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:47:49.5403750Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:47:49.5655008Z Removing HTTP extra header
+2026-10-04T17:47:49.5661272Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:47:49.5705226Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:47:49.5953770Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:47:49.5961869Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:47:49.5996413Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T17:47:49.5997519Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T17:47:49.5998168Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:47:49.5998676Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:47:49.6008117Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T17:47:49.6036740Z /home/runner/work/_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:47:49.6050186Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:47:49.6094674Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T17:47:49.6125109Z /home/runner/work/_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:47:49.6135737Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:47:49.6177472Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:47:49.6204329Z /github/runner_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:47:49.6213496Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:47:49.6254957Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:47:49.6280663Z /github/runner_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:47:49.6291638Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config
+2026-10-04T17:47:49.6334347Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:47:49.6600841Z Removing credentials config '/home/runner/work/_temp/git-credentials-06884b7e-e374-4633-9b63-1d48257410f1.config'
+2026-10-04T17:47:49.6785660Z Cleaning up orphan processes

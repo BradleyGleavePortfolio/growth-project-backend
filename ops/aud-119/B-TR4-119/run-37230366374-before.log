@@ -1,0 +1,743 @@
+targeted	Set up job	﻿2026-10-04T20:01:41.8816934Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T20:01:41.8842468Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T20:01:41.8843416Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T20:01:41.8844014Z Version: 20260901.588
+targeted	Set up job	2026-10-04T20:01:41.8844744Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T20:01:41.8845515Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T20:01:41.8846277Z Worker ID: {e38ceb8c-4381-40a8-afd6-29198e2b6b68}
+targeted	Set up job	2026-10-04T20:01:41.8847188Z Azure Region: westcentralus
+targeted	Set up job	2026-10-04T20:01:41.8848058Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:01:41.8849759Z ##[group]Operating System
+targeted	Set up job	2026-10-04T20:01:41.8850443Z Ubuntu
+targeted	Set up job	2026-10-04T20:01:41.8851061Z 24.04.5
+targeted	Set up job	2026-10-04T20:01:41.8851681Z LTS
+targeted	Set up job	2026-10-04T20:01:41.8852251Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:01:41.8853283Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T20:01:41.8853931Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T20:01:41.8854579Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T20:01:41.8855696Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T20:01:41.8857719Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T20:01:41.8858727Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:01:41.8860060Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T20:01:41.8861992Z Contents: read
+targeted	Set up job	2026-10-04T20:01:41.8862722Z Metadata: read
+targeted	Set up job	2026-10-04T20:01:41.8863318Z Packages: read
+targeted	Set up job	2026-10-04T20:01:41.8863903Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:01:41.8866114Z Secret source: Actions
+targeted	Set up job	2026-10-04T20:01:41.8867167Z Cache mode: write
+targeted	Set up job	2026-10-04T20:01:41.8868200Z Prepare workflow directory
+targeted	Set up job	2026-10-04T20:01:41.9309294Z Prepare all required actions
+targeted	Set up job	2026-10-04T20:01:41.9358522Z Getting action download info
+targeted	Set up job	2026-10-04T20:01:42.2431622Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T20:01:42.3542587Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T20:01:42.5555695Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T20:01:42.6070409Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T20:01:42.6083292Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T20:01:42.7212157Z '1.48'
+targeted	Initialize containers	2026-10-04T20:01:42.7229538Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T20:01:42.7230480Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T20:01:42.7396573Z '1.48'
+targeted	Initialize containers	2026-10-04T20:01:42.7410292Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T20:01:42.7415645Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T20:01:42.7419185Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T20:01:42.7424717Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=da9c1c"
+targeted	Initialize containers	2026-10-04T20:01:42.7578549Z ##[command]/usr/bin/docker network prune --force --filter "label=da9c1c"
+targeted	Initialize containers	2026-10-04T20:01:42.7708381Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T20:01:42.7709002Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T20:01:42.7718769Z ##[command]/usr/bin/docker network create --label da9c1c github_network_b8bbce9698aa42c49e839928d1a2cfb8
+targeted	Initialize containers	2026-10-04T20:01:42.8267868Z c6f323a801384cde9645e33ad70c09a51b01bf5fca21a9af842185a121f75e6c
+targeted	Initialize containers	2026-10-04T20:01:42.8289518Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T20:01:42.8313413Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T20:01:42.8334999Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T20:01:43.5287117Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T20:01:43.7160541Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:01:43.7162294Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:01:43.7164465Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:01:43.7165738Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:01:43.7167904Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:01:43.7169067Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:01:43.7170149Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:01:43.7171211Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T20:01:43.7172224Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T20:01:43.7173219Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T20:01:43.7174121Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T20:01:43.9055252Z 83234986c742: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:01:43.9058117Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T20:01:43.9584569Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:01:43.9587074Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T20:01:44.1473798Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:01:44.1476311Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T20:01:44.2001450Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T20:01:44.2746221Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:01:44.2748593Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T20:01:44.3297901Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:01:44.3298814Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T20:01:44.3382036Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:01:44.3382657Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T20:01:46.6622873Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T20:01:46.8031769Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T20:01:46.9979787Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T20:01:47.0076963Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T20:01:47.0160684Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T20:01:47.0273632Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T20:01:47.0311834Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T20:01:47.0324975Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T20:01:47.0332809Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T20:01:47.0365655Z ##[command]/usr/bin/docker create --name 4943d909e7f64acf8a0470685267de95_redis7alpine_bd6f0e --label da9c1c --network github_network_b8bbce9698aa42c49e839928d1a2cfb8 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T20:01:47.0671532Z 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Initialize containers	2026-10-04T20:01:47.0696362Z ##[command]/usr/bin/docker start 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Initialize containers	2026-10-04T20:01:47.2937261Z 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Initialize containers	2026-10-04T20:01:47.2962665Z ##[command]/usr/bin/docker ps --all --filter id=8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T20:01:47.3083883Z 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2 Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T20:01:47.3104727Z ##[command]/usr/bin/docker port 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Initialize containers	2026-10-04T20:01:47.3227068Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T20:01:47.3228248Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T20:01:47.3273795Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T20:01:47.3282415Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T20:01:47.3295523Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Initialize containers	2026-10-04T20:01:47.3420182Z starting
+targeted	Initialize containers	2026-10-04T20:01:47.3440806Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T20:01:49.3436885Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Initialize containers	2026-10-04T20:01:49.3557845Z starting
+targeted	Initialize containers	2026-10-04T20:01:49.3570359Z redis service is starting, waiting 4 seconds before checking again.
+targeted	Initialize containers	2026-10-04T20:01:53.7061236Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Initialize containers	2026-10-04T20:01:53.7184402Z healthy
+targeted	Initialize containers	2026-10-04T20:01:53.7199675Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T20:01:53.7200437Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T20:01:53.7484522Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7485137Z with:
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7485434Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7488226Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7488467Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7488680Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7488891Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7489426Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7489637Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7489888Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7490085Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7490293Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7490539Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7490721Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7490923Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7491160Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.7491692Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8606334Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8608273Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8608886Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8609587Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8628493Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8652694Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8666907Z Temporarily overriding HOME='/home/runner/work/_temp/6c213af4-d8ee-456e-a119-1ead1347b46f' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8668386Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8674230Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8726507Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8730958Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8733641Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8734222Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8739590Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8904245Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8905260Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8906147Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8906878Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8907215Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8907977Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8908535Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8909071Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8909990Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8910744Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8911089Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8911419Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8911961Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8913029Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8921969Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8973450Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8973900Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.8979216Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9009663Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9010155Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9011186Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9018113Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9047857Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9418645Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9424258Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9455184Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9676286Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9683435Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9715540Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9942562Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T20:01:53.9979258Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Run actions/checkout@v6	2026-10-04T20:01:54.0010473Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Run actions/checkout@v6	2026-10-04T20:01:54.0044537Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Run actions/checkout@v6	2026-10-04T20:01:54.0075912Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Run actions/checkout@v6	2026-10-04T20:01:54.0123397Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:54.0123866Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T20:01:54.0132092Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +33df64fcbd18853641c5026958bbb8eea0920e26:refs/remotes/origin/ci/B-TR4-119-673-before
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9892446Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9908745Z  * [new ref]         33df64fcbd18853641c5026958bbb8eea0920e26 -> origin/ci/B-TR4-119-673-before
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9911173Z [command]/usr/bin/git branch --list --remote origin/ci/B-TR4-119-673-before
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9928700Z   origin/ci/B-TR4-119-673-before
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9937648Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-TR4-119-673-before
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9960551Z 33df64fcbd18853641c5026958bbb8eea0920e26
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9964970Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9965388Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9988922Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:55.9989374Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T20:01:56.0029601Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T20:01:56.0065578Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T20:01:56.0066440Z [command]/usr/bin/git checkout --progress --force -B ci/B-TR4-119-673-before refs/remotes/origin/ci/B-TR4-119-673-before
+targeted	Run actions/checkout@v6	2026-10-04T20:01:56.2225150Z Switched to a new branch 'ci/B-TR4-119-673-before'
+targeted	Run actions/checkout@v6	2026-10-04T20:01:56.2231258Z branch 'ci/B-TR4-119-673-before' set up to track 'origin/ci/B-TR4-119-673-before'.
+targeted	Run actions/checkout@v6	2026-10-04T20:01:56.2241431Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:01:56.2286648Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T20:01:56.2310353Z 33df64fcbd18853641c5026958bbb8eea0920e26
+targeted	Run actions/setup-node@v6	﻿2026-10-04T20:01:56.2565248Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:56.2565546Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:56.2565740Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:56.2565940Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:56.2566135Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:56.2568789Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:56.2569011Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:56.2569255Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:56.3954942Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:57.2585757Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:57.8899819Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:57.9019859Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/13a648e5-198a-4da4-80c2-9d49eb52d01a -f /home/runner/work/_temp/2c1184d8-2fa5-415d-a2cc-418275988e46
+targeted	Run actions/setup-node@v6	2026-10-04T20:01:58.9563637Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:00.7936521Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:01.0209226Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:01.0209804Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:01.0210025Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:01.0210487Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:01.0233559Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:01.1286002Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:01.3291903Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:02.5508706Z Received 37748736 of 86828135 (43.5%), 36.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:02.8625288Z Received 86828135 of 86828135 (100.0%), 62.9 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:02.8627222Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:02.8659891Z [command]/usr/bin/tar -xf /home/runner/work/_temp/6517f726-01c4-4f41-b2b9-931b7222ee34/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:03.0391861Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T20:02:03.0440270Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T20:02:03.0646001Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T20:02:03.0646318Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T20:02:03.0872641Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T20:02:03.0873020Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T20:02:08.8854643Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T20:02:09.6813005Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T20:02:11.3801486Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:02:12.8274502Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:02:12.8585550Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:02:12.9062076Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:02:25.7593455Z 
+targeted	Run npm ci	2026-10-04T20:02:25.7594441Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T20:02:25.7595206Z > prisma generate
+targeted	Run npm ci	2026-10-04T20:02:25.7595405Z 
+targeted	Run npm ci	2026-10-04T20:02:26.6982728Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T20:02:30.5595046Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T20:02:30.5596492Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T20:02:30.5597852Z │                                                         │
+targeted	Run npm ci	2026-10-04T20:02:30.5599031Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T20:02:30.5600187Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T20:02:30.5601226Z │                                                         │
+targeted	Run npm ci	2026-10-04T20:02:30.5602814Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T20:02:30.5604126Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T20:02:30.5605822Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T20:02:30.5607004Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T20:02:30.5607815Z 
+targeted	Run npm ci	2026-10-04T20:02:30.5613112Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.10s
+targeted	Run npm ci	2026-10-04T20:02:30.5613712Z 
+targeted	Run npm ci	2026-10-04T20:02:30.5614267Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T20:02:30.5614808Z 
+targeted	Run npm ci	2026-10-04T20:02:30.5615297Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npm ci	2026-10-04T20:02:30.5615784Z 
+targeted	Run npm ci	2026-10-04T20:02:30.6148535Z 
+targeted	Run npm ci	2026-10-04T20:02:30.6149264Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T20:02:30.6149836Z > lefthook install
+targeted	Run npm ci	2026-10-04T20:02:30.6150053Z 
+targeted	Run npm ci	2026-10-04T20:02:30.6674973Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-04T20:02:30.6958521Z 
+targeted	Run npm ci	2026-10-04T20:02:30.6988485Z added 1115 packages, and audited 1116 packages in 28s
+targeted	Run npm ci	2026-10-04T20:02:30.7017718Z 
+targeted	Run npm ci	2026-10-04T20:02:30.7018282Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T20:02:30.7020121Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T20:02:30.7057866Z 
+targeted	Run npm ci	2026-10-04T20:02:30.7058240Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-04T20:02:30.7058497Z 
+targeted	Run npm ci	2026-10-04T20:02:30.7059013Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T20:02:30.7060264Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T20:02:30.7077950Z 
+targeted	Run npm ci	2026-10-04T20:02:30.7078980Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T20:02:30.7722043Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T20:02:30.7722540Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T20:02:30.7787789Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T20:02:30.7788077Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T20:02:32.0135841Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T20:02:35.9043043Z 
+targeted	Run npx prisma generate	2026-10-04T20:02:35.9044390Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.08s
+targeted	Run npx prisma generate	2026-10-04T20:02:35.9044910Z 
+targeted	Run npx prisma generate	2026-10-04T20:02:35.9045399Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T20:02:35.9045834Z 
+targeted	Run npx prisma generate	2026-10-04T20:02:35.9046173Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npx prisma generate	2026-10-04T20:02:35.9046530Z 
+targeted	Targeted jest	﻿2026-10-04T20:02:36.0212262Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T20:02:36.0212602Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T20:02:36.0212987Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T20:02:36.0213470Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T20:02:36.0213821Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T20:02:36.0214105Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T20:02:36.0277340Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T20:02:36.0278025Z env:
+targeted	Targeted jest	2026-10-04T20:02:36.0278251Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T20:02:36.0278601Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T20:02:36.0278916Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T20:02:36.0377897Z specs: test/b-trials-4-fix-round.spec.ts
+targeted	Targeted jest	2026-10-04T20:02:39.0676638Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.0879807Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.0905906Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.0936419Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.0989868Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1005775Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1031541Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1053100Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1081055Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1109424Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1129122Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1148317Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1162110Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1268204Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.1282674Z ^[[33m[Nest] 3070  - ^[[39m10/04/2026, 8:02:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2379172Z FAIL test/b-trials-4-fix-round.spec.ts (154 MB heap size)
+targeted	Targeted jest	2026-10-04T20:02:39.2382316Z   B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged
+targeted	Targeted jest	2026-10-04T20:02:39.2385756Z     ✕ past_due after a paid first invoice: no DELETE, superseded, exactly one billed alert (19 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2387244Z     ✕ unpaid after a paid first invoice: no DELETE, superseded, exactly one billed alert (2 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2388786Z     ✕ a charge in a zero-decimal currency (JPY 500) counts as billed (2 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2390009Z     ✕ a charge in customer credit balance (paid 0, total 4900) counts as billed (3 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2391281Z     ✓ never billed (the first regular invoice failed): one DELETE, cancelled (3 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2392554Z     ✕ reads one bounded page of paid invoices for this subscription (3 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2394062Z     ✕ an incomplete page (has_more) with no charge on it: no DELETE, stays owed, retried as history_unknown (2 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2395591Z     ✕ a malformed list (no data array): no DELETE, stays owed, retried as history_unknown (2 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2397006Z     ✕ an invoice without amount_paid: no DELETE, stays owed, retried as history_unknown (2 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2398568Z     ✕ a failed list (503): no DELETE, stays owed, retried as history_unknown (3 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2399921Z     ✕ a 404 on the list (never read as already cancelled): no DELETE, stays owed, retried as history_unknown (2 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2401454Z     ✕ three unknown-history attempts alert support once (cancel still failing); never a DELETE (2 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2402668Z     ✓ terminal: canceled reads no invoices and sends no DELETE (1 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2403718Z   B-673-2 (round 10) — a change committed during the reads vetoes the DELETE
+targeted	Targeted jest	2026-10-04T20:02:39.2405364Z     ✕ a supersession (early paid conversion) during the GET: stale, no DELETE (2 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2406783Z     ✕ a subscription-deleted webhook during the GET: stale, no DELETE, the row stays cancelled (1 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2408474Z     ✕ another worker took the lease during the GET: stale, no DELETE, its lease untouched (6 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2409880Z     ✕ a supersession during the paid-invoice read of a never-billed past_due plan: stale, no DELETE (1 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2411050Z     ✓ control: an unchanged trial far from its end cancels once (1 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2412119Z   B-672-3 (round 10) — the purchase and the customer card come from one admission snapshot
+targeted	Targeted jest	2026-10-04T20:02:39.2413442Z     ✕ push: the only customer card removed during the final purchase read sends the no-card copy (10 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2414823Z     ✕ email: the only customer card removed during the final purchase read mails will_charge false (5 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2416241Z     ✕ push: a customer card added during the final purchase read is reported truthfully (3 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2417921Z     ✕ email: a customer card added during the final purchase read mails will_charge true (3 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2419343Z     ✕ every admission reads both authorities inside one REPEATABLE READ transaction (3 ms)
+targeted	Targeted jest	2026-10-04T20:02:39.2419989Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2421493Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › past_due after a paid first invoice: no DELETE, superseded, exactly one billed alert
+targeted	Targeted jest	2026-10-04T20:02:39.2422602Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2422969Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2423395Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2423580Z     Expected: "superseded"
+targeted	Targeted jest	2026-10-04T20:02:39.2424044Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2424317Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2425290Z     ^[[0m ^[[90m 108 |^[[39m         invoices^[[33m:^[[39m page([^[[33mTRIAL_INVOICE^[[39m^[[33m,^[[39m ^[[33mPAID_INVOICE^[[39m])^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2426401Z      ^[[90m 109 |^[[39m       })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2428476Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 110 |^[[39m       expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'superseded'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2430483Z      ^[[90m     |^[[39m                                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2431642Z      ^[[90m 111 |^[[39m       expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2432703Z      ^[[90m 112 |^[[39m       expect(w^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T20:02:39.2433712Z      ^[[90m 113 |^[[39m         status^[[33m:^[[39m ^[[32m'superseded'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2434224Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2434543Z       at test/b-trials-4-fix-round.spec.ts:110:52
+targeted	Targeted jest	2026-10-04T20:02:39.2434943Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2436359Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › unpaid after a paid first invoice: no DELETE, superseded, exactly one billed alert
+targeted	Targeted jest	2026-10-04T20:02:39.2437757Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2438114Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2438382Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2438513Z     Expected: "superseded"
+targeted	Targeted jest	2026-10-04T20:02:39.2438782Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2438939Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2439484Z     ^[[0m ^[[90m 108 |^[[39m         invoices^[[33m:^[[39m page([^[[33mTRIAL_INVOICE^[[39m^[[33m,^[[39m ^[[33mPAID_INVOICE^[[39m])^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2440072Z      ^[[90m 109 |^[[39m       })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2440999Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 110 |^[[39m       expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'superseded'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2441891Z      ^[[90m     |^[[39m                                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2442686Z      ^[[90m 111 |^[[39m       expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2443278Z      ^[[90m 112 |^[[39m       expect(w^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T20:02:39.2443844Z      ^[[90m 113 |^[[39m         status^[[33m:^[[39m ^[[32m'superseded'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2444207Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2444380Z       at test/b-trials-4-fix-round.spec.ts:110:52
+targeted	Targeted jest	2026-10-04T20:02:39.2444601Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2445271Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › a charge in a zero-decimal currency (JPY 500) counts as billed
+targeted	Targeted jest	2026-10-04T20:02:39.2445822Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2446013Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2446247Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2446353Z     Expected: "superseded"
+targeted	Targeted jest	2026-10-04T20:02:39.2446596Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2446741Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2447159Z     ^[[0m ^[[90m 136 |^[[39m       invoices^[[33m:^[[39m page([^[[33mTRIAL_INVOICE^[[39m^[[33m,^[[39m invoice])^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2447908Z      ^[[90m 137 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2448839Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 138 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'superseded'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2449698Z      ^[[90m     |^[[39m                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2450275Z      ^[[90m 139 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2450733Z      ^[[90m 140 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2451020Z      ^[[90m 141 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2451159Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2451318Z       at test/b-trials-4-fix-round.spec.ts:138:50
+targeted	Targeted jest	2026-10-04T20:02:39.2451535Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2452234Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › a charge in customer credit balance (paid 0, total 4900) counts as billed
+targeted	Targeted jest	2026-10-04T20:02:39.2452821Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2452995Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2453376Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2453482Z     Expected: "superseded"
+targeted	Targeted jest	2026-10-04T20:02:39.2453721Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2453860Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2454269Z     ^[[0m ^[[90m 136 |^[[39m       invoices^[[33m:^[[39m page([^[[33mTRIAL_INVOICE^[[39m^[[33m,^[[39m invoice])^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2454784Z      ^[[90m 137 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2455675Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 138 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'superseded'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2456530Z      ^[[90m     |^[[39m                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2457124Z      ^[[90m 139 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2457777Z      ^[[90m 140 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2458071Z      ^[[90m 141 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2458205Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2458378Z       at test/b-trials-4-fix-round.spec.ts:138:50
+targeted	Targeted jest	2026-10-04T20:02:39.2458593Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2459228Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › reads one bounded page of paid invoices for this subscription
+targeted	Targeted jest	2026-10-04T20:02:39.2459774Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2459909Z     expect(received).toBeDefined()
+targeted	Targeted jest	2026-10-04T20:02:39.2460081Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2460180Z     Received: undefined
+targeted	Targeted jest	2026-10-04T20:02:39.2460321Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2460829Z     ^[[0m ^[[90m 151 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2461869Z      ^[[90m 152 |^[[39m     ^[[36mconst^[[39m list ^[[33m=^[[39m w^[[33m.^[[39mcalls^[[33m.^[[39mfind((c) ^[[33m=>^[[39m c^[[33m.^[[39mstartsWith(^[[32m'GET /invoices'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2462829Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 153 |^[[39m     expect(list)^[[33m.^[[39mtoBeDefined()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2463341Z      ^[[90m     |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2464198Z      ^[[90m 154 |^[[39m     ^[[36mconst^[[39m q ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mURLSearchParams^[[39m(^[[33mString^[[39m(list)^[[33m.^[[39msplit(^[[32m'?'^[[39m)[^[[35m1^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2464874Z      ^[[90m 155 |^[[39m     expect({
+targeted	Targeted jest	2026-10-04T20:02:39.2465460Z      ^[[90m 156 |^[[39m       subscription^[[33m:^[[39m q^[[33m.^[[39m^[[36mget^[[39m(^[[32m'subscription'^[[39m)^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2465839Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2466091Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:153:18)
+targeted	Targeted jest	2026-10-04T20:02:39.2466383Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2467184Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › an incomplete page (has_more) with no charge on it: no DELETE, stays owed, retried as history_unknown
+targeted	Targeted jest	2026-10-04T20:02:39.2467990Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2468177Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2468415Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2468523Z     Expected: "retry"
+targeted	Targeted jest	2026-10-04T20:02:39.2468752Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2468901Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2469531Z     ^[[0m ^[[90m 174 |^[[39m   ])(^[[32m'%s: no DELETE, stays owed, retried as history_unknown'^[[39m^[[33m,^[[39m ^[[36masync^[[39m (_name^[[33m,^[[39m invoices) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T20:02:39.2470637Z      ^[[90m 175 |^[[39m     ^[[36mconst^[[39m w ^[[33m=^[[39m ^[[36mawait^[[39m conflictWorld({ sub^[[33m:^[[39m sub(^[[32m'past_due'^[[39m)^[[33m,^[[39m invoices })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2471826Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 176 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'retry'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2472669Z      ^[[90m     |^[[39m                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2473252Z      ^[[90m 177 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2473818Z      ^[[90m 178 |^[[39m     expect(w^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T20:02:39.2474522Z      ^[[90m 179 |^[[39m       status^[[33m:^[[39m ^[[32m'owed'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2474776Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2474939Z       at test/b-trials-4-fix-round.spec.ts:176:50
+targeted	Targeted jest	2026-10-04T20:02:39.2475155Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2475876Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › a malformed list (no data array): no DELETE, stays owed, retried as history_unknown
+targeted	Targeted jest	2026-10-04T20:02:39.2476484Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2476669Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2476904Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2476993Z     Expected: "retry"
+targeted	Targeted jest	2026-10-04T20:02:39.2477221Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2477358Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2478126Z     ^[[0m ^[[90m 174 |^[[39m   ])(^[[32m'%s: no DELETE, stays owed, retried as history_unknown'^[[39m^[[33m,^[[39m ^[[36masync^[[39m (_name^[[33m,^[[39m invoices) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T20:02:39.2479226Z      ^[[90m 175 |^[[39m     ^[[36mconst^[[39m w ^[[33m=^[[39m ^[[36mawait^[[39m conflictWorld({ sub^[[33m:^[[39m sub(^[[32m'past_due'^[[39m)^[[33m,^[[39m invoices })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2480429Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 176 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'retry'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2481265Z      ^[[90m     |^[[39m                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2481852Z      ^[[90m 177 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2482417Z      ^[[90m 178 |^[[39m     expect(w^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T20:02:39.2482929Z      ^[[90m 179 |^[[39m       status^[[33m:^[[39m ^[[32m'owed'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2483331Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2483495Z       at test/b-trials-4-fix-round.spec.ts:176:50
+targeted	Targeted jest	2026-10-04T20:02:39.2483713Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2484432Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › an invoice without amount_paid: no DELETE, stays owed, retried as history_unknown
+targeted	Targeted jest	2026-10-04T20:02:39.2485046Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2485223Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2485451Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2485544Z     Expected: "retry"
+targeted	Targeted jest	2026-10-04T20:02:39.2485766Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2485910Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2486526Z     ^[[0m ^[[90m 174 |^[[39m   ])(^[[32m'%s: no DELETE, stays owed, retried as history_unknown'^[[39m^[[33m,^[[39m ^[[36masync^[[39m (_name^[[33m,^[[39m invoices) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T20:02:39.2487786Z      ^[[90m 175 |^[[39m     ^[[36mconst^[[39m w ^[[33m=^[[39m ^[[36mawait^[[39m conflictWorld({ sub^[[33m:^[[39m sub(^[[32m'past_due'^[[39m)^[[33m,^[[39m invoices })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2489008Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 176 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'retry'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2489850Z      ^[[90m     |^[[39m                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2490428Z      ^[[90m 177 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2490989Z      ^[[90m 178 |^[[39m     expect(w^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T20:02:39.2491500Z      ^[[90m 179 |^[[39m       status^[[33m:^[[39m ^[[32m'owed'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2491754Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2491915Z       at test/b-trials-4-fix-round.spec.ts:176:50
+targeted	Targeted jest	2026-10-04T20:02:39.2492125Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2492788Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › a failed list (503): no DELETE, stays owed, retried as history_unknown
+targeted	Targeted jest	2026-10-04T20:02:39.2493347Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2493527Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2493751Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2493845Z     Expected: "retry"
+targeted	Targeted jest	2026-10-04T20:02:39.2494195Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2494341Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2494959Z     ^[[0m ^[[90m 174 |^[[39m   ])(^[[32m'%s: no DELETE, stays owed, retried as history_unknown'^[[39m^[[33m,^[[39m ^[[36masync^[[39m (_name^[[33m,^[[39m invoices) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T20:02:39.2496042Z      ^[[90m 175 |^[[39m     ^[[36mconst^[[39m w ^[[33m=^[[39m ^[[36mawait^[[39m conflictWorld({ sub^[[33m:^[[39m sub(^[[32m'past_due'^[[39m)^[[33m,^[[39m invoices })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2497231Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 176 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'retry'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2498219Z      ^[[90m     |^[[39m                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2498796Z      ^[[90m 177 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2499367Z      ^[[90m 178 |^[[39m     expect(w^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T20:02:39.2499881Z      ^[[90m 179 |^[[39m       status^[[33m:^[[39m ^[[32m'owed'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2500134Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2500289Z       at test/b-trials-4-fix-round.spec.ts:176:50
+targeted	Targeted jest	2026-10-04T20:02:39.2500502Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2501296Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › a 404 on the list (never read as already cancelled): no DELETE, stays owed, retried as history_unknown
+targeted	Targeted jest	2026-10-04T20:02:39.2501951Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2502126Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2502359Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2502452Z     Expected: "retry"
+targeted	Targeted jest	2026-10-04T20:02:39.2502671Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2502812Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2503416Z     ^[[0m ^[[90m 174 |^[[39m   ])(^[[32m'%s: no DELETE, stays owed, retried as history_unknown'^[[39m^[[33m,^[[39m ^[[36masync^[[39m (_name^[[33m,^[[39m invoices) ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T20:02:39.2504646Z      ^[[90m 175 |^[[39m     ^[[36mconst^[[39m w ^[[33m=^[[39m ^[[36mawait^[[39m conflictWorld({ sub^[[33m:^[[39m sub(^[[32m'past_due'^[[39m)^[[33m,^[[39m invoices })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2505832Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 176 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'retry'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2506672Z      ^[[90m     |^[[39m                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2507245Z      ^[[90m 177 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2507936Z      ^[[90m 178 |^[[39m     expect(w^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T20:02:39.2508458Z      ^[[90m 179 |^[[39m       status^[[33m:^[[39m ^[[32m'owed'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2508716Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2508875Z       at test/b-trials-4-fix-round.spec.ts:176:50
+targeted	Targeted jest	2026-10-04T20:02:39.2509092Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2509853Z   ● B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothing was ever charged › three unknown-history attempts alert support once (cancel still failing); never a DELETE
+targeted	Targeted jest	2026-10-04T20:02:39.2510492Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2510672Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2510912Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2511001Z     Expected: "retry"
+targeted	Targeted jest	2026-10-04T20:02:39.2511225Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2511361Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2511929Z     ^[[0m ^[[90m 187 |^[[39m     ^[[36mfor^[[39m (^[[36mlet^[[39m i ^[[33m=^[[39m ^[[35m0^[[39m^[[33m;^[[39m i ^[[33m<^[[39m ^[[35m4^[[39m^[[33m;^[[39m i ^[[33m+=^[[39m ^[[35m1^[[39m) {
+targeted	Targeted jest	2026-10-04T20:02:39.2512771Z      ^[[90m 188 |^[[39m       w^[[33m.^[[39mrow()^[[33m.^[[39mnext_attempt_at ^[[33m=^[[39m ^[[33mNOW^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2514077Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 189 |^[[39m       expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mNOW^[[39m^[[33m.^[[39mgetTime() ^[[33m+^[[39m i ^[[33m*^[[39m ^[[35m3^[[39m_600_000)))^[[33m.^[[39mtoBe(
+targeted	Targeted jest	2026-10-04T20:02:39.2515371Z      ^[[90m     |^[[39m                                                                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2515876Z      ^[[90m 190 |^[[39m         ^[[32m'retry'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2516241Z      ^[[90m 191 |^[[39m       )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2516564Z      ^[[90m 192 |^[[39m     }^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2516719Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2516950Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:189:88)
+targeted	Targeted jest	2026-10-04T20:02:39.2517230Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2517992Z   ● B-673-2 (round 10) — a change committed during the reads vetoes the DELETE › a supersession (early paid conversion) during the GET: stale, no DELETE
+targeted	Targeted jest	2026-10-04T20:02:39.2518541Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2518728Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2518979Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2519069Z     Expected: 0
+targeted	Targeted jest	2026-10-04T20:02:39.2519280Z     Received: 1
+targeted	Targeted jest	2026-10-04T20:02:39.2519398Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2519575Z     ^[[0m ^[[90m 220 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2520411Z      ^[[90m 221 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'stale'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2521352Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 222 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2521922Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2522568Z      ^[[90m 223 |^[[39m     expect(w^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'superseded'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2523098Z      ^[[90m 224 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2523393Z      ^[[90m 225 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2523534Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2523758Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:222:25)
+targeted	Targeted jest	2026-10-04T20:02:39.2524162Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2524873Z   ● B-673-2 (round 10) — a change committed during the reads vetoes the DELETE › a subscription-deleted webhook during the GET: stale, no DELETE, the row stays cancelled
+targeted	Targeted jest	2026-10-04T20:02:39.2525744Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2525950Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2526197Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2526288Z     Expected: 0
+targeted	Targeted jest	2026-10-04T20:02:39.2526488Z     Received: 1
+targeted	Targeted jest	2026-10-04T20:02:39.2526603Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2526780Z     ^[[0m ^[[90m 232 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2527752Z      ^[[90m 233 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'stale'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2528688Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 234 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2529252Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2529919Z      ^[[90m 235 |^[[39m     expect(w^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'cancelled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2530447Z      ^[[90m 236 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2530730Z      ^[[90m 237 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2530869Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2531092Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:234:25)
+targeted	Targeted jest	2026-10-04T20:02:39.2531368Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2532045Z   ● B-673-2 (round 10) — a change committed during the reads vetoes the DELETE › another worker took the lease during the GET: stale, no DELETE, its lease untouched
+targeted	Targeted jest	2026-10-04T20:02:39.2532616Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2532792Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2533024Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2533113Z     Expected: 0
+targeted	Targeted jest	2026-10-04T20:02:39.2533315Z     Received: 1
+targeted	Targeted jest	2026-10-04T20:02:39.2533433Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2533591Z     ^[[0m ^[[90m 245 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2534432Z      ^[[90m 246 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'stale'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2535512Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 247 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2536083Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2536988Z      ^[[90m 248 |^[[39m     expect(w^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'owed'^[[39m^[[33m,^[[39m lease_token^[[33m:^[[39m ^[[32m'other-worker'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2537839Z      ^[[90m 249 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2538127Z      ^[[90m 250 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2538261Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2538485Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:247:25)
+targeted	Targeted jest	2026-10-04T20:02:39.2538762Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2539480Z   ● B-673-2 (round 10) — a change committed during the reads vetoes the DELETE › a supersession during the paid-invoice read of a never-billed past_due plan: stale, no DELETE
+targeted	Targeted jest	2026-10-04T20:02:39.2540094Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2540272Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:02:39.2540513Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2540610Z     Expected: "stale"
+targeted	Targeted jest	2026-10-04T20:02:39.2540842Z     Received: "cancelled"
+targeted	Targeted jest	2026-10-04T20:02:39.2540979Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2541150Z     ^[[0m ^[[90m 260 |^[[39m       )^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2541482Z      ^[[90m 261 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2542366Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 262 |^[[39m     expect(^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msettle(^[[32m'pur-1'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoBe(^[[32m'stale'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2543201Z      ^[[90m     |^[[39m                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2543780Z      ^[[90m 263 |^[[39m     expect(w^[[33m.^[[39mdeletes())^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2544641Z      ^[[90m 264 |^[[39m     expect(w^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'superseded'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2545174Z      ^[[90m 265 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2545361Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2545583Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:262:50)
+targeted	Targeted jest	2026-10-04T20:02:39.2545850Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2546621Z   ● B-672-3 (round 10) — the purchase and the customer card come from one admission snapshot › push: the only customer card removed during the final purchase read sends the no-card copy
+targeted	Targeted jest	2026-10-04T20:02:39.2547265Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2547570Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T20:02:39.2547803Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2547960Z     Expected substring: not "will be charged $49"
+targeted	Targeted jest	2026-10-04T20:02:39.2548558Z     Received string:        "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before."
+targeted	Targeted jest	2026-10-04T20:02:39.2548972Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2549516Z     ^[[0m ^[[90m 380 |^[[39m     expect(w^[[33m.^[[39mnotifications^[[33m.^[[39mpushToUser)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2550702Z      ^[[90m 381 |^[[39m     ^[[36mconst^[[39m body ^[[33m=^[[39m ^[[33mString^[[39m(w^[[33m.^[[39mnotifications^[[33m.^[[39mpushToUser^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m0^[[39m][^[[35m2^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2551788Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 382 |^[[39m     expect(body)^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'will be charged $49'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2552423Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2553024Z      ^[[90m 383 |^[[39m     expect(body)^[[33m.^[[39mtoContain(^[[32m'nothing will be charged'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2553525Z      ^[[90m 384 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2553812Z      ^[[90m 385 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2553955Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2554175Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:382:22)
+targeted	Targeted jest	2026-10-04T20:02:39.2554455Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2555224Z   ● B-672-3 (round 10) — the purchase and the customer card come from one admission snapshot › email: the only customer card removed during the final purchase read mails will_charge false
+targeted	Targeted jest	2026-10-04T20:02:39.2556044Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2556190Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T20:02:39.2556396Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2556495Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T20:02:39.2556714Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T20:02:39.2556838Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2556920Z       Object {
+targeted	Targeted jest	2026-10-04T20:02:39.2557129Z         "data": Object {
+targeted	Targeted jest	2026-10-04T20:02:39.2557513Z     -     "will_charge": false,
+targeted	Targeted jest	2026-10-04T20:02:39.2557802Z     +     "will_charge": true,
+targeted	Targeted jest	2026-10-04T20:02:39.2558038Z         },
+targeted	Targeted jest	2026-10-04T20:02:39.2558229Z       }
+targeted	Targeted jest	2026-10-04T20:02:39.2558328Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2558793Z     ^[[0m ^[[90m 390 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39mdeliver(id^[[33m,^[[39m ^[[33mNOW^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2559632Z      ^[[90m 391 |^[[39m     expect(w^[[33m.^[[39memail^[[33m.^[[39msend)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2560928Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 392 |^[[39m     expect(w^[[33m.^[[39memail^[[33m.^[[39msend^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m0^[[39m][^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ data^[[33m:^[[39m { will_charge^[[33m:^[[39m ^[[36mfalse^[[39m } })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2561901Z      ^[[90m     |^[[39m                                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2562305Z      ^[[90m 393 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2562583Z      ^[[90m 394 |^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2563374Z      ^[[90m 395 |^[[39m   it(^[[32m'push: a customer card added during the final purchase read is reported truthfully'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2563933Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2564158Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:392:43)
+targeted	Targeted jest	2026-10-04T20:02:39.2564435Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2565152Z   ● B-672-3 (round 10) — the purchase and the customer card come from one admission snapshot › push: a customer card added during the final purchase read is reported truthfully
+targeted	Targeted jest	2026-10-04T20:02:39.2565897Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2566069Z     expect(received).toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T20:02:39.2566287Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2566434Z     Expected substring: "will be charged $49"
+targeted	Targeted jest	2026-10-04T20:02:39.2567057Z     Received string:    "Your free trial ends on Oct 12. No card is saved, so nothing will be charged and your plan ends then."
+targeted	Targeted jest	2026-10-04T20:02:39.2567620Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2568247Z     ^[[0m ^[[90m 398 |^[[39m     w^[[33m.^[[39mduringAdmissionRead(^[[32m'push'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m w^[[33m.^[[39msetCustomerCard(^[[32m'pm_new'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2569177Z      ^[[90m 399 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39mdeliver(id^[[33m,^[[39m ^[[33mNOW^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2570454Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 400 |^[[39m     expect(^[[33mString^[[39m(w^[[33m.^[[39mnotifications^[[33m.^[[39mpushToUser^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m0^[[39m][^[[35m2^[[39m]))^[[33m.^[[39mtoContain(^[[32m'will be charged $49'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2571481Z      ^[[90m     |^[[39m                                                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2571909Z      ^[[90m 401 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2572183Z      ^[[90m 402 |^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2572962Z      ^[[90m 403 |^[[39m   it(^[[32m'email: a customer card added during the final purchase read mails will_charge true'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2573516Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2573742Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:400:65)
+targeted	Targeted jest	2026-10-04T20:02:39.2574015Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2574775Z   ● B-672-3 (round 10) — the purchase and the customer card come from one admission snapshot › email: a customer card added during the final purchase read mails will_charge true
+targeted	Targeted jest	2026-10-04T20:02:39.2575389Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2575562Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T20:02:39.2575790Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2575888Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T20:02:39.2576101Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T20:02:39.2576224Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2576447Z       Object {
+targeted	Targeted jest	2026-10-04T20:02:39.2576657Z         "data": Object {
+targeted	Targeted jest	2026-10-04T20:02:39.2576911Z     -     "will_charge": true,
+targeted	Targeted jest	2026-10-04T20:02:39.2577186Z     +     "will_charge": false,
+targeted	Targeted jest	2026-10-04T20:02:39.2577547Z         },
+targeted	Targeted jest	2026-10-04T20:02:39.2577739Z       }
+targeted	Targeted jest	2026-10-04T20:02:39.2577846Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2578471Z     ^[[0m ^[[90m 406 |^[[39m     w^[[33m.^[[39mduringAdmissionRead(^[[32m'email'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m w^[[33m.^[[39msetCustomerCard(^[[32m'pm_new'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2579394Z      ^[[90m 407 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39mdeliver(id^[[33m,^[[39m ^[[33mNOW^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2580649Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 408 |^[[39m     expect(w^[[33m.^[[39memail^[[33m.^[[39msend^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m0^[[39m][^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ data^[[33m:^[[39m { will_charge^[[33m:^[[39m ^[[36mtrue^[[39m } })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2581616Z      ^[[90m     |^[[39m                                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2582011Z      ^[[90m 409 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2582291Z      ^[[90m 410 |^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2583055Z      ^[[90m 411 |^[[39m   it(^[[32m'every admission reads both authorities inside one REPEATABLE READ transaction'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2583602Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2583820Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:408:43)
+targeted	Targeted jest	2026-10-04T20:02:39.2584096Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2584807Z   ● B-672-3 (round 10) — the purchase and the customer card come from one admission snapshot › every admission reads both authorities inside one REPEATABLE READ transaction
+targeted	Targeted jest	2026-10-04T20:02:39.2585406Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2585573Z     expect(received).toBeGreaterThanOrEqual(expected)
+targeted	Targeted jest	2026-10-04T20:02:39.2585929Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2586023Z     Expected: >= 2
+targeted	Targeted jest	2026-10-04T20:02:39.2586233Z     Received:    0
+targeted	Targeted jest	2026-10-04T20:02:39.2586355Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2586516Z     ^[[0m ^[[90m 418 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2587121Z      ^[[90m 419 |^[[39m     ^[[90m// push and email, each prepared before its claim and again at its admission.^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2588143Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 420 |^[[39m     expect(snapshots^[[33m.^[[39mlength)^[[33m.^[[39mtoBeGreaterThanOrEqual(^[[35m2^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2588811Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2589873Z      ^[[90m 421 |^[[39m     expect(w^[[33m.^[[39mnotices^[[33m.^[[39mrows[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ push_status^[[33m:^[[39m ^[[32m'delivered'^[[39m^[[33m,^[[39m email_status^[[33m:^[[39m ^[[32m'sent'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2590691Z      ^[[90m 422 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:02:39.2591012Z      ^[[90m 423 |^[[39m })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:02:39.2591186Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2591407Z       at Object.<anonymous> (test/b-trials-4-fix-round.spec.ts:420:30)
+targeted	Targeted jest	2026-10-04T20:02:39.2591680Z 
+targeted	Targeted jest	2026-10-04T20:02:39.2591838Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T20:02:39.2592169Z Tests:       20 failed, 3 passed, 23 total
+targeted	Targeted jest	2026-10-04T20:02:39.2592458Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T20:02:39.2592683Z Time:        2.391 s
+targeted	Targeted jest	2026-10-04T20:02:39.2593052Z Ran all test suites matching test/b-trials-4-fix-round.spec.ts.
+targeted	Targeted jest	2026-10-04T20:02:39.3736307Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T20:02:39.3854839Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.4702808Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.4739901Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.4778832Z Temporarily overriding HOME='/home/runner/work/_temp/f298c652-bd50-46e7-99f3-ecc1bec1462d' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.4779991Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.4784375Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.4814827Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.4821396Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.4856875Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5088609Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5095701Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5132981Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5354920Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5362744Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5393008Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5394003Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5394643Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5395093Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5402554Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5425009Z /home/runner/work/_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5435536Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5470781Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5491297Z /home/runner/work/_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5500696Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5535770Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5556160Z /github/runner_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5564220Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5595389Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5616225Z /github/runner_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5626827Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5661935Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T20:02:39.5886291Z Removing credentials config '/home/runner/work/_temp/git-credentials-6829788e-abf7-433b-963c-e473e533a172.config'
+targeted	Stop containers	﻿2026-10-04T20:02:39.6003201Z Print service container logs: 4943d909e7f64acf8a0470685267de95_redis7alpine_bd6f0e
+targeted	Stop containers	2026-10-04T20:02:39.6008488Z ##[command]/usr/bin/docker logs --details 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Stop containers	2026-10-04T20:02:39.6143802Z  1:C 04 Oct 2026 20:01:47.299 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T20:02:39.6146740Z  1:C 04 Oct 2026 20:01:47.299 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T20:02:39.6147845Z  1:C 04 Oct 2026 20:01:47.299 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T20:02:39.6148747Z  1:C 04 Oct 2026 20:01:47.299 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T20:02:39.6149518Z  1:M 04 Oct 2026 20:01:47.299 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T20:02:39.6149935Z  1:M 04 Oct 2026 20:01:47.299 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T20:02:39.6150327Z  1:M 04 Oct 2026 20:01:47.300 * Server initialized
+targeted	Stop containers	2026-10-04T20:02:39.6150683Z  1:M 04 Oct 2026 20:01:47.300 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T20:02:39.6169972Z Stop and remove container: 4943d909e7f64acf8a0470685267de95_redis7alpine_bd6f0e
+targeted	Stop containers	2026-10-04T20:02:39.6174897Z ##[command]/usr/bin/docker rm --force 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Stop containers	2026-10-04T20:02:40.9665719Z 8b0f24272e4290032a8b725ecae17461ef57d736c75e8f77ed5ce05f04139bc2
+targeted	Stop containers	2026-10-04T20:02:40.9695195Z Remove container network: github_network_b8bbce9698aa42c49e839928d1a2cfb8
+targeted	Stop containers	2026-10-04T20:02:40.9700989Z ##[command]/usr/bin/docker network rm github_network_b8bbce9698aa42c49e839928d1a2cfb8
+targeted	Stop containers	2026-10-04T20:02:41.0643892Z github_network_b8bbce9698aa42c49e839928d1a2cfb8
+targeted	Complete job	﻿2026-10-04T20:02:41.0722469Z Cleaning up orphan processes

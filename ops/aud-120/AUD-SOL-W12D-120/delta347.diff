@@ -1,0 +1,664 @@
+diff --git a/src/components/coach/setup/FirstPackageForm.tsx b/src/components/coach/setup/FirstPackageForm.tsx
+index 70ec9eaa..3065362e 100644
+--- a/src/components/coach/setup/FirstPackageForm.tsx
++++ b/src/components/coach/setup/FirstPackageForm.tsx
+@@ -4,7 +4,13 @@
+  * it live, and for a free package attaches it to the coach's invite link so
+  * a client who joins with the link gets it straight away.
+  */
+-import React, { useEffect, useMemo, useRef, useState } from "react";
++import React, {
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
+ import {
+   ActivityIndicator,
+   StyleSheet,
+@@ -112,10 +118,30 @@ export default function FirstPackageForm({
+ }: Props) {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+-  const [title, setTitle] = useState(defaultTitle);
+-  const [free, setFree] = useState(false);
+-  const [priceText, setPriceText] = useState(DEFAULT_PRICE_TEXT);
+-  const [monthly, setMonthly] = useState(true);
++  const [title, setTitleState] = useState(defaultTitle);
++  const [free, setFreeState] = useState(false);
++  const [priceText, setPriceTextState] = useState(DEFAULT_PRICE_TEXT);
++  const [monthly, setMonthlyState] = useState(true);
++  // B-346-3 (agent 119): what the form shows right now. Every field write
++  // goes through show(), so a submit that waited for hydration reads the
++  // package the coach sees, not the values of the render it started in.
++  const shown = useRef({
++    title: defaultTitle,
++    free: false,
++    priceText: DEFAULT_PRICE_TEXT,
++    monthly: true,
++  });
++  const show = useCallback((next: Partial<typeof shown.current>) => {
++    Object.assign(shown.current, next);
++    if (next.title !== undefined) setTitleState(next.title);
++    if (next.free !== undefined) setFreeState(next.free);
++    if (next.priceText !== undefined) setPriceTextState(next.priceText);
++    if (next.monthly !== undefined) setMonthlyState(next.monthly);
++  }, []);
++  // B-346-3: false until this account's saved intent has been read and, if
++  // there is one, shown. Fields take no edits until then, and a tap made
++  // earlier waits for it, then uses what is shown.
++  const [ready, setReady] = useState(false);
+   const [busy, setBusy] = useState(false);
+   const [invalid, setInvalid] = useState<string | null>(null);
+   const [error, setError] = useState<FriendlyError | null>(null);
+@@ -155,6 +181,7 @@ export default function FirstPackageForm({
+ 
+   useEffect(() => {
+     let live = true;
++    setReady(false);
+     if (shownFor.current !== coachId) {
+       // A different account: nothing from the earlier one stays on screen
+       // or in memory, and its running create can no longer write here.
+@@ -166,56 +193,76 @@ export default function FirstPackageForm({
+       setError(null);
+       setInvalid(null);
+       setResumed(false);
+-      setTitle(resetTitle.current);
+-      setFree(false);
+-      setPriceText(DEFAULT_PRICE_TEXT);
+-      setMonthly(true);
++      show({
++        title: resetTitle.current,
++        free: false,
++        priceText: DEFAULT_PRICE_TEXT,
++        monthly: true,
++      });
+     }
+     hydrated.current = loadIntent(coachId).then((read) => {
+-      if (!live || read.kind !== "found" || intent.current) return;
++      if (!live) return;
++      // An unreadable read still ends hydration: submit reads storage again
++      // and stops with specific copy if it is still unreadable.
++      setReady(true);
++      if (read.kind !== "found" || intent.current) return;
+       const stored = read.intent;
+       intent.current = stored;
+       // Show the coach the package that was on its way, as it was sent.
+-      setTitle(stored.input.title);
+-      setFree(stored.input.priceCents === 0);
+-      if (stored.input.priceCents > 0)
+-        setPriceText((stored.input.priceCents / 100).toFixed(2));
+-      setMonthly(stored.input.billingInterval !== "one_time");
++      show({
++        title: stored.input.title,
++        free: stored.input.priceCents === 0,
++        monthly: stored.input.billingInterval !== "one_time",
++        ...(stored.input.priceCents > 0
++          ? { priceText: (stored.input.priceCents / 100).toFixed(2) }
++          : {}),
++      });
+       setResumed(true);
+     });
+     return () => {
+       live = false;
+     };
+-  }, [coachId]);
++  }, [coachId, show]);
+ 
+   const submit = async () => {
+-    const problem = validatePackage({ title, free, priceText });
+-    setInvalid(problem);
+     setError(null);
+-    if (problem || inFlight.current) return;
++    if (inFlight.current) return;
+     inFlight.current = true;
+     setBusy(true);
+-    const owner = coachId;
++    const owner = coachRef.current;
+     const myGeneration = generation.current;
+     const stillOwner = () =>
+       mounted.current &&
+       coachRef.current === owner &&
+       generation.current === myGeneration;
+-    const priceCents = free ? 0 : (parsePriceCents(priceText) ?? 0);
+-    const billingInterval: PackageBillingInterval =
+-      free || !monthly ? "one_time" : "monthly";
+-    const input: PackageCreateInput = {
+-      title: title.trim(),
+-      description: defaultDescription ?? null,
+-      priceCents,
+-      currency: "usd",
+-      billingInterval,
+-      intervalCount: 1,
+-      trialDays: 0,
+-      features: [],
+-    };
+     try {
+-      if (hydrated.current) await hydrated.current;
++      // B-346-3 (agent 119): wait until this account's saved intent is read
++      // and shown, then take the package exactly as the form shows it. A tap
++      // made before that never sends the earlier defaults.
++      let hydrating = hydrated.current;
++      while (hydrating) {
++        await hydrating;
++        if (!stillOwner()) return;
++        if (hydrated.current === hydrating) break;
++        hydrating = hydrated.current;
++      }
++      const snap = { ...shown.current };
++      const problem = validatePackage(snap);
++      setInvalid(problem);
++      if (problem) return;
++      const priceCents = snap.free ? 0 : (parsePriceCents(snap.priceText) ?? 0);
++      const billingInterval: PackageBillingInterval =
++        snap.free || !snap.monthly ? "one_time" : "monthly";
++      const input: PackageCreateInput = {
++        title: snap.title.trim(),
++        description: defaultDescription ?? null,
++        priceCents,
++        currency: "usd",
++        billingInterval,
++        intervalCount: 1,
++        trialDays: 0,
++        features: [],
++      };
+       let earlier = intent.current;
+       if (!earlier) {
+         // B-329-1: read storage again before any fresh create. A failed read
+@@ -305,12 +352,18 @@ export default function FirstPackageForm({
+           to finish that same package.
+         </Text>
+       ) : null}
++      {ready ? null : (
++        <Text style={styles.help} testID={`${testID}-hydrating`}>
++          Checking this device for a package saved earlier.
++        </Text>
++      )}
+       <Text style={styles.label} nativeID={`${testID}-name-label`}>
+         Package name
+       </Text>
+       <TextInput
+         value={title}
+-        onChangeText={setTitle}
++        onChangeText={(v) => show({ title: v })}
++        editable={ready}
+         style={styles.input}
+         accessibilityLabel="Package name"
+         accessibilityLabelledBy={`${testID}-name-label`}
+@@ -328,10 +381,11 @@ export default function FirstPackageForm({
+         ].map((o) => (
+           <TouchableOpacity
+             key={o.key}
+-            onPress={() => setFree(o.key === "free")}
++            onPress={() => show({ free: o.key === "free" })}
++            disabled={!ready}
+             style={[styles.segmentItem, o.on && styles.segmentOn]}
+             accessibilityRole="radio"
+-            accessibilityState={{ checked: o.on }}
++            accessibilityState={{ checked: o.on, disabled: !ready }}
+             accessibilityLabel={o.label}
+             testID={`${testID}-${o.key}`}
+           >
+@@ -353,7 +407,8 @@ export default function FirstPackageForm({
+           </Text>
+           <TextInput
+             value={priceText}
+-            onChangeText={setPriceText}
++            onChangeText={(v) => show({ priceText: v })}
++            editable={ready}
+             style={styles.input}
+             keyboardType="decimal-pad"
+             accessibilityLabel="Price in US dollars"
+@@ -371,10 +426,11 @@ export default function FirstPackageForm({
+             ].map((o) => (
+               <TouchableOpacity
+                 key={o.key}
+-                onPress={() => setMonthly(o.key === "monthly")}
++                onPress={() => show({ monthly: o.key === "monthly" })}
++                disabled={!ready}
+                 style={[styles.segmentItem, o.on && styles.segmentOn]}
+                 accessibilityRole="radio"
+-                accessibilityState={{ checked: o.on }}
++                accessibilityState={{ checked: o.on, disabled: !ready }}
+                 accessibilityLabel={o.label}
+                 testID={`${testID}-${o.key}`}
+               >
+diff --git a/src/components/coach/setup/__tests__/w2FixRound118.test.tsx b/src/components/coach/setup/__tests__/w2FixRound118.test.tsx
+index 2e5e2ca6..cbc847c1 100644
+--- a/src/components/coach/setup/__tests__/w2FixRound118.test.tsx
++++ b/src/components/coach/setup/__tests__/w2FixRound118.test.tsx
+@@ -246,7 +246,7 @@ describe("B-345-1 at the form: the cadence the coach picks is the cadence that g
+ });
+ 
+ describe("B-329-5: nothing is sent or written after the form closed or the account changed", () => {
+-  it("closed while the write-ahead saves: no create", async () => {
++  it("closed while the write-ahead saves: no create, and the written intent stays (B-345-1)", async () => {
+     mockHold.writes = true;
+     const s = await render(form());
+     await fireEvent.press(s.getByTestId("first-package-create"));
+@@ -256,7 +256,8 @@ describe("B-329-5: nothing is sent or written after the form closed or the accou
+     mockHold.pending.splice(0).forEach((go) => go());
+     await flush();
+     expect(mockServer.creates).toBe(0);
+-    expect(mockStore.has(KEY)).toBe(false);
++    // B-345-1 (agent 119): another form may have read and sent it.
++    expect(mockStore.has(KEY)).toBe(true);
+   });
+ 
+   it("account changed while the write-ahead saves: no create, and the form starts clean", async () => {
+diff --git a/src/components/coach/setup/__tests__/w2FixRound119.test.tsx b/src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+new file mode 100644
+index 00000000..d71b50cd
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+@@ -0,0 +1,207 @@
++/**
++ * B-WIZ2-119 (agent 119) — fix round for mobile #346 (coach setup W2).
++ * B-346-3 (Sol): the form took its package from the defaults on screen
++ * before the saved intent was read; hydration then showed the saved package
++ * while the tap updated, published and reported the defaults. Each case
++ * below failed at 2baea5b8.
++ */
++import React from "react";
++import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
++
++jest.mock("../../../../services/sentry", () => ({ captureError: jest.fn() }));
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn(), put: jest.fn() },
++}));
++const mockCreate = jest.fn(async (..._a: unknown[]) => ({
++  data: { id: "pkg_new" },
++}));
++const mockUpdate = jest.fn(async (..._a: unknown[]) => ({}));
++jest.mock("../../../../api/packagesApi", () => ({
++  coachPackagesApi: {
++    create: (...a: unknown[]) => mockCreate(...a),
++    update: (...a: unknown[]) => mockUpdate(...a),
++  },
++}));
++const mockPublish = jest.fn(async (..._a: unknown[]) => ({}));
++const mockInvite = jest.fn(async () => ({ code: "SYNTH", url: "x" }));
++const mockBind = jest.fn(async (..._a: unknown[]) => ({}));
++jest.mock("../../../../api/coachSetupApi", () => ({
++  coachSetupApi: {
++    publishPackage: (...a: unknown[]) => mockPublish(...a),
++    inviteLink: () => mockInvite(),
++    bindFreePackage: (...a: unknown[]) => mockBind(...a),
++  },
++}));
++let mockUser: { id: string } | null = { id: "coach_1" };
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => mockUser,
++}));
++const mockStore = new Map<string, string>();
++const mockRead: { hold: Promise<void> | null } = { hold: null };
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => {
++      if (mockRead.hold) await mockRead.hold;
++      return mockStore.get(k);
++    },
++    set: async (k: string, v: string) => {
++      mockStore.set(k, v);
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++import FirstPackageForm from "../FirstPackageForm";
++import {
++  intentStorageKey,
++  newIntent,
++} from "../../../../lib/coachSetup/packageCreateIntent";
++import type { PackageCreateInput } from "../../../../api/packagesApi";
++
++const KEY = intentStorageKey("coach_1");
++const savedOneTime: PackageCreateInput = {
++  title: "Saved one-time plan",
++  priceCents: 9900,
++  currency: "usd",
++  billingInterval: "one_time",
++  intervalCount: 1,
++};
++const form = (done = jest.fn()) => (
++  <FirstPackageForm
++    defaultTitle="Synthetic coaching"
++    chargesEnabled
++    onCreated={done}
++  />
++);
++/** Holds the mount read; returns the release. */
++function holdRead(): () => Promise<void> {
++  let release: () => void = () => undefined;
++  mockRead.hold = new Promise<void>((r) => (release = r));
++  return async () => {
++    await act(async () => {
++      mockRead.hold = null;
++      release();
++    });
++  };
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockStore.clear();
++  mockRead.hold = null;
++  mockUser = { id: "coach_1" };
++});
++
++describe("B-346-3: nothing is sent from fields shown before hydration", () => {
++  it("a tap during hydration of a made one-time package publishes it as shown, never the monthly defaults", async () => {
++    mockStore.set(
++      KEY,
++      JSON.stringify({ ...newIntent(savedOneTime), packageId: "pkg_saved" }),
++    );
++    const release = holdRead();
++    const done = jest.fn();
++    const s = await render(form(done));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    expect(mockPublish).not.toHaveBeenCalled();
++    await release();
++    await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(mockUpdate).not.toHaveBeenCalled();
++    expect(mockPublish.mock.calls).toEqual([["pkg_saved"]]);
++    expect(done.mock.calls[0][0]).toMatchObject({
++      id: "pkg_saved",
++      title: "Saved one-time plan",
++      priceCents: 9900,
++      billingInterval: "one_time",
++    });
++  });
++
++  it("a tap during hydration of an unsent free package re-sends that package with its own key", async () => {
++    const free = newIntent({
++      ...savedOneTime,
++      title: "Saved free",
++      priceCents: 0,
++    });
++    mockStore.set(KEY, JSON.stringify(free));
++    const release = holdRead();
++    const done = jest.fn();
++    const s = await render(form(done));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await release();
++    await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++    expect(mockCreate.mock.calls[0][1]).toBe(free.key);
++    expect(mockCreate.mock.calls[0][0]).toMatchObject({
++      title: "Saved free",
++      priceCents: 0,
++      billingInterval: "one_time",
++    });
++    expect(mockUpdate).not.toHaveBeenCalled();
++    expect(mockBind).toHaveBeenCalledWith("SYNTH", "pkg_new");
++    expect(done.mock.calls[0][0]).toMatchObject({
++      title: "Saved free",
++      priceCents: 0,
++      freeOnJoin: true,
++    });
++  });
++
++  it("fields take no edits until hydration ends; a later edit is what gets published", async () => {
++    mockStore.set(
++      KEY,
++      JSON.stringify({ ...newIntent(savedOneTime), packageId: "pkg_saved" }),
++    );
++    const release = holdRead();
++    const done = jest.fn();
++    const s = await render(form(done));
++    expect(s.getByTestId("first-package-title").props.editable).toBe(false);
++    expect(s.getByTestId("first-package-hydrating")).toBeTruthy();
++    await release();
++    expect(s.queryByTestId("first-package-hydrating")).toBeNull();
++    expect(s.getByTestId("first-package-title").props.value).toBe(
++      "Saved one-time plan",
++    );
++    await fireEvent.changeText(s.getByTestId("first-package-title"), "Renamed");
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++    expect(mockUpdate).toHaveBeenCalledWith(
++      "pkg_saved",
++      expect.objectContaining({ title: "Renamed", priceCents: 9900 }),
++    );
++    expect(done.mock.calls[0][0]).toMatchObject({
++      title: "Renamed",
++      billingInterval: "one_time",
++    });
++  });
++
++  it("control: a tap during hydration for an account that then signs out sends nothing", async () => {
++    mockStore.set(KEY, JSON.stringify(newIntent(savedOneTime)));
++    const release = holdRead();
++    const done = jest.fn();
++    const s = await render(form(done));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    mockUser = null;
++    await s.rerender(form(done));
++    await release();
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(mockPublish).not.toHaveBeenCalled();
++    expect(done).not.toHaveBeenCalled();
++  });
++
++  it("control: with nothing saved, a tap after hydration publishes the shown defaults", async () => {
++    const done = jest.fn();
++    const s = await render(form(done));
++    await waitFor(() =>
++      expect(s.queryByTestId("first-package-hydrating")).toBeNull(),
++    );
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
++    expect(done.mock.calls[0][0]).toMatchObject({
++      title: "Synthetic coaching",
++      priceCents: 4900,
++      billingInterval: "monthly",
++    });
++  });
++});
+diff --git a/src/lib/coachSetup/__tests__/w1FixRound118.test.ts b/src/lib/coachSetup/__tests__/w1FixRound118.test.ts
+index 21f45572..993721bc 100644
+--- a/src/lib/coachSetup/__tests__/w1FixRound118.test.ts
++++ b/src/lib/coachSetup/__tests__/w1FixRound118.test.ts
+@@ -257,7 +257,7 @@ describe("B-345-1 / B-345-2: the PATCH carries the billing the coach picked", ()
+ });
+ 
+ describe("B-329-5: nothing runs after the owner, session or form ended", () => {
+-  it("retired while the write-ahead is saving: no create, no callback, no leftover intent", async () => {
++  it("retired while the write-ahead is saving: no create, no callback, the written intent stays (B-345-1)", async () => {
+     let release: () => void = () => undefined;
+     mockHold.set = new Promise<void>((r) => (release = r));
+     let live = true;
+@@ -278,7 +278,8 @@ describe("B-329-5: nothing runs after the owner, session or form ended", () => {
+     await expect(run).rejects.toBeInstanceOf(PackageCreateStoppedError);
+     expect(post()).not.toHaveBeenCalled();
+     expect(onIntent).not.toHaveBeenCalled();
+-    expect(mockStore.has(KEY)).toBe(false);
++    // B-345-1 (agent 119): another form may have read and sent it.
++    expect(mockStore.has(KEY)).toBe(true);
+   });
+ 
+   it("a re-sent create answers after sign-out: no callback, the sent intent stays for the same account", async () => {
+diff --git a/src/lib/coachSetup/__tests__/w1FixRound119.test.ts b/src/lib/coachSetup/__tests__/w1FixRound119.test.ts
+new file mode 100644
+index 00000000..1c4ef198
+--- /dev/null
++++ b/src/lib/coachSetup/__tests__/w1FixRound119.test.ts
+@@ -0,0 +1,140 @@
++/**
++ * B-WIZ2-119 (agent 119) — fix round for mobile #345 (coach setup W1).
++ * B-345-1 (Sol, retained): a create retired while its write-ahead was saving
++ * removed that intent, even though a replacement form of the same account
++ * could already have read it and sent its key. A later retry then made a
++ * second package under a new key. Each case below failed at 97c9005e.
++ */
++const mockStore = new Map<string, string>();
++const mockHold: { first: Promise<void> | null; writes: number } = {
++  first: null,
++  writes: 0,
++};
++jest.mock("../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => mockStore.get(k),
++    set: async (k: string, v: string) => {
++      mockStore.set(k, v);
++      mockHold.writes += 1;
++      // Storage has the value; only its completion is late.
++      if (mockHold.writes === 1 && mockHold.first) await mockHold.first;
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++import type { PackageCreateInput } from "../../../api/packagesApi";
++import {
++  createPackageOnce,
++  intentStorageKey,
++  loadIntent,
++  PackageCreateStoppedError,
++} from "../packageCreateIntent";
++
++const KEY = intentStorageKey("coach_1");
++const input: PackageCreateInput = {
++  title: "North coaching",
++  priceCents: 4900,
++  currency: "usd",
++  billingInterval: "monthly",
++  intervalCount: 1,
++};
++/** Backend double: one package per key; `lose` drops the answer. */
++const rows = new Map<string, string>();
++let lose = true;
++const create = jest.fn(async (_b: PackageCreateInput, key: string) => {
++  if (!rows.has(key)) rows.set(key, `pkg_${rows.size + 1}`);
++  if (lose)
++    throw Object.assign(new Error("Network Error"), {
++      code: "ERR_NETWORK",
++      request: {},
++    });
++  return { data: { id: rows.get(key) as string } };
++});
++const deps = { create, update: jest.fn(async () => ({})) };
++const run = (
++  earlier: Parameters<typeof createPackageOnce>[0]["earlier"],
++  isLive: () => boolean = () => true,
++) =>
++  createPackageOnce({
++    coachId: "coach_1",
++    scope: "wizard",
++    input,
++    earlier,
++    deps,
++    onIntent: jest.fn(),
++    isLive,
++  });
++const hydrate = async () => {
++  const read = await loadIntent("coach_1");
++  return read.kind === "found" ? read.intent : null;
++};
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockStore.clear();
++  rows.clear();
++  lose = true;
++  mockHold.first = null;
++  mockHold.writes = 0;
++});
++
++/** The first form writes its intent, is retired, and a second form sends it. */
++async function retiredWhileReplacementSends() {
++  let release: () => void = () => undefined;
++  mockHold.first = new Promise<void>((r) => (release = r));
++  let oldLive = true;
++  const old = run(null, () => oldLive).catch((e: unknown) => e);
++  expect(mockStore.has(KEY)).toBe(true);
++  oldLive = false;
++  const seen = await hydrate();
++  expect(seen).not.toBeNull();
++  await expect(run(seen)).rejects.toMatchObject({ code: "ERR_NETWORK" });
++  release();
++  expect(await old).toBeInstanceOf(PackageCreateStoppedError);
++  return seen?.key as string;
++}
++
++describe("B-345-1: a retired create never removes an intent it cannot prove unsent", () => {
++  it("the key a replacement form sent stays on disk", async () => {
++    const sentKey = await retiredWhileReplacementSends();
++    expect(rows.size).toBe(1);
++    expect(JSON.parse(mockStore.get(KEY) as string).key).toBe(sentKey);
++  });
++
++  it("the next retry re-sends that key: one package, never two", async () => {
++    const sentKey = await retiredWhileReplacementSends();
++    lose = false;
++    const out = await run(await hydrate());
++    expect(rows.size).toBe(1);
++    expect(out.packageId).toBe("pkg_1");
++    expect(create.mock.calls.map((c) => c[1])).toEqual([sentKey, sentKey]);
++  });
++
++  it("retired with no replacement: the same account later finishes the same create with the same key", async () => {
++    let release: () => void = () => undefined;
++    mockHold.first = new Promise<void>((r) => (release = r));
++    let live = true;
++    const old = run(null, () => live).catch((e: unknown) => e);
++    live = false;
++    release();
++    expect(await old).toBeInstanceOf(PackageCreateStoppedError);
++    expect(create).not.toHaveBeenCalled();
++    const kept = await hydrate();
++    expect(kept?.packageId).toBeNull();
++    lose = false;
++    const out = await run(kept);
++    expect(create.mock.calls.map((c) => c[1])).toEqual([kept?.key]);
++    expect(rows.size).toBe(1);
++    expect(out.intent.key).toBe(kept?.key);
++  });
++
++  it("control: a lost answer with no retirement keeps its key for the retry", async () => {
++    await run(null).catch(() => undefined);
++    await run(await hydrate()).catch(() => undefined);
++    expect(rows.size).toBe(1);
++    expect(create.mock.calls[0][1]).toBe(create.mock.calls[1][1]);
++  });
++});
+diff --git a/src/lib/coachSetup/packageCreateIntent.ts b/src/lib/coachSetup/packageCreateIntent.ts
+index 788f6450..7f0d2416 100644
+--- a/src/lib/coachSetup/packageCreateIntent.ts
++++ b/src/lib/coachSetup/packageCreateIntent.ts
+@@ -287,8 +287,9 @@ export interface CreateOnceDeps {
+  * the first step and again after every await, before any request, callback or
+  * storage write. Once it answers false the create stops with
+  * PackageCreateStoppedError: no request is sent, `onIntent` is not called and
+- * an intent that may already have been sent stays on disk (a fresh intent
+- * that was never sent is removed again).
++ * nothing is removed from disk. B-345-1 (agent 119): that includes a fresh
++ * intent this create wrote but never sent, because another form of the same
++ * account may already have read and sent it.
+  */
+ export async function createPackageOnce(args: {
+   coachId: string | null;
+@@ -362,9 +363,13 @@ export async function createPackageOnce(args: {
+     const fresh = newIntent(input);
+     const saved = await saveIntent(coachId, fresh, scope);
+     if (!isLive()) {
+-      // Written but never sent: nothing exists for this key, so removing it
+-      // cannot lose a package, and no residue outlives a sign-out wipe.
+-      if (saved) await clearIntent(coachId, scope);
++      // B-345-1 (agent 119): what was written stays. This create never sent
++      // it, but once it is on disk another form of the same account may have
++      // read it and sent its key, so this one cannot prove it unsent and must
++      // not remove it (removing a sent key lets a later retry make a second
++      // package). Kept, it only lets the same account finish this same create
++      // with the same key. Sign-out still wipes it: storage applies writes in
++      // the order they were issued, and this write was issued first.
+       throw new PackageCreateStoppedError();
+     }
+     if (!saved) throw new IntentStorageError("unsaved");

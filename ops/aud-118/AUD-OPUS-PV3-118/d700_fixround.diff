@@ -1,0 +1,2051 @@
+diff --git a/src/admin/federation/finance-admin.client.ts b/src/admin/federation/finance-admin.client.ts
+index be95a7aa0..16e08d283 100644
+--- a/src/admin/federation/finance-admin.client.ts
++++ b/src/admin/federation/finance-admin.client.ts
+@@ -30,6 +30,17 @@ const MAX_TIMEOUT_MS = 15000;
+ const MAX_ATTEMPTS = 2;
+ const RETRY_BACKOFF_MS = 150;
+ 
++// B-700-2: what a degraded log line names. Paths carry the address
++// (`/by-email/<encoded address>`) or the search text (`?q=`), so the line
++// names one of these fixed labels instead.
++type FinanceRoute =
++  | 'health'
++  | 'users/search'
++  | 'clients/by-email'
++  | 'coaches/by-email'
++  | 'usage/product'
++  | 'coaches/by-email/practice';
++
+ @Injectable()
+ export class FinanceAdminClient {
+   private readonly logger = new Logger(FinanceAdminClient.name);
+@@ -45,7 +56,7 @@ export class FinanceAdminClient {
+   }
+ 
+   async getHealth(): Promise<FinanceCallOutcome<FinanceHealthContract>> {
+-    return this.get<FinanceHealthContract>('/api/admin/federation/health');
++    return this.get<FinanceHealthContract>('health', '/api/admin/federation/health');
+   }
+ 
+   async searchUsers(
+@@ -54,6 +65,7 @@ export class FinanceAdminClient {
+   ): Promise<FinanceCallOutcome<FinanceUserSearchHit[]>> {
+     const params = new URLSearchParams({ q, limit: String(limit) });
+     return this.getArray<FinanceUserSearchHit>(
++      'users/search',
+       `/api/admin/federation/users/search?${params.toString()}`,
+     );
+   }
+@@ -62,6 +74,7 @@ export class FinanceAdminClient {
+     email: string,
+   ): Promise<FinanceCallOutcome<FinanceClientSummary>> {
+     return this.get<FinanceClientSummary>(
++      'clients/by-email',
+       `/api/admin/federation/clients/by-email/${encodeURIComponent(email)}`,
+     );
+   }
+@@ -70,12 +83,13 @@ export class FinanceAdminClient {
+     email: string,
+   ): Promise<FinanceCallOutcome<FinanceCoachSummary>> {
+     return this.get<FinanceCoachSummary>(
++      'coaches/by-email',
+       `/api/admin/federation/coaches/by-email/${encodeURIComponent(email)}`,
+     );
+   }
+ 
+   async getProductUsage(): Promise<FinanceCallOutcome<FinanceProductUsage>> {
+-    return this.get<FinanceProductUsage>('/api/admin/federation/usage/product');
++    return this.get<FinanceProductUsage>('usage/product', '/api/admin/federation/usage/product');
+   }
+ 
+   // Sprint A — symmetric practice-type write. Calls the finance
+@@ -90,13 +104,14 @@ export class FinanceAdminClient {
+     practiceType: 'fitness_only' | 'finance_only' | 'both',
+   ): Promise<FinanceCallOutcome<{ email: string; practice_type: string }>> {
+     return this.put<{ email: string; practice_type: string }>(
++      'coaches/by-email/practice',
+       `/api/admin/federation/coaches/by-email/${encodeURIComponent(email)}/practice`,
+       { practice_type: practiceType },
+     );
+   }
+ 
+-  private put<T>(path: string, body: unknown): Promise<FinanceCallOutcome<T>> {
+-    return this.request<T>(path, { expectArray: false, method: 'PUT', body });
++  private put<T>(route: FinanceRoute, path: string, body: unknown): Promise<FinanceCallOutcome<T>> {
++    return this.request<T>(route, path, { expectArray: false, method: 'PUT', body });
+   }
+ 
+   private resolveTimeoutMs(): number {
+@@ -106,15 +121,16 @@ export class FinanceAdminClient {
+     return Math.min(Math.max(parsed, MIN_TIMEOUT_MS), MAX_TIMEOUT_MS);
+   }
+ 
+-  private get<T>(path: string): Promise<FinanceCallOutcome<T>> {
+-    return this.request<T>(path, { expectArray: false });
++  private get<T>(route: FinanceRoute, path: string): Promise<FinanceCallOutcome<T>> {
++    return this.request<T>(route, path, { expectArray: false });
+   }
+ 
+-  private getArray<T>(path: string): Promise<FinanceCallOutcome<T[]>> {
+-    return this.request<T[]>(path, { expectArray: true });
++  private getArray<T>(route: FinanceRoute, path: string): Promise<FinanceCallOutcome<T[]>> {
++    return this.request<T[]>(route, path, { expectArray: true });
+   }
+ 
+   private async request<T>(
++    route: FinanceRoute,
+     path: string,
+     opts: {
+       expectArray: boolean;
+@@ -162,9 +178,10 @@ export class FinanceAdminClient {
+         await sleep(RETRY_BACKOFF_MS);
+       }
+     }
+-    // Surface the last failure mode in logs (no PII; URL path only).
++    // Surface the last failure mode in logs. B-700-2: the fixed route label,
++    // never the path (it holds the address or the search text).
+     this.logger.warn(
+-      `Finance federation degraded path=${path} reason=${lastDegraded?.kind === 'degraded' ? lastDegraded.reason : 'unknown'}`,
++      `Finance federation degraded route=${route} reason=${lastDegraded?.kind === 'degraded' ? lastDegraded.reason : 'unknown'}`,
+     );
+     return (
+       lastDegraded ?? {
+diff --git a/src/auth/auth.service.ts b/src/auth/auth.service.ts
+index f87388450..6ecb33af6 100644
+--- a/src/auth/auth.service.ts
++++ b/src/auth/auth.service.ts
+@@ -45,6 +45,7 @@ import {
+ } from './recent-auth.guard';
+ import { roleSatisfies } from './roles.guard';
+ import type { AppRole } from '../common/decorators/roles.decorator';
++import { describeFailure } from '../observability/log-pii';
+ 
+ // Self-service promotion to coach is the legacy behavior of POST
+ // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
+@@ -248,7 +249,7 @@ export class AuthService {
+     } catch (err) {
+       const code = inviteAttachErrorCode(err);
+       this.logger.warn(
+-        `${flow} invite_code attach failed for user=${userId} code=${code}: ${(err as Error).message}`,
++        `${flow} invite_code attach failed for user=${userId} code=${code}: ${describeFailure(err)}`,
+       );
+       return { invite_attached: false, invite_attach_error: code };
+     }
+@@ -827,7 +828,9 @@ export class AuthService {
+     });
+     if (error || !data?.session) {
+       // R30/R109: never log the refresh token; surface a clear, actionable code.
+-      this.logger.warn(`extension refresh rejected: ${error?.message ?? 'no session returned'}`);
++      this.logger.warn(
++        `extension refresh rejected: ${error ? describeFailure(error) : 'no session returned'}`,
++      );
+       throw new UnauthorizedException({
+         code: 'extension_refresh_invalid',
+         message: 'refresh token invalid or expired',
+@@ -877,7 +880,7 @@ export class AuthService {
+     const hashedToken = linkData?.properties?.hashed_token;
+     if (linkError || !hashedToken) {
+       this.logger.error(
+-        `pair redeem: generateLink failed: ${linkError?.message ?? 'no hashed_token'}`,
++        `pair redeem: generateLink failed: ${linkError ? describeFailure(linkError) : 'no hashed_token'}`,
+       );
+       throw new InternalServerErrorException('pair_redeem_session_mint_failed');
+     }
+@@ -895,7 +898,7 @@ export class AuthService {
+     });
+     if (otpError || !otpData?.session) {
+       this.logger.error(
+-        `pair redeem: verifyOtp failed: ${otpError?.message ?? 'no session returned'}`,
++        `pair redeem: verifyOtp failed: ${otpError ? describeFailure(otpError) : 'no session returned'}`,
+       );
+       throw new InternalServerErrorException('pair_redeem_session_mint_failed');
+     }
+@@ -1156,7 +1159,7 @@ export class AuthService {
+     try {
+       applePayload = await this.appleVerifier.verify(token);
+     } catch (err) {
+-      this.logger.warn(`apple token verify failed: ${(err as Error).message}`);
++      this.logger.warn(`apple token verify failed: ${describeFailure(err)}`);
+       throw new UnauthorizedException('Apple auth failed — invalid token');
+     }
+ 
+@@ -1213,7 +1216,7 @@ export class AuthService {
+ 
+     if (signInError || !signInData.session || !signInData.user) {
+       this.logger.warn(
+-        `supabase signInWithIdToken(apple) failed: ${signInError?.message ?? 'no session'}`,
++        `supabase signInWithIdToken(apple) failed: ${signInError ? describeFailure(signInError) : 'no session'}`,
+       );
+       throw new UnauthorizedException('Apple auth failed — Supabase rejected the token');
+     }
+@@ -1471,7 +1474,9 @@ export class AuthService {
+     if (error) {
+       // Don't reveal whether the email exists to the client — but do log so ops
+       // can see Supabase outages instead of losing the signal. Audit M1.
+-      this.logger.warn(`resetPasswordForEmail failed: ${error.message}`);
++      // B-700-2: Supabase echoes the address in some errors
++      // (email_address_invalid); log the status and code only.
++      this.logger.warn(`resetPasswordForEmail failed: ${describeFailure(error)}`);
+     }
+ 
+     return { message: 'If an account exists with that email, a reset link has been sent.' };
+@@ -1986,7 +1991,7 @@ export class AuthService {
+         payload = await this.appleVerifier.verify(providerToken);
+       } catch (err) {
+         this.logger.warn(
+-          `recent-auth apple token verify failed for user=${user.id}: ${(err as Error).message}`,
++          `recent-auth apple token verify failed for user=${user.id}: ${describeFailure(err)}`,
+         );
+         throw new UnauthorizedException('Provider token is invalid');
+       }
+@@ -2028,7 +2033,7 @@ export class AuthService {
+       }
+       if (signInError || !signInData?.user) {
+         this.logger.warn(
+-          `recent-auth apple supabase verify failed for user=${user.id}: ${signInError?.message ?? 'no session'}`,
++          `recent-auth apple supabase verify failed for user=${user.id}: ${signInError ? describeFailure(signInError) : 'no session'}`,
+         );
+         throw new UnauthorizedException('Provider token is invalid');
+       }
+@@ -2065,7 +2070,7 @@ export class AuthService {
+       payload = await this.googleVerifier.verify(providerToken);
+     } catch (err) {
+       this.logger.warn(
+-        `recent-auth google token verify failed for user=${user.id}: ${(err as Error).message}`,
++        `recent-auth google token verify failed for user=${user.id}: ${describeFailure(err)}`,
+       );
+       throw new UnauthorizedException('Provider token is invalid');
+     }
+@@ -2114,7 +2119,7 @@ export class AuthService {
+           throw new ServiceUnavailableException('Authentication service temporarily unavailable');
+         }
+         this.logger.warn(
+-          `recent-auth google sub lookup failed for user=${user.id}: ${(err as Error).message}`,
++          `recent-auth google sub lookup failed for user=${user.id}: ${describeFailure(err)}`,
+         );
+       }
+     }
+diff --git a/src/coach/brief/coach-brief.service.ts b/src/coach/brief/coach-brief.service.ts
+index 6d931a47a..c11304be1 100644
+--- a/src/coach/brief/coach-brief.service.ts
++++ b/src/coach/brief/coach-brief.service.ts
+@@ -35,6 +35,7 @@ import {
+   noClientDataSubject,
+ } from '../../ai-egress/ai-egress.types';
+ import { createAnthropicClient } from '../../ai-egress/provider-clients';
++import { describeFailure } from '../../observability/log-pii';
+ 
+ /**
+  * Sentinel error surfaced by `markBriefRead` when the briefId either does
+@@ -107,20 +108,16 @@ export function bucketDateLocal(
+   }
+ }
+ 
+-function errorMessageOf(err: unknown): string {
+-  if (err instanceof Error) return err.message;
+-  if (typeof err === 'string') return err;
+-  try {
+-    return JSON.stringify(err);
+-  } catch {
+-    return String(err);
+-  }
+-}
+-
+ // R44: typed internal errors for Coach Brief — replaces raw Error
+ // construction in the service. These never propagate to coaches
+ // (callClaude catches and falls back to the deterministic narrative),
+ // but a `code` field keeps internal logs greppable.
++// B-700-1: the codes describeFailure may print for this module.
++const BRIEF_ERROR_CODES: ReadonlySet<string> = new Set([
++  'COACH_BRIEF_CLAUDE_EMPTY',
++  'COACH_BRIEF_CLAUDE_CONTRACT_FAILED',
++]);
++
+ class CoachBriefClaudeError extends Error {
+   readonly code:
+     | 'COACH_BRIEF_CLAUDE_EMPTY'
+@@ -1393,6 +1390,8 @@ export class CoachBriefService {
+     // R2b — REQUIRED. null = no client in scope allowed AI help: the
+     // deterministic narrative is used and nothing is sent.
+     ai: BriefAiInput | null,
++    // B-700-1: what the log lines name instead of the coach's name.
++    coachId?: string,
+   ): Promise<{ narrative: string; generated_by: 'ai' | 'fallback' }> {
+     // Fast-path fallback for zero-action briefs — no Claude call needed.
+     // Solo/sub-coach mode keys off client-level action counters; head-
+@@ -1437,7 +1436,7 @@ export class CoachBriefService {
+     } catch (err) {
+       // ANTHROPIC_API_KEY missing — never propagate as 500 to coach.
+       this.logger.error(
+-        `CoachBrief Anthropic client init failed: ${errorMessageOf(err)}`,
++        `CoachBrief Anthropic client init failed: ${describeFailure(err, BRIEF_ERROR_CODES)}`,
+       );
+       return {
+         narrative: buildFallbackNarrative(ctx),
+@@ -1451,15 +1450,17 @@ export class CoachBriefService {
+         : buildSoloCoachSystemPrompt();
+     // R2b — the prompt is built from the AI context only (consented clients).
+     const userPrompt = buildBriefPrompt(ai.ctx, ai.scope);
+-    // P1-8: every downstream prompt-or-log interpolation of the
+-    // coach's name (repair prompt, contract validator, log lines)
+-    // must run through sanitizePromptIdentifier so a malicious
++    // P1-8: every downstream prompt interpolation of the coach's name
++    // (repair prompt, contract validator) must run through
++    // sanitizePromptIdentifier so a malicious
+     // User.name cannot smuggle newlines, fake system delimiters, or
+     // injection payloads into the Claude conversation.
+     const safeCoachFirstName = sanitizePromptIdentifier(
+       ctx.coach_first_name,
+     );
+-    const safeCoachName = sanitizePromptIdentifier(ctx.coach_name);
++    // B-700-1: log lines name the coach id, the mode and the brief date,
++    // never the coach's name (the name goes to the prompt only).
++    const logRef = `coach=${coachId ?? 'unset'} mode=${ctx.brief_mode} date=${ctx.date}`;
+ 
+     // P1-7: validate Claude output against the voice contract. On
+     // violation, try one repair round-trip with the violation reason
+@@ -1479,7 +1480,7 @@ export class CoachBriefService {
+         return { narrative: firstAttempt.narrative, generated_by: 'ai' };
+       }
+       this.logger.warn(
+-        `CoachBrief Claude output failed contract (${violation}) for coach=${safeCoachName}; attempting one repair`,
++        `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
+       );
+ 
+       const repairPrompt = `${userPrompt}\n\nYour previous response violated the contract (${violation}). Output a fresh brief that:\n- Is exactly 3 to 5 complete sentences (no more, no fewer).\n- Begins with ${safeCoachFirstName} in the very first sentence.\n- Uses first-person plural TGP voice ("we", "we're", "we've") at least once.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_MAX_NARRATIVE_CHARS} characters.`;
+@@ -1499,16 +1500,16 @@ export class CoachBriefService {
+           return { narrative: secondAttempt.narrative, generated_by: 'ai' };
+         }
+         this.logger.warn(
+-          `CoachBrief Claude repair attempt also failed contract (${violation2}) for coach=${safeCoachName}; using fallback`,
++          `CoachBrief Claude repair attempt also failed contract (${violation2}) for ${logRef}; using fallback`,
+         );
+       } else {
+         this.logger.warn(
+-          `CoachBrief Claude repair attempt errored for coach=${safeCoachName}: ${secondAttempt.error}`,
++          `CoachBrief Claude repair attempt errored for ${logRef}: ${secondAttempt.error}`,
+         );
+       }
+     } else {
+       this.logger.error(
+-        `CoachBrief Claude call failed for coach=${safeCoachName}: ${firstAttempt.error}`,
++        `CoachBrief Claude call failed for ${logRef}: ${firstAttempt.error}`,
+       );
+     }
+ 
+@@ -1569,7 +1570,9 @@ export class CoachBriefService {
+           : normalized;
+       return { kind: 'success', narrative: clamped };
+     } catch (err) {
+-      return { kind: 'error', error: errorMessageOf(err) };
++      // B-700-1: the class, status and code only; an SDK or egress message
++      // can quote prompt content.
++      return { kind: 'error', error: describeFailure(err, BRIEF_ERROR_CODES) };
+     } finally {
+       clearTimeout(timer);
+     }
+@@ -1802,7 +1805,7 @@ export class CoachBriefService {
+         );
+       }
+ 
+-      const { narrative, generated_by } = await this.callClaude(context, aiInput);
++      const { narrative, generated_by } = await this.callClaude(context, aiInput, coachId);
+ 
+       const updated = await this.prisma.coachBrief.update({
+         where: {
+@@ -1830,7 +1833,7 @@ export class CoachBriefService {
+       // Release the claim so the next request can retry. We do not
+       // distinguish failures here — the next caller will re-claim.
+       this.logger.error(
+-        `CoachBrief generation failed for coach=${coachId}: ${errorMessageOf(err)}`,
++        `CoachBrief generation failed for coach=${coachId}: ${describeFailure(err, BRIEF_ERROR_CODES)}`,
+       );
+       // P1-10 fix round 5: a failed cleanup is itself a real incident.
+       // The previous `.catch(() => undefined)` silently masked
+@@ -1852,7 +1855,7 @@ export class CoachBriefService {
+         });
+       } catch (cleanupErr) {
+         this.logger.error(
+-          `CoachBrief generation cleanup also failed for coach=${coachId} date=${briefDate} primary=${errorMessageOf(err)} cleanup=${errorMessageOf(cleanupErr)}`,
++          `CoachBrief generation cleanup also failed for coach=${coachId} date=${briefDate} primary=${describeFailure(err, BRIEF_ERROR_CODES)} cleanup=${describeFailure(cleanupErr, BRIEF_ERROR_CODES)}`,
+         );
+       }
+       throw err;
+diff --git a/src/email/email.service.ts b/src/email/email.service.ts
+index b516d6699..0376df8ce 100644
+--- a/src/email/email.service.ts
++++ b/src/email/email.service.ts
+@@ -10,7 +10,7 @@ import * as path from 'path';
+ import * as Handlebars from 'handlebars';
+ import { Prisma } from '@prisma/client';
+ import { PrismaService } from '../prisma.service';
+-import { redactEmailAddresses } from '../observability/log-pii';
++import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
+ import {
+   EmailTemplateKey,
+   SendEmailInput,
+@@ -179,13 +179,15 @@ export class EmailService {
+       html = rendered.html;
+       subject = rendered.subject;
+     } catch (err) {
+-      const msg = redactEmailAddresses(err instanceof Error ? err.message : 'unknown');
+-      await this._finalize(logRow.id, 'failed', null, `render: ${msg}`);
++      // B-700-1: a render error can quote template data (a first name, a
++      // coach name); keep the class and code only.
++      const failure = `render: ${describeFailure(err)}`;
++      await this._finalize(logRow.id, 'failed', null, failure);
+       return {
+         status: 'failed',
+         providerMessageId: null,
+         idempotencyKey: input.idempotencyKey,
+-        error: `render: ${msg}`,
++        error: failure,
+       };
+     }
+ 
+@@ -225,19 +227,20 @@ export class EmailService {
+         idempotencyKey: input.idempotencyKey,
+       };
+     } catch (err) {
+-      // A provider error body can echo the address back ("Invalid `to`
+-      // field: ..."); redact it once here so the log line, the stored
+-      // error and the returned error (callers log it) never carry it.
+-      const msg = redactEmailAddresses(err instanceof Error ? err.message : 'unknown');
+-      await this._finalize(logRow.id, 'failed', null, msg);
++      // A provider error body can echo the address and display name back
++      // ("Invalid `to` field: ..."). B-700-1: the log line, the stored error
++      // and the returned error (callers log it) hold the provider, HTTP
++      // status and the provider's code only, never the body.
++      const failure = describeFailure(err);
++      await this._finalize(logRow.id, 'failed', null, failure);
+       this.logger.error(
+-        `email send failed template=${input.template} row=${logRow.id}: ${msg}`,
++        `email send failed template=${input.template} row=${logRow.id}: ${failure}`,
+       );
+       return {
+         status: 'failed',
+         providerMessageId: null,
+         idempotencyKey: input.idempotencyKey,
+-        error: msg,
++        error: failure,
+       };
+     }
+   }
+@@ -264,7 +267,7 @@ export class EmailService {
+       // Audit-style: never let log-finalize failure mask the real send
+       // outcome. Best-effort write; error makes Sentry via global logger.
+       this.logger.error(
+-        `email send log finalize failed row=${rowId}: ${err instanceof Error ? err.message : 'unknown'}`,
++        `email send log finalize failed row=${rowId}: ${describeFailure(err)}`,
+       );
+     }
+   }
+@@ -360,12 +363,13 @@ class ResendTransport implements EmailTransport {
+       body: JSON.stringify(body),
+     });
+     if (!res.ok) {
+-      const text = await res.text().catch(() => '<no body>');
+-      throw new Error(`Resend ${res.status}: ${text.slice(0, 500)}`);
++      // B-700-1: the body can echo the recipient; keep the provider's code.
++      const text = await res.text().catch(() => '');
++      throw new ProviderFailure('resend', res.status, providerErrorCode('resend', text));
+     }
+     const json = (await res.json().catch(() => ({}))) as { id?: string };
+     if (!json.id) {
+-      throw new Error('Resend response missing id field');
++      throw new ProviderFailure('resend', res.status, 'missing_id');
+     }
+     return { providerMessageId: json.id };
+   }
+diff --git a/src/email/email.types.ts b/src/email/email.types.ts
+index 49981c6c6..24c9fc36c 100644
+--- a/src/email/email.types.ts
++++ b/src/email/email.types.ts
+@@ -58,8 +58,10 @@ export interface SendEmailResult {
+   providerMessageId: string | null;
+   // Mirrored from input.idempotencyKey for caller convenience.
+   idempotencyKey: string;
+-  // Human-readable error text on 'failed'. Never contains the provider
+-  // API key or an email address (C-611-17: provider text is passed through
+-  // redactEmailAddresses). Safe to surface up to the operator.
++  // Diagnostic on 'failed': server-owned parts only, e.g.
++  // `provider=resend status=422 code=validation_error` or
++  // `render: error=Error` (B-700-1: never the provider body or an exception
++  // message, which can hold an address or a name). Safe to surface up to
++  // the operator.
+   error?: string;
+ }
+diff --git a/src/notifications/digest.service.ts b/src/notifications/digest.service.ts
+index 83314317c..ce518bbe0 100644
+--- a/src/notifications/digest.service.ts
++++ b/src/notifications/digest.service.ts
+@@ -6,7 +6,7 @@ import * as Handlebars from 'handlebars';
+ import { PrismaService } from '../prisma.service';
+ import { NotificationsService } from './notifications.service';
+ import { NotificationKind } from './notification-kind';
+-import { redactEmailAddresses } from '../observability/log-pii';
++import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
+ 
+ // Handlebars helper: {{gt a b}} — used in templates for conditional plural.
+ Handlebars.registerHelper('gt', (a: number, b: number) => a > b);
+@@ -161,11 +161,12 @@ export class DigestService {
+ 
+       await this.notifications.markDigestSent(logId);
+     } catch (err) {
+-      // Any step can fail with text that holds the address (a provider body,
+-      // or an ORM error quoting the notification body above): redact once.
+-      const msg = redactEmailAddresses((err as Error)?.message);
+-      await this.notifications.markDigestFailed(logId, msg);
+-      this.logger.error(`client digest failed: user=${client.id} kind=${digestKind}: ${msg}`);
++      // Any step can fail with text that holds the address, the name or the
++      // digest body (a provider body, an ORM error quoting the notification
++      // body above). B-700-1: store and log the class and code only.
++      const failure = describeFailure(err);
++      await this.notifications.markDigestFailed(logId, failure);
++      this.logger.error(`client digest failed: user=${client.id} kind=${digestKind}: ${failure}`);
+     }
+   }
+ 
+@@ -222,11 +223,12 @@ export class DigestService {
+ 
+       await this.notifications.markDigestSent(logId);
+     } catch (err) {
+-      // Any step can fail with text that holds the address (a provider body,
+-      // or an ORM error quoting the notification body above): redact once.
+-      const msg = redactEmailAddresses((err as Error)?.message);
+-      await this.notifications.markDigestFailed(logId, msg);
+-      this.logger.error(`coach digest failed: user=${coach.id} kind=${digestKind}: ${msg}`);
++      // Any step can fail with text that holds the address, the name or the
++      // digest body (a provider body, an ORM error quoting the notification
++      // body above). B-700-1: store and log the class and code only.
++      const failure = describeFailure(err);
++      await this.notifications.markDigestFailed(logId, failure);
++      this.logger.error(`coach digest failed: user=${coach.id} kind=${digestKind}: ${failure}`);
+     }
+   }
+ 
+@@ -448,7 +450,7 @@ export class DigestService {
+     });
+     if (!res.ok) {
+       const body = await res.text();
+-      throw new Error(`Resend API error ${res.status}: ${redactEmailAddresses(body)}`);
++      throw new ProviderFailure('resend', res.status, providerErrorCode('resend', body));
+     }
+   }
+ 
+@@ -475,7 +477,7 @@ export class DigestService {
+     });
+     if (!res.ok) {
+       const body = await res.text();
+-      throw new Error(`SendGrid API error ${res.status}: ${redactEmailAddresses(body)}`);
++      throw new ProviderFailure('sendgrid', res.status, providerErrorCode('sendgrid', body));
+     }
+   }
+ 
+@@ -500,7 +502,7 @@ export class DigestService {
+     });
+     if (!res.ok) {
+       const body = await res.text();
+-      throw new Error(`Postmark API error ${res.status}: ${redactEmailAddresses(body)}`);
++      throw new ProviderFailure('postmark', res.status, providerErrorCode('postmark', body));
+     }
+   }
+ 
+diff --git a/src/notifications/notifications.service.ts b/src/notifications/notifications.service.ts
+index 741aa745e..c3633ea9b 100644
+--- a/src/notifications/notifications.service.ts
++++ b/src/notifications/notifications.service.ts
+@@ -26,6 +26,7 @@ import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notificat
+ import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
+ import { VoicePolicyService } from '../roman/voice/voice-policy.service';
+ import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
++import { describeFailure } from '../observability/log-pii';
+ 
+ // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
+ // passes through. It intentionally contains no PII — only the alert
+@@ -609,7 +610,7 @@ export class NotificationsService {
+       await this.pollReceipts(tickets, coachId);
+       return true;
+     } catch (err) {
+-      this.logger.error(`pushToCoach failed for coach=${coachId}: ${(err as Error).message}`, err);
++      this.logger.error(`pushToCoach failed for coach=${coachId}: ${describeFailure(err)}`);
+       return false;
+     }
+   }
+@@ -707,10 +708,11 @@ export class NotificationsService {
+       await this.pollReceipts(tickets, userId);
+       return { delivered: true, code: 'delivered' };
+     } catch (err) {
+-      // R17: log the raw err for ops, return a scrubbed typed result to
+-      // the caller. The `detail` field carries only the Error.name so we
+-      // never leak stack traces or query text.
+-      this.logger.error(`Push notification failed for user ${userId}`, err);
++      // R17: return a scrubbed typed result to the caller. The `detail`
++      // field carries only the Error.name so we never leak stack traces or
++      // query text. B-700-1: the log line holds the class and code only
++      // (an Expo error message quotes the push token).
++      this.logger.error(`Push notification failed for user ${userId}: ${describeFailure(err)}`);
+       if (err instanceof PushAbortedError) {
+         return { delivered: false, code: 'aborted', detail: err.name };
+       }
+@@ -752,7 +754,7 @@ export class NotificationsService {
+         }
+       }
+     } catch (err) {
+-      this.logger.warn('Failed to poll push receipts', err);
++      this.logger.warn(`Failed to poll push receipts: ${describeFailure(err)}`);
+     }
+   }
+ 
+@@ -779,7 +781,7 @@ export class NotificationsService {
+         // Unique constraint violation = window already claimed by another process.
+         return false;
+       }
+-      this.logger.error('claimDigestWindow unexpected error', err);
++      this.logger.error(`claimDigestWindow unexpected error: ${describeFailure(err)}`);
+       throw err;
+     }
+   }
+diff --git a/src/observability/README.md b/src/observability/README.md
+index eb5eb26c2..8158e95a1 100644
+--- a/src/observability/README.md
++++ b/src/observability/README.md
+@@ -81,16 +81,33 @@ Allowed keys that will never be redacted even if they match a prefix of the
+ above names: `request_id`, `user_id`, `method`, `path`, `status`,
+ `latency_ms`, `timestamp`, `level`, `message`, `msg`.
+ 
+-### No personal data in log lines (C-611-17)
++### No personal data in log lines (C-611-17, B-700-1, B-700-2)
+ 
+ Log lines carry ids and codes: the user id, the row id, the template key,
+-the provider's message id or error code. They never interpolate an email
+-address, a person's name or free text (message bodies, notes, alert text,
+-request payloads). Text the service does not write itself (a provider's
+-error body, an exception message) goes through `redactEmailAddresses`
+-(`log-pii.ts`) first, because providers echo addresses back.
+-`test/privacy/no-pii-in-logs.spec.ts` checks every log call under `src/`
+-and the main email paths.
++the provider's message id. They never interpolate an email address, a
++person's name or free text (message bodies, notes, alert text, request
++payloads, request paths or URLs built from an address or a search).
++
++Failure text the service does not write itself (a provider's error body, an
++exception message, a Supabase Auth or Prisma error message) can echo an
++address, a display name or a message body back, and no pattern can tell a
++name from any other word. So that text never reaches a log line, an error
++column (`EmailSendLog.error`, `notification_digest_log`) or an API result.
++`describeFailure(err)` (`log-pii.ts`) prints only
++`error=<class> status=<http status> code=<code>`, where the code comes from a
++finite list (Supabase Auth, jose, Node network, Prisma `P####`, the module's
++own codes); any other code prints as `other`. Email providers throw
++`ProviderFailure`, whose message is built from the provider, the HTTP status
++and the provider's own error code only.
++
++`test/privacy/no-pii-in-logs.spec.ts` checks every log call under `src/`:
++no address, recipient, person-name, free-text, path/URL or exception-text
++expression. Exception text (`.message`, `.stack`, `String(err)`, a bare
++error argument) is still logged by older code in files this rule has not
++reached yet; the guard lists each such file with its exact count
++(`LEGACY_EXCEPTION_TEXT`). A new site fails the guard, and so does a fixed
++site until its count is lowered, so the list only shrinks. Moving those
++sites to `describeFailure` is a tracked follow-up.
+ 
+ ---
+ 
+diff --git a/src/observability/log-pii.ts b/src/observability/log-pii.ts
+index 602d554d8..2cead5c59 100644
+--- a/src/observability/log-pii.ts
++++ b/src/observability/log-pii.ts
+@@ -1,36 +1,227 @@
+ /**
+- * Log lines carry ids and codes, never personal data (C-611-17, agent 117,
+- * B-PRIV-FU-117; AGENT_RULES G12: no PII in errors or logs).
++ * Log lines, stored error columns and returned errors carry ids and
++ * server-owned codes, never personal data (C-611-17, agent 117; B-700-1,
++ * B-700-2, C-700-2, C-700-3, agent 118, B-PRIVFU2-118; AGENT_RULES G12).
+  *
+  * Code in this service never interpolates an email address, a person's name
+  * or free text (message bodies, notes, request payloads) into a log line; it
+- * logs the row id, user id or template key instead. test/privacy/
+- * no-pii-in-logs.spec.ts enforces that over every log call under src/.
++ * logs the row id, user id or template key instead.
+  *
+- * Text this service does not write itself (an email provider's error body,
+- * an exception message) can still echo an address back, for example
+- * "Illegal email address 'pat@example.com'". `redactEmailAddresses` is for
+- * that text: every run of characters joined by an '@' becomes "[email]", so
+- * no address survives, and the result is bounded to LOG_TEXT_MAX characters.
++ * Text the service does not write itself (an email provider's error body,
++ * an exception message, a Supabase Auth or Prisma error message) can echo
++ * an address, a display name or a message body back, for example
++ * `Invalid recipient Pat Quill <pat@example.com>` or
++ * `Email address "pat@example.com" is invalid`. No pattern can tell a name
++ * from any other word, so that text never reaches a log line, an error
++ * column or an API result. `describeFailure` keeps only what the code or the
++ * provider's fixed vocabulary owns: the error class, an HTTP status, and a
++ * code from a finite list. Anything outside the list becomes `other`.
++ *
++ * test/privacy/no-pii-in-logs.spec.ts enforces this over every log call
++ * under src/ (see src/observability/README.md for the legacy baseline).
++ */
++
++/** Email providers whose HTTP failures are described by `ProviderFailure`. */
++export type FailureProvider = 'resend' | 'sendgrid' | 'postmark';
++
++// Resend error `name` values (resend.com/docs/api-reference/errors, read
++// 2026-10-04, plus the older names the API still returns).
++const RESEND_ERROR_NAMES: ReadonlySet<string> = new Set([
++  'application_error',
++  'concurrent_idempotent_requests',
++  'daily_quota_exceeded',
++  'email_above_quota',
++  'internal_server_error',
++  'invalid_access',
++  'invalid_api_key',
++  'invalid_attachment',
++  'invalid_from_address',
++  'invalid_idempotency_key',
++  'invalid_idempotent_request',
++  'invalid_parameter',
++  'invalid_permission',
++  'invalid_region',
++  'method_not_allowed',
++  'missing_api_key',
++  'missing_required_field',
++  'missing_required_parameter',
++  'monthly_quota_exceeded',
++  'not_found',
++  'rate_limit_exceeded',
++  'resource_locked',
++  'restricted_api_key',
++  'security_error',
++  'service_unavailable',
++  'suspended_api_key',
++  'validation_error',
++]);
++
++// Codes the service itself assigns to a provider failure.
++const SERVER_PROVIDER_CODES: ReadonlySet<string> = new Set([
++  'empty',
++  'unparsed',
++  'missing_id',
++  'other',
++]);
++
++// Supabase Auth `ErrorCode` (@supabase/auth-js lib/error-codes.d.ts).
++const SUPABASE_AUTH_CODES = [
++  'unexpected_failure', 'validation_failed', 'bad_json', 'email_exists', 'phone_exists',
++  'bad_jwt', 'not_admin', 'no_authorization', 'user_not_found', 'session_not_found',
++  'session_expired', 'refresh_token_not_found', 'refresh_token_already_used',
++  'flow_state_not_found', 'flow_state_expired', 'signup_disabled', 'user_banned',
++  'provider_email_needs_verification', 'invite_not_found', 'bad_oauth_state',
++  'bad_oauth_callback', 'oauth_provider_not_supported', 'unexpected_audience',
++  'single_identity_not_deletable', 'email_conflict_identity_not_deletable',
++  'identity_already_exists', 'email_provider_disabled', 'phone_provider_disabled',
++  'too_many_enrolled_mfa_factors', 'mfa_factor_name_conflict', 'mfa_factor_not_found',
++  'mfa_ip_address_mismatch', 'mfa_challenge_expired', 'mfa_verification_failed',
++  'mfa_verification_rejected', 'insufficient_aal', 'captcha_failed', 'saml_provider_disabled',
++  'manual_linking_disabled', 'sms_send_failed', 'email_not_confirmed', 'phone_not_confirmed',
++  'reauth_nonce_missing', 'saml_relay_state_not_found', 'saml_relay_state_expired',
++  'saml_idp_not_found', 'saml_assertion_no_user_id', 'saml_assertion_no_email',
++  'user_already_exists', 'sso_provider_not_found', 'saml_metadata_fetch_failed',
++  'saml_idp_already_exists', 'sso_domain_already_exists', 'saml_entity_id_mismatch',
++  'conflict', 'provider_disabled', 'user_sso_managed', 'reauthentication_needed',
++  'same_password', 'reauthentication_not_valid', 'otp_expired', 'otp_disabled',
++  'identity_not_found', 'weak_password', 'over_request_rate_limit',
++  'over_email_send_rate_limit', 'over_sms_send_rate_limit', 'bad_code_verifier',
++  'anonymous_provider_disabled', 'hook_timeout', 'hook_timeout_after_retry',
++  'hook_payload_over_size_limit', 'hook_payload_invalid_content_type', 'request_timeout',
++  'mfa_phone_enroll_not_enabled', 'mfa_phone_verify_not_enabled',
++  'mfa_totp_enroll_not_enabled', 'mfa_totp_verify_not_enabled',
++  'mfa_webauthn_enroll_not_enabled', 'mfa_webauthn_verify_not_enabled',
++  'mfa_verified_factor_exists', 'invalid_credentials', 'email_address_not_authorized',
++  'email_address_invalid',
++] as const;
++
++// jose error codes (jose/dist/webapi/util/errors.js, v6).
++const JOSE_CODES = [
++  'ERR_JOSE_ALG_NOT_ALLOWED', 'ERR_JOSE_GENERIC', 'ERR_JOSE_NOT_SUPPORTED',
++  'ERR_JWE_DECRYPTION_FAILED', 'ERR_JWE_INVALID', 'ERR_JWKS_INVALID',
++  'ERR_JWKS_MULTIPLE_MATCHING_KEYS', 'ERR_JWKS_NO_MATCHING_KEY', 'ERR_JWKS_TIMEOUT',
++  'ERR_JWK_INVALID', 'ERR_JWS_INVALID', 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED',
++  'ERR_JWT_CLAIM_VALIDATION_FAILED', 'ERR_JWT_EXPIRED', 'ERR_JWT_INVALID',
++] as const;
++
++// Node system and undici (fetch) network codes.
++const NETWORK_CODES = [
++  'ABORT_ERR', 'EAI_AGAIN', 'ECONNABORTED', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH',
++  'ENETUNREACH', 'ENOTFOUND', 'EPIPE', 'ETIMEDOUT', 'UND_ERR_ABORTED', 'UND_ERR_BODY_TIMEOUT',
++  'UND_ERR_CLOSED', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_SOCKET',
++] as const;
++
++const KNOWN_CODES: ReadonlySet<string> = new Set<string>([
++  ...SUPABASE_AUTH_CODES,
++  ...JOSE_CODES,
++  ...NETWORK_CODES,
++]);
++
++// Prisma engine codes are a letter and four digits (P2002, P1001): no room
++// for a name or an address.
++const PRISMA_CODE = /^P\d{4}$/;
++
++// JWT claim names jose reports on a claim failure.
++const JWT_CLAIMS: ReadonlySet<string> = new Set([
++  'aud', 'azp', 'exp', 'iat', 'iss', 'jti', 'nbf', 'nonce', 'sub', 'typ', 'unspecified',
++]);
++
++function providerCodeIsKnown(code: string): boolean {
++  return RESEND_ERROR_NAMES.has(code) || SERVER_PROVIDER_CODES.has(code) || /^postmark_\d{1,5}$/.test(code);
++}
++
++/**
++ * A provider HTTP call that failed. The message is built from server-owned
++ * parts only (provider, HTTP status, a code from the finite list), so even a
++ * caller that logs `err.message` cannot leak the provider's body.
++ */
++export class ProviderFailure extends Error {
++  readonly provider: FailureProvider;
++  readonly status: number | null;
++  readonly code: string;
++
++  constructor(provider: FailureProvider, status: number | null, code: string) {
++    const safeStatus = typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
++    const safeCode = providerCodeIsKnown(code) ? code : 'other';
++    super(`provider=${provider} status=${safeStatus ?? 'none'} code=${safeCode}`);
++    this.name = 'ProviderFailure';
++    this.provider = provider;
++    this.status = safeStatus;
++    this.code = safeCode;
++  }
++}
++
++/**
++ * The provider's own error code from a failure body, from a finite list.
++ * Resend: `{ name }`; Postmark: `{ ErrorCode }` (a number); SendGrid has no
++ * code in its body. The body text itself is never returned.
+  */
++export function providerErrorCode(provider: FailureProvider, body: unknown): string {
++  if (typeof body !== 'string' || body.trim().length === 0) return 'empty';
++  let parsed: unknown;
++  try {
++    parsed = JSON.parse(body);
++  } catch {
++    return 'unparsed';
++  }
++  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return 'unparsed';
++  const record = parsed as Record<string, unknown>;
++  if (provider === 'resend') {
++    return typeof record.name === 'string' && RESEND_ERROR_NAMES.has(record.name) ? record.name : 'other';
++  }
++  if (provider === 'postmark') {
++    const n = record.ErrorCode;
++    return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 99999 ? `postmark_${n}` : 'other';
++  }
++  return 'other';
++}
+ 
+-/** Longest provider or exception text that goes into a log line or error column. */
+-export const LOG_TEXT_MAX = 500;
++function className(err: object): string {
++  const ctor = (err as { constructor?: unknown }).constructor;
++  const name = typeof ctor === 'function' ? ctor.name : '';
++  // A class name is written in code, never built from data; the shape check
++  // is a second fence.
++  return /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(name) ? name : 'other';
++}
+ 
+-/** Replacement for anything that looks like an address. */
+-export const REDACTED_EMAIL = '[email]';
++function httpStatus(record: Record<string, unknown>): number | null {
++  for (const v of [record.status, record.statusCode]) {
++    if (typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= 599) return v;
++  }
++  return null;
++}
+ 
+-// Any run of characters around an '@' that is not whitespace, a quote,
+-// a bracket or a list separator: covers "a@b.c", "<a@b.c>", "a+tag@b",
+-// "%61@b" and a lone "@". Deliberately broad: a false positive costs a few
+-// characters of diagnostics, a false negative leaks an address.
+-const ADDRESS_LIKE = /[^\s@<>()[\]{}"'`,;]*@[^\s@<>()[\]{}"'`,;]*/g;
++function knownCode(v: unknown, extra: ReadonlySet<string> | undefined): string | null {
++  if (typeof v !== 'string' || v.length === 0) return null;
++  return KNOWN_CODES.has(v) || PRISMA_CODE.test(v) || extra?.has(v) === true ? v : 'other';
++}
+ 
+ /**
+- * Returns `text` with every address-like run replaced by "[email]", cut to
+- * `max` characters. Never throws; a non-string becomes "unknown".
++ * A server-owned description of any thrown value or returned error object:
++ * `error=<class>[ status=<http status>][ code=<known code>][ claim=<jwt claim>]`.
++ * Never the message, the stack or any field the failure carries as text.
++ * `extraCodes` is a module's own finite list of error codes (for example
++ * `COACH_BRIEF_CLAUDE_EMPTY`); any other code becomes `other`. Never throws.
+  */
+-export function redactEmailAddresses(text: unknown, max: number = LOG_TEXT_MAX): string {
+-  if (typeof text !== 'string') return 'unknown';
+-  return text.replace(ADDRESS_LIKE, REDACTED_EMAIL).slice(0, max);
++export function describeFailure(err: unknown, extraCodes?: ReadonlySet<string>): string {
++  try {
++    if (err instanceof ProviderFailure) return err.message;
++    if (err === null || err === undefined) return 'error=none';
++    if (typeof err !== 'object') return 'error=non_error';
++    const record = err as Record<string, unknown>;
++    const parts = [`error=${className(err)}`];
++    const status = httpStatus(record);
++    if (status !== null) parts.push(`status=${status}`);
++    const cause = record.cause;
++    const code =
++      knownCode(record.code, extraCodes) ??
++      (cause !== null && typeof cause === 'object'
++        ? knownCode((cause as Record<string, unknown>).code, extraCodes)
++        : null);
++    if (code !== null) parts.push(`code=${code}`);
++    if (typeof record.claim === 'string' && JWT_CLAIMS.has(record.claim)) parts.push(`claim=${record.claim}`);
++    return parts.join(' ');
++  } catch {
++    return 'error=other';
++  }
+ }
+diff --git a/src/scheduling/scheduling-webhook.controller.ts b/src/scheduling/scheduling-webhook.controller.ts
+index 8f89e5856..9bf784190 100644
+--- a/src/scheduling/scheduling-webhook.controller.ts
++++ b/src/scheduling/scheduling-webhook.controller.ts
+@@ -29,8 +29,9 @@ import { Public } from '../common/decorators/public.decorator';
+ //   - Accepts and 200s any payload (signature unverified) so smoke
+ //     tests can exercise the route shape end-to-end.
+ //   - Is gated by @Public() because providers don't carry our JWT.
+-//   - Logs the payload's shape (event name, top-level keys) at debug
+-//     level, never its values (C-611-17).
++//   - Logs the payload's shape at debug level: a known event name and
++//     known top-level keys, a count of the rest, never a value
++//     (C-611-17, B-700-2).
+ //
+ // SECURITY: do NOT add any state mutation here without first wiring
+ // signature verification. The current handler is read-only / log-only.
+@@ -90,20 +91,50 @@ export class SchedulingWebhookController {
+ 
+ // C-611-17: provider payloads carry participant names and email addresses
+ // (Zoom's participant.user_name / participant.email), so the stub logs the
+-// payload's shape only: the event name when it is a plain dotted token, and
+-// the top-level keys. Never a value.
+-const EVENT_TOKEN = /^[a-z0-9_.-]{1,64}$/i;
+-const KEY_TOKEN = /^[a-z0-9_$-]{1,40}$/i;
++// payload's shape only. B-700-2 / C-700-5: the stubs are public and
++// unauthenticated when SCHEDULING_WEBHOOK_SECRET is unset, so any string in
++// the body (an event name, a key) can be a name someone typed. The line names
++// only labels from these finite lists; anything else is counted, never shown.
++const KNOWN_EVENTS: ReadonlySet<string> = new Set([
++  // Zoom (developers.zoom.us webhook reference): the meeting events a
++  // session mirror would use, plus the endpoint check.
++  'endpoint.url_validation',
++  'meeting.created',
++  'meeting.updated',
++  'meeting.deleted',
++  'meeting.started',
++  'meeting.ended',
++  'meeting.participant_joined',
++  'meeting.participant_left',
++  'recording.completed',
++]);
++const KNOWN_KEYS: ReadonlySet<string> = new Set([
++  // Zoom envelope.
++  'event',
++  'event_ts',
++  'payload',
++  'download_token',
++  // Google Calendar push-notification channel fields.
++  'kind',
++  'id',
++  'resourceId',
++  'resourceUri',
++  'token',
++  'expiration',
++]);
+ function payloadShape(v: unknown): string {
+   if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+     return `type=${Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v}`;
+   }
+   const record = v as Record<string, unknown>;
+   const event =
+-    typeof record.event === 'string' && EVENT_TOKEN.test(record.event) ? record.event : 'none';
+-  const keys = Object.keys(record)
+-    .slice(0, 20)
+-    .map((k) => (KEY_TOKEN.test(k) ? k : '?'))
+-    .join(',');
+-  return `event=${event} keys=${keys}`;
++    typeof record.event !== 'string'
++      ? 'none'
++      : KNOWN_EVENTS.has(record.event)
++        ? record.event
++        : 'other';
++  const allKeys = Object.keys(record);
++  const known = allKeys.filter((k) => KNOWN_KEYS.has(k));
++  const otherKeys = allKeys.length - known.length;
++  return `event=${event} keys=${known.join(',') || 'none'} other_keys=${otherKeys}`;
+ }
+diff --git a/src/storefront/checkout-recovery.service.ts b/src/storefront/checkout-recovery.service.ts
+index 944c42eae..377f58e94 100644
+--- a/src/storefront/checkout-recovery.service.ts
++++ b/src/storefront/checkout-recovery.service.ts
+@@ -13,7 +13,7 @@ import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
+ import { PrismaService } from '../prisma.service';
+ import { EmailService } from '../email/email.service';
+ import { EmailTemplateKey } from '../email/email.types';
+-import { redactEmailAddresses } from '../observability/log-pii';
++import { describeFailure } from '../observability/log-pii';
+ import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
+ 
+ // r48 #5 — magic-link recovery for abandoned checkouts.
+@@ -134,11 +134,11 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
+       // the single-use guard.
+       if (isProd) {
+         const envLabel = nodeEnv ?? '<unset>';
+-        const msg =
++        const refusal =
+           `CheckoutRecoveryService: REDIS_URL is required in ${envLabel} — refusing to boot. ` +
+           'The in-memory single-use guard is single-process and unsafe across the Fly cluster.';
+-        this.logger.error(msg);
+-        throw new Error(msg);
++        this.logger.error(refusal);
++        throw new Error(refusal);
+       }
+       this.logger.log(
+         'CheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)',
+@@ -276,9 +276,7 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
+       // "we sent it but it bounced" and "we sent it successfully"
+       // anyway.
+       this.logger.error(
+-        `recovery email failed for checkout=${checkout.id}: ${redactEmailAddresses(
+-          err instanceof Error ? err.message : 'unknown',
+-        )}`,
++        `recovery email failed for checkout=${checkout.id}: ${describeFailure(err)}`,
+       );
+     }
+     return { sent: true };
+@@ -415,9 +413,7 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
+         // "link was real and is now consumed" / "backing store is down" /
+         // "link never existed". Ops keep the distinction via the log.
+         this.logger.error(
+-          `recovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): ${
+-            err instanceof Error ? err.message : 'unknown'
+-          }`,
++          `recovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): ${describeFailure(err)}`,
+         );
+         throw this.invalidTokenError();
+       }
+diff --git a/src/users/account.service.ts b/src/users/account.service.ts
+index 0321c548b..153a3b879 100644
+--- a/src/users/account.service.ts
++++ b/src/users/account.service.ts
+@@ -8,6 +8,7 @@ import {
+ } from '@nestjs/common';
+ import { DataExportStatus, Prisma } from '@prisma/client';
+ import { PrismaService } from '../prisma.service';
++import { describeFailure } from '../observability/log-pii';
+ import { AuditAction, AuditService } from '../audit/audit.service';
+ 
+ // Window between scheduling deletion and actual PII scrub. Deliberately
+@@ -109,8 +110,10 @@ export class AccountService {
+         completed_at: fulfilled.completed_at,
+       };
+     } catch (err) {
+-      const message = err instanceof Error ? err.message : String(err);
+-      this.logger.error(`Data export assembly failed for user=${userId}: ${message}`);
++      // C-700-2: the log line and the audit row hold the class and code
++      // only; a Prisma error can quote the row it failed on.
++      const failure = describeFailure(err);
++      this.logger.error(`Data export assembly failed for user=${userId}: ${failure}`);
+       await this.prisma.dataExportRequest.update({
+         where: { id: request.id },
+         data: { status: DataExportStatus.FAILED },
+@@ -121,7 +124,7 @@ export class AccountService {
+         targetUserId: userId,
+         targetType: 'data_export_request',
+         targetId: request.id,
+-        metadata: { error: message },
++        metadata: { error: failure },
+       });
+       throw err;
+     }
+diff --git a/src/users/gdpr-scrub.scheduler.ts b/src/users/gdpr-scrub.scheduler.ts
+index d15ca0ca6..4d8a95155 100644
+--- a/src/users/gdpr-scrub.scheduler.ts
++++ b/src/users/gdpr-scrub.scheduler.ts
+@@ -1,6 +1,7 @@
+ import { Injectable, Logger } from '@nestjs/common';
+ import { Cron } from '@nestjs/schedule';
+ import { GdprScrubService } from './gdpr-scrub.service';
++import { describeFailure } from '../observability/log-pii';
+ 
+ // Daily cron tick that drives the GDPR PII-scrub worker. The scrub
+ // itself (selection, transactional tombstoning, audit emission) lives
+@@ -44,8 +45,7 @@ export class GdprScrubScheduler {
+         `GDPR scrub cron tick: completed; scrubbed=${report.scrubbed} considered=${report.considered} errors=${report.errors.length}`,
+       );
+     } catch (err: unknown) {
+-      const message = err instanceof Error ? err.message : String(err);
+-      this.logger.error(`GDPR scrub cron tick: fatal error: ${message}`);
++      this.logger.error(`GDPR scrub cron tick: fatal error: ${describeFailure(err)}`);
+     }
+   }
+ }
+diff --git a/src/users/gdpr-scrub.service.ts b/src/users/gdpr-scrub.service.ts
+index 601c22acd..5ce5ce971 100644
+--- a/src/users/gdpr-scrub.service.ts
++++ b/src/users/gdpr-scrub.service.ts
+@@ -1,5 +1,6 @@
+ import { Injectable, Logger } from '@nestjs/common';
+ import { PrismaService } from '../prisma.service';
++import { describeFailure } from '../observability/log-pii';
+ import { AuditAction, AuditService } from '../audit/audit.service';
+ import { DELETION_GRACE_PERIOD_DAYS } from './account.service';
+ 
+@@ -171,11 +172,11 @@ export class GdprScrubService {
+         // A failure on one user (e.g. a UserProfile constraint) must not
+         // poison the rest of the batch. Record and move on; the cron job
+         // will retry on the next tick.
+-        const message = err instanceof Error ? err.message : String(err);
+-        this.logger.error(
+-          `GDPR scrub failed for user=${c.user_id}: ${message}`,
+-        );
+-        errors.push({ user_id: c.user_id, message });
++        // C-700-2: a Prisma error can quote the row it failed on; the log
++        // line and the report hold the class and code only.
++        const failure = describeFailure(err);
++        this.logger.error(`GDPR scrub failed for user=${c.user_id}: ${failure}`);
++        errors.push({ user_id: c.user_id, message: failure });
+       }
+     }
+ 
+diff --git a/test/email.service.spec.ts b/test/email.service.spec.ts
+index 6f121e43a..ab8ef3a75 100644
+--- a/test/email.service.spec.ts
++++ b/test/email.service.spec.ts
+@@ -300,7 +300,8 @@ describe('EmailService', () => {
+         data: { coach_name: 'C', invite_code: 'GP-X', accept_url: 'u' },
+       });
+       expect(res.status).toBe('failed');
+-      expect(res.error).toMatch(/Resend 422/);
++      // B-700-1: the provider, status and code, never the body text.
++      expect(res.error).toBe('provider=resend status=422 code=unparsed');
+       expect(prisma.emailSendLog.update).toHaveBeenCalledWith(
+         expect.objectContaining({
+           data: expect.objectContaining({ status: 'failed' }),
+diff --git a/test/privacy/log-pii.spec.ts b/test/privacy/log-pii.spec.ts
+index 7f3a3ddf9..c7159e693 100644
+--- a/test/privacy/log-pii.spec.ts
++++ b/test/privacy/log-pii.spec.ts
+@@ -1,43 +1,119 @@
+ /**
+- * C-611-17 (agent 117, B-PRIV-FU-117): redactEmailAddresses removes every
+- * address from text the service does not write itself (provider error
+- * bodies, exception messages) before it reaches a log line or error column.
++ * B-700-1, C-700-2, C-700-3 (agent 118, B-PRIVFU2-118; C-611-17, agent 117):
++ * a failure is described by server-owned parts only. No provider body, no
++ * exception message, no field text survives `describeFailure`, whatever it
++ * holds (an address, a display name, a message body).
+  */
++import { Prisma } from '@prisma/client';
+ import {
+-  REDACTED_EMAIL,
+-  LOG_TEXT_MAX,
+-  redactEmailAddresses,
++  ProviderFailure,
++  describeFailure,
++  providerErrorCode,
+ } from '../../src/observability/log-pii';
+ 
+-describe('C-611-17: redactEmailAddresses', () => {
++const ADDRESS = 'pat.client+tgp@example.com';
++const PERSON = 'Patricia Quill';
++const PRIVATE_TEXT = 'private consultation details';
++
++function expectNoText(out: string): void {
++  expect(out).not.toContain('@');
++  expect(out).not.toContain('pat.client');
++  expect(out).not.toContain('Patricia');
++  expect(out).not.toContain('Quill');
++  expect(out).not.toContain('private');
++}
++
++describe('B-700-1: describeFailure keeps the class, status and a known code only', () => {
++  it('a plain Error: the class, never the message', () => {
++    const out = describeFailure(new Error(`Cannot render greeting for ${PERSON} <${ADDRESS}>; ${PRIVATE_TEXT}`));
++    expect(out).toBe('error=Error');
++  });
++
++  it('a TypeError from fetch: the network code from its cause', () => {
++    const err = Object.assign(new TypeError('fetch failed'), {
++      cause: { code: 'ECONNRESET', message: ADDRESS },
++    });
++    expect(describeFailure(err)).toBe('error=TypeError code=ECONNRESET');
++  });
++
++  it('a Supabase Auth error that echoes the address: status and Supabase code', () => {
++    const supabaseShape = {
++      message: `Email address "${ADDRESS}" is invalid`,
++      code: 'email_address_invalid',
++      status: 400,
++    };
++    const out = describeFailure(supabaseShape);
++    expect(out).toBe('error=Object status=400 code=email_address_invalid');
++    expectNoText(out);
++  });
++
++  it('a Prisma known request error: the P code', () => {
++    const err = new Prisma.PrismaClientKnownRequestError(`Unique constraint failed: ${ADDRESS}`, {
++      code: 'P2002',
++      clientVersion: 'test',
++    });
++    const out = describeFailure(err);
++    expect(out).toBe('error=PrismaClientKnownRequestError code=P2002');
++  });
++
++  it('a jose claim failure: the jose code and the claim name', () => {
++    class JWTClaimValidationFailed extends Error {
++      code = 'ERR_JWT_CLAIM_VALIDATION_FAILED';
++      claim = 'aud';
++    }
++    expect(describeFailure(new JWTClaimValidationFailed(`unexpected "aud" ${ADDRESS}`))).toBe(
++      'error=JWTClaimValidationFailed code=ERR_JWT_CLAIM_VALIDATION_FAILED claim=aud',
++    );
++  });
++
++  it('a code outside every list is "other", even when it is shaped like a code', () => {
++    const out = describeFailure({ code: 'patricia_quill', status: 422, message: PERSON });
++    expect(out).toBe('error=Object status=422 code=other');
++    expect(describeFailure({ code: 'MY_MODULE_CODE' }, new Set(['MY_MODULE_CODE']))).toBe(
++      'error=Object code=MY_MODULE_CODE',
++    );
++    expect(describeFailure({ claim: PERSON, status: 9999 })).toBe('error=Object');
++  });
++
++  it('never throws, and describes values that are not errors', () => {
++    expect(describeFailure(undefined)).toBe('error=none');
++    expect(describeFailure(null)).toBe('error=none');
++    expect(describeFailure(`${PERSON} ${ADDRESS}`)).toBe('error=non_error');
++    expect(describeFailure(42)).toBe('error=non_error');
++    const hostile = new Proxy(
++      {},
++      {
++        get() {
++          throw new Error('boom');
++        },
++      },
++    );
++    expect(describeFailure(hostile)).toBe('error=other');
++  });
++});
++
++describe('B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body', () => {
+   it.each([
+-    ['Invalid `to` field: pat.client+tgp@example.com is not valid', 'Invalid `to` field: [email] is not valid'],
+-    ["Error parsing 'To': Illegal email address 'pat@example.com'.", "Error parsing 'To': Illegal email address '[email]'."],
+-    ['to: <Pat Quill <pat@example.com>>', 'to: <Pat Quill <[email]>>'],
+-    ['{"to":["a@b.co","c.d@e.org"]}', '{"to":["[email]","[email]"]}'],
+-    ['%70at@example.com', '[email]'],
+-    ['It must contain the @ symbol', 'It must contain the [email] symbol'],
+-  ])('%s', (input, expected) => {
+-    const out = redactEmailAddresses(input);
+-    expect(out).toBe(expected);
+-    expect(out).not.toMatch(/[^\s]@|@[^\s]/);
+-  });
+-
+-  it('leaves text without an @ unchanged', () => {
+-    expect(redactEmailAddresses('Resend 503: upstream timeout')).toBe('Resend 503: upstream timeout');
+-  });
+-
+-  it('bounds the result, and redacts before cutting so no partial address survives', () => {
+-    const long = `${'x'.repeat(LOG_TEXT_MAX - 3)} pat@example.com ${'y'.repeat(100)}`;
+-    const out = redactEmailAddresses(long);
+-    expect(out.length).toBe(LOG_TEXT_MAX);
+-    expect(out).not.toContain('@');
+-    expect(out).not.toContain('pat');
+-    expect(redactEmailAddresses('a@b.c tail', 4)).toBe(REDACTED_EMAIL.slice(0, 4));
+-  });
+-
+-  it('never throws on a non-string', () => {
+-    expect(redactEmailAddresses(undefined)).toBe('unknown');
+-    expect(redactEmailAddresses(42)).toBe('unknown');
++    ['resend', JSON.stringify({ name: 'validation_error', message: `Invalid recipient ${PERSON} <${ADDRESS}>` }), 'validation_error'],
++    ['resend', JSON.stringify({ name: 'Patricia-Quill', message: PRIVATE_TEXT }), 'other'],
++    ['resend', JSON.stringify({ message: `Invalid recipient ${PERSON} <${ADDRESS}>; ${PRIVATE_TEXT}` }), 'other'],
++    ['resend', `${' '.repeat(488)}${ADDRESS}`, 'unparsed'],
++    ['resend', '', 'empty'],
++    ['postmark', JSON.stringify({ ErrorCode: 300, Message: `Invalid 'To' address: '${ADDRESS}'.` }), 'postmark_300'],
++    ['postmark', JSON.stringify({ ErrorCode: PERSON, Message: PERSON }), 'other'],
++    ['sendgrid', JSON.stringify({ errors: [{ message: `${PERSON} ${ADDRESS}`, field: 'personalizations' }] }), 'other'],
++  ] as const)('%s body %#: code %s', (provider, body, code) => {
++    expect(providerErrorCode(provider, body)).toBe(code);
++    const failure = new ProviderFailure(provider, 422, providerErrorCode(provider, body));
++    expect(failure.message).toBe(`provider=${provider} status=422 code=${code}`);
++    expect(describeFailure(failure)).toBe(failure.message);
++    expectNoText(failure.message);
++  });
++
++  it('a code or status that is not server-owned is replaced', () => {
++    expect(new ProviderFailure('resend', 422, PERSON).message).toBe('provider=resend status=422 code=other');
++    expect(new ProviderFailure('resend', 4220, 'validation_error').message).toBe(
++      'provider=resend status=none code=validation_error',
++    );
+   });
+ });
+diff --git a/test/privacy/no-pii-in-logs.spec.ts b/test/privacy/no-pii-in-logs.spec.ts
+index 3c1c18378..53832444a 100644
+--- a/test/privacy/no-pii-in-logs.spec.ts
++++ b/test/privacy/no-pii-in-logs.spec.ts
+@@ -133,13 +133,12 @@ describe('C-611-17: EmailService logs the send-log row id and template, never th
+     const res = await svc.send(input);
+     expect(res.status).toBe('failed');
+     expectNoPersonalData(logs.lines());
+-    expect(logs.lines().join('\n')).toContain('Resend 422');
+-    expect(res.error).toContain('Resend 422');
+-    expect(res.error).not.toContain('@');
++    // B-700-1: the provider, the HTTP status and the provider's code only.
++    expect(logs.lines().join('\n')).toContain('provider=resend status=422 code=other');
++    expect(res.error).toBe('provider=resend status=422 code=other');
+     const updates = db.emailSendLog.update.mock.calls;
+     const stored = String(updates[updates.length - 1][0].data.error);
+-    expect(stored).toContain('Resend 422');
+-    expect(stored).not.toContain('@');
++    expect(stored).toBe('provider=resend status=422 code=other');
+   });
+ });
+ 
+@@ -196,8 +195,7 @@ describe('C-611-17: DigestService logs the user id, never the address', () => {
+     await svc.sendClientDailyDigests();
+     expect(notifications.markDigestFailed).toHaveBeenCalledTimes(1);
+     const stored = notifications.markDigestFailed.mock.calls[0][1] as string;
+-    expect(stored).toContain('Resend API error 422');
+-    expect(stored).not.toContain('@');
++    expect(stored).toBe('provider=resend status=422 code=unparsed');
+     expectNoPersonalData(logs.lines());
+     expect(logs.lines().join('\n')).toContain('user=user-1');
+   });
+@@ -271,7 +269,10 @@ describe('C-611-17: other log lines that carried a name, an address or a payload
+       await ctrl.zoom(zoomBody, req);
+       await ctrl.googleCalendar({ attendee: { displayName: PERSON, email: ADDRESS } }, req);
+       expectNoPersonalData(logs.lines());
+-      expect(logs.lines().join('\n')).toContain('event=meeting.participant_joined');
++      expect(logs.lines().join('\n')).toContain(
++        'event=meeting.participant_joined keys=event,payload other_keys=0',
++      );
++      expect(logs.lines().join('\n')).toContain('event=none keys=none other_keys=1');
+     } finally {
+       if (saved === undefined) delete process.env.SCHEDULING_WEBHOOK_SECRET;
+       else process.env.SCHEDULING_WEBHOOK_SECRET = saved;
+@@ -393,18 +394,41 @@ function readTemplate(src: string, i: number): { exprs: string[]; end: number }
+   return { exprs, end: i + 1 };
+ }
+ 
++/**
++ * What a rule sees: the code of one log call, plus whether the file it is
++ * in builds a URL from an address (`encodeURIComponent(email)`), where any
++ * logged path or URL carries that address (B-700-2).
++ */
++interface CallContext {
++  encodesAddress: boolean;
++}
++
++const ENCODES_ADDRESS = /encodeURIComponent\(\s*[\w$.]*e[-_]?mail/i;
++
++// B-700-1: any identifier that holds a person-name token, also inside a
++// longer camelCase or snake_case name (`safeCoachName`, `client_display_name`).
++const PERSON_NAME_TOKEN =
++  /(?:first|last|full|display|guest|user|recipient|coach|client|sender|member|owner|author|person|buyer|contact|given|family|sur|nick)_?names?$/i;
++
++function identifiers(code: string): string[] {
++  return code.match(/[A-Za-z_$][\w$]*/g) ?? [];
++}
++
+ /** Each rule names what it forbids; `hit` gets the code of one log call. */
+-const RULES: ReadonlyArray<{ id: string; what: string; hit: (code: string) => boolean }> = [
++const RULES: ReadonlyArray<{
++  id: string;
++  what: string;
++  hit: (code: string, ctx: CallContext) => boolean;
++}> = [
+   {
+     id: 'email',
+     what: 'an email address (an identifier named like email that is not an id, count, flag or template key)',
+     hit: (code) =>
+-      (code.match(/[A-Za-z_$][\w$]*/g) ?? []).some(
++      identifiers(code).some(
+         (tok) =>
+           /e[-_]?mail/i.test(tok) &&
+           !/(?:ids?|count|hash|hashed|kind|status|template|templatekey|key|enabled|verified|sent|service|transport|digest)$/i.test(tok) &&
+-          !/^(?:EmailService|EmailTemplateKey|EmailSendLog|emailSendLog)$/.test(tok) &&
+-          !/^redact/i.test(tok),
++          !/^(?:EmailService|EmailTemplateKey|EmailSendLog|emailSendLog)$/.test(tok),
+       ),
+   },
+   {
+@@ -414,11 +438,9 @@ const RULES: ReadonlyArray<{ id: string; what: string; hit: (code: string) => bo
+   },
+   {
+     id: 'name',
+-    what: "a person's name",
++    what: "a person's name (an identifier holding a person-name token, or `<person>.name`)",
+     hit: (code) =>
+-      /\b(?:first_?name|last_?name|full_?name|display_?name|guest_?name|user_?name|recipient_?name|coach_?name|client_?name|sender_?name)\b/i.test(
+-        code,
+-      ) ||
++      identifiers(code).some((tok) => PERSON_NAME_TOKEN.test(tok)) ||
+       /\b(?:user|client|coach|u|member|recipient|sender|owner|guest|profile|buyer|person|author|actor)\.name\b/.test(code),
+   },
+   {
+@@ -433,10 +455,31 @@ const RULES: ReadonlyArray<{ id: string; what: string; hit: (code: string) => bo
+         code,
+       ),
+   },
++  {
++    id: 'path',
++    what: 'a raw request URL, or a path or URL in a file that puts an address into a URL',
++    hit: (code, ctx) =>
++      /\b(?:req|request)\s*\.\s*(?:originalUrl|url)\b/.test(code) ||
++      (ctx.encodesAddress && /(?:^|[^\w$.])(?:path|url|uri|href|fullUrl)\b(?!\s*:)/.test(code)),
++  },
++  {
++    id: 'exception-text',
++    what: 'exception or provider text (`.message`, `.stack`, `String(err)`, a bare error argument, an error-message helper) instead of describeFailure(err)',
++    hit: (code) => {
++      const c = code.replace(/\bdescribeFailure\s*\([^()]*\)/g, ' SAFE ');
++      return (
++        /\.\s*(?:message|stack)\b/.test(c) ||
++        /\bString\s*\(\s*(?:err|error|e|ex|exception|cause|reason)\b/.test(c) ||
++        /(?:^|[^\w$.])(?:message|msg|errMsg|errorMessage|errMessage)\b(?!\s*:)/.test(c) ||
++        /(?:^|[,(]\s*)(?:err|error|e|ex|exception|cause)\s*(?:,|$)/.test(c.trim()) ||
++        /\b[\w$]*[mM]essage(?:Of|For|From)?\s*\(/.test(c)
++      );
++    },
++  },
+ ];
+ 
+-function violations(code: string): string[] {
+-  return RULES.filter((r) => r.hit(code)).map((r) => r.id);
++function violations(code: string, ctx: CallContext = { encodesAddress: false }): string[] {
++  return RULES.filter((r) => r.hit(code, ctx)).map((r) => r.id);
+ }
+ 
+ function sourceFiles(dir: string): string[] {
+@@ -453,9 +496,160 @@ function sourceFiles(dir: string): string[] {
+   return out;
+ }
+ 
+-describe('C-611-17 guard: no log call under src/ interpolates an address, a name or free text', () => {
++/**
++ * C-700-2 legacy baseline: log calls that still print exception text, per
++ * file, exact counts at agent 118 (B-PRIVFU2-118). Every other rule has no
++ * baseline. A file not listed must have none; a listed count that grows or
++ * shrinks fails, so the list is lowered as sites move to describeFailure.
++ * Files this PR touches are fixed and are not listed.
++ */
++const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
++  'src/account-deletion/account-deletion.service.ts': 5,
++  'src/account-deletion/apple-token-revocation.service.ts': 3,
++  'src/admin/admin.service.ts': 1,
++  'src/admin/ptm/admin-ptm.service.ts': 1,
++  'src/admin/soc2/soc2-evidence.service.ts': 3,
++  'src/ai-credits/coach-ai-budget.scheduler.ts': 1,
++  'src/ai-credits/coach-ai-credit-pack.service.ts': 1,
++  'src/ai/adapters/anthropic.adapter.ts': 2,
++  'src/ai/ai.service.ts': 2,
++  'src/ai/coach/coach-ai-state.service.ts': 1,
++  'src/ai/coach/weekly-insight.cron.ts': 1,
++  'src/ai/gateway/ai-approval.service.ts': 1,
++  'src/ai/gateway/ai-gateway.service.ts': 2,
++  'src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts': 2,
++  'src/ai/gateway/materialisers/assign-workout.materialiser.ts': 2,
++  'src/ai/gateway/materialisers/coach-message.materialiser.ts': 2,
++  'src/ai/gateway/materialisers/coach-wearable-message.materialiser.ts': 2,
++  'src/ai/gateway/materialisers/create-workout-plan.materialiser.ts': 1,
++  'src/ai/gateway/materialisers/edit-workout-plan.materialiser.ts': 1,
++  'src/ai/gateway/materialisers/send-notification.materialiser.ts': 1,
++  'src/analytics/analytics.service.ts': 1,
++  'src/audit/audit.service.ts': 1,
++  'src/auth/jwks.service.ts': 1,
++  'src/auth/recent-auth.guard.ts': 1,
++  'src/billing/billing.service.ts': 10,
++  'src/bloodwork/bloodwork-stale.scheduler.ts': 1,
++  'src/checkout/checkout-webhook-handler.service.ts': 14,
++  'src/checkout/checkout.service.ts': 2,
++  'src/checkout/dunning-v2/dunning-lockout.guard.ts': 1,
++  'src/checkout/dunning-v2/dunning-lockout.scheduler.ts': 1,
++  'src/checkout/dunning-v2/dunning-v2.dispatcher.ts': 1,
++  'src/checkout/dunning-v2/dunning-v2.service.ts': 1,
++  'src/checkout/dunning.service.ts': 6,
++  'src/checkout/purchase-split-handler.service.ts': 2,
++  'src/checkout/refund-dispute-handler.service.ts': 5,
++  'src/coach-connect/coach-connect.service.ts': 2,
++  'src/coach-media/coach-media.service.ts': 1,
++  'src/coach-media/supabase-storage.provider.ts': 2,
++  'src/coach/brief/coach-brief.scheduler.ts': 6,
++  'src/coach/coach-effectiveness.scheduler.ts': 2,
++  'src/coach/command-center/churn-intervention.service.ts': 3,
++  'src/common/cors-origins.ts': 1,
++  'src/common/env-validation.ts': 6,
++  'src/common/feature-flag/pilot-coach-allowlist.guard.ts': 2,
++  'src/common/interceptors/rls-context.interceptor.ts': 1,
++  'src/common/middleware/rls-context.middleware.ts': 2,
++  'src/community/ai-triage/ai-triage.service.ts': 2,
++  'src/community/classroom/community-classroom.service.ts': 1,
++  'src/community/events/community-events.scheduler.ts': 1,
++  'src/community/moderation/community-moderation.service.ts': 1,
++  'src/community/notifications/community-notifications.service.ts': 1,
++  'src/community/realtime/community-realtime.service.ts': 2,
++  'src/community/voice/community-voice.service.ts': 1,
++  'src/community/voice/voice-upload.provider.ts': 7,
++  'src/connect/connect.module.ts': 2,
++  'src/connect/connect.service.ts': 1,
++  'src/connect/fees/payout-readiness.service.ts': 4,
++  'src/connect/fees/reconciliation.service.ts': 3,
++  'src/connect/fees/transfer-orchestrator.service.ts': 1,
++  'src/consent/consent.service.ts': 1,
++  'src/contracts/contract-envelope.service.ts': 2,
++  'src/contracts/webhooks/hellosign-webhook.controller.ts': 3,
++  'src/data-export/data-export-archive.store.ts': 1,
++  'src/data-export/data-export-cleanup.cron.ts': 1,
++  'src/data-export/data-export.controller.ts': 1,
++  'src/data-export/data-export.service.ts': 11,
++  'src/diagnostic/ai-roadmap.service.ts': 1,
++  'src/diagnostic/diagnostic.service.ts': 1,
++  'src/exercise-catalog/exercise-video-provider.service.ts': 11,
++  'src/exercise-library/exercise-library.service.ts': 1,
++  'src/filters/http-exception.filter.ts': 1,
++  'src/first-win/first-win.service.ts': 1,
++  'src/food/food.service.ts': 1,
++  'src/invite-codes/invite-codes.service.ts': 5,
++  'src/invite-grant/invite-grant.service.ts': 1,
++  'src/landing-pages/crm/lead-sync.processor.ts': 3,
++  'src/landing-pages/landing-pages.public.service.ts': 2,
++  'src/landing-pages/lead-rate-limiter.service.ts': 2,
++  'src/leaderboard/leaderboard.scheduler.ts': 1,
++  'src/leaderboard/leaderboard.service.ts': 1,
++  'src/messaging/messaging.service.ts': 1,
++  'src/notifications/emitters/booking.emitter.ts': 1,
++  'src/notifications/emitters/build-week-day-unlocked.emitter.ts': 1,
++  'src/notifications/emitters/checkin-submitted.emitter.ts': 1,
++  'src/notifications/emitters/coach-alert.emitter.ts': 1,
++  'src/notifications/emitters/message-received.emitter.ts': 1,
++  'src/notifications/emitters/milestone-reached.emitter.ts': 1,
++  'src/notifications/emitters/missed-checkin.emitter.ts': 1,
++  'src/notifications/emitters/weight-trend-alert.emitter.ts': 1,
++  'src/notifications/nudges/nudge-engine.service.ts': 7,
++  'src/notifications/nudges/nudge.scheduler.ts': 2,
++  'src/packages/asset-resolvers/auto-message.resolver.ts': 1,
++  'src/packages/drip-dispatcher.cron.ts': 5,
++  'src/packages/drip-trigger.service.ts': 2,
++  'src/packages/milestone.service.ts': 1,
++  'src/packages/package-contents.service.ts': 1,
++  'src/packages/package-push.service.ts': 4,
++  'src/packages/purchase-fanout.service.ts': 4,
++  'src/ptm/ptm-recompute.service.ts': 2,
++  'src/ptm/ptm.scheduler.ts': 1,
++  'src/ptm/ptm.service.ts': 1,
++  'src/roman/roman.service.ts': 1,
++  'src/scheduling/google-calendar/google-calendar.service.ts': 2,
++  'src/scheduling/jobs/reminder.job.ts': 1,
++  'src/scheduling/scheduling-session-lifecycle.service.ts': 1,
++  'src/storefront/checkout-cookie.service.ts': 1,
++  'src/storefront/checkout-idempotency.service.ts': 3,
++  'src/storefront/checkout-rate-limiter.service.ts': 2,
++  'src/storefront/checkout-receipt.scheduler.ts': 2,
++  'src/storefront/checkout-receipt.service.ts': 4,
++  'src/storefront/connect-preflight.service.ts': 4,
++  'src/storefront/guest-checkout-pii-scrub.service.ts': 2,
++  'src/storefront/guest-checkout-reconciliation.service.ts': 3,
++  'src/storefront/guest-checkout.service.ts': 2,
++  'src/storefront/lost-webhook-reconcile.service.ts': 5,
++  'src/sub-coach/sub-coach-idempotency.service.ts': 2,
++  'src/supabase/supabase.service.ts': 2,
++  'src/talent-marketplace/admin-moderation.service.ts': 1,
++  'src/talent-marketplace/anti-bot/in-house-anti-bot.provider.ts': 2,
++  'src/team/team.service.ts': 1,
++  'src/throttler/login-throttle-reset.service.ts': 3,
++  'src/throttler/throttler.config.ts': 2,
++  'src/wearables/connections/connections.service.ts': 1,
++  'src/wearables/connectors/fitbit/fitbit-webhook.controller.ts': 1,
++  'src/wearables/connectors/fitbit/fitbit.connector.ts': 2,
++  'src/wearables/connectors/oura/oura-webhook.controller.ts': 1,
++  'src/wearables/connectors/oura/oura.connector.ts': 1,
++  'src/wearables/connectors/polar/polar-webhook.controller.ts': 1,
++  'src/wearables/connectors/polar/polar.connector.ts': 2,
++  'src/wearables/connectors/wahoo/wahoo-webhook.controller.ts': 1,
++  'src/wearables/connectors/wahoo/wahoo.connector.ts': 2,
++  'src/wearables/connectors/withings/withings-webhook.controller.ts': 1,
++  'src/wearables/connectors/withings/withings.connector.ts': 2,
++  'src/wearables/http/provider-http-client.ts': 1,
++  'src/wearables/ingestion/ingestion.service.ts': 2,
++  'src/wearables/insights/wearable-insights.service.ts': 3,
++  'src/wearables/maintenance/wearable-processed-event-prune.scheduler.ts': 1,
++  'src/wearables/samples/wearable-samples.service.ts': 2,
++  'src/workout-builder/program-library.service.ts': 2,
++  'src/workout-builder/workout-builder-revision-prune.cron.ts': 2,
++  'src/workout-builder/workout-builder.service.ts': 2,
++};
++
++describe('C-611-17 / B-700-1 / B-700-2 guard: no log call under src/ interpolates personal data', () => {
+   it('the rules catch each kind of leak and pass ids, codes and static text', () => {
+-    const bad: Array<[string, string]> = [
++    const bad: Array<[string, string, CallContext?]> = [
+       ['this.logger.log(`sent to=${input.to} id=${id}`)', 'recipient'],
+       ['this.logger.warn(`no coach for ${u.email}`)', 'email'],
+       ['this.logger.warn(`rebind refused (email=${supaEmail})`)', 'email'],
+@@ -463,53 +657,98 @@ describe('C-611-17 guard: no log call under src/ interpolates an address, a name
+       ["this.logger.log(`[email log] to=${to} subject=\"x\"`)", 'recipient'],
+       ['this.logger.log(`hello ${client.name}`)', 'name'],
+       ['this.logger.log({ first_name: firstName })', 'name'],
++      // B-700-1 (Opus probe shape): a camelCase identifier holding a name.
++      ['this.logger.warn(`Claude call failed for coach=${safeCoachName}`)', 'name'],
++      ['this.logger.log(`welcome ${clientDisplayName}`)', 'name'],
+       ['this.logger.log(`push skipped: ${alert.message}`)', 'free-text'],
+       ['this.logger.error(`ticket error: ${ticket.message}`)', 'free-text'],
+       ["this.logger.error('Push receipt error:', receipt.message)", 'free-text'],
+       ['this.logger.log({ note: truncateNote(result.note) })', 'free-text'],
+       ['this.logger.debug(`payload: ${safeStringify(body)}`)', 'free-text'],
+       ['this.logger.debug(JSON.stringify(dto))', 'free-text'],
++      // B-700-2 (Opus probe shapes): a path built from an address, and
++      // Supabase error text that echoes the address.
++      ['this.logger.warn(`Finance federation degraded path=${path} reason=${r}`)', 'path', { encodesAddress: true }],
++      ['this.logger.warn(`lookup failed url=${url}`)', 'path', { encodesAddress: true }],
++      ['this.logger.warn(`unmatched ${req.originalUrl}`)', 'path'],
++      ['this.logger.warn(`resetPasswordForEmail failed: ${error.message}`)', 'exception-text'],
++      ['this.logger.error(`pair redeem: generateLink failed: ${linkError?.message ?? STR}`)', 'exception-text'],
++      // B-700-1 (Sol probe shape): provider and exception text in any form.
++      ['this.logger.error(`send failed user=${user.id}: ${(err as Error).message}`)', 'exception-text'],
++      ['this.logger.error(`render failed: ${msg}`)', 'exception-text'],
++      ["this.logger.error('boot failed', (err as Error).stack)", 'exception-text'],
++      ["this.logger.error('claim failed', err)", 'exception-text'],
++      ['this.logger.warn(`failed: ${String(err)}`)', 'exception-text'],
++      ['this.logger.warn(`failed: ${errorMessageOf(err)}`)', 'exception-text'],
++      ["this.logger.warn({ msg: 'x', error_message: message })", 'exception-text'],
+     ];
+-    for (const [snippet, rule] of bad) {
++    for (const [snippet, rule, ctx] of bad) {
+       const calls = logCalls(snippet);
+       expect(calls).toHaveLength(1);
+-      expect(violations(calls[0].code)).toContain(rule);
++      expect(violations(calls[0].code, ctx)).toContain(rule);
+     }
+-    const good = [
+-      'this.logger.log(`email sent template=${input.template} row=${logRow.id} provider_id=${providerMessageId}`)',
+-      "this.logger.warn('Invalid email address: the recipient is missing an @ sign')",
+-      'this.logger.error(`send failed user=${user.id}: ${(err as Error).message}`)',
+-      'this.logger.log(`digest sent user=${client.id} emailCount=${emailCount}`)',
+-      "this.logger.log(`provider ${provider.name} threw (err=${err instanceof Error ? err.name : 'unknown'})`)",
+-      'this.logger.log({ event: STR_EVENT, note_length: result.note?.length ?? 0 })',
++    const good: Array<[string, CallContext?]> = [
++      ['this.logger.log(`email sent template=${input.template} row=${logRow.id} provider_id=${providerMessageId}`)'],
++      ["this.logger.warn('Invalid email address: the recipient is missing an @ sign')"],
++      ['this.logger.error(`send failed user=${user.id}: ${describeFailure(err)}`)'],
++      ['this.logger.error(`brief failed: ${describeFailure(err, BRIEF_ERROR_CODES)}`)'],
++      ['this.logger.log(`digest sent user=${client.id} emailCount=${emailCount}`)'],
++      ["this.logger.log(`provider ${provider.name} threw (err=${err instanceof Error ? err.name : 'unknown'})`)"],
++      ['this.logger.log({ event: STR_EVENT, note_length: result.note?.length ?? 0 })'],
++      ['this.logger.warn(`Finance federation degraded route=${route} reason=${r}`)', { encodesAddress: true }],
++      ["this.logger.warn({ message: 'throttler.rejected', userId, path, method })"],
++      ['this.logger.warn(`secret ${secretName} rotated; exercise ${exerciseName}`)'],
+       // Split so no single literal holds template syntax naming an import in
+       // scope (CodeQL js/template-syntax-in-string-literal).
+-      'this.logger.log(`EMAIL_TRANSPORT=${kind}; templates=$' + '{EmailTemplateKey.WEEKLY_DIGEST}`)',
+-      'this.logger.error(`recovery failed checkout=${checkout.id}: ${redactEmailAddresses(err.message)}`)',
++      ['this.logger.log(`EMAIL_TRANSPORT=${kind}; templates=$' + '{EmailTemplateKey.WEEKLY_DIGEST}`)'],
+     ];
+-    for (const snippet of good) {
++    for (const [snippet, ctx] of good) {
+       const calls = logCalls(snippet);
+       expect(calls).toHaveLength(1);
+-      expect(violations(calls[0].code)).toEqual([]);
++      expect(violations(calls[0].code, ctx)).toEqual([]);
+     }
+   });
+ 
+-  it('every log call under src/ passes the rules', () => {
++  it('every log call under src/ passes the rules (exception text: only the listed legacy counts)', () => {
+     const root = join(__dirname, '..', '..', 'src');
+     const found: string[] = [];
++    const exceptionText: Record<string, number> = {};
+     let scanned = 0;
+     for (const file of sourceFiles(root)) {
+       const src = readFileSync(file, 'utf8');
++      const rel = relative(join(root, '..'), file).split('\\').join('/');
++      const ctx: CallContext = { encodesAddress: ENCODES_ADDRESS.test(src) };
+       for (const call of logCalls(src)) {
+         scanned++;
+-        const v = violations(call.code);
+-        if (v.length > 0) {
+-          found.push(`${relative(join(root, '..'), file)}:${call.line} [${v.join(', ')}] ${call.code.replace(/\s+/g, ' ').trim().slice(0, 160)}`);
++        const v = violations(call.code, ctx);
++        if (v.includes('exception-text')) exceptionText[rel] = (exceptionText[rel] ?? 0) + 1;
++        const strict = v.filter((id) => id !== 'exception-text');
++        if (strict.length > 0) {
++          found.push(`${rel}:${call.line} [${strict.join(', ')}] ${call.code.replace(/\s+/g, ' ').trim().slice(0, 160)}`);
+         }
+       }
+     }
+     // Hundreds of calls exist; a broken matcher that finds none must fail.
+     expect(scanned).toBeGreaterThan(500);
+     expect(found).toEqual([]);
++    expect(exceptionText).toEqual(LEGACY_EXCEPTION_TEXT);
++  });
++
++  it('the files B-PRIVFU2-118 fixed print no exception text at all', () => {
++    for (const rel of [
++      'src/auth/auth.service.ts',
++      'src/email/email.service.ts',
++      'src/notifications/digest.service.ts',
++      'src/notifications/notifications.service.ts',
++      'src/storefront/checkout-recovery.service.ts',
++      'src/coach/brief/coach-brief.service.ts',
++      'src/admin/federation/finance-admin.client.ts',
++      'src/scheduling/scheduling-webhook.controller.ts',
++      'src/users/gdpr-scrub.service.ts',
++      'src/users/gdpr-scrub.scheduler.ts',
++      'src/users/account.service.ts',
++    ]) {
++      expect(LEGACY_EXCEPTION_TEXT[rel]).toBeUndefined();
++    }
+   });
+ });
+diff --git a/test/privacy/no-pii-probe-replays.spec.ts b/test/privacy/no-pii-probe-replays.spec.ts
+new file mode 100644
+index 000000000..57b080f5c
+--- /dev/null
++++ b/test/privacy/no-pii-probe-replays.spec.ts
+@@ -0,0 +1,334 @@
++/**
++ * B-PRIVFU2-118 (agent 118): permanent replays of both lenses' #700 probes at
++ * 66569a61, so the shapes they used stay covered. Synthetic data only.
++ *  - GPT-6.1 Sol (AUD-SOL-FU2-118, run 37218198321): B-700-1 provider and
++ *    render failure text with a display name and free text, through the
++ *    email log, `EmailSendLog.error`, `SendEmailResult.error` and the digest
++ *    failure row; an address crossing the old 500-character cut; B-700-2 a
++ *    crafted webhook event name and key on both public stubs.
++ *  - Claude Opus 5.5 (AUD-OPUS-FU2-118, run 37219384148): B-700-1 the coach
++ *    brief log lines and the coach's name; B-700-2 a Supabase reset error
++ *    that echoes the address, and the finance federation path that holds it.
++ * Each case also checks the id or code that lets support find the failure.
++ */
++import { Logger } from '@nestjs/common';
++import type { ConfigService } from '@nestjs/config';
++import type { Request } from 'express';
++import type { PrismaService } from '../../src/prisma.service';
++import type { NotificationsService } from '../../src/notifications/notifications.service';
++import { EmailService } from '../../src/email/email.service';
++import { EmailTemplateKey } from '../../src/email/email.types';
++import { DigestService } from '../../src/notifications/digest.service';
++import { SchedulingWebhookController } from '../../src/scheduling/scheduling-webhook.controller';
++import { CoachBriefService } from '../../src/coach/brief/coach-brief.service';
++import type { BriefAiInput } from '../../src/coach/brief/coach-brief.service';
++import { FinanceAdminClient } from '../../src/admin/federation/finance-admin.client';
++import { AuthService } from '../../src/auth/auth.service';
++import { clientDataSubject } from '../../src/ai-egress/ai-egress.types';
++import {
++  asAnthropic,
++  asConfig,
++  asPrismaService,
++  makeBriefContext,
++  makeMockAnthropic,
++  makeMockConfig,
++  makeMockPrisma,
++} from '../_fixtures/coach-brief-mocks';
++import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
++
++const PERSON = 'Patricia Quill';
++const SURNAME = 'Quillfeather';
++const ADDRESS = 'patricia.quill@example.test';
++const RESET_ADDRESS = 'pat.client+tgp@example.com';
++const PRIVATE_TEXT = 'private consultation details';
++const LEVELS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
++
++jest.mock('@supabase/supabase-js', () => {
++  const actual = jest.requireActual('@supabase/supabase-js');
++  return {
++    ...actual,
++    createClient: jest.fn(() => ({
++      auth: {
++        resetPasswordForEmail: jest.fn(async (email: string) => ({
++          data: null,
++          error: { message: `Email address "${email}" is invalid`, code: 'email_address_invalid', status: 400 },
++        })),
++      },
++    })),
++  };
++});
++
++const realFetch = global.fetch;
++
++function fake<T>(value: unknown): T {
++  return value as T;
++}
++
++function config(values: Record<string, string | undefined>): ConfigService {
++  return fake<ConfigService>({ get: (key: string) => values[key] });
++}
++
++function spyLogs(): () => string[] {
++  const spies = LEVELS.map((level) =>
++    jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined),
++  );
++  return () =>
++    spies.flatMap((spy) =>
++      spy.mock.calls.map((args: unknown[]) =>
++        args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a) ?? String(a))).join(' '),
++      ),
++    );
++}
++
++function expectNone(surface: string, ...needles: string[]): void {
++  for (const needle of needles) expect(surface).not.toContain(needle);
++}
++
++function emailDb() {
++  return {
++    emailSendLog: {
++      create: jest.fn().mockResolvedValue({ id: 'row-privacy-probe' }),
++      update: jest.fn().mockResolvedValue({}),
++    },
++  };
++}
++
++function resendFailure(status: number, body: string): typeof fetch {
++  return fake<typeof fetch>(jest.fn().mockResolvedValue({ ok: false, status, text: async () => body }));
++}
++
++const resendConfig = config({
++  EMAIL_TRANSPORT: 'resend',
++  RESEND_API_KEY: 're_test',
++  EMAIL_FROM_ADDRESS: 'team@example.test',
++});
++
++const input = {
++  to: ADDRESS,
++  template: EmailTemplateKey.NUDGE_ONBOARDING_ABANDONED,
++  data: { first_name: 'Patricia', app_url: 'https://app.example.test' },
++  idempotencyKey: 'probe:user-1',
++};
++
++const saved = {
++  base: process.env.FINANCE_API_BASE_URL,
++  token: process.env.FINANCE_SERVICE_TOKEN,
++  secret: process.env.SCHEDULING_WEBHOOK_SECRET,
++};
++
++function restoreEnv(key: string, value: string | undefined): void {
++  if (value === undefined) delete process.env[key];
++  else process.env[key] = value;
++}
++
++afterEach(() => {
++  global.fetch = realFetch;
++  jest.restoreAllMocks();
++  restoreEnv('FINANCE_API_BASE_URL', saved.base);
++  restoreEnv('FINANCE_SERVICE_TOKEN', saved.token);
++  restoreEnv('SCHEDULING_WEBHOOK_SECRET', saved.secret);
++});
++
++describe('Sol B-700-1 replay: provider and render failures keep codes, never text', () => {
++  it('EmailService provider failure with a display name and free text', async () => {
++    const logs = spyLogs();
++    const db = emailDb();
++    global.fetch = resendFailure(
++      422,
++      JSON.stringify({ message: `Invalid recipient ${PERSON} <${ADDRESS}>; ${PRIVATE_TEXT}` }),
++    );
++    const result = await new EmailService(fake<PrismaService>(db), resendConfig).send(input);
++    expect(result.status).toBe('failed');
++    const stored = String(db.emailSendLog.update.mock.calls[0][0].data.error);
++    const surfaces = `${logs().join('\n')} ${result.error} ${stored}`;
++    expectNone(surfaces, ADDRESS, PERSON, PRIVATE_TEXT, '@');
++    expect(logs().join('\n')).toContain('row=row-privacy-probe');
++    expect(result.error).toBe('provider=resend status=422 code=other');
++    expect(stored).toBe('provider=resend status=422 code=other');
++  });
++
++  it('control: a Resend error name from the documented list is kept', async () => {
++    spyLogs();
++    const db = emailDb();
++    global.fetch = resendFailure(
++      422,
++      JSON.stringify({ name: 'validation_error', message: `Invalid recipient ${PERSON} <${ADDRESS}>` }),
++    );
++    const result = await new EmailService(fake<PrismaService>(db), resendConfig).send(input);
++    expect(result.error).toBe('provider=resend status=422 code=validation_error');
++  });
++
++  it('EmailService render exception that quotes the recipient name', async () => {
++    const logs = spyLogs();
++    const db = emailDb();
++    const svc = new EmailService(fake<PrismaService>(db), config({}));
++    jest.spyOn(svc, 'render').mockImplementation(() => {
++      throw new Error(`Cannot render greeting for ${PERSON}; ${PRIVATE_TEXT}`);
++    });
++    const result = await svc.send(input);
++    expect(result.status).toBe('failed');
++    const stored = String(db.emailSendLog.update.mock.calls[0][0].data.error);
++    expectNone(`${logs().join('\n')} ${result.error} ${stored}`, PERSON, PRIVATE_TEXT);
++    expect(result.error).toBe('render: error=Error');
++    expect(stored).toBe('render: error=Error');
++  });
++
++  it('DigestService provider failure with a display name and free text', async () => {
++    const logs = spyLogs();
++    const notifications = {
++      claimDigestWindow: jest.fn().mockResolvedValue('digest-probe'),
++      createNotification: jest.fn().mockResolvedValue({}),
++      markDigestSent: jest.fn().mockResolvedValue(undefined),
++      markDigestFailed: jest.fn().mockResolvedValue(undefined),
++    };
++    global.fetch = resendFailure(
++      422,
++      JSON.stringify({ message: `Invalid recipient ${PERSON} <${ADDRESS}>; ${PRIVATE_TEXT}` }),
++    );
++    const svc = new DigestService(
++      fake<PrismaService>({}),
++      fake<NotificationsService>(notifications),
++      config({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 're_test' }),
++    );
++    const internals = fake<{
++      _activeClientsWithEmailDigest: () => Promise<unknown>;
++      _buildClientDigestData: () => Promise<unknown>;
++    }>(svc);
++    jest
++      .spyOn(internals, '_activeClientsWithEmailDigest')
++      .mockResolvedValue([{ id: 'user-1', email: ADDRESS, name: PERSON }]);
++    jest.spyOn(internals, '_buildClientDigestData').mockResolvedValue({
++      date: 'test-date',
++      checkins: [],
++      weightMetrics: [],
++      streakMetrics: [],
++    });
++    await svc.sendClientDailyDigests();
++    expect(notifications.markDigestFailed).toHaveBeenCalledTimes(1);
++    const stored = String(notifications.markDigestFailed.mock.calls[0][1]);
++    expectNone(`${logs().join('\n')} ${stored}`, ADDRESS, PERSON, PRIVATE_TEXT, '@');
++    expect(stored).toBe('provider=resend status=422 code=other');
++    expect(logs().join('\n')).toContain('user=user-1');
++  });
++
++  it('an address that crossed the old 500-character cut leaves no fragment', async () => {
++    const logs = spyLogs();
++    const db = emailDb();
++    global.fetch = resendFailure(422, `${' '.repeat(488)}${ADDRESS}`);
++    const result = await new EmailService(fake<PrismaService>(db), resendConfig).send(input);
++    const stored = String(db.emailSendLog.update.mock.calls[0][0].data.error);
++    expectNone(`${logs().join('\n')} ${result.error} ${stored}`, 'patricia.qu', '@');
++    expect(result.error).toBe('provider=resend status=422 code=unparsed');
++  });
++});
++
++describe('Sol B-700-2 / Opus C-700-5 replay: webhook stubs log finite labels only', () => {
++  it.each(['zoom', 'googleCalendar'] as const)(
++    '%s: a crafted event name and key are counted, never shown',
++    async (handler) => {
++      const logs = spyLogs();
++      delete process.env.SCHEDULING_WEBHOOK_SECRET;
++      const res = await new SchedulingWebhookController()[handler](
++        { event: 'Patricia-Quill', 'Patricia-Quill': { details: PRIVATE_TEXT } },
++        fake<Request>({ headers: {} }),
++      );
++      expect(res).toEqual({ ok: true, handler: 'stub' });
++      expectNone(logs().join('\n'), 'Patricia', PRIVATE_TEXT);
++      expect(logs().join('\n')).toContain('event=other keys=event other_keys=1');
++    },
++  );
++
++  it('control: a recognised Zoom event and its envelope keys are named', async () => {
++    const logs = spyLogs();
++    delete process.env.SCHEDULING_WEBHOOK_SECRET;
++    await new SchedulingWebhookController().zoom(
++      { event: 'meeting.started', event_ts: 1, payload: { object: { host_email: ADDRESS } } },
++      fake<Request>({ headers: {} }),
++    );
++    expect(logs().join('\n')).toContain('event=meeting.started keys=event,event_ts,payload other_keys=0');
++    expectNone(logs().join('\n'), '@');
++  });
++});
++
++describe('Opus B-700-1 replay: coach brief log lines never hold the coach name', () => {
++  function run(scenario: Parameters<typeof makeMockAnthropic>[0], coachId?: string) {
++    const svc = new CoachBriefService(
++      asPrismaService(makeMockPrisma()),
++      asConfig(makeMockConfig()),
++      grantAllEgress(),
++      asAnthropic(makeMockAnthropic(scenario)),
++    );
++    const ctx = makeBriefContext({
++      coach_name: `Patricia ${SURNAME}`,
++      coach_first_name: 'Patricia',
++      workouts_pending_approval: 1,
++    });
++    const ai: BriefAiInput = { ctx, subject: clientDataSubject(['client-1'], 'coach') };
++    return svc.callClaude(ctx, ai, coachId);
++  }
++
++  it('Claude call error (the probe called without a coach id)', async () => {
++    const lines = spyLogs();
++    const res = await run(new Error(`upstream 529 overloaded for Patricia ${SURNAME}`));
++    expect(res.generated_by).toBe('fallback');
++    const all = lines().join('\n');
++    expect(all).toContain('CoachBrief Claude call failed for coach=unset mode=solo_coach');
++    expect(all).toContain(': error=Error');
++    expectNone(all, SURNAME);
++  });
++
++  it('contract failure twice: the coach id, mode and date, never the name', async () => {
++    const lines = spyLogs();
++    const tooFew = 'Patricia, there are updates this morning. Watch for more.';
++    const res = await run([tooFew, tooFew], 'coach-1');
++    expect(res.generated_by).toBe('fallback');
++    const all = lines().join('\n');
++    expect(all).toContain('failed contract');
++    expect(all).toContain('coach=coach-1 mode=solo_coach');
++    expectNone(all, SURNAME);
++  });
++});
++
++describe('Opus B-700-2 replay: addresses that arrive through upstream text or a path', () => {
++  it('forgotPassword: a Supabase error that echoes the address logs status and code only', async () => {
++    const logs = spyLogs();
++    const anyMock = fake<never>({});
++    const service = new AuthService(anyMock, anyMock, anyMock, anyMock, anyMock, anyMock);
++    // The reply is the same whether or not the reset call failed.
++    await expect(service.forgotPassword(RESET_ADDRESS)).resolves.toEqual({
++      message: 'If an account exists with that email, a reset link has been sent.',
++    });
++    const all = logs().join('\n');
++    expect(all).toContain('resetPasswordForEmail failed: error=Object status=400 code=email_address_invalid');
++    expectNone(all, '@', 'pat.client');
++  });
++
++  it('finance federation degraded: a fixed route label, never the path with the address', async () => {
++    process.env.FINANCE_API_BASE_URL = 'https://finance.example.test';
++    process.env.FINANCE_SERVICE_TOKEN = 'svc-token';
++    class Http400Client extends FinanceAdminClient {
++      protected fetchImpl: typeof fetch = async () =>
++        fake<Response>({ ok: false, status: 400, json: async () => ({}), text: async () => '' });
++    }
++    const logs = spyLogs();
++    const outcome = await new Http400Client().setCoachPracticeByEmail(RESET_ADDRESS, 'both');
++    expect(outcome.kind).toBe('degraded');
++    const all = logs().join('\n');
++    expect(all).toContain('Finance federation degraded route=coaches/by-email/practice reason=http_error');
++    expectNone(all, 'pat.client', '%40', '@');
++  });
++
++  it('finance user search: the search text never reaches the line', async () => {
++    process.env.FINANCE_API_BASE_URL = 'https://finance.example.test';
++    process.env.FINANCE_SERVICE_TOKEN = 'svc-token';
++    class Http500Client extends FinanceAdminClient {
++      protected fetchImpl: typeof fetch = async () =>
++        fake<Response>({ ok: false, status: 500, json: async () => ({}), text: async () => '' });
++    }
++    const logs = spyLogs();
++    await new Http500Client().searchUsers(PERSON, 5);
++    const all = logs().join('\n');
++    expect(all).toContain('route=users/search');
++    expectNone(all, 'Patricia', 'Quill');
++  });
++});

@@ -1,0 +1,353 @@
+diff --git a/src/coach-money/coach-money.service.ts b/src/coach-money/coach-money.service.ts
+index 7bb5cef78..9076e8764 100644
+--- a/src/coach-money/coach-money.service.ts
++++ b/src/coach-money/coach-money.service.ts
+@@ -240,6 +240,17 @@ interface SliceRow {
+ const COUNTED_SLICE_STATUSES = ['posted', 'reversed'];
+ const LOST_DISPUTE_STATUS_LIST: string[] = [...LOST_DISPUTE_STATUSES];
+ 
++/**
++ * A purchase that billed: a paid status, or the ledger holds a posted coach
++ * slice for it. A free trial cancelled before its first bill has neither.
++ */
++const BILLED_WHERE = {
++  OR: [
++    { status: { in: [...PAID_PURCHASE_STATUSES] } },
++    { splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } } },
++  ],
++};
++
+ /**
+  * A purchase was paid when its status says so OR the ledger holds a posted
+  * coach slice for it (a paid purchase that later canceled or expired keeps
+@@ -253,12 +264,7 @@ export const PAID_WHERE = {
+   AND: [
+     { status: { notIn: [CHARGEBACK_LOST_PURCHASE_STATUS, REFUNDED_PURCHASE_STATUS] } },
+     { disputes: { none: { status: { in: [...LOST_DISPUTE_STATUSES] } } } },
+-    {
+-      OR: [
+-        { status: { in: [...PAID_PURCHASE_STATUSES] } },
+-        { splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } } },
+-      ],
+-    },
++    BILLED_WHERE,
+   ],
+ };
+ 
+@@ -397,6 +403,9 @@ export interface ReversalPortion {
+   cents: number;
+   /** What the client got back in the event (null for `reversal`). */
+   event_amount_cents: number | null;
++  /** B-676-3: the ChargeRefund / ChargeDispute id and the event's own time. */
++  source_id?: string;
++  event_at?: Date;
+ }
+ 
+ /** When a slice was posted (legacy rows without posted_at use created_at). */
+@@ -428,7 +437,14 @@ export function allocateReversal(slice: ReversedSliceRow): ReversalPortion[] {
+   const posted: ReversalPortion[] = postings.map((p) => {
+     const kind = p.source_kind === 'refund' ? 'refund' : 'chargeback';
+     const e = slice.events.find((x) => x.kind === kind && x.source_id === p.source_id);
+-    return { kind, at: p.posted_at, cents: p.cents, event_amount_cents: e?.amount_cents ?? null };
++    return {
++      kind,
++      at: p.posted_at,
++      cents: p.cents,
++      event_amount_cents: e?.amount_cents ?? null,
++      source_id: p.source_id,
++      event_at: e?.at,
++    };
+   });
+   const total = slice.reversed_cents - posted.reduce((acc, p) => acc + p.cents, 0);
+   if (total <= 0) return posted;
+@@ -465,7 +481,14 @@ export function allocateReversal(slice: ReversedSliceRow): ReversalPortion[] {
+         : 0;
+     left -= share;
+     if (share > 0) {
+-      out.push({ kind: e.kind, at: e.at, cents: share, event_amount_cents: e.amount_cents });
++      out.push({
++        kind: e.kind,
++        at: e.at,
++        cents: share,
++        event_amount_cents: e.amount_cents,
++        source_id: e.source_id,
++        event_at: e.at,
++      });
+     }
+   });
+   return out;
+@@ -478,7 +501,29 @@ export function reversedInWindow(slice: ReversedSliceRow, window: MoneyWindow):
+     .reduce((acc, p) => acc + p.cents, 0);
+ }
+ 
++/**
++ * B-676-3: a succeeded refund or lost chargeback of the coach's own sale,
++ * loaded on its own (not through ledger slices), so it has its CSV row with
++ * what the client got back even when no ledger cent moved (every portion
++ * rounded to zero).
++ */
++export interface MoneyOccurrence {
++  kind: 'refund' | 'chargeback';
++  /** ChargeRefund / ChargeDispute id (matches ReversalPortion.source_id). */
++  source_id: string;
++  purchase_id: string;
++  stripe_charge_id: string;
++  currency: string;
++  /** The event's own time (refund success / chargeback close). */
++  at: Date;
++  amount_cents: number;
++  client_name: string | null;
++  package_name: string | null;
++}
++
+ export interface WindowSlices {
++  /** B-676-3: refund / chargeback occurrences (the tax export loads them). */
++  occurrences?: MoneyOccurrence[];
+   /** Slices of the coach's own sales posted in the window. */
+   salesSeller: TimedSliceRow[];
+   /** head_coach_split slices paid to the coach, posted in the window. */
+@@ -764,6 +809,13 @@ function displayName(u: { name?: string | null } | null | undefined): string {
+ /** Ledger rows per query the CSV export accepts before asking for a shorter period. */
+ export const MONEY_EXPORT_MAX_ROWS = 20_000;
+ 
++function exportTooLarge(limit: number): BadRequestException {
++  return new BadRequestException({
++    code: 'MONEY_EXPORT_TOO_LARGE',
++    message: `This period has more than ${limit} ledger rows, which is too many for one file. Choose a shorter period, for example one quarter, and export each part.`,
++  });
++}
++
+ export const MONEY_CSV_COLUMNS = [
+   'date_utc',
+   'type',
+@@ -814,7 +866,12 @@ export function csvText(value: string): string {
+   return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+ }
+ 
+-function emptyCsvRow(s: TimedSliceRow, at: Date, type: CsvRow['type'], withNames: boolean): CsvRow {
++type CsvRowSource = Pick<
++  TimedSliceRow,
++  'purchase_id' | 'stripe_charge_id' | 'currency' | 'client_name' | 'package_name'
++>;
++
++function emptyCsvRow(s: CsvRowSource, at: Date, type: CsvRow['type'], withNames: boolean): CsvRow {
+   return {
+     at,
+     type,
+@@ -863,12 +920,34 @@ export function buildMoneyCsv(coachId: string, window: MoneyWindow, slices: Wind
+     );
+     r.net_to_you += s.amount_cents;
+   }
++  // B-676-3: one row per money movement, i.e. one event (refund / chargeback
++  // id) at one time. The writer posts an event's slices at the event's own
++  // time, so they share a row; a later head-coach recovery (the sweep) is its
++  // own row, dated when it happened. What the client got back shows once, on
++  // the row at the event's own time, so it never repeats across rows or files.
++  // Every succeeded refund / lost chargeback in the window seeds its row from
++  // the event itself, so a refund whose portions all rounded to zero is
++  // still exported with what the client got back.
++  const eventKey = (type: string, purchaseId: string, sourceId: string, at: Date) =>
++    `${type}|${purchaseId}|id:${sourceId}|${at.toISOString()}`;
++  const reversalKey = (type: string, s: TimedSliceRow, p: ReversalPortion) =>
++    p.source_id
++      ? eventKey(type, s.purchase_id, p.source_id, p.at)
++      : `${type}|${s.purchase_id}|${s.stripe_charge_id ?? ''}||${p.at.toISOString()}`;
++  for (const o of slices.occurrences ?? []) {
++    if (!inWindow(o.at, window)) continue;
++    const r = row(eventKey(o.kind, o.purchase_id, o.source_id, o.at), () =>
++      emptyCsvRow(o, o.at, o.kind, true),
++    );
++    r.client_refunded = o.amount_cents;
++  }
+   for (const s of slices.reversedSeller) {
+     for (const p of allocateReversal(s)) {
+       if (!inWindow(p.at, window)) continue;
+-      const key = `${p.kind}|${s.purchase_id}|${s.stripe_charge_id ?? ''}|${p.at.toISOString()}`;
+-      const r = row(key, () => emptyCsvRow(s, p.at, p.kind, true));
+-      if (p.event_amount_cents !== null) r.client_refunded = p.event_amount_cents;
++      const r = row(reversalKey(p.kind, s, p), () => emptyCsvRow(s, p.at, p.kind, true));
++      if (p.event_amount_cents !== null && p.event_at?.getTime() === p.at.getTime()) {
++        r.client_refunded = p.event_amount_cents;
++      }
+       if (s.kind === 'destination' && s.payee_user_id === coachId) r.net_to_you -= p.cents;
+       else if (s.kind === 'application_fee') r.tgp_fee -= p.cents;
+       else if (s.kind === 'head_coach_split') r.head_coach_share -= p.cents;
+@@ -878,8 +957,9 @@ export function buildMoneyCsv(coachId: string, window: MoneyWindow, slices: Wind
+     if (s.kind !== 'head_coach_split' || s.payee_user_id !== coachId) continue;
+     for (const p of allocateReversal(s)) {
+       if (!inWindow(p.at, window)) continue;
+-      const key = `team_rev|${s.purchase_id}|${s.stripe_charge_id ?? ''}|${p.at.toISOString()}`;
+-      const r = row(key, () => emptyCsvRow(s, p.at, 'team_share_reversal', false));
++      const r = row(reversalKey('team_rev', s, p), () =>
++        emptyCsvRow(s, p.at, 'team_share_reversal', false),
++      );
+       r.net_to_you -= p.cents;
+     }
+   }
+@@ -1180,10 +1260,7 @@ export class CoachMoneyService {
+       limit !== undefined &&
+       [salesSeller, salesIncome, reversedSeller, reversedIncome].some((rows) => rows.length > limit)
+     ) {
+-      throw new BadRequestException({
+-        code: 'MONEY_EXPORT_TOO_LARGE',
+-        message: `This period has more than ${limit} ledger rows, which is too many for one file. Choose a shorter period, for example one quarter, and export each part.`,
+-      });
++      throw exportTooLarge(limit);
+     }
+     // B-641-3 belt and braces: even if a query ever loses its currency
+     // scope, a total never adds a row in another currency.
+@@ -1197,6 +1274,85 @@ export class CoachMoneyService {
+     };
+   }
+ 
++  /**
++   * B-676-3: the coach's own succeeded refunds (completion time) and lost
++   * chargebacks (close time) in the window, each read once from its own row
++   * and scoped like the seller slices: the authenticated coach's sales in
++   * the export's currency (the sale's currency; ChargeRefund rows do not
++   * carry their own), at most `limit` rows per kind.
++   */
++  async loadOccurrences(
++    coachId: string,
++    window: MoneyWindow,
++    opts: { currency?: string; limit: number },
++  ): Promise<MoneyOccurrence[]> {
++    const range = this.windowRange(window);
++    const scope = {
++      purchase: {
++        coach_user_id: coachId,
++        source: null,
++        ...(opts.currency ? { currency: opts.currency } : {}),
++      },
++    };
++    const common = {
++      id: true,
++      purchase_id: true,
++      stripe_charge_id: true,
++      amount_cents: true,
++      purchase: {
++        select: {
++          currency: true,
++          client: { select: { name: true } },
++          package: { select: { name: true } },
++        },
++      },
++    } as const;
++    const [refunds, disputes] = await Promise.all([
++      this.prisma.chargeRefund.findMany({
++        where: {
++          ...scope,
++          status: 'succeeded',
++          OR: [{ posted_at: range }, { posted_at: null, created_at: range }],
++        },
++        select: { ...common, posted_at: true, created_at: true },
++        orderBy: { id: 'asc' },
++        take: opts.limit + 1,
++      }),
++      this.prisma.chargeDispute.findMany({
++        where: {
++          ...scope,
++          status: { in: LOST_DISPUTE_STATUS_LIST },
++          OR: [{ closed_at: range }, { closed_at: null, updated_at: range }],
++        },
++        select: { ...common, closed_at: true, updated_at: true },
++        orderBy: { id: 'asc' },
++        take: opts.limit + 1,
++      }),
++    ]);
++    if (refunds.length > opts.limit || disputes.length > opts.limit) {
++      throw exportTooLarge(opts.limit);
++    }
++    const occurrence = (
++      kind: MoneyOccurrence['kind'],
++      x: (typeof refunds)[number] | (typeof disputes)[number],
++      at: Date,
++    ): MoneyOccurrence => ({
++      kind,
++      source_id: x.id,
++      purchase_id: x.purchase_id,
++      stripe_charge_id: x.stripe_charge_id,
++      currency: x.purchase.currency,
++      at,
++      amount_cents: x.amount_cents,
++      client_name: displayName(x.purchase.client),
++      package_name: x.purchase.package?.name ?? null,
++    });
++    return [
++      ...refunds.map((x) => occurrence('refund', x, x.posted_at ?? x.created_at)),
++      ...disputes.map((x) => occurrence('chargeback', x, x.closed_at ?? x.updated_at)),
++    ].filter((o) => !opts.currency || o.currency.toLowerCase() === opts.currency);
++  }
++
+   async totalsFor(coachId: string, window: MoneyWindow, currency: string): Promise<MoneyTotals> {
+     return foldWindowTotals(coachId, window, await this.loadWindow(coachId, window, { currency }));
+   }
+@@ -1216,11 +1372,12 @@ export class CoachMoneyService {
+   ): Promise<string> {
+     // C-641-6 (S-COACH-3): `?currency=` limits the file to one currency, so
+     // a spreadsheet sum of net_to_you is one meaningful number.
+-    const slices = await this.loadWindow(coachId, window, {
+-      limit: MONEY_EXPORT_MAX_ROWS,
+-      ...(currency ? { currency } : {}),
+-    });
+-    return buildMoneyCsv(coachId, window, slices);
++    const scope = { limit: MONEY_EXPORT_MAX_ROWS, ...(currency ? { currency } : {}) };
++    const [slices, occurrences] = await Promise.all([
++      this.loadWindow(coachId, window, scope),
++      this.loadOccurrences(coachId, window, scope),
++    ]);
++    return buildMoneyCsv(coachId, window, { ...slices, occurrences });
+   }
+ 
+   /**
+@@ -1274,6 +1431,8 @@ export class CoachMoneyService {
+           source: null,
+           amount_cents: { gt: 0 },
+           canceled_at: { gte: thirtyAgo, lte: now },
++          // B-676-4: only a purchase that billed can churn.
++          ...BILLED_WHERE,
+         },
+         select: { client_user_id: true },
+       }),
+@@ -1332,10 +1491,12 @@ export class CoachMoneyService {
+       const returning = new Set(earlier.map((p) => p.client_user_id));
+       newClients = candidateIds.filter((id) => !returning.has(id)).length;
+     }
+-    // Churned = clients who canceled in the window and hold no other active
+-    // paid purchase with this coach today.
++    // Churned = clients who canceled a billed purchase in the window and hold
++    // no entitled purchase with this coach today; a client still on a free
++    // trial (another plan) has not left (B-676-4).
++    const heldIds = new Set(active.map((p) => p.client_user_id));
+     const churnedIds = new Set(
+-      churned.map((p) => p.client_user_id).filter((id) => !payingIds.has(id)),
++      churned.map((p) => p.client_user_id).filter((id) => !heldIds.has(id)),
+     );
+     return {
+       mrr_cents: mrr,
+diff --git a/test/support/money-read-double.ts b/test/support/money-read-double.ts
+index 74269651c..cd10640b8 100644
+--- a/test/support/money-read-double.ts
++++ b/test/support/money-read-double.ts
+@@ -55,6 +55,13 @@ const RELATIONS: Record<string, Record<string, Relation>> = {
+         (db.state.dunningAttempt ?? []).filter((x) => x.dunning_state_id === r.id),
+     },
+   },
++  chargeRefund: {
++    purchase: {
++      model: 'clientPurchase',
++      many: false,
++      resolve: (r, db) => (db.state.clientPurchase ?? []).filter((p) => p.id === r.purchase_id),
++    },
++  },
+   chargeDispute: {
+     purchase: {
+       model: 'clientPurchase',
+@@ -178,6 +185,7 @@ export function moneyReadPrisma(db: StatefulPrisma) {
+     },
+     splitLedgerEntry: { findMany: many('splitLedgerEntry') },
+     chargeDispute: { findMany: many('chargeDispute') },
++    chargeRefund: { findMany: many('chargeRefund') },
+     connectAccount: {
+       findUnique: async (args: Row) => findMany(db, 'connectAccount', args)[0] ?? null,
+     },

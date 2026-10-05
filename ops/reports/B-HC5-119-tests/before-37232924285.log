@@ -1,0 +1,541 @@
+﻿2026-10-04T20:39:22.4101387Z Current runner version: '2.337.0'
+2026-10-04T20:39:22.4121614Z ##[group]Runner Image Provisioner
+2026-10-04T20:39:22.4122336Z Hosted Compute Agent
+2026-10-04T20:39:22.4122795Z Version: 20260901.588
+2026-10-04T20:39:22.4123355Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T20:39:22.4123940Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T20:39:22.4124517Z Worker ID: {be86fc45-5bf3-4992-a23f-6ad81657ab19}
+2026-10-04T20:39:22.4125164Z Azure Region: centralus
+2026-10-04T20:39:22.4125615Z ##[endgroup]
+2026-10-04T20:39:22.4126878Z ##[group]Operating System
+2026-10-04T20:39:22.4127377Z Ubuntu
+2026-10-04T20:39:22.4127783Z 24.04.5
+2026-10-04T20:39:22.4128228Z LTS
+2026-10-04T20:39:22.4128638Z ##[endgroup]
+2026-10-04T20:39:22.4129097Z ##[group]Runner Image
+2026-10-04T20:39:22.4129579Z Image: ubuntu-24.04
+2026-10-04T20:39:22.4130038Z Version: 20260927.320.1
+2026-10-04T20:39:22.4131036Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T20:39:22.4132264Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T20:39:22.4133018Z ##[endgroup]
+2026-10-04T20:39:22.4133960Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T20:39:22.4135912Z Contents: read
+2026-10-04T20:39:22.4136355Z Metadata: read
+2026-10-04T20:39:22.4137331Z Packages: read
+2026-10-04T20:39:22.4137791Z ##[endgroup]
+2026-10-04T20:39:22.4139503Z Secret source: Actions
+2026-10-04T20:39:22.4140285Z Cache mode: write
+2026-10-04T20:39:22.4141011Z Prepare workflow directory
+2026-10-04T20:39:22.4409096Z Prepare all required actions
+2026-10-04T20:39:22.4448807Z Getting action download info
+2026-10-04T20:39:22.6739099Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T20:39:22.7817881Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T20:39:23.0217638Z Complete job name: targeted
+2026-10-04T20:39:23.0773557Z ##[group]Run actions/checkout@v6
+2026-10-04T20:39:23.0774262Z with:
+2026-10-04T20:39:23.0774778Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:39:23.0778153Z   token: ***
+2026-10-04T20:39:23.0778670Z   ssh-strict: true
+2026-10-04T20:39:23.0779076Z   ssh-user: git
+2026-10-04T20:39:23.0779489Z   persist-credentials: true
+2026-10-04T20:39:23.0779948Z   clean: true
+2026-10-04T20:39:23.0780365Z   sparse-checkout-cone-mode: true
+2026-10-04T20:39:23.0780867Z   fetch-depth: 1
+2026-10-04T20:39:23.0781325Z   fetch-tags: false
+2026-10-04T20:39:23.0781740Z   show-progress: true
+2026-10-04T20:39:23.0782175Z   lfs: false
+2026-10-04T20:39:23.0782586Z   submodules: false
+2026-10-04T20:39:23.0783031Z   set-safe-directory: true
+2026-10-04T20:39:23.0783490Z   allow-unsafe-pr-checkout: false
+2026-10-04T20:39:23.0784103Z ##[endgroup]
+2026-10-04T20:39:23.1630526Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:39:23.1632184Z ##[group]Getting Git version info
+2026-10-04T20:39:23.1632906Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T20:39:23.1633958Z [command]/usr/bin/git version
+2026-10-04T20:39:23.1698661Z git version 2.55.0
+2026-10-04T20:39:23.1715246Z ##[endgroup]
+2026-10-04T20:39:23.1725477Z Temporarily overriding HOME='/home/runner/work/_temp/2a7e1243-13c9-409f-8712-0e8e6876d2d7' before making global git config changes
+2026-10-04T20:39:23.1726964Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:39:23.1729996Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:39:23.1770181Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T20:39:23.1773411Z ##[group]Determining repository object format
+2026-10-04T20:39:23.1775264Z ##[endgroup]
+2026-10-04T20:39:23.1775961Z ##[group]Initializing the repository
+2026-10-04T20:39:23.1780180Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:39:23.1877884Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T20:39:23.1878841Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T20:39:23.1879563Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T20:39:23.1880217Z hint: call:
+2026-10-04T20:39:23.1880615Z hint:
+2026-10-04T20:39:23.1881083Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T20:39:23.1881640Z hint:
+2026-10-04T20:39:23.1882108Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T20:39:23.1882899Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T20:39:23.1883478Z hint:
+2026-10-04T20:39:23.1883814Z hint: 	git branch -m <name>
+2026-10-04T20:39:23.1884225Z hint:
+2026-10-04T20:39:23.1884806Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T20:39:23.1888671Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-04T20:39:23.1895292Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:39:23.1937490Z ##[endgroup]
+2026-10-04T20:39:23.1938197Z ##[group]Disabling automatic garbage collection
+2026-10-04T20:39:23.1941053Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T20:39:23.1966841Z ##[endgroup]
+2026-10-04T20:39:23.1968143Z ##[group]Setting up auth
+2026-10-04T20:39:23.1968917Z Removing SSH command configuration
+2026-10-04T20:39:23.1973070Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:39:23.1996726Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:39:23.2284449Z Removing HTTP extra header
+2026-10-04T20:39:23.2288598Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:39:23.2311246Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:39:23.2465329Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:39:23.2469531Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:39:23.2491677Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:39:23.2653362Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T20:39:23.2681316Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:39:23.2706253Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:39:23.2732298Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:39:23.2787662Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:39:23.2816913Z ##[endgroup]
+2026-10-04T20:39:23.2817888Z ##[group]Fetching the repository
+2026-10-04T20:39:23.2823623Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +3069b97d5f4c2791859982b06f2cddc467fa2a83:refs/remotes/origin/ci/B-HC5-119-362-before
+2026-10-04T20:39:24.3347667Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T20:39:24.3350539Z  * [new ref]         3069b97d5f4c2791859982b06f2cddc467fa2a83 -> origin/ci/B-HC5-119-362-before
+2026-10-04T20:39:24.3362386Z [command]/usr/bin/git branch --list --remote origin/ci/B-HC5-119-362-before
+2026-10-04T20:39:24.3378464Z   origin/ci/B-HC5-119-362-before
+2026-10-04T20:39:24.3386372Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-HC5-119-362-before
+2026-10-04T20:39:24.3404561Z 3069b97d5f4c2791859982b06f2cddc467fa2a83
+2026-10-04T20:39:24.3408322Z ##[endgroup]
+2026-10-04T20:39:24.3409708Z ##[group]Determining the checkout info
+2026-10-04T20:39:24.3411470Z ##[endgroup]
+2026-10-04T20:39:24.3412439Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T20:39:24.3454170Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T20:39:24.3477204Z ##[group]Checking out the ref
+2026-10-04T20:39:24.3479381Z [command]/usr/bin/git checkout --progress --force -B ci/B-HC5-119-362-before refs/remotes/origin/ci/B-HC5-119-362-before
+2026-10-04T20:39:24.4222163Z Switched to a new branch 'ci/B-HC5-119-362-before'
+2026-10-04T20:39:24.4225951Z branch 'ci/B-HC5-119-362-before' set up to track 'origin/ci/B-HC5-119-362-before'.
+2026-10-04T20:39:24.4233080Z ##[endgroup]
+2026-10-04T20:39:24.4268797Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T20:39:24.4287774Z 3069b97d5f4c2791859982b06f2cddc467fa2a83
+2026-10-04T20:39:24.4613906Z ##[group]Run actions/setup-node@v6
+2026-10-04T20:39:24.4614946Z with:
+2026-10-04T20:39:24.4615788Z   node-version: 22.13
+2026-10-04T20:39:24.4616875Z   cache: npm
+2026-10-04T20:39:24.4617758Z   check-latest: false
+2026-10-04T20:39:24.4625455Z   token: ***
+2026-10-04T20:39:24.4626299Z   package-manager-cache: true
+2026-10-04T20:39:24.4627437Z ##[endgroup]
+2026-10-04T20:39:24.5787592Z Attempting to download 22.13...
+2026-10-04T20:39:25.2870241Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-04T20:39:25.7491940Z Extracting ...
+2026-10-04T20:39:25.7587416Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/28638569-5f59-4551-b22a-d16129581463 -f /home/runner/work/_temp/478f1d7d-3afd-443b-8f88-63c09b470a2e
+2026-10-04T20:39:26.8409402Z Adding to the cache ...
+2026-10-04T20:39:28.6844335Z ##[group]Environment details
+2026-10-04T20:39:28.8592088Z node: v22.13.1
+2026-10-04T20:39:28.8592588Z npm: 10.9.2
+2026-10-04T20:39:28.8592950Z yarn: 1.22.22
+2026-10-04T20:39:28.8593603Z ##[endgroup]
+2026-10-04T20:39:28.8608313Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-04T20:39:28.9344109Z /home/runner/.npm
+2026-10-04T20:39:29.1014960Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T20:39:30.2815582Z Received 121634816 of 241027159 (50.5%), 116.0 MBs/sec
+2026-10-04T20:39:30.8454811Z Received 241027159 of 241027159 (100.0%), 147.0 MBs/sec
+2026-10-04T20:39:30.8457839Z Cache Size: ~230 MB (241027159 B)
+2026-10-04T20:39:30.8557670Z [command]/usr/bin/tar -xf /home/runner/work/_temp/22b3097a-7ab3-4d12-95d1-13ad0cd87e7f/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-04T20:39:31.2096696Z Cache restored successfully
+2026-10-04T20:39:31.2187356Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T20:39:31.2337811Z ##[group]Run npm ci
+2026-10-04T20:39:31.2338172Z npm ci
+2026-10-04T20:39:31.2511973Z shell: /usr/bin/bash -e {0}
+2026-10-04T20:39:31.2512471Z ##[endgroup]
+2026-10-04T20:39:35.3511790Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T20:39:35.4966968Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-04T20:39:35.5075896Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-04T20:39:35.5112324Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-04T20:39:35.5276079Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-04T20:39:35.6203626Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-04T20:39:35.6234157Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:39:35.6239200Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:39:35.6253654Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:39:35.6256053Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:39:35.6271563Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:39:35.6548647Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:39:35.6920993Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-04T20:39:36.0194448Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-04T20:39:36.5306720Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-04T20:39:39.5991902Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-04T20:40:20.1176932Z 
+2026-10-04T20:40:20.1178307Z added 1108 packages, and audited 1109 packages in 49s
+2026-10-04T20:40:20.1178813Z 
+2026-10-04T20:40:20.1181063Z 187 packages are looking for funding
+2026-10-04T20:40:20.1181779Z   run `npm fund` for details
+2026-10-04T20:40:20.4013575Z 
+2026-10-04T20:40:20.4014648Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-04T20:40:20.4015051Z 
+2026-10-04T20:40:20.4015362Z To address issues that do not require attention, run:
+2026-10-04T20:40:20.4016801Z   npm audit fix
+2026-10-04T20:40:20.4017108Z 
+2026-10-04T20:40:20.4017420Z To address all issues (including breaking changes), run:
+2026-10-04T20:40:20.4017981Z   npm audit fix --force
+2026-10-04T20:40:20.4018305Z 
+2026-10-04T20:40:20.4018479Z Run `npm audit` for details.
+2026-10-04T20:40:20.5121017Z ##[group]Run set -euo pipefail
+2026-10-04T20:40:20.5121470Z set -euo pipefail
+2026-10-04T20:40:20.5122011Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T20:40:20.5122496Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T20:40:20.5122854Z echo "specs: ${SPECS[*]}"
+2026-10-04T20:40:20.5123204Z npx jest --ci "${SPECS[@]}"
+2026-10-04T20:40:20.5165883Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T20:40:20.5166335Z ##[endgroup]
+2026-10-04T20:40:20.5242353Z specs: src/hooks/useWearableConnections.sessionEpoch.test.tsx src/hooks/useWearableConnections.transport.test.tsx src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
+2026-10-04T20:40:25.1764025Z FAIL src/hooks/useWearableConnections.transport.test.tsx
+2026-10-04T20:40:25.1765769Z   ● Sol119 real transport switch=true: A Disconnect cannot leave with B Authorization
+2026-10-04T20:40:25.1791354Z 
+2026-10-04T20:40:25.1792388Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:40:25.1793038Z 
+2026-10-04T20:40:25.1795837Z     - Expected  - 1
+2026-10-04T20:40:25.1796513Z     + Received  + 6
+2026-10-04T20:40:25.1797140Z 
+2026-10-04T20:40:25.1797528Z     - Array []
+2026-10-04T20:40:25.1798011Z     + Array [
+2026-10-04T20:40:25.1798515Z     +   Object {
+2026-10-04T20:40:25.1799659Z     +     "authorization": "***",
+2026-10-04T20:40:25.1800636Z     +     "url": "/v1/wearables/connections/HEALTH_CONNECT",
+2026-10-04T20:40:25.1801244Z     +   },
+2026-10-04T20:40:25.1801748Z     + ]
+2026-10-04T20:40:25.1819169Z 
+2026-10-04T20:40:25.1820457Z       91 |     await view.unmount();
+2026-10-04T20:40:25.1822173Z       92 |     qc.clear();
+2026-10-04T20:40:25.1823380Z     > 93 |     expect(dispatched).toEqual(switchAccount ? [] : [{
+2026-10-04T20:40:25.1824437Z          |                        ^
+2026-10-04T20:40:25.1825580Z       94 |       authorization: '***',
+2026-10-04T20:40:25.1826738Z       95 |       url: '/v1/wearables/connections/HEALTH_CONNECT',
+2026-10-04T20:40:25.1827586Z       96 |     }]);
+2026-10-04T20:40:25.1827954Z 
+2026-10-04T20:40:25.1828381Z       at toEqual (src/hooks/useWearableConnections.transport.test.tsx:93:24)
+2026-10-04T20:40:25.1829482Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.1830415Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.1830915Z 
+2026-10-04T20:40:25.1831675Z   ● B-HC5-119 token attachment held, switch=true: the request leaves only for the session it started in
+2026-10-04T20:40:25.1832363Z 
+2026-10-04T20:40:25.1832707Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:40:25.1833191Z 
+2026-10-04T20:40:25.1833473Z     - Expected  - 1
+2026-10-04T20:40:25.1833983Z     + Received  + 3
+2026-10-04T20:40:25.1834314Z 
+2026-10-04T20:40:25.1834583Z     - Array []
+2026-10-04T20:40:25.1835076Z     + Array [
+2026-10-04T20:40:25.1835684Z     +   "***",
+2026-10-04T20:40:25.1836120Z     + ]
+2026-10-04T20:40:25.1836783Z 
+2026-10-04T20:40:25.1837427Z       141 |     await view.unmount();
+2026-10-04T20:40:25.1838334Z       142 |     qc.clear();
+2026-10-04T20:40:25.1839602Z     > 143 |     expect(dispatched).toEqual(switchAccount ? [] : ['***']);
+2026-10-04T20:40:25.1840616Z           |                        ^
+2026-10-04T20:40:25.1842205Z       144 |     expect(switchAccount ? isOnDeviceStop(outcome) : outcome).toBe(switchAccount ? true : 'resolved');
+2026-10-04T20:40:25.1843349Z       145 |   },
+2026-10-04T20:40:25.1843919Z       146 | );
+2026-10-04T20:40:25.1844465Z 
+2026-10-04T20:40:25.1844882Z       at toEqual (src/hooks/useWearableConnections.transport.test.tsx:143:24)
+2026-10-04T20:40:25.1845758Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.1846858Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.1847403Z 
+2026-10-04T20:40:25.3282989Z FAIL src/hooks/useWearableConnections.sessionEpoch.test.tsx
+2026-10-04T20:40:25.3489292Z   ● Console
+2026-10-04T20:40:25.3489789Z 
+2026-10-04T20:40:25.3490362Z     console.error
+2026-10-04T20:40:25.3513487Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-04T20:40:25.3514288Z       
+2026-10-04T20:40:25.3515068Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-04T20:40:25.3515867Z       
+2026-10-04T20:40:25.3516328Z       act(() => {
+2026-10-04T20:40:25.3517124Z         /* fire events that update state */
+2026-10-04T20:40:25.3517679Z       });
+2026-10-04T20:40:25.3518130Z       /* assert on the output */
+2026-10-04T20:40:25.3518863Z       
+2026-10-04T20:40:25.3522572Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-04T20:40:25.3523423Z 
+2026-10-04T20:40:25.3523976Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-04T20:40:25.3525006Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-04T20:40:25.3526121Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-04T20:40:25.3527513Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T20:40:25.3528430Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+2026-10-04T20:40:25.3529275Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+2026-10-04T20:40:25.3529932Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+2026-10-04T20:40:25.3530556Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+2026-10-04T20:40:25.3531087Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+2026-10-04T20:40:25.3531458Z           at Array.forEach (<anonymous>)
+2026-10-04T20:40:25.3531874Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+2026-10-04T20:40:25.3532413Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+2026-10-04T20:40:25.3532976Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+2026-10-04T20:40:25.3533362Z 
+2026-10-04T20:40:25.3533510Z     console.error
+2026-10-04T20:40:25.3533989Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-04T20:40:25.3534524Z       
+2026-10-04T20:40:25.3535051Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-04T20:40:25.3535637Z       
+2026-10-04T20:40:25.3535946Z       act(() => {
+2026-10-04T20:40:25.3536402Z         /* fire events that update state */
+2026-10-04T20:40:25.3537010Z       });
+2026-10-04T20:40:25.3537357Z       /* assert on the output */
+2026-10-04T20:40:25.3537802Z       
+2026-10-04T20:40:25.3538612Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-04T20:40:25.3539288Z 
+2026-10-04T20:40:25.3539659Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-04T20:40:25.3540593Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-04T20:40:25.3541956Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-04T20:40:25.3543396Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T20:40:25.3544398Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+2026-10-04T20:40:25.3545395Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+2026-10-04T20:40:25.3546238Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+2026-10-04T20:40:25.3547192Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+2026-10-04T20:40:25.3547887Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+2026-10-04T20:40:25.3548473Z           at Array.forEach (<anonymous>)
+2026-10-04T20:40:25.3549128Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+2026-10-04T20:40:25.3549937Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+2026-10-04T20:40:25.3550817Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+2026-10-04T20:40:25.3551191Z 
+2026-10-04T20:40:25.3551322Z     console.error
+2026-10-04T20:40:25.3551734Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-04T20:40:25.3552091Z       
+2026-10-04T20:40:25.3552515Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-04T20:40:25.3552921Z       
+2026-10-04T20:40:25.3553145Z       act(() => {
+2026-10-04T20:40:25.3553549Z         /* fire events that update state */
+2026-10-04T20:40:25.3553878Z       });
+2026-10-04T20:40:25.3554191Z       /* assert on the output */
+2026-10-04T20:40:25.3554565Z       
+2026-10-04T20:40:25.3555330Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-04T20:40:25.3555933Z 
+2026-10-04T20:40:25.3556250Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-04T20:40:25.3557229Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-04T20:40:25.3558178Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-04T20:40:25.3559192Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T20:40:25.3560134Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+2026-10-04T20:40:25.3560972Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+2026-10-04T20:40:25.3561682Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+2026-10-04T20:40:25.3562391Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+2026-10-04T20:40:25.3563067Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+2026-10-04T20:40:25.3563696Z           at Array.forEach (<anonymous>)
+2026-10-04T20:40:25.3564247Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+2026-10-04T20:40:25.3564952Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+2026-10-04T20:40:25.3565754Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+2026-10-04T20:40:25.3566225Z 
+2026-10-04T20:40:25.3566365Z     console.error
+2026-10-04T20:40:25.3567142Z       An update to HookContainer inside a test was not wrapped in act(...).
+2026-10-04T20:40:25.3567639Z       
+2026-10-04T20:40:25.3568177Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-04T20:40:25.3568771Z       
+2026-10-04T20:40:25.3569081Z       act(() => {
+2026-10-04T20:40:25.3569494Z         /* fire events that update state */
+2026-10-04T20:40:25.3570515Z       });
+2026-10-04T20:40:25.3571132Z       /* assert on the output */
+2026-10-04T20:40:25.3571511Z       
+2026-10-04T20:40:25.3572235Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-04T20:40:25.3572949Z 
+2026-10-04T20:40:25.3573315Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-04T20:40:25.3574138Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-04T20:40:25.3575203Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-04T20:40:25.3576183Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T20:40:25.3577165Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+2026-10-04T20:40:25.3577808Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+2026-10-04T20:40:25.3578275Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+2026-10-04T20:40:25.3578830Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+2026-10-04T20:40:25.3579458Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+2026-10-04T20:40:25.3579957Z           at Array.forEach (<anonymous>)
+2026-10-04T20:40:25.3580459Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+2026-10-04T20:40:25.3581111Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+2026-10-04T20:40:25.3581912Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+2026-10-04T20:40:25.3582363Z 
+2026-10-04T20:40:25.3583298Z   ● useDisconnectProvider: session epoch and grant generation › Sol119 identity capture held, switch=true: an obsolete action never sends a new-session Disconnect
+2026-10-04T20:40:25.3584000Z 
+2026-10-04T20:40:25.3584236Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-04T20:40:25.3584542Z 
+2026-10-04T20:40:25.3584759Z     Expected number of calls: 0
+2026-10-04T20:40:25.3585238Z     Received number of calls: 1
+2026-10-04T20:40:25.3585481Z 
+2026-10-04T20:40:25.3585774Z        97 |         await pending;
+2026-10-04T20:40:25.3586339Z        98 |       });
+2026-10-04T20:40:25.3587702Z     >  99 |       expect(mockDisconnect).toHaveBeenCalledTimes(switchAccount ? 0 : 1);
+2026-10-04T20:40:25.3588610Z           |                              ^
+2026-10-04T20:40:25.3589253Z       100 |       if (switchAccount) {
+2026-10-04T20:40:25.3590407Z       101 |         expect((await getLocalAuthorization('user-b', scope.source))?.connectionId).toBe('conn-b');
+2026-10-04T20:40:25.3591428Z       102 |       }
+2026-10-04T20:40:25.3591623Z 
+2026-10-04T20:40:25.3592053Z       at toHaveBeenCalledTimes (src/hooks/useWearableConnections.sessionEpoch.test.tsx:99:30)
+2026-10-04T20:40:25.3593013Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.3593836Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.3594259Z 
+2026-10-04T20:40:25.3595154Z   ● useDisconnectProvider: session epoch and grant generation › Sol119 local grant capture held, switch=true: an obsolete action never sends a new-session Disconnect
+2026-10-04T20:40:25.3595874Z 
+2026-10-04T20:40:25.3596153Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-04T20:40:25.3596437Z 
+2026-10-04T20:40:25.3596777Z     Expected number of calls: 0
+2026-10-04T20:40:25.3597253Z     Received number of calls: 1
+2026-10-04T20:40:25.3597520Z 
+2026-10-04T20:40:25.3598068Z       127 |         await pending;
+2026-10-04T20:40:25.3598608Z       128 |       });
+2026-10-04T20:40:25.3599824Z     > 129 |       expect(mockDisconnect).toHaveBeenCalledTimes(switchAccount ? 0 : 1);
+2026-10-04T20:40:25.3600836Z           |                              ^
+2026-10-04T20:40:25.3601368Z       130 |     },
+2026-10-04T20:40:25.3601879Z       131 |   );
+2026-10-04T20:40:25.3602438Z       132 |
+2026-10-04T20:40:25.3602697Z 
+2026-10-04T20:40:25.3603079Z       at toHaveBeenCalledTimes (src/hooks/useWearableConnections.sessionEpoch.test.tsx:129:30)
+2026-10-04T20:40:25.3603993Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.3604821Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.3605252Z 
+2026-10-04T20:40:25.3606131Z   ● useDisconnectProvider: session epoch and grant generation › Sol119 cleanup enumeration held, new Connect=true: retirement cannot delete a newer consent
+2026-10-04T20:40:25.3607008Z 
+2026-10-04T20:40:25.3607343Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:40:25.3607695Z 
+2026-10-04T20:40:25.3607845Z     Expected: "conn-new"
+2026-10-04T20:40:25.3608232Z     Received: null
+2026-10-04T20:40:25.3608444Z 
+2026-10-04T20:40:25.3608870Z       148 |       enumeration.resolve(keys);
+2026-10-04T20:40:25.3609548Z       149 |       await retiring;
+2026-10-04T20:40:25.3610989Z     > 150 |       expect((await getLocalAuthorization(scope.userId, scope.source))?.connectionId ?? null).toBe(
+2026-10-04T20:40:25.3612420Z           |                                                                                               ^
+2026-10-04T20:40:25.3613361Z       151 |         reconnect ? 'conn-new' : null,
+2026-10-04T20:40:25.3614009Z       152 |       );
+2026-10-04T20:40:25.3614510Z       153 |     },
+2026-10-04T20:40:25.3614762Z 
+2026-10-04T20:40:25.3615164Z       at toBe (src/hooks/useWearableConnections.sessionEpoch.test.tsx:150:95)
+2026-10-04T20:40:25.3615927Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.3616935Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.3617283Z 
+2026-10-04T20:40:25.3618128Z   ● useDisconnectProvider: session epoch and grant generation › Sol119 no-session cleanup held, switch=true: late cleanup must not retire the next account
+2026-10-04T20:40:25.3618808Z 
+2026-10-04T20:40:25.3619172Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:40:25.3619478Z 
+2026-10-04T20:40:25.3619654Z     Expected: "new-b"
+2026-10-04T20:40:25.3619991Z     Received: null
+2026-10-04T20:40:25.3620260Z 
+2026-10-04T20:40:25.3620518Z       176 |       });
+2026-10-04T20:40:25.3621448Z       177 |       await new Promise((resolve) => setTimeout(resolve, 0));
+2026-10-04T20:40:25.3623106Z     > 178 |       expect((await getLocalAuthorization('user-b', scope.source))?.connectionId ?? null).toBe(
+2026-10-04T20:40:25.3624359Z           |                                                                                           ^
+2026-10-04T20:40:25.3625201Z       179 |         switchAccount ? 'new-b' : null,
+2026-10-04T20:40:25.3626056Z       180 |       );
+2026-10-04T20:40:25.3626513Z       181 |     },
+2026-10-04T20:40:25.3627170Z 
+2026-10-04T20:40:25.3627534Z       at toBe (src/hooks/useWearableConnections.sessionEpoch.test.tsx:178:91)
+2026-10-04T20:40:25.3628311Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.3629187Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.3629561Z 
+2026-10-04T20:40:25.3630420Z   ● useDisconnectProvider: session epoch and grant generation › an account switch during identity capture rejects with the session-change class and sends nothing
+2026-10-04T20:40:25.3631145Z 
+2026-10-04T20:40:25.3631487Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:40:25.3631800Z 
+2026-10-04T20:40:25.3631972Z     Expected: true
+2026-10-04T20:40:25.3632297Z     Received: false
+2026-10-04T20:40:25.3632575Z 
+2026-10-04T20:40:25.3632968Z       202 |       await pending;
+2026-10-04T20:40:25.3633517Z       203 |     });
+2026-10-04T20:40:25.3634416Z     > 204 |     expect(isOnDeviceStop(outcome)).toBe(true);
+2026-10-04T20:40:25.3635255Z           |                                     ^
+2026-10-04T20:40:25.3636081Z       205 |     expect(mockDisconnect).not.toHaveBeenCalled();
+2026-10-04T20:40:25.3637747Z       206 |     expect((await getLocalAuthorization('user-a', scope.source))?.connectionId).toBe('conn-a');
+2026-10-04T20:40:25.3638722Z       207 |   });
+2026-10-04T20:40:25.3639065Z 
+2026-10-04T20:40:25.3639469Z       at Object.toBe (src/hooks/useWearableConnections.sessionEpoch.test.tsx:204:37)
+2026-10-04T20:40:25.3640222Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.3640985Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.3641391Z 
+2026-10-04T20:40:25.3642229Z   ● useDisconnectProvider: session epoch and grant generation › a newer Connect during enumeration keeps its grant and its import progress
+2026-10-04T20:40:25.3642880Z 
+2026-10-04T20:40:25.3643168Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:40:25.3643520Z 
+2026-10-04T20:40:25.3643705Z     Expected: "conn-new"
+2026-10-04T20:40:25.3644052Z     Received: undefined
+2026-10-04T20:40:25.3644322Z 
+2026-10-04T20:40:25.3644921Z       219 |     enumeration.resolve(await AsyncStorage.getAllKeys());
+2026-10-04T20:40:25.3645780Z       220 |     await retiring;
+2026-10-04T20:40:25.3647491Z     > 221 |     expect((await getLocalAuthorization(scope.userId, scope.source))?.connectionId).toBe('conn-new');
+2026-10-04T20:40:25.3648844Z           |                                                                                     ^
+2026-10-04T20:40:25.3650268Z       222 |     expect((await getSyncProgress(fresh)).completedThrough.Steps).toBe('2026-10-02T00:00:00.000Z');
+2026-10-04T20:40:25.3651354Z       223 |   });
+2026-10-04T20:40:25.3651780Z       224 |
+2026-10-04T20:40:25.3652167Z 
+2026-10-04T20:40:25.3652546Z       at Object.toBe (src/hooks/useWearableConnections.sessionEpoch.test.tsx:221:85)
+2026-10-04T20:40:25.3653433Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.3654456Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.3654841Z 
+2026-10-04T20:40:25.3655497Z   ● useDisconnectProvider: session epoch and grant generation › no-session Disconnect retires every older grant but keeps one written after it started
+2026-10-04T20:40:25.3656393Z 
+2026-10-04T20:40:25.3656863Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:40:25.3657174Z 
+2026-10-04T20:40:25.3657304Z     Expected: "new-b"
+2026-10-04T20:40:25.3657680Z     Received: undefined
+2026-10-04T20:40:25.3657903Z 
+2026-10-04T20:40:25.3658255Z       240 |     });
+2026-10-04T20:40:25.3659172Z       241 |     await new Promise((resolve) => setTimeout(resolve, 0));
+2026-10-04T20:40:25.3660702Z     > 242 |     expect((await getLocalAuthorization('user-b', scope.source))?.connectionId).toBe('new-b');
+2026-10-04T20:40:25.3661796Z           |                                                                                 ^
+2026-10-04T20:40:25.3662817Z       243 |     expect(await getLocalAuthorization('user-c', scope.source)).toBeNull();
+2026-10-04T20:40:25.3663634Z       244 |   });
+2026-10-04T20:40:25.3664076Z       245 | });
+2026-10-04T20:40:25.3664363Z 
+2026-10-04T20:40:25.3664694Z       at Object.toBe (src/hooks/useWearableConnections.sessionEpoch.test.tsx:242:81)
+2026-10-04T20:40:25.3665533Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:25.3666228Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:25.3666763Z 
+2026-10-04T20:40:28.8680791Z FAIL src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx (6.933 s)
+2026-10-04T20:40:28.8682652Z   ● ConnectionsScreen — disconnect confirm (C-317-4) › Sol B-362-6: an account change before the request closes the dialog, with no copy or report
+2026-10-04T20:40:28.8683292Z 
+2026-10-04T20:40:28.8683418Z     expect(received).toBeNull()
+2026-10-04T20:40:28.8683611Z 
+2026-10-04T20:40:28.8684193Z     Received: <Text accessibilityRole="header" style={{"color": "#1A1A18", "fontFamily": "Inter_500Medium", "fontSize": 17, "fontWeight": "500", "letterSpacing": -0.1, "lineHeight": 22}}>Disconnect Oura?</Text>
+2026-10-04T20:40:28.8684750Z 
+2026-10-04T20:40:28.8684984Z       300 |     await openConfirm();
+2026-10-04T20:40:28.8685663Z       301 |     await fireEvent.press(screen.getByLabelText('Disconnect Oura now'));
+2026-10-04T20:40:28.8686518Z     > 302 |     expect(screen.queryByText('Disconnect Oura?')).toBeNull();
+2026-10-04T20:40:28.8687445Z           |                                                    ^
+2026-10-04T20:40:28.8688088Z       303 |     expect(screen.queryByText(/still connected/)).toBeNull();
+2026-10-04T20:40:28.8688787Z       304 |     expect(mockReportUnexpected).not.toHaveBeenCalled();
+2026-10-04T20:40:28.8689288Z       305 |   });
+2026-10-04T20:40:28.8689434Z 
+2026-10-04T20:40:28.8689789Z       at Object.toBeNull (src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx:302:52)
+2026-10-04T20:40:28.8690357Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T20:40:28.8690894Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T20:40:28.8691216Z 
+2026-10-04T20:40:29.3808795Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+2026-10-04T20:40:29.3831796Z Test Suites: 3 failed, 3 total
+2026-10-04T20:40:29.3833273Z Tests:       10 failed, 35 passed, 45 total
+2026-10-04T20:40:29.3833839Z Snapshots:   0 total
+2026-10-04T20:40:29.3834243Z Time:        8.038 s
+2026-10-04T20:40:29.3835600Z Ran all test suites matching /src\/hooks\/useWearableConnections.sessionEpoch.test.tsx|src\/hooks\/useWearableConnections.transport.test.tsx|src\/screens\/client\/wearables\/__tests__\/ConnectionsScreen.test.tsx/i.
+2026-10-04T20:40:29.4674136Z ##[error]Process completed with exit code 1.
+2026-10-04T20:40:29.4793865Z Post job cleanup.
+2026-10-04T20:40:29.5463827Z [command]/usr/bin/git version
+2026-10-04T20:40:29.5494000Z git version 2.55.0
+2026-10-04T20:40:29.5524168Z Temporarily overriding HOME='/home/runner/work/_temp/476c9262-4acd-479a-97ea-32218d2f0cdd' before making global git config changes
+2026-10-04T20:40:29.5525280Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:40:29.5529311Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T20:40:29.5553704Z Removing SSH command configuration
+2026-10-04T20:40:29.5559466Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:40:29.5589656Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:40:29.5757024Z Removing HTTP extra header
+2026-10-04T20:40:29.5761547Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:40:29.5789485Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:40:29.5957691Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:40:29.5964394Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:40:29.5989667Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T20:40:29.5990770Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T20:40:29.5991525Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:40:29.5992123Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:40:29.6008500Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T20:40:29.6014155Z /home/runner/work/_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:40:29.6022871Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:40:29.6051225Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T20:40:29.6068581Z /home/runner/work/_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:40:29.6076015Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:40:29.6101972Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:40:29.6124261Z /github/runner_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:40:29.6128244Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:40:29.6153638Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:40:29.6170122Z /github/runner_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:40:29.6176979Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config
+2026-10-04T20:40:29.6205001Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:40:29.6364983Z Removing credentials config '/home/runner/work/_temp/git-credentials-5af664fe-1544-4e8a-9136-447fb69899b7.config'
+2026-10-04T20:40:29.6503409Z Cleaning up orphan processes

@@ -1,0 +1,1069 @@
+diff --git a/prisma/migrations/20270301000000_community_win_coach_matcher/down.sql b/prisma/migrations/20270301000000_community_win_coach_matcher/down.sql
+new file mode 100644
+index 00000000..638ee9ad
+--- /dev/null
++++ b/prisma/migrations/20270301000000_community_win_coach_matcher/down.sql
+@@ -0,0 +1,63 @@
++-- Reverse of 20270301000000_community_win_coach_matcher.
++--
++-- Restores the 20270211000000 state exactly: authenticated may EXECUTE the
++-- coach lookup again (re-opening C-610-11), the INSERT policy and the
++-- moderation trigger call the lookup directly, and the matcher is dropped.
++-- No data is touched.
++GRANT EXECUTE ON FUNCTION app.community_win_author_coach(text) TO authenticated;
++COMMENT ON FUNCTION app.community_win_author_coach(text) IS
++  'A-610-2 round 5: the authoritative coach of a win author (the author for a coach, else User.coach_id; NULL for a deleted or unknown user). The only source of a win''s coach_id for a non-privileged writer.';
++
++DROP POLICY IF EXISTS "p_communitywin_insert" ON "CommunityWin";
++CREATE POLICY "p_communitywin_insert" ON "CommunityWin" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "visibility" = 'circle' AND ("user_id" = app.current_user_id() OR app.is_current_coach_of("user_id")) AND "coach_id" IS NOT DISTINCT FROM app.community_win_author_coach("user_id"))));
++COMMENT ON POLICY "p_communitywin_insert" ON "CommunityWin" IS
++  'A-610-2: the author (own path) or the author''s current coach (coach path) may insert a circle win whose coach_id is the author''s authoritative coach (app.community_win_author_coach); owner bypass. hidden_at is guarded by trg_community_win_guard_moderation.';
++
++CREATE OR REPLACE FUNCTION public.community_win_guard_moderation()
++RETURNS trigger
++LANGUAGE plpgsql
++SECURITY INVOKER
++SET search_path = pg_catalog, public, app, pg_temp
++AS $function$
++DECLARE
++  privileged boolean;
++BEGIN
++  SELECT COALESCE(r.rolbypassrls, false) OR r.rolsuper
++    INTO privileged
++    FROM pg_catalog.pg_roles r
++   WHERE r.rolname = current_user;
++  IF COALESCE(privileged, false) OR app.is_owner() THEN
++    RETURN NEW;
++  END IF;
++  IF TG_OP = 'INSERT' THEN
++    IF NEW."coach_id" IS DISTINCT FROM app.community_win_author_coach(NEW."user_id") THEN
++      RAISE EXCEPTION 'community.win.moderation_column: coach_id must be the author''s coach'
++        USING ERRCODE = '42501';
++    END IF;
++    IF NEW."hidden_at" IS NOT NULL THEN
++      RAISE EXCEPTION 'community.win.moderation_column: only a moderator can hide a win'
++        USING ERRCODE = '42501';
++    END IF;
++    RETURN NEW;
++  END IF;
++  IF NEW."user_id" IS DISTINCT FROM OLD."user_id"
++     OR NEW."coach_id" IS DISTINCT FROM OLD."coach_id"
++     OR NEW."visibility" IS DISTINCT FROM OLD."visibility" THEN
++    RAISE EXCEPTION 'community.win.moderation_column: author, coach and visibility cannot be changed'
++      USING ERRCODE = '42501';
++  END IF;
++  IF NEW."hidden_at" IS DISTINCT FROM OLD."hidden_at"
++     AND NOT (
++       app.current_user_id() IS NOT NULL
++       AND app.is_current_coach_of(OLD."user_id")
++     ) THEN
++    RAISE EXCEPTION 'community.win.moderation_column: only a moderator can hide or unhide a win'
++      USING ERRCODE = '42501';
++  END IF;
++  RETURN NEW;
++END
++$function$;
++
++REVOKE ALL ON FUNCTION public.community_win_guard_moderation() FROM PUBLIC, anon, authenticated;
++
++DROP FUNCTION IF EXISTS app.community_win_coach_matches(text, text);
+diff --git a/prisma/migrations/20270301000000_community_win_coach_matcher/migration.sql b/prisma/migrations/20270301000000_community_win_coach_matcher/migration.sql
+new file mode 100644
+index 00000000..9e7c5033
+--- /dev/null
++++ b/prisma/migrations/20270301000000_community_win_coach_matcher/migration.sql
+@@ -0,0 +1,105 @@
++-- C-610-11 (Opus + Sol, #610 audit carry; B-UGC-5, ruling OR-112-6):
++-- the coach lookup app.community_win_author_coach(text) is SECURITY DEFINER
++-- and was EXECUTE-granted to "authenticated", so any signed-in database role
++-- could resolve ANY user id to that user's coach (a cross-tenant lookup) if
++-- the "app" schema were ever exposed over the Data API. The backend connects
++-- as service_role (BYPASSRLS) and is unaffected.
++--
++-- Fix, same behaviour for every legitimate writer:
++--   1. A boolean matcher app.community_win_coach_matches(author, coach)
++--      answers only "is this the author's authoritative coach?" and only for
++--      a caller who is the author or the author's current coach (the same two
++--      principals the INSERT policy admits). For anyone else it is FALSE, so
++--      it can never be used to look up, or confirm, a stranger's coach.
++--   2. The INSERT policy on "CommunityWin" and the moderation trigger use the
++--      matcher instead of the lookup. Policy text is otherwise unchanged.
++--   3. EXECUTE on the lookup is revoked from "authenticated"; it stays for
++--      service_role and for the SECURITY DEFINER helpers that call it
++--      (app.community_win_teammate_visible, the matcher), which run as the
++--      function owner.
++-- No table, column or data change. Additive and safe for the running code.
++
++CREATE OR REPLACE FUNCTION app.community_win_coach_matches(p_author_id text, p_coach_id text)
++RETURNS boolean
++LANGUAGE sql
++STABLE
++SECURITY DEFINER
++SET search_path = pg_catalog, public, app, pg_temp
++AS $function$
++  SELECT COALESCE(
++    app.current_user_id() IS NOT NULL
++    AND p_author_id IS NOT NULL
++    AND (p_author_id = app.current_user_id() OR app.is_current_coach_of(p_author_id))
++    AND p_coach_id IS NOT DISTINCT FROM app.community_win_author_coach(p_author_id),
++    false
++  )
++$function$;
++
++COMMENT ON FUNCTION app.community_win_coach_matches(text, text) IS
++  'C-610-11: TRUE when p_coach_id is the authoritative coach of p_author_id (app.community_win_author_coach) AND the caller is that author or the author''s current coach; FALSE otherwise. Never returns the coach id, so it cannot be used to look up a stranger''s coach.';
++
++REVOKE ALL ON FUNCTION app.community_win_coach_matches(text, text) FROM PUBLIC;
++REVOKE EXECUTE ON FUNCTION app.community_win_coach_matches(text, text) FROM anon;
++GRANT EXECUTE ON FUNCTION app.community_win_coach_matches(text, text) TO authenticated, service_role;
++
++DROP POLICY IF EXISTS "p_communitywin_insert" ON "CommunityWin";
++CREATE POLICY "p_communitywin_insert" ON "CommunityWin" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "visibility" = 'circle' AND ("user_id" = app.current_user_id() OR app.is_current_coach_of("user_id")) AND app.community_win_coach_matches("user_id", "coach_id"))));
++COMMENT ON POLICY "p_communitywin_insert" ON "CommunityWin" IS
++  'A-610-2 / C-610-11: the author (own path) or the author''s current coach (coach path) may insert a circle win whose coach_id is the author''s authoritative coach (app.community_win_coach_matches); owner bypass. hidden_at is guarded by trg_community_win_guard_moderation.';
++
++CREATE OR REPLACE FUNCTION public.community_win_guard_moderation()
++RETURNS trigger
++LANGUAGE plpgsql
++SECURITY INVOKER
++SET search_path = pg_catalog, public, app, pg_temp
++AS $function$
++DECLARE
++  privileged boolean;
++BEGIN
++  SELECT COALESCE(r.rolbypassrls, false) OR r.rolsuper
++    INTO privileged
++    FROM pg_catalog.pg_roles r
++   WHERE r.rolname = current_user;
++  IF COALESCE(privileged, false) OR app.is_owner() THEN
++    RETURN NEW;
++  END IF;
++  IF TG_OP = 'INSERT' THEN
++    -- C-610-11: the boolean matcher, not the coach lookup (which the
++    -- authenticated role can no longer execute).
++    IF NOT app.community_win_coach_matches(NEW."user_id", NEW."coach_id") THEN
++      RAISE EXCEPTION 'community.win.moderation_column: coach_id must be the author''s coach'
++        USING ERRCODE = '42501';
++    END IF;
++    IF NEW."hidden_at" IS NOT NULL THEN
++      RAISE EXCEPTION 'community.win.moderation_column: only a moderator can hide a win'
++        USING ERRCODE = '42501';
++    END IF;
++    RETURN NEW;
++  END IF;
++  -- UPDATE: the moderator (the author's current coach, from the live
++  -- relationship, never from the writable coach_id) may hide and unhide;
++  -- nobody but a privileged role may move a win between authors or coaches,
++  -- or change its visibility.
++  IF NEW."user_id" IS DISTINCT FROM OLD."user_id"
++     OR NEW."coach_id" IS DISTINCT FROM OLD."coach_id"
++     OR NEW."visibility" IS DISTINCT FROM OLD."visibility" THEN
++    RAISE EXCEPTION 'community.win.moderation_column: author, coach and visibility cannot be changed'
++      USING ERRCODE = '42501';
++  END IF;
++  IF NEW."hidden_at" IS DISTINCT FROM OLD."hidden_at"
++     AND NOT (
++       app.current_user_id() IS NOT NULL
++       AND app.is_current_coach_of(OLD."user_id")
++     ) THEN
++    RAISE EXCEPTION 'community.win.moderation_column: only a moderator can hide or unhide a win'
++      USING ERRCODE = '42501';
++  END IF;
++  RETURN NEW;
++END
++$function$;
++
++REVOKE ALL ON FUNCTION public.community_win_guard_moderation() FROM PUBLIC, anon, authenticated;
++
++REVOKE EXECUTE ON FUNCTION app.community_win_author_coach(text) FROM authenticated;
++COMMENT ON FUNCTION app.community_win_author_coach(text) IS
++  'A-610-2 round 5: the authoritative coach of a win author (the author for a coach, else User.coach_id; NULL for a deleted or unknown user). C-610-11: not executable by anon or authenticated; API-role SQL uses app.community_win_coach_matches.';
+diff --git a/src/community/voice/__tests__/community-voice.service.spec.ts b/src/community/voice/__tests__/community-voice.service.spec.ts
+index e037d91e..68e4cd5d 100644
+--- a/src/community/voice/__tests__/community-voice.service.spec.ts
++++ b/src/community/voice/__tests__/community-voice.service.spec.ts
+@@ -36,8 +36,7 @@ type RepoMock = {
+   findByStorageKey: jest.Mock;
+   createVoiceNote: jest.Mock;
+   findById: jest.Mock;
+-  softDelete: jest.Mock;
+-  softDeleteSearchEntries: jest.Mock;
++  softDeleteWithErasure: jest.Mock;
+   list: jest.Mock;
+   recordErasure: jest.Mock;
+   attemptErasure: jest.Mock;
+@@ -124,8 +123,9 @@ describe('CommunityVoiceService', () => {
+       findByStorageKey: jest.fn().mockResolvedValue(null),
+       createVoiceNote: jest.fn().mockResolvedValue(note()),
+       findById: jest.fn().mockResolvedValue(note()),
+-      softDelete: jest.fn().mockResolvedValue(undefined),
+-      softDeleteSearchEntries: jest.fn().mockResolvedValue(undefined),
++      softDeleteWithErasure: jest.fn(async (n: { storage_key: string }) => [
++        { id: 'erasure-0', kind: 'object', target: n.storage_key, attempts: 0 },
++      ]),
+       list: jest.fn().mockResolvedValue({ items: [note()], nextCursor: null }),
+       recordErasure: jest.fn(async (keys: string[]) =>
+         keys.map((k, i) => ({ id: `erasure-${i}`, kind: 'object', target: k, attempts: 0 })),
+@@ -306,31 +306,40 @@ describe('CommunityVoiceService', () => {
+     it('lets the author soft-delete their note', async () => {
+       const res = await service.delete(member, NOTE_A);
+       expect(res).toEqual({ deleted: true });
+-      expect(repo.softDelete).toHaveBeenCalledWith(NOTE_A, expect.any(Date));
++      expect(repo.softDeleteWithErasure).toHaveBeenCalledWith(
++        expect.objectContaining({ id: NOTE_A, storage_key: note().storage_key }),
++        'author_delete',
++      );
+     });
+ 
+-    it('records the recording erasure durably BEFORE the soft delete, then tries it (B-610-5 round 5)', async () => {
++    it('commits the erasure work and the soft delete together, then tries storage (C-610-10)', async () => {
+       const order: string[] = [];
+-      repo.recordErasure.mockImplementation(async (keys: string[]) => {
+-        order.push('record');
+-        return keys.map((k) => ({ id: 'e1', kind: 'object', target: k, attempts: 0 }));
+-      });
+-      repo.softDelete.mockImplementation(async () => {
+-        order.push('softDelete');
++      repo.softDeleteWithErasure.mockImplementation(async (n: { storage_key: string }) => {
++        order.push('erasure+softDelete (one transaction)');
++        return [{ id: 'e1', kind: 'object', target: n.storage_key, attempts: 0 }];
+       });
+       repo.attemptErasure.mockImplementation(async () => {
+         order.push('attempt');
+         return { completed: 0, pending: 1 };
+       });
+       await expect(service.delete(member, NOTE_A)).resolves.toEqual({ deleted: true });
+-      expect(order).toEqual(['record', 'softDelete', 'attempt']);
+-      expect(repo.recordErasure).toHaveBeenCalledWith([note().storage_key], 'author_delete');
++      expect(order).toEqual(['erasure+softDelete (one transaction)', 'attempt']);
++      expect(repo.recordErasure).not.toHaveBeenCalled();
++      expect(repo.attemptErasure).toHaveBeenCalledWith(upload, [
++        { id: 'e1', kind: 'object', target: note().storage_key, attempts: 0 },
++      ]);
+     });
+ 
+-    it('a failed erasure record fails the delete before anything is soft-deleted', async () => {
+-      repo.recordErasure.mockRejectedValue(new Error('db down'));
++    it('a failed delete transaction fails the delete and never calls storage', async () => {
++      repo.softDeleteWithErasure.mockRejectedValue(new Error('db down'));
+       await expect(service.delete(member, NOTE_A)).rejects.toThrow('db down');
+-      expect(repo.softDelete).not.toHaveBeenCalled();
++      expect(repo.attemptErasure).not.toHaveBeenCalled();
++    });
++
++    it('an erasure attempt that throws after the commit still answers deleted; the cron owns it (C-610-10)', async () => {
++      repo.attemptErasure.mockRejectedValue(new Error('erasure table timeout'));
++      await expect(service.delete(member, NOTE_A)).resolves.toEqual({ deleted: true });
++      expect(repo.softDeleteWithErasure).toHaveBeenCalledTimes(1);
+     });
+ 
+     it('lets a workspace coach soft-delete a member note', async () => {
+@@ -348,13 +357,13 @@ describe('CommunityVoiceService', () => {
+           message: expect.any(String),
+         }),
+       );
+-      expect(repo.softDelete).not.toHaveBeenCalled();
++      expect(repo.softDeleteWithErasure).not.toHaveBeenCalled();
+     });
+ 
+     it('404s (not 403) a non-member, so a note id cannot be probed', async () => {
+       access.canAccessCohort.mockResolvedValue(false);
+       await expect(service.delete(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+-      expect(repo.softDelete).not.toHaveBeenCalled();
++      expect(repo.softDeleteWithErasure).not.toHaveBeenCalled();
+     });
+ 
+     it('404s a member in a block relation with the author (either direction)', async () => {
+@@ -362,12 +371,14 @@ describe('CommunityVoiceService', () => {
+       // @ts-expect-error mocks are partial implementations of the injected deps
+       const blocked = new CommunityVoiceService(access, repo, upload, realtime, analytics, safetyWithBlocks([[MEMBER_ID, STRANGER_ID]]));
+       await expect(blocked.delete(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+-      expect(repo.softDelete).not.toHaveBeenCalled();
++      expect(repo.softDeleteWithErasure).not.toHaveBeenCalled();
+     });
+ 
+-    it('also hides the note from search when the author deletes it', async () => {
++    it('also hides the note from search when the author deletes it (same transaction)', async () => {
+       await service.delete(member, NOTE_A);
+-      expect(repo.softDeleteSearchEntries).toHaveBeenCalledWith(NOTE_A, expect.any(Date));
++      // The search row is soft-deleted inside softDeleteWithErasure; the
++      // in-memory transaction spec (community-ugc-b5.spec.ts) proves it.
++      expect(repo.softDeleteWithErasure).toHaveBeenCalledTimes(1);
+     });
+ 
+     it('404s an already-deleted note', async () => {
+diff --git a/src/community/voice/community-voice.repository.ts b/src/community/voice/community-voice.repository.ts
+index 632e174e..f3519263 100644
+--- a/src/community/voice/community-voice.repository.ts
++++ b/src/community/voice/community-voice.repository.ts
+@@ -114,13 +114,6 @@ export class CommunityVoiceRepository {
+     return this.prisma.communityVoiceNote.findUnique({ where: { id } });
+   }
+ 
+-  async softDelete(id: string, at: Date): Promise<void> {
+-    await this.prisma.communityVoiceNote.update({
+-      where: { id },
+-      data: { soft_deleted_at: at },
+-    });
+-  }
+-
+   /**
+    * B-610-5 round 5: durably record the recording erasure BEFORE the row is
+    * soft-deleted or storage is called (see voice-erasure.ts).
+@@ -129,6 +122,38 @@ export class CommunityVoiceRepository {
+     return recordVoiceErasures(this.prisma, objectTargets(storageKeys), reason);
+   }
+ 
++  /**
++   * C-610-10 (author-delete half): record the recording erasure AND soft-delete
++   * the note and its search row in ONE transaction, then return the work so
++   * the caller can try storage after the commit.
++   *
++   * Before this, the erasure row committed first and the soft delete second:
++   * a crash (or a failed write) between them left a LIVE note whose recording
++   * the retry cron would then erase, so it stopped playing. Now either all
++   * three writes commit, or none do and the member's delete fails visibly
++   * with nothing changed. Storage is never called inside the transaction.
++   * Idempotent: a note that is already soft-deleted keeps its first
++   * soft_deleted_at.
++   */
++  async softDeleteWithErasure(
++    note: Pick<CommunityVoiceNote, 'id' | 'storage_key'>,
++    reason: VoiceErasureReason,
++    at: Date = new Date(),
++  ): Promise<VoiceErasureRow[]> {
++    return this.prisma.$transaction(async (tx) => {
++      const work = await recordVoiceErasures(tx, objectTargets([note.storage_key]), reason, at);
++      await tx.communityVoiceNote.updateMany({
++        where: { id: note.id, soft_deleted_at: null },
++        data: { soft_deleted_at: at },
++      });
++      await tx.communitySearchEntry.updateMany({
++        where: { kind: 'voice_note_transcript', targetId: note.id, softDeletedAt: null },
++        data: { softDeletedAt: at },
++      });
++      return work;
++    });
++  }
++
+   /** Try the recorded erasure now; an unverified row stays open for the retry cron. */
+   async attemptErasure(
+     storage: VoiceErasureStorage,
+@@ -137,14 +162,6 @@ export class CommunityVoiceRepository {
+     return attemptVoiceErasures(this.prisma, storage, rows);
+   }
+ 
+-  /** Hide any search row for a deleted note (defence in depth). */
+-  async softDeleteSearchEntries(id: string, at: Date): Promise<void> {
+-    await this.prisma.communitySearchEntry.updateMany({
+-      where: { kind: 'voice_note_transcript', targetId: id, softDeletedAt: null },
+-      data: { softDeletedAt: at },
+-    });
+-  }
+-
+   /**
+    * List voice notes most-recent-first. A coach/owner sees every non-deleted
+    * note in the workspace (optionally narrowed to a cohort/conversation); a
+diff --git a/src/community/voice/community-voice.service.ts b/src/community/voice/community-voice.service.ts
+index 86166c97..f539eed7 100644
+--- a/src/community/voice/community-voice.service.ts
++++ b/src/community/voice/community-voice.service.ts
+@@ -589,12 +589,14 @@ export class CommunityVoiceService {
+    * read the note gets the same 404 as a missing note (no existence leak); a
+    * member who can read it but did not record it gets 403 VOICE_NOT_AUTHOR.
+    *
+-   * B-610-5: the erasure of the recording is recorded durably first
+-   * (community_voice_erasures), then the note and its search row are
+-   * soft-deleted (no read path, queue or search shows it and nothing signs it
+-   * again), then the object is erased and the removal verified. A storage
+-   * outage leaves the erasure open and VoiceErasureService retries it until
+-   * verified, so "deleted" is never a recording left behind.
++   * B-610-5 / C-610-10: the erasure of the recording (community_voice_erasures)
++   * and the soft delete of the note and its search row (no read path, queue
++   * or search shows it and nothing signs it again) commit in ONE transaction;
++   * only after that commit is the object erased and the removal verified. A
++   * crash can therefore never leave a live note whose recording the retry
++   * cron erases. A storage outage leaves the erasure open and
++   * VoiceErasureService retries it until verified, so "deleted" is never a
++   * recording left behind.
+    */
+   async delete(user: User, voiceNoteId: string): Promise<{ deleted: true }> {
+     const own = await this.repo.findById(voiceNoteId);
+@@ -618,19 +620,15 @@ export class CommunityVoiceService {
+     return { deleted: true };
+   }
+ 
+-  /** Record the erasure durably, soft-delete the rows, then erase + verify. */
++  /**
++   * One transaction records the erasure and soft-deletes the rows
++   * (C-610-10); storage is tried only after it commits.
++   */
+   private async deleteAndErase(row: CommunityVoiceNote): Promise<void> {
+-    const work = await this.repo.recordErasure([row.storage_key], 'author_delete');
+-    await this.softDeleteNote(row);
++    const work = await this.repo.softDeleteWithErasure(row, 'author_delete');
+     await this.runErasure(row, work);
+   }
+ 
+-  private async softDeleteNote(row: CommunityVoiceNote): Promise<void> {
+-    const at = new Date();
+-    await this.repo.softDelete(row.id, at);
+-    await this.repo.softDeleteSearchEntries(row.id, at);
+-  }
+-
+   /** Re-open (or create) the durable erasure for an already-deleted note and try it. */
+   private async eraseRecording(row: CommunityVoiceNote): Promise<void> {
+     const work = await this.repo.recordErasure([row.storage_key], 'author_delete');
+@@ -641,10 +639,19 @@ export class CommunityVoiceService {
+     row: CommunityVoiceNote,
+     work: Awaited<ReturnType<CommunityVoiceRepository['recordErasure']>>,
+   ): Promise<void> {
+-    const outcome = await this.repo.attemptErasure(this.upload, work);
+-    if (outcome.pending > 0) {
+-      this.logger.warn(
+-        `voice note ${row.id}: recording removal not yet verified; erasure recorded and retried by VoiceErasureService`,
++    try {
++      const outcome = await this.repo.attemptErasure(this.upload, work);
++      if (outcome.pending > 0) {
++        this.logger.warn(
++          `voice note ${row.id}: recording removal not yet verified; erasure recorded and retried by VoiceErasureService`,
++        );
++      }
++    } catch (err) {
++      // The delete and its erasure work are already committed (C-610-10), so
++      // the member's delete succeeded; the retry cron owns the erasure from
++      // here (same rule as a moderation Hide/Ban after commit).
++      this.logger.error(
++        `voice note ${row.id}: erasure attempt failed after commit (${(err as Error).message}); VoiceErasureService retries it`,
+       );
+     }
+   }
+diff --git a/src/community/voice/voice-erasure.ts b/src/community/voice/voice-erasure.ts
+index 3177d8d6..a399dc74 100644
+--- a/src/community/voice/voice-erasure.ts
++++ b/src/community/voice/voice-erasure.ts
+@@ -15,7 +15,12 @@ import { VoiceUploadProvider } from './voice-upload.provider';
+  * storage are touched:
+  *
+  *  1. recordVoiceErasures(): upsert one row per exact key (kind 'object') or
+- *     owner folder (kind 'owner_folder'). A completed row is re-opened.
++ *     owner folder (kind 'owner_folder'). A completed row is re-opened as a
++ *     new intent: its failure count, last error and reason start fresh
++ *     (C-610-12), so its first failure backs off 1 minute, not from the old
++ *     count. A row that is still open keeps its count (the same work is
++ *     still failing; the >= 10 attempts error log must not be reset by a
++ *     retried request) and is only made due now.
+  *  2. attemptVoiceErasures(): try now. A row is completed ONLY after a
+  *     verified removal: the exact object reads back missing, or the owner
+  *     folder lists empty. Anything else (storage error, object still there,
+@@ -94,6 +99,13 @@ export async function recordVoiceErasures(
+     const k = `${t.kind}|${t.target}`;
+     if (seen.has(k)) continue;
+     seen.add(k);
++    // C-610-12: re-opening COMPLETED work is a genuinely new intent, so it
++    // starts with a clean failure count. Conditional on completed_at, so it
++    // never resets work that is still open (and still failing).
++    await db.communityVoiceErasure.updateMany({
++      where: { kind: t.kind, target: t.target, completed_at: { not: null } },
++      data: { completed_at: null, attempts: 0, last_error: null, reason, next_attempt_at: now },
++    });
+     const row = await db.communityVoiceErasure.upsert({
+       where: { kind_target: { kind: t.kind, target: t.target } },
+       create: { kind: t.kind, target: t.target, reason, next_attempt_at: now },
+diff --git a/test/account-deletion.voice-erasure.spec.ts b/test/account-deletion.voice-erasure.spec.ts
+index 7fcb674b..34a9acb4 100644
+--- a/test/account-deletion.voice-erasure.spec.ts
++++ b/test/account-deletion.voice-erasure.spec.ts
+@@ -39,9 +39,22 @@ const USER_ID = '66666666-6666-4666-8666-666666666666';
+ const KEY_A = `${USER_ID}/1700000000000-0123456789abcdef.m4a`;
+ const KEY_B = `${USER_ID}/1700000000001-0123456789abcdef-0123456789abcdef0123456789abcdef.m4a`;
+ 
+-type Call = { delegate: string; method: string; args: unknown };
++/**
++ * One recorded call. `tx` is the id of the interactive transaction it ran in
++ * (undefined = outside any transaction); `rolledBack` marks a call whose
++ * transaction threw, so it never committed. Storage calls are logged as
++ * delegate 'storage' so their order against the database writes can be
++ * asserted (C-610-10, ported from #652 17606f6c).
++ */
++type Call = { delegate: string; method: string; args: unknown; tx?: number; rolledBack?: boolean };
++type TxState = { current: number | undefined };
+ 
+-function recordingPrisma(calls: Call[], opts: { failErasureRecord?: boolean } = {}) {
++function recordingPrisma(
++  calls: Call[],
++  opts: { failErasureRecord?: boolean; failNoteDelete?: boolean; txState?: TxState } = {},
++) {
++  let txSeq = 0;
++  const txState = opts.txState ?? { current: undefined };
+   const locked = {
+     id: USER_ID,
+     role: 'student',
+@@ -58,7 +71,10 @@ function recordingPrisma(calls: Call[], opts: { failErasureRecord?: boolean } =
+         get: (_t, method: string) => {
+           if (method === 'then') return undefined;
+           return jest.fn(async (args: unknown) => {
+-            calls.push({ delegate: name, method, args });
++            calls.push({ delegate: name, method, args, tx: txState.current });
++            if (opts.failNoteDelete && name === 'communityVoiceNote' && method === 'deleteMany') {
++              throw new Error('voice note table locked');
++            }
+             if (name === 'communityVoiceErasure' && method === 'upsert') {
+               if (opts.failErasureRecord) throw new Error('erasure table unavailable');
+               const create = (args as { create: { kind: string; target: string } }).create;
+@@ -84,7 +100,18 @@ function recordingPrisma(calls: Call[], opts: { failErasureRecord?: boolean } =
+       get: (_t, prop: string) => {
+         if (prop === 'then') return undefined;
+         if (prop === '$transaction') {
+-          return async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma);
++          return async (fn: (tx: unknown) => Promise<unknown>) => {
++            const id = ++txSeq;
++            txState.current = id;
++            try {
++              return await fn(prisma);
++            } catch (error) {
++              for (const c of calls) if (c.tx === id) c.rolledBack = true;
++              throw error;
++            } finally {
++              txState.current = undefined;
++            }
++          };
+         }
+         if (prop === '$queryRaw') {
+           return jest.fn(async (strings: TemplateStringsArray) => {
+@@ -102,12 +129,20 @@ function recordingPrisma(calls: Call[], opts: { failErasureRecord?: boolean } =
+   return prisma;
+ }
+ 
+-function storageClient(opts: { failRemove?: boolean; keepObjects?: boolean } = {}) {
++function storageClient(
++  opts: { failRemove?: boolean; keepObjects?: boolean; log?: Call[]; txState?: TxState } = {},
++) {
+   const removed: string[][] = [];
+   const listed: string[] = [];
+   let folder = ['orphan-upload.m4a', 'note-a.m4a'];
+   const bucket = {
+     remove: jest.fn(async (keys: string[]) => {
++      opts.log?.push({
++        delegate: 'storage',
++        method: 'remove',
++        args: keys,
++        tx: opts.txState?.current,
++      });
+       removed.push(keys);
+       if (opts.failRemove) return { data: null, error: { message: 'storage down' } };
+       if (!opts.keepObjects) folder = folder.filter((n) => !keys.includes(`${USER_ID}/${n}`));
+@@ -309,4 +344,83 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
+       expect.stringContaining('VoiceErasureService retries it'),
+     );
+   });
++
++  // ── C-610-10, account-deletion half (ported from #652 17606f6c) ─────────
++  // #652 moved the erasure work and the note soft deletes into one
++  // transaction so a failure between them could not leave LIVE notes with
++  // open erasure work (the retry cron would erase audio still in the feed).
++  // #608's single finalization transaction already gives that guarantee:
++  // these two cases (#652's tests, adapted to #608's hard deletes and its
++  // in-transaction storage purge) prove it on main's code.
++
++  it('C-610-10: the erasure work, the note + transcript deletes and the tombstone commit in ONE transaction; storage runs after them', async () => {
++    const calls: Call[] = [];
++    const txState: TxState = { current: undefined };
++    const { client } = storageClient({ log: calls, txState });
++    const service = build(recordingPrisma(calls, { txState }), client);
++    await expect(service.adminForceDelete(USER_ID, admin)).resolves.toEqual({
++      message: `User ${USER_ID} has been permanently deleted.`,
++    });
++
++    const upserts = calls.filter(
++      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'upsert',
++    );
++    expect(upserts).toHaveLength(3);
++    const tx = upserts[0].tx;
++    expect(tx).toEqual(expect.any(Number));
++    for (const u of upserts) expect(u.tx).toBe(tx);
++    const noteDelete = calls.find(
++      (c) => c.delegate === 'communityVoiceNote' && c.method === 'deleteMany',
++    );
++    const searchDeletes = calls.filter(
++      (c) => c.delegate === 'communitySearchEntry' && c.method === 'deleteMany',
++    );
++    const tombstone = calls.find(isTombstone);
++    expect(noteDelete?.tx).toBe(tx);
++    expect(searchDeletes.length).toBeGreaterThan(0);
++    for (const d of searchDeletes) expect(d.tx).toBe(tx);
++    expect(tombstone?.tx).toBe(tx);
++    expect(calls.some((c) => c.rolledBack)).toBe(false);
++
++    // Storage runs only after every erasure write above (inside the same
++    // transaction under #608, so a storage failure rolls them all back; see
++    // the storage-failure case above).
++    const firstStorage = calls.findIndex((c) => c.delegate === 'storage');
++    expect(firstStorage).toBeGreaterThan(-1);
++    expect(calls[firstStorage].tx).toBe(tx);
++    for (const c of [...upserts, noteDelete, ...searchDeletes, tombstone]) {
++      expect(calls.indexOf(c as Call)).toBeLessThan(firstStorage);
++    }
++  });
++
++  it('C-610-10: a failed note delete rolls the erasure work back and stops finalization (retried next run); storage is never called', async () => {
++    const calls: Call[] = [];
++    const txState: TxState = { current: undefined };
++    const { client, removed } = storageClient({ log: calls, txState });
++    const service = build(recordingPrisma(calls, { failNoteDelete: true, txState }), client);
++    await expect(service.adminForceDelete(USER_ID, admin)).rejects.toThrow(
++      'voice note table locked',
++    );
++
++    // No erasure work committed for notes that are still live.
++    const upserts = calls.filter(
++      (c) => c.delegate === 'communityVoiceErasure' && c.method === 'upsert',
++    );
++    expect(upserts.length).toBeGreaterThan(0);
++    for (const u of upserts) expect(u.rolledBack).toBe(true);
++    // Nothing was erased from storage and no tombstone committed, so the
++    // finalize cron picks the whole user up again.
++    expect(removed).toEqual([]);
++    expect(calls.some((c) => c.delegate === 'storage')).toBe(false);
++    expect(client.auth.admin.deleteUser).not.toHaveBeenCalled();
++    expect(calls.filter(isTombstone).every((c) => c.rolledBack === true)).toBe(true);
++    expect(
++      calls.some(
++        (c) =>
++          c.delegate === 'communityVoiceErasure' &&
++          c.method === 'updateMany' &&
++          (c.args as { data: { completed_at?: Date } }).data.completed_at instanceof Date,
++      ),
++    ).toBe(false);
++  });
+ });
+diff --git a/test/community/rls/community-wins-rls.live.spec.ts b/test/community/rls/community-wins-rls.live.spec.ts
+index f39e6d29..f7f69c49 100644
+--- a/test/community/rls/community-wins-rls.live.spec.ts
++++ b/test/community/rls/community-wins-rls.live.spec.ts
+@@ -302,9 +302,45 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
+     await prisma.$executeRaw`
+       INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+       VALUES (${forged}, ${id.stranger}, ${id.coach}, 'x', 'y', 'circle')`;
+-    const seen = await as(id.bob, async (tx) =>
+-      tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "CommunityWin" WHERE id = ${forged}`,
++    const seen = await as(
++      id.bob,
++      async (tx) =>
++        tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "CommunityWin" WHERE id = ${forged}`,
+     );
+     expect(seen).toEqual([]);
+   });
++
++  // ── C-610-11 (B-UGC-5): no coach lookup for API roles ──────────────────
++
++  it('C-610-11: a signed-in role cannot call the coach lookup (no user -> coach resolution)', async () => {
++    await expect(
++      as(
++        id.stranger,
++        (tx) => tx.$queryRaw`SELECT app.community_win_author_coach(${id.alice}) AS c`,
++      ),
++    ).rejects.toThrow(/42501|permission denied/);
++    // Not even for their own id: the lookup is server-only now.
++    await expect(
++      as(id.alice, (tx) => tx.$queryRaw`SELECT app.community_win_author_coach(${id.alice}) AS c`),
++    ).rejects.toThrow(/42501|permission denied/);
++  });
++
++  it('C-610-11: the boolean matcher answers only for the author or their current coach', async () => {
++    const matches = (actor: string, author: string, coach: string | null) =>
++      as(actor, async (tx) => {
++        const rows = await tx.$queryRaw<Array<{ ok: boolean }>>`
++          SELECT app.community_win_coach_matches(${author}, ${coach}) AS ok`;
++        return rows[0]?.ok;
++      });
++    // The author and their current coach get the true answer ...
++    expect(await matches(id.alice, id.alice, id.coach)).toBe(true);
++    expect(await matches(id.alice, id.alice, id.otherCoach)).toBe(false);
++    expect(await matches(id.coach, id.bob, id.coach)).toBe(true);
++    expect(await matches(id.coach, id.coach, id.coach)).toBe(true);
++    // ... nobody else can confirm a pairing, even a correct one.
++    expect(await matches(id.stranger, id.alice, id.coach)).toBe(false);
++    expect(await matches(id.bob, id.alice, id.coach)).toBe(false);
++    expect(await matches(id.otherCoach, id.alice, id.coach)).toBe(false);
++    expect(await matches(id.stranger, id.alice, null)).toBe(false);
++  });
+ });
+diff --git a/test/community/safety/community-ugc-b5.spec.ts b/test/community/safety/community-ugc-b5.spec.ts
+new file mode 100644
+index 00000000..2bcb3821
+--- /dev/null
++++ b/test/community/safety/community-ugc-b5.spec.ts
+@@ -0,0 +1,337 @@
++/**
++ * B-UGC-5 (ruling OR-112-6): the #610 audit carries closed before launch.
++ *
++ *  - C-610-10, author-delete half (Opus + Sol): the author's delete recorded
++ *    the erasure work and soft-deleted the note in SEPARATE commits. A crash
++ *    or failed write between them left a LIVE note with open erasure work,
++ *    so the retry cron erased the audio of a note members could still see
++ *    (it stopped playing). Now the work row, the note's soft delete and its
++ *    search row commit in one transaction, and storage runs only after it.
++ *  - C-610-12 (Opus + Sol): re-opening COMPLETED erasure work kept the old
++ *    `attempts`, so the first failure of the new intent backed off from the
++ *    old count (e.g. 2 hours instead of 1 minute). A genuinely new intent now
++ *    starts at zero; still-open work keeps its count.
++ *
++ * Runs the REAL CommunityVoiceService, CommunityVoiceRepository and erasure
++ * helpers over the in-memory Prisma, whose transactions roll back on a throw
++ * or a lost COMMIT and refuse root-client writes while open (B-610-13), so a
++ * non-atomic write path cannot pass by accident.
++ */
++import 'reflect-metadata';
++import { NotFoundException } from '@nestjs/common';
++import type { User } from '@prisma/client';
++
++import { CommunityVoiceService } from '../../../src/community/voice/community-voice.service';
++import { CommunityVoiceRepository } from '../../../src/community/voice/community-voice.repository';
++import {
++  attemptVoiceErasures,
++  recordVoiceErasures,
++  voiceErasureBackoffMs,
++  type VoiceErasureStorage,
++} from '../../../src/community/voice/voice-erasure';
++import type { VoiceUploadProvider } from '../../../src/community/voice/voice-upload.provider';
++import type { CommunityAccessService } from '../../../src/community/community-access.service';
++import type { CommunitySafetyService } from '../../../src/community/safety/community-safety.service';
++import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
++import type { AnalyticsService } from '../../../src/analytics/analytics.service';
++import type { PrismaService } from '../../../src/prisma.service';
++import { InMemoryPrisma } from './in-memory-prisma';
++
++function stub<T>(v: unknown): T {
++  return v as T;
++}
++
++const AUTHOR_ID = '55555555-5555-4555-8555-555555555555';
++const KEY = `${AUTHOR_ID}/1700000000000-0123456789abcdef.m4a`;
++
++interface Faults {
++  /** The note's search-row write fails (connection lost mid-delete). */
++  searchWrite?: boolean;
++  /** Root-client erasure updates fail (DB blip after the delete committed). */
++  rootErasureUpdate?: boolean;
++}
++
++/**
++ * The repository's PrismaService: the in-memory DB with injectable faults on
++ * the root client AND inside every transaction (the old code wrote through
++ * the root client, the fixed code through the transaction).
++ */
++function prismaWithFaults(db: InMemoryPrisma, faults: Faults): PrismaService {
++  const wrap = (client: object, inTx: boolean): object =>
++    new Proxy(client, {
++      get(target, prop: string) {
++        if (prop === '$transaction' && !inTx) {
++          return async (fn: (tx: object) => Promise<unknown>) =>
++            db.$transaction((tx) => fn(wrap(tx, true)));
++        }
++        const value: unknown = Reflect.get(target, prop);
++        if (prop === 'communitySearchEntry' && faults.searchWrite) {
++          return {
++            ...(value as object),
++            updateMany: async () => {
++              throw new Error('connection lost during delete');
++            },
++          };
++        }
++        if (prop === 'communityVoiceErasure' && faults.rootErasureUpdate && !inTx) {
++          return {
++            ...(value as object),
++            updateMany: async () => {
++              throw new Error('erasure table timeout');
++            },
++          };
++        }
++        return value;
++      },
++    });
++  return stub<PrismaService>(wrap(db, false));
++}
++
++describe('B-UGC-5: author delete is atomic; reopened erasure work starts fresh', () => {
++  let db: InMemoryPrisma;
++  let faults: Faults;
++  let storage: {
++    bucket: () => string;
++    removeObjects: jest.Mock;
++    objectGone: jest.Mock;
++    removeOwnerFolder: jest.Mock;
++    ownerFolderEmpty: jest.Mock;
++  };
++  /** Open transactions seen at each storage call (must always be 0). */
++  let txOpenAtStorage: number[];
++  let voice: CommunityVoiceService;
++  let author: User;
++  let noteId: string;
++
++  const note = () => db.table('communityVoiceNote').find((r) => r.id === noteId);
++  const searchRow = () => db.table('communitySearchEntry').find((r) => r.targetId === noteId);
++  const erasures = () => db.table('communityVoiceErasure');
++
++  beforeEach(() => {
++    db = new InMemoryPrisma();
++    faults = {};
++    txOpenAtStorage = [];
++    author = stub<User>(
++      db.seed('user', { id: AUTHOR_ID, role: 'student', name: 'Bob', deleted_at: null }),
++    );
++    const ws = db.seed('communityWorkspace', {
++      coach_id: 'coach-1',
++      name: 'Hall',
++      archived_at: null,
++    });
++    const row = db.seed('communityVoiceNote', {
++      workspace_id: ws.id,
++      cohort_id: null,
++      conversation_id: null,
++      author_id: AUTHOR_ID,
++      storage_key: KEY,
++      duration_ms: 42_000,
++      bytes: BigInt(120_000),
++      mime_type: 'audio/mp4',
++      soft_deleted_at: null,
++    });
++    noteId = row.id as string;
++    db.seed('communitySearchEntry', {
++      workspaceId: ws.id,
++      cohortId: null,
++      kind: 'voice_note_transcript',
++      targetId: noteId,
++      authorId: AUTHOR_ID,
++      excerpt: 'voice note',
++      visibleToRoles: ['coach', 'student'],
++    });
++    storage = {
++      bucket: () => 'voice-notes',
++      removeObjects: jest.fn(async (keys: string[]) => {
++        txOpenAtStorage.push(db.openTransactions);
++        return { removed: keys.length, failed: false };
++      }),
++      objectGone: jest.fn(async () => {
++        txOpenAtStorage.push(db.openTransactions);
++        return true;
++      }),
++      removeOwnerFolder: jest.fn(async () => ({ removed: 0, failed: false })),
++      ownerFolderEmpty: jest.fn(async () => true),
++    };
++    const prisma = prismaWithFaults(db, faults);
++    voice = new CommunityVoiceService(
++      stub<CommunityAccessService>({}),
++      new CommunityVoiceRepository(prisma),
++      stub<VoiceUploadProvider>(storage),
++      stub<CommunityRealtimeService>({}),
++      stub<AnalyticsService>({ capture: () => undefined }),
++      stub<CommunitySafetyService>({}),
++    );
++  });
++
++  afterEach(() => {
++    db.beforeCommit = null;
++  });
++
++  // ── C-610-10: author delete ────────────────────────────────────────────
++
++  describe('C-610-10 (author-delete half)', () => {
++    it('a failure between recording the erasure and the soft delete leaves no erasure work for a still-live note', async () => {
++      faults.searchWrite = true;
++      await expect(voice.delete(author, noteId)).rejects.toThrow('connection lost during delete');
++      // Nothing half-done: no open erasure that the cron would run against a
++      // live note, the note still plays, the search row is untouched.
++      expect(erasures()).toHaveLength(0);
++      expect(note()?.soft_deleted_at).toBeNull();
++      expect(searchRow()?.softDeletedAt).toBeNull();
++      expect(storage.removeObjects).not.toHaveBeenCalled();
++
++      // The member's retry, once the fault clears, deletes everything once.
++      faults.searchWrite = false;
++      await expect(voice.delete(author, noteId)).resolves.toEqual({ deleted: true });
++      expect(erasures()).toHaveLength(1);
++      expect(erasures()[0]).toMatchObject({ kind: 'object', target: KEY, attempts: 0 });
++      expect(erasures()[0].completed_at).toBeInstanceOf(Date);
++      expect(note()?.soft_deleted_at).toBeInstanceOf(Date);
++      expect(searchRow()?.softDeletedAt).toBeInstanceOf(Date);
++    });
++
++    it('a lost COMMIT (process death) rolls back the erasure work, the soft delete and the search row', async () => {
++      db.beforeCommit = () => {
++        throw new Error('server closed the connection unexpectedly');
++      };
++      await expect(voice.delete(author, noteId)).rejects.toThrow(/closed the connection/);
++      expect(erasures()).toHaveLength(0);
++      expect(note()?.soft_deleted_at).toBeNull();
++      expect(searchRow()?.softDeletedAt).toBeNull();
++      expect(storage.removeObjects).not.toHaveBeenCalled();
++      expect(storage.objectGone).not.toHaveBeenCalled();
++    });
++
++    it('one transaction holds all three writes, and storage runs only after it commits', async () => {
++      const committed: string[][] = [];
++      db.beforeCommit = (writes) => {
++        expect(storage.removeObjects).not.toHaveBeenCalled();
++        committed.push([...writes]);
++      };
++      const txSpy = jest.spyOn(db, '$transaction');
++      await expect(voice.delete(author, noteId)).resolves.toEqual({ deleted: true });
++      expect(txSpy).toHaveBeenCalledTimes(1);
++      expect(committed).toEqual([
++        expect.arrayContaining([
++          'communityVoiceErasure.upsert',
++          'communityVoiceNote.updateMany',
++          'communitySearchEntry.updateMany',
++        ]),
++      ]);
++      expect(storage.removeObjects).toHaveBeenCalledWith([KEY]);
++      expect(txOpenAtStorage.length).toBeGreaterThan(0);
++      expect(txOpenAtStorage.every((n) => n === 0)).toBe(true);
++      expect(erasures()[0].completed_at).toBeInstanceOf(Date);
++    });
++
++    it('an erasure attempt that fails after the commit still answers deleted; the work stays open for the cron', async () => {
++      faults.rootErasureUpdate = true;
++      await expect(voice.delete(author, noteId)).resolves.toEqual({ deleted: true });
++      expect(note()?.soft_deleted_at).toBeInstanceOf(Date);
++      expect(searchRow()?.softDeletedAt).toBeInstanceOf(Date);
++      expect(erasures()).toHaveLength(1);
++      expect(erasures()[0].completed_at).toBeNull();
++    });
++
++    it('deleting an already-deleted note keeps its first soft_deleted_at and re-opens the erasure', async () => {
++      await voice.delete(author, noteId);
++      const first = note()?.soft_deleted_at;
++      await expect(voice.delete(author, noteId)).rejects.toBeInstanceOf(NotFoundException);
++      expect(note()?.soft_deleted_at).toBe(first);
++      expect(erasures()).toHaveLength(1);
++      expect(erasures()[0].completed_at).toBeInstanceOf(Date);
++    });
++  });
++
++  // ── C-610-12: a re-opened erasure starts a fresh failure count ─────────
++
++  describe('C-610-12 (retry count on a re-opened erasure)', () => {
++    const failing: VoiceErasureStorage = {
++      bucket: () => 'voice-notes',
++      removeObjects: async () => ({ removed: 0, failed: true }),
++      objectGone: async () => null,
++      removeOwnerFolder: async () => ({ removed: 0, failed: true }),
++      ownerFolderEmpty: async () => null,
++    };
++
++    function seedErasure(over: Record<string, unknown>) {
++      return db.seed('communityVoiceErasure', {
++        kind: 'object',
++        target: KEY,
++        reason: 'moderation',
++        ...over,
++      });
++    }
++
++    it('re-opening COMPLETED work resets attempts and last_error, so the first failure backs off 1 minute', async () => {
++      seedErasure({
++        attempts: 7,
++        last_error: 'storage_remove_failed',
++        completed_at: new Date('2026-09-01T00:00:00Z'),
++      });
++      const now = new Date('2026-10-02T12:00:00Z');
++      const rows = await recordVoiceErasures(
++        stub<PrismaService>(db),
++        [{ kind: 'object', target: KEY }],
++        'author_delete',
++        now,
++      );
++      expect(rows).toEqual([expect.objectContaining({ kind: 'object', target: KEY, attempts: 0 })]);
++      expect(erasures()[0]).toMatchObject({
++        attempts: 0,
++        last_error: null,
++        completed_at: null,
++        reason: 'author_delete',
++      });
++
++      const at = new Date('2026-10-02T12:00:05Z');
++      await attemptVoiceErasures(stub<PrismaService>(db), failing, rows, undefined, () => at);
++      expect(erasures()[0].attempts).toBe(1);
++      expect((erasures()[0].next_attempt_at as Date).getTime()).toBe(
++        at.getTime() + voiceErasureBackoffMs(1),
++      );
++      expect(voiceErasureBackoffMs(1)).toBe(60_000);
++    });
++
++    it('still-open work keeps its count when recorded again (it is the same failing work), and is made due now', async () => {
++      seedErasure({
++        attempts: 4,
++        last_error: 'storage_check_unavailable',
++        completed_at: null,
++        next_attempt_at: new Date('2026-10-02T20:00:00Z'),
++      });
++      const now = new Date('2026-10-02T12:00:00Z');
++      const rows = await recordVoiceErasures(
++        stub<PrismaService>(db),
++        [{ kind: 'object', target: KEY }],
++        'author_delete',
++        now,
++      );
++      expect(rows[0].attempts).toBe(4);
++      expect(erasures()[0]).toMatchObject({
++        attempts: 4,
++        last_error: 'storage_check_unavailable',
++        reason: 'moderation',
++        completed_at: null,
++      });
++      expect((erasures()[0].next_attempt_at as Date).getTime()).toBe(now.getTime());
++    });
++
++    it('an author re-delete after a completed erasure re-opens it with a fresh count', async () => {
++      await voice.delete(author, noteId);
++      const row = erasures()[0];
++      row.attempts = 9;
++      row.last_error = 'object_still_present';
++      storage.objectGone.mockResolvedValue(null);
++      storage.removeObjects.mockResolvedValue({ removed: 0, failed: true });
++      await expect(voice.delete(author, noteId)).rejects.toBeInstanceOf(NotFoundException);
++      // Re-opened as a new intent, then one failed try: attempts 1, not 10.
++      expect(erasures()[0]).toMatchObject({
++        attempts: 1,
++        last_error: 'storage_remove_failed',
++        completed_at: null,
++      });
++    });
++  });
++});
+diff --git a/test/community/safety/community-ugc-round2.spec.ts b/test/community/safety/community-ugc-round2.spec.ts
+index e184e73d..a07e62ae 100644
+--- a/test/community/safety/community-ugc-round2.spec.ts
++++ b/test/community/safety/community-ugc-round2.spec.ts
+@@ -621,19 +621,19 @@ describe('#610 round 2: wins safety reach, durable bans, notices, recording eras
+       });
+     });
+ 
+-    it('the erasure is recorded before the note is soft-deleted (a crash in between still erases)', async () => {
++    it('the erasure is recorded with the soft delete, in one commit (C-610-10: a crash cannot split them)', async () => {
+       const n = seedNote(bob);
+-      let recordedAtSoftDelete: unknown = 'soft delete never ran';
+-      const spy = jest
+-        .spyOn(CommunityVoiceRepository.prototype, 'softDelete')
+-        .mockImplementationOnce(async function (this: CommunityVoiceRepository, id, at) {
+-          recordedAtSoftDelete = erasureFor(n.key)?.completed_at;
+-          await prisma.communityVoiceNote.update({ where: { id }, data: { soft_deleted_at: at } });
+-        });
++      let atCommit: { work: unknown; softDeleted: unknown } | null = null;
++      db.beforeCommit = () => {
++        atCommit = {
++          work: erasureFor(n.key)?.completed_at,
++          softDeleted: db.table('communityVoiceNote').find((x) => x.id === n.id)?.soft_deleted_at,
++        };
++      };
+       await voice.delete(bob, n.id);
+-      spy.mockRestore();
+-      // The open work row already existed when the soft delete ran.
+-      expect(recordedAtSoftDelete).toBeNull();
++      db.beforeCommit = null;
++      // The open work row and the soft delete are in the same transaction.
++      expect(atCommit).toEqual({ work: null, softDeleted: expect.any(Date) });
+     });
+ 
+     it('two concurrent cron runs never process the same row twice (lease)', async () => {

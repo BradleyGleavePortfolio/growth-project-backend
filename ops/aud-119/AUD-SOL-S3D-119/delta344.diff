@@ -1,0 +1,247 @@
+diff --git a/src/__tests__/ClientPackagesScreen.purchase.test.tsx b/src/__tests__/ClientPackagesScreen.purchase.test.tsx
+index 8c3395a..1491f7b 100644
+--- a/src/__tests__/ClientPackagesScreen.purchase.test.tsx
++++ b/src/__tests__/ClientPackagesScreen.purchase.test.tsx
+@@ -130,7 +130,7 @@ it('Your plans: End my plan confirms, then cancels at period end through the #62
+     expect(mockPost).toHaveBeenCalledWith('/v1/checkout/subscriptions/purchase-1/cancel', {}),
+   );
+   expect(alertSpy.mock.calls[0][1]).toBe(
+-    'Your plan stays active until November 2, 2026, and nothing more is charged after that.',
++    'Your plan stays active until November 2, 2026, and nothing more is charged after that. If a payment is overdue, ending it ends access now instead and cancels the unpaid charge.',
+   );
+   alertSpy.mockRestore();
+ });
+diff --git a/src/components/__tests__/YourPlansPanel.recovery.test.tsx b/src/components/__tests__/YourPlansPanel.recovery.test.tsx
+index 13bb6ba..1e01117 100644
+--- a/src/components/__tests__/YourPlansPanel.recovery.test.tsx
++++ b/src/components/__tests__/YourPlansPanel.recovery.test.tsx
+@@ -155,3 +155,48 @@ describe('B-344-4/6 plan copy and a working support path', () => {
+     await waitFor(() => expect(r.getByTestId('your-plans-support-fallback-address')).toBeTruthy());
+   });
+ });
++
++describe('B-SHEET5-119: receipt truth (B-344-7), no stale End (B-344-2), newer reads win (B-344-3)', () => {
++  const TRIAL = { ...PLAN, state: 'trialing', next_charge_at: null, trial_ends_at: '2026-11-02T12:00:00.000Z' };
++  it.each([
++    [TRIAL, '2026-11-02T12:00:00.000Z', 'Your free trial ends on November 2, 2026, and nothing is charged.'],
++    [TRIAL, '2026-12-02T12:00:00.000Z', 'Your plan will not renew. Access continues until December 2, 2026, and nothing more is charged.'],
++    [PLAN, '2026-11-02T12:00:00.000Z', 'Your plan will not renew. Access continues until November 2, 2026, and nothing more is charged.'],
++  ])('scheduled end %#: the line claims no payment that did not happen', async (plan, end, copy) => {
++    mockGet.mockResolvedValueOnce(ok(plan)).mockRejectedValue(http(503, { code: 'X_DOWN' }));
++    mockPost.mockResolvedValue(cancelResult({ outcome: 'scheduled', access_ends_at: end }));
++    autoConfirm();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++    await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++    expect(line(r)).toBe(copy);
++  });
++  it('End my plan on a card whose refresh failed sends nothing and offers a refresh', async () => {
++    mockGet.mockResolvedValueOnce(ok(PLAN)).mockRejectedValueOnce(http(503, { code: 'X_DOWN' })).mockResolvedValue(ok(PLAN));
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const r = await render(<YourPlansPanel reloadKey={0} />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++    await r.rerender(<YourPlansPanel reloadKey={1} />);
++    await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++    expect(alert.mock.calls[0][0]).toBe('Refresh your plans first');
++    expect(alert.mock.calls[0][2]?.some((b) => b.style === 'destructive')).toBe(false);
++    await act(async () => { alert.mock.calls[0][2]?.[1]?.onPress?.(); });
++    await waitFor(() => expect(r.queryByTestId('your-plans-stale')).toBeNull());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++    expect(alert.mock.calls[1][1]).toMatch(/until November 2, 2026, .* If a payment is overdue, ending it ends access now instead/);
++    expect(mockPost).not.toHaveBeenCalled();
++  });
++  it('a newer read showing the plan renewing again replaces the old cancel receipt', async () => {
++    mockGet.mockResolvedValueOnce(ok(PLAN)).mockRejectedValueOnce(http(503, { code: 'X_DOWN' })).mockResolvedValue(ok(PLAN));
++    mockPost.mockResolvedValue(cancelResult({ outcome: 'scheduled', access_ends_at: '2026-11-02T12:00:00.000Z' }));
++    autoConfirm();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++    await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('your-plans-retry'));
++    await waitFor(() => expect(line(r)).toBe('Next charge of $99.00 a month on November 2, 2026.'));
++  });
++});
+diff --git a/src/components/purchase/YourPlansPanel.tsx b/src/components/purchase/YourPlansPanel.tsx
+index 1c88c4d..101bd10 100644
+--- a/src/components/purchase/YourPlansPanel.tsx
++++ b/src/components/purchase/YourPlansPanel.tsx
+@@ -52,10 +52,13 @@ export const YOUR_PLANS_COPY = {
+   endPlan: "End my plan",
+   keepPlan: "Keep my plan",
+   endConfirmTitle: "End this plan?",
++  // B-344-2: the server ends now (2A) whenever it holds a payment as overdue.
+   endConfirmBody: (date: string | null) =>
+-    date
+-      ? `Your plan stays active until ${date}, and nothing more is charged after that.`
+-      : "Your plan stays active until the end of the period you paid for, and nothing more is charged after that.",
++    `${date ? `Your plan stays active until ${date}` : "Your plan stays active until the end of the current period"}, and nothing more is charged after that. If a payment is overdue, ending it ends access now instead and cancels the unpaid charge.`,
++  staleTitle: "Refresh your plans first",
++  staleBody:
++    "The latest details of this plan could not load, so it is not confirmed what ending it would do. Refresh your plans before choosing End my plan.",
++  staleRefresh: "Refresh plans",
+   endConfirmAction: "End plan",
+   endConfirmKeep: "Keep plan",
+   // B-344-2/5: dunning (owner ruling 2A), with the paid-meanwhile race.
+@@ -104,6 +107,22 @@ function afterCancel(p: ClientPlan, o: CancelOutcome): ClientPlan {
+ }
+ 
+ type ListState = { kind: "loading" | "ready" } | PlansListFailure;
++/** B-344-3: a cancel receipt and the generation it was answered at. */
++type Receipt = { result: CancelOutcome; trial: boolean; gen: number };
++
++// B-344-7: Stripe's period end during a trial is the trial end.
++const endsInTrial = (p: ClientPlan, o: CancelOutcome) =>
++  p.state === "trialing" &&
++  !!o.accessEndsAt &&
++  !!p.trialEndsAt &&
++  Date.parse(o.accessEndsAt) <= Date.parse(p.trialEndsAt);
++
++/** B-344-3: a receipt stands only while a newer read agrees with it. */
++const agrees = (r: Receipt, p: ClientPlan | undefined) =>
++  !!p &&
++  (r.result.outcome === "scheduled"
++    ? p.cancelAtPeriodEnd && p.state !== "ended"
++    : p.state === "ended");
+ 
+ export default function YourPlansPanel({
+   reloadKey = 0,
+@@ -117,7 +136,7 @@ export default function YourPlansPanel({
+   );
+   const [plans, setPlans] = useState<ClientPlan[]>([]);
+   const [list, setList] = useState<ListState>({ kind: "loading" });
+-  const [outcomes, setOutcomes] = useState<Record<string, string>>({});
++  const [outcomes, setOutcomes] = useState<Record<string, Receipt>>({});
+   const [busyId, setBusyId] = useState<string | null>(null);
+   const [notice, setNotice] = useState<{
+     purchaseId: string;
+@@ -146,6 +165,19 @@ export default function YourPlansPanel({
+       if (!mounted.current || mine !== generation.current) return;
+       setPlans(next);
+       setList({ kind: "ready" });
++      setOutcomes((o) => {
++        const keep = Object.entries(o).filter(
++          ([id, r]) =>
++            r.gen >= mine ||
++            agrees(
++              r,
++              next.find((p) => p.purchaseId === id),
++            ),
++        );
++        return keep.length === Object.keys(o).length
++          ? o
++          : Object.fromEntries(keep);
++      });
+     } catch (err) {
+       if (!mounted.current || mine !== generation.current) return;
+       setList(describePlansListFailure(err));
+@@ -172,7 +204,7 @@ export default function YourPlansPanel({
+         if (action === "cancel") {
+           const outcome = await cancelPlan(id);
+           if (!mounted.current) return;
+-          generation.current += 1;
++          const gen = ++generation.current;
+           if (outcome) {
+             setPlans((ps) =>
+               ps.map((p) =>
+@@ -181,7 +213,7 @@ export default function YourPlansPanel({
+             );
+             setOutcomes((o) => ({
+               ...o,
+-              [id]: PLAN_ACTION_COPY.outcome(outcome),
++              [id]: { result: outcome, trial: endsInTrial(plan, outcome), gen },
+             }));
+           }
+         } else {
+@@ -215,8 +247,19 @@ export default function YourPlansPanel({
+     [load],
+   );
+ 
++  const stale = list.kind === "failed" || list.kind === "unavailable";
+   const confirmEnd = useCallback(
+     (plan: ClientPlan) => {
++      // B-344-2: no End my plan from a card no read has confirmed.
++      if (stale)
++        return Alert.alert(
++          YOUR_PLANS_COPY.staleTitle,
++          YOUR_PLANS_COPY.staleBody,
++          [
++            { text: YOUR_PLANS_COPY.endConfirmKeep, style: "cancel" },
++            { text: YOUR_PLANS_COPY.staleRefresh, onPress: () => void load() },
++          ],
++        );
+       const now = plan.state === "past_due";
+       Alert.alert(
+         now ? YOUR_PLANS_COPY.endNowTitle : YOUR_PLANS_COPY.endConfirmTitle,
+@@ -237,7 +280,7 @@ export default function YourPlansPanel({
+         ],
+       );
+     },
+-    [runAction],
++    [load, runAction, stale],
+   );
+ 
+   const support = (
+@@ -301,7 +344,7 @@ export default function YourPlansPanel({
+       <Text style={styles.title} accessibilityRole="header">
+         {YOUR_PLANS_COPY.title}
+       </Text>
+-      {list.kind === "failed" || list.kind === "unavailable" ? (
++      {stale ? (
+         <View testID="your-plans-stale">
+           <Text style={styles.line} accessibilityLiveRegion="polite">
+             {list.kind === "failed"
+@@ -313,9 +356,10 @@ export default function YourPlansPanel({
+       ) : null}
+       {visible.map((plan) => {
+         const amount = `${money(plan.amountCents, plan.currency)} ${cadenceCopy(plan.interval ?? "month", plan.intervalCount)}`;
+-        const line =
+-          outcomes[plan.purchaseId] ??
+-          (plan.state === "ended"
++        const receipt = outcomes[plan.purchaseId];
++        const line = receipt
++          ? PLAN_ACTION_COPY.outcome(receipt.result, receipt.trial)
++          : plan.state === "ended"
+             ? YOUR_PLANS_COPY.endedNow
+             : plan.state === "confirming"
+               ? YOUR_PLANS_COPY.confirming
+@@ -330,7 +374,7 @@ export default function YourPlansPanel({
+                       : YOUR_PLANS_COPY.renews(
+                           amount,
+                           dateOf(plan.nextChargeAt),
+-                        ));
++                        );
+         const isBusy = busyId === plan.purchaseId;
+         const n = notice?.purchaseId === plan.purchaseId ? notice.notice : null;
+         return (
+diff --git a/src/lib/planActions.ts b/src/lib/planActions.ts
+index 8a01736..936d7c5 100644
+--- a/src/lib/planActions.ts
++++ b/src/lib/planActions.ts
+@@ -82,7 +82,8 @@ const verb = (a: PlanAction) =>
+   a === "cancel" ? "End my plan" : "Keep my plan";
+ 
+ export const PLAN_ACTION_COPY = {
+-  outcome: (o: CancelOutcome): string => {
++  /** B-344-7: trial = the scheduled end is the trial end, before any charge. */
++  outcome: (o: CancelOutcome, trial = false): string => {
+     const date = planDate(o.accessEndsAt);
+     if (o.outcome === "already_ended")
+       return "This plan had already ended, so nothing changed and nothing more is charged.";
+@@ -91,9 +92,11 @@ export const PLAN_ACTION_COPY = {
+         ? `This plan has ended, and access ended today. The unpaid ${o.currency ? money(o.voidedAmountCents, o.currency) : "charge"} is canceled and is never collected. Nothing more is charged.`
+         : "This plan has ended, and access ended today. Nothing more is charged.";
+     const until = date ? `until ${date}` : "to the end of the period";
+-    return o.paidPeriodKept
+-      ? `The latest payment went through before the plan ended, so access continues ${until}, the period it paid for. Nothing more is charged after that.`
+-      : `Your plan is ended. Access continues ${until}, the end of the period paid for, and nothing more is charged.`;
++    if (o.paidPeriodKept)
++      return `The latest payment went through before the plan ended, so access continues ${until}, the period it paid for. Nothing more is charged after that.`;
++    return trial && date
++      ? `Your free trial ends on ${date}, and nothing is charged.`
++      : `Your plan will not renew. Access continues ${until}, and nothing more is charged.`;
+   },
+   noAnswer: (a: PlanAction, ref: string | null) =>
+     `The app could not reach the server, so it is not confirmed whether your plan changed. Check your connection, then pull down to refresh your plans before choosing ${verb(a)} again. If it is still unclear, email support${quote(ref)}.`,

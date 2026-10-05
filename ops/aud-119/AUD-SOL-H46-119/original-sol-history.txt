@@ -1,0 +1,402 @@
+COMMENT 5936939527
+AUDIT GPT-6.1 Sol — growth-project-mobile#317 @ f63da34e1d61d8ae9df84d1481c37697722fbedf — VERDICT: BLOCK
+
+Independent read-only **T4** audit of the complete `090bbf9ba2d223eb9010885e05c1141fb6e835ab..f63da34e1d61d8ae9df84d1481c37697722fbedf` change and backend #623; health-data collection, local account/device authorization and persisted import correctness justify the stated tier. ([PR tier and scope](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317))
+
+### A-317-1 — Critical / blocker: remote connection status authorizes uploading this phone's health store into another account
+
+**Evidence:** `src/screens/client/wearables/WearablesShell.tsx:77-85` automatically calls import whenever the *server account* has a connected provider; `src/services/health/onDeviceSync.ts:84-103` registers/reuses that account's connection and reads the *current phone's* store, without any local per-account connect authorization. ([Automatic refresh predicate](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/screens/client/wearables/WearablesShell.tsx#L77-L92), [orchestration](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/onDeviceSync.ts#L84-L108))
+
+Reproduction: account A previously granted this app native health access on A's phone; account B, already connected on B's own phone, signs into A's phone and opens Health—B's remote row satisfies the new predicate, the existing app-level native grant permits A's store to be read, and samples are posted through B's connection/JWT without B choosing Connect on this device. ([Refresh trigger](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/screens/client/wearables/WearablesShell.tsx#L78-L85), [read and posting](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitSyncService.ts#L160-L189))
+
+The read-only source-loaded probe confirmed a remote B connection triggers a native read and a wire sample targeting `account-B-connection` without invoking the explicit Connect flow; JWT-only server identity correctly stamps B, but cannot determine that the underlying health store belongs to A. ([Automatic orchestration](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/onDeviceSync.ts#L80-L109), [server identity boundary](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/c5d451722db6e8e589c2bda0cc8295ba2eb8dd41/src/wearables/samples/wearable-samples.controller.ts#L237-L249))
+
+**Minimal fix:** require explicit account-and-device-scoped local connect authorization before any automatic read/upload, not merely a remotely connected provider or OS app permission; require an explicit Connect on a new account/device, retire authorization on sign-out, and fence/cancel in-flight imports when session identity changes. Add the A-phone/B-account regression proving zero native reads and zero POSTs until explicit local Connect; do not add `userId` to the wire body.
+
+### B-317-1 — High / must fix: provider-global cursors skip a different user's 30-day import
+
+**Evidence:** `healthkit/healthKitSyncService.ts:54,132-157,192` and `healthConnect/healthConnectSyncService.ts:36,85-99,172-202` use one persistent cursor per provider regardless of JWT account or connection ID; the new registration flow immediately reuses that cursor for any returned connection. ([Apple cursor](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitSyncService.ts#L132-L157), [Android cursor](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthConnect/healthConnectSyncService.ts#L85-L110), [registration-to-sync](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/onDeviceSync.ts#L88-L108))
+
+The probe synced connection A at `2026-10-01T10:00Z`, then a new B connection at `10:05Z`: B's first import started at `2026-10-01T09:00Z`, not September 1, and only `healthkit_last_sync_at` existed in storage. ([Actual window computation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitSyncService.ts#L146-L158))
+
+**Minimal fix:** namespace progress by account/connection and provider, ignore/migrate the legacy global cursor without assigning it to a new identity, and cover account switch, new connection, deletion/recreation and sign-out/in-flight cursor writes; keep identity out of the POST body.
+
+### B-317-2 — High / must fix: incomplete native reads are reported as completed imports and permanently advance progress
+
+**Evidence:** `healthConnectClient.ts:275-291` returns success after page 20 even when another `pageToken` remains, while `healthConnectSyncService.ts:180-202` converts a granted-type read error to `[]` and advances the shared watermark to now. ([Pagination exit](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthConnect/healthConnectClient.ts#L273-L291), [error handling and watermark](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthConnect/healthConnectSyncService.ts#L179-L202))
+
+The probe returned 20 pages with a remaining token as an ordinary array, and a second probe with Steps successful/Weight throwing still returned success and wrote `2026-10-01T10:00Z`; the next five-minute overlap cannot recover the omitted history. ([Read bound](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthConnect/healthConnectClient.ts#L244-L291), [overlap and completion](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthConnect/healthConnectSyncService.ts#L47-L53))
+
+Apple has the analogous progress hazard: `healthKitClient.ts:307-312` silently drops a native reader failure, then any other nonempty metric permits the global cursor to advance. ([Apple reader settlement](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitClient.ts#L305-L312), [Apple progress write](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitSyncService.ts#L173-L192))
+
+**Minimal fix:** explicitly represent complete/partial/error reads; retain progress for failed/truncated types, resume bounded pages or split bounded time windows, and never close the sheet as a completed 30-day import when data remains unread. The simplest safe first repair is to reject incomplete granted-type reads and retain the cursor, with bounded resumable handling for page-limit exhaustion; test page 21 and transient reader failure/recovery.
+
+### B-317-3 — High / must fix: Apple 30-day sleep history is collapsed into one “night,” and overlap replay has different dedup keys
+
+**Evidence:** `healthkit/healthKitNormalizer.ts:371-439` sums every sleep segment in the entire query into one metric sample spanning earliest start to latest end; the newly wired importer calls this once over the 30-day window. ([Sleep normalization](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitNormalizer.ts#L371-L439), [import window](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitSyncService.ts#L153-L168))
+
+Two eight-hour nights produced one `SLEEP_TOTAL_MIN=960` sample across both nights, then rereading only the second produced a separate 480-minute sample with a different start/end key; neither per-night history nor repeat-import idempotency is preserved by this query-window-dependent aggregation. ([Aggregation and emitted intervals](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitNormalizer.ts#L397-L439), [dedup contract](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/623))
+
+**Minimal fix:** emit stable sleep-session/night samples (or stable segment observations with correct downstream aggregation), not a whole-query total; reconcile overlapping/coarse/staged sources, and test two nights, a 30-day window, incremental overlap and repeat import against server dedup.
+
+### B-317-4 — High / must fix: Apple weight is read in pounds but persisted as kilograms
+
+**Evidence:** `healthkit/healthKitClient.ts:353` passes the common options without `unit` to `getWeightSamples`; locked `react-native-health@1.19.0` defaults this reader to **pounds**, while `healthKitNormalizer.ts:464` forwards the value unchanged as `BODY_WEIGHT_KG`. ([Client reader](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitClient.ts#L346-L354), [locked native default, lines 43-47](https://github.com/agencyenterprise/react-native-health/blob/84d946aad6f2c3191998c04c84afc01e3f035b4c/RCTAppleHealthKit/RCTAppleHealthKit%2BMethods_Body.m#L43-L47), [normalizer](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitNormalizer.ts#L453-L468))
+
+A mock honoring that native default through the actual client/normalizer reproduced a 180-pound reading becoming **180 kg**, rather than approximately 81.65 kg; this latent helper defect becomes persisted health-data corruption when this PR activates import. ([Affected client-to-normalizer path](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/healthkit/healthKitSyncService.ts#L164-L189))
+
+**Minimal fix:** explicitly request `unit: 'kg'` for this native reader (or explicitly convert a documented pound result), and add client-to-normalizer plus shared-fixture coverage for a known physical weight.
+
+### Optional findings
+
+- **C-317-1 — Low:** `ingestBatching.ts:118` counts UTF-16 string length, not UTF-8 bytes; schema-length-valid Unicode pointer fields produced a 221,851-byte batch while the counter reported 89,611 characters. Current normalizers normally emit ASCII pointers, so this is not the present native-path blocker; use a React-Native-safe UTF-8 byte counter, reject an individually oversized sample, and assert actual encoded bytes in the test. ([Batch counter](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/ingestBatching.ts#L113-L131))
+- **C-317-2 — Medium / consent UX:** `ConnectProviderSheet.tsx:238-255` discloses the 30-day history only *after* permission grant/import begins, while its pre-Continue copy describes merely device access. Show the 30-day scope and coaching use before Continue, aligned with required box 1; do not require optional AI box 2 for ordinary health collection, and keep the AI panel off. ([Connect disclosure timing](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/screens/client/wearables/ConnectProviderSheet.tsx#L238-L255), [off-by-default AI flag](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/config/featureFlags.ts#L471-L482))
+
+### Native plugin / contracts / AI disposition
+
+The **plugin itself is not the launch blocker found here**: it inserts the delegate after `super.onCreate` exactly once, adds one Android 14 permission-usage alias, and repeated alias application preserves an existing `ACTION_SHOW_PERMISSIONS_RATIONALE` filter; the pinned native delegate constructs activity-result contracts and registers launchers, rather than initializing/reading Health Connect on launch. ([Plugin implementation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/plugins/withHealthConnectPermissionDelegate.js), [native delegate](https://github.com/matinzd/react-native-health-connect/blob/b834a6251de71c2db617ab2da9e3102b2ee2450a/android/src/main/java/dev/matinzd/healthconnect/permissions/HealthConnectPermissionDelegate.kt))
+
+This is source/mod-test evidence, **not an APK launch proof**; integrate the independently merged Crisp repair #316 (`53447a36d630b5594cfde6e14c9fd47c2ab2b402`) into the actual binary and perform Android/iPhone device passes rather than attributing that unrelated previous crash to this plugin. ([Crisp repair](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/316), [device acceptance script](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317))
+
+The shared fixture hashes match at `033301173cc52458d4a1d2ee98a24df6b10aeac6137487e18f5c335687e4ec9e`; JWT-only allow-listed wire identity, RHR's `SLEEP_RECOVERY` bucket/read, request count bounds, bounded 429 retry and matched requested/read permission sets are implemented, but do not resolve the findings above. ([Shared fixture tests](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/__tests__/ingestContract.test.ts), [batching](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/services/health/ingestBatching.ts), [PR permission/bucket changes](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317))
+
+The client AI panel is not mounted with the off-by-default flag, and this diff does not implement consent-box-2 enforcement on other AI paths; keep `EXPO_PUBLIC_FF_WEARABLE_AI_INSIGHTS` unset/off until those separate controls exist. ([Panel gate](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/screens/client/wearables/WearablesShell.tsx), [flag](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f63da34e1d61d8ae9df84d1481c37697722fbedf/src/config/featureFlags.ts))
+
+Backend #623 also requires the existing #604 throttler-isolation dependency: at its exact audited head the real guard allows only three ingest requests/hour, not the advertised 60/minute. ([Existing dependency repair](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/604#issuecomment-5936641633), [backend counterpart](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/623))
+
+### Execution and exact-head CI
+
+All local execution used `ops/heavy.sh`, shared installed dependencies and isolated read-only candidate worktrees; no code push, dependency installation, full suite, native build, production action or live DB.
+
+```text
+# 15 suites / 170 tests PASS
+ops/heavy.sh npx jest --runInBand \
+  src/services/health/__tests__/ingestBatching.test.ts \
+  src/services/health/__tests__/ingestContract.test.ts \
+  src/services/health/__tests__/healthPlatformConfig.test.ts \
+  src/services/health/__tests__/onDeviceSync.test.ts \
+  src/services/health/healthkit src/services/health/healthConnect \
+  src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx \
+  src/screens/client/wearables/__tests__/WearablesShell.test.tsx \
+  src/screens/client/wearables/__tests__/HealthFitnessScreen.rhr.test.tsx
+
+# 3 suites / 51 tests PASS
+ops/heavy.sh npx jest --runInBand \
+  src/services/health/__tests__/onDeviceConnect.test.ts \
+  src/screens/client/wearables/__tests__/recoveryData.test.ts \
+  src/config/__tests__/featureFlagsReleaseInlining.test.ts
+
+# Read-only source-loaded probes reproduced the defect assertions;
+# exit 0 / AUDIT_PROBES_COMPLETE. No candidate file modification.
+ops/heavy.sh node /home/user/workspace/ops/s14/sol_adversarial.cjs
+```
+
+Observed CI at this exact head: **Typecheck, lint, test; Analyze (javascript-typescript); Analyze (actions); CodeQL all SUCCESS**; passing these tests does not establish the untested multi-account/completeness/physical-unit cases. ([Exact-head CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/36896834230), [CodeQL](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/36896834091))
+
+COMMENT 5939974918
+AUDIT GPT-6.1 Sol — growth-project-mobile#317 @ c7e35d847dae7cb08422d221ec0657b769192e7c — VERDICT: BLOCK
+
+Independent T4 full-diff audit against `53447a36d630b5594cfde6e14c9fd47c2ab2b402`, including the previous findings; open counts **A=1 / B=1 / C=0**. [Candidate scope](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317)
+
+### A-317-1 — Still open, narrower reproduction: the local Connect consent is attributed to the account signed in AFTER the native permission dialog
+
+The remote-row-only automatic-upload case is repaired, but `ConnectProviderSheet.tsx:126-144` awaits the permission dialog **before** `connectOnDevice` captures the signed-in user/fence at `onDeviceSync.ts:175-178`; there is no identity/generation captured at the original Continue tap and no cancellation of that async continuation on unmount. [Permission-to-import handoff](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/screens/client/wearables/ConnectProviderSheet.tsx#L126-L144) [Late identity capture](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/onDeviceSync.ts#L171-L193)
+
+Reproduction with exact source-loaded functions and deterministic seams: A starts Continue on A's phone; while the native permission promise is pending, auth changes to B and emits the auth event; A's old promise resolves `granted`; the continuing callback registers **B's** connection, records **B's** local authorization and invokes the phone-store sync with `userId=account-B, connectionId=connection-account-B`, then emits success and closes. [Callback ordering](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/screens/client/wearables/ConnectProviderSheet.tsx#L126-L164) [Authorization write and sync](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/onDeviceSync.ts#L175-L193)
+
+This is not the documented old-connection/new-JWT millisecond race: here both JWT and newly registered connection belong to B, so server connection ownership cannot reject the misattributed A-phone data. The new fence is created after the auth event, and thus considers B current throughout. [Scope construction](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/onDeviceSync.ts#L175-L193) [Fence generation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/sessionFence.ts#L52-L63)
+
+Minimal fix: capture the user and auth generation at Continue **before** the native prompt, carry that same fence through permission completion, registration, authorization storage and import, and abort the old/unmounted continuation rather than adopting the new account; add a real sheet-to-orchestrator deferred-permission regression asserting zero B registration, zero local grant and zero native read/POST after A→B, logout and same-account re-login. The current account-change test begins at registration and misses the earlier window. [Existing narrower test](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/__tests__/onDeviceSync.test.ts#L151-L166)
+
+### B-317-2 — Partially repaired but still open: incomplete imports are silently presented as completed in the sheet
+
+The clients/services now preserve failed-type progress, resume Health Connect pages and propagate `complete:false`; `runSyncPasses` deliberately returns partial after its bound or a zero-post failed pass, but `ConnectProviderSheet.tsx:154-164` checks only `disabled` and otherwise emits `wearable_connected`, calls `onConnected` and closes without examining `complete`. [Bounded partial outcome](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/onDeviceSync.ts#L117-L131) [Discarded completion flag](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/screens/client/wearables/ConnectProviderSheet.tsx#L154-L164)
+
+The exact source-loaded sheet handler given `{kind:'imported', postedCount:10, complete:false}` produced **one close, one onConnected, one success tutorial signal, zero errors**; refresh also discards completeness, so a failed metric has no visible partial/recovery state. [Sheet consumer](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/screens/client/wearables/ConnectProviderSheet.tsx#L154-L164) [Refresh consumer](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/screens/client/wearables/WearablesShell.tsx#L86-L96)
+
+Minimal fix: distinguish connected from history-complete; keep or show a truthful partial/error state with a working resume/retry action when `complete:false`, rather than silently closing a promised 30-day import. Add sheet integration tests for persistent failed reads, all reads failing and history exceeding MAX_IMPORT_PASSES; the current sheet mock omits `complete` entirely, so it cannot prove this requirement. [Incomplete service regression](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/__tests__/onDeviceSync.test.ts#L185-L202) [Sheet mock](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx#L77-L91)
+
+### Closed portions / other prior findings
+
+- **A-317-1 remote-row-only case closed:** current user + source local authorization must match the connected remote id; the read-only probe confirmed B's remote row alone gives `not_authorized` and zero native reads. [Refresh enforcement](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/onDeviceSync.ts#L205-L223)
+- **B-317-1 closed:** authorization/progress keys are scoped by user, connection and provider; legacy provider-global cursors are not read, and sign-out sweeps the new namespace. [Scoped state](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/onDeviceState.ts#L70-L76) [Sign-out sweep](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/authActions.ts#L93-L101)
+- **B-317-2 progress-loss portion closed:** paged reads return continuation tokens; failed reads retain per-type progress; bounded passes report partial rather than falsely claiming completion at service level. [Android progress](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/healthConnect/healthConnectSyncService.ts#L183-L225) [Apple progress](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/healthkit/healthKitSyncService.ts#L199-L244)
+- **B-317-3 closed for the reported whole-query aggregation/replay case:** sleep is grouped per session, overlapping intervals counted once, edge sessions deferred and incremental reads have a sleep lookback; regressions cover two nights and full/incremental equality. [Normalizer](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/healthkit/healthKitNormalizer.ts#L348-L515) [Sleep regressions](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/healthkit/__tests__/healthKitNormalizer.test.ts#L225-L306)
+- **B-317-4 / C-317-1 / C-317-2 closed:** native weight explicitly requests kilograms with client-to-normalizer regression; batch bounds count UTF-8 and exclude oversized records; 30-day/coaching disclosure appears before Continue. [Weight test](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/healthkit/__tests__/healthKitClient.test.ts#L266-L284) [Byte counter](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/services/health/ingestBatching.ts#L109-L172) [Disclosure](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/screens/client/wearables/ConnectProviderSheet.tsx#L302-L312)
+
+### Evidence / launch limits
+
+Independent local command: `node /home/user/workspace/ops/reports/AUD-SOL-317-adversarial-probes.cjs` -> exit 0, `AUDIT_PROBES_COMPLETE`; this means the two defects were reproduced, **not** that safety assertions passed. The harness evaluates exact candidate source with native/network/storage seams, makes no real provider/network request and is not device proof.
+
+Exact-head CI inspected: all required mobile checks SUCCESS, and the actual test log contains **377 suites / 5,085 tests passed**, including local authorization, session-fence, native-config and import regressions; those isolated mocks do not cover the reproduced composition gaps. [Exact-head test execution](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/36905449310/job/110514715565) [Exact-head checks](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/c7e35d847dae7cb08422d221ec0657b769192e7c/checks)
+
+No local Jest/install/native build/live DB was run; shared dependency READY markers were absent. New-binary Android/iPhone device acceptance, backend #623 rollout and the #604 throttler dependency remain operator release prerequisites, and the wearable AI insight flag must remain off until separate D2 enforcement is accepted. [PR rollout/device plan](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317) [Default-off panel flag](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/c7e35d847dae7cb08422d221ec0657b769192e7c/src/config/featureFlags.ts#L471-L482)
+
+No candidate source was edited, pushed or merged; no deploy/production/flag action was performed.
+
+COMMENT 5961170156
+AUDIT GPT-6.1 Sol — growth-project-mobile#317 @ 58c2d53fa061071e193e5e3b5f981209425e9e0c — VERDICT: REQUEST CHANGES
+
+Independent T4 re-audit, AUD-SOL-5 / operator 112: **A 0 · B 3 · C 2** (three new B findings; the two C findings are inherited from the [same-head Opus audit](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5961091995), not reissued).
+
+The previous cross-account permission-prompt blocker and partial-import presentation defect are repaired, but cancellation has a pre-fence hole and Health Connect continues native reads after logout; this is not dual-approved at this head. ([Permission-prompt composition regressions](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/__tests__/ConnectProviderSheet.accountSwitch.test.tsx), [Connect continuation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectProviderSheet.tsx#L244-L275), [native read loop](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/healthConnect/healthConnectSyncService.ts#L179-L232))
+
+### B-317-6 — High / must fix: closing or unmounting during identity capture does not cancel Connect
+
+**Evidence:** `ConnectProviderSheet.tsx:134-152` can cancel only a fence already stored in `attemptRef`; `:250-258` first awaits `beginOnDeviceConnect()`, then unconditionally installs the returned fence and opens the permission flow, without checking mount state or whether the sheet/provider attempt changed during that await. ([Cleanup and reset](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectProviderSheet.tsx#L134-L152), [late fence installation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectProviderSheet.tsx#L244-L274))
+
+**Reproduction:** defer the identity-cache read begun by Continue, hide the sheet or unmount it before that read resolves, then resolve the same user's identity with native access granted; the actual sheet/orchestrator/fence/storage composition still invokes the permission seam once, registers once, persists a local grant and invokes the phone-sync seam once in both cases. ([Affected continuation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectProviderSheet.tsx#L244-L274), [asynchronous fence construction](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/sessionFence.ts#L111-L118))
+
+The independent `hide` and `unmount` assertions both failed as expected; this is unwanted collection after cancelling the attempt, **not** a claim that the repaired A→B ownership bug still reproduces. ([Cancellation-sensitive path](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectProviderSheet.tsx#L134-L152))
+
+**Minimal fix:** create a synchronous attempt identity/cancellation epoch before the first await, invalidate it on close/unmount/provider change, and after identity capture cancel/discard a late fence unless that exact attempt is still mounted, visible and current; recheck before opening native permissions and before importing. Add composition regressions for close/unmount/provider change while identity capture is pending, expecting zero prompt, registration, grant and phone read.
+
+### B-317-7 — High / must fix: Health Connect reads subsequent pages and types after logout
+
+**Evidence:** `healthConnectSyncService.ts:181-200` checks the fence once before an awaited progress read, then reads each granted type without another check; `healthConnectClient.ts:281-318` follows up to 20 native pages with no cancellation/fence callback. ([Type loop](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/healthConnect/healthConnectSyncService.ts#L179-L222), [page loop](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/healthConnect/healthConnectClient.ts#L281-L318))
+
+**Reproduction:** use the real service, real paged client and real session fence; grant Steps, HeartRate and Weight, and emit logout while the first native Steps read returns a continuation token; the service subsequently starts Steps page 2, HeartRate and Weight before detecting the changed session at its later request/progress boundary. ([Unchecked continuation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/healthConnect/healthConnectClient.ts#L302-L316), [late fence boundary](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/healthConnect/healthConnectSyncService.ts#L193-L232))
+
+The independent assertion observed **4 native calls instead of 1**; session-change rejection and unchanged persisted progress were separately asserted, so the demonstrated gap is **additional local health collection after logout**, not a foreign-account POST or progress advance. ([Read and save boundaries](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/healthConnect/healthConnectSyncService.ts#L193-L232))
+
+**Minimal fix:** thread a mandatory cancellation/fence check into the native paged read and run it before every new page and type, including after asynchronous progress/permission setup; rethrow session-change/cancellation errors instead of degrading them into an ordinary per-type read failure. Do not attempt to undo a native request already started; prove that no *new* page/type starts after logout, account switch or sheet cancellation.
+
+### B-317-8 — Medium / must fix: cloud connect still ignores failure status/code and drops the support reference
+
+**Evidence:** `ConnectProviderSheet.tsx:341-347` discards the caught error and tells every cloud OAuth failure to check the internet and tap Continue; it neither handles an expired session nor supplies a reference/support path and reporting for unexpected server failures. ([Cloud error catch](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectProviderSheet.tsx#L334-L347))
+
+Independent actual-sheet cases with OAuth start HTTP **401** and **500** both rendered the internet advice; 401 had no login action/copy, and 500 had no reference/support copy or `reportUnexpected` call, contradicting the owner's coded-error requirement. ([Error branch](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectProviderSheet.tsx#L341-L347))
+
+**Minimal fix:** retain the error and use a cloud-specific mapper: network advice only for network errors, login recovery for 401, actionable known status/machine-code outcomes, and unexpected failures with a short request reference, working support path and safe Sentry report. Add 401, 403, 429, 5xx/unknown and genuine-network component cases.
+
+### Prior-finding disposition and optional inherited items
+
+- **A-317-1 narrow account-switch-through-permission-dialog case: CLOSED.** The account/generation fence is captured before the prompt; existing real-composition cases cover A→B, logout, same-account re-login and a successful control, and this lens reran them successfully; B-317-6 concerns a different pre-fence close/unmount interleaving. ([Composition suite](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/__tests__/ConnectProviderSheet.accountSwitch.test.tsx), [previous Sol audit](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5939974918))
+- **B-317-2 UI partial-import case: CLOSED.** Incomplete results retain the sheet with Continue import/Try again instead of full-import success; the partial/resume/all-fail cases pass. ([Outcome handling](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectProviderSheet.tsx#L194-L227), [component regressions](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx))
+- **B-317-5 and C-317-4: CLOSED.** Remote-connected/no-local-grant rows offer Not syncing here/Reconnect; Disconnect has a confirmation and specific failure handling, including already-disconnected refresh and unknown-reference reporting; targeted tests pass. ([Connections implementation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/ConnectionsScreen.tsx#L289-L352), [Opus closure record](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5961091995))
+- The Health Connect declared/read permission-set equality regression passes; the three unused Health Connect permissions are removed, with no new manifest finding from this lens. ([Exact-set test](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/__tests__/healthPlatformConfig.test.ts))
+- **C-317-5 and C-317-6: inherited, optional; no duplicate finding.** Preserve Opus's remaining Samsung/activity permission observation and the operational release prerequisites: backend #608 deployed before ingest activation, wearable AI insight flag unset pending D2 enforcement, a fresh clinic binary plus device pass, and Play declaration before reviewed tracks. ([Same-head C findings](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5961091995))
+
+### Scope / verification
+
+The merge of main at `54916fa` is **not pure/tree-equal** to the conflicted `merge-tree`: I reviewed its resolution seams, including preserving health-state and consultation-draft retirement, the Health Connect disabled build guard/lazy import, scoped progress, deletion of the removed hook test, and the wearable-AI default-off expected-env registration; the own-fix diff `54916fa..58c2d53` was reviewed separately. ([Independent same-head merge-seam record](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5961091995))
+
+Required exact-head CI is green: Typecheck/lint/test and both required Analyze checks, plus CodeQL; this does not cover the adversarial interleavings above. ([Typecheck/lint/test](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37060528148/job/111015773472), [Analyze actions](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37060528174/job/111015774520), [Analyze JS/TS](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37060528174/job/111015774431))
+
+**Local targeted evidence:** **16 suites / 208 passed**; external independent assertions **5 failed as expected**, not setup failures (two cancellation cases, one paged-read logout case, two OAuth status cases); React act warnings in the cancellation harness are retained in the log, and the service/storage call observations—not rendered timing—establish those failures. ([Candidate sheet composition](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/screens/client/wearables/__tests__/ConnectProviderSheet.accountSwitch.test.tsx), [affected read loop](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/58c2d53fa061071e193e5e3b5f981209425e9e0c/src/services/health/healthConnect/healthConnectSyncService.ts#L193-L232))
+
+Exact commands (worktree `/home/user/workspace/wt/aud-sol5-317`; all via shared heavy queue):
+
+```text
+/home/user/workspace/ops/heavy.sh npx jest --runInBand --forceExit \
+ src/screens/client/wearables/__tests__/ConnectProviderSheet.accountSwitch.test.tsx \
+ src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx \
+ src/screens/client/wearables/__tests__/ConnectProviderSheet.buildSwitch.test.tsx \
+ src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx \
+ src/screens/client/wearables/__tests__/WearablesShell.test.tsx \
+ src/screens/client/wearables/__tests__/onDeviceCopy.test.ts \
+ src/services/health/__tests__/onDeviceSync.test.ts \
+ src/services/health/__tests__/sessionFence.test.ts \
+ src/services/health/__tests__/healthPlatformConfig.test.ts \
+ src/services/health/__tests__/healthConnectBuildGuard.test.ts \
+ src/services/health/healthkit/__tests__/healthKitSyncService.test.ts \
+ src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts \
+ src/hooks/useWearableConnections.test.tsx \
+ src/config/__tests__/androidHealthConnectConfig.test.js \
+ src/services/__tests__/authActions.signOut.test.ts \
+ src/services/__tests__/authActions.test.ts
+/home/user/workspace/ops/heavy.sh npx jest \
+ --config /home/user/workspace/ops/evidence/AUD-SOL-5-112/jest317.config.cjs \
+ --runInBand --forceExit
+```
+
+Evidence retained under `ops/evidence/AUD-SOL-5-112/`: `317-targeted.log`, `317-independent-probes.log`, `aud-sol5-wearables-r4.test.tsx`, `jest317.config.cjs`, `mobile-317-r4-own.diff`, `317-merge-seam.txt`, `317-merge-resolution.diff`. No device/prebuild/native-binary proof, full local suite, push, merge, workflow dispatch or production action was performed.
+
+COMMENT 5964162719
+AUDIT GPT-6.1 Sol — growth-project-mobile#317 @ cf387e88d2a18e8dd047a831a18dc273d6136328 — VERDICT: REQUEST CHANGES
+
+Independent T4 re-audit; **A/B/C = 0/2/0**; B-317-6/7/8 close for their previously reported interleavings, but cancellation still stops at two async boundaries. [Previous Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5961170156), [audited head](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/cf387e88d2a18e8dd047a831a18dc273d6136328).
+
+### B-317-9 — New: cancelling during Health Connect setup still opens a fresh permission dialog
+
+`ConnectProviderSheet.tsx:315-324` checks the fence before calling `connectOnDeviceProvider(target)`, but passes no cancellation/fence into that helper; `onDeviceConnect.ts:127-138` awaits SDK availability and initialization, then unconditionally starts `requestPermission`. Closing/unmounting or signing out while either setup await is held therefore still permits a **new native permission prompt after cancellation**. [Sheet boundary](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/screens/client/wearables/ConnectProviderSheet.tsx#L315-L324), [unchecked native continuation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/services/health/onDeviceConnect.ts#L117-L139).
+
+Independent execution of the actual sheet callback plus actual `connectHealthConnect` helper, with a deferred synthetic `getSdkStatus`, cancels the installed fence and unmounts before releasing SDK availability: the continuation still calls `initialize` and `requestPermission`; the later import is correctly suppressed. This is a newly-started prompt after cancellation, not a claim that an already-open OS prompt can be withdrawn or that the old cross-account POST defect remains. [Exact helper/caller](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/services/health/onDeviceConnect.ts#L117-L166).
+
+**Minimal fix:** carry the same attempt/session stop check into native Connect, recheck after `getSdkStatus` and initialization, and synchronously immediately before permission UI starts; cancellation/session changes must propagate as a stop, not a permission failure report. Add real sheet-to-helper regressions holding both setup awaits, then close/unmount/provider-switch/sign-out; assert no newly-started prompt, registration, local grant or read. Preserve explicit Connect and the existing revoked-access/no-auto-reprompt behavior. [Boundary to fence](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/services/health/onDeviceConnect.ts#L127-L139).
+
+### B-317-10 — New: a stale cloud auth-session result still emits success and closes the current sheet
+
+The changed `handleCloudConnect` checks its attempt epoch after OAuth-start, but not after `await WebBrowser.openAuthSessionAsync`; `ConnectProviderSheet.tsx:212-221` then invalidates, emits `wearable_connected`, calls `onConnected`, and calls `onClose` even after that attempt has been closed/unmounted or replaced with another provider. [Missing post-browser fence](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/screens/client/wearables/ConnectProviderSheet.tsx#L191-L224).
+
+Independent exact-callback execution holds the browser promise, changes the epoch to represent closing/reopening for another provider, and returns `success`: all four obsolete side effects still execute (`invalidate`, success signal, connected callback, close). A completion from the old flow can therefore announce/close the new flow; the guarded failure path does not prevent this successful-completion race. [Unchecked success branch](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/screens/client/wearables/ConnectProviderSheet.tsx#L202-L222).
+
+**Minimal fix:** recheck the originating attempt/mount and session identity after every async cloud boundary and immediately before visible callbacks/tutorial success; stale completions must not operate on the replacement sheet. Authoritative backend reconciliation may remain separate from UI success. Add component tests for held browser success/dismiss after close, unmount, provider replacement and sign-out, plus an unchanged-attempt positive control. [Callback to repair](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/screens/client/wearables/ConnectProviderSheet.tsx#L191-L224).
+
+### Previous findings: explicit disposition
+
+- **B-317-6 CLOSED for identity-capture cancellation:** synchronous attempt epoch plus mount checks discard a late-created fence before any native Connect; the actual composition regression covers hide, unmount and provider change while `readUserCache` is held, with a successful control. B-317-9 is the separate, later native-setup window, which that suite mocks as one indivisible permission promise. [Epoch implementation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/screens/client/wearables/ConnectProviderSheet.tsx#L147-L177), [failing-before composition cases](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/screens/client/wearables/__tests__/ConnectProviderSheet.accountSwitch.test.tsx#L194-L257).
+- **B-317-7 CLOSED:** `signOut` invalidates health work synchronously before its first await; the real paged client checks the same fence before every new native page, the sync service checks types and drops late results, and stop errors are rethrown rather than converted into a partial read. Real-client/real-fence cases cover sign-out start, logout, identity switch and cancellation, expecting one native call, no POST and no saved progress. [Page boundary](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/services/health/healthConnect/healthConnectClient.ts#L314-L337), [composition regressions](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts#L354-L422), [sign-out entry](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/services/authActions.ts#L297-L305).
+- **B-317-8 CLOSED:** real HTTP status plus allowlisted machine code now distinguish network, 401/login, 403, 429 and disabled-cloud 503; unexpected server/browser failures retain a short request reference, support address and structured Sentry report. The component regressions include 401 recovery and 500 reference/reporting, rather than testing the mapper alone. [Cloud mapper](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/screens/client/wearables/onDeviceCopy.ts#L361-L414), [component cases](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx#L155-L233).
+- **C-317-5 CLOSED:** Samsung-specific native client removed, Samsung-era and ACTIVITY_RECOGNITION permissions removed and blocked in every dynamic build, retaining the 15 canonical Health Connect reads and clinic build switch. **C-317-6 is a binding operator release sequence, not reissued:** backend deletion/ingest prerequisites, AI flag off, new binary and device/Play-declaration checks remain outside this code approval. [Native permission configuration](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/app.config.js#L5-L87), [release plan](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317).
+- Earlier A-317-1 and B-317-1/2/3/4/5 remain repaired: scoped local authorization/progress, permission-before-account-switch fence, truthful partial history/resume, stable per-session sleep, kilogram reads, and explicit reconnect after sign-out are retained. Automatic Health Connect refresh no longer requests permission after revocation; its regression explicitly asserts no permission call. [Previous closure record](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5961170156), [revocation regression](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/cf387e88d2a18e8dd047a831a18dc273d6136328/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts#L130-L145).
+
+### Integration, execution and limits
+
+Reviewed own S-WEAR-3 commits and their tests plus both main-merge seams; final `f2edbdef + aae30ac0` merge reconstructs exactly as tree `bb71f56f7690043a8e55a6507026da3a310c2a6a`, preserving main's Sentry/env/support changes. The Fix round table is present in the PR body and describes the previous failures and pre-fix execution. [Fix-round record](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317), [final merge](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/cf387e88d2a18e8dd047a831a18dc273d6136328).
+
+Executed `ops/heavy.sh node ops/evidence/S-L-SOL/317-independent.cjs wt/S-L-SOL-317`, exit 0: it confirms both new counterexamples using exact callback/helper bodies with only TypeScript signatures removed and synthetic delayed native/browser seams; exit 0 means **reproduction succeeded**, not that cancellation invariants passed. No real native permission, OAuth, browser, health read, storage write or HTTP call occurred.
+
+All three required mobile checks are green at this exact head; downloaded actual CI execution reports **423 suites / 5,980 tests PASS**, including Connect composition, paged Health Connect, session fence, copy and manifest/config cases. Shared mobile deps were not READY, so no local Jest/full-suite/device run is represented. [Exact-head tests](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37081218837/job/111081946543), [JS/TS analysis](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37081218807/job/111081946405), [Actions analysis](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37081218807/job/111081946595).
+
+No source push, merge, workflow dispatch, native build or production action; hold merge on B-317-9/10, not on the operator-owned device/release conditions.
+
+COMMENT 5964393578
+FIX ROUND 4 — growth-project-mobile#317 @ cfa99ce3f8c2b9f6f2b7007ccc316b8956e97b05
+
+S-WEAR-4. Lane S-B2 (sub-manager 114-S), builder Claude Opus 5.5; not a self-audit. Answers Sol RC 5964162719 (B-317-9, B-317-10) and Opus APPROVE 5964176914 (C-317-7) at cf387e88. Before this round, the PR body table was the only round record. Range:
+- fix `175537b`;
+- merge main `1f8981dd` in `cfa99ce3`. The merge is pure: `git merge-tree --write-tree 175537b 1f8981dd` gives `88ab70ec`, which equals the head tree. app.json takes both sides (main's expo-audio plugin is kept).
+
+**B-317-9:**
+- `connectOnDeviceProvider(provider, isCurrent)` asks the sheet's attempt check at four points:
+  - before setup;
+  - after `getSdkStatus`;
+  - after `initialize`;
+  - synchronously right before `requestPermission` (and before the HealthKit sheet).
+- An attempt that has ended returns `stopped`. A setup error after the stop also counts as `stopped`, not `error`.
+- The sheet's check is: same fence, still mounted, epoch unchanged, and `fence.throwIfStopped()` passes.
+- A sign-out while the sheet is still open shows the session-changed copy.
+- Explicit Connect works as before, and so does the no-auto-reprompt after revocation.
+
+**B-317-10:**
+- `handleCloudConnect` captures the auth generation at the tap.
+- After the browser returns it rechecks mount, epoch and generation before any visible effect.
+- A stale `success` or `dismiss` emits no tutorial signal, calls no `onConnected` and does no `onClose`.
+- In the same session it still re-reads the connection list. After a sign-out it does nothing.
+
+**C-317-7:** the JSDoc is corrected. The `docs/OTA_UPDATES.md` line belongs to #305, so whichever PR merges second updates it.
+
+**Tests** (heavy.sh, `env CI=true npx jest --runInBand --forceExit --runTestsByPath`):
+- New `ConnectProviderSheet.attemptFence.test.tsx` runs the real sheet against the real helper, orchestrator, fence and storage; only the Health Connect native module is a double.
+  - Native setup: `getSdkStatus` or `initialize` is held, then hide, unmount, provider change or sign-out. Result: no prompt, registration, grant or read. A logout event and a live control are included.
+  - Cloud: the browser's `success` or `dismiss` arrives after hide, unmount, provider replacement or sign-out. A close/reopen for another provider is included, plus unchanged-attempt controls.
+- `onDeviceConnect.test.ts` adds 5 cases.
+- Before (sources at cf387e88, new tests kept): 22 failed / 19 passed.
+- After: 12 suites / 213 passed.
+- After the main merge: 14 suites / 187 passed (ConnectProviderSheet suites, onDeviceConnect and all `src/config/__tests__`).
+- eslint clean.
+
+**Pre-push checklist (19:05), over the whole PR diff:**
+- (a) Pass. Every report from this PR (`reportUnexpected` in onDeviceCopy and disconnectCopy) carries only status, an allowlisted code and a request id. No message text and no health values. No new sink this round.
+- (b) Pass for the paths in this round. The native setup awaits and the cloud browser await now recheck attempt, mount and session before any side effect. The earlier identity-read, import and page fences are unchanged.
+- (c) Pass. Close, unmount, provider change, sign-out and logout are each tested at both native setup awaits and after the browser.
+- (d) Pass. This round adds no new copy. A grep of the added client copy finds no we/us/our, no exclamation marks and no emojis. Unknown failures keep a reference plus the support address.
+- (e) Pass. 22 tests fail before and pass after, as listed above.
+
+No package change of its own; main's expo-audio arrives via the merge. Required checks are running at cfa99ce3.
+
+Handover: per operator 19:05, #317 now passes to builder S-B5. S-B2 will not push to this PR again.
+
+COMMENT 5964406089
+AUDIT GPT-6.1 Sol — growth-project-mobile#317 @ cfa99ce3f8c2b9f6f2b7007ccc316b8956e97b05 — VERDICT: APPROVE
+
+Independent T4 S-WEAR-4 re-audit from `cf387e88`; **A/B/C 0/0/0**. All prior audit/fix records, the complete eight-file own-fix delta and the final main-merge seam were read. **B-317-9 and B-317-10 close with actual-path tests and an independently executed failing-before comparison.** [Previous Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964162719), [round-4 record](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964393578).
+
+### B-317-9 — CLOSED
+
+`src/services/health/onDeviceConnect.ts:144-160,172-193` now accepts the real sheet's current-attempt callback, checks it before setup, after SDK availability and initialization, and synchronously before opening permission UI. The sheet's callback (`ConnectProviderSheet.tsx:345-369`) combines current fence/mount/epoch with `fence.throwIfStopped()`; cancellation returns `stopped`, not a permission failure, and setup failure after cancellation is also stopped. HealthKit checks before its prompt. [Actual helper/sheet closure](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964393578).
+
+The actual sheet/helper/orchestrator/fence/storage tests hold **each** native setup await, then hide/unmount/change provider/start sign-out: no subsequent prompt, registration, local grant or import occurs. The status-held cases also require no initialization. Logout-event and unchanged-attempt controls prove the tests exercise the real path; the live control reaches prompt, registration, grant storage and import. No physical device/Health Connect/HealthKit acceptance is claimed. [New native composition cases](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964393578).
+
+### B-317-10 — CLOSED
+
+`ConnectProviderSheet.tsx:197-204,218-229` captures the synchronous auth generation before the OAuth-start await and checks mount/attempt epoch/generation after the browser await, before tutorial success, `onConnected` or `onClose`. Stale same-session completion may only refresh the authoritative connection list; a retired session does not even invalidate it. [Cloud closure and tests](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964393578).
+
+The browser matrix exercises both success and dismiss after hide/unmount/provider replacement/sign-out, plus close-and-reopen for another provider. Every stale case suppresses visible completion and callbacks; unchanged-attempt controls still connect/close, and only actual success emits the tutorial signal. [Actual browser-seam test scope](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964393578).
+
+### Retained closures, delta hunt and merge
+
+B-317-6/7/8 retain their identity-capture cancellation, paged/type health-read stop fences and status+machine-code cloud error mapping. C-317-5 remains closed: deleted Samsung-only source, blocked ACTIVITY_RECOGNITION/Samsung sensor permissions and the 15 Health Connect reads are unchanged. Revocation still never auto-prompts. No new privacy/log sink, server request schema, permission expansion, automatic prompt or generic error is introduced by this round. [Previous code/test dispositions](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964162719), [round-4 delta](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964393578).
+
+Final merge `cfa99ce3` is pure: `git merge-tree --write-tree 175537b 1f8981dd` equals HEAD tree `88ab70ec6d1fbada79ba0a100e61d2558ce140ce`. Main's expo-audio plugin/dependency/mock and this PR's Health Connect build/permission changes are both preserved; no conflict resolution or unrelated hand edit occurred. The helper JSDoc part of Opus C-317-7 is corrected; the #305 hard-coded clinic flag documentation remains a disclosed second-to-merge seam, not a reopened blocker. [Merge and optional-doc disposition](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964393578), [other lens's optional finding](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964176914).
+
+### Executed evidence / limits
+
+After mobile READY, `ops/heavy.sh env CI=true npx jest --runInBand --forceExit --runTestsByPath` on `ConnectProviderSheet.attemptFence`, `onDeviceConnect`, `ConnectProviderSheet.accountSwitch` and `sessionFence` passes **4 suites / 63 tests**, exit 0, at this final head. Mapping only the sheet/helper modules to exact `cf387e88` source and rerunning unchanged `attemptFence`/`onDeviceConnect` tests produces **22 expected failures / 19 passing controls**, exit 1. Candidate tracked files were unchanged; baseline modules, config, logs and verdict are retained as `ops/evidence/S-L-SOL/317-r4-*`. [Exercised production/test paths](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5964393578).
+
+All three required checks are green at exact head `cfa99ce3`; actual CI ran **435 suites / 6,120 passing tests**. Release sequencing and installed-device acceptance remain operator gates. No push, merge, dispatch, build, live provider or production action was performed. [Exact-head CI execution](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37088175119/job/111102659827), [analysis checks](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37088175108).
+
+COMMENT 5971833355
+FIX ROUND 5 (B-MOB-B, agent 115) — growth-project-mobile#317 @ 7174daa88a67c6d8028b2c741fd4d1d76d5b3c8b
+
+Input: dual APPROVE at `cfa99ce3` (Opus, Sol), plus builder self-finding B-317-11 and optional C-317-a..d. Not a self-audit: B-MOB-B did not write rounds 1 to 4.
+
+| Finding | Change | Commit | Test (fails before / passes after) |
+|---|---|---|---|
+| B-317-11 (builder): a stale on-device import, held resume or failure could still mark success, call `onConnected`, close, show an error or report to Sentry on the next sheet (close and reopen, or provider change) | `ConnectProviderSheet.tsx`: `isCurrentAttempt(epoch, fence)` (mounted, epoch unchanged, same fence). `runImport` takes the attempt epoch and fence and captures the auth generation. A stale success or failure does nothing visible (no signal, no `onConnected`, no close, no message, no Sentry); it only re-reads the connection list when the session is the same. Sheet still current but session changed: success is silent, failure shows the session-changed copy, no Sentry. `finally` clears busy state only for the current attempt; `handleResume` and `handleContinue` gate their `finally` on the epoch; the `[visible, provider]` effect resets the busy flag; Continue busy state is per attempt (`requestingOnDevice`), no longer the shared `startOauth.isPending` | 4e72bf0 tests, 7174daa fix | new `ConnectProviderSheet.importEpoch.test.tsx`: close/reopen and provider change × import success / failure, busy Continue on the new sheet, unmount ×2, sign-out ×2, held resume ×2, controls ×2 |
+| C-317-c (builder): Open Health Connect result shown on a later sheet | `handleOpenExternal` rechecks mount and epoch after the await | 7174daa | importEpoch: settings open resolves true / false after close and reopen (no message on the Oura sheet) + control |
+| C-317-a (builder): a refresh that settles after sign-out or unmount still wrote a notice and re-read | `WearablesShell.tsx`: `mountedRef`, `latestRunRef` and the auth generation are checked before any notice or invalidate | 7174daa | `WearablesShell.test.tsx` C-317-a: sign-out then reject, sign-out then partial, unmount, plus control |
+| C-317-b (builder): refresh failure logged its text | `logger.warn` logs `{ error: err.name or typeof }` only | 7174daa | `WearablesShell.test.tsx` C-317-b |
+| C-317-d (builder): test name described the wrong case | attemptFence test renamed to "a sheet closed and reopened for another provider is not closed by the old browser result" | 4e72bf0 | n/a (name) |
+| C-317-7 / OR-115-5: `docs/OTA_UPDATES.md` Health Connect line | Fixed in #305 (`d7f41e5`), which no longer hard-codes the clinic value, so the line is right whichever PR merges second | #305 d7f41e5 | n/a (docs) |
+| Merge main `4f1d74d` | merge commit, no rebase | 737a95a | PR CI |
+
+Failing before (GitHub CI, tests-only branch `ci/B-MOB-B-317-before` @ `4e72bf0`, fix not applied): https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37141124980 — red, 2 suites / 17 tests failed, 6191 passed. Failing: 13 in `ConnectProviderSheet.importEpoch.test.tsx` (for example "B-317-11 … close and reopen for Oura, then the import SUCCEEDS: no success, onConnected or close on the Oura sheet", "… provider change to Oura while the import is still running: the Oura Continue is ready, not busy", "C-317-c … settings open resolves true after a close and reopen for Oura") and 4 in `WearablesShell.test.tsx` ("C-317-a … sign-out while the refresh runs, then it rejects: no notice, no refetch, no report", "C-317-b: a refresh failure is logged by error class only, never its text"). Controls passed.
+
+Passing after: PR CI at this head https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37141169059 (success) and CodeQL https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37141169051 (success). Local: importEpoch 17/17.
+
+Pre-push checklist: no free-form text to logs or Sentry (error class only); every await before a state write rechecks mount, epoch and auth generation; close, reopen, provider change, unmount and sign-out races tested; no new copy; failing-before test per finding.
+
+Out of scope here: `ConnectionsScreen` "We couldn't load your connections" belongs to the OR-115-4 copy PR.
+
+Required checks at 7174daa8: Typecheck, lint, test / Analyze (javascript-typescript) / Analyze (actions) all green.
+
+READY FOR AUDIT
+
+COMMENT 5972003820
+FIX ROUND 6 (B-MOB-B, agent 115) — growth-project-mobile#317 @ 82137c312e957cb05eedeaebf86fcd95029f2bde
+
+Delta on top of FIX ROUND 5 (`7174daa8`), before any lens verdict there: main moved to `47124a4` (#326), and the C-317-b log still carried the mutable `Error.name` (the gap Sol's in-progress note at `WearablesShell.tsx:149-153` points at). Not a self-audit. Tier unchanged: T4.
+
+| Finding | Change | Commit | Test (fails before / passes after) |
+|---|---|---|---|
+| C-317-b r2: the refresh failure log copied `Error.name`, which is mutable (a native or library error can put arbitrary text there), and it logged before the stale-session return | `refreshErrorClass(err)` returns a closed set (`aborted`, `network`, `http`, `type`, `error`, `other`); `name` is only compared with constants, never copied. The log now runs after `if (!current()) return`, so a stale failure (sign-out, unmount, newer run) logs nothing | cdd4446 tests, 82137c3 fix | `WearablesShell.test.tsx`: closed class for a plain Error; an `Error` whose `name` is synthetic private text never reaches the log; a non-Error rejection logs `other`; sign-out then reject logs nothing |
+| Merge main `47124a4` (#326) | merge commit, no rebase; no conflicts | ea06106 | PR CI |
+
+Failing before (GitHub one-job ci-lane, `ci/B-MOB-B-317-before` @ `cdd4446` = this head minus the fix): https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37142129659 — red, 4 failed / 16 passed: "C-317-b: a refresh failure is logged by a closed class only, never its text", "C-317-b: an arbitrary Error.name never reaches the log", "C-317-b: a non-Error rejection is logged as other, never its value", "C-317-a … sign-out while the refresh runs, then it rejects: no notice, no refetch, no report". Round 5 before-proof stays https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37141124980.
+
+Passing after: PR CI at this head https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37142172757 (success) and CodeQL https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37142172742 (success). Local: `WearablesShell.test.tsx` 20/20.
+
+Pre-push checklist: the log carries a closed class only; the stale-session check runs before any write or log; sign-out race tested; no copy change.
+
+Required checks at 82137c31: Typecheck, lint, test / Analyze (javascript-typescript) / Analyze (actions) all green.
+
+READY FOR AUDIT
+
+COMMENT 5972055787
+AUDIT GPT-6.1 Sol — growth-project-mobile#317 @ 82137c312e957cb05eedeaebf86fcd95029f2bde — VERDICT: APPROVE
+
+Independent T4 delta from this lens's prior wearables review and the builder's round 5/6; **A/B/C 0/0/0**. I read all prior audit/fix comments, the complete five-file round-5 own delta, the pure main merge and both round-6 test/code commits. B-317-11's sheet attempt/epoch/session fence and busy-state recovery remain closed; old import completions cannot update another mounted sheet or sign-in. The new mutable-error-name privacy gap is **closed**, not being reported stale. ([Round-5 detailed audit](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5971856663), [round-6 fix](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5972003820))
+
+**Logger boundary:** my audit-only actual-shell probe at the prior `7174daa8` source failed exactly at the privacy assertion: the logger argument included a synthetic free-form `Error.name` (`AUDIT_PRIVATE_PERSON_HEALTH_CANARY_317`). This was a logger-boundary test, not a physical device or claim that production transport emitted it. The builder independently added a closed-set `refreshErrorClass()` (`WearablesShell.tsx:71-85`) and moved the log **after** the stale mount/run/session return (`:163-170`). The production logger can now receive only `aborted/network/http/type/error/other`; neither a mutable name nor an untyped rejection is interpolated. An obsolete error after sign-out is silent. ([Independent red probe: 1 failed / 6,226 passed tests](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37141532606), [exact repair](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/82137c312e957cb05eedeaebf86fcd95029f2bde/src/screens/client/wearables/WearablesShell.tsx#L71-L85))
+
+The builder's before-only one-job CI executes 20 actual-shell cases: four fail for arbitrary name, class, non-Error rejection and stale logging, 16 pass. At the exact head the WearablesShell suite passes and full installed-graph CI executes **449 suites / 6,345 tests PASS**; all three required checks pass. This lens ran no local heavy tests. ([Failing-before CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37142129659/job/111258581903), [exact-head CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37142172757/job/111258708043))
+
+`ea061062` is a pure merge of `7174daa8` with main `47124a4d`: independent merge-tree equals committed tree `22c50c7de3d199ddb4240a24a373191680864057`. Round-6 own edits after the merge are one test commit and one 25-line production classifier/log-order commit; there is no dependency/config/plugin change. Health Connect and Apple Health device permissions, background import, accessibility and native build checks remain operator release gates; this is not vendor/native validation. No candidate write, PR-branch push, merge or production action; only the test-only audit branch was pushed for the historical probe. ([Exact merge](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/ea0610623efed512a4791f0070fb4da850afad89), [final candidate](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/82137c312e957cb05eedeaebf86fcd95029f2bde))
+
+COMMENT 5972176395
+AUDIT GPT-6.1 Sol — growth-project-mobile#317 @ d0407b625e1d2bc63ebe9d063296bc85461842ed — VERDICT: REQUEST CHANGES
+
+Short T4 merge-only delta from this lens's APPROVE at `82137c312e957cb05eedeaebf86fcd95029f2bde`; **A/B/C 0/1/0**. The new head has exactly those two parents: the prior verdict head and mobile main `367e6c48` after approved #305. Independent `merge-tree --write-tree` reconstructs exact committed tree `ec754f158b1531b789fb0e8f3a2e66ce4e3bb259`, with no conflicts or resolution hunks, so the entire intervening delta is inherited main, not a new wearable/content change. Its required CI has now finished **red**, exposing a small integration-test contradiction below. ([Prior Sol approval](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5972055787), [operator merge-only readiness](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5972137278), [exact merge](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/d0407b625e1d2bc63ebe9d063296bc85461842ed), [failed exact-head CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37143998405/job/111264077205))
+
+B-317-11 and the arbitrary-error-name/stale-logger repair stay closed; the wearable session/attempt fences and closed six-value logger classifier are byte-unchanged from the prior approved source. Main's bounded OTA context/Sentry scrub composition is retained. `docs/OTA_UPDATES.md:120` also retains #305's OR-115-5 correction: it references the clinic profile's actual `TGP_ANDROID_HEALTH_CONNECT` value rather than claiming it must be off. No new production seam was introduced by this pure merge. ([Approved closures/evidence](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5972055787), [inherited #305 approval](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/305#issuecomment-5972016378), [inherited OTA documentation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/d0407b625e1d2bc63ebe9d063296bc85461842ed/docs/OTA_UPDATES.md#L116-L123))
+
+### B-317-12 — new merge-composition test contradiction blocks the required CI
+
+`scripts/__tests__/easUpdateGuard.test.js:138,287`, inherited from main/#305, hard-code clinic `TGP_ANDROID_HEALTH_CONNECT` to `"0"`. This PR's clinic build profile correctly has `"1"` at `eas.json:49`. The exact-head suite executes **2 failed / 6,478 passed tests**, **1 failed / 453 passed suites**: “reads the clinic channel from eas.json with the production flags merged under the clinic flags” and “B-305-5: a staged rollout goes through the guard with the clinic profile env” both receive `"1"` rather than their stale expected `"0"`. This is a test-composition defect, not evidence that the correctly derived guard runtime regressed. ([Failing execution](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37143998405/job/111264077205), [first stale assertion](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/d0407b625e1d2bc63ebe9d063296bc85461842ed/scripts/__tests__/easUpdateGuard.test.js#L130-L140), [second stale assertion](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/d0407b625e1d2bc63ebe9d063296bc85461842ed/scripts/__tests__/easUpdateGuard.test.js#L280-L290), [correct clinic profile](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/d0407b625e1d2bc63ebe9d063296bc85461842ed/eas.json#L44-L51))
+
+**Minimal fix:** update those two expectations to the actual clinic-profile value, retaining the guard's profile/env/fingerprint assertions and the positive clinic-on/production-off config coverage. Do **not** disable Health Connect, weaken the guard, skip the tests or change production settings. The current required run supplies failing-before evidence; a small test-only commit and green required CI supply the after proof. ([Actual integration seam](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37143998405/job/111264077205), [profile](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/d0407b625e1d2bc63ebe9d063296bc85461842ed/eas.json#L32-L51))
+
+Both required Analyze checks pass, but “Typecheck, lint, test” fails at this exact head, so no APPROVE from this lens now. Native HealthKit/Health Connect acceptance and release configuration remain operator gates; this is merge-composition evidence, not a device or production-transport claim. No new probes, local heavy work, candidate edits, merge or production action. ([Exact-head CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37143998405/job/111264077205), [exact-head analysis](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37143998466))
+

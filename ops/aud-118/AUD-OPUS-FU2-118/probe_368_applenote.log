@@ -1,0 +1,334 @@
+﻿2026-10-04T17:08:10.2504609Z Current runner version: '2.337.0'
+2026-10-04T17:08:10.2529572Z ##[group]Runner Image Provisioner
+2026-10-04T17:08:10.2530499Z Hosted Compute Agent
+2026-10-04T17:08:10.2531226Z Version: 20260901.588
+2026-10-04T17:08:10.2531936Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T17:08:10.2532744Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T17:08:10.2533544Z Worker ID: {d496685f-d6af-4401-b3f4-3e5866bd45ae}
+2026-10-04T17:08:10.2534308Z Azure Region: westcentralus
+2026-10-04T17:08:10.2534993Z ##[endgroup]
+2026-10-04T17:08:10.2536515Z ##[group]Operating System
+2026-10-04T17:08:10.2537477Z Ubuntu
+2026-10-04T17:08:10.2538163Z 24.04.5
+2026-10-04T17:08:10.2538720Z LTS
+2026-10-04T17:08:10.2539305Z ##[endgroup]
+2026-10-04T17:08:10.2539926Z ##[group]Runner Image
+2026-10-04T17:08:10.2540611Z Image: ubuntu-24.04
+2026-10-04T17:08:10.2541314Z Version: 20260927.320.1
+2026-10-04T17:08:10.2542638Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T17:08:10.2544324Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T17:08:10.2545384Z ##[endgroup]
+2026-10-04T17:08:10.2546695Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T17:08:10.2549143Z Contents: read
+2026-10-04T17:08:10.2550135Z Metadata: read
+2026-10-04T17:08:10.2550779Z Packages: read
+2026-10-04T17:08:10.2551437Z ##[endgroup]
+2026-10-04T17:08:10.2553532Z Secret source: Actions
+2026-10-04T17:08:10.2554484Z Cache mode: write
+2026-10-04T17:08:10.2555492Z Prepare workflow directory
+2026-10-04T17:08:10.2972813Z Prepare all required actions
+2026-10-04T17:08:10.3019192Z Getting action download info
+2026-10-04T17:08:10.5948556Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T17:08:10.6704829Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T17:08:10.8569102Z Complete job name: targeted
+2026-10-04T17:08:10.9356236Z ##[group]Run actions/checkout@v6
+2026-10-04T17:08:10.9357071Z with:
+2026-10-04T17:08:10.9357823Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:08:10.9361805Z   token: ***
+2026-10-04T17:08:10.9362250Z   ssh-strict: true
+2026-10-04T17:08:10.9362702Z   ssh-user: git
+2026-10-04T17:08:10.9363152Z   persist-credentials: true
+2026-10-04T17:08:10.9363637Z   clean: true
+2026-10-04T17:08:10.9364082Z   sparse-checkout-cone-mode: true
+2026-10-04T17:08:10.9364596Z   fetch-depth: 1
+2026-10-04T17:08:10.9365027Z   fetch-tags: false
+2026-10-04T17:08:10.9365477Z   show-progress: true
+2026-10-04T17:08:10.9365925Z   lfs: false
+2026-10-04T17:08:10.9366339Z   submodules: false
+2026-10-04T17:08:10.9366789Z   set-safe-directory: true
+2026-10-04T17:08:10.9367559Z   allow-unsafe-pr-checkout: false
+2026-10-04T17:08:10.9368340Z ##[endgroup]
+2026-10-04T17:08:11.0362455Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:08:11.0364603Z ##[group]Getting Git version info
+2026-10-04T17:08:11.0365478Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T17:08:11.0366817Z [command]/usr/bin/git version
+2026-10-04T17:08:11.0404433Z git version 2.55.0
+2026-10-04T17:08:11.0426422Z ##[endgroup]
+2026-10-04T17:08:11.0439959Z Temporarily overriding HOME='/home/runner/work/_temp/95340048-197e-4804-8754-677815749657' before making global git config changes
+2026-10-04T17:08:11.0441894Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:08:11.0444682Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:08:11.0486454Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T17:08:11.0490610Z ##[group]Determining repository object format
+2026-10-04T17:08:11.0492805Z ##[endgroup]
+2026-10-04T17:08:11.0493544Z ##[group]Initializing the repository
+2026-10-04T17:08:11.0497032Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:08:11.0569281Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T17:08:11.0570634Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T17:08:11.0571585Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T17:08:11.0572611Z hint: call:
+2026-10-04T17:08:11.0573033Z hint:
+2026-10-04T17:08:11.0573557Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T17:08:11.0574183Z hint:
+2026-10-04T17:08:11.0574761Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T17:08:11.0575674Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T17:08:11.0576860Z hint:
+2026-10-04T17:08:11.0577672Z hint: 	git branch -m <name>
+2026-10-04T17:08:11.0578373Z hint:
+2026-10-04T17:08:11.0579022Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T17:08:11.0580164Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-04T17:08:11.0582201Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:08:11.0618284Z ##[endgroup]
+2026-10-04T17:08:11.0619080Z ##[group]Disabling automatic garbage collection
+2026-10-04T17:08:11.0621673Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T17:08:11.0651609Z ##[endgroup]
+2026-10-04T17:08:11.0652634Z ##[group]Setting up auth
+2026-10-04T17:08:11.0653299Z Removing SSH command configuration
+2026-10-04T17:08:11.0658123Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:08:11.0688828Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:08:11.0990786Z Removing HTTP extra header
+2026-10-04T17:08:11.0995567Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:08:11.1027739Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:08:11.1253909Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:08:11.1259811Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:08:11.1291112Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:08:11.1522505Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T17:08:11.1559870Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:08:11.1590089Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:08:11.1621354Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:08:11.1651980Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:08:11.1685571Z ##[endgroup]
+2026-10-04T17:08:11.1686340Z ##[group]Fetching the repository
+2026-10-04T17:08:11.1693419Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +389950f24ba26e0059380632733512c5c03a019c:refs/remotes/origin/audit/AUD-OPUS-FU2-118/368-applenote
+2026-10-04T17:08:12.5521725Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T17:08:12.5523306Z  * [new ref]         389950f24ba26e0059380632733512c5c03a019c -> origin/audit/AUD-OPUS-FU2-118/368-applenote
+2026-10-04T17:08:12.5544990Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-FU2-118/368-applenote
+2026-10-04T17:08:12.5563604Z   origin/audit/AUD-OPUS-FU2-118/368-applenote
+2026-10-04T17:08:12.5585023Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-FU2-118/368-applenote
+2026-10-04T17:08:12.5608613Z 389950f24ba26e0059380632733512c5c03a019c
+2026-10-04T17:08:12.5610685Z ##[endgroup]
+2026-10-04T17:08:12.5611674Z ##[group]Determining the checkout info
+2026-10-04T17:08:12.5612548Z ##[endgroup]
+2026-10-04T17:08:12.5613339Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T17:08:12.5664634Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T17:08:12.5695025Z ##[group]Checking out the ref
+2026-10-04T17:08:12.5700275Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-FU2-118/368-applenote refs/remotes/origin/audit/AUD-OPUS-FU2-118/368-applenote
+2026-10-04T17:08:12.6753074Z Switched to a new branch 'audit/AUD-OPUS-FU2-118/368-applenote'
+2026-10-04T17:08:12.6756389Z branch 'audit/AUD-OPUS-FU2-118/368-applenote' set up to track 'origin/audit/AUD-OPUS-FU2-118/368-applenote'.
+2026-10-04T17:08:12.6766656Z ##[endgroup]
+2026-10-04T17:08:12.6809577Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T17:08:12.6834217Z 389950f24ba26e0059380632733512c5c03a019c
+2026-10-04T17:08:12.7198094Z ##[group]Run actions/setup-node@v6
+2026-10-04T17:08:12.7199324Z with:
+2026-10-04T17:08:12.7200262Z   node-version: 22.13
+2026-10-04T17:08:12.7201292Z   cache: npm
+2026-10-04T17:08:12.7202246Z   check-latest: false
+2026-10-04T17:08:12.7210532Z   token: ***
+2026-10-04T17:08:12.7211571Z   package-manager-cache: true
+2026-10-04T17:08:12.7212736Z ##[endgroup]
+2026-10-04T17:08:12.8672992Z Attempting to download 22.13...
+2026-10-04T17:08:13.9728764Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-04T17:08:14.6643686Z Extracting ...
+2026-10-04T17:08:14.6764681Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/4e57fe62-c91a-4bb9-b2b3-9e5275d281ca -f /home/runner/work/_temp/1fc55b34-8489-4518-8ec8-70ba0a9bb89d
+2026-10-04T17:08:15.9238579Z Adding to the cache ...
+2026-10-04T17:08:17.4927614Z ##[group]Environment details
+2026-10-04T17:08:17.7021411Z node: v22.13.1
+2026-10-04T17:08:17.7021866Z npm: 10.9.2
+2026-10-04T17:08:17.7022180Z yarn: 1.22.22
+2026-10-04T17:08:17.7023098Z ##[endgroup]
+2026-10-04T17:08:17.7042903Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-04T17:08:17.7945619Z /home/runner/.npm
+2026-10-04T17:08:17.9840676Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T17:08:19.2171290Z Received 37748736 of 241027159 (15.7%), 36.0 MBs/sec
+2026-10-04T17:08:20.2258885Z Received 222298112 of 241027159 (92.2%), 105.8 MBs/sec
+2026-10-04T17:08:20.2853072Z Received 241027159 of 241027159 (100.0%), 111.2 MBs/sec
+2026-10-04T17:08:20.2853715Z Cache Size: ~230 MB (241027159 B)
+2026-10-04T17:08:20.2883084Z [command]/usr/bin/tar -xf /home/runner/work/_temp/032bd9ba-77bb-43b9-b68e-19f1ddf4351c/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-04T17:08:20.9355430Z Cache restored successfully
+2026-10-04T17:08:20.9478419Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T17:08:20.9717845Z ##[group]Run npm ci
+2026-10-04T17:08:20.9718211Z [36;1mnpm ci[0m
+2026-10-04T17:08:20.9952296Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:08:20.9952604Z ##[endgroup]
+2026-10-04T17:08:25.8372995Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T17:08:26.0132099Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-04T17:08:26.0269043Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-04T17:08:26.0310428Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-04T17:08:26.0505307Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-04T17:08:26.1674394Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-04T17:08:26.1693664Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:08:26.1697588Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:08:26.1718840Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:08:26.1722489Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:08:26.1743388Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:08:26.2363574Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:08:26.2682294Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-04T17:08:26.6510150Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-04T17:08:27.3144652Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-04T17:08:30.2909107Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-04T17:09:22.9094165Z 
+2026-10-04T17:09:22.9097418Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-04T17:09:22.9097878Z 
+2026-10-04T17:09:22.9098089Z 187 packages are looking for funding
+2026-10-04T17:09:22.9098421Z   run `npm fund` for details
+2026-10-04T17:09:23.2948397Z 
+2026-10-04T17:09:23.2949289Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-04T17:09:23.2949734Z 
+2026-10-04T17:09:23.2950105Z To address issues that do not require attention, run:
+2026-10-04T17:09:23.2951271Z   npm audit fix
+2026-10-04T17:09:23.2951825Z 
+2026-10-04T17:09:23.2952235Z To address all issues (including breaking changes), run:
+2026-10-04T17:09:23.2952829Z   npm audit fix --force
+2026-10-04T17:09:23.2953347Z 
+2026-10-04T17:09:23.2953549Z Run `npm audit` for details.
+2026-10-04T17:09:23.4982732Z ##[group]Run set -euo pipefail
+2026-10-04T17:09:23.4983080Z [36;1mset -euo pipefail[0m
+2026-10-04T17:09:23.4983483Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T17:09:23.4984000Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T17:09:23.4984369Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T17:09:23.4984656Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-04T17:09:23.5056803Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T17:09:23.5057354Z ##[endgroup]
+2026-10-04T17:09:23.5162527Z specs: src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
+2026-10-04T17:09:32.9231107Z FAIL src/screens/settings/__tests__/DeleteAccountScreen.test.tsx (7.752 s)
+2026-10-04T17:09:32.9235331Z   DeleteAccountScreen
+2026-10-04T17:09:32.9235905Z     request form
+2026-10-04T17:09:32.9238534Z       ✓ renders server grace period and the manifest-derived lists (1799 ms)
+2026-10-04T17:09:32.9239881Z       ✓ C-313-1: uses the grace period the server reports (13 ms)
+2026-10-04T17:09:32.9241227Z       ✓ B-313-2/B-313-4: never claims Apple access is revoked, nor a universal anonymization promise (13 ms)
+2026-10-04T17:09:32.9242830Z       ✓ does not contain forbidden tokens (emoji, exclamation marks, income, finance, netWorth) (16 ms)
+2026-10-04T17:09:32.9244326Z       ✓ keeps the delete button disabled until DELETE and a password are entered (31 ms)
+2026-10-04T17:09:32.9245613Z       ✓ accepts the account email (case-insensitive) instead of DELETE (25 ms)
+2026-10-04T17:09:32.9246657Z       ✓ rejects other confirmation text (25 ms)
+2026-10-04T17:09:32.9248028Z       ✓ offers only the password for an email account without Apple available (12 ms)
+2026-10-04T17:09:32.9249270Z       ✓ offers every platform option when the sign-in method is unknown (14 ms)
+2026-10-04T17:09:32.9250103Z     password re-auth
+2026-10-04T17:09:32.9251195Z       ✓ mints a recent-auth token, schedules deletion with it and shows the date and window (61 ms)
+2026-10-04T17:09:32.9252783Z       ✓ purges the encrypted consultation draft as soon as deletion is scheduled (Sol A-04, C-310-10) (41 ms)
+2026-10-04T17:09:32.9254151Z       ✓ keeps the consultation draft when scheduling the deletion fails (41 ms)
+2026-10-04T17:09:32.9255540Z       ✓ shows a wrong-password message on 401, does not request deletion and does not sign out (31 ms)
+2026-10-04T17:09:32.9256642Z       ✓ shows a rate-limit message on 429 (23 ms)
+2026-10-04T17:09:32.9258139Z       ✓ an expired identity check when scheduling says so, offers to confirm again and stays on the form (32 ms)
+2026-10-04T17:09:32.9259203Z     Sign in with Apple re-auth (B-313-2)
+2026-10-04T17:09:32.9260335Z       ✓ re-authenticates with Apple and forwards the authorization code for revocation (24 ms)
+2026-10-04T17:09:32.9261799Z       ✓ outcome not_configured: no revocation claim, shows the Apple Account settings fallback (29 ms)
+2026-10-04T17:09:32.9263341Z       ✓ outcome exchange_failed: no revocation claim, shows the Apple Account settings fallback (16 ms)
+2026-10-04T17:09:32.9264829Z       ✓ outcome revoke_failed: no revocation claim, shows the Apple Account settings fallback (16 ms)
+2026-10-04T17:09:32.9266323Z       ✓ outcome not_requested: no revocation claim, shows the Apple Account settings fallback (14 ms)
+2026-10-04T17:09:32.9267861Z       ✓ outcome revoked: the scheduled view says Apple Account, never Apple ID (18 ms)
+2026-10-04T17:09:32.9269210Z       ✓ outcome not_configured: the scheduled view says Apple Account, never Apple ID (27 ms)
+2026-10-04T17:09:32.9270571Z       ✓ outcome revoke_failed: the scheduled view says Apple Account, never Apple ID (26 ms)
+2026-10-04T17:09:32.9271679Z       ✓ the revoked view names the Apple Account (24 ms)
+2026-10-04T17:09:32.9272754Z       ✓ the form says Apple Account, and its Apple note has no first person (9 ms)
+2026-10-04T17:09:32.9273870Z       ✓ hides the password field for an Apple-only account (12 ms)
+2026-10-04T17:09:32.9275632Z       ✓ stays silent when the user cancels the Apple sheet (16 ms)
+2026-10-04T17:09:32.9276416Z     Google re-auth (B-313-1)
+2026-10-04T17:09:32.9277656Z       ✓ OAuth-only success: fresh Google session proof schedules the deletion (25 ms)
+2026-10-04T17:09:32.9278623Z       ✓ cancel: stays on the form without an error (18 ms)
+2026-10-04T17:09:32.9279768Z       ✓ stale or wrong account: the server 401 becomes a clear Google message (29 ms)
+2026-10-04T17:09:32.9280793Z       ✓ provider error: shows the Google error text (21 ms)
+2026-10-04T17:09:32.9281494Z     legacy requested state (B-313-3)
+2026-10-04T17:09:32.9282338Z       ✓ is shown as not scheduled and can be completed with re-auth (31 ms)
+2026-10-04T17:09:32.9283087Z     status view
+2026-10-04T17:09:32.9284077Z       ✓ shows the scheduled date instead of the form when deletion is already scheduled (9 ms)
+2026-10-04T17:09:32.9285361Z       ✓ cancels the deletion after confirmation and returns to the form (14 ms)
+2026-10-04T17:09:32.9286555Z       ✓ explains a 409 when the deletion is already being completed (11 ms)
+2026-10-04T17:09:32.9287977Z       ✓ hides cancel once the grace period can no longer be cancelled (6 ms)
+2026-10-04T17:09:32.9288947Z       ✓ signs out from the status view (7 ms)
+2026-10-04T17:09:32.9289661Z     completion and errors (B-313-5)
+2026-10-04T17:09:32.9290551Z       ✓ a deleted status shows completion and signs out once (4 ms)
+2026-10-04T17:09:32.9291612Z       ✓ a 403 ACCOUNT_DELETED from the API is treated as completion (6 ms)
+2026-10-04T17:09:32.9292830Z       ✓ rechecks on focus and moves to completion when the deletion has finished (9 ms)
+2026-10-04T17:09:32.9294227Z       ✓ a status error shows a retry state, never the form, and does not sign out (11 ms)
+2026-10-04T17:09:32.9295152Z     navigation
+2026-10-04T17:09:32.9295998Z       ✓ goes back from the header back button (9 ms)
+2026-10-04T17:09:32.9296965Z       ✓ goes back from "Cancel — keep my account" (11 ms)
+2026-10-04T17:09:32.9298523Z   APPLE_FALLBACK: Apple’s current names and steps (B-PRIV-FU-117)
+2026-10-04T17:09:32.9299469Z     ✓ is pinned word for word
+2026-10-04T17:09:32.9300334Z     ✓ says iOS 18 or later before the first iPhone step (1 ms)
+2026-10-04T17:09:32.9301020Z     ✓ gives earlier iOS versions and other devices the web steps (3 ms)
+2026-10-04T17:09:32.9301727Z     ✓ uses no old Apple names, no first person and no exclamation mark (1 ms)
+2026-10-04T17:09:32.9302395Z   AUD-OPUS-FU2-118 probe: Apple note promise when providers are unknown
+2026-10-04T17:09:32.9303239Z     ✕ confirmed with Apple, no authorization code (server: not_requested): an Apple card is shown (26 ms)
+2026-10-04T17:09:32.9304135Z     ✕ confirmed with Apple, response without apple_revocation: an Apple card is shown (17 ms)
+2026-10-04T17:09:32.9305008Z     ✓ control: confirmed with Apple, code sent, server not_configured: the fallback is shown (17 ms)
+2026-10-04T17:09:32.9305506Z 
+2026-10-04T17:09:32.9306412Z   ● AUD-OPUS-FU2-118 probe: Apple note promise when providers are unknown › confirmed with Apple, no authorization code (server: not_requested): an Apple card is shown
+2026-10-04T17:09:32.9307320Z 
+2026-10-04T17:09:32.9307838Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:09:32.9308351Z 
+2026-10-04T17:09:32.9308541Z     Expected: true
+2026-10-04T17:09:32.9308939Z     Received: false
+2026-10-04T17:09:32.9309238Z 
+2026-10-04T17:09:32.9310129Z     [0m [90m 740 |[39m     [36mconst[39m utils [33m=[39m [36mawait[39m confirmWithAppleUnknownProviders([36mnull[39m[33m,[39m [32m'not_requested'[39m)[33m;[39m
+2026-10-04T17:09:32.9311667Z      [90m 741 |[39m     [36mconst[39m shown [33m=[39m utils[33m.[39mqueryByTestId([32m'apple-revoked'[39m) [33m!==[39m [36mnull[39m [33m||[39m utils[33m.[39mqueryByTestId([32m'apple-fallback'[39m) [33m!==[39m [36mnull[39m[33m;[39m
+2026-10-04T17:09:32.9312817Z     [31m[1m>[22m[39m[90m 742 |[39m     expect(shown)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T17:09:32.9313838Z      [90m     |[39m                   [31m[1m^[22m[39m
+2026-10-04T17:09:32.9314222Z      [90m 743 |[39m   })[33m;[39m
+2026-10-04T17:09:32.9314520Z      [90m 744 |[39m
+2026-10-04T17:09:32.9315306Z      [90m 745 |[39m   it([32m'confirmed with Apple, response without apple_revocation: an Apple card is shown'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T17:09:32.9315831Z 
+2026-10-04T17:09:32.9316149Z       at Object.toBe (src/screens/settings/__tests__/DeleteAccountScreen.test.tsx:742:19)
+2026-10-04T17:09:32.9316809Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:09:32.9317552Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:09:32.9317851Z 
+2026-10-04T17:09:32.9318535Z   ● AUD-OPUS-FU2-118 probe: Apple note promise when providers are unknown › confirmed with Apple, response without apple_revocation: an Apple card is shown
+2026-10-04T17:09:32.9319109Z 
+2026-10-04T17:09:32.9319303Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:09:32.9319538Z 
+2026-10-04T17:09:32.9319646Z     Expected: true
+2026-10-04T17:09:32.9319888Z     Received: false
+2026-10-04T17:09:32.9320028Z 
+2026-10-04T17:09:32.9320685Z     [0m [90m 746 |[39m     [36mconst[39m utils [33m=[39m [36mawait[39m confirmWithAppleUnknownProviders([32m'apple-code'[39m[33m,[39m undefined)[33m;[39m
+2026-10-04T17:09:32.9322184Z      [90m 747 |[39m     [36mconst[39m shown [33m=[39m utils[33m.[39mqueryByTestId([32m'apple-revoked'[39m) [33m!==[39m [36mnull[39m [33m||[39m utils[33m.[39mqueryByTestId([32m'apple-fallback'[39m) [33m!==[39m [36mnull[39m[33m;[39m
+2026-10-04T17:09:32.9323266Z     [31m[1m>[22m[39m[90m 748 |[39m     expect(shown)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T17:09:32.9323793Z      [90m     |[39m                   [31m[1m^[22m[39m
+2026-10-04T17:09:32.9324160Z      [90m 749 |[39m   })[33m;[39m
+2026-10-04T17:09:32.9324454Z      [90m 750 |[39m
+2026-10-04T17:09:32.9325255Z      [90m 751 |[39m   it([32m'control: confirmed with Apple, code sent, server not_configured: the fallback is shown'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T17:09:32.9325782Z 
+2026-10-04T17:09:32.9326087Z       at Object.toBe (src/screens/settings/__tests__/DeleteAccountScreen.test.tsx:748:19)
+2026-10-04T17:09:32.9326719Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T17:09:32.9327427Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T17:09:32.9327714Z 
+2026-10-04T17:09:32.9327868Z Test Suites: 1 failed, 1 total
+2026-10-04T17:09:32.9328203Z Tests:       2 failed, 48 passed, 50 total
+2026-10-04T17:09:32.9328500Z Snapshots:   0 total
+2026-10-04T17:09:32.9328744Z Time:        8.27 s
+2026-10-04T17:09:32.9329249Z Ran all test suites matching /src\/screens\/settings\/__tests__\/DeleteAccountScreen.test.tsx/i.
+2026-10-04T17:09:33.9313327Z Jest did not exit one second after the test run has completed.
+2026-10-04T17:09:33.9313650Z 
+2026-10-04T17:09:33.9314434Z 'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+2026-10-04T17:09:34.4320300Z ##[error]Process completed with exit code 1.
+2026-10-04T17:09:34.4461782Z Post job cleanup.
+2026-10-04T17:09:34.5280838Z [command]/usr/bin/git version
+2026-10-04T17:09:34.5316636Z git version 2.55.0
+2026-10-04T17:09:34.5353937Z Temporarily overriding HOME='/home/runner/work/_temp/962ada2f-230a-452d-8372-a00ae45f2e59' before making global git config changes
+2026-10-04T17:09:34.5355891Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:09:34.5360081Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T17:09:34.5393752Z Removing SSH command configuration
+2026-10-04T17:09:34.5400111Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:09:34.5434949Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:09:34.5669898Z Removing HTTP extra header
+2026-10-04T17:09:34.5674581Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:09:34.5707684Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:09:34.5938645Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:09:34.5944352Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:09:34.6002519Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T17:09:34.6003541Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T17:09:34.6004150Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:09:34.6004578Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:09:34.6011303Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T17:09:34.6034668Z /home/runner/work/_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:09:34.6045570Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:09:34.6082057Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T17:09:34.6103803Z /home/runner/work/_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:09:34.6113068Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:09:34.6145033Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:09:34.6166476Z /github/runner_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:09:34.6173723Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:09:34.6206090Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:09:34.6228083Z /github/runner_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:09:34.6238017Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config
+2026-10-04T17:09:34.6274619Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:09:34.6514290Z Removing credentials config '/home/runner/work/_temp/git-credentials-0d90a9d6-2d1c-4ec5-9328-31e9ff1c42cc.config'
+2026-10-04T17:09:34.6718360Z Cleaning up orphan processes

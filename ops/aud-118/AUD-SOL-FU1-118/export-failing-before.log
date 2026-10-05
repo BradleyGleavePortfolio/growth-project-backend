@@ -1,0 +1,589 @@
+targeted	UNKNOWN STEP	﻿2026-10-04T05:32:19.6061426Z Current runner version: '2.337.0'
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6082531Z ##[group]Runner Image Provisioner
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6083194Z Hosted Compute Agent
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6083777Z Version: 20260901.588
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6084291Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6084974Z Build Date: 2026-09-01T19:56:44Z
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6085792Z Worker ID: {a24f4626-395e-4c93-af9d-9f6361f123d2}
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6086356Z Azure Region: westus3
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6086884Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6088108Z ##[group]Operating System
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6088654Z Ubuntu
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6089126Z 24.04.5
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6089562Z LTS
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6090314Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6090796Z ##[group]Runner Image
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6091339Z Image: ubuntu-24.04
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6091837Z Version: 20260927.320.1
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6092863Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6094120Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6094905Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6096046Z ##[group]GITHUB_TOKEN Permissions
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6097667Z Contents: read
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6098155Z Metadata: read
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6098603Z Packages: read
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6099120Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6100725Z Secret source: Actions
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6101557Z Cache mode: write
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6102103Z Prepare workflow directory
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6441453Z Prepare all required actions
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.6480294Z Getting action download info
+targeted	UNKNOWN STEP	2026-10-04T05:32:19.9342875Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.0057375Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.1912461Z Complete job name: targeted
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.2309878Z ##[group]Checking docker version
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.2320257Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.2895035Z '1.48'
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.2908497Z Docker daemon API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.2909108Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3036177Z '1.48'
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3046176Z Docker client API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3050124Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3052293Z ##[group]Clean up resources from previous jobs
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3056433Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=b4be27"
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3168203Z ##[command]/usr/bin/docker network prune --force --filter "label=b4be27"
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3269829Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3270438Z ##[group]Create local container network
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3279156Z ##[command]/usr/bin/docker network create --label b4be27 github_network_10dd791700b044f789880b51a1f392a0
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3729560Z 8f312d7ffac4740c45b169372777574f2a90777aac77cdd7f81f78adf1513c30
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3745991Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3765890Z ##[group]Starting redis service container
+targeted	UNKNOWN STEP	2026-10-04T05:32:20.3782674Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.1058795Z 7-alpine: Pulling from library/redis
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3237207Z 16333ee0c00f: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3238335Z 83234986c742: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3239428Z 7eb50503c2b0: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3240479Z 1522f9c6f453: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3241335Z 9928009b15c8: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3242278Z 4f4fb700ef54: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3243212Z 4eb14bae0e1d: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3244072Z 9928009b15c8: Waiting
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3244880Z 4f4fb700ef54: Waiting
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3245782Z 4eb14bae0e1d: Waiting
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.3246600Z 1522f9c6f453: Waiting
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.4924539Z 83234986c742: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.4926366Z 83234986c742: Download complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.4942817Z 7eb50503c2b0: Download complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.5102130Z 16333ee0c00f: Download complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.5997823Z 16333ee0c00f: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.6708500Z 9928009b15c8: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.6710076Z 9928009b15c8: Download complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.6772410Z 4f4fb700ef54: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.6772865Z 4f4fb700ef54: Download complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.7041665Z 1522f9c6f453: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.7042135Z 1522f9c6f453: Download complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.8001119Z 83234986c742: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:21.9063705Z 7eb50503c2b0: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2102206Z 1522f9c6f453: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2188767Z 9928009b15c8: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2245608Z 4f4fb700ef54: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2408611Z 4eb14bae0e1d: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2443227Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2450040Z Status: Downloaded newer image for redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2457212Z docker.io/library/redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2504492Z ##[command]/usr/bin/docker create --name d608dc66d024421c9981617297c7b371_redis7alpine_07acde --label b4be27 --network github_network_10dd791700b044f789880b51a1f392a0 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2711243Z 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.2727793Z ##[command]/usr/bin/docker start 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4213414Z 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4226811Z ##[command]/usr/bin/docker ps --all --filter id=8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4325937Z 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181 Up Less than a second (health: starting)
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4340689Z ##[command]/usr/bin/docker port 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4436781Z 6379/tcp -> 0.0.0.0:6379
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4437443Z 6379/tcp -> [::]:6379
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4473630Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4480778Z ##[group]Waiting for all services to be ready
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4491670Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4598418Z starting
+targeted	UNKNOWN STEP	2026-10-04T05:32:22.4615285Z redis service is starting, waiting 2 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-04T05:32:24.4625529Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:32:24.4723406Z starting
+targeted	UNKNOWN STEP	2026-10-04T05:32:24.4733617Z redis service is starting, waiting 4 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6138908Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6240337Z healthy
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6254011Z redis service is healthy.
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6254597Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6470160Z ##[group]Run actions/checkout@v6
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6470572Z with:
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6470822Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6473025Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6473204Z   ssh-strict: true
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6473375Z   ssh-user: git
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6473556Z   persist-credentials: true
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6473751Z   clean: true
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6473943Z   sparse-checkout-cone-mode: true
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6474158Z   fetch-depth: 1
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6474513Z   fetch-tags: false
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6474690Z   show-progress: true
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6474865Z   lfs: false
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6475018Z   submodules: false
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6475186Z   set-safe-directory: true
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6475605Z   allow-unsafe-pr-checkout: false
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.6476058Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7285536Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7286837Z ##[group]Getting Git version info
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7287242Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7350690Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7429290Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7445188Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7456124Z Temporarily overriding HOME='/home/runner/work/_temp/34e8b9ca-1ccd-4141-84f9-f20fde254a57' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7457063Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7460239Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7496821Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7500218Z ##[group]Determining repository object format
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7501904Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7502348Z ##[group]Initializing the repository
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7505511Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7570496Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7571187Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7571793Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7572261Z hint: call:
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7572491Z hint:
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7572842Z hint: 	git config --global init.defaultBranch <name>
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7573242Z hint:
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7573594Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7574195Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7574666Z hint:
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7574914Z hint: 	git branch -m <name>
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7575195Z hint:
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7575718Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7576371Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7581552Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7617832Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7618171Z ##[group]Disabling automatic garbage collection
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7620853Z [command]/usr/bin/git config --local gc.auto 0
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7643960Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7644553Z ##[group]Setting up auth
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7645472Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7650175Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7674051Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7928114Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7932099Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.7957981Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8137662Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8142205Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8166546Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8345991Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8373958Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8398791Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8425586Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8450639Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8478780Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8479147Z ##[group]Fetching the repository
+targeted	UNKNOWN STEP	2026-10-04T05:32:28.8484873Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +41f616fc99128dc3c215f902547cf3de4481331f:refs/remotes/origin/ci/B-CIQ-117-export-before
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8395534Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8396380Z  * [new ref]         41f616fc99128dc3c215f902547cf3de4481331f -> origin/ci/B-CIQ-117-export-before
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8403909Z [command]/usr/bin/git branch --list --remote origin/ci/B-CIQ-117-export-before
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8424820Z   origin/ci/B-CIQ-117-export-before
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8431493Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-CIQ-117-export-before
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8449709Z 41f616fc99128dc3c215f902547cf3de4481331f
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8452812Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8453152Z ##[group]Determining the checkout info
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8453885Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8457002Z [command]/usr/bin/git sparse-checkout disable
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8495167Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8517669Z ##[group]Checking out the ref
+targeted	UNKNOWN STEP	2026-10-04T05:32:30.8520749Z [command]/usr/bin/git checkout --progress --force -B ci/B-CIQ-117-export-before refs/remotes/origin/ci/B-CIQ-117-export-before
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0204286Z Switched to a new branch 'ci/B-CIQ-117-export-before'
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0208467Z branch 'ci/B-CIQ-117-export-before' set up to track 'origin/ci/B-CIQ-117-export-before'.
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0216871Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0253592Z [command]/usr/bin/git log -1 --format=%H
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0272870Z 41f616fc99128dc3c215f902547cf3de4481331f
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0479791Z ##[group]Run actions/setup-node@v6
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0480021Z with:
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0480180Z   node-version: 20
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0480350Z   cache: npm
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0480512Z   check-latest: false
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0482586Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0482764Z   package-manager-cache: true
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.0482965Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:31.1571670Z Attempting to download 20...
+targeted	UNKNOWN STEP	2026-10-04T05:32:32.1459540Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	UNKNOWN STEP	2026-10-04T05:32:32.6307729Z Extracting ...
+targeted	UNKNOWN STEP	2026-10-04T05:32:32.6398888Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/53de7ac0-75c5-4288-b58a-ddc4bf96959b -f /home/runner/work/_temp/2aa3aef5-2750-4ab5-b6d0-1f9ff8201008
+targeted	UNKNOWN STEP	2026-10-04T05:32:33.5089777Z Adding to the cache ...
+targeted	UNKNOWN STEP	2026-10-04T05:32:35.2646484Z ##[group]Environment details
+targeted	UNKNOWN STEP	2026-10-04T05:32:35.4332007Z node: v20.20.2
+targeted	UNKNOWN STEP	2026-10-04T05:32:35.4332350Z npm: 10.8.2
+targeted	UNKNOWN STEP	2026-10-04T05:32:35.4332570Z yarn: 1.22.22
+targeted	UNKNOWN STEP	2026-10-04T05:32:35.4333130Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:35.4347647Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	UNKNOWN STEP	2026-10-04T05:32:35.5181030Z /home/runner/.npm
+targeted	UNKNOWN STEP	2026-10-04T05:32:35.7199408Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	UNKNOWN STEP	2026-10-04T05:32:36.9292414Z Received 41943040 of 86828135 (48.3%), 40.0 MBs/sec
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.1596829Z Received 86828135 of 86828135 (100.0%), 67.3 MBs/sec
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.1597265Z Cache Size: ~83 MB (86828135 B)
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.1622448Z [command]/usr/bin/tar -xf /home/runner/work/_temp/b5b6d30a-cdcd-4b43-862a-7d6e8b54167c/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.2934312Z Cache restored successfully
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.2974081Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.3135759Z ##[group]Run npm ci
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.3136004Z ^[[36;1mnpm ci^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.3347703Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-04T05:32:37.3347941Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:41.6578811Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	UNKNOWN STEP	2026-10-04T05:32:42.2000635Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	UNKNOWN STEP	2026-10-04T05:32:43.3093982Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T05:32:44.2916973Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T05:32:44.3073975Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T05:32:44.3469934Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T05:32:54.5552391Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:54.5553258Z > growth-project-backend@1.0.0 postinstall
+targeted	UNKNOWN STEP	2026-10-04T05:32:54.5553739Z > prisma generate
+targeted	UNKNOWN STEP	2026-10-04T05:32:54.5553913Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:55.2649816Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1874980Z ┌─────────────────────────────────────────────────────────┐
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1876008Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1876594Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1877177Z │  This is a major update - please follow the guide at    │
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1877850Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1878465Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1879026Z │  Run the following to update                            │
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1879633Z │    npm i --save-dev prisma@latest                       │
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1880204Z │    npm i @prisma/client@latest                          │
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1881029Z └─────────────────────────────────────────────────────────┘
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1881254Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1881590Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.59s
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1881844Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1882145Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1882413Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1882692Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.1882923Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2336522Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2337016Z > growth-project-backend@1.0.0 prepare
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2337542Z > lefthook install
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2337712Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2771490Z sync hooks: ✔️(commit-msg, pre-commit)
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2914788Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2915592Z added 1115 packages, and audited 1116 packages in 21s
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2915937Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2916156Z 202 packages are looking for funding
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2916561Z   run `npm fund` for details
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2942244Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2942577Z 3 high severity vulnerabilities
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2942893Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2943769Z To address all issues (including breaking changes), run:
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2944320Z   npm audit fix --force
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2944580Z 
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.2944899Z Run `npm audit` for details.
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.3452753Z ##[group]Run npx prisma generate
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.3453016Z ^[[36;1mnpx prisma generate^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.3508054Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-04T05:32:58.3508364Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:32:59.2714726Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2028576Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2029808Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.58s
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2030267Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2030678Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2031065Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2031651Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2032204Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2991492Z ##[group]Run set -euo pipefail
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2991766Z ^[[36;1mset -euo pipefail^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2992082Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2992479Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2992765Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.2993006Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.3048487Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.3048766Z env:
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.3048954Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.3049262Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.3049520Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T05:33:02.3132750Z specs: test/data-export-storage.spec.ts test/data-export-archive-inventory.spec.ts
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.5560515Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.5562359Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_NETWORK), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.5563491Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_500), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.5564611Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_502), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.5565884Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive check failed (STORAGE_TIMEOUT), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.5567247Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive check failed (STORAGE_TIMEOUT), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8276669Z ^[[95m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mop: settled after it was abandoned or cancelled: late^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8278535Z ^[[95m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mop: settled after it was abandoned or cancelled: late^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8280416Z ^[[95m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mdata export read: settled after it was abandoned or cancelled: aborted^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8282275Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export read failed (STORAGE_TIMEOUT), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8284192Z ^[[95m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mdata export read: settled after it was abandoned or cancelled: aborted^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8286281Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export read failed (STORAGE_TIMEOUT), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8288126Z ^[[95m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mdata export read: settled after it was abandoned or cancelled: aborted^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8290325Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8293373Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8296027Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8298388Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8300784Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8303162Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8305688Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8307994Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8310320Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8312978Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8315498Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8318012Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8320350Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8322700Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8324994Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8327447Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8329719Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8332229Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8334557Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8337127Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8339402Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8341700Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8344018Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8346452Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8348782Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8351322Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8353642Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8356102Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8358455Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8360752Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8362990Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8365484Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8368046Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8370428Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8372529Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_500), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8374444Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_500), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8376864Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8379217Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8381554Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8383863Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8386361Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8388978Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8391087Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8393003Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_503), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8395167Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8397703Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8400040Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8402043Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8404102Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8406811Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8408860Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_HTTP_504), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8410703Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_HTTP_504), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8412920Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8415227Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8417668Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8419942Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8422249Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8424801Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8427391Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8429697Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8432012Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8434332Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8436859Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8438939Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8440855Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_503), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8443215Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8445749Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8448096Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8450421Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8452746Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8455064Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8457098Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8458377Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8459930Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8461229Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8462486Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8463730Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8464986Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8466431Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.8467678Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9069224Z FAIL test/data-export-storage.spec.ts (124 MB heap size)
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9071021Z   ● latest request with equal or out-of-order created_at (F-EXPORT-TIE) › a replacement stamped in the same millisecond as the retired row is the row the status screen and the download link use
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9072582Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9072914Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9073541Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9073884Z     - Expected  - 2
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9074652Z     + Received  + 2
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9074965Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9075228Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9076012Z     -   "id": "00000000-0000-4000-8000-999999999997",
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9076584Z     -   "status": "PENDING",
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9077165Z     +   "id": "00000000-0000-4000-8000-999999999998",
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9077734Z     +   "status": "FAILED",
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9078193Z       }
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9078484Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9079199Z     ^[[0m ^[[90m 1658 |^[[39m     expect(next^[[33m.^[[39mcreated_at^[[33m.^[[39mgetTime())^[[33m.^[[39mtoBe(t0)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9080647Z      ^[[90m 1659 |^[[39m     expect(db^[[33m.^[[39mrows^[[33m.^[[39m^[[36mget^[[39m(old)^[[33m?^[[39m^[[33m.^[[39mcreated_at^[[33m.^[[39mgetTime())^[[33m.^[[39mtoBe(t0)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9082133Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 1660 |^[[39m     expect(^[[36mawait^[[39m svc^[[33m.^[[39mgetLatestStatus(^[[33mA^[[39m))^[[33m.^[[39mtoMatchObject({
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9083172Z      ^[[90m      |^[[39m                                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9083952Z      ^[[90m 1661 |^[[39m       id^[[33m:^[[39m next^[[33m.^[[39mid^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9084927Z      ^[[90m 1662 |^[[39m       status^[[33m:^[[39m ^[[33mDataExportStatus^[[39m^[[33m.^[[39m^[[33mPENDING^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9085925Z      ^[[90m 1663 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9086307Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9086778Z       at Object.<anonymous> (test/data-export-storage.spec.ts:1660:42)
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9087316Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9088459Z   ● latest request with equal or out-of-order created_at (F-EXPORT-TIE) › a replacement stamped before the retired row (the database clock stepped back) is still the latest request
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9089951Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9090374Z     expect(received).toBe(expected) // Object.is equality
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9090837Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9091194Z     Expected: "00000000-0000-4000-8000-000000000002"
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9091800Z     Received: "00000000-0000-4000-8000-000000000001"
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9092238Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9093058Z     ^[[0m ^[[90m 1688 |^[[39m     ^[[36mconst^[[39m next ^[[33m=^[[39m ^[[36mawait^[[39m requestOnly(svc^[[33m,^[[39m ^[[33mA^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9094943Z      ^[[90m 1689 |^[[39m     expect(next^[[33m.^[[39mcreated_at^[[33m.^[[39mgetTime())^[[33m.^[[39mtoBeLessThan(db^[[33m.^[[39mrows^[[33m.^[[39m^[[36mget^[[39m(old)^[[33m?^[[39m^[[33m.^[[39mcreated_at^[[33m.^[[39mgetTime() ^[[33m?^[[39m^[[33m?^[[39m ^[[35m0^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9097234Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 1690 |^[[39m     expect((^[[36mawait^[[39m svc^[[33m.^[[39mgetLatestStatus(^[[33mA^[[39m))^[[33m.^[[39mid)^[[33m.^[[39mtoBe(next^[[33m.^[[39mid)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9104527Z      ^[[90m      |^[[39m                                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9105235Z      ^[[90m 1691 |^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9106463Z      ^[[90m 1692 |^[[39m     ^[[36mawait^[[39m runOn(instance(db^[[33m,^[[39m st)^[[33m,^[[39m next^[[33m.^[[39mid^[[33m,^[[39m ^[[33mA^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9107900Z      ^[[90m 1693 |^[[39m     expect(^[[36mawait^[[39m svc^[[33m.^[[39mgetLatestStatus(^[[33mA^[[39m))^[[33m.^[[39mtoMatchObject({^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9108635Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9109093Z       at Object.<anonymous> (test/data-export-storage.spec.ts:1690:47)
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9109631Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9110740Z   ● latest request with equal or out-of-order created_at (F-EXPORT-TIE) › two finished requests in the same millisecond: every read picks the same one, the greater id
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9111706Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9112056Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9112468Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9112740Z     - Expected  - 1
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9113186Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9113501Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9113760Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9114481Z         "download_available": false,
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9115049Z     -   "id": "00000000-0000-4000-8000-000000000002",
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9116518Z     +   "id": "00000000-0000-4000-8000-000000000001",
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9117101Z         "status": "FAILED",
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9122071Z       }
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9122410Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9122777Z     ^[[0m ^[[90m 1714 |^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9123945Z      ^[[90m 1715 |^[[39m     ^[[36mfor^[[39m (^[[36mlet^[[39m read ^[[33m=^[[39m ^[[35m0^[[39m^[[33m;^[[39m read ^[[33m<^[[39m ^[[35m3^[[39m^[[33m;^[[39m read ^[[33m+=^[[39m ^[[35m1^[[39m) {
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9125596Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 1716 |^[[39m       expect(^[[36mawait^[[39m svc^[[33m.^[[39mgetLatestStatus(^[[33mA^[[39m))^[[33m.^[[39mtoMatchObject({
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9126648Z      ^[[90m      |^[[39m                                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9127422Z      ^[[90m 1717 |^[[39m         id^[[33m:^[[39m second^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9128406Z      ^[[90m 1718 |^[[39m         status^[[33m:^[[39m ^[[33mDataExportStatus^[[39m^[[33m.^[[39m^[[33mFAILED^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9129506Z      ^[[90m 1719 |^[[39m         download_available^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9130090Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9130542Z       at Object.<anonymous> (test/data-export-storage.spec.ts:1716:44)
+targeted	UNKNOWN STEP	2026-10-04T05:33:04.9131047Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1661402Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1663648Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1665441Z FAIL test/data-export-archive-inventory.spec.ts (143 MB heap size)
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1666570Z   ● data export paging (F-EXPORT-TIE) › exports every row exactly once when unordered pages come back in another order
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1667088Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1667244Z     expect(received).toBe(expected) // Object.is equality
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1667441Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1667528Z     Expected: 1234
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1667705Z     Received: 734
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1667812Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1668154Z     ^[[0m ^[[90m 338 |^[[39m     ^[[36mconst^[[39m weights ^[[33m=^[[39m ids(archive^[[33m.^[[39mweight_logs)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1668704Z      ^[[90m 339 |^[[39m     expect(weights)^[[33m.^[[39mtoHaveLength(^[[35m1234^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1669342Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 340 |^[[39m     expect(^[[36mnew^[[39m ^[[33mSet^[[39m(weights)^[[33m.^[[39msize)^[[33m.^[[39mtoBe(^[[35m1234^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1669865Z      ^[[90m     |^[[39m                                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1670618Z      ^[[90m 341 |^[[39m     expect([^[[33m...^[[39mweights]^[[33m.^[[39msort())^[[33m.^[[39mtoEqual(weightLogs^[[33m.^[[39mmap((r) ^[[33m=>^[[39m ^[[33mString^[[39m(r^[[33m.^[[39mid))^[[33m.^[[39msort())^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1671169Z      ^[[90m 342 |^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1671699Z      ^[[90m 343 |^[[39m     ^[[36mconst^[[39m messages ^[[33m=^[[39m stub^[[33m<^[[39m^[[33mRow^[[39m[]^[[33m>^[[39m(archive^[[33m.^[[39mcoach_messages)^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1672043Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1672263Z       at Object.<anonymous> (test/data-export-archive-inventory.spec.ts:340:35)
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1672509Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1672905Z   ● data export paging (F-EXPORT-TIE) › fails the export with the table name when a page would repeat, instead of looping
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1673235Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1673349Z     expect(received).rejects.toThrow()
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1673497Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1673627Z     Received promise resolved instead of rejected
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1685688Z     Resolved to value: {"ai_processing_consent_events": [{"action": "grant", "consent_version": "v4", "copy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "created_at": "2026-10-01T00:00:02.000Z", "id": "c1", "processor": "anthropic", "purpose": "client_ai_processing", "seq": 1, "user_id": "user-1"}, {"action": "withdraw", "consent_version": "v4", "copy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "created_at": "2026-10-01T00:00:06.000Z", "id": "c2", "processor": "anthropic", "purpose": "client_ai_processing", "seq": 2, "user_id": "user-1"}], "audit_log_entries_about_user": [], "build_week_completions": [], "build_week_enrollment": null, "check_ins": [], "coach_guidelines": [], "coach_messages": [], "coach_nudges": [], "community_wins": [], "created_recipes": [{"created_at": "2026-10-01T00:00:01.000Z", "id": "r1", "ingredients": ["kale"], "instructions": ["toss"], "title": "Green salad"}, {"created_at": "2026-10-01T00:00:02.000Z", "id": "r2", "ingredients": ["oats"], "instructions": ["soak"], "title": "Overnight oats"}], "data_export_requests": [], "diagnostic_submissions": [], "fasting_windows": [], "food_entries": [], "habits": [], "invite_codes": [], "lesson_completions": [], "list_items": [], "manifest": {"completed_at": "2026-10-04T05:33:05.145Z", "export_id": "00000000-0000-4000-8000-000000000001", "requested_at": "2026-10-04T05:33:05.142Z", "schema_version": "1.0", "sha256": "0f0af3db915a13c66d1ee355879373360781280542b1e5d7b76674ff58d0cc40", "user_id": "user-1"}, "meal_plans": [], "message_drafts": [], "notification_preferences": [], "preferences": [], "profile": [], "ptm_predictions": [], "ptm_signals": [], "roman_messages": [{"content": "Help me plan my week.", "created_at": "2026-10-01T00:00:03.000Z", "id": "m1", "interrupted": false, "model_id": null, "role": "user", "session_id": "s-live"}, {"content": "Here is a plan.", "created_at": "2026-10-01T00:00:04.000Z", "id": "m2", "interrupted": false, "model_id": "claude-x", "role": "assistant", "session_id": "s-live"}], "roman_sessions": [{"created_at": "2026-10-01T00:00:01.000Z", "day_key": "2026-10-01", "id": "s-live", "message_count": 2, "surface": "client"}], "saved_recipes": [], "user": {"email": "u@example.test", "id": "user-1"}, "water_logs": [], "weight_logs": [{"id": "w-00000", "user_id": "user-1", "weight_kg": 70}, {"id": "w-00515", "user_id": "user-1", "weight_kg": 70}, {"id": "w-01030", "user_id": "user-1", "weight_kg": 70}, {"id": "w-00311", "user_id": "user-1", "weight_kg": 70}, {"id": "w-00826", "user_id": "user-1", "weight_kg": 70}, {"id": "w-00107", "user_id": "user-1", "weight_kg": 70}, {"id": "w-00622", "user_id": "user-1", "weight_kg": 70}, {"id": "w-01137", "user_id": "user-1", "weight_kg": 70}, {"id": "w-00418", "user_id": "user-1", "weight_kg": 70}, {"id": "w-00933", "user_id": "user-1", "weight_kg": 70}, …], "workout_sessions": []}
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1692439Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1692572Z     ^[[0m ^[[90m 372 |^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1693194Z      ^[[90m 373 |^[[39m   it(^[[32m'fails the export with the table name when a page would repeat, instead of looping'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1694187Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 374 |^[[39m     ^[[36mawait^[[39m expect(build({ weightLog^[[33m:^[[39m weightLogs }^[[33m,^[[39m { ignoreKeyset^[[33m:^[[39m ^[[36mtrue^[[39m }))^[[33m.^[[39mrejects^[[33m.^[[39mtoThrow(
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1694803Z      ^[[90m     |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1695501Z      ^[[90m 375 |^[[39m       ^[[32m'Data export paging stopped on weightLog: a page did not end on a newer row id.'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1695970Z      ^[[90m 376 |^[[39m     )^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1696390Z      ^[[90m 377 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1696620Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1696856Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1697466Z       at Object.<anonymous> (test/data-export-archive-inventory.spec.ts:374:11)
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1697716Z 
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1698657Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1700002Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1701329Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1702977Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1704562Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1705980Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1707259Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1708521Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1709912Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1711177Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1712426Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1713673Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1714934Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1716374Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1717680Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1718833Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive check failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1720006Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive check failed (STORAGE_HTTP_503), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1721238Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1722526Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1723797Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1725061Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1726497Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1727751Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1728871Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export read link failed (STORAGE_HTTP_502), attempt 1 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1730026Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export read link failed (STORAGE_HTTP_502), attempt 2 of 3; retrying.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1731197Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1732454Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1733702Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1734983Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1736549Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1737840Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1739119Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1740527Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1741806Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1743072Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1744325Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1745745Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1747029Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1748279Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1749342Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:04 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportController] ^[[39m^[[33mDownload of export e1 ended early (client closed).^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1750693Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:05 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1751967Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:05 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1753228Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:05 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1754475Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:05 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1755911Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:05 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1757171Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:05 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1758422Z ^[[33m[Nest] 2800  - ^[[39m10/04/2026, 5:33:05 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1759081Z Test Suites: 2 failed, 2 total
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1759348Z Tests:       5 failed, 78 passed, 83 total
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1759590Z Snapshots:   0 total
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1759777Z Time:        2.216 s
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.1760337Z Ran all test suites matching test/data-export-storage.spec.ts|test/data-export-archive-inventory.spec.ts.
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3004222Z ##[error]Process completed with exit code 1.
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3094693Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3767125Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3795690Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3829950Z Temporarily overriding HOME='/home/runner/work/_temp/6123e8a7-2387-4003-a5d2-4f4412a965ec' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3831059Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3834499Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3905785Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3912063Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.3940563Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4133316Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4137608Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4164613Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4348934Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4354740Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4459633Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4460315Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4461058Z includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4461478Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4466318Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4487231Z /home/runner/work/_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4496761Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4526223Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4543517Z /home/runner/work/_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4550355Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4666438Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4684795Z /github/runner_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4696397Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4827793Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4846269Z /github/runner_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4853435Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.4887306Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5077610Z Removing credentials config '/home/runner/work/_temp/git-credentials-a8767590-339b-4379-9962-d587e878ce43.config'
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5191277Z Print service container logs: d608dc66d024421c9981617297c7b371_redis7alpine_07acde
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5194754Z ##[command]/usr/bin/docker logs --details 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5297155Z  1:C 04 Oct 2026 05:32:22.425 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5298499Z  1:C 04 Oct 2026 05:32:22.425 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5298927Z  1:C 04 Oct 2026 05:32:22.425 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5299614Z  1:C 04 Oct 2026 05:32:22.425 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5300153Z  1:M 04 Oct 2026 05:32:22.426 * monotonic clock: POSIX clock_gettime
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5300468Z  1:M 04 Oct 2026 05:32:22.426 * Running mode=standalone, port=6379.
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5300752Z  1:M 04 Oct 2026 05:32:22.426 * Server initialized
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5301022Z  1:M 04 Oct 2026 05:32:22.426 * Ready to accept connections tcp
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5308881Z Stop and remove container: d608dc66d024421c9981617297c7b371_redis7alpine_07acde
+targeted	UNKNOWN STEP	2026-10-04T05:33:05.5312832Z ##[command]/usr/bin/docker rm --force 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:33:09.7076302Z 8cbd256f1996ae58df936b1899474185ce0eb277350b26c51622b5bfc0e7b181
+targeted	UNKNOWN STEP	2026-10-04T05:33:09.7098544Z Remove container network: github_network_10dd791700b044f789880b51a1f392a0
+targeted	UNKNOWN STEP	2026-10-04T05:33:09.7101873Z ##[command]/usr/bin/docker network rm github_network_10dd791700b044f789880b51a1f392a0
+targeted	UNKNOWN STEP	2026-10-04T05:33:09.7974302Z github_network_10dd791700b044f789880b51a1f392a0
+targeted	UNKNOWN STEP	2026-10-04T05:33:09.8045748Z Cleaning up orphan processes

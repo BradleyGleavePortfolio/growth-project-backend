@@ -1,0 +1,39 @@
+
+f70234ff actual=b2f5dda85611fbf62ae3a0bffb932497a7b4dafc
+b2f5dda85611fbf62ae3a0bffb932497a7b4dafc
+
+4dd82634 actual=97cd8dcb6eaea8dfa627c31bafe9272db877f101
+97cd8dcb6eaea8dfa627c31bafe9272db877f101
+
+85683135 actual=6b9a208efd8ca828288a5eceb680bfd628b027cd
+6b9a208efd8ca828288a5eceb680bfd628b027cd
+
+b3fdc2db actual=f16e0da0156620c0f472a95368c0916c2ebab495
+f16e0da0156620c0f472a95368c0916c2ebab495
+diff --git a/test/s-fee-r5-or-111-1.spec.ts b/test/s-fee-r5-or-111-1.spec.ts
+index 743ed50f..22b01462 100644
+--- a/test/s-fee-r5-or-111-1.spec.ts
++++ b/test/s-fee-r5-or-111-1.spec.ts
+@@ -309,6 +309,7 @@ describe('OR-111-1 worked example 1: $100 full refund', () => {
+       'A client was refunded',
+       "A client got $100.00 back. $94.80 was taken back from that sale's payout. $5.20 is held from your next sale.",
+       expect.objectContaining({ type: 'payout_adjustment', notice_id: ctx.db.notices![0].id }),
++      expect.any(AbortSignal),
+     );
+     expect(ctx.emails).toHaveLength(1);
+     expect(ctx.emails[0]).toMatchObject({
+
+be7efc09...f0c48049 890cd4e7652bf51a6777260da6fe0d645ec47744 0000000000000000000000000000000000000000
+
+a61d50f4^2...a61d50f4 d88942b5b1d24c51dfb854432d1ba89e176b665e 0000000000000000000000000000000000000000
+
+f0c48049...85683135 f14b1e32b05a18b70d1b05bd401f2a0a99e546f2 0000000000000000000000000000000000000000
+
+a61d50f4...30a118dd f14b1e32b05a18b70d1b05bd401f2a0a99e546f2 0000000000000000000000000000000000000000
+e4f86d6e931495a4a229311fdf19c8443d427b99
+e4f86d6e931495a4a229311fdf19c8443d427b99
+Candidate/scratch diff:
+Probe source:
+4b5dfb3efca50f61e30f4f09b897619781ae688f c1a07d9cc0a282a4e335035d11bb7eb8b2e0eca5
+a1a3a49c89f15f7916820d780325ce4fbceabc01 be7efc09d8a2caa2252b7ac51081e5ed6b8fa214
+Before/after relevant input applicability:

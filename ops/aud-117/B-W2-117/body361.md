@@ -1,0 +1,14 @@
+Split of mobile #317 (S14 Apple Health / Health Connect connect, 30-day import; 11,860 lines at `d0407b62`, already current with main `367e6c48`) under the owner's PR size rule: over 3,000 changed lines is an automatic fail (MODEL_ROUTING.md 8.2, tgp-agent-context). Cut with an import-order check. Stack: H1 -> H2 -> H3 -> H4 -> H5 -> H6, merged back to back; the new connect flow is user-visible from H4. Tree at H6 = #317 head (git diff). #317's earlier verdicts were at its own head; per the T4 rule each piece needs Opus 5.5 and Sol at its exact head (content unchanged, so these should be short). Device verification (HealthKit / Health Connect on hardware) still follows the EAS build the owner approves. `tsc --noEmit` passes at every piece; every existing test importing a changed file was run locally.
+
+**H3 (base H2, 1,793 lines):** on-device sync orchestration and test, on-device and disconnect copy and test, disconnect confirm dialog, feature flag, expected env, build-switch docs. 51 suites, 840 tests locally.
+
+
+**Re-cut (operator 115):** the Health Connect build config (app.config.js switch, permission delegate plugin, app.json permissions, eas.json clinic flag) and its config tests moved together into H6, so H1 to H5 do not mix #317's config tests with main's config. Known red at H6, inherited from #317's own head: `scripts/__tests__/easUpdateGuard.test.js` (from #305) pins the clinic channel's `TGP_ANDROID_HEALTH_CONNECT` to '0' while #317 sets '1'. A builder resolves it once the owner decides whether the clinic binary ships Health Connect.
+
+
+**Tier: T4** (health data; max-tier rule, split piece of #317). Parent owner: operator (land as one, rule 11).
+
+**Fix rounds**
+| Round | Head | Builder | Change | Comment |
+|---|---|---|---|---|
+| 1 (restack, merge-only) | `574b32a8ab9f2c36986c160de257340fa71cfe52` | B-W2-117 | merged the #360 B-360-1 fix upward; this piece's own diff byte-identical (patch-id) | [FIX ROUND 1](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/361#issuecomment-5976975795) |

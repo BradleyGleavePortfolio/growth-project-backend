@@ -1,0 +1,33 @@
+diff --git a/src/lib/coachSetup/packageCreateIntent.ts b/src/lib/coachSetup/packageCreateIntent.ts
+index 788f645..7f0d241 100644
+--- a/src/lib/coachSetup/packageCreateIntent.ts
++++ b/src/lib/coachSetup/packageCreateIntent.ts
+@@ -287,8 +287,9 @@ export interface CreateOnceDeps {
+  * the first step and again after every await, before any request, callback or
+  * storage write. Once it answers false the create stops with
+  * PackageCreateStoppedError: no request is sent, `onIntent` is not called and
+- * an intent that may already have been sent stays on disk (a fresh intent
+- * that was never sent is removed again).
++ * nothing is removed from disk. B-345-1 (agent 119): that includes a fresh
++ * intent this create wrote but never sent, because another form of the same
++ * account may already have read and sent it.
+  */
+ export async function createPackageOnce(args: {
+   coachId: string | null;
+@@ -362,9 +363,13 @@ export async function createPackageOnce(args: {
+     const fresh = newIntent(input);
+     const saved = await saveIntent(coachId, fresh, scope);
+     if (!isLive()) {
+-      // Written but never sent: nothing exists for this key, so removing it
+-      // cannot lose a package, and no residue outlives a sign-out wipe.
+-      if (saved) await clearIntent(coachId, scope);
++      // B-345-1 (agent 119): what was written stays. This create never sent
++      // it, but once it is on disk another form of the same account may have
++      // read it and sent its key, so this one cannot prove it unsent and must
++      // not remove it (removing a sent key lets a later retry make a second
++      // package). Kept, it only lets the same account finish this same create
++      // with the same key. Sign-out still wipes it: storage applies writes in
++      // the order they were issued, and this write was issued first.
+       throw new PackageCreateStoppedError();
+     }
+     if (!saved) throw new IntentStorageError("unsaved");

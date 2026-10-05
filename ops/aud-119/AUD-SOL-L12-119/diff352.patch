@@ -1,0 +1,2480 @@
+diff --git a/src/constants/support.ts b/src/constants/support.ts
+index b288271..2f96e04 100644
+--- a/src/constants/support.ts
++++ b/src/constants/support.ts
+@@ -11,9 +11,14 @@
+  */
+ export const SUPPORT_EMAIL = "Bradleyapple1031@gmail.com";
+ 
+-/** `mailto:` link to SUPPORT_EMAIL, with an optional subject line. */
+-export function supportMailto(subject?: string): string {
+-  return subject
+-    ? `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}`
+-    : `mailto:${SUPPORT_EMAIL}`;
++/**
++ * `mailto:` link to SUPPORT_EMAIL, with an optional subject line and an
++ * optional prefilled body (for example a request reference, so support can
++ * find the exact failure).
++ */
++export function supportMailto(subject?: string, body?: string): string {
++  const params: string[] = [];
++  if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
++  if (body) params.push(`body=${encodeURIComponent(body)}`);
++  return params.length > 0 ? `mailto:${SUPPORT_EMAIL}?${params.join("&")}` : `mailto:${SUPPORT_EMAIL}`;
+ }
+diff --git a/src/entitlements/dunning/README.md b/src/entitlements/dunning/README.md
+new file mode 100644
+index 0000000..501efe0
+--- /dev/null
++++ b/src/entitlements/dunning/README.md
+@@ -0,0 +1,27 @@
++# Payment lockout (Smart Dunning v2)
++
++Client-side half of the backend's 10-day non-payment sequence (`FEATURE_DUNNING_V2`).
++
++| Day | Backend | App |
++|---|---|---|
++| 0-9 | Stripe retries the charge (Days 1, 3, 7); the client keeps full access | `DunningBanner` on Home and Plans: amount, failure date, lock date, Update card, Message coach |
++| 10+ | `DunningLockoutGuard` answers non-allowed routes with `403 { code: 'LOCKED_DUNNING' }` | `DunningLockoutProvider` shows one full-screen `DunningLockoutScreen` |
++| Paid | Saving a card in the app pays the open invoice right away (owner 1A); `invoice.paid` also clears the lock | `UpdateCardScreen` shows "Payment received", the status refresh clears the store, paid queries refetch |
++| Cancel in dunning | Unpaid invoice voided, plan ends now (owner 2A) | "End my plan" on the lockout and Update card screens, with a confirm dialog |
++
++## Files
++
++- `dunningLockoutStore.ts`: module-level signal. The axios interceptor in `src/services/api.ts` calls `reportLocked` on every 403 `LOCKED_DUNNING`. `EntitlementProvider` reads it so the paywall sheet never stacks on top of the lockout.
++- `dunningApi.ts`: `GET /v1/checkout/dunning` (status, reachable while locked), `POST /v1/checkout/payment-method/setup-intent`, `POST /v1/checkout/payment-method/confirm`, `POST /v1/checkout/subscriptions/:purchaseId/cancel`. Strict normalisers; money is integer minor units.
++- `updateCard.ts`: the native card update (OR-110-2). The backend creates a SetupIntent on the client's platform Stripe customer. `@stripe/stripe-react-native` PaymentSheet collects the card (`initStripe` with the key from the backend, `initPaymentSheet` with `setupIntentClientSecret`, then `presentPaymentSheet`). Confirm then sets the default card and, in dunning, pays the open invoice. A `requires_action` answer runs `handleNextAction` on the returned PaymentIntent and confirms again. The SDK is required lazily, so a build without the native module shows "update the app" instead of crashing.
++- `paymentSheetAppearance.ts`: the PaymentSheet theme built from `theme/tokens` (light and dark semantic tokens, square primary button). Fonts are left to the OS, because Stripe looks fonts up by native name.
++- `UpdateCardScreen.tsx`: route `UpdateCard` in the More stack. Deep links `tgp://billing/update-card`, `tgp://billing/update` and the universal link `https://app.trygrowthproject.com/billing/update-card` (dunning emails) open it. It says what will be charged before the client acts, shows the outcome (paid, saved, processing, bank confirmation, declined), and offers "Confirm with my bank" and "End my plan instead".
++- `dunningErrorCopy.ts`: specific copy for every backend machine code (`CUSTOMER_NOT_FOUND`, `SETUP_INTENT_*`, `BILLING_ACTION_IN_PROGRESS`, `PURCHASE_NOT_FOUND`, `NOT_A_SUBSCRIPTION`, `CANCEL_INCOMPLETE`, `STRIPE_*` per step, `PAYMENTS_NOT_CONFIGURED`), for the native sheet, and for offline, rate-limited and session-ended. A lost answer on a payment never says "nothing changed". Unknown failures show the request reference and the support address, and are reported to Sentry.
++- `DunningLockoutProvider.tsx`: mounted in `RootNavigator` around `ClientNavigator` (clients only). It steps aside while `DataExport`, `DeleteAccount`, `Messages` or `UpdateCard` is focused, the same set the backend allow-list keeps reachable.
++- `DunningLockoutScreen.tsx`, `DunningBanner.tsx`: UI. No exclamation marks, no emoji.
++
++## Recovery
++
++Saving a card on the Update card screen pays the open invoice right away (owner ruling 1A), so a locked client gets access back as soon as the payment clears. No Stripe-hosted portal is involved. The backend keeps `POST /v1/checkout/billing-portal` only for app builds installed before this change.
++
++With the backend flag off, the status route returns `enabled: false` and nothing here renders.
+diff --git a/src/entitlements/dunning/__tests__/dunningL1Contract.test.ts b/src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+new file mode 100644
+index 0000000..22fcc1b
+--- /dev/null
++++ b/src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+@@ -0,0 +1,250 @@
++/**
++ * L1 contract (B-LOCK-118): truthful copy against today's production backend
++ * (no native card routes yet), dispute facts kept in the outcome copy
++ * (B-353-2 / C-352-5), and the native flow's ownership port (B-353-2).
++ */
++import { normalizeCardUpdate, normalizePaymentQuote } from '../dunningApi';
++import {
++  cancelOutcomeCopy,
++  cardUpdateOutcomeCopy,
++  describeDunningError,
++  disputeNotSettledLine,
++  SUPPORT_EMAIL,
++} from '../dunningErrorCopy';
++import { confirmWithBank, runNativeCardUpdate, type StripeSdk } from '../updateCard';
++
++jest.mock('../../../services/sentry', () => ({ captureError: jest.fn() }));
++
++const mockPost = jest.fn();
++jest.mock('../../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: (...args: unknown[]) => mockPost(...args) },
++}));
++
++const SETUP = {
++  setup_intent_id: 'seti_1',
++  setup_intent_client_secret: 'seti_1_secret',
++  ephemeral_key: 'ek_1',
++  customer_id: 'cus_1',
++  publishable_key: 'pk_test_backend',
++  merchant_display_name: 'The Growth Project',
++};
++const PAID = {
++  outcome: 'paid',
++  amount_paid_cents: 15000,
++  amount_due_cents: 0,
++  currency: 'usd',
++  paid_totals: [{ currency: 'usd', amount_cents: 15000 }],
++  due_totals: [],
++  access_restored: true,
++  access_state: 'restored',
++};
++
++function sdkDouble(over: Partial<Record<keyof StripeSdk, jest.Mock>> = {}): StripeSdk {
++  return {
++    initStripe: jest.fn(async () => undefined),
++    initPaymentSheet: jest.fn(async () => ({})),
++    presentPaymentSheet: jest.fn(async () => ({})),
++    handleNextAction: jest.fn(async () => ({ paymentIntent: { status: 'Succeeded' } })),
++    handleURLCallback: jest.fn(async () => true),
++    ...over,
++  } as unknown as StripeSdk;
++}
++
++/** Production's envelope for a route it does not have (src/filters/not-found-envelope.ts). */
++function productionRouteMissing(path: string) {
++  return Object.assign(new Error('Request failed with status code 404'), {
++    response: {
++      status: 404,
++      data: {
++        statusCode: 404,
++        message: `Cannot POST /api${path}`,
++        error: 'Not Found',
++        timestamp: '2026-10-04T17:00:00.000Z',
++        path: `/api${path}`,
++        request_id: 'req-404',
++      },
++      headers: {},
++    },
++  });
++}
++
++beforeEach(() => {
++  mockPost.mockReset();
++});
++
++describe("today's production backend (no native card routes)", () => {
++  it('a missing card route says the in-app update is not available yet, nothing was charged, and is not reported', () => {
++    for (const action of ['update_card', 'confirm_card'] as const) {
++      const c = describeDunningError(productionRouteMissing('/v1/checkout/payment-method/setup-intent'), action);
++      expect(c.code).toBe('BILLING_ROUTE_NOT_AVAILABLE');
++      expect(c.report).toBe(false);
++      expect(c.message).toContain('not available yet, so nothing was charged');
++      expect(c.message).toContain(SUPPORT_EMAIL);
++    }
++    const cancel = describeDunningError(productionRouteMissing('/v1/checkout/subscriptions/p1/cancel'), 'cancel_plan');
++    expect(cancel.code).toBe('BILLING_ROUTE_NOT_AVAILABLE');
++    expect(cancel.message).toContain('nothing changed');
++  });
++
++  it('a bare 503 on a money call (reason phrase, no code) is "not confirmed", never "nothing changed"', () => {
++    const err = Object.assign(new Error('Request failed with status code 503'), {
++      response: { status: 503, data: { statusCode: 503, error: 'Service Unavailable', message: 'x' }, headers: {} },
++    });
++    const c = describeDunningError(err, 'confirm_card');
++    expect(c.code).toBe('RESULT_NOT_CONFIRMED');
++    expect(c.message).not.toMatch(/nothing changed|nothing was charged/);
++  });
++
++  it('a 404 that carries a machine code keeps its specific copy', () => {
++    const err = Object.assign(new Error('x'), {
++      response: { status: 404, data: { code: 'PURCHASE_NOT_FOUND', error: 'PURCHASE_NOT_FOUND' }, headers: {} },
++    });
++    expect(describeDunningError(err, 'cancel_plan').code).toBe('PLAN_NOT_FOUND');
++  });
++});
++
++describe('B-353-2 / C-352-5: dispute facts survive into the outcome copy', () => {
++  it('a dispute-only Save card says nothing was charged and that saving a card does not settle the reversal', () => {
++    const r = normalizeCardUpdate({
++      outcome: 'saved',
++      amount_paid_cents: 0,
++      amount_due_cents: 0,
++      currency: 'usd',
++      paid_totals: [],
++      due_totals: [],
++      access_restored: false,
++      access_state: 'unchanged',
++      plans: [{ purchase_id: 'p1', dispute_open: true, currency: 'usd' }],
++      quote: {
++        quote_id: 'q',
++        complete: true,
++        lines: [],
++        totals: [],
++        disputes: [{ purchase_id: 'p1', coach_name: 'Avery', currency: 'usd', amount_cents: 15000 }],
++      },
++    });
++    expect(r.disputes).toEqual([{ purchase_id: 'p1', coach_name: 'Avery', currency: 'usd', amount_cents: 15000 }]);
++    const c = cardUpdateOutcomeCopy(r);
++    expect(c.body).toContain('There was no open invoice to pay, so nothing was charged.');
++    expect(c.body).toContain('Your bank reversed an earlier payment of $150.00. Saving a card does not settle that.');
++    expect(c.body).not.toContain('Your next payment will use it');
++    expect(c.tone).toBe('action');
++  });
++
++  it('a mixed update names what was paid and keeps the dispute line', () => {
++    const r = normalizeCardUpdate({
++      ...PAID,
++      access_restored: false,
++      access_state: 'partial',
++      plans: [
++        { purchase_id: 'p1', dispute_open: false },
++        { purchase_id: 'p2', dispute_open: true },
++      ],
++    });
++    const c = cardUpdateOutcomeCopy(r);
++    expect(c.body).toContain('$150.00 went through');
++    expect(c.body).toContain('Your bank reversed an earlier payment. Saving a card does not settle that.');
++  });
++
++  it('when the answer reports no plans, the quote read before the card form supplies the disputes', () => {
++    const r = normalizeCardUpdate({ ...PAID, outcome: 'saved', paid_totals: [], amount_paid_cents: 0 });
++    expect(r.disputes).toBeNull();
++    const quote = normalizePaymentQuote({
++      quote_id: 'q',
++      complete: true,
++      lines: [],
++      totals: [],
++      disputes: [{ purchase_id: 'p1', coach_name: null, currency: 'eur', amount_cents: 8000 }],
++    });
++    expect(cardUpdateOutcomeCopy(r, quote.disputes).body).toContain('reversed an earlier payment of 80.00 EUR');
++    expect(cardUpdateOutcomeCopy(r).body).toContain('Your next payment will use it');
++  });
++
++  it('ending a disputed plan keeps the server limitation', () => {
++    const ended = {
++      outcome: 'ended' as const,
++      purchase_id: 'p1',
++      access_ends_at: null,
++      voided_invoice_count: 0,
++      voided_amount_cents: 0,
++      currency: 'usd',
++      paid_period_kept: false,
++      message: null,
++    };
++    expect(cancelOutcomeCopy(ended, { dispute: true }).body).toContain(
++      'Ending the plan does not settle the payment your bank reversed.',
++    );
++    expect(cancelOutcomeCopy(ended).body).not.toContain('reversed');
++    expect(disputeNotSettledLine([])).toBeNull();
++  });
++});
++
++describe('B-353-2: a retired screen starts no further native or payment step', () => {
++  const base = {
++    surface: 'test',
++    colorScheme: 'light' as const,
++    primaryButtonLabel: 'Save card and pay $150.00',
++    approved: [{ invoice_id: 'in_1', amount_cents: 15000, currency: 'usd' }],
++    retryDelaysMs: [0, 0],
++  };
++
++  it('retired while the SetupIntent is created: no card form, no confirm', async () => {
++    let current = true;
++    mockPost.mockImplementation(async (url: string) => {
++      current = false;
++      return { data: url.endsWith('/setup-intent') ? SETUP : PAID };
++    });
++    const sdk = sdkDouble();
++    const out = await runNativeCardUpdate({ ...base, sdk, isCurrent: () => current });
++    expect(out).toEqual({ kind: 'retired' });
++    expect(sdk.presentPaymentSheet).not.toHaveBeenCalled();
++    expect(mockPost).toHaveBeenCalledTimes(1);
++  });
++
++  it('retired while the card form is open: the late native return sends no confirm', async () => {
++    let current = true;
++    mockPost.mockImplementation(async (url: string) => ({ data: url.endsWith('/setup-intent') ? SETUP : PAID }));
++    const sdk = sdkDouble({
++      presentPaymentSheet: jest.fn(async () => {
++        current = false;
++        return {};
++      }),
++    });
++    const out = await runNativeCardUpdate({ ...base, sdk, isCurrent: () => current });
++    expect(out).toEqual({ kind: 'retired' });
++    expect(mockPost.mock.calls.map(([url]) => url)).toEqual(['/v1/checkout/payment-method/setup-intent']);
++  });
++
++  it('retired during the bank step: no re-confirm', async () => {
++    let current = true;
++    mockPost.mockImplementation(async () => ({ data: PAID }));
++    const sdk = sdkDouble({
++      handleNextAction: jest.fn(async () => {
++        current = false;
++        return { paymentIntent: { status: 'Succeeded' } };
++      }),
++    });
++    const out = await confirmWithBank({
++      sdk,
++      surface: 'test',
++      setupIntentId: 'seti_1',
++      clientSecret: 'pi_1_secret',
++      approved: base.approved,
++      retryDelaysMs: [0, 0],
++      isCurrent: () => current,
++    });
++    expect(out).toEqual({ kind: 'retired' });
++    expect(mockPost).not.toHaveBeenCalled();
++  });
++
++  it('CONTROL: a current screen completes the paid flow', async () => {
++    mockPost.mockImplementation(async (url: string) => ({ data: url.endsWith('/setup-intent') ? SETUP : PAID }));
++    const out = await runNativeCardUpdate({ ...base, sdk: sdkDouble(), isCurrent: () => true });
++    expect(out.kind).toBe('done');
++    expect(mockPost).toHaveBeenCalledWith('/v1/checkout/payment-method/confirm', {
++      setup_intent_id: 'seti_1',
++      approved_invoices: base.approved,
++    });
++  });
++});
+diff --git a/src/entitlements/dunning/__tests__/fixtures/backend628-in-progress.json b/src/entitlements/dunning/__tests__/fixtures/backend628-in-progress.json
+new file mode 100644
+index 0000000..78f39a2
+--- /dev/null
++++ b/src/entitlements/dunning/__tests__/fixtures/backend628-in-progress.json
+@@ -0,0 +1,67 @@
++{
++  "outcome": "in_progress",
++  "card": {
++    "brand": "visa",
++    "last4": "4242",
++    "exp_month": 12,
++    "exp_year": 2030
++  },
++  "amount_paid_cents": 15000,
++  "amount_due_cents": 0,
++  "currency": "usd",
++  "paid_totals": [
++    {
++      "currency": "usd",
++      "amount_cents": 15000
++    }
++  ],
++  "due_totals": [],
++  "access_restored": false,
++  "access_state": "partial",
++  "plans": [
++    {
++      "purchase_id": "purchase-1",
++      "coach_name": "Morgan Coach",
++      "currency": "usd",
++      "outcome": "paid",
++      "amount_paid_cents": 15000,
++      "amount_due_cents": 0,
++      "access": "restored",
++      "dispute_open": false,
++      "error_code": null,
++      "invoices": [
++        {
++          "invoice_id": "in_dv2_renewal_1",
++          "currency": "usd",
++          "amount_due_cents": 15000,
++          "amount_paid_cents": 15000,
++          "result": "paid",
++          "decline_code": null
++        }
++      ]
++    },
++    {
++      "purchase_id": "purchase-2",
++      "coach_name": "Morgan Coach",
++      "currency": "usd",
++      "outcome": "in_progress",
++      "amount_paid_cents": 0,
++      "amount_due_cents": 0,
++      "access": "unchanged",
++      "dispute_open": false,
++      "error_code": "BILLING_ACTION_IN_PROGRESS",
++      "invoices": []
++    }
++  ],
++  "quote": {
++    "quote_id": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++    "complete": true,
++    "lines": [],
++    "totals": [],
++    "disputes": []
++  },
++  "payment_intent_client_secret": null,
++  "requires_action_purchase_id": null,
++  "decline_code": null,
++  "message": "Your card ending 4242 is saved. $150.00 went through. Another change to your other plan is still being processed. Pull down in a few seconds to see the result."
++}
+diff --git a/src/entitlements/dunning/dunningApi.ts b/src/entitlements/dunning/dunningApi.ts
+new file mode 100644
+index 0000000..d47344c
+--- /dev/null
++++ b/src/entitlements/dunning/dunningApi.ts
+@@ -0,0 +1,520 @@
++import api from '../../services/api';
++import { generateIdempotencyKey } from '../../utils/idempotency';
++
++/**
++ * Client read of the signed-in client's non-payment status (S-DUNNING).
++ * Backend: `GET /v1/checkout/dunning` (DunningStatusController). Reachable
++ * while locked. With the backend flag off it returns `enabled: false` and
++ * the app renders nothing.
++ */
++export type DunningState = 'none' | 'past_due' | 'locked';
++
++export interface ClientDunningStatus {
++  enabled: boolean;
++  state: DunningState;
++  /** 'dispute' = the bank reversed a payment already made (no card update ends it). */
++  kind?: 'payment' | 'dispute' | null;
++  /** The cycle is locked but another live plan keeps access (show the banner, not the lock). */
++  lock_waived?: boolean;
++  purchase_id: string | null;
++  amount_cents: number | null;
++  currency: string | null;
++  failed_at: string | null;
++  lockout_at: string | null;
++  locked_at: string | null;
++  day: number | null;
++  coach_name: string | null;
++  card_last4: string | null;
++  card_brand: string | null;
++}
++
++/** Thrown when a 2xx body is missing a field the flow cannot continue without. */
++export class DunningResponseShapeError extends Error {
++  constructor(readonly route: string) {
++    super('DUNNING_RESPONSE_SHAPE');
++  }
++}
++
++/** The quote route; a shape error on it stops the payment before the card form opens. */
++export const ROUTE_QUOTE = 'payment-method/quote';
++
++function str(v: unknown): string | null {
++  return typeof v === 'string' && v.length > 0 ? v : null;
++}
++
++function num(v: unknown): number | null {
++  return typeof v === 'number' && Number.isFinite(v) ? v : null;
++}
++
++/** Integer minor units, or null when absent / not an integer (never a guessed 0). */
++function cents(v: unknown): number | null {
++  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null;
++}
++
++const ROUTE_STATUS = 'checkout/dunning';
++
++/**
++ * Strict normaliser (S-DUNNING-R3 B-322-5): an unexpected shape throws, so
++ * the provider keeps its last known state instead of clearing a lockout or
++ * a banner on a malformed answer.
++ */
++export function normalizeDunningStatus(raw: unknown): ClientDunningStatus {
++  if (!raw || typeof raw !== 'object') throw new DunningResponseShapeError(ROUTE_STATUS);
++  const r = raw as Record<string, unknown>;
++  if (typeof r.enabled !== 'boolean') throw new DunningResponseShapeError(ROUTE_STATUS);
++  if (r.state !== 'none' && r.state !== 'past_due' && r.state !== 'locked') {
++    throw new DunningResponseShapeError(ROUTE_STATUS);
++  }
++  const state: DunningState = r.state;
++  if (state !== 'none' && !str(r.purchase_id)) throw new DunningResponseShapeError(ROUTE_STATUS);
++  return {
++    enabled: r.enabled,
++    state,
++    kind: r.kind === 'dispute' ? 'dispute' : r.kind === 'payment' ? 'payment' : null,
++    lock_waived: r.lock_waived === true,
++    purchase_id: str(r.purchase_id),
++    amount_cents: cents(r.amount_cents),
++    currency: str(r.currency),
++    failed_at: str(r.failed_at),
++    lockout_at: str(r.lockout_at),
++    locked_at: str(r.locked_at),
++    day: num(r.day),
++    coach_name: str(r.coach_name),
++    card_last4: str(r.card_last4),
++    card_brand: str(r.card_brand),
++  };
++}
++
++/**
++ * Native card update (OR-110-2). Backend: ClientBillingController.
++ *  1. GET  /v1/checkout/payment-method/quote -> every open invoice the update
++ *     would pay, per currency (shown before the client acts).
++ *  2. POST /v1/checkout/payment-method/setup-intent -> a SetupIntent on the
++ *     client's Stripe customer (platform account) + an ephemeral key.
++ *  3. PaymentSheet collects and confirms the card on the device.
++ *  4. POST /v1/checkout/payment-method/confirm with the approved invoices ->
++ *     the backend makes the card the default and (1A) pays exactly those.
++ */
++export interface CardSetup {
++  setup_intent_id: string;
++  setup_intent_client_secret: string;
++  ephemeral_key: string;
++  customer_id: string;
++  publishable_key: string | null;
++  merchant_display_name: string;
++}
++
++export interface MoneyTotal {
++  currency: string;
++  amount_cents: number;
++}
++
++export interface QuoteLine {
++  invoice_id: string;
++  purchase_id: string;
++  coach_name: string | null;
++  currency: string;
++  amount_cents: number;
++}
++
++/**
++ * A plan with a disputed payment open: the bank reversed a payment already
++ * made. A card update never settles it (backend B-628-8); the amount is known
++ * only on a dispute cycle.
++ */
++export interface QuoteDispute {
++  purchase_id: string;
++  coach_name: string | null;
++  currency: string | null;
++  amount_cents: number | null;
++}
++
++export interface PaymentQuote {
++  quote_id: string;
++  lines: QuoteLine[];
++  totals: MoneyTotal[];
++  /** Plans with a disputed payment open (a card update does not settle them). */
++  disputes: QuoteDispute[];
++}
++
++export interface ApprovedInvoice {
++  invoice_id: string;
++  amount_cents: number;
++  currency: string;
++}
++
++export function approvalFor(quote: PaymentQuote | null): ApprovedInvoice[] {
++  return (quote?.lines ?? []).map((l) => ({
++    invoice_id: l.invoice_id,
++    amount_cents: l.amount_cents,
++    currency: l.currency,
++  }));
++}
++
++export type CardUpdateOutcome =
++  | 'paid'
++  | 'saved'
++  | 'requires_action'
++  | 'declined'
++  | 'processing'
++  | 'approval_required'
++  | 'payment_uncertain'
++  | 'failed'
++  /**
++   * B-322-7: part of the update ran (e.g. one plan paid) while another
++   * change to a different plan was still being processed on the server.
++   * Not an error: the known payment is shown and "Check again" repeats the
++   * same confirm (same SetupIntent and approval), which never charges twice.
++   */
++  | 'in_progress';
++
++export type AccessState = 'restored' | 'partial' | 'updating' | 'unchanged';
++
++export interface CardUpdateResponse {
++  outcome: CardUpdateOutcome;
++  card_last4: string | null;
++  card_brand: string | null;
++  /** Integer minor units paid (single currency only; null when mixed or unknown). */
++  amount_paid_cents: number | null;
++  /** Integer minor units still open (single currency only; null when mixed or unknown). */
++  amount_due_cents: number | null;
++  currency: string | null;
++  paid_totals: MoneyTotal[];
++  due_totals: MoneyTotal[];
++  /** True only when the server confirmed every plan's access is back. */
++  access_restored: boolean;
++  access_state: AccessState;
++  quote: PaymentQuote | null;
++  payment_intent_client_secret: string | null;
++  decline_code: string | null;
++  /**
++   * B-353-2 / C-352-5: plans whose disputed payment is still open after this
++   * update (from the server's per-plan `dispute_open`, merged with the quote's
++   * disputes). Saving a card did not settle them, so the copy says so. Null
++   * when the answer carries neither (the screen then uses the quote it read
++   * before the card form).
++   */
++  disputes: QuoteDispute[] | null;
++  /** The server's own truthful sentence (leads with what was paid). */
++  message: string | null;
++}
++
++export type CancelOutcome = 'ended' | 'scheduled' | 'already_ended';
++
++export interface CancelPlanResponse {
++  outcome: CancelOutcome;
++  purchase_id: string;
++  access_ends_at: string | null;
++  voided_invoice_count: number;
++  /** Integer minor units forgiven by voiding (never collected). */
++  voided_amount_cents: number;
++  currency: string | null;
++  /** A payment that landed meanwhile kept the paid period (plan ends at period end). */
++  paid_period_kept: boolean;
++  message: string | null;
++}
++
++function totals(v: unknown, route: string): MoneyTotal[] {
++  if (v === undefined || v === null) return [];
++  if (!Array.isArray(v)) throw new DunningResponseShapeError(route);
++  return v.map((t) => {
++    const r = (t && typeof t === 'object' ? t : {}) as Record<string, unknown>;
++    const currency = str(r.currency);
++    const amount = cents(r.amount_cents);
++    if (!currency || amount === null) throw new DunningResponseShapeError(route);
++    return { currency, amount_cents: amount };
++  });
++}
++
++export function normalizeCardSetup(raw: unknown): CardSetup {
++  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
++  const id = str(r.setup_intent_id);
++  const secret = str(r.setup_intent_client_secret);
++  const key = str(r.ephemeral_key);
++  const customer = str(r.customer_id);
++  if (!id || !secret || !key || !customer) {
++    throw new DunningResponseShapeError('payment-method/setup-intent');
++  }
++  return {
++    setup_intent_id: id,
++    setup_intent_client_secret: secret,
++    ephemeral_key: key,
++    customer_id: customer,
++    publishable_key: str(r.publishable_key),
++    merchant_display_name: str(r.merchant_display_name) ?? 'The Growth Project',
++  };
++}
++
++/**
++ * B-322-5: a quote is money the client is about to approve, so it must be
++ * complete and internally consistent or the flow stops before the card form
++ * opens (no fail-open into an approval the button does not show):
++ *  - `complete: true` (the server read every plan and every invoice page);
++ *  - `lines` and `totals` both present; every line a unique invoice with an
++ *    integer amount; every total a unique currency;
++ *  - the per-currency totals equal the per-currency sums of the lines
++ *    (zero amounts aside), so the "Save card and pay ..." label and the
++ *    approved invoices always describe the same money.
++ * A complete quote with no lines and no totals is valid (Save card only).
++ */
++export function normalizePaymentQuote(raw: unknown, route: string = ROUTE_QUOTE): PaymentQuote {
++  const r = (raw && typeof raw === 'object' ? raw : null) as Record<string, unknown> | null;
++  if (!r || !str(r.quote_id) || !Array.isArray(r.lines) || !Array.isArray(r.totals) || r.complete !== true) {
++    throw new DunningResponseShapeError(route);
++  }
++  const seenInvoices = new Set<string>();
++  const lines = r.lines.map((l) => {
++    const x = (l && typeof l === 'object' ? l : {}) as Record<string, unknown>;
++    const invoice = str(x.invoice_id);
++    const purchase = str(x.purchase_id);
++    const currency = str(x.currency);
++    const amount = cents(x.amount_cents);
++    if (!invoice || !purchase || !currency || amount === null) throw new DunningResponseShapeError(route);
++    if (seenInvoices.has(invoice)) throw new DunningResponseShapeError(route);
++    seenInvoices.add(invoice);
++    return {
++      invoice_id: invoice,
++      purchase_id: purchase,
++      coach_name: str(x.coach_name),
++      currency,
++      amount_cents: amount,
++    };
++  });
++  const quoteTotals = totals(r.totals, route);
++  const byCurrency = (list: Array<{ currency: string; amount_cents: number }>, unique: boolean) => {
++    const out = new Map<string, number>();
++    for (const t of list) {
++      const cur = t.currency.toLowerCase();
++      if (unique && out.has(cur)) throw new DunningResponseShapeError(route);
++      out.set(cur, (out.get(cur) ?? 0) + t.amount_cents);
++    }
++    for (const [cur, amount] of [...out]) if (amount === 0) out.delete(cur);
++    return out;
++  };
++  const fromLines = byCurrency(lines, false);
++  const fromTotals = byCurrency(quoteTotals, true);
++  if (fromLines.size !== fromTotals.size || [...fromLines].some(([cur, amount]) => fromTotals.get(cur) !== amount)) {
++    throw new DunningResponseShapeError(route);
++  }
++  const disputes = Array.isArray(r.disputes) ? r.disputes.map(normalizeDispute) : [];
++  return {
++    quote_id: str(r.quote_id) as string,
++    lines,
++    totals: quoteTotals.filter((t) => t.amount_cents > 0),
++    disputes,
++  };
++}
++
++function normalizeDispute(d: unknown): QuoteDispute {
++  const x = (d && typeof d === 'object' ? d : {}) as Record<string, unknown>;
++  return {
++    purchase_id: str(x.purchase_id) ?? '',
++    coach_name: str(x.coach_name),
++    currency: str(x.currency),
++    amount_cents: cents(x.amount_cents),
++  };
++}
++
++/**
++ * Open disputes after a confirm: every plan the server marks `dispute_open`,
++ * plus the quote's disputes (which carry the reversed amount), one per plan.
++ * A dispute flag is never dropped, even when the plan entry is incomplete.
++ */
++function confirmDisputes(plans: unknown, quote: PaymentQuote | null): QuoteDispute[] | null {
++  if (!Array.isArray(plans) && !quote) return null;
++  const out = new Map<string, QuoteDispute>();
++  for (const d of quote?.disputes ?? []) out.set(d.purchase_id, d);
++  if (Array.isArray(plans)) {
++    plans.forEach((p, i) => {
++      const x = (p && typeof p === 'object' ? p : {}) as Record<string, unknown>;
++      if (x.dispute_open !== true) return;
++      const id = str(x.purchase_id) ?? `plan-${i}`;
++      if (out.has(id)) return;
++      out.set(id, { purchase_id: id, coach_name: str(x.coach_name), currency: str(x.currency), amount_cents: null });
++    });
++  }
++  return [...out.values()];
++}
++
++const OUTCOMES: ReadonlySet<string> = new Set([
++  'paid',
++  'saved',
++  'requires_action',
++  'declined',
++  'processing',
++  'approval_required',
++  'payment_uncertain',
++  'failed',
++  'in_progress',
++]);
++const ACCESS: ReadonlySet<string> = new Set(['restored', 'partial', 'updating', 'unchanged']);
++
++/**
++ * Fail closed (B-322-5): an unknown outcome, a money field that is not an
++ * integer, or a bank step without its secret is a shape error (reported,
++ * shown as "could not confirm"), never "nothing was charged" or "paid".
++ */
++export function normalizeCardUpdate(raw: unknown): CardUpdateResponse {
++  const route = 'payment-method/confirm';
++  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
++  if (typeof r.outcome !== 'string' || !OUTCOMES.has(r.outcome)) {
++    throw new DunningResponseShapeError(route);
++  }
++  const outcome = r.outcome as CardUpdateOutcome;
++  const paidTotals = totals(r.paid_totals, route);
++  const dueTotals = totals(r.due_totals, route);
++  const paid = r.amount_paid_cents === null ? null : cents(r.amount_paid_cents);
++  const due = r.amount_due_cents === null ? null : cents(r.amount_due_cents);
++  if (r.amount_paid_cents !== null && paid === null && paidTotals.length === 0) {
++    throw new DunningResponseShapeError(route);
++  }
++  const secret = str(r.payment_intent_client_secret);
++  if (outcome === 'requires_action' && !secret) throw new DunningResponseShapeError(route);
++  const access =
++    typeof r.access_state === 'string' && ACCESS.has(r.access_state)
++      ? (r.access_state as AccessState)
++      : r.access_restored === true
++        ? 'restored'
++        : 'unchanged';
++  const card = (r.card && typeof r.card === 'object' ? r.card : {}) as Record<string, unknown>;
++  const quote = r.quote ? normalizePaymentQuote(r.quote, route) : null;
++  return {
++    outcome,
++    card_last4: str(card.last4),
++    card_brand: str(card.brand),
++    amount_paid_cents: paid,
++    amount_due_cents: due,
++    currency: str(r.currency),
++    paid_totals:
++      paidTotals.length > 0 || paid === null || paid === 0
++        ? paidTotals
++        : [{ currency: str(r.currency) ?? 'usd', amount_cents: paid }],
++    due_totals:
++      dueTotals.length > 0 || due === null || due === 0
++        ? dueTotals
++        : [{ currency: str(r.currency) ?? 'usd', amount_cents: due }],
++    access_restored: r.access_restored === true && access === 'restored',
++    access_state: access,
++    quote,
++    payment_intent_client_secret: secret,
++    decline_code: str(r.decline_code),
++    disputes: confirmDisputes(r.plans, quote),
++    message: str(r.message),
++  };
++}
++
++const CANCEL_OUTCOMES: ReadonlySet<string> = new Set(['ended', 'scheduled', 'already_ended']);
++
++export function normalizeCancelPlan(raw: unknown): CancelPlanResponse {
++  const route = 'subscriptions/cancel';
++  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
++  const purchaseId = str(r.purchase_id);
++  if (typeof r.outcome !== 'string' || !CANCEL_OUTCOMES.has(r.outcome) || !purchaseId) {
++    throw new DunningResponseShapeError(route);
++  }
++  const voidedCount = cents(r.voided_invoice_count);
++  const voidedCents = cents(r.voided_amount_cents);
++  if (voidedCount === null || voidedCents === null) throw new DunningResponseShapeError(route);
++  return {
++    outcome: r.outcome as CancelOutcome,
++    purchase_id: purchaseId,
++    access_ends_at: str(r.access_ends_at),
++    voided_invoice_count: voidedCount,
++    voided_amount_cents: voidedCents,
++    currency: str(r.currency),
++    paid_period_kept: r.paid_period_kept === true,
++    message: str(r.message),
++  };
++}
++
++export const dunningApi = {
++  /** Throws the axios error (or a shape error) on failure; callers map it with describeDunningError. */
++  async getStatus(): Promise<ClientDunningStatus> {
++    const res = await api.get<unknown>('/v1/checkout/dunning');
++    return normalizeDunningStatus(res.data);
++  },
++  /** Every open invoice a card update would pay, read fresh before the client acts. */
++  async getPaymentQuote(): Promise<PaymentQuote> {
++    const res = await api.get<unknown>('/v1/checkout/payment-method/quote');
++    return normalizePaymentQuote(res.data);
++  },
++  /** Step 2 of the native card update. One idempotency key per tap. */
++  async createCardSetup(idempotencyKey: string = generateIdempotencyKey()): Promise<CardSetup> {
++    const res = await api.post<unknown>('/v1/checkout/payment-method/setup-intent', {
++      idempotency_key: idempotencyKey,
++    });
++    return normalizeCardSetup(res.data);
++  },
++  /**
++   * Step 4: make the confirmed card the default and pay exactly the approved
++   * invoices. Safe to repeat with the same SetupIntent and approval: the
++   * server answers with what that confirm already paid.
++   */
++  async confirmCardUpdate(setupIntentId: string, approved: ApprovedInvoice[] = []): Promise<CardUpdateResponse> {
++    const res = await api.post<unknown>('/v1/checkout/payment-method/confirm', {
++      setup_intent_id: setupIntentId,
++      approved_invoices: approved,
++    });
++    return normalizeCardUpdate(res.data);
++  },
++  /**
++   * End a plan. In dunning (2A) the unpaid invoice is voided and access ends
++   * now, unless a payment already landed (then the paid period is kept);
++   * otherwise (option A) access runs to the end of the paid period.
++   */
++  async cancelPlan(purchaseId: string): Promise<CancelPlanResponse> {
++    const res = await api.post<unknown>(`/v1/checkout/subscriptions/${encodeURIComponent(purchaseId)}/cancel`, {});
++    return normalizeCancelPlan(res.data);
++  },
++};
++
++/** Stripe zero-decimal currencies: the minor unit is the whole unit. */
++const ZERO_DECIMAL = new Set([
++  'BIF',
++  'CLP',
++  'DJF',
++  'GNF',
++  'JPY',
++  'KMF',
++  'KRW',
++  'MGA',
++  'PYG',
++  'RWF',
++  'UGX',
++  'VND',
++  'VUV',
++  'XAF',
++  'XOF',
++  'XPF',
++]);
++
++/**
++ * "$150.00" for USD, "150.00 EUR" otherwise; null when the amount is unknown.
++ * Input is integer minor units (Stripe's amount fields).
++ */
++export function formatDunningAmount(cents: number | null, currency: string | null): string | null {
++  if (cents == null || !Number.isFinite(cents)) return null;
++  const cur = (currency ?? 'usd').toUpperCase();
++  const amount = ZERO_DECIMAL.has(cur) ? String(Math.round(cents)) : (cents / 100).toFixed(2);
++  return cur === 'USD' ? `$${amount}` : `${amount} ${cur}`;
++}
++
++/** "Wednesday, October 14" in the device time zone; null when unknown. */
++export function formatDunningDate(iso: string | null): string | null {
++  if (!iso) return null;
++  const d = new Date(iso);
++  if (Number.isNaN(d.getTime())) return null;
++  return d.toLocaleDateString('en-US', {
++    weekday: 'long',
++    month: 'long',
++    day: 'numeric',
++  });
++}
++
++/** "$150.00 and 80.00 EUR" for per-currency totals (never summed across currencies). */
++export function formatDunningTotals(list: MoneyTotal[]): string | null {
++  const parts = list.map((t) => formatDunningAmount(t.amount_cents, t.currency)).filter((x): x is string => Boolean(x));
++  if (parts.length === 0) return null;
++  if (parts.length === 1) return parts[0];
++  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
++}
+diff --git a/src/entitlements/dunning/dunningErrorCopy.ts b/src/entitlements/dunning/dunningErrorCopy.ts
+new file mode 100644
+index 0000000..4ff89cd
+--- /dev/null
++++ b/src/entitlements/dunning/dunningErrorCopy.ts
+@@ -0,0 +1,657 @@
++import { SUPPORT_EMAIL } from '../../constants/support';
++import { extractRequestId, newRequestId } from '../../utils/correlation';
++import {
++  formatDunningAmount,
++  formatDunningDate,
++  formatDunningTotals,
++  ROUTE_QUOTE,
++  type CancelPlanResponse,
++  type CardUpdateResponse,
++  type MoneyTotal,
++  type QuoteDispute,
++} from './dunningApi';
++
++/**
++ * Specific, calm copy for every failure on the payment-lockout surfaces
++ * (S-DUNNING). No generic "Something went wrong": each case says what
++ * happened and gives a next action that works. Unknown failures carry the
++ * backend request id as a support reference and are flagged for Sentry.
++ *
++ * SUPPORT_EMAIL is the owner's one support address (S-ERRORS ruling,
++ * 2026-10-01 14:19), re-exported from src/constants/support.ts so the
++ * address is written once (supportEmail.guard.test.ts).
++ */
++
++export { SUPPORT_EMAIL };
++
++/**
++ * `update_card`: before the card is saved (setup / quote). `confirm_card`:
++ * the confirm call, after the card form finished; from here a lost answer
++ * may hide a payment that went through, so it is never "nothing charged".
++ */
++export type DunningAction = 'update_card' | 'confirm_card' | 'load_status' | 'cancel_plan';
++
++export type DunningErrorCode =
++  | 'OFFLINE'
++  | 'RATE_LIMITED'
++  | 'NO_BILLING_ACCOUNT'
++  | 'STRIPE_UNAVAILABLE'
++  | 'PAYMENT_UNCONFIRMED'
++  | 'PLAN_CHANGE_UNCONFIRMED'
++  | 'STRIPE_REJECTED'
++  | 'PAYMENTS_NOT_CONFIGURED'
++  | 'CARD_FORM_EXPIRED'
++  | 'CARD_NOT_SAVED'
++  | 'CARD_SHEET_UNAVAILABLE'
++  | 'CARD_SHEET_FAILED'
++  | 'BANK_CONFIRMATION_FAILED'
++  | 'BANK_RESULT_UNCONFIRMED'
++  | 'QUOTE_NOT_VALID'
++  | 'BILLING_ACTION_IN_PROGRESS'
++  | 'PLAN_NOT_FOUND'
++  | 'NOT_A_SUBSCRIPTION'
++  | 'CANCEL_INCOMPLETE'
++  | 'PLAN_NOT_LOADED'
++  | 'LINK_REJECTED'
++  | 'SESSION_EXPIRED'
++  | 'STATUS_NOT_AVAILABLE'
++  | 'BILLING_ROUTE_NOT_AVAILABLE'
++  | 'UNEXPECTED_RESPONSE'
++  | 'RESULT_NOT_CONFIRMED'
++  | 'INVALID_REQUEST'
++  | 'INVALID_PLAN_LINK'
++  | 'UNKNOWN';
++
++export interface DunningErrorCopy {
++  /** Stable machine code for tests and analytics. */
++  code: DunningErrorCode;
++  message: string;
++  /** Backend request id when the server supplied one. */
++  reference: string | null;
++  /** True when the failure is unexpected and must be reported to Sentry. */
++  report: boolean;
++}
++
++function withReference(text: string, reference: string | null): string {
++  return reference ? `${text} Reference: ${reference}.` : text;
++}
++
++/**
++ * B-322-5: the reference is part of the visible message whenever one exists
++ * (a reported failure without a server request id gets a client reference,
++ * which is also sent to Sentry), so support can always find it.
++ */
++function copy(code: DunningErrorCode, message: string, reference: string | null, report: boolean): DunningErrorCopy {
++  const ref = reference ?? (report ? newRequestId() : null);
++  return { code, message: withReference(message, ref), reference: ref, report };
++}
++
++/**
++ * The backend's machine code: `code`, or an `error` written as a code
++ * (SCREAMING_SNAKE). Nest's generic `error` is the HTTP reason phrase
++ * ("Not Found", "Service Unavailable"), which is not a code: a 404 for a
++ * route the server does not have (today's production for every native card
++ * route) must read as "not available yet", and a bare 503 on a money call as
++ * "not confirmed", never as an unknown code.
++ */
++function machineCode(body: { code?: unknown; error?: unknown }): string | null {
++  if (typeof body.code === 'string' && body.code) return body.code;
++  if (typeof body.error === 'string' && /^[A-Z][A-Z0-9_]+$/.test(body.error)) return body.error;
++  return null;
++}
++
++function serverMessage(body: { message?: unknown }): string | null {
++  return typeof body.message === 'string' && body.message.trim().length > 0 ? body.message.trim() : null;
++}
++
++/** Client-side failures with no HTTP response (native sheet, bad body). */
++export function localDunningError(
++  code:
++    | 'CARD_SHEET_UNAVAILABLE'
++    | 'CARD_SHEET_FAILED'
++    | 'PAYMENTS_NOT_CONFIGURED'
++    | 'PLAN_NOT_LOADED'
++    | 'UNEXPECTED_RESPONSE',
++): DunningErrorCopy {
++  switch (code) {
++    case 'PLAN_NOT_LOADED':
++      return copy(
++        code,
++        'Your plan details have not loaded yet, so nothing changed. Pull down to refresh, then tap End my plan again.',
++        null,
++        false,
++      );
++    case 'CARD_SHEET_UNAVAILABLE':
++      return copy(
++        code,
++        `This version of the app cannot open the card form. Update the app from the App Store or Google Play, then tap Update card again. If you are on the latest version, email ${SUPPORT_EMAIL}.`,
++        null,
++        true,
++      );
++    case 'CARD_SHEET_FAILED':
++      return copy(
++        code,
++        `The card form did not finish, so your card was not saved and nothing was charged. Tap Update card to try again, or use a different card.`,
++        null,
++        true,
++      );
++    case 'PAYMENTS_NOT_CONFIGURED':
++      return copy(
++        code,
++        `Card payments are not set up in this version of the app, so nothing was charged. Email ${SUPPORT_EMAIL} for help paying.`,
++        null,
++        true,
++      );
++    default:
++      return copy(
++        'UNEXPECTED_RESPONSE',
++        `The server sent an answer the app did not understand. Pull down to refresh to see where things stand. If it keeps happening, email ${SUPPORT_EMAIL}.`,
++        null,
++        true,
++      );
++  }
++}
++
++export function describeDunningError(err: unknown, action: DunningAction): DunningErrorCopy {
++  const reference = extractRequestId(err);
++  const e = (err ?? {}) as {
++    message?: unknown;
++    response?: {
++      status?: number;
++      data?: {
++        error?: unknown;
++        code?: unknown;
++        step?: unknown;
++        message?: unknown;
++      };
++    };
++  };
++  const status = e.response?.status;
++  const body = e.response?.data ?? {};
++  const machine = machineCode(body);
++  const step = typeof body.step === 'string' ? body.step : null;
++  const retryVerb =
++    action === 'update_card' || action === 'confirm_card'
++      ? 'tap Update card again'
++      : action === 'cancel_plan'
++        ? 'tap End my plan again'
++        : 'pull down to refresh';
++
++  if (e.message === 'STRIPE_URL_REJECTED') {
++    return copy(
++      'LINK_REJECTED',
++      `The card update link did not come from Stripe, so it was not opened. Email ${SUPPORT_EMAIL} for a working link.`,
++      reference,
++      true,
++    );
++  }
++  if (e.message === 'DUNNING_RESPONSE_SHAPE') {
++    if ((err as { route?: unknown }).route === ROUTE_QUOTE) {
++      // B-322-5: an incomplete or inconsistent quote stops the payment before
++      // the card form opens, so nothing can be approved that is not shown.
++      return copy(
++        'QUOTE_NOT_VALID',
++        `The amount you owe did not load in full, so the card form did not open and nothing was charged. Pull down to refresh, then tap Update card again. If it keeps happening, email ${SUPPORT_EMAIL} with the reference below.`,
++        reference,
++        true,
++      );
++    }
++    if (action === 'confirm_card' || action === 'cancel_plan') {
++      return copy(
++        'RESULT_NOT_CONFIRMED',
++        action === 'confirm_card'
++          ? `The server answered in a way the app did not understand, so it is not confirmed yet whether your payment went through. Pull down to refresh to see where things stand. Trying again never charges you twice. If it keeps happening, email ${SUPPORT_EMAIL}.`
++          : `The server answered in a way the app did not understand, so it is not confirmed yet whether your plan ended. Pull down to refresh to see where things stand. If it keeps happening, email ${SUPPORT_EMAIL}.`,
++        reference,
++        true,
++      );
++    }
++    return copy(
++      'UNEXPECTED_RESPONSE',
++      `The server sent an answer the app did not understand. Pull down to refresh to see where things stand. If it keeps happening, email ${SUPPORT_EMAIL}.`,
++      reference,
++      true,
++    );
++  }
++  if (!e.response && (action === 'confirm_card' || action === 'cancel_plan')) {
++    // B-322-2: the request may have reached the server; its answer was lost.
++    return copy(
++      'RESULT_NOT_CONFIRMED',
++      action === 'confirm_card'
++        ? 'The connection dropped while your card was being confirmed, so it is not clear yet whether the payment went through. Check your connection and pull down to refresh. Trying again never charges you twice.'
++        : 'The connection dropped while your plan was ending, so it is not clear yet whether it went through. Check your connection and pull down to refresh, then tap End my plan again if it still shows. Repeating it is safe.',
++      null,
++      false,
++    );
++  }
++  if (!e.response) {
++    return copy(
++      'OFFLINE',
++      action === 'update_card'
++        ? `The server could not be reached, so nothing was charged. Check your connection, then ${retryVerb}.`
++        : `The server could not be reached. Check your connection, then ${retryVerb}.`,
++      null,
++      false,
++    );
++  }
++  if (status === 401) {
++    return copy(
++      'SESSION_EXPIRED',
++      action === 'cancel_plan'
++        ? 'Your session ended. Sign in again to change your plan.'
++        : 'Your session ended. Sign in again to update your card.',
++      reference,
++      false,
++    );
++  }
++  if (status === 429) {
++    return copy(
++      'RATE_LIMITED',
++      `Too many attempts in a short time. Wait a minute, then ${retryVerb}.`,
++      reference,
++      false,
++    );
++  }
++  if (action === 'load_status' && status === 404) {
++    // The status route ships with backend #628; an older server answers 404.
++    // Expected during rollout, so not reported.
++    return copy(
++      'STATUS_NOT_AVAILABLE',
++      `Your billing status is not available yet. If your plan is paused, email ${SUPPORT_EMAIL}.`,
++      reference,
++      false,
++    );
++  }
++  if (status === 404 && !machine) {
++    // A 404 without a machine code means the server predates the native
++    // card routes (backend #628): production answers its generic
++    // { error: 'Not Found' } envelope. Expected during rollout, so not
++    // reported, and nothing was sent to the payment provider.
++    return copy(
++      'BILLING_ROUTE_NOT_AVAILABLE',
++      action === 'cancel_plan'
++        ? `Ending a plan in the app is not available yet, so nothing changed. Email ${SUPPORT_EMAIL} to end it.`
++        : `Updating your card in the app is not available yet, so nothing was charged. Email ${SUPPORT_EMAIL} for help paying.`,
++      reference,
++      false,
++    );
++  }
++  const said = serverMessage(body);
++  switch (machine) {
++    case 'INVALID_BILLING_REQUEST':
++      return copy(
++        'INVALID_REQUEST',
++        said ??
++          `The app sent an incomplete billing request, so nothing was charged or changed. Close this screen, pull down to refresh, and try again. If it keeps happening, update the app.`,
++        reference,
++        true,
++      );
++    case 'INVALID_PLAN_ID':
++      return copy(
++        'INVALID_PLAN_LINK',
++        said ?? 'That plan link is not valid, so nothing was changed. Pull down to refresh your plans, then try again.',
++        reference,
++        true,
++      );
++    case 'PAYMENT_RESULT_UNKNOWN':
++      return copy(
++        'PAYMENT_UNCONFIRMED',
++        said ??
++          'Your payment is not confirmed yet. Wait a minute, then pull down to refresh. Trying again never charges you twice.',
++        reference,
++        true,
++      );
++    case 'PLAN_CHANGE_RESULT_UNKNOWN':
++      return copy(
++        'PLAN_CHANGE_UNCONFIRMED',
++        said ??
++          'Your plan change is not confirmed yet. Wait a minute, then tap End my plan again. Repeating it is safe and never charges you.',
++        reference,
++        true,
++      );
++    case 'CUSTOMER_NOT_FOUND':
++      return copy(
++        'NO_BILLING_ACCOUNT',
++        `No billing account was found for you. Message your coach for a new payment link, or email ${SUPPORT_EMAIL}.`,
++        reference,
++        false,
++      );
++    case 'SETUP_INTENT_NOT_FOUND':
++      return copy(
++        'CARD_FORM_EXPIRED',
++        'That card form is no longer valid, so nothing was saved or charged. Tap Update card to open a fresh one.',
++        reference,
++        true,
++      );
++    case 'SETUP_INTENT_NOT_CONFIRMED':
++      return copy(
++        'CARD_NOT_SAVED',
++        'Your new card was not saved yet, so nothing was charged. Tap Update card and add the card again.',
++        reference,
++        false,
++      );
++    case 'BILLING_ACTION_IN_PROGRESS':
++      return copy(
++        'BILLING_ACTION_IN_PROGRESS',
++        said ??
++          'A payment change for this plan is already in progress. Wait a minute, then pull down to refresh before trying again.',
++        reference,
++        false,
++      );
++    case 'PURCHASE_NOT_FOUND':
++      return copy(
++        'PLAN_NOT_FOUND',
++        `That plan was not found on your account. Pull down to refresh. If it is still shown, email ${SUPPORT_EMAIL}.`,
++        reference,
++        true,
++      );
++    case 'NOT_A_SUBSCRIPTION':
++      return copy(
++        'NOT_A_SUBSCRIPTION',
++        'This plan is a one-time purchase, so there is nothing to end. Message your coach if you want to change it.',
++        reference,
++        false,
++      );
++    case 'CANCEL_INCOMPLETE':
++      return copy(
++        'CANCEL_INCOMPLETE',
++        said ??
++          'Your plan did not finish ending. Nothing was charged, and if the unpaid invoice was already canceled it stays canceled. Wait a minute, then tap End my plan again. Repeating it is safe.',
++        reference,
++        true,
++      );
++    case 'PAYMENTS_NOT_CONFIGURED':
++      return copy(
++        'PAYMENTS_NOT_CONFIGURED',
++        `Card updates are not available right now, so nothing was charged. Email ${SUPPORT_EMAIL} with the reference below for help paying.`,
++        reference,
++        true,
++      );
++    case 'STRIPE_REQUEST_FAILED':
++      return copy(
++        'STRIPE_REJECTED',
++        `The payment provider could not complete this change, so nothing was charged. Email ${SUPPORT_EMAIL} with this reference to finish it.`,
++        reference,
++        true,
++      );
++    default:
++      break;
++  }
++  if (machine === 'STRIPE_UNAVAILABLE' && said) {
++    // The server knows the phase and only says "nothing changed" when true.
++    return copy('STRIPE_UNAVAILABLE', said, reference, true);
++  }
++  if (
++    !machine &&
++    (status === 502 || status === 503 || status === 504) &&
++    (action === 'confirm_card' || action === 'cancel_plan')
++  ) {
++    // A bare gateway error on a money call: the server may have finished it.
++    return copy(
++      'RESULT_NOT_CONFIRMED',
++      action === 'confirm_card'
++        ? 'The server did not answer in time, so it is not clear yet whether your payment went through. Pull down to refresh in a minute. Trying again never charges you twice.'
++        : 'The server did not answer in time, so it is not clear yet whether your plan ended. Pull down to refresh in a minute, then tap End my plan again if it still shows.',
++      reference,
++      true,
++    );
++  }
++  if (
++    machine === 'STRIPE_UNAVAILABLE' ||
++    machine === 'STRIPE_CHECKOUT_ERROR' ||
++    status === 502 ||
++    status === 503 ||
++    status === 504
++  ) {
++    if (step === 'invoice_pay') {
++      // A lost answer on a payment may still have charged: never say "nothing changed".
++      return copy(
++        'PAYMENT_UNCONFIRMED',
++        'Your payment is not confirmed yet. Wait a minute, then pull down to refresh. Trying again never charges you twice.',
++        reference,
++        true,
++      );
++    }
++    if (step === 'invoice_void' || step === 'cancel') {
++      return copy(
++        'PLAN_CHANGE_UNCONFIRMED',
++        'Your plan change is not confirmed yet. Wait a minute, then tap End my plan again. Repeating it is safe and never charges you.',
++        reference,
++        true,
++      );
++    }
++    return copy(
++      'STRIPE_UNAVAILABLE',
++      `The payment provider did not respond, so nothing changed. Wait a minute and ${retryVerb}. If it keeps happening, email ${SUPPORT_EMAIL}.`,
++      reference,
++      (status ?? 0) >= 500,
++    );
++  }
++  const unknown =
++    action === 'update_card' || action === 'confirm_card'
++      ? `Your card update did not finish. Pull down to refresh to see where things stand, and email ${SUPPORT_EMAIL} with this reference if it looks wrong.`
++      : action === 'cancel_plan'
++        ? `Your plan change did not finish. Pull down to refresh, and email ${SUPPORT_EMAIL} with this reference if your plan still shows as active.`
++        : `Your billing status did not load. Email ${SUPPORT_EMAIL} with this reference if it does not load after a refresh.`;
++  return copy('UNKNOWN', unknown, reference, true);
++}
++
++/** "$150.00" / "$150.00 and 80.00 EUR" for the reversed amounts that are known. */
++function disputedTotals(disputes: QuoteDispute[]): string | null {
++  const byCurrency = new Map<string, number>();
++  for (const d of disputes) {
++    if (d.amount_cents == null || !d.currency) continue;
++    const cur = d.currency.toLowerCase();
++    byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + d.amount_cents);
++  }
++  const list: MoneyTotal[] = [...byCurrency].map(([currency, amount_cents]) => ({ currency, amount_cents }));
++  return formatDunningTotals(list.filter((t) => t.amount_cents > 0));
++}
++
++/**
++ * B-353-2 / C-352-5: the limitation the server states for a disputed
++ * payment (backend B-628-8: a card update never settles it), with the
++ * working next step.
++ */
++export function disputeNotSettledLine(disputes: QuoteDispute[]): string | null {
++  if (disputes.length === 0) return null;
++  const amount = disputedTotals(disputes);
++  return `Your bank reversed an earlier payment${amount ? ` of ${amount}` : ''}. Saving a card does not settle that. Email ${SUPPORT_EMAIL} to sort it out.`;
++}
++
++/**
++ * Calm, specific copy for each card-update outcome. Never invents an amount
++ * and never sums currencies (B-322-1): amounts come from the per-currency
++ * totals, "active again" only when the server confirmed access is back, and
++ * the server's own sentence (which leads with what was paid) is preferred.
++ */
++export function cardUpdateOutcomeCopy(
++  r: CardUpdateResponse,
++  /** Disputes from the quote read before the card form, used when the answer reports none. */
++  knownDisputes: QuoteDispute[] = [],
++): {
++  title: string;
++  body: string;
++  tone: 'done' | 'action';
++} {
++  const disputes = r.disputes ?? knownDisputes;
++  const disputeLine = disputeNotSettledLine(disputes);
++  const ending = r.card_last4 ? ` ending ${r.card_last4}` : '';
++  const paid = formatDunningTotals(r.paid_totals);
++  const due = formatDunningTotals(r.due_totals);
++  const restored = r.access_state === 'restored' && r.access_restored;
++  const accessLine = restored
++    ? ' Your plan is active again.'
++    : r.access_state === 'updating' || r.access_state === 'partial'
++      ? ' Your plan updates within a few minutes. Pull down to refresh.'
++      : '';
++  const local = (): string => {
++    switch (r.outcome) {
++      case 'paid':
++        return paid
++          ? `Your card${ending} is saved and ${paid} went through.${accessLine}`
++          : `Your card${ending} is saved and your balance is paid.${accessLine}`;
++      case 'saved':
++        // A dispute-only update has no open invoice to pay (backend copy).
++        return disputeLine
++          ? `Your card${ending} is saved. There was no open invoice to pay, so nothing was charged.`
++          : `Your card${ending} is saved. Your next payment will use it.`;
++      case 'processing':
++        // C-322-2: money already collected is said first, then the payment
++        // that is still processing.
++        return paid
++          ? `Your card${ending} is saved and ${paid} went through. The payment${due ? ` of ${due}` : ''} is processing. Your plan updates as soon as it clears, usually within a few minutes.`
++          : `Your card${ending} is saved and your payment${due ? ` of ${due}` : ''} is processing. Your plan updates as soon as it clears, usually within a few minutes.`;
++      case 'in_progress':
++        // B-322-7: one plan settled while another plan's change was still
++        // being processed; the known payment is never hidden.
++        return paid
++          ? `Your card${ending} is saved and ${paid} went through.${accessLine} Another change to your other plan was still being processed, so it was not charged now. Tap Check again in a few seconds to finish it. Checking again never charges you twice.`
++          : `Your card${ending} is saved. Another change to your plan was still being processed, so nothing was charged now. Tap Check again in a few seconds to finish it. Checking again never charges you twice.`;
++      case 'requires_action':
++        return `Your card${ending} is saved.${paid ? ` ${paid} went through.` : ''} Your bank wants you to confirm the payment${due ? ` of ${due}` : ''}. Tap Confirm with my bank to finish.`;
++      case 'approval_required':
++        return `Your card${ending} is saved.${paid ? ` ${paid} went through.` : ''} The amount you owe changed${due ? ` to ${due}` : ''}, so it was not charged. Review it, then tap Pay to confirm.`;
++      case 'payment_uncertain':
++        return `Your card${ending} is saved.${paid ? ` ${paid} went through.` : ''} The rest is not confirmed yet. Pull down to refresh in a minute. Trying again never charges you twice.`;
++      case 'failed':
++        return paid
++          ? `Your card${ending} is saved and ${paid} went through. The rest${due ? ` (${due})` : ''} did not go through. Tap Update card to try again.`
++          : `Your card${ending} is saved, but the payment${due ? ` of ${due}` : ''} did not go through, so nothing was charged. Tap Update card to try again.`;
++      case 'declined':
++      default:
++        return paid
++          ? `Your card${ending} is saved and ${paid} went through, but your bank declined the rest${due ? ` (${due})` : ''}. Try a different card, or call your bank and try again.`
++          : `Your card${ending} is saved, but your bank declined the payment${due ? ` of ${due}` : ''}, so nothing was charged. Try a different card, or call your bank and try again.`;
++    }
++  };
++  // Built from the structured fields so the copy always names buttons that
++  // are on screen; the server's `message` is for logs and older clients. The
++  // dispute limitation is always kept (B-353-2).
++  const body = disputeLine ? `${local()} ${disputeLine}` : local();
++  switch (r.outcome) {
++    case 'paid':
++      return {
++        title: restored ? 'Payment received' : 'Payment received, updating your plan',
++        body,
++        tone: 'done',
++      };
++    case 'saved':
++      return { title: 'Card saved', body, tone: disputeLine ? 'action' : 'done' };
++    case 'processing':
++      return {
++        title: paid ? 'Part of your payment went through' : 'Payment processing',
++        body,
++        tone: 'done',
++      };
++    case 'in_progress':
++      return {
++        title: paid ? 'Part of your payment went through' : 'Another change is in progress',
++        body,
++        tone: 'action',
++      };
++    case 'requires_action':
++      return { title: 'Your bank needs to confirm', body, tone: 'action' };
++    case 'approval_required':
++      return { title: 'Please review the amount', body, tone: 'action' };
++    case 'payment_uncertain':
++      return { title: 'Confirming your payment', body, tone: 'action' };
++    case 'failed':
++      return {
++        title: paid ? 'Part of your payment went through' : 'Payment did not go through',
++        body,
++        tone: 'action',
++      };
++    case 'declined':
++    default:
++      return {
++        title: paid ? 'Part of your payment went through' : 'Payment declined',
++        body,
++        tone: 'action',
++      };
++  }
++}
++
++/**
++ * Copy after ending a plan. 2A (ended now) vs option A (scheduled). With
++ * `dispute` (the plan's cycle is a reversed payment), the server's
++ * limitation is kept: ending the plan does not settle the reversal.
++ */
++export function cancelOutcomeCopy(
++  r: CancelPlanResponse,
++  opts: { dispute?: boolean } = {},
++): {
++  title: string;
++  body: string;
++} {
++  const base = cancelOutcomeBase(r);
++  return opts.dispute
++    ? {
++        title: base.title,
++        body: `${base.body} Ending the plan does not settle the payment your bank reversed. Email ${SUPPORT_EMAIL} to sort it out.`,
++      }
++    : base;
++}
++
++function cancelOutcomeBase(r: CancelPlanResponse): { title: string; body: string } {
++  if (r.outcome === 'scheduled' && r.paid_period_kept) {
++    const until = formatDunningDate(r.access_ends_at);
++    return {
++      title: 'Your payment went through',
++      body: until
++        ? `Your payment went through just before you ended the plan, so you keep access until ${until}, the end of the period you paid for. Your plan ends then and you will not be charged again.`
++        : 'Your payment went through just before you ended the plan, so you keep access until the end of the period you paid for. Your plan ends then and you will not be charged again.',
++    };
++  }
++  if (r.outcome === 'scheduled') {
++    const until = formatDunningDate(r.access_ends_at);
++    return {
++      title: 'Your plan is canceled',
++      body: until
++        ? `You keep access until ${until}, the end of the period you paid for. You will not be charged again.`
++        : 'You keep access until the end of the period you paid for. You will not be charged again.',
++    };
++  }
++  if (r.outcome === 'already_ended') {
++    return {
++      title: 'Your plan has ended',
++      body: 'This plan had already ended. Nothing more will be charged for it.',
++    };
++  }
++  const voided = formatDunningAmount(r.voided_amount_cents || null, r.currency);
++  return {
++    title: 'Your plan has ended',
++    body: voided
++      ? `The unpaid ${voided} is canceled, so you will not be charged for it. Your data stays in your account until you delete it.`
++      : 'You will not be charged again. Your data stays in your account until you delete it.',
++  };
++}
++
++/**
++ * B-322-1: copy for a bank step (3DS) that failed, built from what the
++ * server last said about this same SetupIntent: money already collected is
++ * always named, and "not charged" is said only when the server has just
++ * confirmed (`verified`) that the payment still waits for the bank. When the
++ * server could not be asked, the result is "not confirmed yet", never zero.
++ */
++export function bankStepCopy(response: CardUpdateResponse | null, verified: boolean): DunningErrorCopy {
++  const paid = formatDunningTotals(response?.paid_totals ?? []);
++  const due = formatDunningTotals(response?.due_totals ?? []);
++  const saved = `Your new card is saved${paid ? ` and ${paid} went through` : ''}.`;
++  if (verified) {
++    return copy(
++      'BANK_CONFIRMATION_FAILED',
++      `${saved} Your bank did not confirm the payment${due ? ` of ${due}` : ''}, so ${
++        paid ? 'that amount was not charged' : 'nothing was charged'
++      }. Tap Confirm with my bank to try again, or Use a different card.`,
++      null,
++      false,
++    );
++  }
++  return copy(
++    'BANK_RESULT_UNCONFIRMED',
++    `${saved} The bank step did not finish, so the payment${due ? ` of ${due}` : ''} is not confirmed yet. Tap Confirm with my bank to check and finish it. Trying again never charges you twice.`,
++    null,
++    true,
++  );
++}
+diff --git a/src/entitlements/dunning/dunningLockoutStore.ts b/src/entitlements/dunning/dunningLockoutStore.ts
+new file mode 100644
+index 0000000..45ef1df
+--- /dev/null
++++ b/src/entitlements/dunning/dunningLockoutStore.ts
+@@ -0,0 +1,137 @@
++import { authEvents } from '../../utils/authEvents';
++
++/**
++ * Smart Dunning v2 — the app-wide "payment lockout" signal (S-DUNNING).
++ *
++ * The backend answers EVERY non-allowed route with
++ * `403 { code: 'LOCKED_DUNNING' }` once a client's payment has been
++ * unresolved for 10 days. The axios response interceptor
++ * (src/services/api.ts) reports each of those here; the
++ * DunningLockoutProvider subscribes and renders one calm full-screen state
++ * instead of letting every screen show its own error.
++ *
++ * Module-level (not React context) on purpose: the interceptor lives outside
++ * React, and EntitlementProvider reads `isLocked()` to keep the paywall sheet
++ * from stacking on top of the lockout screen.
++ *
++ * B-352-1 (account ownership): the signal belongs to one auth generation.
++ * The generation is retired synchronously at every identity boundary
++ * (`authEvents` 'logout' / 'login', and the provider's unmount when the
++ * client tree goes away), which clears the signal. The request interceptor
++ * stamps every request with the generation it started under, and a 403
++ * from a retired generation is dropped before it can write here, so a late
++ * answer for the previous account never locks the next one. A same-account
++ * token refresh does not change the generation.
++ */
++
++export const LOCKED_DUNNING_CODE = 'LOCKED_DUNNING';
++
++export interface DunningLockedSignal {
++  /** Backend request id of the 403, for the support reference. */
++  requestId: string | null;
++  /** The route that was refused (for diagnostics only, never shown). */
++  requestUrl?: string;
++  /**
++   * Auth generation the refused request started under (stamped by the api
++   * request interceptor, or read by the provider before its status call). A
++   * signal without one counts as generation 0 (process start), so it is
++   * accepted only until the first identity boundary.
++   */
++  generation?: number;
++}
++
++type Listener = (locked: boolean, signal: DunningLockedSignal | null) => void;
++
++let locked = false;
++let lastSignal: DunningLockedSignal | null = null;
++let generation = 0;
++const listeners = new Set<Listener>();
++
++function notify(): void {
++  listeners.forEach((fn) => fn(locked, lastSignal));
++}
++
++export const dunningLockoutStore = {
++  isLocked(): boolean {
++    return locked;
++  },
++  lastSignal(): DunningLockedSignal | null {
++    return lastSignal;
++  },
++  /** The current auth generation (stamped on requests; compared after every await). */
++  currentGeneration(): number {
++    return generation;
++  },
++  /** Called by the API interceptor on a 403 LOCKED_DUNNING. Dropped when its generation is retired. */
++  reportLocked(signal: DunningLockedSignal): void {
++    if ((signal.generation ?? 0) !== generation) return;
++    lastSignal = { requestId: signal.requestId, requestUrl: signal.requestUrl };
++    if (locked) return;
++    locked = true;
++    notify();
++  },
++  /**
++   * Called when a fresh status read (or a payment) shows the client is not
++   * locked. With `forGeneration`, a clear from a retired generation is dropped.
++   */
++  clear(forGeneration?: number): void {
++    if (forGeneration !== undefined && forGeneration !== generation) return;
++    if (!locked && lastSignal === null) return;
++    locked = false;
++    lastSignal = null;
++    notify();
++  },
++  /**
++   * Identity boundary: retire the current generation (every request or read
++   * started before now can no longer write here) and drop the signal.
++   */
++  retire(): void {
++    generation += 1;
++    if (!locked && lastSignal === null) return;
++    locked = false;
++    lastSignal = null;
++    notify();
++  },
++  subscribe(fn: Listener): () => void {
++    listeners.add(fn);
++    return () => {
++      listeners.delete(fn);
++    };
++  },
++  /** Test seam: reset module state between cases. */
++  __resetForTests(): void {
++    locked = false;
++    lastSignal = null;
++    generation = 0;
++    listeners.clear();
++  },
++};
++
++// The app's sign-out boundary (signOut, refresh failure, biometric lock) and
++// any explicit sign-in emit these synchronously. Guarded because many suites
++// replace authEvents with a partial double (emit or onAuthChange only).
++if (typeof (authEvents as Partial<typeof authEvents>).on === 'function') {
++  authEvents.on('logout', () => dunningLockoutStore.retire());
++  authEvents.on('login', () => dunningLockoutStore.retire());
++}
++
++/** Request config field carrying the auth generation a request started under. */
++type GenerationStamped = { _dunningGeneration?: number };
++
++/** Called first in the api request interceptor (before any await). */
++export function stampDunningGeneration<T extends object>(config: T): T {
++  (config as GenerationStamped)._dunningGeneration = generation;
++  return config;
++}
++
++/** The generation stamped on a request config; undefined when it was never stamped. */
++export function dunningGenerationOf(config: unknown): number | undefined {
++  const g = config && typeof config === 'object' ? (config as GenerationStamped)._dunningGeneration : undefined;
++  return typeof g === 'number' ? g : undefined;
++}
++
++/** True when an axios-style error body is the backend's dunning lockout. */
++export function isLockedDunningResponse(status: number | undefined, data: unknown): boolean {
++  if (status !== 403 || !data || typeof data !== 'object') return false;
++  return (data as { code?: unknown }).code === LOCKED_DUNNING_CODE;
++}
+diff --git a/src/entitlements/dunning/paymentSheetAppearance.ts b/src/entitlements/dunning/paymentSheetAppearance.ts
+new file mode 100644
+index 0000000..5023a82
+--- /dev/null
++++ b/src/entitlements/dunning/paymentSheetAppearance.ts
+@@ -0,0 +1,72 @@
++import { colors, darkTokens, lightTokens, radius, type SemanticTokens } from '../../theme/tokens';
++
++/**
++ * Stripe PaymentSheet theme built from the TGP design tokens (OR-110-2).
++ *
++ * Shape matches `PaymentSheet.AppearanceParams` of @stripe/stripe-react-native
++ * 0.64 (colors are #RRGGBB hex, which every semantic color token is).
++ * Fonts are left to the OS on purpose: Stripe looks custom fonts up by native
++ * file / PostScript name and fails `initPaymentSheet` when one is missing,
++ * and the app's serif and Inter are loaded at runtime by expo-font.
++ */
++export interface SheetColors {
++  primary: string;
++  background: string;
++  componentBackground: string;
++  componentBorder: string;
++  componentDivider: string;
++  primaryText: string;
++  secondaryText: string;
++  componentText: string;
++  placeholderText: string;
++  icon: string;
++  error: string;
++}
++
++export interface SheetAppearance {
++  colors: { light: SheetColors; dark: SheetColors };
++  shapes: { borderRadius: number; borderWidth: number };
++  primaryButton: {
++    colors: {
++      light: { background: string; text: string; border: string };
++      dark: { background: string; text: string; border: string };
++    };
++    shapes: { borderRadius: number; borderWidth: number };
++  };
++}
++
++function sheetColors(t: SemanticTokens, error: string): SheetColors {
++  return {
++    primary: t.accent,
++    background: t.bgPrimary,
++    componentBackground: t.bgSurface,
++    componentBorder: t.border,
++    componentDivider: t.border,
++    primaryText: t.textPrimary,
++    secondaryText: t.textMuted,
++    componentText: t.textPrimary,
++    placeholderText: t.textMuted,
++    icon: t.textMuted,
++    error,
++  };
++}
++
++export function buildPaymentSheetAppearance(): SheetAppearance {
++  return {
++    // Dark mode lifts the error red the same way accentText lifts the accent.
++    colors: { light: sheetColors(lightTokens, colors.error), dark: sheetColors(darkTokens, darkTokens.accentText) },
++    shapes: { borderRadius: radius.md, borderWidth: 1 },
++    primaryButton: {
++      colors: {
++        light: { background: lightTokens.accent, text: lightTokens.textOnAccent, border: lightTokens.accent },
++        dark: { background: darkTokens.accent, text: darkTokens.textOnAccent, border: darkTokens.accent },
++      },
++      shapes: { borderRadius: radius.sm, borderWidth: 0 },
++    },
++  };
++}
++
++/** Pin the sheet to the app's own light/dark choice (the app has an override). */
++export function sheetStyleFor(colorScheme: 'light' | 'dark'): 'alwaysLight' | 'alwaysDark' {
++  return colorScheme === 'dark' ? 'alwaysDark' : 'alwaysLight';
++}
+diff --git a/src/entitlements/dunning/updateCard.ts b/src/entitlements/dunning/updateCard.ts
+new file mode 100644
+index 0000000..3c130f8
+--- /dev/null
++++ b/src/entitlements/dunning/updateCard.ts
+@@ -0,0 +1,387 @@
++import type * as StripeRN from '@stripe/stripe-react-native';
++import { resolveStripePublishableKey } from '../../config/stripe';
++import { captureError } from '../../services/sentry';
++import { dunningApi, type ApprovedInvoice, type CardUpdateResponse } from './dunningApi';
++import { bankStepCopy, describeDunningError, localDunningError, type DunningErrorCopy } from './dunningErrorCopy';
++import { buildPaymentSheetAppearance, sheetStyleFor } from './paymentSheetAppearance';
++
++/**
++ * Native card update (OR-110-2), replacing the Stripe-hosted portal on the
++ * client's dunning surfaces.
++ *
++ *   backend SetupIntent  ->  PaymentSheet (TGP-themed)  ->  backend confirm
++ *                                                           (default card +
++ *                                                            1A: pay now)
++ *
++ * When the bank wants the client to confirm the payment (3DS), the SDK's
++ * handleNextAction runs on the PaymentIntent the backend returns, then the
++ * confirm call is repeated. Every backend step is idempotent, so a retry
++ * after a lost answer can never charge twice.
++ *
++ * B-353-2 (ownership): the caller passes `isCurrent`, true while the screen
++ * that started the update is mounted and the auth generation it started
++ * under is live. It is checked after every await and before every request
++ * or native step, so a retired screen never creates a SetupIntent, opens the
++ * card form, confirms or pays. A request already sent stays on the server
++ * (idempotent, account-bound); stopping here claims nothing about it, and
++ * the next status read shows the truth.
++ */
++
++export type StripeSdk = Pick<
++  typeof StripeRN,
++  'initStripe' | 'initPaymentSheet' | 'presentPaymentSheet' | 'handleNextAction' | 'handleURLCallback'
++>;
++
++/** Registered app scheme (app.json `scheme`); Stripe returns here after a bank redirect. */
++export const STRIPE_URL_SCHEME = 'tgp';
++export const STRIPE_RETURN_URL = 'tgp://stripe-redirect';
++
++let cachedSdk: StripeSdk | null | undefined;
++
++/**
++ * Lazy so a build without the native module (Expo Go, an old binary) shows a
++ * specific "update the app" message instead of crashing on import.
++ */
++export function loadStripeSdk(): StripeSdk | null {
++  if (cachedSdk !== undefined) return cachedSdk;
++  try {
++    // eslint-disable-next-line @typescript-eslint/no-var-requires
++    const mod: Partial<StripeSdk> = require('@stripe/stripe-react-native');
++    cachedSdk =
++      typeof mod.initStripe === 'function' &&
++      typeof mod.initPaymentSheet === 'function' &&
++      typeof mod.presentPaymentSheet === 'function' &&
++      typeof mod.handleNextAction === 'function' &&
++      typeof mod.handleURLCallback === 'function'
++        ? (mod as StripeSdk)
++        : null;
++  } catch {
++    cachedSdk = null;
++  }
++  return cachedSdk;
++}
++
++/** Test seam. */
++export function __resetStripeSdkForTests(): void {
++  cachedSdk = undefined;
++}
++
++export type NativeCardUpdateResult =
++  /** The client closed the card form; nothing was saved or charged. */
++  | { kind: 'canceled' }
++  /**
++   * The screen (or the signed-in account) that started this update is gone,
++   * so no further step ran. Says nothing about requests already sent.
++   */
++  | { kind: 'retired' }
++  /** The backend answered; `response.outcome` says what happened to the money. */
++  | { kind: 'done'; response: CardUpdateResponse; setupIntentId: string }
++  /**
++   * The card is saved and the bank must confirm a payment, but the bank
++   * step was closed or failed (B-322-3). The SetupIntent and the bank
++   * secret are kept so "Confirm with my bank" works without a new card.
++   */
++  | {
++      kind: 'bank_pending';
++      setupIntentId: string;
++      clientSecret: string;
++      response: CardUpdateResponse | null;
++      error: DunningErrorCopy | null;
++    }
++  /**
++   * The confirm answer was lost (offline / gateway timeout) even after
++   * retries (B-322-2): the payment may have gone through. The screen shows
++   * "confirming" and can repeat the same confirm safely.
++   */
++  | { kind: 'unconfirmed'; setupIntentId: string; error: DunningErrorCopy }
++  | { kind: 'error'; error: DunningErrorCopy };
++
++export interface NativeCardUpdateOptions {
++  surface: string;
++  colorScheme: 'light' | 'dark';
++  /** "Save card" outside dunning; "Save card and pay $150.00" while a payment is owed. */
++  primaryButtonLabel: string;
++  /** The exact open invoices the client approved on the quote (B-322-6). */
++  approved: ApprovedInvoice[];
++  /** Injected in tests; defaults to the lazily loaded SDK. */
++  sdk?: StripeSdk | null;
++  /** Called when the confirm answer was lost and the app is re-asking. */
++  onConfirming?: () => void;
++  /** Backoff between confirm re-asks after a lost answer (tests pass zeros). */
++  retryDelaysMs?: number[];
++  /** False once the initiating screen or auth generation is retired; defaults to always current. */
++  isCurrent?: () => boolean;
++}
++
++const RETIRED = { kind: 'retired' } as const;
++const always = () => true;
++
++function fail(error: DunningErrorCopy, surface: string, err: unknown, extra: Record<string, unknown> = {}) {
++  if (error.report) {
++    captureError(err ?? new Error(error.code), {
++      surface,
++      dunning_error_code: error.code,
++      request_id: error.reference,
++      ...extra,
++    });
++  }
++  return { kind: 'error' as const, error };
++}
++
++/** Run one native SDK call; a rejected promise becomes a value, never an uncaught throw (B-322-4). */
++async function guarded<T>(fn: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; err: unknown }> {
++  try {
++    return { ok: true, value: await fn() };
++  } catch (err) {
++    return { ok: false, err };
++  }
++}
++
++function isLostAnswer(err: unknown): boolean {
++  const e = (err ?? {}) as {
++    message?: unknown;
++    response?: { status?: number; data?: { code?: unknown } };
++  };
++  if (e.message === 'DUNNING_RESPONSE_SHAPE') return false;
++  if (!e.response) return true;
++  const status = e.response.status ?? 0;
++  return (status === 502 || status === 503 || status === 504) && typeof e.response.data?.code !== 'string';
++}
++
++const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
++
++export async function runNativeCardUpdate(opts: NativeCardUpdateOptions): Promise<NativeCardUpdateResult> {
++  const { surface } = opts;
++  const isCurrent = opts.isCurrent ?? always;
++  if (!isCurrent()) return RETIRED;
++  const sdk = opts.sdk === undefined ? loadStripeSdk() : opts.sdk;
++  if (!sdk) {
++    return fail(localDunningError('CARD_SHEET_UNAVAILABLE'), surface, null);
++  }
++
++  let setup;
++  try {
++    setup = await dunningApi.createCardSetup();
++  } catch (err) {
++    if (!isCurrent()) return RETIRED;
++    return fail(describeDunningError(err, 'update_card'), surface, err, {
++      step: 'setup_intent',
++    });
++  }
++  if (!isCurrent()) return RETIRED;
++
++  // The backend key always matches the secret key that minted the
++  // SetupIntent (same mode, same account); the build-time key is the fallback.
++  const publishableKey = setup.publishable_key ?? resolveStripePublishableKey();
++  if (!publishableKey) {
++    return fail(localDunningError('PAYMENTS_NOT_CONFIGURED'), surface, null);
++  }
++
++  const init = await guarded(async () => {
++    await sdk.initStripe({
++      publishableKey,
++      urlScheme: STRIPE_URL_SCHEME,
++      setReturnUrlSchemeOnAndroid: true,
++    });
++    return sdk.initPaymentSheet({
++      merchantDisplayName: setup.merchant_display_name,
++      customerId: setup.customer_id,
++      customerEphemeralKeySecret: setup.ephemeral_key,
++      setupIntentClientSecret: setup.setup_intent_client_secret,
++      returnURL: STRIPE_RETURN_URL,
++      allowsDelayedPaymentMethods: false,
++      primaryButtonLabel: opts.primaryButtonLabel,
++      style: sheetStyleFor(opts.colorScheme),
++      appearance: buildPaymentSheetAppearance(),
++    });
++  });
++  if (!isCurrent()) return RETIRED;
++  if (!init.ok) {
++    return fail(localDunningError('CARD_SHEET_FAILED'), surface, init.err, {
++      step: 'sheet_init',
++    });
++  }
++  if (init.value?.error) {
++    return fail(localDunningError('CARD_SHEET_FAILED'), surface, new Error('PAYMENT_SHEET_INIT'), {
++      stripe_error_code: init.value.error.code,
++    });
++  }
++
++  const presented = await guarded(() => sdk.presentPaymentSheet());
++  // The card form confirmed only the SetupIntent; nothing is charged until
++  // the backend confirm below, which a retired screen never sends.
++  if (!isCurrent()) return RETIRED;
++  if (!presented.ok) {
++    return fail(localDunningError('CARD_SHEET_FAILED'), surface, presented.err, { step: 'sheet_present' });
++  }
++  if (presented.value?.error) {
++    if (presented.value.error.code === 'Canceled') return { kind: 'canceled' };
++    return fail(localDunningError('CARD_SHEET_FAILED'), surface, new Error('PAYMENT_SHEET_PRESENT'), {
++      stripe_error_code: presented.value.error.code,
++    });
++  }
++  if ((presented.value as { didCancel?: boolean } | undefined)?.didCancel) return { kind: 'canceled' };
++
++  return confirmWithBank({
++    sdk,
++    surface,
++    setupIntentId: setup.setup_intent_id,
++    clientSecret: null,
++    approved: opts.approved,
++    onConfirming: opts.onConfirming,
++    retryDelaysMs: opts.retryDelaysMs,
++    isCurrent,
++  });
++}
++
++/** One confirm call; a lost answer is re-asked with the same SetupIntent and approval. */
++async function confirmOnce(args: {
++  surface: string;
++  setupIntentId: string;
++  approved: ApprovedInvoice[];
++  onConfirming?: () => void;
++  retryDelaysMs?: number[];
++  isCurrent: () => boolean;
++}): Promise<{ ok: true; response: CardUpdateResponse } | { ok: false; result: NativeCardUpdateResult }> {
++  const delays = args.retryDelaysMs ?? [1000, 3000];
++  let lastErr: unknown = null;
++  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
++    if (attempt > 0) {
++      args.onConfirming?.();
++      await wait(delays[attempt - 1]);
++    }
++    if (!args.isCurrent()) return { ok: false, result: RETIRED };
++    try {
++      const response = await dunningApi.confirmCardUpdate(args.setupIntentId, args.approved);
++      if (!args.isCurrent()) return { ok: false, result: RETIRED };
++      return { ok: true, response };
++    } catch (err) {
++      if (!args.isCurrent()) return { ok: false, result: RETIRED };
++      lastErr = err;
++      if (!isLostAnswer(err)) {
++        return {
++          ok: false,
++          result: fail(describeDunningError(err, 'confirm_card'), args.surface, err, { step: 'confirm' }),
++        };
++      }
++    }
++  }
++  const error = describeDunningError(lastErr, 'confirm_card');
++  if (error.report) {
++    captureError(lastErr ?? new Error(error.code), {
++      surface: args.surface,
++      dunning_error_code: error.code,
++      request_id: error.reference,
++      step: 'confirm_lost_answer',
++    });
++  }
++  return {
++    ok: false,
++    result: { kind: 'unconfirmed', setupIntentId: args.setupIntentId, error },
++  };
++}
++
++/**
++ * Confirm the saved card with the backend, handling a bank confirmation
++ * (3DS) in between. With `clientSecret` set, starts with the bank step (the
++ * "Confirm with my bank" retry after the client closed the bank sheet).
++ */
++export async function confirmWithBank(args: {
++  sdk?: StripeSdk | null;
++  surface: string;
++  setupIntentId: string;
++  clientSecret: string | null;
++  approved: ApprovedInvoice[];
++  onConfirming?: () => void;
++  retryDelaysMs?: number[];
++  /**
++   * The last answer the screen holds for this SetupIntent (a "Confirm with
++   * my bank" retry): its `paid_totals` keep naming money already collected
++   * if the bank step fails again before the server can be asked (B-322-1).
++   */
++  lastKnown?: CardUpdateResponse | null;
++  /** False once the initiating screen or auth generation is retired (B-353-2). */
++  isCurrent?: () => boolean;
++}): Promise<NativeCardUpdateResult> {
++  const { surface, setupIntentId } = args;
++  const isCurrent = args.isCurrent ?? always;
++  if (!isCurrent()) return RETIRED;
++  const sdk = args.sdk === undefined ? loadStripeSdk() : args.sdk;
++  let pendingSecret = args.clientSecret;
++  let last: CardUpdateResponse | null = args.lastKnown ?? null;
++  // Each round settles one invoice that needed the bank; three covers a
++  // client with more than one open invoice without looping forever.
++  for (let round = 0; round < 3; round += 1) {
++    if (pendingSecret) {
++      if (!sdk) return fail(localDunningError('CARD_SHEET_UNAVAILABLE'), surface, null);
++      const secret = pendingSecret;
++      if (!isCurrent()) return RETIRED;
++      const next = await guarded(() => sdk.handleNextAction(secret, STRIPE_RETURN_URL));
++      if (!isCurrent()) return RETIRED;
++      const nextError = next.ok ? next.value?.error : { code: 'Failed' };
++      if (nextError && nextError.code === 'Canceled') {
++        // The client closed the bank step. B-322-3: keep the SetupIntent and
++        // the bank secret so "Confirm with my bank" works without a new card.
++        return { kind: 'bank_pending', setupIntentId, clientSecret: secret, response: last, error: null };
++      }
++      if (nextError) {
++        // B-322-1: a failed, rejected or lost bank step does not prove the
++        // payment was not collected (or that it was). Ask the server, with the
++        // same SetupIntent and approval (never a second charge), before saying
++        // anything about the money.
++        const check = await confirmOnce({ ...args, setupIntentId, isCurrent });
++        if (!check.ok && check.result.kind === 'retired') return RETIRED;
++        if (check.ok && check.response.outcome !== 'requires_action') {
++          // The server already knows the end state (paid, declined, ...).
++          return { kind: 'done', response: check.response, setupIntentId };
++        }
++        const verified = check.ok;
++        const known = check.ok ? check.response : last;
++        const error = bankStepCopy(known, verified);
++        captureError(next.ok ? new Error('HANDLE_NEXT_ACTION') : next.err, {
++          surface,
++          dunning_error_code: error.code,
++          stripe_error_code: nextError.code,
++          reconciled: verified,
++          request_id: error.reference,
++        });
++        return {
++          kind: 'bank_pending',
++          setupIntentId,
++          clientSecret: (check.ok && check.response.payment_intent_client_secret) || secret,
++          response: known,
++          error,
++        };
++      }
++    }
++    const out = await confirmOnce({ ...args, setupIntentId, isCurrent });
++    if (!out.ok) return out.result;
++    last = out.response;
++    if (last.outcome !== 'requires_action' || !last.payment_intent_client_secret) {
++      return { kind: 'done', response: last, setupIntentId };
++    }
++    if (last.payment_intent_client_secret === pendingSecret) {
++      // The bank step succeeded but the same payment still asks for it.
++      return { kind: 'done', response: last, setupIntentId };
++    }
++    pendingSecret = last.payment_intent_client_secret;
++  }
++  return last
++    ? { kind: 'done', response: last, setupIntentId }
++    : fail(localDunningError('UNEXPECTED_RESPONSE'), surface, null);
++}
++
++/**
++ * Hand a `tgp://stripe-redirect` return (bank redirect during 3DS) back to the
++ * SDK. Returns true when Stripe consumed it.
++ */
++export async function handleStripeReturnUrl(url: string | null | undefined): Promise<boolean> {
++  if (!url || !url.toLowerCase().startsWith(STRIPE_RETURN_URL)) return false;
++  const sdk = loadStripeSdk();
++  if (!sdk) return false;
++  try {
++    return await sdk.handleURLCallback(url);
++  } catch {
++    return false;
++  }
++}
+diff --git a/src/services/README.md b/src/services/README.md
+index bc26030..2c2c188 100644
+--- a/src/services/README.md
++++ b/src/services/README.md
+@@ -122,3 +122,4 @@ Unit tests of interest:
+ - `secureStorage.ts` is the single security-critical file in this directory. The migration step exists so existing logged-in users don't get logged out on the upgrade that introduced SecureStore — leave it alone unless you intend to force re-login.
+ - Realtime is best-effort. The 60 s polling fallback is the contract; do not rely on the WebSocket for correctness.
+ - SecureStore keys owned by the app: `supabase_token`, `supabase_refresh_token`, and `biometric_unlock_enabled` (the opt-in flag for `BiometricUnlockGate`, owned by `src/hooks/useBiometricGate.ts`).
++- `403 { code: 'LOCKED_DUNNING' }` (Smart Dunning v2 Day-10 lockout) is caught in the response interceptor. It reports to `dunningLockoutStore` with the backend request id and sets a specific `error.message`. The app shows one lockout screen (`src/entitlements/dunning`) and individual screens do not render their own error for it.
+diff --git a/src/services/__tests__/api.lockedDunning.test.ts b/src/services/__tests__/api.lockedDunning.test.ts
+new file mode 100644
+index 0000000..75993db
+--- /dev/null
++++ b/src/services/__tests__/api.lockedDunning.test.ts
+@@ -0,0 +1,162 @@
++/**
++ * S-DUNNING: the response interceptor turns a 403 LOCKED_DUNNING into the
++ * app-wide lockout signal (with the backend request id) and a specific
++ * message, and leaves every other 403 alone. Strategy mirrors
++ * api.correlation.test.ts: axios.create() is mocked so the registered
++ * interceptors can be invoked directly.
++ *
++ * B-352-1: the signal is owned by the auth generation the request started
++ * under. Sign-out retires it, and a late 403 for the previous account never
++ * locks the next one; a same-account token refresh keeps working.
++ */
++type ErrorHandler = (error: unknown) => Promise<unknown>;
++type RequestHandler = (config: Record<string, unknown>) => Promise<Record<string, unknown>>;
++
++jest.mock('axios', () => {
++  const instance = {
++    request: jest.fn(),
++    get: jest.fn(),
++    post: jest.fn(),
++    put: jest.fn(),
++    patch: jest.fn(),
++    delete: jest.fn(),
++    interceptors: {
++      request: { use: jest.fn(), fulfilled: [] as RequestHandler[] },
++      response: { use: jest.fn(), rejected: [] as ErrorHandler[] },
++    },
++    defaults: { headers: { common: {} as Record<string, string> } },
++  };
++  instance.interceptors.request.use.mockImplementation((fulfilled: RequestHandler) => {
++    instance.interceptors.request.fulfilled.push(fulfilled);
++  });
++  instance.interceptors.response.use.mockImplementation((_ok: unknown, rejected: ErrorHandler) => {
++    instance.interceptors.response.rejected.push(rejected);
++  });
++  return {
++    __esModule: true,
++    default: { create: jest.fn(() => instance) },
++    __instance: instance,
++  };
++});
++
++let mockToken: string | null = null;
++jest.mock('../secureStorage', () => ({
++  secureStorage: {
++    getItem: jest.fn(async () => mockToken),
++    setItem: jest.fn(async () => undefined),
++    removeItem: jest.fn(async () => undefined),
++  },
++}));
++
++const axiosMock: {
++  __instance: {
++    interceptors: { request: { fulfilled: RequestHandler[] }; response: { rejected: ErrorHandler[] } };
++  };
++} = jest.requireMock('axios');
++
++import { LOCKED_DUNNING_MESSAGE } from '../api';
++import { dunningLockoutStore } from '../../entitlements/dunning/dunningLockoutStore';
++import { authEvents } from '../../utils/authEvents';
++
++/** Run the registered request interceptor, as axios does before sending. */
++async function send(url = '/v1/workouts/today'): Promise<Record<string, unknown>> {
++  const handler = axiosMock.__instance.interceptors.request.fulfilled[0];
++  if (!handler) throw new Error('Request interceptor not registered');
++  return handler({ url, headers: {} });
++}
++
++/** The 403 LOCKED_DUNNING answer to a request that went through `send`. */
++function lockedAnswerTo(config: Record<string, unknown>) {
++  return Object.assign(new Error('Request failed with status code 403'), {
++    config,
++    response: { status: 403, data: { code: 'LOCKED_DUNNING' }, headers: { 'x-request-id': 'req-old' } },
++  });
++}
++
++function onRejected(): ErrorHandler {
++  const handler = axiosMock.__instance.interceptors.response.rejected[0];
++  if (!handler) throw new Error('Response interceptor not registered');
++  return handler;
++}
++
++function forbidden(data: Record<string, unknown>) {
++  return Object.assign(new Error('Request failed with status code 403'), {
++    config: { url: '/v1/workouts/today', headers: {} },
++    response: { status: 403, data, headers: { 'x-request-id': 'req-lock-1' } },
++  });
++}
++
++beforeEach(() => {
++  dunningLockoutStore.__resetForTests();
++  mockToken = 'token-a1';
++});
++
++describe('api response interceptor: LOCKED_DUNNING', () => {
++  it('reports the lockout with the request id and sets a specific message', async () => {
++    const err = forbidden({ code: 'LOCKED_DUNNING', message: 'Your account is locked.' });
++    await expect(onRejected()(err)).rejects.toBe(err);
++    expect(dunningLockoutStore.isLocked()).toBe(true);
++    expect(dunningLockoutStore.lastSignal()).toEqual({
++      requestId: 'req-lock-1',
++      requestUrl: '/v1/workouts/today',
++    });
++    expect(err.message).toBe(LOCKED_DUNNING_MESSAGE);
++  });
++
++  it('C-352-4: the message is true for a reversed-payment lock too (no card promise)', () => {
++    expect(LOCKED_DUNNING_MESSAGE).toContain('Your plan is paused');
++    expect(LOCKED_DUNNING_MESSAGE).not.toMatch(/update your card|has not gone through/i);
++    expect(LOCKED_DUNNING_MESSAGE).not.toMatch(/\b(we|our|us)\b|!/i);
++  });
++
++  it('ignores every other 403', async () => {
++    const err = forbidden({ code: 'COACH_ONLY', message: 'Coaches only.' });
++    await expect(onRejected()(err)).rejects.toBe(err);
++    expect(dunningLockoutStore.isLocked()).toBe(false);
++    expect(err.message).toBe('Request failed with status code 403');
++  });
++});
++
++describe('B-352-1: the lockout signal belongs to one auth generation', () => {
++  it('sign-out retires the signal and its request reference synchronously', async () => {
++    const err = lockedAnswerTo(await send());
++    await expect(onRejected()(err)).rejects.toBe(err);
++    expect(dunningLockoutStore.isLocked()).toBe(true);
++    authEvents.emit('logout');
++    expect(dunningLockoutStore.isLocked()).toBe(false);
++    expect(dunningLockoutStore.lastSignal()).toBeNull();
++  });
++
++  it('a late 403 for account A, answered after A signed out and B signed in, does not lock B', async () => {
++    const stale = lockedAnswerTo(await send());
++    authEvents.emit('logout');
++    mockToken = 'token-b1';
++    authEvents.emit('login');
++    dunningLockoutStore.clear();
++    await expect(onRejected()(stale)).rejects.toBe(stale);
++    expect(dunningLockoutStore.isLocked()).toBe(false);
++    expect(dunningLockoutStore.lastSignal()).toBeNull();
++    // B's own lockout still works.
++    const current = lockedAnswerTo(await send());
++    await expect(onRejected()(current)).rejects.toBe(current);
++    expect(dunningLockoutStore.isLocked()).toBe(true);
++  });
++
++  it('a same-account token refresh between request and answer still locks (no identity change)', async () => {
++    const config = await send();
++    expect((config.headers as Record<string, string>).Authorization).toBe('Bearer token-a1');
++    mockToken = 'token-a2';
++    const err = lockedAnswerTo(config);
++    await expect(onRejected()(err)).rejects.toBe(err);
++    expect(dunningLockoutStore.isLocked()).toBe(true);
++    expect(dunningLockoutStore.lastSignal()?.requestId).toBe('req-old');
++  });
++
++  it('an unstamped 403 after an identity boundary is dropped (fail closed)', async () => {
++    authEvents.emit('logout');
++    const err = forbidden({ code: 'LOCKED_DUNNING' });
++    await expect(onRejected()(err)).rejects.toBe(err);
++    expect(dunningLockoutStore.isLocked()).toBe(false);
++    expect(err.message).toBe(LOCKED_DUNNING_MESSAGE);
++  });
++});
+diff --git a/src/services/__tests__/authActions.signOut.test.ts b/src/services/__tests__/authActions.signOut.test.ts
+index 5039f07..1405abd 100644
+--- a/src/services/__tests__/authActions.signOut.test.ts
++++ b/src/services/__tests__/authActions.signOut.test.ts
+@@ -7,6 +7,7 @@
+ // asserts each store has returned to its documented initial state.
+ 
+ import { signOut, resetUserScopedStores } from '../authActions';
++import { dunningLockoutStore } from '../../entitlements/dunning/dunningLockoutStore';
+ import { useCoachStore } from '../../store/coachStore';
+ import { useClientStore } from '../../store/clientStore';
+ import { useFastingStore } from '../../store/fastingStore';
+@@ -159,6 +160,14 @@ describe('signOut → store resets (Hunter #2 P1-7)', () => {
+     expect(foregroundBannerStore.getState().banner).toBeNull();
+   });
+ 
++  it('B-352-1: retires the payment lockout of the signed-out account', () => {
++    dunningLockoutStore.__resetForTests();
++    dunningLockoutStore.reportLocked({ requestId: 'req-a' });
++    resetUserScopedStores();
++    expect(dunningLockoutStore.isLocked()).toBe(false);
++    expect(dunningLockoutStore.lastSignal()).toBeNull();
++  });
++
+   it('does not throw if a store reset throws — logout event must still proceed', async () => {
+     const original = useCoachStore.getState().reset;
+     useCoachStore.setState({
+diff --git a/src/services/api.ts b/src/services/api.ts
+index 7959306..8b68a34 100644
+--- a/src/services/api.ts
++++ b/src/services/api.ts
+@@ -75,7 +75,13 @@ import { entitlementEvents } from '../entitlements/entitlementEvents';
+ import { withTutorialSignal } from '../tutorial/tutorialEvents';
+ import { logger } from '../utils/logger';
+ import { generateIdempotencyKey } from '../utils/idempotency';
+-import { REQUEST_ID_HEADER, newRequestId } from '../utils/correlation';
++import { REQUEST_ID_HEADER, extractRequestId, newRequestId } from '../utils/correlation';
++import {
++  dunningGenerationOf,
++  dunningLockoutStore,
++  isLockedDunningResponse,
++  stampDunningGeneration,
++} from '../entitlements/dunning/dunningLockoutStore';
+ import { Alert, Platform } from 'react-native';
+ import { nativeBuildNumber, purchasePolicyHeader } from '../config/purchaseSurfaces';
+ import type { SignupPolicyResponse } from '../lib/signupPolicy';
+@@ -95,6 +101,10 @@ const API_BASE = env.API_URL;
+ const SUPABASE_URL = env.SUPABASE_URL;
+ const SUPABASE_ANON_KEY = env.SUPABASE_ANON_KEY;
+ 
++/** error.message for a 403 LOCKED_DUNNING (payment lockout); exported for tests. */
++export const LOCKED_DUNNING_MESSAGE =
++  'Your plan is paused because of a payment problem, so this is not available right now. The payment screen shows what happened and what to do next.';
++
+ const api = axios.create({
+   baseURL: API_BASE,
+   timeout: 30000, // 30sec — Fly.io free tier cold start can take up to 25sec
+@@ -105,6 +115,10 @@ const api = axios.create({
+ // Security: token now comes from SecureStore (iOS Keychain / Android Keystore)
+ // via the secureStorage adapter, not plain AsyncStorage.
+ api.interceptors.request.use(async (config) => {
++  // B-352-1: the auth generation this request starts under, read before the
++  // token await, so a payment-lockout 403 answered after a sign-out or an
++  // account switch is dropped instead of locking the next account.
++  stampDunningGeneration(config);
+   const token = await secureStorage.getItem('supabase_token');
+   if (token) {
+     config.headers.Authorization = `Bearer ${token}`;
+@@ -267,6 +281,24 @@ api.interceptors.response.use(
+       return Promise.reject(error);
+     }
+ 
++    // 403 LOCKED_DUNNING — Smart Dunning v2 Day-10 payment lockout. Report
++    // it once to the app-wide store so DunningLockoutProvider shows the single
++    // calm lockout screen; individual screens never render their own error
++    // for it. The store drops it when the request started under a retired
++    // auth generation (B-352-1). The message is specific and true for both
++    // lock kinds (a failed payment, or a payment the bank reversed, where a
++    // new card does not help), so any screen that surfaces error.message
++    // still says what happened and where the next step is (C-352-4).
++    if (isLockedDunningResponse(error.response.status, error.response.data)) {
++      dunningLockoutStore.reportLocked({
++        requestId: extractRequestId(error),
++        requestUrl: (error.config as { url?: string } | undefined)?.url,
++        generation: dunningGenerationOf(error.config),
++      });
++      error.message = LOCKED_DUNNING_MESSAGE;
++      return Promise.reject(error);
++    }
++
+     // 402 — entitlement required. Emit an event so the EntitlementProvider
+     // can show the paywall, then reject. Skip emission for checkout endpoints
+     // themselves (they are expected to return 402 as part of normal flow).
+diff --git a/src/services/authActions.ts b/src/services/authActions.ts
+index 8c138ae..4a49e39 100644
+--- a/src/services/authActions.ts
++++ b/src/services/authActions.ts
+@@ -26,6 +26,7 @@ import { useCoachStore } from '../store/coachStore';
+ import { useClientStore } from '../store/clientStore';
+ import { useFastingStore } from '../store/fastingStore';
+ import { foregroundBannerStore } from '../store/foregroundBannerStore';
++import { dunningLockoutStore } from '../entitlements/dunning/dunningLockoutStore';
+ import { resetCrispIdentity } from './support/crisp.service';
+ import { COACH_SIGNUP_UNCONFIRMED_KEY } from '../lib/coachSignupAttempt';
+ import { SIGNUP_ROLE_NOTICE_KEY } from '../lib/signupRoleNotice';
+@@ -437,6 +438,8 @@ export function resetUserScopedStores(): void {
+     ['clientStore', () => useClientStore.getState().reset()],
+     ['fastingStore', () => useFastingStore.getState().reset()],
+     ['foregroundBannerStore', () => foregroundBannerStore.getState().reset()],
++    // B-352-1: the payment lockout belongs to the signed-in account.
++    ['dunningLockoutStore', () => dunningLockoutStore.retire()],
+   ];
+   for (const [name, reset] of stores) {
+     try {

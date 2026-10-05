@@ -1,0 +1,467 @@
+diff --git a/src/services/__tests__/authActions.healthQueue.sol119e.test.ts b/src/services/__tests__/authActions.healthQueue.sol119e.test.ts
+new file mode 100644
+index 0000000..54bb643
+--- /dev/null
++++ b/src/services/__tests__/authActions.healthQueue.sol119e.test.ts
+@@ -0,0 +1,185 @@
++/**
++ * Real signOut, Connect/Refresh orchestration, session fence and state module.
++ * Synthetic native-commit scheduler; no native build, network or health data.
++ * Unrelated signOut integrations use the established authActions test seams.
++ */
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import { signOut } from '../authActions';
++import { authEvents } from '../../utils/authEvents';
++import {
++  beginOnDeviceConnect,
++  connectOnDevice,
++  refreshOnDevice,
++} from '../health/onDeviceSync';
++import {
++  emptyProgress,
++  getLocalAuthorization,
++  localAuthorizationSeq,
++  recordLocalAuthorization,
++  setSyncProgress,
++  retireOnDeviceState,
++} from '../health/onDeviceState';
++import { OnDeviceSessionChangedError } from '../health/sessionFence';
++import type { WearableConnection } from '../../api/wearablesConnectionsApi';
++
++jest.mock('../api', () => ({
++  usersApi: { updatePushToken: jest.fn(async () => ({ data: {} })) },
++  profileApi: { get: jest.fn(async () => ({ data: {} })) },
++}));
++jest.mock('../sentry', () => ({ setSentryUser: jest.fn() }));
++jest.mock('../../lib/analytics', () => ({ reset: jest.fn() }));
++jest.mock('../../utils/logger', () => ({
++  logger: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
++}));
++jest.mock('../../lib/userCache', () => ({
++  readUserCacheSync: jest.fn(() => ({ id: 'health-queue-user' })),
++  readUserCache: jest.fn(async () => ({ id: 'health-queue-user' })),
++  clearUserCache: jest.fn(async () => undefined),
++}));
++jest.mock('../../offline/sync/sync-engine', () => ({
++  deleteWorkoutLogsForUser: jest.fn(async () => 0),
++}));
++jest.mock('../../storage/mmkv', () => {
++  const storage = () => ({
++    getString: () => undefined,
++    getStringAsync: async () => undefined,
++    getAllKeys: async () => [],
++    delete: async () => undefined,
++    set: async () => undefined,
++  });
++  return {
++    clearAllStorage: jest.fn(async () => undefined),
++    prefsStorage: storage(),
++    cacheStorage: storage(),
++    secureStorage: storage(),
++  };
++});
++jest.mock('../queryClient', () => ({
++  purgePersistedQueryCacheForAllUsers: jest.fn(async () => undefined),
++  retireAndDrainIdentityPersistences: jest.fn(async () => undefined),
++  settleAndClearQueryCache: jest.fn(async () => undefined),
++}));
++jest.mock('../../lib/consultation/storage', () => ({
++  LEGACY_DRAFT_PREFIX: 'consultation_v1:',
++  purgeConsultationDraft: jest.fn(async () => undefined),
++}));
++jest.mock('../../db/fastingDb', () => ({
++  getActiveFast: jest.fn(async () => null),
++  getFastingHistory: jest.fn(async () => []),
++  startFast: jest.fn(async () => undefined),
++  endFast: jest.fn(async () => undefined),
++}));
++
++const scope = {
++  userId: 'health-queue-user',
++  source: 'HEALTH_CONNECT' as const,
++  connectionId: 'health-queue-connection',
++};
++const row: WearableConnection = {
++  id: scope.connectionId,
++  user_id: scope.userId,
++  provider: scope.source,
++  external_account_id: 'on-device',
++  access_token_expires_at: null,
++  scopes: [],
++  webhook_subscription_id: null,
++  channel_expires_at: null,
++  status: 'connected',
++  last_error: null,
++  last_synced_at: null,
++  backfilled_until: null,
++  disconnected_at: null,
++  created_at: '2026-10-01T00:00:00.000Z',
++  updated_at: '2026-10-01T00:00:00.000Z',
++};
++const readUserId = async () => scope.userId;
++const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
++function deferred() {
++  let resolve: () => void = () => undefined;
++  const promise = new Promise<void>((yes) => (resolve = yes));
++  return { promise, resolve };
++}
++
++beforeEach(async () => {
++  jest.restoreAllMocks();
++  await AsyncStorage.clear();
++});
++afterEach(() => jest.restoreAllMocks());
++
++it.each(['in-flight native grant', 'queued grant behind native progress'] as const)(
++  '%s: completed signOut must require a new Connect after same-account login',
++  async (mode) => {
++    // Pre-existing key ensures enumeration can see the exact key; the defect
++    // is effect ordering, not only omission of a not-yet-created key.
++    await recordLocalAuthorization(scope);
++    const invoked = deferred();
++    const commit = deferred();
++    const set = AsyncStorage.setItem.bind(AsyncStorage);
++    jest.spyOn(AsyncStorage, 'setItem').mockImplementationOnce(async (key, value) => {
++      invoked.resolve();
++      await commit.promise;
++      await set(key, value);
++    });
++    const syncHealthConnect = jest.fn(async (_scope, fence) => {
++      await fence.assertCurrent();
++      return { normalizedCount: 0, complete: true };
++    });
++    const fence = await beginOnDeviceConnect({ readUserId });
++    const seq = localAuthorizationSeq();
++    const progressing =
++      mode === 'queued grant behind native progress'
++        ? setSyncProgress(scope, { ...emptyProgress(), completedThrough: { Steps: row.created_at } })
++        : Promise.resolve();
++    const connecting = connectOnDevice(scope.source, fence, {
++      readUserId,
++      register: async () => row,
++      syncHealthConnect,
++    }).then(
++      () => null,
++      (err: unknown) => err,
++    );
++    await invoked.promise;
++    for (let i = 0; i < 20 && localAuthorizationSeq() === seq; i += 1) await tick();
++    expect(localAuthorizationSeq()).toBeGreaterThan(seq);
++    // Release independently of either queued Connect or signOut: correct
++    // draining cleanup can wait for native completion without driver deadlock.
++    const signingOut = signOut(scope.userId);
++    for (let i = 0; i < 5; i += 1) await tick();
++    commit.resolve();
++    await Promise.all([progressing, signingOut]);
++    expect(await connecting).toBeInstanceOf(OnDeviceSessionChangedError);
++    syncHealthConnect.mockClear();
++    authEvents.emit('login');
++    const outcome = await refreshOnDevice(scope.source, [row], { readUserId, syncHealthConnect });
++    expect(outcome.kind).toBe('not_authorized');
++    expect(syncHealthConnect).not.toHaveBeenCalled();
++    expect(await getLocalAuthorization(scope.userId, scope.source)).toBeNull();
++  },
++);
++
++it('control: settled Connect is removed by completed signOut, same-account refresh is unauthorized', async () => {
++  await recordLocalAuthorization(scope);
++  await signOut(scope.userId);
++  authEvents.emit('login');
++  const syncHealthConnect = jest.fn(async () => ({ normalizedCount: 0, complete: true }));
++  expect(
++    (await refreshOnDevice(scope.source, [row], { readUserId, syncHealthConnect })).kind,
++  ).toBe('not_authorized');
++  expect(syncHealthConnect).not.toHaveBeenCalled();
++});
++
++it.each(['grant', 'progress'] as const)(
++  'control: rejected %s write is observable and does not poison unconditional retirement or later writes',
++  async (kind) => {
++    const failure = new Error('synthetic storage failure');
++    jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(failure);
++    await expect(
++      kind === 'grant' ? recordLocalAuthorization(scope) : setSyncProgress(scope, emptyProgress()),
++    ).rejects.toBe(failure);
++    await recordLocalAuthorization(scope);
++    await retireOnDeviceState();
++    expect(await getLocalAuthorization(scope.userId, scope.source)).toBeNull();
++    await recordLocalAuthorization(scope);
++    expect((await getLocalAuthorization(scope.userId, scope.source))?.connectionId).toBe(scope.connectionId);
++  },
++);
+diff --git a/src/services/authActions.ts b/src/services/authActions.ts
+index 6a9ab93..fa49fc3 100644
+--- a/src/services/authActions.ts
++++ b/src/services/authActions.ts
+@@ -21,7 +21,7 @@ import { deleteWorkoutLogsForUser } from '../offline/sync/sync-engine';
+ import { AUTOSAVE_MIRROR_KEY_PREFIX } from '../storage/autosaveMirror';
+ import { IMPORT_PAIRING_MIRROR_KEY_PREFIX } from '../storage/importPairingMirror';
+ import { IMPORT_OFFER_DECISION_KEY_PREFIX } from '../storage/importOfferDecision';
+-import { ON_DEVICE_STATE_PREFIX } from './health/onDeviceState';
++import { retireOnDeviceStateAtSignOut } from './health/onDeviceState';
+ import { stopOnDeviceHealthWork } from './health/sessionFence';
+ import { LEGACY_DRAFT_PREFIX, purgeConsultationDraft } from '../lib/consultation/storage';
+ import { useCoachStore } from '../store/coachStore';
+@@ -109,11 +109,6 @@ const ASYNC_SIGN_OUT_PREFIXES = [
+   // inherit it and be handed a session that pairs into someone else's account.
+   // Swept via the exported constant so the literal lives in one place.
+   IMPORT_PAIRING_MIRROR_KEY_PREFIX,
+-  // S14 (A-317-1 / B-317-1): on-device health Connect authorizations and
+-  // per-account sync progress (`services/health/onDeviceState.ts`). Swept for
+-  // every account on sign-out (and therefore after account deletion): the
+-  // phone's health store must not be read again until someone taps Connect.
+-  ON_DEVICE_STATE_PREFIX,
+   // Legacy plaintext consultation drafts (first build of PR #310, keyed
+   // `consultation_v1:<userId>`): health and screening answers must never
+   // survive sign-out. Current drafts live in SecureStore and are purged by
+@@ -300,6 +295,8 @@ export async function signOut(userId?: string | null): Promise<void> {
+   // no new native page, record type, upload or progress write starts after
+   // the person taps Log out (the `logout` event below comes much later).
+   stopOnDeviceHealthWork();
++  // Sol B-362-7: health grants and progress leave through their own chain.
++  const healthStateRetired = retireOnDeviceStateAtSignOut();
+ 
+   // Clear all auth + session state and notify the root navigator.
+   // We surface failures via console.error instead of Alert because a sign-out
+@@ -394,6 +391,7 @@ export async function signOut(userId?: string | null): Promise<void> {
+       // `logout` is emitted below. clearAllStorage() also wipes the namespace;
+       // this is the explicit, mirror-aware path.
+       clearUserCache(),
++      healthStateRetired,
+       ...SECURE_SIGN_OUT_KEYS.map((k) => secureStorage.removeItem(k)),
+       AsyncStorage.removeMany([...ASYNC_SIGN_OUT_KEYS, ...prefixedKeys, ...perUserKeys]),
+       // R15 (PR #161): route new user-scoped MMKV keys through proper storage
+diff --git a/src/services/health/__tests__/onDeviceState.signOutDrain.test.ts b/src/services/health/__tests__/onDeviceState.signOutDrain.test.ts
+new file mode 100644
+index 0000000..3b0fc5a
+--- /dev/null
++++ b/src/services/health/__tests__/onDeviceState.signOutDrain.test.ts
+@@ -0,0 +1,133 @@
++/**
++ * Sol B-362-7 / Opus C-362-12: sign-out removes on-device health grants and
++ * progress through the onDeviceState write chain, so a native write in flight
++ * or queued at sign-out can never leave a grant behind. Opus C-362-13: a grant
++ * write that failed or was dropped never counts as newer than a Disconnect.
++ * Synthetic storage scheduler only; no native build, network or health data.
++ */
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import {
++  ON_DEVICE_STATE_PREFIX,
++  emptyProgress,
++  getLocalAuthorization,
++  getSyncProgress,
++  localAuthorizationSeq,
++  recordLocalAuthorization,
++  retireOnDeviceSource,
++  retireOnDeviceStateAtSignOut,
++  setSyncProgress,
++} from '../onDeviceState';
++import { OnDeviceSessionChangedError } from '../sessionFence';
++
++const source = 'HEALTH_CONNECT' as const;
++const old = { userId: 'drain-user', source, connectionId: 'old-connection' };
++const fresh = { ...old, connectionId: 'fresh-connection' };
++const other = { userId: 'drain-bystander', source: 'APPLE_HEALTHKIT' as const, connectionId: 'c2' };
++const D1 = '2026-10-01T00:00:00.000Z';
++const D2 = '2026-10-02T00:00:00.000Z';
++const D3 = '2026-10-03T00:00:00.000Z';
++
++function deferred() {
++  let resolve: () => void = () => undefined;
++  const promise = new Promise<void>((yes) => (resolve = yes));
++  return { resolve, promise };
++}
++const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
++
++/** Hold the next setItem after it is invoked, before its native effect. */
++function holdNextSet() {
++  const invoked = deferred();
++  const commit = deferred();
++  const set = AsyncStorage.setItem.bind(AsyncStorage);
++  jest.spyOn(AsyncStorage, 'setItem').mockImplementationOnce(async (k: string, v: string) => {
++    invoked.resolve();
++    await commit.promise;
++    await set(k, v);
++  });
++  return { invoked: invoked.promise, commit: commit.resolve };
++}
++
++async function healthKeys(): Promise<readonly string[]> {
++  return (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(ON_DEVICE_STATE_PREFIX));
++}
++
++beforeEach(async () => {
++  jest.restoreAllMocks();
++  await AsyncStorage.clear();
++});
++afterEach(() => jest.restoreAllMocks());
++
++it('a grant write in flight at sign-out is removed after it commits, and the sweep waits for it', async () => {
++  const held = holdNextSet();
++  const writing = recordLocalAuthorization(old, new Date(D3));
++  await held.invoked;
++  let retired = false;
++  const sweeping = retireOnDeviceStateAtSignOut().then(() => {
++    retired = true;
++  });
++  for (let i = 0; i < 5; i += 1) await tick();
++  expect(retired).toBe(false); // the sweep is behind the native write, not beside it
++  held.commit();
++  await Promise.all([writing, sweeping]);
++  expect(await healthKeys()).toEqual([]);
++  expect(await getLocalAuthorization(old.userId, source)).toBeNull();
++});
++
++it('grant and progress writes still queued at sign-out never run and reject as stopped', async () => {
++  const held = holdNextSet();
++  const first = setSyncProgress(old, { ...emptyProgress(), completedThrough: { Steps: D1 } });
++  await held.invoked;
++  const grant = recordLocalAuthorization(old, new Date(D2)).then(() => null, (e: unknown) => e);
++  const progress = setSyncProgress(old, emptyProgress()).then(() => null, (e: unknown) => e);
++  const sweeping = retireOnDeviceStateAtSignOut();
++  held.commit();
++  await Promise.all([first, sweeping]);
++  expect(await grant).toBeInstanceOf(OnDeviceSessionChangedError);
++  expect(await progress).toBeInstanceOf(OnDeviceSessionChangedError);
++  expect(await healthKeys()).toEqual([]);
++});
++
++it('sweeps every account and source, and nothing outside the prefix', async () => {
++  await recordLocalAuthorization(old, new Date(D1));
++  await recordLocalAuthorization(other, new Date(D1));
++  await setSyncProgress(other, emptyProgress());
++  await AsyncStorage.setItem('wearables_other', 'stays');
++  await retireOnDeviceStateAtSignOut();
++  expect(await healthKeys()).toEqual([]);
++  expect(await AsyncStorage.getItem('wearables_other')).toBe('stays');
++});
++
++it('a failed sweep never rejects and still voids every grant written before sign-out', async () => {
++  await recordLocalAuthorization(old, new Date(D1));
++  jest.spyOn(AsyncStorage, 'getAllKeys').mockRejectedValueOnce(new Error('synthetic storage failure'));
++  await expect(retireOnDeviceStateAtSignOut()).resolves.toBeUndefined();
++  expect(await healthKeys()).not.toEqual([]); // the key is still on disk
++  expect(await getLocalAuthorization(old.userId, source)).toBeNull();
++});
++
++it('a new Connect after sign-out is honoured, and the chain keeps working', async () => {
++  await recordLocalAuthorization(old, new Date(D1));
++  await retireOnDeviceStateAtSignOut();
++  await recordLocalAuthorization(fresh, new Date(D2));
++  await setSyncProgress(fresh, { ...emptyProgress(), completedThrough: { Steps: D2 } });
++  expect((await getLocalAuthorization(old.userId, source))?.connectionId).toBe(fresh.connectionId);
++  expect((await getSyncProgress(fresh)).completedThrough.Steps).toBe(D2);
++});
++
++it('C-362-13: a Disconnect older than a REJECTED grant write still retires the old grant', async () => {
++  const prior = await recordLocalAuthorization(old, new Date(D1));
++  const since = localAuthorizationSeq();
++  jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('disk full'));
++  await expect(recordLocalAuthorization(fresh, new Date(D2))).rejects.toThrow('disk full');
++  await retireOnDeviceSource(old.userId, source, prior.grantedAt, since);
++  expect(await getLocalAuthorization(old.userId, source)).toBeNull();
++});
++
++it('C-362-13 control: a newer grant that did land is still kept from an older Disconnect', async () => {
++  const prior = await recordLocalAuthorization(old, new Date(D1));
++  const since = localAuthorizationSeq();
++  const disconnecting = retireOnDeviceSource(old.userId, source, prior.grantedAt, since);
++  await recordLocalAuthorization(fresh, new Date(D2));
++  await disconnecting;
++  expect((await getLocalAuthorization(old.userId, source))?.connectionId).toBe(fresh.connectionId);
++});
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index 88f65ad..da56100 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -23,6 +23,7 @@
+  */
+ 
+ import AsyncStorage from '@react-native-async-storage/async-storage';
++import { OnDeviceSessionChangedError } from './sessionFence';
+ 
+ /** Every key this module writes starts with this prefix. */
+ export const ON_DEVICE_STATE_PREFIX = 'wearables_on_device:';
+@@ -115,6 +116,19 @@ function serialStorage<T>(op: () => Promise<T>): Promise<T> {
+   return run;
+ }
+ 
++/** Sol B-362-7: moves when sign-out starts; a write queued before it never runs. */
++let signOutEpoch = 0;
++/** No grant written at or before this sequence is honoured after a sign-out. */
++let signedOutThroughSeq = 0;
++
++function serialWrite(op: () => Promise<void>): Promise<void> {
++  const epoch = signOutEpoch;
++  return serialStorage(() => {
++    if (epoch !== signOutEpoch) throw new OnDeviceSessionChangedError();
++    return op();
++  });
++}
++
+ /** The local authorization write sequence now (capture it before any await). */
+ export function localAuthorizationSeq(): number {
+   return authWriteSeq;
+@@ -134,8 +148,19 @@ export async function recordLocalAuthorization(
+   };
+   const key = authKey(scope.userId, scope.source);
+   authWriteSeq += 1; // before the await: a retirement already running sees it (Sol B-362-2)
+-  authWrittenAt.set(key, authWriteSeq);
+-  await serialStorage(() => AsyncStorage.setItem(key, JSON.stringify(record)));
++  const seq = authWriteSeq;
++  const prior = authWrittenAt.get(key);
++  authWrittenAt.set(key, seq);
++  try {
++    await serialWrite(() => AsyncStorage.setItem(key, JSON.stringify(record)));
++  } catch (err) {
++    // Opus C-362-13: a grant that failed or was dropped never counts as newer.
++    if (authWrittenAt.get(key) === seq) {
++      if (prior === undefined) authWrittenAt.delete(key);
++      else authWrittenAt.set(key, prior);
++    }
++    throw err;
++  }
+   return record;
+ }
+ 
+@@ -145,7 +170,9 @@ export async function getLocalAuthorization(
+   source: OnDeviceSource,
+ ): Promise<LocalAuthorization | null> {
+   await storageTail; // every write already queued has settled
+-  const parsed = await readJson(authKey(userId, source));
++  const key = authKey(userId, source);
++  if (signOutEpoch > 0 && (authWrittenAt.get(key) ?? 0) <= signedOutThroughSeq) return null;
++  const parsed = await readJson(key);
+   if (!isRecord(parsed)) return null;
+   if (
+     parsed.v !== 1 ||
+@@ -185,6 +212,22 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+   if (doomed.length > 0) await serialStorage(() => AsyncStorage.removeMany(doomed));
+ }
+ 
++/**
++ * Sign-out (Sol B-362-7). Synchronously drops every queued write and voids
++ * every grant written so far (even if the removal below fails), then, in the
++ * same chain, waits for the native operation in flight and removes every key
++ * under the prefix. Never rejects: sign-out always completes.
++ */
++export function retireOnDeviceStateAtSignOut(): Promise<void> {
++  signOutEpoch += 1;
++  signedOutThroughSeq = authWriteSeq;
++  return serialStorage(async () => {
++    const keys = await AsyncStorage.getAllKeys();
++    const doomed = keys.filter((k) => k.startsWith(ON_DEVICE_STATE_PREFIX));
++    if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
++  }).catch(() => undefined);
++}
++
+ /**
+  * Disconnect cleanup for `source` (Sol B-362-2): removes `userId`'s local
+  * authorization and progress, never another account's; with `userId` null
+@@ -256,5 +299,5 @@ export async function getSyncProgress(scope: OnDeviceScope): Promise<SyncProgres
+ /** Persist the progress for a scope. */
+ export async function setSyncProgress(scope: OnDeviceScope, progress: SyncProgress): Promise<void> {
+   const value = JSON.stringify(progress);
+-  await serialStorage(() => AsyncStorage.setItem(progressKey(scope), value));
++  await serialWrite(() => AsyncStorage.setItem(progressKey(scope), value));
+ }

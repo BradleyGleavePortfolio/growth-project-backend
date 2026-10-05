@@ -1,0 +1,3210 @@
+diff --git a/.env.example b/.env.example
+index 9f5e2dee..a9e6dca2 100644
+--- a/.env.example
++++ b/.env.example
+@@ -231,13 +231,15 @@ STRIPE_CUSTOMER_PORTAL_LOGIN_URL=
+ # STRIPE_CONNECT_REFRESH_URL — where Stripe sends the coach if the
+ # onboarding link expires or they bail mid-flow. Mobile deep link in prod;
+ # any HTTPS URL acceptable in dev.
+-# Example: STRIPE_CONNECT_REFRESH_URL=growthproject://connect/onboarding/refresh
++# Example: STRIPE_CONNECT_REFRESH_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh
++# (HTTPS landing that hands the coach back to the app at tgp://connect/onboarding/refresh)
+ STRIPE_CONNECT_REFRESH_URL=
+ 
+ # STRIPE_CONNECT_RETURN_URL — where Stripe sends the coach after Express
+ # onboarding completes (regardless of pass/fail — we mirror the resulting
+ # state from the webhook, not from this return).
+-# Example: STRIPE_CONNECT_RETURN_URL=growthproject://connect/onboarding/return
++# Example: STRIPE_CONNECT_RETURN_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return
++# (HTTPS landing that hands the coach back to the app at tgp://connect/onboarding/return)
+ STRIPE_CONNECT_RETURN_URL=
+ 
+ # --- Stripe Checkout (Connect Phase 2-3) ---
+diff --git a/README.md b/README.md
+index cd2c7347..f0806954 100644
+--- a/README.md
++++ b/README.md
+@@ -26,8 +26,8 @@ PRs #198 and #199.
+ | `REDIS_URL` | **Production refuses to boot without this.** Pre-Connect cleanup hardened `assertEnv()` AND `buildThrottlerOptions` to throw when `NODE_ENV=production` and `REDIS_URL` is missing — a single-machine in-memory throttler cannot defend a multi-machine Fly deploy. Dev/test still fall back to in-memory. | `rediss://default:PASSWORD@<host>:6379` |
+ | `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` | DSN is required for error reporting; sample rate defaults to `0.1`. Release tag is now set from `GIT_SHA` in `src/instrument.ts` (falls back to `RELEASE_VERSION`). | `https://…@o…ingest.sentry.io/…` |
+ | `GIT_SHA` | Sentry release tag for the running image. Wired through `fly.toml` `[build.args]` → Dockerfile `ARG/ENV GIT_SHA` → `src/instrument.ts`. Pass on every deploy: `fly deploy --build-arg GIT_SHA=$(git rev-parse HEAD)`. Without it, falls back to `RELEASE_VERSION` and finally to no release. | `3ec015bd…` (40-char SHA) |
+-| `STRIPE_CONNECT_REFRESH_URL` | **Connect Phase 1.** Mobile deep link Stripe redirects the coach to if they bail mid-onboarding. `/v1/connect/accounts/onboarding-link` returns 503 when unset. | `growthproject://connect/onboarding/refresh` |
+-| `STRIPE_CONNECT_RETURN_URL` | **Connect Phase 1.** Mobile deep link Stripe redirects the coach to after Express onboarding completes. Same 503 if unset. | `growthproject://connect/onboarding/return` |
++| `STRIPE_CONNECT_REFRESH_URL` | **Connect Phase 1.** HTTPS landing (S-COACH) that hands the coach back to the app at tgp://connect/onboarding/refresh when the link expired. `/v1/connect/accounts/onboarding-link` returns 503 when unset. | `https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh` |
++| `STRIPE_CONNECT_RETURN_URL` | **Connect Phase 1.** HTTPS landing (S-COACH) that hands the coach back to the app at tgp://connect/onboarding/return after Express onboarding. Same 503 if unset. | `https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return` |
+ 
+ For every other env var the backend reads at boot, see `.env.example`
+ (top to bottom is grouped by subsystem; the audit added inline comments
+@@ -61,8 +61,8 @@ the exact next step. Full step-by-step also in `docs/connect-setup.md`.
+ 7. On Fly, set `STRIPE_CONNECT_REFRESH_URL` and `STRIPE_CONNECT_RETURN_URL`:
+    ```
+    fly secrets set \
+-     STRIPE_CONNECT_REFRESH_URL=growthproject://connect/onboarding/refresh \
+-     STRIPE_CONNECT_RETURN_URL=growthproject://connect/onboarding/return
++     STRIPE_CONNECT_REFRESH_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh \
++     STRIPE_CONNECT_RETURN_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return
+    ```
+ 8. Confirm the existing Stripe webhook endpoint is subscribed to:
+    - `account.updated`
+diff --git a/docs/connect-setup.md b/docs/connect-setup.md
+index 4d0cd96e..e255c7b7 100644
+--- a/docs/connect-setup.md
++++ b/docs/connect-setup.md
+@@ -101,8 +101,8 @@ to:
+ 
+ ```bash
+ fly secrets set \
+-  STRIPE_CONNECT_REFRESH_URL=growthproject://connect/onboarding/refresh \
+-  STRIPE_CONNECT_RETURN_URL=growthproject://connect/onboarding/return
++  STRIPE_CONNECT_REFRESH_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh \
++  STRIPE_CONNECT_RETURN_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return
+ ```
+ 
+ (Use `https://` URLs in dev if you're hitting the backend from a
+diff --git a/src/app.module.ts b/src/app.module.ts
+index 937082e4..7575a21d 100644
+--- a/src/app.module.ts
++++ b/src/app.module.ts
+@@ -106,6 +106,7 @@ import { TeamModule } from './team/team.module';
+ import { SubCoachesModule } from './sub-coaches/sub-coaches.module';
+ import { TalentMarketplaceModule } from './talent-marketplace/talent-marketplace.module';
+ import { CoachConnectModule } from './coach-connect/coach-connect.module';
++import { CoachMoneyModule } from './coach-money/coach-money.module';
+ // Concierge scheduling (PR #142) — private 1:1 coach <-> client booking
+ // with optional Google Calendar two-way sync. See
+ // docs/rfcs/142-concierge-scheduling.md.
+@@ -365,6 +366,7 @@ import { WearablesModule } from './wearables/wearables.module';
+     SubCoachesModule,
+     TalentMarketplaceModule,
+     CoachConnectModule,
++    CoachMoneyModule,
+     // Concierge scheduling — private 1:1 coach<->client booking with
+     // optional Google Calendar two-way sync. Stub adapters by default
+     // so the module loads without Google OAuth credentials configured;
+diff --git a/src/coach-connect/coach-connect.controller.ts b/src/coach-connect/coach-connect.controller.ts
+index a1d67ce8..68395d11 100644
+--- a/src/coach-connect/coach-connect.controller.ts
++++ b/src/coach-connect/coach-connect.controller.ts
+@@ -44,6 +44,18 @@ export class CoachConnectController {
+     return this.svc.getStatus(req.user.id);
+   }
+ 
++  // POST /coach/connect/status/refresh — S-COACH: the app calls this when
++  // the coach comes back from Stripe-hosted onboarding so the status it
++  // shows is Stripe's, not a webhook-lagged mirror. Throttled because every
++  // call is a Stripe read.
++  @Roles('coach', 'owner')
++  @Post('status/refresh')
++  @Throttle({ default: { ttl: 60_000, limit: 12 } })
++  @HttpCode(HttpStatus.OK)
++  async refreshStatus(@Req() req: AuthedRequest) {
++    return this.svc.refreshStatus(req.user.id);
++  }
++
+   // GET /coach/connect/metrics — the requesting coach's MRR / payout
+   // metrics. Scoped by req.user.id. Sub-coaches blocked by class-level
+   // NoActiveSubCoachGuard (financial surface).
+diff --git a/src/coach-connect/coach-connect.service.ts b/src/coach-connect/coach-connect.service.ts
+index 811809fd..b257f8b1 100644
+--- a/src/coach-connect/coach-connect.service.ts
++++ b/src/coach-connect/coach-connect.service.ts
+@@ -12,6 +12,7 @@ import {
+ import { ConnectModuleState } from '../connect/connect.module-state';
+ import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
+ import { AdminAnalyticsService } from '../checkout/admin-analytics.service';
++import { readRequirements, type ParsedRequirements } from '../coach-money/coach-money.service';
+ 
+ // Phase 8 — Coach-facing Connect surface for the mobile app.
+ //
+@@ -31,13 +32,38 @@ import { AdminAnalyticsService } from '../checkout/admin-analytics.service';
+ // data yet" (real zeros) by the configured flag on ConnectStatus and
+ // the empty arrays on Payouts/Packages.
+ 
++/**
++ * S-COACH: the truthful onboarding state the coach sees.
++ *  - not_started          no Connect account yet
++ *  - details_needed       account exists, the coach has not finished Stripe's form
++ *  - pending_verification form submitted, Stripe is verifying, nothing due from the coach
++ *  - restricted           Stripe needs more from the coach before charges or payouts work
++ *  - active               charges and payouts enabled (requirements may still be due later)
++ *  - deauthorized         the coach disconnected TGP from their Stripe account
++ */
++export type CoachConnectState =
++  | 'not_started'
++  | 'details_needed'
++  | 'pending_verification'
++  | 'restricted'
++  | 'active'
++  | 'deauthorized';
++
+ export interface CoachConnectStatus {
+   configured: boolean;
+   charges_enabled: boolean;
+   payouts_enabled: boolean;
+   account_id: string | null;
+   last_onboarded_at: string | null;
++  /** Legacy union of currently_due, past_due and eventually_due. */
+   requirements_due: string[];
++  // S-COACH additive fields (older clients ignore them).
++  state: CoachConnectState;
++  details_submitted: boolean;
++  disabled_reason: string | null;
++  /** True when Stripe needs something from the coach now (currently_due or past_due). */
++  action_required: boolean;
++  requirements: ParsedRequirements;
+ }
+ 
+ export interface BusinessMetrics {
+@@ -82,6 +108,72 @@ export interface OnboardingLink {
+   expires_at: string;
+ }
+ 
++export function deriveConnectState(a: {
++  deauthorized: boolean;
++  chargesEnabled: boolean;
++  payoutsEnabled: boolean;
++  detailsSubmitted: boolean;
++  actionRequired: boolean;
++  disabledReason: string | null;
++}): CoachConnectState {
++  if (a.deauthorized) return 'deauthorized';
++  if (a.chargesEnabled && a.payoutsEnabled) return 'active';
++  if (!a.detailsSubmitted) return 'details_needed';
++  if (a.actionRequired) return 'restricted';
++  if (a.disabledReason && a.disabledReason !== 'requirements.pending_verification') {
++    return 'restricted';
++  }
++  return 'pending_verification';
++}
++
++// C-676-2 (B-CM1-116): a failed payout's reason is app copy picked by Stripe's
++// failure_code, with the coach's next step (an unknown code shows it as a
++// reference). Stripe's description and failure_message are never the reason.
++const BANK_DETAILS_WRONG = 'The bank details on file are wrong. Correct them in Stripe.';
++const BANK_ACCOUNT_UNUSABLE =
++  'This bank account cannot take payouts. Add a different bank account in Stripe.';
++const BANK_REFUSED =
++  'The bank refused this payout. Contact the bank, then check the account in Stripe.';
++// Stripe payout failure codes (docs.stripe.com/api/payouts/failures).
++const PAYOUT_FAILURE_COPY: Record<string, string> = {
++  incorrect_account_holder_address: BANK_DETAILS_WRONG,
++  incorrect_account_holder_name: BANK_DETAILS_WRONG,
++  incorrect_account_holder_tax_id: BANK_DETAILS_WRONG,
++  incorrect_account_type: BANK_DETAILS_WRONG,
++  invalid_account_number: BANK_DETAILS_WRONG,
++  invalid_account_number_length: BANK_DETAILS_WRONG,
++  no_account: BANK_DETAILS_WRONG,
++  account_closed: BANK_ACCOUNT_UNUSABLE,
++  account_frozen: BANK_ACCOUNT_UNUSABLE,
++  bank_account_restricted: BANK_ACCOUNT_UNUSABLE,
++  bank_account_unusable: BANK_ACCOUNT_UNUSABLE,
++  bank_ownership_changed: BANK_ACCOUNT_UNUSABLE,
++  debit_not_authorized: BANK_ACCOUNT_UNUSABLE,
++  invalid_currency: BANK_ACCOUNT_UNUSABLE,
++  unsupported_card: BANK_ACCOUNT_UNUSABLE,
++  declined: BANK_REFUSED,
++  could_not_process: BANK_REFUSED,
++  insufficient_funds:
++    'The Stripe balance was too low for this payout. Check the balance in Stripe.',
++};
++
++/** What the mobile Money page shows under a payout (C-332-14, C-676-2). */
++export function payoutReason(
++  status: string,
++  description: unknown,
++  failureCode: unknown,
++): string | null {
++  if (status !== 'failed') {
++    return typeof description === 'string' && description.length > 0 ? description : null;
++  }
++  const code =
++    typeof failureCode === 'string' && /^[a-z_]{1,64}$/.test(failureCode) ? failureCode : null;
++  if (code && Object.prototype.hasOwnProperty.call(PAYOUT_FAILURE_COPY, code)) {
++    return PAYOUT_FAILURE_COPY[code];
++  }
++  return `The payout failed. Open Stripe for details.${code ? ` Reference: ${code}.` : ''}`;
++}
++
+ @Injectable()
+ export class CoachConnectService {
+   private readonly logger = new Logger(CoachConnectService.name);
+@@ -108,18 +200,68 @@ export class CoachConnectService {
+         account_id: null,
+         last_onboarded_at: null,
+         requirements_due: [],
++        state: 'not_started',
++        details_submitted: false,
++        disabled_reason: null,
++        action_required: false,
++        requirements: readRequirements(null),
+       };
+     }
++    const requirements = readRequirements(row.requirements_due);
++    const chargesEnabled = !!row.charges_enabled && !row.deauthorized_at;
++    const payoutsEnabled = !!row.payouts_enabled && !row.deauthorized_at;
++    const actionRequired =
++      requirements.currently_due.length > 0 || requirements.past_due.length > 0;
+     return {
+-      configured: !!row.charges_enabled && !!row.payouts_enabled,
+-      charges_enabled: !!row.charges_enabled,
+-      payouts_enabled: !!row.payouts_enabled,
++      configured: chargesEnabled && payoutsEnabled,
++      charges_enabled: chargesEnabled,
++      payouts_enabled: payoutsEnabled,
+       account_id: row.stripe_account_id,
+       last_onboarded_at: row.updated_at?.toISOString() ?? null,
+       requirements_due: this.extractRequirements(row.requirements_due),
++      state: deriveConnectState({
++        deauthorized: !!row.deauthorized_at,
++        chargesEnabled,
++        payoutsEnabled,
++        detailsSubmitted: !!row.details_submitted,
++        actionRequired,
++        disabledReason: row.disabled_reason ?? null,
++      }),
++      details_submitted: !!row.details_submitted,
++      disabled_reason: row.disabled_reason ?? null,
++      action_required: actionRequired,
++      requirements,
+     };
+   }
+ 
++  // POST /coach/connect/status/refresh — re-read the account from Stripe
++  // (the webhook can lag the coach's return from hosted onboarding by
++  // seconds) and return the fresh status. `refreshed: false` means Stripe
++  // could not be reached and the status is the last mirrored copy.
++  async refreshStatus(coachUserId: string): Promise<CoachConnectStatus & { refreshed: boolean }> {
++    const row = await this.prisma.connectAccount.findUnique({
++      where: { coach_user_id: coachUserId },
++      select: { stripe_account_id: true, updated_at: true },
++    });
++    let refreshed = false;
++    if (row && this.stripeConnect.isConfigured()) {
++      try {
++        // syncFromStripe returns the untouched mirror when Stripe rejects the
++        // read, so a moved updated_at is the proof that Stripe answered.
++        const synced = await this.connect.syncFromStripe(row.stripe_account_id);
++        refreshed = !!synced && synced.updated_at.getTime() !== row.updated_at.getTime();
++      } catch (err) {
++        // B-676-2: closed code and error class only (provider text is free text).
++        const cls = err instanceof StripeConnectApiError ? 'stripe' : 'other';
++        this.logger.warn(
++          `refreshStatus: sync failed for coach=${coachUserId} code=CONNECT_REFRESH_FAILED class=${cls}`,
++        );
++      }
++    }
++    const status = await this.getStatus(coachUserId);
++    return { ...status, refreshed };
++  }
++
+   // POST /coach/connect/onboarding-link — Stripe-hosted onboarding URL.
+   async createOnboardingLink(
+     coachUserId: string,
+@@ -177,7 +319,12 @@ export class CoachConnectService {
+           created_at:
+             snap.last_payout_arrival_at?.toISOString() ??
+             new Date(0).toISOString(),
+-          description: snap.last_payout_failure_message ?? null,
++          // C-676-2: the mirror keeps no failure_code, so no free text either.
++          description: payoutReason(
++            this.normalizePayoutStatus(snap.last_payout_status),
++            null,
++            null,
++          ),
+         },
+       ];
+     }
+@@ -201,10 +348,13 @@ export class CoachConnectService {
+                 ((p as Record<string, unknown>)['created'] as number) * 1000,
+               ).toISOString()
+             : new Date(0).toISOString(),
+-        description:
+-          (p as Record<string, unknown>)['description']?.toString() ??
+-          p.failure_message ??
+-          null,
++        // C-332-14 / C-676-2: the app shows a failed payout's description as
++        // its reason, so it carries app copy for Stripe's failure_code.
++        description: payoutReason(
++          this.normalizePayoutStatus(p.status),
++          (p as Record<string, unknown>)['description'],
++          p.failure_code,
++        ),
+       }));
+     } catch (err) {
+       if (err instanceof StripeConnectApiError) {
+diff --git a/src/coach-money/coach-money.controller.ts b/src/coach-money/coach-money.controller.ts
+new file mode 100644
+index 00000000..814d561f
+--- /dev/null
++++ b/src/coach-money/coach-money.controller.ts
+@@ -0,0 +1,148 @@
++import {
++  BadRequestException,
++  Controller,
++  Get,
++  Header,
++  Param,
++  Query,
++  Request,
++  Res,
++  UseGuards,
++} from '@nestjs/common';
++import type { Response } from 'express';
++import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
++import type { AuthedRequest } from '../auth/auth-request';
++import { JwtAuthGuard } from '../auth/auth.guard';
++import { Roles } from '../common/decorators/roles.decorator';
++import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
++import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
++import {
++  CHARGE_STATUS_FILTERS,
++  type ChargeStatusFilter,
++  CoachMoneyService,
++  MONEY_CHARGES_PAGE_MAX,
++  parseCurrency,
++  parseWindow,
++} from './coach-money.service';
++
++// S-COACH (agent 111) — TGP Money read routes for the coach Money page.
++// Self-only: every handler reads req.user.id and never accepts a coach id.
++// Active sub-coaches are blocked (financial surface), matching
++// /coach/connect/*.
++@ApiTags('coach-money')
++@Controller('v1/coach/money')
++@UseGuards(JwtAuthGuard, CoachOrOwnerGuard, NoActiveSubCoachGuard)
++export class CoachMoneyController {
++  constructor(private readonly money: CoachMoneyService) {}
++
++  // GET /v1/coach/money/summary?from&to[&compare_from&compare_to][&currency]
++  // The device computes calendar windows (Today / 30d / 90d / YTD) in the
++  // coach's own time zone; the server validates and bounds them. Every
++  // amount is in the response's `currency` (B-641-3); `currencies` lists
++  // the others the coach can switch to.
++  @Roles('coach', 'owner')
++  @Get('summary')
++  @ApiOperation({ summary: 'Net to the coach for a window, with a comparison window' })
++  @ApiResponse({
++    status: 400,
++    description: 'MONEY_WINDOW_INVALID | MONEY_COMPARE_WINDOW_INVALID | MONEY_CURRENCY_INVALID',
++  })
++  async summary(
++    @Request() req: AuthedRequest,
++    @Query('from') from?: string,
++    @Query('to') to?: string,
++    @Query('compare_from') compareFrom?: string,
++    @Query('compare_to') compareTo?: string,
++    @Query('currency') currencyRaw?: string,
++  ) {
++    const window = parseWindow(from, to, 'window');
++    const currency = parseCurrency(currencyRaw);
++    const compare =
++      compareFrom !== undefined || compareTo !== undefined
++        ? parseWindow(compareFrom, compareTo, 'compare')
++        : null;
++    return this.money.getSummary(req.user.id, window, compare, new Date(), currency);
++  }
++
++  // GET /v1/coach/money/charges?status=all|paid|failed|refunded|disputed&cursor&limit
++  @Roles('coach', 'owner')
++  @Get('charges')
++  @ApiOperation({ summary: "The coach's own charges, newest first, filtered by state" })
++  @ApiResponse({ status: 400, description: 'MONEY_FILTER_INVALID' })
++  async charges(
++    @Request() req: AuthedRequest,
++    @Query('status') statusRaw?: string,
++    @Query('cursor') cursor?: string,
++    @Query('limit') limitRaw?: string,
++  ) {
++    const status = (statusRaw ?? 'all') as ChargeStatusFilter;
++    if (!CHARGE_STATUS_FILTERS.includes(status)) {
++      throw new BadRequestException({
++        code: 'MONEY_FILTER_INVALID',
++        message: `status must be one of ${CHARGE_STATUS_FILTERS.join(', ')}.`,
++      });
++    }
++    const parsed = limitRaw === undefined ? undefined : Number.parseInt(limitRaw, 10);
++    const limit =
++      parsed === undefined || Number.isNaN(parsed)
++        ? undefined
++        : Math.min(Math.max(parsed, 1), MONEY_CHARGES_PAGE_MAX);
++    return this.money.listCharges(req.user.id, {
++      status,
++      cursor: cursor && cursor.trim() ? cursor.trim() : null,
++      limit,
++    });
++  }
++
++  // GET /v1/coach/money/export.csv?from&to[&currency] — C-641-4 "Export CSV for taxes".
++  // Same window rules as /summary (max 400 days, so a tax year fits); the
++  // net_to_you column sums to the summary's net for the same window.
++  @Roles('coach', 'owner')
++  @Get('export.csv')
++  @Header('Content-Type', 'text/csv; charset=utf-8')
++  @Header('Cache-Control', 'no-store')
++  @ApiOperation({ summary: 'Sales, refunds and chargebacks in a window as CSV, for taxes' })
++  @ApiResponse({ status: 200, description: 'text/csv attachment' })
++  @ApiResponse({
++    status: 400,
++    description: 'MONEY_WINDOW_INVALID | MONEY_EXPORT_TOO_LARGE | MONEY_CURRENCY_INVALID',
++  })
++  async exportCsv(
++    @Request() req: AuthedRequest,
++    @Res({ passthrough: true }) res: Response,
++    @Query('from') from?: string,
++    @Query('to') to?: string,
++    @Query('currency') currencyRaw?: string,
++  ): Promise<string> {
++    const window = parseWindow(from, to, 'window');
++    const currency = parseCurrency(currencyRaw);
++    const csv = await this.money.exportCsv(req.user.id, window, currency);
++    const day = (d: Date) => d.toISOString().slice(0, 10);
++    res.setHeader(
++      'Content-Disposition',
++      `attachment; filename="tgp-money-${day(window.from)}-to-${day(window.to)}${
++        currency ? `-${currency}` : ''
++      }.csv"`,
++    );
++    return csv;
++  }
++
++  // GET /v1/coach/money/charges/:id — price - processing - TGP 2% = net for
++  // one of the coach's own charges. Another coach's id is a plain 404.
++  @Roles('coach', 'owner')
++  @Get('charges/:id')
++  @ApiOperation({ summary: 'Fee breakdown for one of the coach’s own charges' })
++  @ApiResponse({ status: 404, description: 'MONEY_CHARGE_NOT_FOUND' })
++  async charge(@Request() req: AuthedRequest, @Param('id') id: string) {
++    return this.money.getChargeBreakdown(req.user.id, id);
++  }
++
++  // GET /v1/coach/money/attention — failed payments with dunning status,
++  // open disputes and Stripe requirements due, each with the client to message.
++  @Roles('coach', 'owner')
++  @Get('attention')
++  @ApiOperation({ summary: 'What needs the coach’s attention in Money' })
++  async attention(@Request() req: AuthedRequest) {
++    return this.money.getAttention(req.user.id);
++  }
++}
+diff --git a/src/coach-money/coach-money.module.ts b/src/coach-money/coach-money.module.ts
+new file mode 100644
+index 00000000..c3c734c3
+--- /dev/null
++++ b/src/coach-money/coach-money.module.ts
+@@ -0,0 +1,14 @@
++import { Module } from '@nestjs/common';
++import { PrismaService } from '../prisma.service';
++import { CoachMoneyController } from './coach-money.controller';
++import { CoachMoneyService } from './coach-money.service';
++
++// S-COACH (agent 111) — TGP Money read model (/v1/coach/money/*).
++// JwtAuthGuard, CoachOrOwnerGuard and NoActiveSubCoachGuard come from the
++// @Global SecurityGuardsModule.
++@Module({
++  controllers: [CoachMoneyController],
++  providers: [CoachMoneyService, PrismaService],
++  exports: [CoachMoneyService],
++})
++export class CoachMoneyModule {}
+diff --git a/src/coach-money/coach-money.service.ts b/src/coach-money/coach-money.service.ts
+new file mode 100644
+index 00000000..7bb5cef7
+--- /dev/null
++++ b/src/coach-money/coach-money.service.ts
+@@ -0,0 +1,1688 @@
++import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
++import { PrismaService } from '../prisma.service';
++import { DUNNING_V2_CADENCE_DAYS } from '../checkout/dunning-v2/dunning-v2.cadence';
++
++// S-COACH (agent 111) — TGP Money read model for the coach Money page.
++//
++// Every number here is derived from rows the payment pipeline already
++// writes (ClientPurchase, SplitLedgerEntry, ChargeRefund, ChargeDispute,
++// DunningState, DunningAttempt). Nothing is estimated:
++//   - net, TGP fee and head-coach split come from the split ledger slices
++//     (`destination`, `application_fee`, `head_coach_split`);
++//   - card processing comes from `stripe_fee` slices, which only the
++//     separate-charges settlement (backend #627) writes. Before #627 the
++//     platform pays Stripe's fee on a destination charge, so a charge with
++//     no `stripe_fee` slice reports processing 0 with
++//     `processing_paid_by: 'platform'` instead of an invented estimate.
++//
++// Tenancy: every query is scoped to the authenticated coach (seller
++// `coach_user_id` or ledger `payee_user_id`). No method accepts a coach id
++// from the request.
++
++export const MONEY_MAX_WINDOW_DAYS = 400;
++export const MONEY_CHARGES_PAGE_DEFAULT = 20;
++export const MONEY_CHARGES_PAGE_MAX = 50;
++
++const DAY_MS = 86_400_000;
++
++/** Purchase statuses that mean "the client's payment did not go through". */
++export const FAILED_PURCHASE_STATUSES = ['past_due', 'payment_failed'] as const;
++/** Purchase statuses that mean "the client paid and access is live". */
++export const PAID_PURCHASE_STATUSES = ['paid', 'active'] as const;
++/** Dispute statuses that still need the coach's attention. */
++export const OPEN_DISPUTE_STATUSES = [
++  'warning_needs_response',
++  'warning_under_review',
++  'needs_response',
++  'under_review',
++] as const;
++
++/** Dispute statuses that mean the bank took the money back for the client. */
++export const LOST_DISPUTE_STATUSES = ['lost'] as const;
++/** Purchase status the dispute pipeline writes on a lost chargeback. */
++export const CHARGEBACK_LOST_PURCHASE_STATUS = 'chargeback_lost';
++/** Purchase status the refund pipeline writes on a full refund. */
++export const REFUNDED_PURCHASE_STATUS = 'refunded';
++
++/**
++ * DunningAttempt kinds whose email carries the client's "Update payment"
++ * button (templates payment-reminder-soft / -urgent / payment-final-notice /
++ * dunning-final all render `billing_portal_url`). `recovered` is the
++ * thank-you email and carries no card-update link.
++ */
++export const CARD_UPDATE_LINK_ATTEMPT_KINDS = ['soft', 'urgent', 'final', 'cancelled'] as const;
++
++export type ChargeStatusFilter = 'all' | 'paid' | 'failed' | 'refunded' | 'disputed';
++export const CHARGE_STATUS_FILTERS: readonly ChargeStatusFilter[] = [
++  'all',
++  'paid',
++  'failed',
++  'refunded',
++  'disputed',
++];
++
++export type ProcessingPaidBy = 'coach' | 'platform' | 'mixed' | 'none';
++
++export interface MoneyWindow {
++  from: Date;
++  to: Date;
++}
++
++/**
++ * Window totals. Sales land in the window they were posted in; refunds and
++ * lost chargebacks land in the window they HAPPENED in (C-641-1), so an old
++ * sale refunded today lowers today's net and never rewrites last month.
++ * `net_cents` can therefore be negative for a window with refunds and no
++ * sales.
++ */
++export interface MoneyTotals {
++  /** What clients were charged for sales posted in the window. */
++  gross_cents: number;
++  /** Stripe's actual processing fee borne by the coach (stripe_fee slices). */
++  processing_cents: number;
++  /** TGP's 2% on sales in the window, less TGP fee returned on reversals in the window. */
++  platform_fee_cents: number;
++  /** Head-coach share taken from this coach's sales, less share returned in the window. */
++  head_coach_split_cents: number;
++  /** Coach share taken back by refunds / lost chargebacks that happened in the window. */
++  refunded_cents: number;
++  /** Head-coach income on sub-coaches' sales, less income reversed in the window. */
++  head_coach_income_cents: number;
++  /** Net to the coach = coach share of sales - refunded + head-coach income. */
++  net_cents: number;
++  /** Charges (purchases) that contributed a destination slice. */
++  charge_count: number;
++  processing_paid_by: ProcessingPaidBy;
++}
++
++export interface MoneySummaryDto {
++  /**
++   * B-641-3 — the ONE currency every money amount in this response is in.
++   * Totals, comparison, MRR and held amounts only count ledger rows and
++   * purchases in this currency; amounts in other currencies are never added
++   * in and no exchange rate is applied.
++   */
++  currency: string;
++  /** Every currency the coach has ledger activity in, sorted; pass one as `?currency=`. */
++  currencies: string[];
++  window: { from: string; to: string };
++  compare: { from: string; to: string } | null;
++  totals: MoneyTotals;
++  compare_totals: MoneyTotals | null;
++  /** totals.net - compare_totals.net, or null with no compare window. */
++  change_cents: number | null;
++  /** Percent change, 1 decimal; null when the previous net was 0. */
++  change_pct: number | null;
++  recurring: {
++    /** Billing subscriptions only: a free trial is not income yet (AUD-OPUS-CM2-116). */
++    mrr_cents: number;
++    paying_clients: number;
++    /** Clients in a free trial, and the MRR they add when they convert. */
++    trial_clients: number;
++    trial_mrr_cents: number;
++    churned_30d: number;
++    new_clients_30d: number;
++  };
++  attention_count: number;
++  /**
++   * C-641-3 — what TGP holds from the coach's next sale(s) after a refund or
++   * chargeback (OR-111-1 forward netting: TGP 2% + every Stripe fee on that
++   * charge + any share Stripe refused to reverse), in the summary currency.
++   * `null` means this server does not record held amounts yet (the backend
++   * #627 PayeeRecovery ledger is not deployed); `0` means nothing is held.
++   * The app shows the line only when the field is a number.
++   */
++  held_from_next_sale_cents: number | null;
++  generated_at: string;
++}
++
++export interface MoneyChargeDto {
++  id: string;
++  client: { id: string; name: string };
++  package: { id: string; name: string };
++  amount_cents: number;
++  currency: string;
++  billing_type: 'one_time' | 'recurring';
++  /**
++   * B-332-2 (S-COACH-3): the cadence a recurring charge bills at, so the app
++   * never guesses "Monthly". From the package (recurring price, or the
++   * recurring companion of a combo package); the B1 pricing lock keeps it
++   * fixed while any subscriber is active. Null for one-time charges.
++   */
++  billing_interval: 'week' | 'month' | 'year' | null;
++  billing_interval_count: number | null;
++  /**
++   * Coach-facing state. `canceled` = the checkout never completed.
++   * `charged_back` = the client's bank took the payment back (lost dispute);
++   * it is never `paid`.
++   */
++  state:
++    | 'paid'
++    | 'failed'
++    | 'refunded'
++    | 'partially_refunded'
++    | 'disputed'
++    | 'charged_back'
++    | 'pending'
++    | 'canceled';
++  refunded_cents: number;
++  /** Amount the bank took back on lost disputes (0 when none). */
++  charged_back_cents: number;
++  created_at: string;
++}
++
++export interface MoneyChargeBreakdownDto {
++  charge: MoneyChargeDto;
++  breakdown: {
++    price_cents: number;
++    processing_cents: number;
++    platform_fee_cents: number;
++    head_coach_split_cents: number;
++    refunded_cents: number;
++    net_cents: number;
++    processing_paid_by: ProcessingPaidBy;
++    /** False until the ledger has slices for this charge (e.g. still pending). */
++    settled: boolean;
++  };
++}
++
++export interface MoneyAttentionItem {
++  kind: 'failed_payment' | 'dispute' | 'stripe_requirements';
++  id: string;
++  client: { id: string; name: string } | null;
++  amount_cents: number | null;
++  currency: string | null;
++  created_at: string | null;
++  failed_payment?: {
++    purchase_id: string;
++    package_name: string;
++    attempt: number;
++    max_attempts: number;
++    next_retry_at: string | null;
++    locked_out_at: string | null;
++    /**
++     * When the client was last emailed an "Update payment" link for this
++     * failure: the newest DunningAttempt the dunning tick stamped `sent`
++     * (B-641-1). Null when no reminder email has gone out yet.
++     */
++    card_update_link_sent_at: string | null;
++    last_failure_reason: string | null;
++  };
++  dispute?: {
++    purchase_id: string;
++    status: string;
++    reason: string | null;
++    evidence_due_by: string | null;
++  };
++  stripe_requirements?: {
++    currently_due: string[];
++    past_due: string[];
++    current_deadline: string | null;
++    disabled_reason: string | null;
++  };
++}
++
++export interface MoneyAttentionDto {
++  count: number;
++  items: MoneyAttentionItem[];
++}
++
++interface SliceRow {
++  kind: string;
++  payee_user_id: string | null;
++  amount_cents: number;
++  reversed_cents: number;
++  status: string;
++  purchase_id: string;
++  currency: string;
++}
++
++const COUNTED_SLICE_STATUSES = ['posted', 'reversed'];
++const LOST_DISPUTE_STATUS_LIST: string[] = [...LOST_DISPUTE_STATUSES];
++
++/**
++ * A purchase was paid when its status says so OR the ledger holds a posted
++ * coach slice for it (a paid purchase that later canceled or expired keeps
++ * its ledger rows, so it still counts as a sale) — unless the money went back
++ * to the client: a fully refunded purchase or a lost chargeback is never
++ * "paid", never a new client and never the coach's first client payment
++ * (B-641-2). An open dispute still counts until the bank decides; a won
++ * dispute flips the purchase back to `paid`.
++ */
++export const PAID_WHERE = {
++  AND: [
++    { status: { notIn: [CHARGEBACK_LOST_PURCHASE_STATUS, REFUNDED_PURCHASE_STATUS] } },
++    { disputes: { none: { status: { in: [...LOST_DISPUTE_STATUSES] } } } },
++    {
++      OR: [
++        { status: { in: [...PAID_PURCHASE_STATUSES] } },
++        { splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } } },
++      ],
++    },
++  ],
++};
++
++/** `refunded` filter: money went back by refund OR by a lost chargeback. */
++export const REFUNDED_WHERE = {
++  OR: [
++    { refunds: { some: { status: 'succeeded' } } },
++    { status: CHARGEBACK_LOST_PURCHASE_STATUS },
++    { disputes: { some: { status: { in: [...LOST_DISPUTE_STATUSES] } } } },
++  ],
++};
++
++/** `disputed` filter: open disputes and lost chargebacks. */
++export const DISPUTED_WHERE = {
++  OR: [
++    { status: CHARGEBACK_LOST_PURCHASE_STATUS },
++    {
++      disputes: {
++        some: { status: { in: [...OPEN_DISPUTE_STATUSES, ...LOST_DISPUTE_STATUSES] } },
++      },
++    },
++  ],
++};
++
++function emptyTotals(): MoneyTotals {
++  return {
++    gross_cents: 0,
++    processing_cents: 0,
++    platform_fee_cents: 0,
++    head_coach_split_cents: 0,
++    refunded_cents: 0,
++    head_coach_income_cents: 0,
++    net_cents: 0,
++    charge_count: 0,
++    processing_paid_by: 'none',
++  };
++}
++
++/**
++ * Pure fold of ledger slices into coach-facing totals. Exported for tests.
++ *
++ * `sellerSlices` are every slice of purchases the coach SOLD; `incomeSlices`
++ * are head_coach_split slices where the coach is the PAYEE on a sub-coach's
++ * sale. A reversal never counts twice: each slice contributes
++ * amount - reversed exactly once.
++ */
++export function foldTotals(
++  coachId: string,
++  sellerSlices: readonly SliceRow[],
++  incomeSlices: readonly SliceRow[],
++): MoneyTotals {
++  const t = emptyTotals();
++  const chargesWithDestination = new Set<string>();
++  const chargesWithStripeFee = new Set<string>();
++  for (const s of sellerSlices) {
++    const kept = Math.max(0, s.amount_cents - s.reversed_cents);
++    t.gross_cents += s.amount_cents;
++    switch (s.kind) {
++      case 'destination':
++        if (s.payee_user_id === coachId) {
++          t.net_cents += kept;
++          t.refunded_cents += s.reversed_cents;
++          chargesWithDestination.add(s.purchase_id);
++        }
++        break;
++      case 'application_fee':
++        t.platform_fee_cents += kept;
++        break;
++      case 'head_coach_split':
++        t.head_coach_split_cents += kept;
++        break;
++      case 'stripe_fee':
++        t.processing_cents += s.amount_cents;
++        chargesWithStripeFee.add(s.purchase_id);
++        break;
++      default:
++        break;
++    }
++  }
++  for (const s of incomeSlices) {
++    if (s.kind !== 'head_coach_split' || s.payee_user_id !== coachId) continue;
++    const kept = Math.max(0, s.amount_cents - s.reversed_cents);
++    t.head_coach_income_cents += kept;
++    t.net_cents += kept;
++  }
++  t.charge_count = chargesWithDestination.size;
++  if (chargesWithDestination.size === 0) t.processing_paid_by = 'none';
++  else {
++    let coachPaid = 0;
++    for (const id of chargesWithDestination) if (chargesWithStripeFee.has(id)) coachPaid += 1;
++    t.processing_paid_by =
++      coachPaid === 0 ? 'platform' : coachPaid === chargesWithDestination.size ? 'coach' : 'mixed';
++  }
++  return t;
++}
++
++/** One refund or lost chargeback that took money back from a charge. */
++export interface ReversalEvent {
++  kind: 'refund' | 'chargeback';
++  at: Date;
++  /** What the client got back in this event. */
++  amount_cents: number;
++  stripe_charge_id: string | null;
++  /** ChargeRefund / ChargeDispute id (matches SplitLedgerReversal.source_id). */
++  source_id?: string;
++}
++
++/** B-676-1: what one event took back from one slice, posted once by the writer. */
++export interface ReversalPosting {
++  source_kind: string;
++  source_id: string;
++  cents: number;
++  posted_at: Date;
++}
++
++/** A ledger slice with its timing, for windowed totals and the tax export. */
++export interface TimedSliceRow extends SliceRow {
++  stripe_charge_id: string | null;
++  posted_at: Date | null;
++  reversed_at: Date | null;
++  created_at: Date;
++  client_name: string | null;
++  package_name: string | null;
++}
++
++/** A slice with reversed_cents > 0 and the events that reversed it. */
++export interface ReversedSliceRow extends TimedSliceRow {
++  events: ReversalEvent[];
++  postings?: ReversalPosting[];
++}
++
++export interface ReversalPortion {
++  /** `reversal` = no refund / dispute row explains it (legacy rows). */
++  kind: 'refund' | 'chargeback' | 'reversal';
++  at: Date;
++  cents: number;
++  /** What the client got back in the event (null for `reversal`). */
++  event_amount_cents: number | null;
++}
++
++/** When a slice was posted (legacy rows without posted_at use created_at). */
++export function slicePostedAt(s: { posted_at: Date | null; created_at: Date }): Date {
++  return s.posted_at ?? s.created_at;
++}
++
++function inWindow(at: Date, w: MoneyWindow): boolean {
++  return at.getTime() >= w.from.getTime() && at.getTime() < w.to.getTime();
++}
++
++/**
++ * C-641-1 — split a slice's `reversed_cents` across the refunds / lost
++ * chargebacks that caused it, so each part lands at the time its event
++ * happened. The ledger keeps one cumulative `reversed_cents` per slice
++ * (SplitLedgerService.applyReversal), and the refund pipeline reverses each
++ * event proportionally to its amount, so the parts are allocated in
++ * proportion to the event amounts, oldest first, the newest event taking
++ * the rounding remainder: the parts always sum to exactly `reversed_cents`.
++ * Events of another charge of the same purchase (per-charge ledger rows
++ * after #627) never count. A reversal with no matching event row falls back
++ * to the slice's `reversed_at` (else its posting time).
++ */
++export function allocateReversal(slice: ReversedSliceRow): ReversalPortion[] {
++  // B-676-1 (B-CM1-116): an event's posting is exactly what the writer took
++  // back, at the event's own time, and never changes. Only cents with no
++  // posting (legacy rows) are split across the events that have none.
++  const postings = slice.postings ?? [];
++  const posted: ReversalPortion[] = postings.map((p) => {
++    const kind = p.source_kind === 'refund' ? 'refund' : 'chargeback';
++    const e = slice.events.find((x) => x.kind === kind && x.source_id === p.source_id);
++    return { kind, at: p.posted_at, cents: p.cents, event_amount_cents: e?.amount_cents ?? null };
++  });
++  const total = slice.reversed_cents - posted.reduce((acc, p) => acc + p.cents, 0);
++  if (total <= 0) return posted;
++  const events = slice.events
++    .filter((e) => !postings.some((p) => p.source_id === e.source_id))
++    .filter(
++      (e) =>
++        !slice.stripe_charge_id ||
++        !e.stripe_charge_id ||
++        e.stripe_charge_id === slice.stripe_charge_id,
++    )
++    .slice()
++    .sort((a, b) => a.at.getTime() - b.at.getTime());
++  if (events.length === 0) {
++    return [
++      ...posted,
++      {
++        kind: 'reversal',
++        at: slice.reversed_at ?? slicePostedAt(slice),
++        cents: total,
++        event_amount_cents: null,
++      },
++    ];
++  }
++  const weight = events.reduce((acc, e) => acc + Math.max(0, e.amount_cents), 0);
++  const out: ReversalPortion[] = posted;
++  let left = total;
++  events.forEach((e, i) => {
++    const last = i === events.length - 1;
++    const share = last
++      ? left
++      : weight > 0
++        ? Math.min(left, Math.floor((total * Math.max(0, e.amount_cents)) / weight))
++        : 0;
++    left -= share;
++    if (share > 0) {
++      out.push({ kind: e.kind, at: e.at, cents: share, event_amount_cents: e.amount_cents });
++    }
++  });
++  return out;
++}
++
++/** Cents of a slice's reversal that happened inside the window. */
++export function reversedInWindow(slice: ReversedSliceRow, window: MoneyWindow): number {
++  return allocateReversal(slice)
++    .filter((p) => inWindow(p.at, window))
++    .reduce((acc, p) => acc + p.cents, 0);
++}
++
++export interface WindowSlices {
++  /** Slices of the coach's own sales posted in the window. */
++  salesSeller: TimedSliceRow[];
++  /** head_coach_split slices paid to the coach, posted in the window. */
++  salesIncome: TimedSliceRow[];
++  /** Reversed slices of the coach's own sales with a reversal that may fall in the window. */
++  reversedSeller: ReversedSliceRow[];
++  /** Reversed head_coach_split slices paid to the coach. */
++  reversedIncome: ReversedSliceRow[];
++}
++
++/**
++ * Pure windowed fold (C-641-1). Sales count in the window they were posted
++ * in at their full amount; every refund / chargeback reversal counts in the
++ * window it happened in. Over a window that covers both, this equals
++ * `foldTotals` (each slice contributes amount - reversed exactly once).
++ * Exported for tests.
++ */
++export function foldWindowTotals(
++  coachId: string,
++  window: MoneyWindow,
++  slices: WindowSlices,
++): MoneyTotals {
++  const t = emptyTotals();
++  const chargesWithDestination = new Set<string>();
++  const chargesWithStripeFee = new Set<string>();
++  const chargeKey = (s: SliceRow & { stripe_charge_id: string | null }) =>
++    `${s.purchase_id}|${s.stripe_charge_id ?? ''}`;
++  for (const s of slices.salesSeller) {
++    t.gross_cents += s.amount_cents;
++    switch (s.kind) {
++      case 'destination':
++        if (s.payee_user_id === coachId) {
++          t.net_cents += s.amount_cents;
++          chargesWithDestination.add(chargeKey(s));
++        }
++        break;
++      case 'application_fee':
++        t.platform_fee_cents += s.amount_cents;
++        break;
++      case 'head_coach_split':
++        t.head_coach_split_cents += s.amount_cents;
++        break;
++      case 'stripe_fee':
++        t.processing_cents += s.amount_cents;
++        chargesWithStripeFee.add(chargeKey(s));
++        break;
++      default:
++        break;
++    }
++  }
++  for (const s of slices.salesIncome) {
++    if (s.kind !== 'head_coach_split' || s.payee_user_id !== coachId) continue;
++    t.head_coach_income_cents += s.amount_cents;
++    t.net_cents += s.amount_cents;
++  }
++  for (const s of slices.reversedSeller) {
++    const r = reversedInWindow(s, window);
++    if (r === 0) continue;
++    switch (s.kind) {
++      case 'destination':
++        if (s.payee_user_id === coachId) {
++          t.net_cents -= r;
++          t.refunded_cents += r;
++        }
++        break;
++      case 'application_fee':
++        t.platform_fee_cents -= r;
++        break;
++      case 'head_coach_split':
++        t.head_coach_split_cents -= r;
++        break;
++      default:
++        // Stripe keeps its processing fee on a refund; a stripe_fee slice is
++        // never reported as returned (parity with foldTotals).
++        break;
++    }
++  }
++  for (const s of slices.reversedIncome) {
++    if (s.kind !== 'head_coach_split' || s.payee_user_id !== coachId) continue;
++    const r = reversedInWindow(s, window);
++    t.head_coach_income_cents -= r;
++    t.net_cents -= r;
++  }
++  t.charge_count = chargesWithDestination.size;
++  if (chargesWithDestination.size === 0) t.processing_paid_by = 'none';
++  else {
++    let coachPaid = 0;
++    for (const id of chargesWithDestination) if (chargesWithStripeFee.has(id)) coachPaid += 1;
++    t.processing_paid_by =
++      coachPaid === 0 ? 'platform' : coachPaid === chargesWithDestination.size ? 'coach' : 'mixed';
++  }
++  return t;
++}
++
++/** B-641-3 — currencies a package can be sold in (packages.dto). */
++export const MONEY_SUPPORTED_CURRENCIES: readonly string[] = ['usd', 'gbp', 'eur', 'aud', 'cad'];
++
++/** Validate an optional `?currency=`; returns the lower-case code or null when absent. */
++export function parseCurrency(raw: string | undefined): string | null {
++  if (raw === undefined || raw.trim() === '') return null;
++  const code = raw.trim().toLowerCase();
++  if (!MONEY_SUPPORTED_CURRENCIES.includes(code)) {
++    throw new BadRequestException({
++      code: 'MONEY_CURRENCY_INVALID',
++      message: `currency must be one of ${MONEY_SUPPORTED_CURRENCIES.join(', ')}. Pick one of the currencies listed in the summary's currencies field.`,
++    });
++  }
++  return code;
++}
++
++/**
++ * B-641-3 — the summary currency when the app does not ask for one: USD if
++ * the coach has any USD activity (or none at all), otherwise their only
++ * currency, otherwise the alphabetically first one. Deterministic, and the
++ * response always names the currency it used.
++ */
++export function defaultCurrency(currencies: readonly string[]): string {
++  if (currencies.length === 0 || currencies.includes('usd')) return 'usd';
++  return [...currencies].sort()[0];
++}
++
++/** B-641-4 — billing cadence of one subscription. */
++export interface RecurringCadence {
++  amount_cents: number;
++  interval: string | null;
++  interval_count: number | null;
++}
++
++/**
++ * B-641-4 — monthly-equivalent of one recurring charge, unrounded, so a
++ * sum of many subscriptions is rounded once. A charge every N weeks counts
++ * 52 / 12 / N times a month, every N months 1 / N, every N years 1 / (12N).
++ * A missing interval is a monthly price (the package default).
++ */
++export function monthlyEquivalent(c: RecurringCadence): number {
++  const count = c.interval_count && c.interval_count > 0 ? c.interval_count : 1;
++  switch (c.interval) {
++    case 'week':
++      return (c.amount_cents * 52) / (12 * count);
++    case 'year':
++      return c.amount_cents / (12 * count);
++    case 'month':
++    default:
++      return c.amount_cents / count;
++  }
++}
++
++/**
++ * B-641-4 — the recurring part of a purchase. For a one-time + recurring
++ * combo package the purchase amount is the one-time charge; the
++ * subscription bills the package's recurring companion price. For a pure
++ * subscription the purchase amount snapshot is the subscription price.
++ * The package cadence is stable for the life of the subscription: the
++ * pricing lock (PACKAGE_PRICING_LOCKED) refuses every price or cadence edit
++ * while the package has an active subscriber, which is exactly the set MRR
++ * counts.
++ */
++export function recurringCadenceOf(p: {
++  amount_cents: number;
++  package: {
++    interval: string | null;
++    interval_count: number;
++    recurring_amount_cents: number | null;
++    recurring_interval: string | null;
++    recurring_interval_count: number | null;
++  } | null;
++}): RecurringCadence {
++  const pkg = p.package;
++  if (pkg && pkg.recurring_amount_cents != null && pkg.recurring_interval) {
++    return {
++      amount_cents: pkg.recurring_amount_cents,
++      interval: pkg.recurring_interval,
++      interval_count: pkg.recurring_interval_count,
++    };
++  }
++  return {
++    amount_cents: p.amount_cents,
++    interval: pkg?.interval ?? null,
++    interval_count: pkg?.interval_count ?? null,
++  };
++}
++
++/** Subscription statuses that bill now (a free trial is not income yet). */
++export const MRR_SUBSCRIPTION_STATUSES: readonly string[] = ['active', 'past_due'];
++
++export function changePct(current: number, previous: number): number | null {
++  if (previous === 0) return null;
++  return Math.round(((current - previous) / Math.abs(previous)) * 1000) / 10;
++}
++
++/** Parse and bound a money window. Throws 400 with a stable code. */
++export function parseWindow(
++  fromRaw: string | undefined,
++  toRaw: string | undefined,
++  label: 'window' | 'compare',
++): MoneyWindow {
++  const code = label === 'window' ? 'MONEY_WINDOW_INVALID' : 'MONEY_COMPARE_WINDOW_INVALID';
++  const from = fromRaw ? new Date(fromRaw) : null;
++  const to = toRaw ? new Date(toRaw) : null;
++  if (!from || !to || Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
++    throw new BadRequestException({
++      code,
++      message: 'from and to must be ISO-8601 timestamps.',
++    });
++  }
++  if (from.getTime() >= to.getTime()) {
++    throw new BadRequestException({ code, message: 'from must be before to.' });
++  }
++  if (to.getTime() - from.getTime() > MONEY_MAX_WINDOW_DAYS * DAY_MS) {
++    throw new BadRequestException({
++      code,
++      message: `A window can span at most ${MONEY_MAX_WINDOW_DAYS} days.`,
++    });
++  }
++  return { from, to };
++}
++
++/** The slice of backend #627's PayeeRecovery delegate this module reads. */
++interface PayeeRecoveryReader {
++  findMany(args: {
++    where: { payee_user_id: string; status: string; currency: string };
++    select: { amount_cents: true; collected_cents: true };
++  }): Promise<Array<{ amount_cents: number; collected_cents: number }>>;
++}
++
++function isPayeeRecoveryReader(v: unknown): v is PayeeRecoveryReader {
++  return typeof v === 'object' && v !== null && typeof Reflect.get(v, 'findMany') === 'function';
++}
++
++/** The PayeeRecovery delegate when this Prisma client has the model, else null. */
++export function payeeRecoveryReader(prisma: object): PayeeRecoveryReader | null {
++  const delegate: unknown = Reflect.get(prisma, 'payeeRecovery');
++  return isPayeeRecoveryReader(delegate) ? delegate : null;
++}
++
++const CADENCE_UNITS = ['week', 'month', 'year'] as const;
++type CadenceUnit = (typeof CADENCE_UNITS)[number];
++
++/**
++ * B-332-2 (S-COACH-3): the cadence one charge bills at, from the same rule
++ * MRR uses (recurringCadenceOf: a combo package bills its recurring part at
++ * the companion interval). An interval this build does not know is null
++ * (the app then says "Recurring"), never a guess. Exported for tests.
++ */
++export function chargeCadence(
++  purchaseBillingType: string,
++  pkg: {
++    interval?: string | null;
++    interval_count?: number | null;
++    recurring_amount_cents?: number | null;
++    recurring_interval?: string | null;
++    recurring_interval_count?: number | null;
++  } | null,
++): { billing_interval: CadenceUnit | null; billing_interval_count: number | null } {
++  const none = { billing_interval: null, billing_interval_count: null };
++  if (purchaseBillingType !== 'recurring' || !pkg) return none;
++  const c = recurringCadenceOf({
++    amount_cents: 0,
++    package: {
++      interval: pkg.interval ?? null,
++      interval_count: pkg.interval_count ?? 1,
++      recurring_amount_cents: pkg.recurring_amount_cents ?? null,
++      recurring_interval: pkg.recurring_interval ?? null,
++      recurring_interval_count: pkg.recurring_interval_count ?? null,
++    },
++  });
++  const unit = CADENCE_UNITS.find((u) => u === c.interval);
++  if (!unit) return none;
++  return {
++    billing_interval: unit,
++    billing_interval_count:
++      typeof c.interval_count === 'number' && c.interval_count >= 1 ? c.interval_count : 1,
++  };
++}
++
++function displayName(u: { name?: string | null } | null | undefined): string {
++  const n = (u?.name ?? '').trim();
++  return n.length > 0 ? n : 'Client';
++}
++
++// ── tax CSV (C-641-4) ─────────────────────────────────────────────────
++
++/** Ledger rows per query the CSV export accepts before asking for a shorter period. */
++export const MONEY_EXPORT_MAX_ROWS = 20_000;
++
++export const MONEY_CSV_COLUMNS = [
++  'date_utc',
++  'type',
++  'charge_id',
++  'stripe_charge_id',
++  'client',
++  'package',
++  'currency',
++  'client_paid',
++  'client_refunded',
++  'processing_fee',
++  'tgp_fee',
++  'head_coach_share',
++  'net_to_you',
++] as const;
++
++type CsvRow = {
++  at: Date;
++  type: 'sale' | 'refund' | 'chargeback' | 'reversal' | 'team_share' | 'team_share_reversal';
++  charge_id: string;
++  stripe_charge_id: string;
++  client: string;
++  package: string;
++  currency: string;
++  client_paid: number | null;
++  client_refunded: number | null;
++  processing_fee: number;
++  tgp_fee: number;
++  head_coach_share: number;
++  net_to_you: number;
++};
++
++/** Integer cents to a plain decimal string (no float maths): -1234 -> "-12.34". */
++export function centsToDecimal(cents: number): string {
++  const sign = cents < 0 ? '-' : '';
++  const abs = Math.abs(Math.trunc(cents));
++  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
++}
++
++/**
++ * One CSV text cell: RFC 4180 quoting plus a formula-injection guard
++ * (a cell starting with = + - @ tab or CR is prefixed with an apostrophe so
++ * a spreadsheet never runs a client-supplied name as a formula).
++ */
++export function csvText(value: string): string {
++  let v = value;
++  if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
++  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
++}
++
++function emptyCsvRow(s: TimedSliceRow, at: Date, type: CsvRow['type'], withNames: boolean): CsvRow {
++  return {
++    at,
++    type,
++    charge_id: s.purchase_id,
++    stripe_charge_id: s.stripe_charge_id ?? '',
++    client: withNames ? (s.client_name ?? '') : '',
++    package: s.package_name ?? '',
++    currency: s.currency,
++    client_paid: null,
++    client_refunded: null,
++    processing_fee: 0,
++    tgp_fee: 0,
++    head_coach_share: 0,
++    net_to_you: 0,
++  };
++}
++
++/** Pure CSV builder over the same slices as foldWindowTotals. Exported for tests. */
++export function buildMoneyCsv(coachId: string, window: MoneyWindow, slices: WindowSlices): string {
++  const rows = new Map<string, CsvRow>();
++  const row = (key: string, make: () => CsvRow): CsvRow => {
++    let r = rows.get(key);
++    if (!r) {
++      r = make();
++      rows.set(key, r);
++    }
++    return r;
++  };
++  for (const s of slices.salesSeller) {
++    const at = slicePostedAt(s);
++    const r = row(`sale|${s.purchase_id}|${s.stripe_charge_id ?? ''}`, () =>
++      emptyCsvRow(s, at, 'sale', true),
++    );
++    if (at.getTime() < r.at.getTime()) r.at = at;
++    r.client_paid = (r.client_paid ?? 0) + s.amount_cents;
++    if (s.kind === 'destination' && s.payee_user_id === coachId) r.net_to_you += s.amount_cents;
++    else if (s.kind === 'application_fee') r.tgp_fee += s.amount_cents;
++    else if (s.kind === 'head_coach_split') r.head_coach_share += s.amount_cents;
++    else if (s.kind === 'stripe_fee') r.processing_fee += s.amount_cents;
++  }
++  for (const s of slices.salesIncome) {
++    if (s.kind !== 'head_coach_split' || s.payee_user_id !== coachId) continue;
++    const at = slicePostedAt(s);
++    const r = row(`team|${s.purchase_id}|${s.stripe_charge_id ?? ''}`, () =>
++      emptyCsvRow(s, at, 'team_share', false),
++    );
++    r.net_to_you += s.amount_cents;
++  }
++  for (const s of slices.reversedSeller) {
++    for (const p of allocateReversal(s)) {
++      if (!inWindow(p.at, window)) continue;
++      const key = `${p.kind}|${s.purchase_id}|${s.stripe_charge_id ?? ''}|${p.at.toISOString()}`;
++      const r = row(key, () => emptyCsvRow(s, p.at, p.kind, true));
++      if (p.event_amount_cents !== null) r.client_refunded = p.event_amount_cents;
++      if (s.kind === 'destination' && s.payee_user_id === coachId) r.net_to_you -= p.cents;
++      else if (s.kind === 'application_fee') r.tgp_fee -= p.cents;
++      else if (s.kind === 'head_coach_split') r.head_coach_share -= p.cents;
++    }
++  }
++  for (const s of slices.reversedIncome) {
++    if (s.kind !== 'head_coach_split' || s.payee_user_id !== coachId) continue;
++    for (const p of allocateReversal(s)) {
++      if (!inWindow(p.at, window)) continue;
++      const key = `team_rev|${s.purchase_id}|${s.stripe_charge_id ?? ''}|${p.at.toISOString()}`;
++      const r = row(key, () => emptyCsvRow(s, p.at, 'team_share_reversal', false));
++      r.net_to_you -= p.cents;
++    }
++  }
++  const sorted = [...rows.values()].sort(
++    (a, b) => a.at.getTime() - b.at.getTime() || a.charge_id.localeCompare(b.charge_id),
++  );
++  const money = (c: number | null) => (c === null ? '' : centsToDecimal(c));
++  const lines = [MONEY_CSV_COLUMNS.join(',')];
++  for (const r of sorted) {
++    lines.push(
++      [
++        r.at.toISOString(),
++        r.type,
++        csvText(r.charge_id),
++        csvText(r.stripe_charge_id),
++        csvText(r.client),
++        csvText(r.package),
++        csvText(r.currency.toUpperCase()),
++        money(r.client_paid),
++        money(r.client_refunded),
++        money(r.processing_fee),
++        money(r.tgp_fee),
++        money(r.head_coach_share),
++        money(r.net_to_you),
++      ].join(','),
++    );
++  }
++  return lines.join('\r\n') + '\r\n';
++}
++
++@Injectable()
++export class CoachMoneyService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  // ── summary ──────────────────────────────────────────────────────────
++
++  async getSummary(
++    coachId: string,
++    window: MoneyWindow,
++    compare: MoneyWindow | null,
++    now: Date = new Date(),
++    requestedCurrency: string | null = null,
++  ): Promise<MoneySummaryDto> {
++    const currencies = await this.currenciesFor(coachId);
++    const currency = requestedCurrency ?? defaultCurrency(currencies);
++    const [totals, compareTotals, recurring, attention, held] = await Promise.all([
++      this.totalsFor(coachId, window, currency),
++      compare ? this.totalsFor(coachId, compare, currency) : Promise.resolve(null),
++      this.recurring(coachId, now, currency),
++      this.getAttention(coachId),
++      this.heldFromNextSale(coachId, currency),
++    ]);
++    return {
++      currency,
++      currencies,
++      window: { from: window.from.toISOString(), to: window.to.toISOString() },
++      compare: compare ? { from: compare.from.toISOString(), to: compare.to.toISOString() } : null,
++      totals,
++      compare_totals: compareTotals,
++      change_cents: compareTotals ? totals.net_cents - compareTotals.net_cents : null,
++      change_pct: compareTotals ? changePct(totals.net_cents, compareTotals.net_cents) : null,
++      recurring,
++      attention_count: attention.count,
++      held_from_next_sale_cents: held,
++      generated_at: now.toISOString(),
++    };
++  }
++
++  /** B-641-3 — every currency the coach has counted ledger activity in. */
++  async currenciesFor(coachId: string): Promise<string[]> {
++    const rows = await this.prisma.splitLedgerEntry.findMany({
++      where: {
++        status: { in: COUNTED_SLICE_STATUSES },
++        OR: [
++          { purchase: { coach_user_id: coachId, source: null } },
++          { kind: 'head_coach_split', payee_user_id: coachId },
++        ],
++      },
++      select: { currency: true },
++      distinct: ['currency'],
++    });
++    return [...new Set(rows.map((r) => r.currency.toLowerCase()))].sort();
++  }
++
++  private windowRange(window: MoneyWindow) {
++    return { gte: window.from, lt: window.to };
++  }
++
++  private postedInWindow(window: MoneyWindow) {
++    // A slice belongs to the window it was posted in; slices without a
++    // posted_at (legacy rows) fall back to their creation time.
++    const range = this.windowRange(window);
++    return {
++      OR: [{ posted_at: range }, { posted_at: null, created_at: range }],
++    };
++  }
++
++  private reversedPossiblyInWindow(window: MoneyWindow) {
++    // Candidate slices for reversals inside the window: the event rows that
++    // explain a reversal (succeeded refund, lost dispute) or, for legacy
++    // rows with no event, the slice's own reversal / posting time. The
++    // exact in-window share is decided by allocateReversal.
++    const range = this.windowRange(window);
++    return {
++      reversed_cents: { gt: 0 },
++      OR: [
++        { reversed_at: range },
++        { reversed_at: null, posted_at: range },
++        { reversed_at: null, posted_at: null, created_at: range },
++        { reversal_postings: { some: { posted_at: range } } },
++        // B-641-6 (S-COACH-3): a refund is booked when it SUCCEEDED
++        // (posted_at, stamped by the refund pipeline on the pending ->
++        // succeeded transition), not when it was requested. Legacy succeeded
++        // rows written before posted_at existed fall back to created_at.
++        {
++          purchase: {
++            refunds: {
++              some: {
++                status: 'succeeded',
++                OR: [{ posted_at: range }, { posted_at: null, created_at: range }],
++              },
++            },
++          },
++        },
++        {
++          purchase: {
++            disputes: { some: { status: { in: [...LOST_DISPUTE_STATUSES] }, closed_at: range } },
++          },
++        },
++      ],
++    };
++  }
++
++  private timedSliceSelect() {
++    return {
++      kind: true,
++      payee_user_id: true,
++      amount_cents: true,
++      reversed_cents: true,
++      status: true,
++      purchase_id: true,
++      currency: true,
++      stripe_charge_id: true,
++      posted_at: true,
++      reversed_at: true,
++      created_at: true,
++      reversal_postings: {
++        select: { source_kind: true, source_id: true, cents: true, posted_at: true },
++      },
++      purchase: {
++        select: {
++          client: { select: { name: true } },
++          package: { select: { name: true } },
++          refunds: {
++            where: { status: 'succeeded' },
++            select: {
++              id: true,
++              amount_cents: true,
++              posted_at: true,
++              created_at: true,
++              stripe_charge_id: true,
++            },
++          },
++          disputes: {
++            where: { status: { in: LOST_DISPUTE_STATUS_LIST } },
++            select: {
++              id: true,
++              amount_cents: true,
++              closed_at: true,
++              updated_at: true,
++              stripe_charge_id: true,
++            },
++          },
++        },
++      },
++    } as const;
++  }
++
++  private toTimed(
++    r: {
++      kind: string;
++      payee_user_id: string | null;
++      amount_cents: number;
++      reversed_cents: number;
++      status: string;
++      purchase_id: string;
++      currency: string;
++      stripe_charge_id: string | null;
++      posted_at: Date | null;
++      reversed_at: Date | null;
++      created_at: Date;
++      reversal_postings?: ReversalPosting[];
++      purchase: {
++        client: { name: string | null } | null;
++        package: { name: string } | null;
++        refunds: Array<{
++          id?: string;
++          amount_cents: number;
++          posted_at?: Date | null;
++          created_at: Date;
++          stripe_charge_id: string;
++        }>;
++        disputes: Array<{
++          id?: string;
++          amount_cents: number;
++          closed_at: Date | null;
++          updated_at: Date;
++          stripe_charge_id: string;
++        }>;
++      } | null;
++    },
++    withClient: boolean,
++  ): ReversedSliceRow {
++    const events: ReversalEvent[] = [
++      ...(r.purchase?.refunds ?? []).map((x): ReversalEvent => ({
++        kind: 'refund',
++        // B-641-6: completion time; created_at only for legacy rows.
++        at: x.posted_at ?? x.created_at,
++        amount_cents: x.amount_cents,
++        stripe_charge_id: x.stripe_charge_id ?? null,
++        source_id: x.id,
++      })),
++      ...(r.purchase?.disputes ?? []).map((x): ReversalEvent => ({
++        kind: 'chargeback',
++        at: x.closed_at ?? x.updated_at,
++        amount_cents: x.amount_cents,
++        stripe_charge_id: x.stripe_charge_id ?? null,
++        source_id: x.id,
++      })),
++    ];
++    return {
++      kind: r.kind,
++      payee_user_id: r.payee_user_id,
++      amount_cents: r.amount_cents,
++      reversed_cents: r.reversed_cents,
++      status: r.status,
++      purchase_id: r.purchase_id,
++      currency: r.currency,
++      stripe_charge_id: r.stripe_charge_id,
++      posted_at: r.posted_at,
++      reversed_at: r.reversed_at,
++      created_at: r.created_at,
++      // Head-coach income rows come from a sub-coach's sale: the client is
++      // the sub-coach's buyer, so the name is not carried.
++      client_name: withClient ? displayName(r.purchase?.client) : null,
++      package_name: r.purchase?.package?.name ?? null,
++      events,
++      postings: r.reversal_postings ?? [],
++    };
++  }
++
++  /** Load every slice the window's totals and tax export need. */
++  async loadWindow(
++    coachId: string,
++    window: MoneyWindow,
++    opts: { currency?: string; limit?: number } = {},
++  ): Promise<WindowSlices> {
++    const { currency, limit } = opts;
++    const select = this.timedSliceSelect();
++    const take: number | undefined = limit === undefined ? undefined : limit + 1;
++    // B-641-3: a money total only ever adds rows of one currency.
++    const currencyScope = currency === undefined ? {} : { currency };
++    const sellerScope = {
++      ...currencyScope,
++      status: { in: COUNTED_SLICE_STATUSES },
++      purchase: { coach_user_id: coachId, source: null },
++    };
++    const incomeScope = {
++      ...currencyScope,
++      status: { in: COUNTED_SLICE_STATUSES },
++      kind: 'head_coach_split',
++      payee_user_id: coachId,
++      purchase: { coach_user_id: { not: coachId } },
++    };
++    const [salesSeller, salesIncome, reversedSeller, reversedIncome] = await Promise.all([
++      this.prisma.splitLedgerEntry.findMany({
++        where: { ...sellerScope, ...this.postedInWindow(window) },
++        select,
++        take,
++      }),
++      this.prisma.splitLedgerEntry.findMany({
++        where: { ...incomeScope, ...this.postedInWindow(window) },
++        select,
++        take,
++      }),
++      this.prisma.splitLedgerEntry.findMany({
++        where: { ...sellerScope, ...this.reversedPossiblyInWindow(window) },
++        select,
++        take,
++      }),
++      this.prisma.splitLedgerEntry.findMany({
++        where: { ...incomeScope, ...this.reversedPossiblyInWindow(window) },
++        select,
++        take,
++      }),
++    ]);
++    if (
++      limit !== undefined &&
++      [salesSeller, salesIncome, reversedSeller, reversedIncome].some((rows) => rows.length > limit)
++    ) {
++      throw new BadRequestException({
++        code: 'MONEY_EXPORT_TOO_LARGE',
++        message: `This period has more than ${limit} ledger rows, which is too many for one file. Choose a shorter period, for example one quarter, and export each part.`,
++      });
++    }
++    // B-641-3 belt and braces: even if a query ever loses its currency
++    // scope, a total never adds a row in another currency.
++    const sameCurrency = (r: { currency: string }) =>
++      currency === undefined || r.currency.toLowerCase() === currency;
++    return {
++      salesSeller: salesSeller.filter(sameCurrency).map((r) => this.toTimed(r, true)),
++      salesIncome: salesIncome.filter(sameCurrency).map((r) => this.toTimed(r, false)),
++      reversedSeller: reversedSeller.filter(sameCurrency).map((r) => this.toTimed(r, true)),
++      reversedIncome: reversedIncome.filter(sameCurrency).map((r) => this.toTimed(r, false)),
++    };
++  }
++
++  async totalsFor(coachId: string, window: MoneyWindow, currency: string): Promise<MoneyTotals> {
++    return foldWindowTotals(coachId, window, await this.loadWindow(coachId, window, { currency }));
++  }
++
++  /**
++   * C-641-4 — "Export CSV for taxes". One row per sale (per charge) posted
++   * in the window and one row per refund / chargeback that happened in the
++   * window, from the same ledger fold as the summary: the `net_to_you`
++   * column, per currency, sums to the summary's `totals.net_cents` for the
++   * same window and currency. Every row names its currency (B-641-3); the
++   * file never adds amounts across currencies.
++   */
++  async exportCsv(
++    coachId: string,
++    window: MoneyWindow,
++    currency: string | null = null,
++  ): Promise<string> {
++    // C-641-6 (S-COACH-3): `?currency=` limits the file to one currency, so
++    // a spreadsheet sum of net_to_you is one meaningful number.
++    const slices = await this.loadWindow(coachId, window, {
++      limit: MONEY_EXPORT_MAX_ROWS,
++      ...(currency ? { currency } : {}),
++    });
++    return buildMoneyCsv(coachId, window, slices);
++  }
++
++  /**
++   * C-641-3 — open held-from-next-sale amount for the coach, read from the
++   * backend #627 PayeeRecovery ledger (open rows, amount - collected) when
++   * this server has it. Feature-detected on the Prisma client so this
++   * module has no compile-time dependency on #627: before #627 is deployed
++   * the delegate does not exist and the field is null; after, it reports
++   * the live number with no code change here.
++   */
++  async heldFromNextSale(coachId: string, currency: string): Promise<number | null> {
++    const reader = payeeRecoveryReader(this.prisma);
++    if (!reader) return null;
++    const rows = await reader.findMany({
++      where: { payee_user_id: coachId, status: 'open', currency },
++      select: { amount_cents: true, collected_cents: true },
++    });
++    return rows.reduce((acc, r) => acc + Math.max(0, r.amount_cents - r.collected_cents), 0);
++  }
++
++  private async recurring(coachId: string, now: Date, currency: string) {
++    const thirtyAgo = new Date(now.getTime() - 30 * DAY_MS);
++    const [active, churned, newPurchases] = await Promise.all([
++      this.prisma.clientPurchase.findMany({
++        where: {
++          coach_user_id: coachId,
++          entitlement_active: true,
++          source: null,
++          amount_cents: { gt: 0 },
++        },
++        select: {
++          client_user_id: true,
++          amount_cents: true,
++          currency: true,
++          billing_type: true,
++          status: true,
++          package: {
++            select: {
++              interval: true,
++              interval_count: true,
++              recurring_amount_cents: true,
++              recurring_interval: true,
++              recurring_interval_count: true,
++            },
++          },
++        },
++      }),
++      this.prisma.clientPurchase.findMany({
++        where: {
++          coach_user_id: coachId,
++          source: null,
++          amount_cents: { gt: 0 },
++          canceled_at: { gte: thirtyAgo, lte: now },
++        },
++        select: { client_user_id: true },
++      }),
++      this.prisma.clientPurchase.findMany({
++        where: {
++          coach_user_id: coachId,
++          source: null,
++          amount_cents: { gt: 0 },
++          ...PAID_WHERE,
++          created_at: { gte: thirtyAgo, lte: now },
++        },
++        select: { client_user_id: true },
++      }),
++    ]);
++    // B-641-4: MRR is the monthly equivalent of every billing subscription
++    // in the summary currency (B-641-3), at its real cadence (week / month /
++    // year x interval count; a combo package's recurring companion price),
++    // summed unrounded and rounded once.
++    // A free trial is counted apart (trial_*), never in MRR or paying clients.
++    let mrrExact = 0;
++    let trialExact = 0;
++    const trialIds = new Set<string>();
++    for (const p of active) {
++      if (p.billing_type !== 'recurring') continue;
++      if (p.currency.toLowerCase() !== currency) continue;
++      if (p.status === 'trialing') {
++        trialIds.add(p.client_user_id);
++        trialExact += monthlyEquivalent(recurringCadenceOf(p));
++        continue;
++      }
++      // A canceled / expired subscription keeps entitlement to the period
++      // end but will not bill again.
++      if (!MRR_SUBSCRIPTION_STATUSES.includes(p.status)) continue;
++      mrrExact += monthlyEquivalent(recurringCadenceOf(p));
++    }
++    const mrr = Math.round(mrrExact);
++    const payingIds = new Set(
++      active.filter((p) => p.status !== 'trialing').map((p) => p.client_user_id),
++    );
++    // A client counts as new when their first paid purchase with this coach
++    // is inside the last 30 days.
++    const candidateIds = [...new Set(newPurchases.map((p) => p.client_user_id))];
++    let newClients = 0;
++    if (candidateIds.length > 0) {
++      const earlier = await this.prisma.clientPurchase.findMany({
++        where: {
++          coach_user_id: coachId,
++          source: null,
++          amount_cents: { gt: 0 },
++          client_user_id: { in: candidateIds },
++          created_at: { lt: thirtyAgo },
++          ...PAID_WHERE,
++        },
++        select: { client_user_id: true },
++      });
++      const returning = new Set(earlier.map((p) => p.client_user_id));
++      newClients = candidateIds.filter((id) => !returning.has(id)).length;
++    }
++    // Churned = clients who canceled in the window and hold no other active
++    // paid purchase with this coach today.
++    const churnedIds = new Set(
++      churned.map((p) => p.client_user_id).filter((id) => !payingIds.has(id)),
++    );
++    return {
++      mrr_cents: mrr,
++      paying_clients: payingIds.size,
++      trial_clients: trialIds.size,
++      trial_mrr_cents: Math.round(trialExact),
++      churned_30d: churnedIds.size,
++      new_clients_30d: newClients,
++    };
++  }
++
++  // ── charges ──────────────────────────────────────────────────────────
++
++  async listCharges(
++    coachId: string,
++    opts: { status: ChargeStatusFilter; cursor?: string | null; limit?: number },
++  ): Promise<{ charges: MoneyChargeDto[]; next_cursor: string | null }> {
++    const limit = Math.min(
++      Math.max(opts.limit ?? MONEY_CHARGES_PAGE_DEFAULT, 1),
++      MONEY_CHARGES_PAGE_MAX,
++    );
++    const statusWhere =
++      opts.status === 'paid'
++        ? PAID_WHERE
++        : opts.status === 'failed'
++          ? { status: { in: [...FAILED_PURCHASE_STATUSES] } }
++          : opts.status === 'refunded'
++            ? REFUNDED_WHERE
++            : opts.status === 'disputed'
++              ? DISPUTED_WHERE
++              : {};
++    const rows = await this.prisma.clientPurchase.findMany({
++      where: { coach_user_id: coachId, source: null, amount_cents: { gt: 0 }, ...statusWhere },
++      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
++      take: limit + 1,
++      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
++      select: this.chargeSelect(),
++    });
++    const hasMore = rows.length > limit;
++    const page = hasMore ? rows.slice(0, limit) : rows;
++    return {
++      charges: page.map((r) => this.toCharge(r)),
++      next_cursor: hasMore ? page[page.length - 1].id : null,
++    };
++  }
++
++  async getChargeBreakdown(coachId: string, purchaseId: string): Promise<MoneyChargeBreakdownDto> {
++    const row = await this.prisma.clientPurchase.findFirst({
++      where: { id: purchaseId, coach_user_id: coachId, source: null },
++      select: this.chargeSelect(),
++    });
++    if (!row) {
++      throw new NotFoundException({
++        code: 'MONEY_CHARGE_NOT_FOUND',
++        message: 'This charge is not one of your sales.',
++      });
++    }
++    const slices = await this.prisma.splitLedgerEntry.findMany({
++      where: { purchase_id: row.id, status: { in: COUNTED_SLICE_STATUSES } },
++      select: {
++        kind: true,
++        payee_user_id: true,
++        amount_cents: true,
++        reversed_cents: true,
++        status: true,
++        purchase_id: true,
++        currency: true,
++      },
++    });
++    const t = foldTotals(coachId, slices, []);
++    const settled = slices.some((s) => s.kind === 'destination');
++    return {
++      charge: this.toCharge(row),
++      breakdown: {
++        price_cents: settled ? t.gross_cents : row.amount_cents,
++        processing_cents: t.processing_cents,
++        platform_fee_cents: t.platform_fee_cents,
++        head_coach_split_cents: t.head_coach_split_cents,
++        refunded_cents: t.refunded_cents,
++        net_cents: t.net_cents,
++        processing_paid_by: settled ? t.processing_paid_by : 'none',
++        settled,
++      },
++    };
++  }
++
++  private chargeSelect() {
++    return {
++      id: true,
++      amount_cents: true,
++      currency: true,
++      billing_type: true,
++      status: true,
++      created_at: true,
++      client: { select: { id: true, name: true } },
++      package: {
++        select: {
++          id: true,
++          name: true,
++          interval: true,
++          interval_count: true,
++          recurring_amount_cents: true,
++          recurring_interval: true,
++          recurring_interval_count: true,
++        },
++      },
++      refunds: { where: { status: 'succeeded' }, select: { amount_cents: true } },
++      disputes: { select: { status: true, amount_cents: true } },
++      splits: {
++        where: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } },
++        select: { id: true },
++        take: 1,
++      },
++    } as const;
++  }
++
++  private toCharge(r: {
++    id: string;
++    amount_cents: number;
++    currency: string;
++    billing_type: string;
++    status: string;
++    created_at: Date;
++    client: { id: string; name: string | null } | null;
++    package: {
++      id: string;
++      name: string;
++      interval?: string | null;
++      interval_count?: number | null;
++      recurring_amount_cents?: number | null;
++      recurring_interval?: string | null;
++      recurring_interval_count?: number | null;
++    } | null;
++    refunds: Array<{ amount_cents: number }>;
++    disputes: Array<{ status: string; amount_cents: number }>;
++    splits: Array<{ id: string }>;
++  }): MoneyChargeDto {
++    const refunded = r.refunds.reduce((acc, x) => acc + x.amount_cents, 0);
++    const openDispute = r.disputes.some((d) =>
++      (OPEN_DISPUTE_STATUSES as readonly string[]).includes(d.status),
++    );
++    const lostDisputes = r.disputes.filter((d) =>
++      (LOST_DISPUTE_STATUSES as readonly string[]).includes(d.status),
++    );
++    const chargedBackCents = lostDisputes.reduce((acc, d) => acc + d.amount_cents, 0);
++    const chargedBack = r.status === CHARGEBACK_LOST_PURCHASE_STATUS || lostDisputes.length > 0;
++    let state: MoneyChargeDto['state'];
++    // B-641-2: a lost chargeback is checked first — the ledger keeps its
++    // (reversed) destination slice, which must never read as `paid`.
++    if (chargedBack) state = 'charged_back';
++    else if (openDispute) state = 'disputed';
++    else if (refunded > 0 && refunded >= r.amount_cents) state = 'refunded';
++    else if (refunded > 0) state = 'partially_refunded';
++    else if ((FAILED_PURCHASE_STATUSES as readonly string[]).includes(r.status)) state = 'failed';
++    else if (
++      (PAID_PURCHASE_STATUSES as readonly string[]).includes(r.status) ||
++      r.splits.length > 0
++    )
++      state = 'paid';
++    else if (r.status === 'canceled' || r.status === 'expired') state = 'canceled';
++    else state = 'pending';
++    return {
++      id: r.id,
++      client: { id: r.client?.id ?? '', name: displayName(r.client) },
++      package: { id: r.package?.id ?? '', name: r.package?.name ?? 'Package' },
++      amount_cents: r.amount_cents,
++      currency: r.currency,
++      billing_type: r.billing_type === 'recurring' ? 'recurring' : 'one_time',
++      ...chargeCadence(r.billing_type, r.package),
++      state,
++      refunded_cents: refunded,
++      charged_back_cents: chargedBackCents,
++      created_at: r.created_at.toISOString(),
++    };
++  }
++
++  // ── needs attention ──────────────────────────────────────────────────
++
++  async getAttention(coachId: string): Promise<MoneyAttentionDto> {
++    const [failed, disputes, account] = await Promise.all([
++      this.prisma.clientPurchase.findMany({
++        where: {
++          coach_user_id: coachId,
++          source: null,
++          status: { in: [...FAILED_PURCHASE_STATUSES] },
++        },
++        orderBy: { updated_at: 'desc' },
++        take: 50,
++        select: {
++          id: true,
++          amount_cents: true,
++          currency: true,
++          updated_at: true,
++          last_error: true,
++          client: { select: { id: true, name: true } },
++          package: { select: { name: true } },
++          dunning: {
++            select: {
++              status: true,
++              failure_count: true,
++              step_index: true,
++              next_attempt_at: true,
++              locked_out_at: true,
++              last_failed_amount_cents: true,
++              last_failure_at: true,
++              last_failure_reason: true,
++              // B-641-1: the production write. DunningService.fireAttempt
++              // stamps status 'sent' + sent_at on the attempt once the
++              // reminder email (with the "Update payment" button) is
++              // accepted by the provider. A reopened cycle deletes the old
++              // cycle's attempts, so this is always the current cycle.
++              attempts: {
++                where: {
++                  status: 'sent',
++                  sent_at: { not: null },
++                  kind: { in: [...CARD_UPDATE_LINK_ATTEMPT_KINDS] },
++                },
++                orderBy: { sent_at: 'desc' },
++                take: 1,
++                select: { sent_at: true },
++              },
++            },
++          },
++        },
++      }),
++      this.prisma.chargeDispute.findMany({
++        where: {
++          status: { in: [...OPEN_DISPUTE_STATUSES] },
++          purchase: { coach_user_id: coachId },
++        },
++        orderBy: { created_at: 'desc' },
++        take: 50,
++        select: {
++          id: true,
++          purchase_id: true,
++          amount_cents: true,
++          currency: true,
++          status: true,
++          reason: true,
++          evidence_due_by: true,
++          created_at: true,
++          purchase: { select: { client: { select: { id: true, name: true } } } },
++        },
++      }),
++      this.prisma.connectAccount.findUnique({
++        where: { coach_user_id: coachId },
++        select: { requirements_due: true, disabled_reason: true },
++      }),
++    ]);
++
++    const maxAttempts = DUNNING_V2_CADENCE_DAYS.length;
++    const items: MoneyAttentionItem[] = [];
++    for (const p of failed) {
++      const d = p.dunning;
++      const attempt = Math.min(
++        maxAttempts,
++        Math.max(1, d ? Math.max(d.failure_count, d.step_index + 1) : 1),
++      );
++      items.push({
++        kind: 'failed_payment',
++        id: `failed:${p.id}`,
++        client: p.client ? { id: p.client.id, name: displayName(p.client) } : null,
++        amount_cents: d?.last_failed_amount_cents ?? p.amount_cents,
++        currency: p.currency,
++        created_at: (d?.last_failure_at ?? p.updated_at).toISOString(),
++        failed_payment: {
++          purchase_id: p.id,
++          package_name: p.package?.name ?? 'Package',
++          attempt,
++          max_attempts: maxAttempts,
++          next_retry_at: d?.next_attempt_at ? d.next_attempt_at.toISOString() : null,
++          locked_out_at: d?.locked_out_at ? d.locked_out_at.toISOString() : null,
++          card_update_link_sent_at: d?.attempts[0]?.sent_at
++            ? d.attempts[0].sent_at.toISOString()
++            : null,
++          last_failure_reason: d?.last_failure_reason ?? p.last_error ?? null,
++        },
++      });
++    }
++    for (const dsp of disputes) {
++      const c = dsp.purchase?.client;
++      items.push({
++        kind: 'dispute',
++        id: `dispute:${dsp.id}`,
++        client: c ? { id: c.id, name: displayName(c) } : null,
++        amount_cents: dsp.amount_cents,
++        currency: dsp.currency,
++        created_at: dsp.created_at.toISOString(),
++        dispute: {
++          purchase_id: dsp.purchase_id,
++          status: dsp.status,
++          reason: dsp.reason,
++          evidence_due_by: dsp.evidence_due_by ? dsp.evidence_due_by.toISOString() : null,
++        },
++      });
++    }
++    const req = readRequirements(account?.requirements_due);
++    if (req.currently_due.length > 0 || req.past_due.length > 0) {
++      items.push({
++        kind: 'stripe_requirements',
++        id: 'stripe_requirements',
++        client: null,
++        amount_cents: null,
++        currency: null,
++        created_at: null,
++        stripe_requirements: {
++          currently_due: req.currently_due,
++          past_due: req.past_due,
++          current_deadline: req.current_deadline,
++          disabled_reason: account?.disabled_reason ?? null,
++        },
++      });
++    }
++    return { count: items.length, items };
++  }
++}
++
++export interface ParsedRequirements {
++  currently_due: string[];
++  past_due: string[];
++  eventually_due: string[];
++  pending_verification: string[];
++  current_deadline: string | null;
++}
++
++/** Read Stripe's `requirements` hash as mirrored on ConnectAccount. */
++export function readRequirements(raw: unknown): ParsedRequirements {
++  const out: ParsedRequirements = {
++    currently_due: [],
++    past_due: [],
++    eventually_due: [],
++    pending_verification: [],
++    current_deadline: null,
++  };
++  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
++  const r = raw as Record<string, unknown>;
++  const list = (k: string): string[] =>
++    Array.isArray(r[k])
++      ? (r[k] as unknown[]).filter((x): x is string => typeof x === 'string')
++      : [];
++  out.currently_due = list('currently_due');
++  out.past_due = list('past_due');
++  out.eventually_due = list('eventually_due');
++  out.pending_verification = list('pending_verification');
++  const deadline = r['current_deadline'];
++  if (typeof deadline === 'number' && Number.isFinite(deadline) && deadline > 0) {
++    out.current_deadline = new Date(deadline * 1000).toISOString();
++  }
++  return out;
++}
+diff --git a/src/connect/connect-onboarding-return.controller.ts b/src/connect/connect-onboarding-return.controller.ts
+new file mode 100644
+index 00000000..e1540035
+--- /dev/null
++++ b/src/connect/connect-onboarding-return.controller.ts
+@@ -0,0 +1,73 @@
++import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
++import { ApiTags } from '@nestjs/swagger';
++import type { Response } from 'express';
++import { Public } from '../common/decorators/public.decorator';
++
++// S-COACH (agent 111) — HTTPS landing pages for Stripe Connect Express
++// onboarding. Stripe sends the coach to STRIPE_CONNECT_RETURN_URL /
++// STRIPE_CONNECT_REFRESH_URL when they finish or when the single-use link
++// has expired. Live-mode account links want web URLs, so the operator
++// points both env values at these routes, and each one hands the coach
++// straight back to the app (the in-app browser closes on the app-scheme
++// redirect and the app re-reads the account from Stripe).
++//
++// The routes are public and stateless: no account id, token or user data is
++// read or echoed, so they reveal nothing and change nothing.
++export const CONNECT_APP_RETURN_URL = 'tgp://connect/onboarding/return';
++export const CONNECT_APP_REFRESH_URL = 'tgp://connect/onboarding/refresh';
++
++function landingHtml(appUrl: string, heading: string, body: string): string {
++  return [
++    '<!doctype html>',
++    '<html lang="en"><head><meta charset="utf-8">',
++    '<meta name="viewport" content="width=device-width, initial-scale=1">',
++    `<meta http-equiv="refresh" content="0;url=${appUrl}">`,
++    '<title>The Growth Project</title>',
++    '<style>body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:48px 24px;color:#1a1a1a;background:#faf8f5}',
++    'h1{font-size:22px;font-weight:600;margin:0 0 12px}p{font-size:16px;line-height:24px;margin:0 0 24px}',
++    'a{display:inline-block;background:#1a1a1a;color:#fff;padding:14px 20px;border-radius:8px;text-decoration:none;font-weight:600}</style>',
++    '</head><body>',
++    `<h1>${heading}</h1>`,
++    `<p>${body}</p>`,
++    `<a href="${appUrl}">Open The Growth Project</a>`,
++    '</body></html>',
++  ].join('');
++}
++
++@ApiTags('connect')
++@Controller('v1/connect/onboarding')
++export class ConnectOnboardingReturnController {
++  @Public()
++  @Get('return')
++  onboardingReturn(@Res() res: Response): void {
++    res.status(HttpStatus.FOUND);
++    res.setHeader('Location', CONNECT_APP_RETURN_URL);
++    res.setHeader('Cache-Control', 'no-store');
++    res
++      .type('html')
++      .send(
++        landingHtml(
++          CONNECT_APP_RETURN_URL,
++          'Back to The Growth Project',
++          'Your Stripe details are saved. Open the app to see your payout status.',
++        ),
++      );
++  }
++
++  @Public()
++  @Get('refresh')
++  onboardingRefresh(@Res() res: Response): void {
++    res.status(HttpStatus.FOUND);
++    res.setHeader('Location', CONNECT_APP_REFRESH_URL);
++    res.setHeader('Cache-Control', 'no-store');
++    res
++      .type('html')
++      .send(
++        landingHtml(
++          CONNECT_APP_REFRESH_URL,
++          'This Stripe link has expired',
++          'Open the app and tap Continue with Stripe to get a fresh link. Your progress is kept.',
++        ),
++      );
++  }
++}
+diff --git a/src/connect/connect.module.ts b/src/connect/connect.module.ts
+index 8737a842..12882fb1 100644
+--- a/src/connect/connect.module.ts
++++ b/src/connect/connect.module.ts
+@@ -1,6 +1,7 @@
+ import { Logger, Module, OnModuleInit } from '@nestjs/common';
+ import { JwksVerifierService } from '../auth/jwks.service';
+ import { ConnectController } from './connect.controller';
++import { ConnectOnboardingReturnController } from './connect-onboarding-return.controller';
+ import { ConnectModuleState } from './connect.module-state';
+ import { ConnectService } from './connect.service';
+ import { FeePolicyService } from './fees/fee-policy.service';
+@@ -25,7 +26,7 @@ import {
+ // crash the process — the rest of the backend (SaaS billing, etc.) must
+ // still boot.
+ @Module({
+-  controllers: [ConnectController],
++  controllers: [ConnectController, ConnectOnboardingReturnController],
+   providers: [
+     ConnectService,
+     StripeConnectApiService,
+diff --git a/src/connect/connect.service.ts b/src/connect/connect.service.ts
+index 261bf837..3bd4a2dd 100644
+--- a/src/connect/connect.service.ts
++++ b/src/connect/connect.service.ts
+@@ -153,7 +153,7 @@ export class ConnectService {
+     } catch (err) {
+       if (err instanceof StripeConnectApiError) {
+         this.logger.warn(
+-          `syncFromStripe: Stripe rejected retrieve(${stripeAccountId}) — ${err.message}`,
++          `syncFromStripe: Stripe rejected retrieve(${stripeAccountId}) code=CONNECT_ACCOUNT_RETRIEVE_FAILED status=${Number(err.httpStatus) || 0}`,
+         );
+         return row;
+       }
+diff --git a/test/coach-connect-payout-reason.spec.ts b/test/coach-connect-payout-reason.spec.ts
+new file mode 100644
+index 00000000..d216d67e
+--- /dev/null
++++ b/test/coach-connect-payout-reason.spec.ts
+@@ -0,0 +1,79 @@
++// C-332-14 (Opus on mobile#332): the mobile Money page shows a failed
++// payout's description as its red reason. C-676-2 (B-CM1-116): that reason is
++// app copy for Stripe's failure_code with the coach's next step; Stripe's
++// failure_message and description are free text and are never shown. Failed
++// at 564f33bf (the mapper sent failure_message, else the description).
++import 'reflect-metadata';
++import { CoachConnectService, payoutReason } from '../src/coach-connect/coach-connect.service';
++
++const CANARY = 'PRIVATE_CANARY_bank_text';
++
++describe('payoutReason', () => {
++  it('a failed payout reads app copy for its failure_code, never Stripe text', () => {
++    expect(payoutReason('failed', CANARY, 'account_closed')).toBe(
++      'This bank account cannot take payouts. Add a different bank account in Stripe.',
++    );
++    expect(payoutReason('failed', CANARY, 'no_account')).toBe(
++      'The bank details on file are wrong. Correct them in Stripe.',
++    );
++    expect(payoutReason('failed', CANARY, 'new_code')).toBe(
++      'The payout failed. Open Stripe for details. Reference: new_code.',
++    );
++    for (const code of [null, CANARY, '__proto__x', 'constructor']) {
++      expect(payoutReason('failed', CANARY, code)).toMatch(/^The payout failed\. Open Stripe/);
++    }
++  });
++  it('any other payout keeps its description', () => {
++    expect(payoutReason('paid', 'Auto payout', null)).toBe('Auto payout');
++    expect(payoutReason('in_transit', '', null)).toBeNull();
++    expect(payoutReason('paid', 42, null)).toBeNull();
++  });
++});
++
++describe('CoachConnectService.listPayouts failed payout reason', () => {
++  it('maps a failed Stripe payout to app copy for its failure_code', async () => {
++    const prisma = {
++      connectAccount: {
++        findUnique: jest.fn(async () => ({
++          stripe_account_id: 'acct_test',
++          default_currency: 'usd',
++        })),
++      },
++      payoutSnapshot: { findUnique: jest.fn(async () => null) },
++    };
++    const stripe = {
++      isConfigured: () => true,
++      listPayouts: jest.fn(async () => ({
++        data: [
++          {
++            id: 'po_f',
++            amount: 5000,
++            currency: 'usd',
++            status: 'failed',
++            arrival_date: 1_700_000_000,
++            created: 1_699_900_000,
++            description: 'STRIPE PAYOUT',
++            failure_code: 'account_closed',
++            failure_message: CANARY,
++          },
++        ],
++        has_more: false,
++      })),
++    };
++    const svc: CoachConnectService = Reflect.construct(CoachConnectService, [
++      prisma,
++      {},
++      stripe,
++      { ready: true, reason: null },
++      { refresh: jest.fn() },
++      {},
++    ]);
++    const out = await svc.listPayouts('coach-1', 3);
++    expect(out[0]).toMatchObject({
++      id: 'po_f',
++      status: 'failed',
++      description: 'This bank account cannot take payouts. Add a different bank account in Stripe.',
++    });
++    expect(JSON.stringify(out)).not.toContain(CANARY);
++  });
++});
+diff --git a/test/coach-connect-refresh-closed-codes.spec.ts b/test/coach-connect-refresh-closed-codes.spec.ts
+new file mode 100644
+index 00000000..da9448a8
+--- /dev/null
++++ b/test/coach-connect-refresh-closed-codes.spec.ts
+@@ -0,0 +1,51 @@
++// B-676-2 (B-CM1-116): a failed Connect refresh logs a closed code and error
++// class only, in CoachConnectService.refreshStatus and in the
++// ConnectService.syncFromStripe sink it delegates to. At 564f33bf both logged
++// the exception / Stripe message (free text) verbatim.
++import 'reflect-metadata';
++import { Logger } from '@nestjs/common';
++import { CoachConnectService } from '../src/coach-connect/coach-connect.service';
++import { ConnectService } from '../src/connect/connect.service';
++import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
++
++const CANARY = 'PRIVATE_CANARY_client_at_example_invalid';
++
++describe('B-676-2 — Connect refresh failures log closed codes only', () => {
++  const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++  afterAll(() => warn.mockRestore());
++  const logged = () => JSON.stringify(warn.mock.calls);
++  const account = { stripe_account_id: 'acct_1', updated_at: new Date(0) };
++
++  it.each([
++    ['Error', new Error(CANARY), 'class=other'],
++    ['Stripe error', new StripeConnectApiError(CANARY, 500, CANARY, CANARY), 'class=stripe'],
++  ])('refreshStatus: %s', async (_name, err, cls) => {
++    warn.mockClear();
++    const prisma = { connectAccount: { findUnique: jest.fn(async () => account) } };
++    const connect = { syncFromStripe: jest.fn(async () => Promise.reject(err)) };
++    const stripe = { isConfigured: () => true };
++    const svc: CoachConnectService = Reflect.construct(CoachConnectService, [
++      prisma,
++      connect,
++      stripe,
++    ]);
++    Reflect.set(svc, 'getStatus', async () => ({}));
++    await expect(svc.refreshStatus('coach-1')).resolves.toMatchObject({ refreshed: false });
++    expect(logged()).toContain(`code=CONNECT_REFRESH_FAILED ${cls}`);
++    expect(logged()).not.toContain(CANARY);
++  });
++
++  it('syncFromStripe: a Stripe rejection keeps the mirror and logs no Stripe text', async () => {
++    warn.mockClear();
++    const prisma = { connectAccount: { findUnique: jest.fn(async () => account) } };
++    const stripe = {
++      retrieveAccount: jest.fn(async () =>
++        Promise.reject(new StripeConnectApiError(CANARY, 404, CANARY, CANARY)),
++      ),
++    };
++    const svc: ConnectService = Reflect.construct(ConnectService, [prisma, stripe]);
++    await expect(svc.syncFromStripe('acct_1')).resolves.toBe(account);
++    expect(logged()).toContain('code=CONNECT_ACCOUNT_RETRIEVE_FAILED status=404');
++    expect(logged()).not.toContain(CANARY);
++  });
++});
+diff --git a/test/coach-connect.service.spec.ts b/test/coach-connect.service.spec.ts
+index 048e55a9..9b0fb76b 100644
+--- a/test/coach-connect.service.spec.ts
++++ b/test/coach-connect.service.spec.ts
+@@ -95,6 +95,18 @@ describe('CoachConnectService.getStatus', () => {
+       account_id: null,
+       last_onboarded_at: null,
+       requirements_due: [],
++      // S-COACH additive fields.
++      state: 'not_started',
++      details_submitted: false,
++      disabled_reason: null,
++      action_required: false,
++      requirements: {
++        currently_due: [],
++        past_due: [],
++        eventually_due: [],
++        pending_verification: [],
++        current_deadline: null,
++      },
+     });
+   });
+ 
+diff --git a/test/coach-money-production-writes.spec.ts b/test/coach-money-production-writes.spec.ts
+new file mode 100644
+index 00000000..04471748
+--- /dev/null
++++ b/test/coach-money-production-writes.spec.ts
+@@ -0,0 +1,496 @@
++// S-COACH-BE-2 (agent 112) — backend #641 fix round: the Money read model
++// reads what production actually writes.
++//
++// The REAL write paths run first, on a stateful Prisma double:
++//   - DunningService.recordFailure + tick (the v1 cadence that sends the
++//     "Update payment" reminder email and stamps DunningAttempt sent),
++//   - RefundDisputeHandlerService.handle for charge.dispute.created /
++//     charge.dispute.closed (lost and won) and charge.refunded, with the
++//     real SplitLedgerService reversing ledger slices.
++// Then CoachMoneyService answers from those rows through its own where
++// clauses (test/support/money-read-double.ts). No hand-shaped read rows.
++//
++// B-641-1  card_update_link_sent_at comes from the sent DunningAttempt.
++// B-641-2  a lost chargeback is `charged_back`: never paid, never a new
++//          client, never the first client payment; a won dispute is paid.
++// C-641-1  a refund lands in the window it happened in.
++
++import 'reflect-metadata';
++import { CoachMoneyService } from '../src/coach-money/coach-money.service';
++import { DunningService } from '../src/checkout/dunning.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { StatefulPrisma } from './support/stateful-prisma';
++import { moneyReadPrisma } from './support/money-read-double';
++
++const COACH = 'coach-1';
++const DAY = 86_400_000;
++
++function store(): StatefulPrisma {
++  const db = new StatefulPrisma();
++  db.model('user');
++  db.model('coachPackage');
++  db.model('clientPurchase');
++  db.model('dunningState', [['id'], ['purchase_id']]);
++  db.model('dunningAttempt', [
++    ['id'],
++    ['dunning_state_id', 'step_index'],
++    ['email_idempotency_key'],
++  ]);
++  db.model('paymentReminder', [['id'], ['purchase_id', 'kind', 'channel', 'window_key']]);
++  db.model('chargeDispute', [['id'], ['stripe_dispute_id']], () => ({
++    ledger_reversed: false,
++    closed_at: null,
++    balance_transaction_id: null,
++  }));
++  db.model('chargeRefund', [['id'], ['stripe_refund_id']], () => ({
++    ledger_reversed: false,
++    transfer_reversed: false,
++  }));
++  db.model('splitLedgerEntry');
++  db.model('connectTransfer');
++  db.model('connectAccount', [['id'], ['coach_user_id']]);
++  db.model('guestCheckout');
++  db.model('notification');
++  db.state.user.push(
++    { id: COACH, name: 'Coach One', email: 'coach@example.test' },
++    { id: 'client-1', name: 'Ana Ruiz', email: 'ana@example.test' },
++    { id: 'client-2', name: 'Sam Lee', email: 'sam@example.test' },
++  );
++  db.state.coachPackage.push({ id: 'pkg-1', name: 'Monthly coaching', interval: 'month' });
++  return db;
++}
++
++function seedPaidPurchase(
++  db: StatefulPrisma,
++  id: string,
++  client: string,
++  charge: string,
++  postedAt: Date,
++): void {
++  db.state.clientPurchase.push({
++    id,
++    coach_user_id: COACH,
++    client_user_id: client,
++    package_id: 'pkg-1',
++    amount_cents: 4900,
++    currency: 'usd',
++    billing_type: 'recurring',
++    status: 'active',
++    entitlement_active: true,
++    source: null,
++    canceled_at: null,
++    last_error: null,
++    stripe_payment_intent_id: null,
++    created_at: postedAt,
++    updated_at: postedAt,
++  });
++  const slice = (kind: string, amount: number, payee: string | null) => ({
++    id: `${id}-${kind}`,
++    purchase_id: id,
++    kind,
++    payee_user_id: payee,
++    amount_cents: amount,
++    reversed_cents: 0,
++    currency: 'usd',
++    status: 'posted',
++    stripe_charge_id: charge,
++    posted_at: postedAt,
++    reversed_at: null,
++    created_at: postedAt,
++    updated_at: postedAt,
++  });
++  db.state.splitLedgerEntry.push(
++    slice('destination', 4802, COACH),
++    slice('application_fee', 98, null),
++  );
++}
++
++function money(db: StatefulPrisma): CoachMoneyService {
++  return Reflect.construct(CoachMoneyService, [moneyReadPrisma(db)]);
++}
++
++function handler(db: StatefulPrisma): RefundDisputeHandlerService {
++  const ledger = Reflect.construct(SplitLedgerService, [db]);
++  const stripe = { retrieveCharge: jest.fn(async () => ({ payment_intent: null })) };
++  const transfers = { reverse: jest.fn(async () => null) };
++  const payoutReadiness = { recordPayoutEvent: jest.fn(async () => null) };
++  const notifications = { createNotification: jest.fn(async () => undefined) };
++  return Reflect.construct(RefundDisputeHandlerService, [
++    db,
++    stripe,
++    ledger,
++    transfers,
++    payoutReadiness,
++    notifications,
++  ]);
++}
++
++// The real webhook entry point; the stateful row is untyped, so call it
++// reflectively instead of casting the row to ClientPurchase.
++function recordFailure(dunning: DunningService, input: Record<string, unknown>): Promise<unknown> {
++  return Reflect.apply(dunning.recordFailure, dunning, [input]);
++}
++
++const last30 = (now: Date) => ({
++  from: new Date(now.getTime() - 30 * DAY),
++  to: new Date(now.getTime() + DAY),
++});
++
++describe('B-641-1 — card update link sent comes from the dunning production write', () => {
++  it('is null until the reminder email goes out, then the sent attempt time', async () => {
++    const db = store();
++    db.state.clientPurchase.push({
++      id: 'p-fail',
++      coach_user_id: COACH,
++      client_user_id: 'client-1',
++      package_id: 'pkg-1',
++      amount_cents: 4900,
++      currency: 'usd',
++      billing_type: 'recurring',
++      status: 'past_due',
++      entitlement_active: true,
++      source: null,
++      last_error: 'Your card was declined.',
++      stripe_subscription_id: null,
++      created_at: new Date(),
++      updated_at: new Date(),
++    });
++    const email = {
++      send: jest.fn(async (_args: { template: string; data: Record<string, unknown> }) => ({
++        status: 'sent',
++        providerMessageId: 'msg_1',
++      })),
++    };
++    const dunning: DunningService = Reflect.construct(DunningService, [db, {}, email]);
++    await recordFailure(dunning, {
++      purchase: db.state.clientPurchase[0],
++      stripe_invoice_id: 'in_1',
++      amount_due_cents: 4900,
++      attempt_number: 1,
++      reason: 'card_declined',
++    });
++
++    const before = await money(db).getAttention(COACH);
++    const itemBefore = before.items.find((i) => i.kind === 'failed_payment')!;
++    expect(itemBefore.failed_payment?.card_update_link_sent_at).toBeNull();
++    // The legacy PaymentReminder rows recordFailure queues are never sent:
++    // they must not be read as a sent link.
++    expect(db.state.paymentReminder.length).toBeGreaterThan(0);
++    expect(db.state.paymentReminder.every((r) => r.status === 'queued')).toBe(true);
++
++    const tick = await dunning.tick(new Date(Date.now() + 60_000));
++    expect(tick.sent).toBe(1);
++    // The email that went out is the reminder with the Update payment button.
++    expect(email.send).toHaveBeenCalledTimes(1);
++    expect(email.send.mock.calls[0][0].data.billing_portal_url).toEqual(expect.any(String));
++    const sent = db.state.dunningAttempt.find((a) => a.status === 'sent')!;
++    expect(sent.kind).toBe('soft');
++
++    const after = await money(db).getAttention(COACH);
++    const item = after.items.find((i) => i.kind === 'failed_payment')!;
++    expect(item.failed_payment?.card_update_link_sent_at).toBe(sent.sent_at.toISOString());
++    expect(item.failed_payment?.attempt).toBe(1);
++    expect(item.failed_payment?.last_failure_reason).toBe('card_declined');
++  });
++
++  it('a failed send (provider error) is not reported as a sent link', async () => {
++    const db = store();
++    db.state.clientPurchase.push({
++      id: 'p-fail',
++      coach_user_id: COACH,
++      client_user_id: 'client-1',
++      package_id: 'pkg-1',
++      amount_cents: 4900,
++      currency: 'usd',
++      billing_type: 'recurring',
++      status: 'payment_failed',
++      entitlement_active: true,
++      source: null,
++      last_error: null,
++      created_at: new Date(),
++      updated_at: new Date(),
++    });
++    const email = { send: jest.fn(async () => ({ status: 'failed', error: 'provider down' })) };
++    const dunning: DunningService = Reflect.construct(DunningService, [db, {}, email]);
++    await recordFailure(dunning, {
++      purchase: db.state.clientPurchase[0],
++      stripe_invoice_id: 'in_2',
++      amount_due_cents: 4900,
++      attempt_number: 1,
++      reason: null,
++    });
++    await dunning.tick(new Date(Date.now() + 60_000));
++    expect(db.state.dunningAttempt.some((a) => a.status === 'failed')).toBe(true);
++    const out = await money(db).getAttention(COACH);
++    expect(out.items[0].failed_payment?.card_update_link_sent_at).toBeNull();
++  });
++});
++
++describe('B-641-2 — a lost chargeback is never paid', () => {
++  it('open dispute -> disputed; lost -> charged_back, out of paid, new clients and first payment', async () => {
++    const db = store();
++    const now = new Date();
++    seedPaidPurchase(db, 'p-cb', 'client-1', 'ch_cb', new Date(now.getTime() - 5 * DAY));
++    const h = handler(db);
++    await h.handle({
++      id: 'evt_open',
++      type: 'charge.dispute.created',
++      data: { object: { id: 'dp_1', charge: 'ch_cb', status: 'needs_response', amount: 4900 } },
++    });
++    const svc = money(db);
++    expect((await svc.listCharges(COACH, { status: 'all' })).charges[0].state).toBe('disputed');
++    // Until the bank decides, the sale still counts.
++    expect((await svc.listCharges(COACH, { status: 'paid', limit: 1 })).charges).toHaveLength(1);
++
++    const closed = await h.handle({
++      id: 'evt_lost',
++      type: 'charge.dispute.closed',
++      data: { object: { id: 'dp_1', status: 'lost', amount: 4900 } },
++    });
++    expect(closed.claimed).toBe(true);
++    expect(db.state.clientPurchase[0].status).toBe('chargeback_lost');
++
++    const all = await svc.listCharges(COACH, { status: 'all' });
++    expect(all.charges[0]).toMatchObject({ state: 'charged_back', charged_back_cents: 4900 });
++    // The mobile "first client payment" checklist reads status=paid&limit=1.
++    expect((await svc.listCharges(COACH, { status: 'paid', limit: 1 })).charges).toEqual([]);
++    expect((await svc.listCharges(COACH, { status: 'refunded' })).charges.map((c) => c.id)).toEqual(
++      ['p-cb'],
++    );
++    expect((await svc.listCharges(COACH, { status: 'disputed' })).charges.map((c) => c.id)).toEqual(
++      ['p-cb'],
++    );
++    const summary = await svc.getSummary(COACH, last30(now), null, now);
++    expect(summary.recurring.new_clients_30d).toBe(0);
++    expect(summary.recurring.paying_clients).toBe(0);
++    // Sale and chargeback both inside the window: the coach keeps nothing.
++    expect(summary.totals.net_cents).toBe(0);
++    expect(summary.totals.refunded_cents).toBe(4802);
++    expect(summary.totals.platform_fee_cents).toBe(0);
++  });
++
++  it('a won dispute is paid again and still counts as a new client', async () => {
++    const db = store();
++    const now = new Date();
++    seedPaidPurchase(db, 'p-won', 'client-2', 'ch_won', new Date(now.getTime() - 5 * DAY));
++    const h = handler(db);
++    await h.handle({
++      id: 'evt_open',
++      type: 'charge.dispute.created',
++      data: { object: { id: 'dp_2', charge: 'ch_won', status: 'needs_response', amount: 4900 } },
++    });
++    await h.handle({
++      id: 'evt_won',
++      type: 'charge.dispute.closed',
++      data: { object: { id: 'dp_2', status: 'won', amount: 4900 } },
++    });
++    expect(db.state.clientPurchase[0].status).toBe('paid');
++    const svc = money(db);
++    const all = await svc.listCharges(COACH, { status: 'all' });
++    expect(all.charges[0]).toMatchObject({ state: 'paid', charged_back_cents: 0 });
++    expect((await svc.listCharges(COACH, { status: 'paid', limit: 1 })).charges).toHaveLength(1);
++    const summary = await svc.getSummary(COACH, last30(now), null, now);
++    expect(summary.recurring.new_clients_30d).toBe(1);
++    expect(summary.totals.net_cents).toBe(4802);
++  });
++});
++
++describe('C-641-1 — a refund lands in the window it happened in', () => {
++  it('an old sale refunded today lowers today, and last month stays as it was', async () => {
++    const db = store();
++    const now = new Date();
++    const saleAt = new Date(now.getTime() - 45 * DAY);
++    seedPaidPurchase(db, 'p-old', 'client-1', 'ch_old', saleAt);
++    const svc = money(db);
++    const lastMonth = {
++      from: new Date(now.getTime() - 60 * DAY),
++      to: new Date(now.getTime() - 30 * DAY),
++    };
++    const before = await svc.getSummary(COACH, last30(now), lastMonth, now);
++    expect(before.compare_totals?.net_cents).toBe(4802);
++    expect(before.totals.net_cents).toBe(0);
++
++    // A full refund today, through the real webhook handler.
++    await handler(db).handle({
++      id: 'evt_refund',
++      type: 'charge.refunded',
++      data: {
++        object: {
++          id: 'ch_old',
++          amount: 4900,
++          amount_refunded: 4900,
++          refunded: true,
++          refunds: { data: [{ id: 're_1', amount: 4900, status: 'succeeded' }] },
++        },
++      },
++    });
++    expect(db.state.splitLedgerEntry.find((s) => s.kind === 'destination')!.reversed_cents).toBe(
++      4802,
++    );
++
++    const after = await svc.getSummary(COACH, last30(now), lastMonth, now);
++    // Last month is not rewritten after the fact.
++    expect(after.compare_totals?.net_cents).toBe(4802);
++    expect(after.compare_totals?.refunded_cents).toBe(0);
++    // Today carries the refund: no sales, coach share taken back, TGP fee returned.
++    expect(after.totals).toMatchObject({
++      gross_cents: 0,
++      net_cents: -4802,
++      refunded_cents: 4802,
++      platform_fee_cents: -98,
++    });
++    // Across both windows the coach nets exactly zero.
++    expect(after.totals.net_cents + (after.compare_totals?.net_cents ?? 0)).toBe(0);
++    // The tax export for today has the refund row and sums to the same net.
++    const csv = await svc.exportCsv(COACH, last30(now));
++    const lines = csv.trim().split('\r\n');
++    expect(lines).toHaveLength(2);
++    const cols = lines[1].split(',');
++    expect(cols[1]).toBe('refund');
++    expect(cols[4]).toBe('Ana Ruiz');
++    expect(cols[8]).toBe('49.00');
++    expect(cols[12]).toBe('-48.02');
++  });
++});
++
++describe('B-641-6 — a refund is booked when it succeeds, not when it was requested', () => {
++  afterEach(() => jest.useRealTimers());
++
++  it('pending last month, succeeded today: last month is unchanged, today carries the refund', async () => {
++    const db = store();
++    const now = new Date();
++    const saleAt = new Date(now.getTime() - 50 * DAY);
++    seedPaidPurchase(db, 'p-pend', 'client-1', 'ch_pend', saleAt);
++    const svc = money(db);
++    const lastMonth = {
++      from: new Date(now.getTime() - 60 * DAY),
++      to: new Date(now.getTime() - 30 * DAY),
++    };
++    const refundEvent = (status: string, id: string) => ({
++      id,
++      type: 'charge.refunded',
++      data: {
++        object: {
++          id: 'ch_pend',
++          amount: 4900,
++          amount_refunded: status === 'succeeded' ? 4900 : 0,
++          refunded: status === 'succeeded',
++          refunds: { data: [{ id: 're_pend', amount: 4900, status }] },
++        },
++      },
++    });
++    jest.useFakeTimers({
++      doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'],
++    });
++
++    // Requested 40 days ago (inside last month's window), still pending.
++    jest.setSystemTime(new Date(now.getTime() - 40 * DAY));
++    await handler(db).handle(refundEvent('pending', 'evt_pending'));
++    const pending = db.state.chargeRefund.find((r) => r.stripe_refund_id === 're_pend')!;
++    expect(pending.status).toBe('pending');
++    expect(pending.posted_at).toBeNull();
++
++    // Succeeds today, through the same real writer.
++    jest.setSystemTime(now);
++    await handler(db).handle(refundEvent('succeeded', 'evt_succeeded'));
++    const done = db.state.chargeRefund.find((r) => r.stripe_refund_id === 're_pend')!;
++    expect(done.posted_at).toEqual(now);
++
++    // A Stripe redelivery two days later does not move it.
++    jest.setSystemTime(new Date(now.getTime() + 2 * DAY));
++    await handler(db).handle(refundEvent('succeeded', 'evt_redelivered'));
++    expect(db.state.chargeRefund.find((r) => r.stripe_refund_id === 're_pend')!.posted_at).toEqual(
++      now,
++    );
++    jest.useRealTimers();
++
++    const after = await svc.getSummary(COACH, last30(now), lastMonth, now);
++    // Last month keeps the sale and none of the refund.
++    expect(after.compare_totals?.net_cents).toBe(4802);
++    expect(after.compare_totals?.refunded_cents).toBe(0);
++    // This window carries the completed refund.
++    expect(after.totals).toMatchObject({ net_cents: -4802, refunded_cents: 4802 });
++    // The tax export for last month has only the sale; this window has the refund.
++    const lastCsv = (await svc.exportCsv(COACH, lastMonth)).trim().split('\r\n');
++    expect(lastCsv.slice(1).map((l) => l.split(',')[1])).toEqual(['sale']);
++    const nowCsv = (await svc.exportCsv(COACH, last30(now))).trim().split('\r\n');
++    expect(nowCsv.slice(1).map((l) => l.split(',')[1])).toEqual(['refund']);
++  });
++});
++
++describe('B-641-6 — a pending refund that completes through charge.refund.updated', () => {
++  afterEach(() => jest.useRealTimers());
++
++  // Stripe sends charge.refunded once, when the refund is created (pending
++  // counts in amount_refunded); the later success arrives ONLY as
++  // charge.refund.updated. That event must book the refund at success time,
++  // reverse the ledger once and alert the coach once.
++  it('books the refund when it succeeds, reverses the ledger once and alerts the coach once', async () => {
++    const db = store();
++    const now = new Date();
++    seedPaidPurchase(db, 'p-upd', 'client-1', 'ch_upd', new Date(now.getTime() - 50 * DAY));
++    const svc = money(db);
++    const lastMonth = {
++      from: new Date(now.getTime() - 60 * DAY),
++      to: new Date(now.getTime() - 30 * DAY),
++    };
++    const notifications = { createNotification: jest.fn(async () => undefined) };
++    const real = Reflect.construct(RefundDisputeHandlerService, [
++      db,
++      { retrieveCharge: jest.fn(async () => ({ payment_intent: null })) },
++      Reflect.construct(SplitLedgerService, [db]),
++      { reverse: jest.fn(async () => null) },
++      { recordPayoutEvent: jest.fn(async () => null) },
++      notifications,
++    ]);
++    const updated = (id: string) => ({
++      id,
++      type: 'charge.refund.updated',
++      data: { object: { id: 're_upd', charge: 'ch_upd', amount: 4900, status: 'succeeded' } },
++    });
++    jest.useFakeTimers({
++      doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'],
++    });
++
++    jest.setSystemTime(new Date(now.getTime() - 40 * DAY));
++    await real.handle({
++      id: 'evt_created',
++      type: 'charge.refunded',
++      data: {
++        object: {
++          id: 'ch_upd',
++          amount: 4900,
++          amount_refunded: 4900,
++          refunded: true,
++          refunds: { data: [{ id: 're_upd', amount: 4900, status: 'pending' }] },
++        },
++      },
++    });
++    const dest = () => db.state.splitLedgerEntry.find((e) => e.id === 'p-upd-destination')!;
++    expect(dest().reversed_cents).toBe(0);
++    expect(notifications.createNotification).not.toHaveBeenCalled();
++
++    jest.setSystemTime(now);
++    await real.handle(updated('evt_upd_1'));
++    const row = () => db.state.chargeRefund.find((r) => r.stripe_refund_id === 're_upd')!;
++    expect(row()).toMatchObject({ status: 'succeeded', ledger_reversed: true });
++    expect(row().posted_at).toEqual(now);
++    expect(dest().reversed_cents).toBe(4802);
++
++    // A redelivery two days later neither moves the booking nor reverses twice.
++    jest.setSystemTime(new Date(now.getTime() + 2 * DAY));
++    await real.handle(updated('evt_upd_2'));
++    jest.useRealTimers();
++    expect(row().posted_at).toEqual(now);
++    expect(dest().reversed_cents).toBe(4802);
++    expect(notifications.createNotification).toHaveBeenCalledTimes(1);
++
++    const after = await svc.getSummary(COACH, last30(now), lastMonth, now);
++    expect(after.compare_totals?.net_cents).toBe(4802);
++    expect(after.compare_totals?.refunded_cents).toBe(0);
++    expect(after.totals).toMatchObject({ net_cents: -4802, refunded_cents: 4802 });
++    const nowCsv = (await svc.exportCsv(COACH, last30(now))).trim().split('\r\n');
++    expect(nowCsv.slice(1).map((l) => l.split(',')[1])).toEqual(['refund']);
++  });
++});
+diff --git a/test/support/money-read-double.ts b/test/support/money-read-double.ts
+new file mode 100644
+index 00000000..74269651
+--- /dev/null
++++ b/test/support/money-read-double.ts
+@@ -0,0 +1,185 @@
++// Read-side double for CoachMoneyService over a StatefulPrisma store.
++//
++// The payment pipeline's real services (DunningService,
++// RefundDisputeHandlerService, SplitLedgerService) write rows into a
++// StatefulPrisma; this double then answers CoachMoneyService's OWN queries
++// against those rows: it evaluates the service's where clauses (scalar
++// operators via matchWhere, plus Prisma relation filters `some` / `none` /
++// `every` and nested to-one filters), nested `select` with relation
++// where / orderBy / take, and top-level orderBy / take / cursor. So a test
++// proves "what production writes is what the Money page reads", not a
++// hand-shaped fixture.
++import { matchWhere, StatefulPrisma } from './stateful-prisma';
++
++type Row = Record<string, any>;
++type Relation = { model: string; many: boolean; resolve: (row: Row, db: StatefulPrisma) => Row[] };
++
++const RELATIONS: Record<string, Record<string, Relation>> = {
++  clientPurchase: {
++    client: {
++      model: 'user',
++      many: false,
++      resolve: (r, db) => (db.state.user ?? []).filter((u) => u.id === r.client_user_id),
++    },
++    package: {
++      model: 'coachPackage',
++      many: false,
++      resolve: (r, db) => (db.state.coachPackage ?? []).filter((p) => p.id === r.package_id),
++    },
++    refunds: {
++      model: 'chargeRefund',
++      many: true,
++      resolve: (r, db) => (db.state.chargeRefund ?? []).filter((x) => x.purchase_id === r.id),
++    },
++    disputes: {
++      model: 'chargeDispute',
++      many: true,
++      resolve: (r, db) => (db.state.chargeDispute ?? []).filter((x) => x.purchase_id === r.id),
++    },
++    splits: {
++      model: 'splitLedgerEntry',
++      many: true,
++      resolve: (r, db) => (db.state.splitLedgerEntry ?? []).filter((x) => x.purchase_id === r.id),
++    },
++    dunning: {
++      model: 'dunningState',
++      many: false,
++      resolve: (r, db) => (db.state.dunningState ?? []).filter((x) => x.purchase_id === r.id),
++    },
++  },
++  dunningState: {
++    attempts: {
++      model: 'dunningAttempt',
++      many: true,
++      resolve: (r, db) =>
++        (db.state.dunningAttempt ?? []).filter((x) => x.dunning_state_id === r.id),
++    },
++  },
++  chargeDispute: {
++    purchase: {
++      model: 'clientPurchase',
++      many: false,
++      resolve: (r, db) => (db.state.clientPurchase ?? []).filter((p) => p.id === r.purchase_id),
++    },
++  },
++  splitLedgerEntry: {
++    purchase: {
++      model: 'clientPurchase',
++      many: false,
++      resolve: (r, db) => (db.state.clientPurchase ?? []).filter((p) => p.id === r.purchase_id),
++    },
++    reversal_postings: {
++      model: 'splitLedgerReversal',
++      many: true,
++      resolve: (r, db) => (db.state.splitLedgerReversal ?? []).filter((x) => x.entry_id === r.id),
++    },
++  },
++};
++
++export function whereMatch(db: StatefulPrisma, model: string, row: Row, where?: Row): boolean {
++  if (!where) return true;
++  const rels = RELATIONS[model] ?? {};
++  for (const [k, cond] of Object.entries(where)) {
++    if (k === 'AND') {
++      if (!(cond as Row[]).every((w) => whereMatch(db, model, row, w))) return false;
++      continue;
++    }
++    if (k === 'OR') {
++      if (!(cond as Row[]).some((w) => whereMatch(db, model, row, w))) return false;
++      continue;
++    }
++    if (k === 'NOT') {
++      if (whereMatch(db, model, row, cond)) return false;
++      continue;
++    }
++    const rel = rels[k];
++    if (rel) {
++      const related = rel.resolve(row, db);
++      if (rel.many) {
++        if (cond.some && !related.some((x) => whereMatch(db, rel.model, x, cond.some)))
++          return false;
++        if (cond.none && related.some((x) => whereMatch(db, rel.model, x, cond.none))) return false;
++        if (cond.every && !related.every((x) => whereMatch(db, rel.model, x, cond.every)))
++          return false;
++      } else {
++        const one = related[0];
++        if (!one || !whereMatch(db, rel.model, one, cond)) return false;
++      }
++      continue;
++    }
++    if (!matchWhere(row, { [k]: cond })) return false;
++  }
++  return true;
++}
++
++function sortRows(rows: Row[], orderBy?: Row | Row[]): Row[] {
++  if (!orderBy) return rows;
++  const keys = (Array.isArray(orderBy) ? orderBy : [orderBy]).flatMap((o) => Object.entries(o));
++  return [...rows].sort((a, b) => {
++    for (const [k, dir] of keys) {
++      const av = a[k] instanceof Date ? a[k].getTime() : a[k];
++      const bv = b[k] instanceof Date ? b[k].getTime() : b[k];
++      if (av === bv) continue;
++      const c = av < bv ? -1 : 1;
++      return dir === 'desc' ? -c : c;
++    }
++    return 0;
++  });
++}
++
++export function project(db: StatefulPrisma, model: string, row: Row, select?: Row): Row {
++  if (!select) return { ...row };
++  const rels = RELATIONS[model] ?? {};
++  const out: Row = {};
++  for (const [k, spec] of Object.entries(select)) {
++    if (!spec) continue;
++    const rel = rels[k];
++    if (rel && typeof spec === 'object') {
++      let related = rel.resolve(row, db).filter((x) => whereMatch(db, rel.model, x, spec.where));
++      related = sortRows(related, spec.orderBy);
++      if (typeof spec.take === 'number') related = related.slice(0, spec.take);
++      const projected = related.map((x) => project(db, rel.model, x, spec.select));
++      out[k] = rel.many ? projected : (projected[0] ?? null);
++    } else {
++      out[k] = row[k] ?? null;
++    }
++  }
++  return out;
++}
++
++export function findMany(db: StatefulPrisma, model: string, args: Row = {}): Row[] {
++  let rows = (db.state[model] ?? []).filter((r) => whereMatch(db, model, r, args.where));
++  rows = sortRows(rows, args.orderBy);
++  if (args.cursor) {
++    const i = rows.findIndex((r) => r.id === args.cursor.id);
++    rows = i >= 0 ? rows.slice(i + (args.skip ?? 0)) : [];
++  }
++  if (Array.isArray(args.distinct)) {
++    const seen = new Set<string>();
++    rows = rows.filter((r) => {
++      const key = JSON.stringify(args.distinct.map((f: string) => r[f]));
++      if (seen.has(key)) return false;
++      seen.add(key);
++      return true;
++    });
++  }
++  if (typeof args.take === 'number') rows = rows.slice(0, args.take);
++  return rows.map((r) => project(db, model, r, args.select));
++}
++
++/** The prisma surface CoachMoneyService reads, answered from the store. */
++export function moneyReadPrisma(db: StatefulPrisma) {
++  const many = (model: string) => async (args: Row) => findMany(db, model, args);
++  return {
++    clientPurchase: {
++      findMany: many('clientPurchase'),
++      findFirst: async (args: Row) =>
++        findMany(db, 'clientPurchase', { ...args, take: 1 })[0] ?? null,
++    },
++    splitLedgerEntry: { findMany: many('splitLedgerEntry') },
++    chargeDispute: { findMany: many('chargeDispute') },
++    connectAccount: {
++      findUnique: async (args: Row) => findMany(db, 'connectAccount', args)[0] ?? null,
++    },
++  };
++}
+diff --git a/test/support/stateful-prisma.ts b/test/support/stateful-prisma.ts
+index 8045f096..c7c8a3f1 100644
+--- a/test/support/stateful-prisma.ts
++++ b/test/support/stateful-prisma.ts
+@@ -288,6 +288,10 @@ export class StatefulPrisma {
+     this.state[name] = this.state[name] ?? [];
+     const m = new Model(this, name, uniques, defaults);
+     this[name] = m;
++    // B-676-1: a ledger always carries its per-event reversal postings.
++    if (name === 'splitLedgerEntry' && !this.splitLedgerReversal) {
++      this.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
++    }
+     return m;
+   }
+ 
+diff --git a/test/talent-marketplace-connect-adapter.service.spec.ts b/test/talent-marketplace-connect-adapter.service.spec.ts
+index 51852034..81f991fc 100644
+--- a/test/talent-marketplace-connect-adapter.service.spec.ts
++++ b/test/talent-marketplace-connect-adapter.service.spec.ts
+@@ -68,6 +68,17 @@ const STATUS: CoachConnectStatus = {
+   account_id: 'acct_1',
+   last_onboarded_at: '2026-06-17T00:00:00.000Z',
+   requirements_due: ['individual.verification.document'],
++  state: 'active',
++  details_submitted: true,
++  disabled_reason: null,
++  action_required: false,
++  requirements: {
++    currently_due: [],
++    past_due: [],
++    eventually_due: ['individual.verification.document'],
++    pending_verification: [],
++    current_deadline: null,
++  },
+ };
+ 
+ describe('TalentConnectAdapter', () => {

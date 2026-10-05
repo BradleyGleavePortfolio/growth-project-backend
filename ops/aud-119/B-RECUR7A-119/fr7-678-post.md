@@ -1,0 +1,46 @@
+FIX ROUND 7 (B-RECUR7A-119, agent 119) — growth-project-backend#678 @ 09e159d83e192e9718bef7a493aa18944022eb0b
+
+Closes Sol B-678-3 and B-678-4 (AUD-SOL-R12-119, [verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/678#issuecomment-5983682649)). The same fix also closes Opus C-678-4 (the same input family, [verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/678#issuecomment-5983746979)). Opus approved at 77bce450 with 0/0/2 and raised no A or B. The fees base is not merged into this PR: the operator restacks recurring onto the final fees top.
+
+| Finding | Change | Commit | Test (failing-before -> after) |
+|---|---|---|---|
+| Sol B-678-3 / Opus C-678-4: coach deletion missed uncertain unbound native subscriptions | `collectUnboundAttemptSubscriptionIds` (src/account-deletion/account-deletion.billing.ts) selects attempts where the deleted user is the client **or** the coach. It qualifies each key with that row's own client (`sub-<row.client_user_id>-`). Fail-closed is unchanged for both parties: a row touched less than 2 minutes ago throws, and so does a `has_more` list. | 7b0743cd | test/b-recur7a-119-r1.spec.ts. Before: [run 37229770060](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37229770060) (5 failed / 8 at 77bce450 + test only). After: [run 37230098522](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230098522) (81/81 with the R1 specs) |
+| Sol B-678-4: send authority fenced only the client | `sendFenced` (src/checkout/subscription-attempt.ts) takes `FOR KEY SHARE` on **both** User rows in one global id order. It then re-proves both: a deleted client gives 'gone' and a deleted coach gives 'closed', with nothing sent. The claim, the read-back and the bind all require the row's `coach_user_id`, so a row that the erasure manifest re-pointed or canceled is never claimed. Finalization of either party (`FOR UPDATE SKIP LOCKED`) skips while a send runs. Otherwise the send waits behind it and then reads the account as deleted. | 7b0743cd, 09e159d8 (reciprocal-identity test) | Same spec: coach finalized first, re-pointed coach, lock order at create, reciprocal ids. Sol's real-PostgreSQL two-session probe passes with `SOL_COACH_FENCE { skipped: true, creates: 1 }` in [run 37230108455](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230108455) |
+
+Test edit: the fixture in test/b-recur6a-118-r1.spec.ts now carries `client_user_id` and `idempotency_key`, and its where-assertion uses the new OR shape.
+
+**Probe replay (both lenses)**
+- Sol 119 coach-deletion probe, 4 cases: pass.
+- Sol 119 PostgreSQL fence probe, 2 cases: pass.
+- Sol r12r5-r1: pass.
+- These ran in [run 37230108455](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230108455), 45 pass / 2 fail. The 2 failures are the Sol r12-116 and r12-117 "minimal bodies" cases. They have been superseded since round 5: the trial-card attach carries the lift, and Sol r12r5-r1 expects it.
+- Opus 119 probe (in the #679 lane, [run 37230205968](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230205968)):
+  - "coach account deletion also finds an unbound attempt": now passes.
+  - Client control: passes.
+  - "No such customer is proven absence" (C-678-3): still fails. It is a C under the freeze.
+
+**Money list**
+- Webhook order and redelivery: no webhook code here. The bind is a CAS on an open pending row, so a late webhook fallback loses cleanly.
+- Concurrency:
+  - The lock order is users (id order, KEY SHARE), then the purchase row. Finalization locks only its own row, with SKIP LOCKED.
+  - KEY SHARE never conflicts with KEY SHARE or with FOR NO KEY UPDATE, so neither two sends nor the manifest's row updates can cycle.
+  - The 30 s send timeout bounds the wait behind a running finalization. On timeout the request is markRetryable and nothing is bound blind.
+- Terminal states:
+  - A deleted client gives 'gone'.
+  - A deleted or re-pointed coach gives 'closed', with no create.
+  - Canceled and incomplete_expired subscriptions are skipped by the collector.
+  - The refunded and disputed paths are unchanged.
+- Lists: `has_more` throws, and the deletion retries. This is unchanged, now for both parties.
+- Currency: untouched.
+- Copy: no new copy.
+
+**Size:** 2,572+22 = 2,594 against the merge base (grandfathered, 3,000 ceiling).
+
+**Follow-ups (C, frozen):**
+- Sol C-678-2 (busy copy while a send holds the row).
+- Sol C-678-3 (pool connection held across the create).
+- Opus C-678-3 (customer 404 is proven absence).
+
+**CI at 09e159d8:** all required checks emitted on this stacked base are green: 12 pass, 1 skipping (deploy-readiness-gate), no reruns. CodeQL, danger, banned casts and build-sbom run after the retarget to main.
+
+READY FOR AUDIT

@@ -1,0 +1,878 @@
+﻿2026-10-04T20:27:15.0026790Z Current runner version: '2.337.0'
+2026-10-04T20:27:15.0054418Z ##[group]Runner Image Provisioner
+2026-10-04T20:27:15.0055463Z Hosted Compute Agent
+2026-10-04T20:27:15.0056152Z Version: 20260901.588
+2026-10-04T20:27:15.0056884Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T20:27:15.0058096Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T20:27:15.0058929Z Worker ID: {5d2f9c6e-794b-4ec4-9485-b0558d2b1208}
+2026-10-04T20:27:15.0059855Z Azure Region: eastus
+2026-10-04T20:27:15.0060580Z ##[endgroup]
+2026-10-04T20:27:15.0062614Z ##[group]Operating System
+2026-10-04T20:27:15.0063396Z Ubuntu
+2026-10-04T20:27:15.0064011Z 24.04.5
+2026-10-04T20:27:15.0064679Z LTS
+2026-10-04T20:27:15.0065298Z ##[endgroup]
+2026-10-04T20:27:15.0066037Z ##[group]Runner Image
+2026-10-04T20:27:15.0066836Z Image: ubuntu-24.04
+2026-10-04T20:27:15.0067491Z Version: 20260927.320.1
+2026-10-04T20:27:15.0069321Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T20:27:15.0071414Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T20:27:15.0072635Z ##[endgroup]
+2026-10-04T20:27:15.0074102Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T20:27:15.0076448Z Contents: read
+2026-10-04T20:27:15.0077249Z Metadata: read
+2026-10-04T20:27:15.0078081Z Packages: read
+2026-10-04T20:27:15.0078712Z ##[endgroup]
+2026-10-04T20:27:15.0081059Z Secret source: Actions
+2026-10-04T20:27:15.0082138Z Cache mode: write
+2026-10-04T20:27:15.0083300Z Prepare workflow directory
+2026-10-04T20:27:15.0541037Z Prepare all required actions
+2026-10-04T20:27:15.0594283Z Getting action download info
+2026-10-04T20:27:15.2488627Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T20:27:15.5186082Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T20:27:15.7224615Z Complete job name: targeted
+2026-10-04T20:27:15.7743387Z ##[group]Checking docker version
+2026-10-04T20:27:15.7754110Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T20:27:15.9647166Z '1.48'
+2026-10-04T20:27:15.9654790Z Docker daemon API version: '1.48'
+2026-10-04T20:27:15.9655428Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T20:27:15.9813480Z '1.48'
+2026-10-04T20:27:15.9824228Z Docker client API version: '1.48'
+2026-10-04T20:27:15.9828736Z ##[endgroup]
+2026-10-04T20:27:15.9830888Z ##[group]Clean up resources from previous jobs
+2026-10-04T20:27:15.9835189Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=b097ec"
+2026-10-04T20:27:15.9972494Z ##[command]/usr/bin/docker network prune --force --filter "label=b097ec"
+2026-10-04T20:27:16.0091113Z ##[endgroup]
+2026-10-04T20:27:16.0091807Z ##[group]Create local container network
+2026-10-04T20:27:16.0102447Z ##[command]/usr/bin/docker network create --label b097ec github_network_1f5052786ae64777b18120fe1f476d41
+2026-10-04T20:27:16.1413795Z 1c3ef8d1ef71a55ea8a5a98b2c4be9472ebbe51d25a5b40c8c59f129130864be
+2026-10-04T20:27:16.1429513Z ##[endgroup]
+2026-10-04T20:27:16.1449756Z ##[group]Starting redis service container
+2026-10-04T20:27:16.1466176Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T20:27:16.4783892Z 7-alpine: Pulling from library/redis
+2026-10-04T20:27:16.5467174Z 16333ee0c00f: Pulling fs layer
+2026-10-04T20:27:16.5468891Z 83234986c742: Pulling fs layer
+2026-10-04T20:27:16.5469704Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T20:27:16.5470321Z 1522f9c6f453: Pulling fs layer
+2026-10-04T20:27:16.5471273Z 9928009b15c8: Pulling fs layer
+2026-10-04T20:27:16.5471904Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T20:27:16.5472548Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T20:27:16.5473137Z 9928009b15c8: Waiting
+2026-10-04T20:27:16.5473710Z 4f4fb700ef54: Waiting
+2026-10-04T20:27:16.5474288Z 4eb14bae0e1d: Waiting
+2026-10-04T20:27:16.5474828Z 1522f9c6f453: Waiting
+2026-10-04T20:27:16.5840750Z 83234986c742: Verifying Checksum
+2026-10-04T20:27:16.5843779Z 83234986c742: Download complete
+2026-10-04T20:27:16.5876526Z 7eb50503c2b0: Download complete
+2026-10-04T20:27:16.6091623Z 16333ee0c00f: Verifying Checksum
+2026-10-04T20:27:16.6096541Z 16333ee0c00f: Download complete
+2026-10-04T20:27:16.6169394Z 9928009b15c8: Verifying Checksum
+2026-10-04T20:27:16.6170746Z 9928009b15c8: Download complete
+2026-10-04T20:27:16.6388784Z 4f4fb700ef54: Download complete
+2026-10-04T20:27:16.6445048Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T20:27:16.6446406Z 4eb14bae0e1d: Download complete
+2026-10-04T20:27:16.6617382Z 1522f9c6f453: Verifying Checksum
+2026-10-04T20:27:16.6619269Z 1522f9c6f453: Download complete
+2026-10-04T20:27:16.7106096Z 16333ee0c00f: Pull complete
+2026-10-04T20:27:21.9400031Z 83234986c742: Pull complete
+2026-10-04T20:27:22.1702031Z 7eb50503c2b0: Pull complete
+2026-10-04T20:27:22.4673812Z 1522f9c6f453: Pull complete
+2026-10-04T20:27:22.4748203Z 9928009b15c8: Pull complete
+2026-10-04T20:27:22.4817469Z 4f4fb700ef54: Pull complete
+2026-10-04T20:27:22.4891194Z 4eb14bae0e1d: Pull complete
+2026-10-04T20:27:22.4922400Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T20:27:22.6148883Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T20:27:22.6159854Z docker.io/library/redis:7-alpine
+2026-10-04T20:27:22.6193578Z ##[command]/usr/bin/docker create --name 9412b652fed54c3190eda48251b72689_redis7alpine_718ade --label b097ec --network github_network_1f5052786ae64777b18120fe1f476d41 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T20:27:22.6783155Z 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:27:22.6802966Z ##[command]/usr/bin/docker start 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:27:22.8850625Z 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:27:22.8865295Z ##[command]/usr/bin/docker ps --all --filter id=7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T20:27:22.8967312Z 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297 Up Less than a second (health: starting)
+2026-10-04T20:27:22.8985433Z ##[command]/usr/bin/docker port 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:27:22.9078001Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T20:27:22.9078521Z 6379/tcp -> [::]:6379
+2026-10-04T20:27:22.9114489Z ##[endgroup]
+2026-10-04T20:27:22.9122061Z ##[group]Waiting for all services to be ready
+2026-10-04T20:27:22.9132724Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:27:22.9226654Z starting
+2026-10-04T20:27:22.9242439Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T20:27:24.9246568Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:27:24.9347116Z starting
+2026-10-04T20:27:24.9356898Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T20:27:29.2415634Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:27:29.2538671Z healthy
+2026-10-04T20:27:29.2573196Z redis service is healthy.
+2026-10-04T20:27:29.2573776Z ##[endgroup]
+2026-10-04T20:27:29.2790491Z ##[group]Run actions/checkout@v6
+2026-10-04T20:27:29.2790896Z with:
+2026-10-04T20:27:29.2791151Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T20:27:29.2793182Z   token: ***
+2026-10-04T20:27:29.2793364Z   ssh-strict: true
+2026-10-04T20:27:29.2793543Z   ssh-user: git
+2026-10-04T20:27:29.2793724Z   persist-credentials: true
+2026-10-04T20:27:29.2793917Z   clean: true
+2026-10-04T20:27:29.2794284Z   sparse-checkout-cone-mode: true
+2026-10-04T20:27:29.2794490Z   fetch-depth: 1
+2026-10-04T20:27:29.2794658Z   fetch-tags: false
+2026-10-04T20:27:29.2794830Z   show-progress: true
+2026-10-04T20:27:29.2795002Z   lfs: false
+2026-10-04T20:27:29.2795156Z   submodules: false
+2026-10-04T20:27:29.2795324Z   set-safe-directory: true
+2026-10-04T20:27:29.2795532Z   allow-unsafe-pr-checkout: false
+2026-10-04T20:27:29.2795892Z ##[endgroup]
+2026-10-04T20:27:29.3603860Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T20:27:29.3605008Z ##[group]Getting Git version info
+2026-10-04T20:27:29.3605412Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T20:27:29.3605938Z [command]/usr/bin/git version
+2026-10-04T20:27:29.5419763Z git version 2.55.0
+2026-10-04T20:27:29.5438322Z ##[endgroup]
+2026-10-04T20:27:29.5449833Z Temporarily overriding HOME='/home/runner/work/_temp/8884613b-0091-4bdf-8ca5-246b2a60bc0b' before making global git config changes
+2026-10-04T20:27:29.5450616Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:27:29.5455047Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T20:27:29.5497568Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T20:27:29.5501098Z ##[group]Determining repository object format
+2026-10-04T20:27:29.5502714Z ##[endgroup]
+2026-10-04T20:27:29.5503151Z ##[group]Initializing the repository
+2026-10-04T20:27:29.5506169Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T20:27:29.5613820Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T20:27:29.5614451Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T20:27:29.5614861Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T20:27:29.5615183Z hint: call:
+2026-10-04T20:27:29.5615351Z hint:
+2026-10-04T20:27:29.5615573Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T20:27:29.5615827Z hint:
+2026-10-04T20:27:29.5616065Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T20:27:29.5616459Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T20:27:29.5616756Z hint:
+2026-10-04T20:27:29.5616924Z hint: 	git branch -m <name>
+2026-10-04T20:27:29.5617197Z hint:
+2026-10-04T20:27:29.5617606Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T20:27:29.5618747Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T20:27:29.5625980Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T20:27:29.5668129Z ##[endgroup]
+2026-10-04T20:27:29.5668463Z ##[group]Disabling automatic garbage collection
+2026-10-04T20:27:29.5671968Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T20:27:29.5695630Z ##[endgroup]
+2026-10-04T20:27:29.5696076Z ##[group]Setting up auth
+2026-10-04T20:27:29.5696841Z Removing SSH command configuration
+2026-10-04T20:27:29.5702077Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:27:29.5726570Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:27:29.6958830Z Removing HTTP extra header
+2026-10-04T20:27:29.6962736Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:27:29.6990725Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:27:29.7167401Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:27:29.7172449Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:27:29.7197640Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:27:29.7377219Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T20:27:29.7405643Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:27:29.7432470Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:27:29.7462116Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:27:29.7488542Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:27:29.7515746Z ##[endgroup]
+2026-10-04T20:27:29.7522056Z ##[group]Fetching the repository
+2026-10-04T20:27:29.7522819Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +d4d6075415a847d7412b5891352c48eee1c56943:refs/remotes/origin/ci/B-RECUR7B-119-680-before
+2026-10-04T20:27:31.5166262Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T20:27:31.5167049Z  * [new ref]         d4d6075415a847d7412b5891352c48eee1c56943 -> origin/ci/B-RECUR7B-119-680-before
+2026-10-04T20:27:31.5175219Z [command]/usr/bin/git branch --list --remote origin/ci/B-RECUR7B-119-680-before
+2026-10-04T20:27:31.5196007Z   origin/ci/B-RECUR7B-119-680-before
+2026-10-04T20:27:31.5202994Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-RECUR7B-119-680-before
+2026-10-04T20:27:31.5221251Z d4d6075415a847d7412b5891352c48eee1c56943
+2026-10-04T20:27:31.5224465Z ##[endgroup]
+2026-10-04T20:27:31.5224794Z ##[group]Determining the checkout info
+2026-10-04T20:27:31.5225510Z ##[endgroup]
+2026-10-04T20:27:31.5228970Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T20:27:31.5395447Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T20:27:31.5418463Z ##[group]Checking out the ref
+2026-10-04T20:27:31.5422402Z [command]/usr/bin/git checkout --progress --force -B ci/B-RECUR7B-119-680-before refs/remotes/origin/ci/B-RECUR7B-119-680-before
+2026-10-04T20:27:31.7147666Z Switched to a new branch 'ci/B-RECUR7B-119-680-before'
+2026-10-04T20:27:31.7151932Z branch 'ci/B-RECUR7B-119-680-before' set up to track 'origin/ci/B-RECUR7B-119-680-before'.
+2026-10-04T20:27:31.7160520Z ##[endgroup]
+2026-10-04T20:27:31.7198991Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T20:27:31.7218442Z d4d6075415a847d7412b5891352c48eee1c56943
+2026-10-04T20:27:31.7415218Z ##[group]Run actions/setup-node@v6
+2026-10-04T20:27:31.7415445Z with:
+2026-10-04T20:27:31.7415607Z   node-version: 20
+2026-10-04T20:27:31.7415776Z   cache: npm
+2026-10-04T20:27:31.7415941Z   check-latest: false
+2026-10-04T20:27:31.7417962Z   token: ***
+2026-10-04T20:27:31.7418149Z   package-manager-cache: true
+2026-10-04T20:27:31.7418353Z ##[endgroup]
+2026-10-04T20:27:31.8509383Z Attempting to download 20...
+2026-10-04T20:27:32.2637573Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T20:27:32.5209656Z Extracting ...
+2026-10-04T20:27:32.5297462Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/366a6675-db20-4d7f-b1f8-db73bf9ef156 -f /home/runner/work/_temp/818ba438-71f6-4a14-ba5b-e9efe30418e1
+2026-10-04T20:27:33.3798741Z Adding to the cache ...
+2026-10-04T20:27:35.0813570Z ##[group]Environment details
+2026-10-04T20:27:35.4112024Z node: v20.20.2
+2026-10-04T20:27:35.4112256Z npm: 10.8.2
+2026-10-04T20:27:35.4112423Z yarn: 1.22.22
+2026-10-04T20:27:35.4112857Z ##[endgroup]
+2026-10-04T20:27:35.4124869Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T20:27:35.4948873Z /home/runner/.npm
+2026-10-04T20:27:35.5694403Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T20:27:36.0316718Z Received 86828135 of 86828135 (100.0%), 203.0 MBs/sec
+2026-10-04T20:27:36.0319156Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T20:27:36.0343304Z [command]/usr/bin/tar -xf /home/runner/work/_temp/c41a3d2b-493b-41f7-ae97-1c6ae6559043/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T20:27:36.1905391Z Cache restored successfully
+2026-10-04T20:27:36.1945207Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T20:27:36.2176055Z ##[group]Run npm ci
+2026-10-04T20:27:36.2176308Z [36;1mnpm ci[0m
+2026-10-04T20:27:36.2353264Z shell: /usr/bin/bash -e {0}
+2026-10-04T20:27:36.2353510Z ##[endgroup]
+2026-10-04T20:27:40.7878805Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T20:27:41.6241469Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T20:27:42.3922464Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:27:43.3482534Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:27:43.3611062Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:27:43.3905332Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:27:54.0857184Z 
+2026-10-04T20:27:54.0858474Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T20:27:54.0858971Z > prisma generate
+2026-10-04T20:27:54.0859143Z 
+2026-10-04T20:27:54.7922956Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T20:27:57.7782372Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T20:27:57.7783268Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T20:27:57.7783789Z │                                                         │
+2026-10-04T20:27:57.7784327Z │  This is a major update - please follow the guide at    │
+2026-10-04T20:27:57.7784947Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T20:27:57.7785509Z │                                                         │
+2026-10-04T20:27:57.7786037Z │  Run the following to update                            │
+2026-10-04T20:27:57.7786707Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T20:27:57.7787288Z │    npm i @prisma/client@latest                          │
+2026-10-04T20:27:57.7788386Z └─────────────────────────────────────────────────────────┘
+2026-10-04T20:27:57.7788671Z 
+2026-10-04T20:27:57.7809380Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.59s
+2026-10-04T20:27:57.7818583Z 
+2026-10-04T20:27:57.7819184Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T20:27:57.7819643Z 
+2026-10-04T20:27:57.7820310Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T20:27:57.7820880Z 
+2026-10-04T20:27:57.8251812Z 
+2026-10-04T20:27:57.8252282Z > growth-project-backend@1.0.0 prepare
+2026-10-04T20:27:57.8252606Z > lefthook install
+2026-10-04T20:27:57.8252731Z 
+2026-10-04T20:27:57.8687252Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T20:27:57.8825720Z 
+2026-10-04T20:27:57.8826312Z added 1115 packages, and audited 1116 packages in 22s
+2026-10-04T20:27:57.8826632Z 
+2026-10-04T20:27:57.8826872Z 202 packages are looking for funding
+2026-10-04T20:27:57.8827191Z   run `npm fund` for details
+2026-10-04T20:27:57.8851876Z 
+2026-10-04T20:27:57.8852108Z 3 high severity vulnerabilities
+2026-10-04T20:27:57.8852697Z 
+2026-10-04T20:27:57.8852890Z To address all issues (including breaking changes), run:
+2026-10-04T20:27:57.8853264Z   npm audit fix --force
+2026-10-04T20:27:57.8853394Z 
+2026-10-04T20:27:57.8853499Z Run `npm audit` for details.
+2026-10-04T20:27:57.9386206Z ##[group]Run npx prisma generate
+2026-10-04T20:27:57.9386464Z [36;1mnpx prisma generate[0m
+2026-10-04T20:27:57.9442022Z shell: /usr/bin/bash -e {0}
+2026-10-04T20:27:57.9442247Z ##[endgroup]
+2026-10-04T20:27:58.8798552Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T20:28:01.8644080Z 
+2026-10-04T20:28:01.8645205Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.59s
+2026-10-04T20:28:01.8645510Z 
+2026-10-04T20:28:01.8645808Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T20:28:01.8646114Z 
+2026-10-04T20:28:01.8646484Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T20:28:01.8646812Z 
+2026-10-04T20:28:01.9591032Z ##[group]Run set -euo pipefail
+2026-10-04T20:28:01.9591309Z [36;1mset -euo pipefail[0m
+2026-10-04T20:28:01.9591632Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T20:28:01.9592030Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T20:28:01.9592309Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T20:28:01.9592537Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T20:28:01.9648948Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T20:28:01.9649235Z env:
+2026-10-04T20:28:01.9649421Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T20:28:01.9649711Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T20:28:01.9649965Z ##[endgroup]
+2026-10-04T20:28:01.9730918Z specs: test/b-recur7b-119-authority.spec.ts test/b-recur5b-117-authority.spec.ts
+2026-10-04T20:28:04.7260990Z FAIL test/b-recur5b-117-authority.spec.ts (181 MB heap size)
+2026-10-04T20:28:04.7262677Z   ● B-680-2: a decline read before a payment never reopens dunning › control: the past_due update Stripe sends with the decline lands first: one redelivery, then dunning opens once
+2026-10-04T20:28:04.7263510Z 
+2026-10-04T20:28:04.7263705Z     expect(received).rejects.toThrow()
+2026-10-04T20:28:04.7263955Z 
+2026-10-04T20:28:04.7264171Z     Received promise resolved instead of rejected
+2026-10-04T20:28:04.7264711Z     Resolved to value: {"claimed": true, "purchase_id": "cp_a"}
+2026-10-04T20:28:04.7265037Z 
+2026-10-04T20:28:04.7265883Z     [0m [90m 209 |[39m     [36mawait[39m h[33m.[39mdeliver(ev([32m'customer.subscription.updated'[39m[33m,[39m sub([32m'past_due'[39m)))[33m;[39m
+2026-10-04T20:28:04.7266992Z      [90m 210 |[39m     [90m// B-680-2 (R119) — no write is exempt from the fence.[39m
+2026-10-04T20:28:04.7269132Z     [31m[1m>[22m[39m[90m 211 |[39m     [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(decline[33m,[39m h[33m.[39mprisma[33m,[39m pre))[33m.[39mrejects[33m.[39mtoThrow([35m/redeliver/[39m)[33m;[39m
+2026-10-04T20:28:04.7270294Z      [90m     |[39m           [31m[1m^[22m[39m
+2026-10-04T20:28:04.7270947Z      [90m 212 |[39m     expect(h[33m.[39mdunning[33m.[39mrecordFailure)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:04.7271833Z      [90m 213 |[39m     [36mawait[39m expect(h[33m.[39mdeliver(decline))[33m.[39mresolves[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-04T20:28:04.7273379Z      [90m 214 |[39m     expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m:[39m [32m'past_due'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m[33m,[39m last_error[33m:[39m [32m'Your card was declined.'[39m })[33m;[39m[0m
+2026-10-04T20:28:04.7274213Z 
+2026-10-04T20:28:04.7274461Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:04.7275047Z       at Object.<anonymous> (test/b-recur5b-117-authority.spec.ts:211:11)
+2026-10-04T20:28:04.7275369Z 
+2026-10-04T20:28:04.7276558Z [33m[Nest] 2818  - [39m10/04/2026, 8:28:04 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33minvoice.paid resync failed for sub=sub_a error=Error[39m
+2026-10-04T20:28:04.7278859Z [33m[Nest] 2818  - [39m10/04/2026, 8:28:04 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error[39m
+2026-10-04T20:28:04.7280682Z [32m[Nest] 2818  - [39m10/04/2026, 8:28:04 PM [32m    LOG[39m [38;5;3m[FirstPaymentEmitter] [39mObject(3) {
+2026-10-04T20:28:04.7281891Z   event: [32m'first_payment_notification_emitted'[39m,
+2026-10-04T20:28:04.7282545Z   coachId: [32m'coach'[39m,
+2026-10-04T20:28:04.7283137Z   category: [32m'COACH_DIRECT'[39m
+2026-10-04T20:28:04.7283611Z }
+2026-10-04T20:28:04.7284568Z [32m[Nest] 2818  - [39m10/04/2026, 8:28:04 PM [32m    LOG[39m [38;5;3m[CoachFirstPaymentService] [39mObject(2) {
+2026-10-04T20:28:04.7285768Z   event: [32m'first_payment_emitted'[39m,
+2026-10-04T20:28:04.7286369Z   coachId: [32m'coach'[39m
+2026-10-04T20:28:04.7286917Z }
+2026-10-04T20:28:04.7288567Z [33m[Nest] 2818  - [39m10/04/2026, 8:28:04 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error[39m
+2026-10-04T20:28:05.1439648Z FAIL test/b-recur7b-119-authority.spec.ts (126 MB heap size)
+2026-10-04T20:28:05.1441230Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) refunded: a live active subscription update grants nothing and seeds nothing
+2026-10-04T20:28:05.1442510Z 
+2026-10-04T20:28:05.1442753Z     expect(received).resolves.toMatchObject(expected)
+2026-10-04T20:28:05.1443040Z 
+2026-10-04T20:28:05.1443175Z     - Expected  - 1
+2026-10-04T20:28:05.1443491Z     + Received  + 0
+2026-10-04T20:28:05.1443650Z 
+2026-10-04T20:28:05.1443761Z       Object {
+2026-10-04T20:28:05.1443974Z         "claimed": true,
+2026-10-04T20:28:05.1444237Z     -   "reason": "subscription_already_ended",
+2026-10-04T20:28:05.1444489Z       }
+2026-10-04T20:28:05.1444575Z 
+2026-10-04T20:28:05.1444777Z     [0m [90m 125 |[39m       [36mawait[39m expect(
+2026-10-04T20:28:05.1445404Z      [90m 126 |[39m         h[33m.[39mdeliver(ev([32m'customer.subscription.updated'[39m[33m,[39m sub([32m'active'[39m)))[33m,[39m
+2026-10-04T20:28:05.1446394Z     [31m[1m>[22m[39m[90m 127 |[39m       )[33m.[39mresolves[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m[33m,[39m reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1447032Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-04T20:28:05.1447674Z      [90m 128 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1449115Z      [90m 129 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1449610Z      [90m 130 |[39m     }[33m,[39m[0m
+2026-10-04T20:28:05.1449772Z 
+2026-10-04T20:28:05.1449965Z       at Object.toMatchObject (node_modules/expect/build/index.js:2140:20)
+2026-10-04T20:28:05.1450326Z       at test/b-recur7b-119-authority.spec.ts:127:18
+2026-10-04T20:28:05.1450505Z 
+2026-10-04T20:28:05.1451101Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) chargeback_lost: a live active subscription update grants nothing and seeds nothing
+2026-10-04T20:28:05.1451574Z 
+2026-10-04T20:28:05.1451723Z     expect(received).resolves.toMatchObject(expected)
+2026-10-04T20:28:05.1451908Z 
+2026-10-04T20:28:05.1451989Z     - Expected  - 1
+2026-10-04T20:28:05.1452173Z     + Received  + 0
+2026-10-04T20:28:05.1452269Z 
+2026-10-04T20:28:05.1452356Z       Object {
+2026-10-04T20:28:05.1452529Z         "claimed": true,
+2026-10-04T20:28:05.1452771Z     -   "reason": "subscription_already_ended",
+2026-10-04T20:28:05.1453006Z       }
+2026-10-04T20:28:05.1453096Z 
+2026-10-04T20:28:05.1453256Z     [0m [90m 125 |[39m       [36mawait[39m expect(
+2026-10-04T20:28:05.1453867Z      [90m 126 |[39m         h[33m.[39mdeliver(ev([32m'customer.subscription.updated'[39m[33m,[39m sub([32m'active'[39m)))[33m,[39m
+2026-10-04T20:28:05.1454817Z     [31m[1m>[22m[39m[90m 127 |[39m       )[33m.[39mresolves[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m[33m,[39m reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1455471Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-04T20:28:05.1456090Z      [90m 128 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1456875Z      [90m 129 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1457487Z      [90m 130 |[39m     }[33m,[39m[0m
+2026-10-04T20:28:05.1457632Z 
+2026-10-04T20:28:05.1457976Z       at Object.toMatchObject (node_modules/expect/build/index.js:2140:20)
+2026-10-04T20:28:05.1458345Z       at test/b-recur7b-119-authority.spec.ts:127:18
+2026-10-04T20:28:05.1458523Z 
+2026-10-04T20:28:05.1459084Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) disputed: a live active subscription update grants nothing and seeds nothing
+2026-10-04T20:28:05.1459534Z 
+2026-10-04T20:28:05.1459668Z     expect(received).resolves.toMatchObject(expected)
+2026-10-04T20:28:05.1459847Z 
+2026-10-04T20:28:05.1459930Z     - Expected  - 1
+2026-10-04T20:28:05.1460106Z     + Received  + 0
+2026-10-04T20:28:05.1460206Z 
+2026-10-04T20:28:05.1460271Z       Object {
+2026-10-04T20:28:05.1460442Z         "claimed": true,
+2026-10-04T20:28:05.1460682Z     -   "reason": "subscription_already_ended",
+2026-10-04T20:28:05.1460913Z       }
+2026-10-04T20:28:05.1460999Z 
+2026-10-04T20:28:05.1461169Z     [0m [90m 125 |[39m       [36mawait[39m expect(
+2026-10-04T20:28:05.1461755Z      [90m 126 |[39m         h[33m.[39mdeliver(ev([32m'customer.subscription.updated'[39m[33m,[39m sub([32m'active'[39m)))[33m,[39m
+2026-10-04T20:28:05.1462716Z     [31m[1m>[22m[39m[90m 127 |[39m       )[33m.[39mresolves[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m[33m,[39m reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1463375Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-04T20:28:05.1464010Z      [90m 128 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1464797Z      [90m 129 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1465685Z      [90m 130 |[39m     }[33m,[39m[0m
+2026-10-04T20:28:05.1465914Z 
+2026-10-04T20:28:05.1466217Z       at Object.toMatchObject (node_modules/expect/build/index.js:2140:20)
+2026-10-04T20:28:05.1466705Z       at test/b-recur7b-119-authority.spec.ts:127:18
+2026-10-04T20:28:05.1466881Z 
+2026-10-04T20:28:05.1467461Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) refunded: the pause_collection update the dispute pause sends restores nothing
+2026-10-04T20:28:05.1468499Z 
+2026-10-04T20:28:05.1468628Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1468790Z 
+2026-10-04T20:28:05.1468879Z     - Expected  - 2
+2026-10-04T20:28:05.1469062Z     + Received  + 2
+2026-10-04T20:28:05.1469165Z 
+2026-10-04T20:28:05.1469239Z       Object {
+2026-10-04T20:28:05.1469434Z     -   "entitlement_active": false,
+2026-10-04T20:28:05.1469656Z     -   "status": "refunded",
+2026-10-04T20:28:05.1469898Z     +   "entitlement_active": true,
+2026-10-04T20:28:05.1470112Z     +   "status": "active",
+2026-10-04T20:28:05.1470297Z       }
+2026-10-04T20:28:05.1470386Z 
+2026-10-04T20:28:05.1470627Z     [0m [90m 141 |[39m       h[33m.[39msetLive(cancelAtEnd)[33m;[39m
+2026-10-04T20:28:05.1471264Z      [90m 142 |[39m       [36mawait[39m h[33m.[39mdeliver(ev([32m'customer.subscription.updated'[39m[33m,[39m cancelAtEnd))[33m;[39m
+2026-10-04T20:28:05.1472123Z     [31m[1m>[22m[39m[90m 143 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1472721Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T20:28:05.1473298Z      [90m 144 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1473763Z      [90m 145 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1474026Z      [90m 146 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1474169Z 
+2026-10-04T20:28:05.1474298Z       at test/b-recur7b-119-authority.spec.ts:143:23
+2026-10-04T20:28:05.1474475Z 
+2026-10-04T20:28:05.1475179Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) chargeback_lost: the pause_collection update the dispute pause sends restores nothing
+2026-10-04T20:28:05.1475659Z 
+2026-10-04T20:28:05.1475773Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1475957Z 
+2026-10-04T20:28:05.1476035Z     - Expected  - 2
+2026-10-04T20:28:05.1476209Z     + Received  + 2
+2026-10-04T20:28:05.1476318Z 
+2026-10-04T20:28:05.1476385Z       Object {
+2026-10-04T20:28:05.1476586Z     -   "entitlement_active": false,
+2026-10-04T20:28:05.1476823Z     -   "status": "chargeback_lost",
+2026-10-04T20:28:05.1477059Z     +   "entitlement_active": true,
+2026-10-04T20:28:05.1477277Z     +   "status": "active",
+2026-10-04T20:28:05.1477462Z       }
+2026-10-04T20:28:05.1477556Z 
+2026-10-04T20:28:05.1477767Z     [0m [90m 141 |[39m       h[33m.[39msetLive(cancelAtEnd)[33m;[39m
+2026-10-04T20:28:05.1478932Z      [90m 142 |[39m       [36mawait[39m h[33m.[39mdeliver(ev([32m'customer.subscription.updated'[39m[33m,[39m cancelAtEnd))[33m;[39m
+2026-10-04T20:28:05.1479804Z     [31m[1m>[22m[39m[90m 143 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1480392Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T20:28:05.1480970Z      [90m 144 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1481431Z      [90m 145 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1481692Z      [90m 146 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1481828Z 
+2026-10-04T20:28:05.1481964Z       at test/b-recur7b-119-authority.spec.ts:143:23
+2026-10-04T20:28:05.1482259Z 
+2026-10-04T20:28:05.1482827Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) disputed: the pause_collection update the dispute pause sends restores nothing
+2026-10-04T20:28:05.1483302Z 
+2026-10-04T20:28:05.1483428Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1483585Z 
+2026-10-04T20:28:05.1483672Z     - Expected  - 2
+2026-10-04T20:28:05.1483846Z     + Received  + 2
+2026-10-04T20:28:05.1483950Z 
+2026-10-04T20:28:05.1484027Z       Object {
+2026-10-04T20:28:05.1484227Z     -   "entitlement_active": false,
+2026-10-04T20:28:05.1484456Z     -   "status": "disputed",
+2026-10-04T20:28:05.1484688Z     +   "entitlement_active": true,
+2026-10-04T20:28:05.1484903Z     +   "status": "active",
+2026-10-04T20:28:05.1485088Z       }
+2026-10-04T20:28:05.1485190Z 
+2026-10-04T20:28:05.1485415Z     [0m [90m 141 |[39m       h[33m.[39msetLive(cancelAtEnd)[33m;[39m
+2026-10-04T20:28:05.1486048Z      [90m 142 |[39m       [36mawait[39m h[33m.[39mdeliver(ev([32m'customer.subscription.updated'[39m[33m,[39m cancelAtEnd))[33m;[39m
+2026-10-04T20:28:05.1486928Z     [31m[1m>[22m[39m[90m 143 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1487502Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T20:28:05.1488282Z      [90m 144 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1488761Z      [90m 145 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1489019Z      [90m 146 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1489158Z 
+2026-10-04T20:28:05.1489287Z       at test/b-recur7b-119-authority.spec.ts:143:23
+2026-10-04T20:28:05.1489465Z 
+2026-10-04T20:28:05.1490069Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) canceled: a paid invoice read after the revocation keeps it revoked; the charge still settles
+2026-10-04T20:28:05.1490566Z 
+2026-10-04T20:28:05.1490683Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1490844Z 
+2026-10-04T20:28:05.1491050Z     - Expected  - 2
+2026-10-04T20:28:05.1491226Z     + Received  + 2
+2026-10-04T20:28:05.1491328Z 
+2026-10-04T20:28:05.1491395Z       Object {
+2026-10-04T20:28:05.1491595Z     -   "entitlement_active": false,
+2026-10-04T20:28:05.1491816Z     -   "status": "canceled",
+2026-10-04T20:28:05.1492038Z     +   "entitlement_active": true,
+2026-10-04T20:28:05.1492249Z     +   "status": "active",
+2026-10-04T20:28:05.1492435Z       }
+2026-10-04T20:28:05.1492517Z 
+2026-10-04T20:28:05.1493014Z     [0m [90m 155 |[39m         deferredSplit[33m:[39m { charge_id[33m:[39m [32m'ch_7b'[39m[33m,[39m invoice_amount_cents[33m:[39m [35m14800[39m }[33m,[39m
+2026-10-04T20:28:05.1493529Z      [90m 156 |[39m       })[33m;[39m
+2026-10-04T20:28:05.1494166Z     [31m[1m>[22m[39m[90m 157 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1494748Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T20:28:05.1495328Z      [90m 158 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1495791Z      [90m 159 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1496048Z      [90m 160 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1496195Z 
+2026-10-04T20:28:05.1496327Z       at test/b-recur7b-119-authority.spec.ts:157:23
+2026-10-04T20:28:05.1496496Z 
+2026-10-04T20:28:05.1497097Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) expired: a paid invoice read after the revocation keeps it revoked; the charge still settles
+2026-10-04T20:28:05.1497583Z 
+2026-10-04T20:28:05.1497703Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1498048Z 
+2026-10-04T20:28:05.1498132Z     - Expected  - 2
+2026-10-04T20:28:05.1498419Z     + Received  + 2
+2026-10-04T20:28:05.1498520Z 
+2026-10-04T20:28:05.1498593Z       Object {
+2026-10-04T20:28:05.1498793Z     -   "entitlement_active": false,
+2026-10-04T20:28:05.1499009Z     -   "status": "expired",
+2026-10-04T20:28:05.1499232Z     +   "entitlement_active": true,
+2026-10-04T20:28:05.1499448Z     +   "status": "active",
+2026-10-04T20:28:05.1499633Z       }
+2026-10-04T20:28:05.1499724Z 
+2026-10-04T20:28:05.1500218Z     [0m [90m 155 |[39m         deferredSplit[33m:[39m { charge_id[33m:[39m [32m'ch_7b'[39m[33m,[39m invoice_amount_cents[33m:[39m [35m14800[39m }[33m,[39m
+2026-10-04T20:28:05.1500728Z      [90m 156 |[39m       })[33m;[39m
+2026-10-04T20:28:05.1501360Z     [31m[1m>[22m[39m[90m 157 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1501930Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T20:28:05.1502508Z      [90m 158 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1502986Z      [90m 159 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1503249Z      [90m 160 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1503394Z 
+2026-10-04T20:28:05.1503525Z       at test/b-recur7b-119-authority.spec.ts:157:23
+2026-10-04T20:28:05.1503700Z 
+2026-10-04T20:28:05.1504302Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) refunded: a paid invoice read after the revocation keeps it revoked; the charge still settles
+2026-10-04T20:28:05.1504783Z 
+2026-10-04T20:28:05.1504913Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1505079Z 
+2026-10-04T20:28:05.1505154Z     - Expected  - 2
+2026-10-04T20:28:05.1505337Z     + Received  + 2
+2026-10-04T20:28:05.1505433Z 
+2026-10-04T20:28:05.1505512Z       Object {
+2026-10-04T20:28:05.1505706Z     -   "entitlement_active": false,
+2026-10-04T20:28:05.1505943Z     -   "status": "refunded",
+2026-10-04T20:28:05.1506167Z     +   "entitlement_active": true,
+2026-10-04T20:28:05.1506382Z     +   "status": "active",
+2026-10-04T20:28:05.1506682Z       }
+2026-10-04T20:28:05.1506771Z 
+2026-10-04T20:28:05.1507257Z     [0m [90m 155 |[39m         deferredSplit[33m:[39m { charge_id[33m:[39m [32m'ch_7b'[39m[33m,[39m invoice_amount_cents[33m:[39m [35m14800[39m }[33m,[39m
+2026-10-04T20:28:05.1507762Z      [90m 156 |[39m       })[33m;[39m
+2026-10-04T20:28:05.1508497Z     [31m[1m>[22m[39m[90m 157 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1509067Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T20:28:05.1509640Z      [90m 158 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1510113Z      [90m 159 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1510371Z      [90m 160 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1510512Z 
+2026-10-04T20:28:05.1510653Z       at test/b-recur7b-119-authority.spec.ts:157:23
+2026-10-04T20:28:05.1510819Z 
+2026-10-04T20:28:05.1511435Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) chargeback_lost: a paid invoice read after the revocation keeps it revoked; the charge still settles
+2026-10-04T20:28:05.1511937Z 
+2026-10-04T20:28:05.1512054Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1512206Z 
+2026-10-04T20:28:05.1512288Z     - Expected  - 2
+2026-10-04T20:28:05.1512456Z     + Received  + 2
+2026-10-04T20:28:05.1512558Z 
+2026-10-04T20:28:05.1512630Z       Object {
+2026-10-04T20:28:05.1512819Z     -   "entitlement_active": false,
+2026-10-04T20:28:05.1513053Z     -   "status": "chargeback_lost",
+2026-10-04T20:28:05.1513287Z     +   "entitlement_active": true,
+2026-10-04T20:28:05.1513494Z     +   "status": "active",
+2026-10-04T20:28:05.1513786Z       }
+2026-10-04T20:28:05.1513874Z 
+2026-10-04T20:28:05.1514357Z     [0m [90m 155 |[39m         deferredSplit[33m:[39m { charge_id[33m:[39m [32m'ch_7b'[39m[33m,[39m invoice_amount_cents[33m:[39m [35m14800[39m }[33m,[39m
+2026-10-04T20:28:05.1514868Z      [90m 156 |[39m       })[33m;[39m
+2026-10-04T20:28:05.1515488Z     [31m[1m>[22m[39m[90m 157 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1516059Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T20:28:05.1516623Z      [90m 158 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1517075Z      [90m 159 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1517331Z      [90m 160 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1517464Z 
+2026-10-04T20:28:05.1517599Z       at test/b-recur7b-119-authority.spec.ts:157:23
+2026-10-04T20:28:05.1517783Z 
+2026-10-04T20:28:05.1518554Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) disputed: a paid invoice read after the revocation keeps it revoked; the charge still settles
+2026-10-04T20:28:05.1519038Z 
+2026-10-04T20:28:05.1519158Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1519317Z 
+2026-10-04T20:28:05.1519392Z     - Expected  - 2
+2026-10-04T20:28:05.1519576Z     + Received  + 2
+2026-10-04T20:28:05.1519670Z 
+2026-10-04T20:28:05.1519744Z       Object {
+2026-10-04T20:28:05.1519937Z     -   "entitlement_active": false,
+2026-10-04T20:28:05.1520160Z     -   "status": "disputed",
+2026-10-04T20:28:05.1520383Z     +   "entitlement_active": true,
+2026-10-04T20:28:05.1520592Z     +   "status": "active",
+2026-10-04T20:28:05.1520781Z       }
+2026-10-04T20:28:05.1520865Z 
+2026-10-04T20:28:05.1521351Z     [0m [90m 155 |[39m         deferredSplit[33m:[39m { charge_id[33m:[39m [32m'ch_7b'[39m[33m,[39m invoice_amount_cents[33m:[39m [35m14800[39m }[33m,[39m
+2026-10-04T20:28:05.1521862Z      [90m 156 |[39m       })[33m;[39m
+2026-10-04T20:28:05.1522619Z     [31m[1m>[22m[39m[90m 157 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1523202Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T20:28:05.1523779Z      [90m 158 |[39m       expect(h[33m.[39mfanout[33m.[39monPurchaseEntitled)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1524249Z      [90m 159 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1524516Z      [90m 160 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1524653Z 
+2026-10-04T20:28:05.1524788Z       at test/b-recur7b-119-authority.spec.ts:157:23
+2026-10-04T20:28:05.1524959Z 
+2026-10-04T20:28:05.1525820Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before for refunded, chargeback_lost, disputed) refunded: a delayed old paid invoice read before the revocation keeps it revoked, no redelivery; the charge still settles
+2026-10-04T20:28:05.1526502Z 
+2026-10-04T20:28:05.1526636Z     expect(received).resolves.toMatchObject()
+2026-10-04T20:28:05.1526803Z 
+2026-10-04T20:28:05.1526925Z     Received promise rejected instead of resolved
+2026-10-04T20:28:05.1527365Z     Rejected to value: [Error: invoice.paid: purchase=cp_7b changed during the Stripe read; redeliver]
+2026-10-04T20:28:05.1527655Z 
+2026-10-04T20:28:05.1528133Z     [0m [90m 167 |[39m       [36mconst[39m pre [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mprefetchForOuterTx(e)[33m;[39m
+2026-10-04T20:28:05.1528645Z      [90m 168 |[39m       h[33m.[39mrevoke(status)[33m;[39m
+2026-10-04T20:28:05.1529353Z     [31m[1m>[22m[39m[90m 169 |[39m       [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(e[33m,[39m h[33m.[39mdb[33m,[39m pre))[33m.[39mresolves[33m.[39mtoMatchObject({
+2026-10-04T20:28:05.1530045Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T20:28:05.1530408Z      [90m 170 |[39m         claimed[33m:[39m [36mtrue[39m[33m,[39m
+2026-10-04T20:28:05.1531068Z      [90m 171 |[39m         deferredSplit[33m:[39m { charge_id[33m:[39m [32m'ch_7b'[39m[33m,[39m invoice_amount_cents[33m:[39m [35m14800[39m }[33m,[39m
+2026-10-04T20:28:05.1531578Z      [90m 172 |[39m       })[33m;[39m[0m
+2026-10-04T20:28:05.1531722Z 
+2026-10-04T20:28:05.1531872Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:05.1532181Z       at test/b-recur7b-119-authority.spec.ts:169:13
+2026-10-04T20:28:05.1532353Z 
+2026-10-04T20:28:05.1533194Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before for refunded, chargeback_lost, disputed) chargeback_lost: a delayed old paid invoice read before the revocation keeps it revoked, no redelivery; the charge still settles
+2026-10-04T20:28:05.1533883Z 
+2026-10-04T20:28:05.1534009Z     expect(received).resolves.toMatchObject()
+2026-10-04T20:28:05.1534173Z 
+2026-10-04T20:28:05.1534299Z     Received promise rejected instead of resolved
+2026-10-04T20:28:05.1534730Z     Rejected to value: [Error: invoice.paid: purchase=cp_7b changed during the Stripe read; redeliver]
+2026-10-04T20:28:05.1535025Z 
+2026-10-04T20:28:05.1535409Z     [0m [90m 167 |[39m       [36mconst[39m pre [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mprefetchForOuterTx(e)[33m;[39m
+2026-10-04T20:28:05.1535913Z      [90m 168 |[39m       h[33m.[39mrevoke(status)[33m;[39m
+2026-10-04T20:28:05.1536620Z     [31m[1m>[22m[39m[90m 169 |[39m       [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(e[33m,[39m h[33m.[39mdb[33m,[39m pre))[33m.[39mresolves[33m.[39mtoMatchObject({
+2026-10-04T20:28:05.1537204Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T20:28:05.1537555Z      [90m 170 |[39m         claimed[33m:[39m [36mtrue[39m[33m,[39m
+2026-10-04T20:28:05.1538394Z      [90m 171 |[39m         deferredSplit[33m:[39m { charge_id[33m:[39m [32m'ch_7b'[39m[33m,[39m invoice_amount_cents[33m:[39m [35m14800[39m }[33m,[39m
+2026-10-04T20:28:05.1539025Z      [90m 172 |[39m       })[33m;[39m[0m
+2026-10-04T20:28:05.1539170Z 
+2026-10-04T20:28:05.1539319Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:05.1539630Z       at test/b-recur7b-119-authority.spec.ts:169:13
+2026-10-04T20:28:05.1539802Z 
+2026-10-04T20:28:05.1540616Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before for refunded, chargeback_lost, disputed) disputed: a delayed old paid invoice read before the revocation keeps it revoked, no redelivery; the charge still settles
+2026-10-04T20:28:05.1541276Z 
+2026-10-04T20:28:05.1541393Z     expect(received).resolves.toMatchObject()
+2026-10-04T20:28:05.1541556Z 
+2026-10-04T20:28:05.1541682Z     Received promise rejected instead of resolved
+2026-10-04T20:28:05.1542116Z     Rejected to value: [Error: invoice.paid: purchase=cp_7b changed during the Stripe read; redeliver]
+2026-10-04T20:28:05.1542407Z 
+2026-10-04T20:28:05.1542795Z     [0m [90m 167 |[39m       [36mconst[39m pre [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mprefetchForOuterTx(e)[33m;[39m
+2026-10-04T20:28:05.1543289Z      [90m 168 |[39m       h[33m.[39mrevoke(status)[33m;[39m
+2026-10-04T20:28:05.1543982Z     [31m[1m>[22m[39m[90m 169 |[39m       [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(e[33m,[39m h[33m.[39mdb[33m,[39m pre))[33m.[39mresolves[33m.[39mtoMatchObject({
+2026-10-04T20:28:05.1544552Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T20:28:05.1544897Z      [90m 170 |[39m         claimed[33m:[39m [36mtrue[39m[33m,[39m
+2026-10-04T20:28:05.1545551Z      [90m 171 |[39m         deferredSplit[33m:[39m { charge_id[33m:[39m [32m'ch_7b'[39m[33m,[39m invoice_amount_cents[33m:[39m [35m14800[39m }[33m,[39m
+2026-10-04T20:28:05.1546166Z      [90m 172 |[39m       })[33m;[39m[0m
+2026-10-04T20:28:05.1546314Z 
+2026-10-04T20:28:05.1546459Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:05.1546778Z       at test/b-recur7b-119-authority.spec.ts:169:13
+2026-10-04T20:28:05.1546943Z 
+2026-10-04T20:28:05.1547474Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) refunded: a subscription update read before the revocation restores nothing
+2026-10-04T20:28:05.1548009Z 
+2026-10-04T20:28:05.1548122Z     expect(received).resolves.toMatchObject()
+2026-10-04T20:28:05.1548283Z 
+2026-10-04T20:28:05.1548408Z     Received promise rejected instead of resolved
+2026-10-04T20:28:05.1548895Z     Rejected to value: [Error: customer.subscription.updated: purchase=cp_7b changed during the Stripe read; redeliver]
+2026-10-04T20:28:05.1549239Z 
+2026-10-04T20:28:05.1549621Z     [0m [90m 183 |[39m       [36mconst[39m pre [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mprefetchForOuterTx(e)[33m;[39m
+2026-10-04T20:28:05.1550125Z      [90m 184 |[39m       h[33m.[39mrevoke(status)[33m;[39m
+2026-10-04T20:28:05.1551053Z     [31m[1m>[22m[39m[90m 185 |[39m       [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(e[33m,[39m h[33m.[39mdb[33m,[39m pre))[33m.[39mresolves[33m.[39mtoMatchObject({ reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1551781Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T20:28:05.1552385Z      [90m 186 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1552887Z      [90m 187 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1553144Z      [90m 188 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1553284Z 
+2026-10-04T20:28:05.1553422Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:05.1553737Z       at test/b-recur7b-119-authority.spec.ts:185:13
+2026-10-04T20:28:05.1553905Z 
+2026-10-04T20:28:05.1554566Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) chargeback_lost: a subscription update read before the revocation restores nothing
+2026-10-04T20:28:05.1555032Z 
+2026-10-04T20:28:05.1555151Z     expect(received).resolves.toMatchObject()
+2026-10-04T20:28:05.1555304Z 
+2026-10-04T20:28:05.1555429Z     Received promise rejected instead of resolved
+2026-10-04T20:28:05.1555911Z     Rejected to value: [Error: customer.subscription.updated: purchase=cp_7b changed during the Stripe read; redeliver]
+2026-10-04T20:28:05.1556248Z 
+2026-10-04T20:28:05.1556634Z     [0m [90m 183 |[39m       [36mconst[39m pre [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mprefetchForOuterTx(e)[33m;[39m
+2026-10-04T20:28:05.1557128Z      [90m 184 |[39m       h[33m.[39mrevoke(status)[33m;[39m
+2026-10-04T20:28:05.1558207Z     [31m[1m>[22m[39m[90m 185 |[39m       [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(e[33m,[39m h[33m.[39mdb[33m,[39m pre))[33m.[39mresolves[33m.[39mtoMatchObject({ reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1558949Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T20:28:05.1559551Z      [90m 186 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1560043Z      [90m 187 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1560299Z      [90m 188 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1560440Z 
+2026-10-04T20:28:05.1560587Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:05.1560890Z       at test/b-recur7b-119-authority.spec.ts:185:13
+2026-10-04T20:28:05.1561063Z 
+2026-10-04T20:28:05.1561590Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) disputed: a subscription update read before the revocation restores nothing
+2026-10-04T20:28:05.1562149Z 
+2026-10-04T20:28:05.1562270Z     expect(received).resolves.toMatchObject()
+2026-10-04T20:28:05.1562427Z 
+2026-10-04T20:28:05.1562551Z     Received promise rejected instead of resolved
+2026-10-04T20:28:05.1563038Z     Rejected to value: [Error: customer.subscription.updated: purchase=cp_7b changed during the Stripe read; redeliver]
+2026-10-04T20:28:05.1563382Z 
+2026-10-04T20:28:05.1563768Z     [0m [90m 183 |[39m       [36mconst[39m pre [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mprefetchForOuterTx(e)[33m;[39m
+2026-10-04T20:28:05.1564265Z      [90m 184 |[39m       h[33m.[39mrevoke(status)[33m;[39m
+2026-10-04T20:28:05.1565197Z     [31m[1m>[22m[39m[90m 185 |[39m       [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(e[33m,[39m h[33m.[39mdb[33m,[39m pre))[33m.[39mresolves[33m.[39mtoMatchObject({ reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1565926Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T20:28:05.1566533Z      [90m 186 |[39m       expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1567032Z      [90m 187 |[39m     }[33m,[39m
+2026-10-04T20:28:05.1567285Z      [90m 188 |[39m   )[33m;[39m[0m
+2026-10-04T20:28:05.1567428Z 
+2026-10-04T20:28:05.1567578Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:05.1567982Z       at test/b-recur7b-119-authority.spec.ts:185:13
+2026-10-04T20:28:05.1568150Z 
+2026-10-04T20:28:05.1568701Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) refunded: the deletion keeps the revocation history; a decline opens no dunning
+2026-10-04T20:28:05.1569161Z 
+2026-10-04T20:28:05.1569301Z     expect(received).resolves.toMatchObject(expected)
+2026-10-04T20:28:05.1569481Z 
+2026-10-04T20:28:05.1569561Z     - Expected  - 1
+2026-10-04T20:28:05.1569743Z     + Received  + 2
+2026-10-04T20:28:05.1569841Z 
+2026-10-04T20:28:05.1569926Z       Object {
+2026-10-04T20:28:05.1570146Z     -   "reason": "subscription_already_ended",
+2026-10-04T20:28:05.1570385Z     +   "claimed": true,
+2026-10-04T20:28:05.1570742Z     +   "purchase_id": "cp_7b",
+2026-10-04T20:28:05.1570946Z       }
+2026-10-04T20:28:05.1571035Z 
+2026-10-04T20:28:05.1571454Z     [0m [90m 193 |[39m       [36mconst[39m h [33m=[39m harness({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1572202Z      [90m 194 |[39m       h[33m.[39msetLive(sub([32m'past_due'[39m[33m,[39m { latest_invoice[33m:[39m [32m'in_7b'[39m }))[33m;[39m
+2026-10-04T20:28:05.1573157Z     [31m[1m>[22m[39m[90m 195 |[39m       [36mawait[39m expect(h[33m.[39mdeliver(declined()))[33m.[39mresolves[33m.[39mtoMatchObject({ reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1573879Z      [90m     |[39m                                                    [31m[1m^[22m[39m
+2026-10-04T20:28:05.1574471Z      [90m 196 |[39m       expect(h[33m.[39mdunning[33m.[39mrecordFailure)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1575202Z      [90m 197 |[39m       [36mconst[39m gone [33m=[39m sub([32m'canceled'[39m[33m,[39m { canceled_at[33m:[39m [33mNOW[39m })[33m;[39m
+2026-10-04T20:28:05.1575722Z      [90m 198 |[39m       h[33m.[39msetLive(gone)[33m;[39m[0m
+2026-10-04T20:28:05.1575914Z 
+2026-10-04T20:28:05.1576100Z       at Object.toMatchObject (node_modules/expect/build/index.js:2140:20)
+2026-10-04T20:28:05.1576461Z       at test/b-recur7b-119-authority.spec.ts:195:52
+2026-10-04T20:28:05.1576630Z 
+2026-10-04T20:28:05.1577201Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) chargeback_lost: the deletion keeps the revocation history; a decline opens no dunning
+2026-10-04T20:28:05.1577672Z 
+2026-10-04T20:28:05.1577957Z     expect(received).resolves.toMatchObject(expected)
+2026-10-04T20:28:05.1578262Z 
+2026-10-04T20:28:05.1578346Z     - Expected  - 1
+2026-10-04T20:28:05.1578521Z     + Received  + 2
+2026-10-04T20:28:05.1578628Z 
+2026-10-04T20:28:05.1578701Z       Object {
+2026-10-04T20:28:05.1578920Z     -   "reason": "subscription_already_ended",
+2026-10-04T20:28:05.1579160Z     +   "claimed": true,
+2026-10-04T20:28:05.1579382Z     +   "purchase_id": "cp_7b",
+2026-10-04T20:28:05.1579581Z       }
+2026-10-04T20:28:05.1579671Z 
+2026-10-04T20:28:05.1580110Z     [0m [90m 193 |[39m       [36mconst[39m h [33m=[39m harness({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1580863Z      [90m 194 |[39m       h[33m.[39msetLive(sub([32m'past_due'[39m[33m,[39m { latest_invoice[33m:[39m [32m'in_7b'[39m }))[33m;[39m
+2026-10-04T20:28:05.1581820Z     [31m[1m>[22m[39m[90m 195 |[39m       [36mawait[39m expect(h[33m.[39mdeliver(declined()))[33m.[39mresolves[33m.[39mtoMatchObject({ reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1582546Z      [90m     |[39m                                                    [31m[1m^[22m[39m
+2026-10-04T20:28:05.1583129Z      [90m 196 |[39m       expect(h[33m.[39mdunning[33m.[39mrecordFailure)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1583856Z      [90m 197 |[39m       [36mconst[39m gone [33m=[39m sub([32m'canceled'[39m[33m,[39m { canceled_at[33m:[39m [33mNOW[39m })[33m;[39m
+2026-10-04T20:28:05.1584368Z      [90m 198 |[39m       h[33m.[39msetLive(gone)[33m;[39m[0m
+2026-10-04T20:28:05.1584548Z 
+2026-10-04T20:28:05.1584739Z       at Object.toMatchObject (node_modules/expect/build/index.js:2140:20)
+2026-10-04T20:28:05.1585091Z       at test/b-recur7b-119-authority.spec.ts:195:52
+2026-10-04T20:28:05.1585259Z 
+2026-10-04T20:28:05.1585820Z   ● B-680-1 (R119): a revoked plan never regains access from a Stripe event › (failed before) disputed: the deletion keeps the revocation history; a decline opens no dunning
+2026-10-04T20:28:05.1586289Z 
+2026-10-04T20:28:05.1586421Z     expect(received).resolves.toMatchObject(expected)
+2026-10-04T20:28:05.1586603Z 
+2026-10-04T20:28:05.1586681Z     - Expected  - 1
+2026-10-04T20:28:05.1586962Z     + Received  + 2
+2026-10-04T20:28:05.1587066Z 
+2026-10-04T20:28:05.1587134Z       Object {
+2026-10-04T20:28:05.1587352Z     -   "reason": "subscription_already_ended",
+2026-10-04T20:28:05.1587584Z     +   "claimed": true,
+2026-10-04T20:28:05.1587788Z     +   "purchase_id": "cp_7b",
+2026-10-04T20:28:05.1588092Z       }
+2026-10-04T20:28:05.1588175Z 
+2026-10-04T20:28:05.1588603Z     [0m [90m 193 |[39m       [36mconst[39m h [33m=[39m harness({ status[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1589344Z      [90m 194 |[39m       h[33m.[39msetLive(sub([32m'past_due'[39m[33m,[39m { latest_invoice[33m:[39m [32m'in_7b'[39m }))[33m;[39m
+2026-10-04T20:28:05.1590311Z     [31m[1m>[22m[39m[90m 195 |[39m       [36mawait[39m expect(h[33m.[39mdeliver(declined()))[33m.[39mresolves[33m.[39mtoMatchObject({ reason[33m:[39m [32m'subscription_already_ended'[39m })[33m;[39m
+2026-10-04T20:28:05.1591040Z      [90m     |[39m                                                    [31m[1m^[22m[39m
+2026-10-04T20:28:05.1591628Z      [90m 196 |[39m       expect(h[33m.[39mdunning[33m.[39mrecordFailure)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1592359Z      [90m 197 |[39m       [36mconst[39m gone [33m=[39m sub([32m'canceled'[39m[33m,[39m { canceled_at[33m:[39m [33mNOW[39m })[33m;[39m
+2026-10-04T20:28:05.1592881Z      [90m 198 |[39m       h[33m.[39msetLive(gone)[33m;[39m[0m
+2026-10-04T20:28:05.1593060Z 
+2026-10-04T20:28:05.1593250Z       at Object.toMatchObject (node_modules/expect/build/index.js:2140:20)
+2026-10-04T20:28:05.1593599Z       at test/b-recur7b-119-authority.spec.ts:195:52
+2026-10-04T20:28:05.1593771Z 
+2026-10-04T20:28:05.1594370Z   ● B-680-2 (R119): no write after the decline read is exempt from the fence › (failed before) a paid write into past_due (another invoice unpaid) never lets the old decline reopen dunning
+2026-10-04T20:28:05.1594966Z 
+2026-10-04T20:28:05.1595080Z     expect(received).rejects.toThrow()
+2026-10-04T20:28:05.1595230Z 
+2026-10-04T20:28:05.1595356Z     Received promise resolved instead of rejected
+2026-10-04T20:28:05.1595686Z     Resolved to value: {"claimed": true, "purchase_id": "cp_7b"}
+2026-10-04T20:28:05.1595885Z 
+2026-10-04T20:28:05.1596398Z     [0m [90m 236 |[39m     expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m:[39m [32m'past_due'[39m[33m,[39m last_error[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-04T20:28:05.1597208Z      [90m 237 |[39m     expect(h[33m.[39mdunning[33m.[39mrecordResolution)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-04T20:28:05.1598336Z     [31m[1m>[22m[39m[90m 238 |[39m     [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(decline[33m,[39m h[33m.[39mdb[33m,[39m pre))[33m.[39mrejects[33m.[39mtoThrow([35m/redeliver/[39m)[33m;[39m
+2026-10-04T20:28:05.1598990Z      [90m     |[39m           [31m[1m^[22m[39m
+2026-10-04T20:28:05.1599705Z      [90m 239 |[39m     [36mawait[39m expect(h[33m.[39mdeliver(decline))[33m.[39mresolves[33m.[39mtoMatchObject({ reason[33m:[39m [32m'invoice_already_settled'[39m })[33m;[39m
+2026-10-04T20:28:05.1600538Z      [90m 240 |[39m     expect(h[33m.[39mdunning[33m.[39mrecordFailure)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:28:05.1601209Z      [90m 241 |[39m     expect(h[33m.[39mrow()[33m.[39mlast_error)[33m.[39mtoBeNull()[33m;[39m[0m
+2026-10-04T20:28:05.1601475Z 
+2026-10-04T20:28:05.1601618Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:05.1601991Z       at Object.<anonymous> (test/b-recur7b-119-authority.spec.ts:238:11)
+2026-10-04T20:28:05.1602206Z 
+2026-10-04T20:28:05.1602731Z   ● B-680-2 (R119): no write after the decline read is exempt from the fence › control: the paired past_due update first costs one redelivery; then dunning opens once
+2026-10-04T20:28:05.1603166Z 
+2026-10-04T20:28:05.1603405Z     expect(received).rejects.toThrow()
+2026-10-04T20:28:05.1603554Z 
+2026-10-04T20:28:05.1603681Z     Received promise resolved instead of rejected
+2026-10-04T20:28:05.1604005Z     Resolved to value: {"claimed": true, "purchase_id": "cp_7b"}
+2026-10-04T20:28:05.1604203Z 
+2026-10-04T20:28:05.1604605Z     [0m [90m 248 |[39m     [36mconst[39m pre [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mprefetchForOuterTx(decline)[33m;[39m
+2026-10-04T20:28:05.1605386Z      [90m 249 |[39m     [36mawait[39m h[33m.[39mdeliver(ev([32m'customer.subscription.updated'[39m[33m,[39m sub([32m'past_due'[39m)))[33m;[39m
+2026-10-04T20:28:05.1606379Z     [31m[1m>[22m[39m[90m 250 |[39m     [36mawait[39m expect(h[33m.[39msvc[33m.[39mhandle(decline[33m,[39m h[33m.[39mdb[33m,[39m pre))[33m.[39mrejects[33m.[39mtoThrow([35m/redeliver/[39m)[33m;[39m
+2026-10-04T20:28:05.1607013Z      [90m     |[39m           [31m[1m^[22m[39m
+2026-10-04T20:28:05.1607659Z      [90m 251 |[39m     [36mawait[39m expect(h[33m.[39mdeliver(decline))[33m.[39mresolves[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-04T20:28:05.1608898Z      [90m 252 |[39m     expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m:[39m [32m'past_due'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m[33m,[39m last_error[33m:[39m [32m'Your card was declined.'[39m })[33m;[39m
+2026-10-04T20:28:05.1609861Z      [90m 253 |[39m     expect(h[33m.[39mdunning[33m.[39mrecordFailure)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m[0m
+2026-10-04T20:28:05.1610207Z 
+2026-10-04T20:28:05.1610359Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:28:05.1610723Z       at Object.<anonymous> (test/b-recur7b-119-authority.spec.ts:250:11)
+2026-10-04T20:28:05.1611077Z 
+2026-10-04T20:28:05.1611538Z   ● C-680-11: a decline never rewrites unpaid as past_due › (failed before) unpaid (access ended), a retry decline: stays unpaid without access
+2026-10-04T20:28:05.1611925Z 
+2026-10-04T20:28:05.1612045Z     expect(received).toMatchObject(expected)
+2026-10-04T20:28:05.1612210Z 
+2026-10-04T20:28:05.1612288Z     - Expected  - 1
+2026-10-04T20:28:05.1612478Z     + Received  + 1
+2026-10-04T20:28:05.1612575Z 
+2026-10-04T20:28:05.1612649Z       Object {
+2026-10-04T20:28:05.1612852Z         "entitlement_active": false,
+2026-10-04T20:28:05.1613083Z     -   "status": "unpaid",
+2026-10-04T20:28:05.1613284Z     +   "status": "past_due",
+2026-10-04T20:28:05.1613474Z       }
+2026-10-04T20:28:05.1613561Z 
+2026-10-04T20:28:05.1613986Z     [0m [90m 268 |[39m     h[33m.[39msetLive(sub([32m'unpaid'[39m[33m,[39m { latest_invoice[33m:[39m [32m'in_7b'[39m }))[33m;[39m
+2026-10-04T20:28:05.1614823Z      [90m 269 |[39m     [36mawait[39m expect(h[33m.[39mdeliver(declined()))[33m.[39mresolves[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-04T20:28:05.1615823Z     [31m[1m>[22m[39m[90m 270 |[39m     expect(h[33m.[39mrow())[33m.[39mtoMatchObject({ status[33m:[39m [32m'unpaid'[39m[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:28:05.1616455Z      [90m     |[39m                     [31m[1m^[22m[39m
+2026-10-04T20:28:05.1616752Z      [90m 271 |[39m   })[33m;[39m
+2026-10-04T20:28:05.1617006Z      [90m 272 |[39m })[33m;[39m
+2026-10-04T20:28:05.1617246Z      [90m 273 |[39m[0m
+2026-10-04T20:28:05.1617358Z 
+2026-10-04T20:28:05.1617549Z       at Object.<anonymous> (test/b-recur7b-119-authority.spec.ts:270:21)
+2026-10-04T20:28:05.1617775Z 
+2026-10-04T20:28:05.1618003Z Test Suites: 2 failed, 2 total
+2026-10-04T20:28:05.1618261Z Tests:       24 failed, 20 passed, 44 total
+2026-10-04T20:28:05.1618504Z Snapshots:   0 total
+2026-10-04T20:28:05.1618699Z Time:        2.541 s
+2026-10-04T20:28:05.1619135Z Ran all test suites matching test/b-recur7b-119-authority.spec.ts|test/b-recur5b-117-authority.spec.ts.
+2026-10-04T20:28:05.2778133Z ##[error]Process completed with exit code 1.
+2026-10-04T20:28:05.2885010Z Post job cleanup.
+2026-10-04T20:28:05.3551950Z [command]/usr/bin/git version
+2026-10-04T20:28:05.3581388Z git version 2.55.0
+2026-10-04T20:28:05.3609923Z Temporarily overriding HOME='/home/runner/work/_temp/635a1198-808f-4c0b-90cf-00f6e7ec55ee' before making global git config changes
+2026-10-04T20:28:05.3610980Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:28:05.3613698Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T20:28:05.3638052Z Removing SSH command configuration
+2026-10-04T20:28:05.3642907Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:28:05.3670958Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:28:05.3856623Z Removing HTTP extra header
+2026-10-04T20:28:05.3860505Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:28:05.3887057Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:28:05.4068445Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:28:05.4073516Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:28:05.4095892Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T20:28:05.4096992Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T20:28:05.4098272Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:28:05.4098855Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:28:05.4104047Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T20:28:05.4121640Z /home/runner/work/_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:28:05.4130688Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:28:05.4161090Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T20:28:05.4179365Z /home/runner/work/_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:28:05.4186591Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:28:05.4213189Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:28:05.4230008Z /github/runner_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:28:05.4235641Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:28:05.5181081Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:28:05.5201996Z /github/runner_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:28:05.5208233Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config
+2026-10-04T20:28:05.5236456Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:28:05.5420006Z Removing credentials config '/home/runner/work/_temp/git-credentials-0cc06167-9535-44dc-b303-7d9397e24e9a.config'
+2026-10-04T20:28:05.5518344Z Print service container logs: 9412b652fed54c3190eda48251b72689_redis7alpine_718ade
+2026-10-04T20:28:05.5521994Z ##[command]/usr/bin/docker logs --details 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:28:05.5623524Z  1:C 04 Oct 2026 20:27:22.889 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T20:28:05.5624902Z  1:C 04 Oct 2026 20:27:22.889 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T20:28:05.5625352Z  1:C 04 Oct 2026 20:27:22.889 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T20:28:05.5626008Z  1:C 04 Oct 2026 20:27:22.889 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T20:28:05.5626532Z  1:M 04 Oct 2026 20:27:22.890 * monotonic clock: POSIX clock_gettime
+2026-10-04T20:28:05.5626843Z  1:M 04 Oct 2026 20:27:22.890 * Running mode=standalone, port=6379.
+2026-10-04T20:28:05.5627126Z  1:M 04 Oct 2026 20:27:22.890 * Server initialized
+2026-10-04T20:28:05.5627397Z  1:M 04 Oct 2026 20:27:22.890 * Ready to accept connections tcp
+2026-10-04T20:28:05.5642619Z Stop and remove container: 9412b652fed54c3190eda48251b72689_redis7alpine_718ade
+2026-10-04T20:28:05.5646356Z ##[command]/usr/bin/docker rm --force 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:28:11.2696669Z 7a16ff1509307a0d59625024e7c720cb13a8b85e7919c7de9d5887c7b20a4297
+2026-10-04T20:28:11.2719679Z Remove container network: github_network_1f5052786ae64777b18120fe1f476d41
+2026-10-04T20:28:11.2723046Z ##[command]/usr/bin/docker network rm github_network_1f5052786ae64777b18120fe1f476d41
+2026-10-04T20:28:11.5392992Z github_network_1f5052786ae64777b18120fe1f476d41
+2026-10-04T20:28:11.5456326Z Cleaning up orphan processes

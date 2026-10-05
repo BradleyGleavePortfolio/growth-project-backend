@@ -1,0 +1,524 @@
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index db10eaf2..9238fabf 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -49,12 +49,50 @@ export const REFUND_TRANSFER_REVERSAL_RUNBOOK = 'docs/runbooks/refund-transfer-r
+ export type RefundTransferReversalOutcome =
+   'reversed' | 'nothing_owed' | 'already_done' | 'pending' | 'needs_review';
+ 
+-// Machine code of a failed reversal attempt for logs (never the message).
++// B-641-11 (Sol): Stripe error codes a transfer reversal can answer with.
++// Anything else logs as `other`; an error's name or message never reaches a
++// log line (both are free text an exception can carry).
++const STRIPE_REVERSAL_ERROR_CODES = new Set([
++  'amount_too_large',
++  'api_key_expired',
++  'balance_insufficient',
++  'idempotency_key_in_use',
++  'idempotency_error',
++  'insufficient_funds',
++  'lock_timeout',
++  'parameter_invalid_integer',
++  'parameter_missing',
++  'rate_limit',
++  'resource_missing',
++  'transfer_already_reversed',
++]);
++
++// Machine code of a failed reversal attempt for logs, from a closed catalog.
+ function transferReversalErrorCode(err: unknown): string {
+   if (err instanceof StripeConnectApiError) {
+-    return `stripe_${err.httpStatus}_${err.stripeCode ?? 'none'}`;
++    const status =
++      Number.isInteger(err.httpStatus) && err.httpStatus >= 100 && err.httpStatus <= 599
++        ? err.httpStatus
++        : 0;
++    const code =
++      err.stripeCode === null
++        ? 'none'
++        : STRIPE_REVERSAL_ERROR_CODES.has(err.stripeCode)
++          ? err.stripeCode
++          : 'other';
++    return `stripe_${status}_${code}`;
+   }
+-  return err instanceof Error ? err.name : 'unknown';
++  return 'error';
++}
++
++// B-641-9: the named Stripe reversal already settles another refund.
++function transferReversalAssignedElsewhere(): ConflictException {
++  return new ConflictException({
++    code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND',
++    error: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND',
++    message:
++      'That reversal is already recorded for a different refund. Pick the reversal for this refund, or reconcile without an id.',
++  });
+ }
+ 
+ // A276 P0-2 + P1-1 (refix) — deep-link routes for coach in-app alerts.
+@@ -566,11 +604,17 @@ export class RefundDisputeHandlerService {
+   private markTransferReversalDone(
+     db: Prisma.TransactionClient,
+     refundRowId: string,
++    stripeTransferReversalId?: string,
+   ): Promise<boolean> {
+     return db.chargeRefund
+       .updateMany({
+         where: { id: refundRowId, transfer_reversed: false },
+-        data: { transfer_reversed: true },
++        data: {
++          transfer_reversed: true,
++          ...(stripeTransferReversalId
++            ? { transfer_reversal_stripe_id: stripeTransferReversalId }
++            : {}),
++        },
+       })
+       .then((r) => r.count === 1);
+   }
+@@ -615,6 +659,11 @@ export class RefundDisputeHandlerService {
+     if (row.transfer_reversal_review_at) return 'needs_review';
+     const firstAttempt = row.transfer_reversal_first_attempt_at ?? now;
+     if (now.getTime() - firstAttempt.getTime() <= REFUND_TRANSFER_RETRY_WINDOW_MS) {
++      // B-641-8 (narrowed): the sweep orders by this, least recent first.
++      await this.prisma.chargeRefund.updateMany({
++        where: { id: refundRowId, transfer_reversed: false, transfer_reversal_review_at: null },
++        data: { transfer_reversal_last_attempt_at: now },
++      });
+       return 'admitted';
+     }
+     await this.moveTransferReversalToReview(row, now);
+@@ -687,23 +736,13 @@ export class RefundDisputeHandlerService {
+ 
+     let retried = 0;
+     let reversed = 0;
+-    // Keyset paging on (created_at, id), not a Prisma cursor: a reversed row
+-    // leaves the owed set, so a cursor on it points outside the filter (the
+-    // page came back empty here, and with skip: 1 Postgres would drop a real
+-    // row). Rows that fail stay owed but sit behind the key, so one run never
+-    // retries the same row twice.
+-    let after: { created_at: Date; id: string } | null = null;
++    // B-641-8 (narrowed, Sol): fair across runs. Never-attempted rows come
++    // first, then the least recently attempted, so rows that keep failing go
++    // to the back of the next run instead of filling its bounded pages again.
++    // Every row a run touches either leaves the owed set (reversed, nothing
++    // owed, review) or is stamped with this run's `now` on admission, so the
++    // `last attempt before now` filter moves each page past it (no cursor).
+     for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
+-      const keyset: Prisma.ChargeRefundWhereInput[] = after
+-        ? [
+-            {
+-              OR: [
+-                { created_at: { gt: after.created_at } },
+-                { created_at: after.created_at, id: { gt: after.id } },
+-              ],
+-            },
+-          ]
+-        : [];
+       const rows = await this.prisma.chargeRefund.findMany({
+         where: {
+           ...owed,
+@@ -714,10 +753,18 @@ export class RefundDisputeHandlerService {
+                 { transfer_reversal_first_attempt_at: { gte: cutoff } },
+               ],
+             },
+-            ...keyset,
++            {
++              OR: [
++                { transfer_reversal_last_attempt_at: null },
++                { transfer_reversal_last_attempt_at: { lt: now } },
++              ],
++            },
+           ],
+         },
+-        orderBy: order,
++        orderBy: [
++          { transfer_reversal_last_attempt_at: { sort: 'asc', nulls: 'first' } },
++          ...order,
++        ],
+         take: limit,
+       });
+       for (const row of rows) {
+@@ -732,8 +779,6 @@ export class RefundDisputeHandlerService {
+         if (outcome === 'needs_review') needsReview++;
+       }
+       if (rows.length < limit) break;
+-      const last: { created_at: Date; id: string } = rows[rows.length - 1];
+-      after = { created_at: last.created_at, id: last.id };
+     }
+ 
+     const inReview = await this.prisma.chargeRefund.count({
+@@ -873,12 +918,48 @@ export class RefundDisputeHandlerService {
+       return claimed;
+     };
+     if (match) {
+-      const amount = Math.min(match.amount, owed.amount_cents);
+-      await this.transfers.recordReconciledReversal({
+-        transfer_row_id: owed.transfer.id,
+-        amount_cents: amount,
+-        claim,
++      const receipt = match;
++      // B-641-10 (Sol): a receipt smaller than this refund's share does not
++      // settle it. Nothing is recorded and the row stays in review.
++      if (receipt.amount < owed.amount_cents) {
++        throw new ConflictException({
++          code: 'TRANSFER_REVERSAL_UNDERSIZED',
++          error: 'TRANSFER_REVERSAL_UNDERSIZED',
++          message:
++            "That reversal is smaller than this refund's head-coach share, so it does not settle it. Nothing was recorded; the refund stays in review.",
++          reversal_amount_cents: receipt.amount,
++          owed_cents: owed.amount_cents,
++        });
++      }
++      // B-641-9 (Sol): one Stripe reversal settles at most one refund. The id
++      // is bound to this refund in the same transaction that claims it (a
++      // unique column), so a second refund, or a concurrent owner request for
++      // another refund, is refused instead of counting the money twice.
++      const bound = await this.prisma.chargeRefund.findFirst({
++        where: { transfer_reversal_stripe_id: receipt.id, NOT: { id: row.id } },
+       });
++      if (bound) throw transferReversalAssignedElsewhere();
++      // Stripe is the truth for the transfer: record what the receipt moved,
++      // capped by what is left on the transfer.
++      const amount = Math.min(
++        receipt.amount,
++        owed.transfer.amount_cents - owed.transfer.reversed_amount_cents,
++      );
++      try {
++        await this.transfers.recordReconciledReversal({
++          transfer_row_id: owed.transfer.id,
++          amount_cents: amount,
++          claim: async (tx) => {
++            claimed = await this.markTransferReversalDone(tx, row.id, receipt.id);
++            return claimed;
++          },
++        });
++      } catch (err) {
++        if ((err as { code?: unknown } | null)?.code === 'P2002') {
++          throw transferReversalAssignedElsewhere();
++        }
++        throw err;
++      }
+       return {
+         charge_refund_id: row.id,
+         outcome: claimed ? 'recorded_from_stripe' : 'already_recorded',
+diff --git a/test/refund-reversal-reconcile.spec.ts b/test/refund-reversal-reconcile.spec.ts
+index 4a4a2029..dce391df 100644
+--- a/test/refund-reversal-reconcile.spec.ts
++++ b/test/refund-reversal-reconcile.spec.ts
+@@ -194,3 +194,107 @@ describe('B-641-7 — owner reconcile route', () => {
+     ]);
+   });
+ });
++
++// FIX ROUND 6 (B-COACH-5, agent 115) — Sol REQUEST CHANGES @ 02cd3f88.
++describe('B-641-9 / B-641-10 — one Stripe reversal settles at most one refund, and only in full', () => {
++  function review(ids: string[], purchase = 'p-r') {
++    const h = harness();
++    const at = new Date(Date.now() - 25 * HOUR);
++    seedPurchase(h.db, purchase, at);
++    for (const id of ids) {
++      h.db.state.chargeRefund.push(
++        refundRow(id, purchase, at, { transfer_reversal_review_at: new Date() }),
++      );
++    }
++    return h;
++  }
++
++  it('Sol probe: the same unattributed reversal cannot settle two refunds', async () => {
++    const h = review(['r-one', 'r-two']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
++    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
++    await expect(
++      h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_1' }),
++    ).rejects.toMatchObject({ response: { code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND' } });
++    expect({
++      external: h.stripeTotal('tr_p-r'),
++      local: h.headCoach('p-r'),
++      firstBound: h.refund('r-one').transfer_reversal_stripe_id,
++      secondDone: h.refund('r-two').transfer_reversed,
++    }).toEqual({ external: 122, local: 122, firstBound: 'trr_1', secondDone: false });
++  });
++
++  it('two owners assigning one reversal to two refunds at once record it once', async () => {
++    const h = review(['r-one', 'r-two']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
++    const out = await Promise.allSettled([
++      h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' }),
++      h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_1' }),
++    ]);
++    expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
++    const refused = out.find((o) => o.status === 'rejected') as PromiseRejectedResult;
++    expect(refused.reason).toMatchObject({
++      response: { code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND' },
++    });
++    expect(h.headCoach('p-r')).toBe(122);
++    expect([h.refund('r-one'), h.refund('r-two')].filter((r) => r.transfer_reversed)).toHaveLength(
++      1,
++    );
++  });
++
++  it('two refunds on one transfer each settle with their own reversal (multiple receipts)', async () => {
++    const h = review(['r-one', 'r-two']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-2' });
++    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
++    await h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_2' });
++    expect(h.stripeTotal('tr_p-r')).toBe(244);
++    expect(h.headCoach('p-r')).toBe(244);
++    expect(h.refund('r-two').transfer_reversal_stripe_id).toBe('trr_2');
++  });
++
++  it('a replayed receipt for the same refund adds nothing', async () => {
++    const h = review(['r-one']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
++    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
++    await expect(
++      h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' }),
++    ).rejects.toMatchObject({ response: { code: 'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED' } });
++    expect(h.headCoach('p-r')).toBe(122);
++  });
++
++  it('Sol probe: an undersized receipt is refused and the refund stays owed in review', async () => {
++    const h = review(['r-partial']);
++    await h.reverseTransfer({
++      transfer_id: 'tr_p-r',
++      amount: 10,
++      idempotencyKey: 'partial',
++      metadata: { tgp_charge_refund_id: 'r-partial' },
++    });
++    await expect(h.svc.reconcileTransferReversal('r-partial')).rejects.toMatchObject({
++      response: {
++        code: 'TRANSFER_REVERSAL_UNDERSIZED',
++        reversal_amount_cents: 10,
++        owed_cents: 122,
++      },
++    });
++    expect({
++      external: h.stripeTotal('tr_p-r'),
++      local: h.headCoach('p-r'),
++      done: h.refund('r-partial').transfer_reversed,
++      inReview: h.refund('r-partial').transfer_reversal_review_at !== null,
++      bound: h.refund('r-partial').transfer_reversal_stripe_id,
++    }).toEqual({ external: 10, local: 0, done: false, inReview: true, bound: null });
++  });
++
++  it('an oversized receipt records what Stripe moved, capped by the transfer', async () => {
++    const h = review(['r-big']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 200, idempotencyKey: 'manual-big' });
++    const out = await h.svc.reconcileTransferReversal('r-big', {
++      stripe_transfer_reversal_id: 'trr_1',
++    });
++    expect(out).toMatchObject({ outcome: 'recorded_from_stripe', amount_cents: 200 });
++    expect(h.headCoach('p-r')).toBe(200);
++    expect(h.refund('r-big').transfer_reversed).toBe(true);
++  });
++});
+diff --git a/test/refund-reversal-review.spec.ts b/test/refund-reversal-review.spec.ts
+index c3eaf115..2045c055 100644
+--- a/test/refund-reversal-review.spec.ts
++++ b/test/refund-reversal-review.spec.ts
+@@ -12,6 +12,8 @@
+ 
+ import 'reflect-metadata';
+ import * as Sentry from '@sentry/node';
++import { Logger } from '@nestjs/common';
++import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
+ import {
+   HOUR,
+   harness,
+@@ -151,8 +153,8 @@ describe('B-641-8 — expired rows never starve fresh recoverable refunds', () =
+   it('pages past rows that leave the owed set and rows that stay owed, each retried once per run', async () => {
+     // Every third Stripe call fails, so a page mixes rows that leave the set
+     // (reversed) with rows that stay owed (pending). A cursor on a row that
+-    // left the filter returned an empty page at 183ed462; keyset paging on
+-    // (created_at, id) reaches all 120 and never retries a row twice.
++    // left the filter returned an empty page at 183ed462; the last-attempt
++    // filter reaches all 120 and never retries a row twice in one run.
+     const h = harness();
+     const at = new Date(Date.now() - HOUR);
+     for (let i = 0; i < 120; i++) {
+@@ -175,3 +177,100 @@ describe('B-641-8 — expired rows never starve fresh recoverable refunds', () =
+     expect(new Set(keys).size).toBe(120);
+   });
+ });
++
++// FIX ROUND 6 (B-COACH-5, agent 115) — Sol REQUEST CHANGES @ 02cd3f88.
++describe('B-641-8 (narrowed) — persistent failures never hold later refunds back across runs', () => {
++  function backlog(failing: number) {
++    const h = harness();
++    const at = new Date(Date.now() - HOUR);
++    for (let i = 0; i < failing; i++) {
++      const id = String(i).padStart(2, '0');
++      seedPurchase(h.db, `p-a-${id}`, at);
++      h.db.state.chargeRefund.push(refundRow(`r-a-${id}`, `p-a-${id}`, new Date(at.getTime() + i)));
++    }
++    // Newest and last by id, so neither creation order nor id puts it first.
++    seedPurchase(h.db, 'p-z-fresh', new Date(at.getTime() + 100));
++    h.db.state.chargeRefund.push(refundRow('r-z-fresh', 'p-z-fresh', new Date(at.getTime() + 100)));
++    const real = h.reverseTransfer.getMockImplementation();
++    h.reverseTransfer.mockImplementation(async (args) => {
++      if (args.transfer_id !== 'tr_p-z-fresh') throw new Error('Synthetic provider failure');
++      return (real as NonNullable<typeof real>)(args);
++    });
++    return h;
++  }
++
++  it('Sol probe: 20 failing rows fill a run of 20 one-row pages; the next run reaches the fresh refund', async () => {
++    const h = backlog(20);
++    const first = await h.svc.retryPendingTransferReversals(new Date(), 1);
++    expect(first).toMatchObject({ retried: 20, reversed: 0 });
++    await h.svc.retryPendingTransferReversals(new Date(Date.now() + 15 * 60_000), 1);
++    expect({
++      external: h.stripeTotal('tr_p-z-fresh'),
++      local: h.headCoach('p-z-fresh'),
++      done: h.refund('r-z-fresh').transfer_reversed,
++    }).toEqual({ external: 122, local: 122, done: true });
++  });
++
++  it('more failures than the page budget: every owed row is tried within a bounded number of runs', async () => {
++    // 45 failing rows, 20 tries a run: runs take 20, 20, then the rest and
++    // the fresh row, never the same 20 again while others wait.
++    const h = backlog(45);
++    const tried = new Set<string>();
++    for (let run = 0; run < 3; run++) {
++      h.reverseTransfer.mockClear();
++      await h.svc.retryPendingTransferReversals(new Date(Date.now() + run * 15 * 60_000), 1);
++      for (const c of h.reverseTransfer.mock.calls) tried.add(c[0].transfer_id);
++    }
++    expect(tried.size).toBe(46);
++    expect(h.refund('r-z-fresh').transfer_reversed).toBe(true);
++    expect(h.stripeTotal('tr_p-z-fresh')).toBe(122);
++  });
++});
++
++describe('B-641-11 — reversal failure logs carry ids and closed codes only', () => {
++  async function failOnce(err: Error): Promise<string> {
++    const h = harness();
++    const at = new Date(Date.now() - HOUR);
++    seedPurchase(h.db, 'p-log', at);
++    h.db.state.chargeRefund.push(refundRow('r-log', 'p-log', at));
++    h.reverseTransfer.mockRejectedValueOnce(err);
++    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++    try {
++      await h.svc.retryPendingTransferReversals();
++      return warn.mock.calls.map((c) => String(c[0])).join('\n');
++    } finally {
++      warn.mockRestore();
++    }
++  }
++
++  it('Sol probe: an arbitrary Error.name never reaches the logger', async () => {
++    const error = new Error('synthetic non-code');
++    error.name = 'AUDIT_FREE_TEXT_CANARY_contact_at_example_invalid';
++    const logged = await failOnce(error);
++    expect(logged).toContain('refund=r-log');
++    expect(logged).toContain('code=error');
++    expect(logged).not.toContain('AUDIT_FREE_TEXT_CANARY');
++  });
++
++  it('an unknown Stripe code or a bad status is logged as a closed fallback', async () => {
++    const logged = await failOnce(
++      new StripeConnectApiError(
++        'Card holder jane@example.test',
++        402,
++        'audit_free_text_canary_contact_at_example_invalid',
++        'invalid_request_error',
++      ),
++    );
++    expect(logged).toContain('code=stripe_402_other');
++    expect(logged).not.toMatch(/canary|example/);
++    expect(await failOnce(new StripeConnectApiError('x', 99999, 'rate_limit', null))).toContain(
++      'code=stripe_0_rate_limit',
++    );
++    expect(
++      await failOnce(new StripeConnectApiError('x', 400, 'balance_insufficient', null)),
++    ).toContain('code=stripe_400_balance_insufficient');
++    expect(await failOnce(new StripeConnectApiError('x', 500, null, null))).toContain(
++      'code=stripe_500_none',
++    );
++  });
++});
+diff --git a/test/support/refund-reversal-harness.ts b/test/support/refund-reversal-harness.ts
+index c14cae32..3399b74f 100644
+--- a/test/support/refund-reversal-harness.ts
++++ b/test/support/refund-reversal-harness.ts
+@@ -28,6 +28,8 @@ export function refundRow(id: string, purchaseId: string, at: Date, extra: Row =
+     transfer_reversed: false,
+     transfer_reversal_first_attempt_at: at,
+     transfer_reversal_review_at: null,
++    transfer_reversal_last_attempt_at: null,
++    transfer_reversal_stripe_id: null,
+     created_at: at,
+     reason: null,
+     note: null,
+@@ -98,11 +100,13 @@ export function harness() {
+   db.model('user');
+   db.model('coachPackage');
+   db.model('clientPurchase');
+-  db.model('chargeRefund', [['id'], ['stripe_refund_id']], () => ({
++  db.model('chargeRefund', [['id'], ['stripe_refund_id'], ['transfer_reversal_stripe_id']], () => ({
+     ledger_reversed: false,
+     transfer_reversed: false,
+     transfer_reversal_first_attempt_at: null,
+     transfer_reversal_review_at: null,
++    transfer_reversal_last_attempt_at: null,
++    transfer_reversal_stripe_id: null,
+   }));
+   db.model('splitLedgerEntry');
+   db.model('connectTransfer');
+diff --git a/test/support/stateful-prisma.ts b/test/support/stateful-prisma.ts
+index 989c8125..8045f096 100644
+--- a/test/support/stateful-prisma.ts
++++ b/test/support/stateful-prisma.ts
+@@ -187,20 +187,26 @@ export class Model {
+   findMany = async ({ where, select, orderBy, take, skip, cursor }: any = {}) => {
+     let rows = this.rows.filter((r) => matchWhere(r, where));
+     if (orderBy) {
+-      const keys: Array<[string, string]> = (Array.isArray(orderBy) ? orderBy : [orderBy]).map(
+-        (o: Row) => Object.entries(o)[0] as [string, string],
+-      );
+-      const cmp = (a: any, b: any): number => {
+-        const an = a === null || a === undefined;
+-        const bn = b === null || b === undefined;
+-        if (an || bn) return an && bn ? 0 : an ? 1 : -1;
+-        const av = a instanceof Date ? a.getTime() : a;
+-        const bv = b instanceof Date ? b.getTime() : b;
+-        return av < bv ? -1 : av > bv ? 1 : 0;
+-      };
++      // { field: 'asc' | 'desc' } or { field: { sort, nulls } }; without
++      // `nulls`, Postgres puts nulls last ascending and first descending.
++      const keys: Array<[string, string, string | undefined]> = (
++        Array.isArray(orderBy) ? orderBy : [orderBy]
++      ).map((o: Row) => {
++        const [k, spec] = Object.entries(o)[0] as [string, any];
++        return typeof spec === 'string' ? [k, spec, undefined] : [k, spec.sort, spec.nulls];
++      });
+       rows = [...rows].sort((a, b) => {
+-        for (const [k, dir] of keys) {
+-          const c = cmp(a[k], b[k]) * (dir === 'desc' ? -1 : 1);
++        for (const [k, dir, nulls] of keys) {
++          const an = a[k] === null || a[k] === undefined;
++          const bn = b[k] === null || b[k] === undefined;
++          if (an || bn) {
++            if (an && bn) continue;
++            const nullsFirst = nulls ? nulls === 'first' : dir === 'desc';
++            return an === nullsFirst ? -1 : 1;
++          }
++          const av = a[k] instanceof Date ? a[k].getTime() : a[k];
++          const bv = b[k] instanceof Date ? b[k].getTime() : b[k];
++          const c = (av < bv ? -1 : av > bv ? 1 : 0) * (dir === 'desc' ? -1 : 1);
+           if (c !== 0) return c;
+         }
+         return 0;
+@@ -243,7 +249,10 @@ export class Model {
+     let count = 0;
+     this.rows.forEach((r, i) => {
+       if (matchWhere(r, where)) {
+-        this.rows[i] = applyData(r, data);
++        const next = applyData(r, data);
++        // Postgres enforces unique columns on UPDATE too (B-641-9).
++        if (this.violates(next, r)) throw this.uniqueError();
++        this.rows[i] = next;
+         count++;
+       }
+     });

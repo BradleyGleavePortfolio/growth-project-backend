@@ -1,0 +1,79 @@
+diff --git a/src/services/__tests__/auditSol117DunningIdentity.test.ts b/src/services/__tests__/auditSol117DunningIdentity.test.ts
+new file mode 100644
+index 0000000..d859970
+--- /dev/null
++++ b/src/services/__tests__/auditSol117DunningIdentity.test.ts
+@@ -0,0 +1,73 @@
++/** Audit-only negative controls against exact L1 head; never merge this file. */
++import { authEvents } from '../../utils/authEvents';
++import { dunningLockoutStore } from '../../entitlements/dunning/dunningLockoutStore';
++
++type ErrorHandler = (error: unknown) => Promise<unknown>;
++jest.mock('axios', () => {
++  const instance = {
++    request: jest.fn(), get: jest.fn(), post: jest.fn(), put: jest.fn(),
++    patch: jest.fn(), delete: jest.fn(),
++    interceptors: {
++      request: { use: jest.fn() },
++      response: { use: jest.fn(), rejected: [] as ErrorHandler[] },
++    },
++    defaults: { headers: { common: {} } },
++  };
++  instance.interceptors.response.use.mockImplementation((_ok, rejected) => {
++    instance.interceptors.response.rejected.push(rejected);
++  });
++  return { __esModule: true, default: { create: jest.fn(() => instance) }, __instance: instance };
++});
++let mockCurrentToken = 'token-A';
++jest.mock('../secureStorage', () => ({
++  secureStorage: {
++    getItem: jest.fn(async () => mockCurrentToken),
++    setItem: jest.fn(), removeItem: jest.fn(),
++  },
++}));
++import '../api';
++const axiosMock = jest.requireMock('axios') as {
++  __instance: { interceptors: { response: { rejected: ErrorHandler[] } } };
++};
++
++function forbidden(token = mockCurrentToken, code = 'LOCKED_DUNNING') {
++  return Object.assign(new Error('HTTP_403'), {
++    config: { url: '/v1/workouts/today', headers: { Authorization: `Bearer ${token}` } },
++    response: { status: 403, data: { code }, headers: { 'x-request-id': 'request-A' } },
++  });
++}
++function reject(err: unknown) {
++  return axiosMock.__instance.interceptors.response.rejected[0](err);
++}
++beforeEach(() => {
++  dunningLockoutStore.__resetForTests();
++  mockCurrentToken = 'token-A';
++});
++
++it('CONTROL: a current-account LOCKED_DUNNING response sets the signal', async () => {
++  const err = forbidden();
++  await expect(reject(err)).rejects.toBe(err);
++  expect(dunningLockoutStore.isLocked()).toBe(true);
++});
++it('CONTROL: an unrelated 403 does not set the signal', async () => {
++  const err = forbidden(mockCurrentToken, 'COACH_ONLY');
++  await expect(reject(err)).rejects.toBe(err);
++  expect(dunningLockoutStore.isLocked()).toBe(false);
++});
++it('B-352-1: logout retires the prior account lockout signal', async () => {
++  const err = forbidden();
++  await expect(reject(err)).rejects.toBe(err);
++  authEvents.emit('logout'); // production signOut's final identity boundary
++  expect(dunningLockoutStore.isLocked()).toBe(false);
++  expect(dunningLockoutStore.lastSignal()).toBeNull();
++});
++it('B-352-1: a delayed account-A 403 cannot lock account B', async () => {
++  const oldResponse = forbidden('token-A');
++  authEvents.emit('logout');
++  mockCurrentToken = 'token-B';
++  authEvents.emit('login');
++  dunningLockoutStore.clear(); // even a reset alone cannot reject the stale response
++  await expect(reject(oldResponse)).rejects.toBe(oldResponse);
++  expect(dunningLockoutStore.isLocked()).toBe(false);
++  expect(dunningLockoutStore.lastSignal()).toBeNull();
++});

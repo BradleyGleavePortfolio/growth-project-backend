@@ -1,0 +1,126 @@
+targeted	Targeted jest	﻿2026-10-04T19:53:20.8329738Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:53:20.8330087Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:53:20.8330479Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:53:20.8330981Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:53:20.8331361Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:53:20.8331655Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:53:20.8394320Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:53:20.8394682Z env:
+targeted	Targeted jest	2026-10-04T19:53:20.8394908Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T19:53:20.8395266Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T19:53:20.8395581Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:53:20.8493337Z specs: test/b-recur7a-119-r1.spec.ts
+targeted	Targeted jest	2026-10-04T19:53:22.7276266Z FAIL test/b-recur7a-119-r1.spec.ts (65 MB heap size)
+targeted	Targeted jest	2026-10-04T19:53:22.7279860Z   Sol B-678-3 deletion collects unbound attempts of both parties
+targeted	Targeted jest	2026-10-04T19:53:22.7282715Z     ✓ control: deleting the client finds the old uncertain create (5 ms)
+targeted	Targeted jest	2026-10-04T19:53:22.7284000Z     ✕ (failed before) deleting the coach finds the same old uncertain create (4 ms)
+targeted	Targeted jest	2026-10-04T19:53:22.7285136Z     ✕ (failed before) deleting the coach fails closed on a recent attempt and an incomplete list (1 ms)
+targeted	Targeted jest	2026-10-04T19:53:22.7286241Z     ✓ a key not carrying the row client id is not a native attempt; other users see nothing (1 ms)
+targeted	Targeted jest	2026-10-04T19:53:22.7287367Z   Sol B-678-4 send authority fences both parties
+targeted	Targeted jest	2026-10-04T19:53:22.7288339Z     ✕ (failed before) the send holds client and coach FOR KEY SHARE, in id order, before the create (2 ms)
+targeted	Targeted jest	2026-10-04T19:53:22.7289156Z     ✕ (failed before) a coach finalized before the send gets nothing sent (3 ms)
+targeted	Targeted jest	2026-10-04T19:53:22.7290222Z     ✕ (failed before) a row whose coach changed (erasure sentinel) is never claimed (2 ms)
+targeted	Targeted jest	2026-10-04T19:53:22.7291028Z     ✓ control: a deleted client still answers gone; a closed attempt still answers closed (2 ms)
+targeted	Targeted jest	2026-10-04T19:53:22.7291445Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7292059Z   ● Sol B-678-3 deletion collects unbound attempts of both parties › (failed before) deleting the coach finds the same old uncertain create
+targeted	Targeted jest	2026-10-04T19:53:22.7292579Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7292766Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:53:22.7293006Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7293113Z     - Expected  - 3
+targeted	Targeted jest	2026-10-04T19:53:22.7293383Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T19:53:22.7293511Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7293597Z     - Array [
+targeted	Targeted jest	2026-10-04T19:53:22.7293806Z     -   "sub_1",
+targeted	Targeted jest	2026-10-04T19:53:22.7294005Z     - ]
+targeted	Targeted jest	2026-10-04T19:53:22.7294191Z     + Array []
+targeted	Targeted jest	2026-10-04T19:53:22.7294310Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7294596Z     ^[[0m ^[[90m 60 |^[[39m     ^[[36mconst^[[39m f ^[[33m=^[[39m setup()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7295122Z      ^[[90m 61 |^[[39m     ^[[36mawait^[[39m f^[[33m.^[[39mcreate()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7296268Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 62 |^[[39m     expect(^[[36mawait^[[39m f^[[33m.^[[39mbilling^[[33m.^[[39mcollectUnboundAttemptSubscriptionIds(f^[[33m.^[[39mdb^[[33m,^[[39m ^[[33mCOACH^[[39m))^[[33m.^[[39mtoEqual([^[[32m'sub_1'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7298121Z      ^[[90m    |^[[39m                                                                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7298972Z      ^[[90m 63 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7299538Z      ^[[90m 64 |^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7301028Z      ^[[90m 65 |^[[39m   it(^[[32m'(failed before) deleting the coach fails closed on a recent attempt and an incomplete list'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:53:22.7302088Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7302498Z       at Object.<anonymous> (test/b-recur7a-119-r1.spec.ts:62:79)
+targeted	Targeted jest	2026-10-04T19:53:22.7302964Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7304240Z   ● Sol B-678-3 deletion collects unbound attempts of both parties › (failed before) deleting the coach fails closed on a recent attempt and an incomplete list
+targeted	Targeted jest	2026-10-04T19:53:22.7305287Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7305542Z     expect(received).rejects.toThrow()
+targeted	Targeted jest	2026-10-04T19:53:22.7306215Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7306507Z     Received promise resolved instead of rejected
+targeted	Targeted jest	2026-10-04T19:53:22.7307474Z     Resolved to value: []
+targeted	Targeted jest	2026-10-04T19:53:22.7307662Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7308431Z     ^[[0m ^[[90m 65 |^[[39m   it(^[[32m'(failed before) deleting the coach fails closed on a recent attempt and an incomplete list'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:53:22.7309510Z      ^[[90m 66 |^[[39m     ^[[36mconst^[[39m recent ^[[33m=^[[39m setup({ updated_at^[[33m:^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m() })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7310170Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 67 |^[[39m     ^[[36mawait^[[39m expect(
+targeted	Targeted jest	2026-10-04T19:53:22.7310598Z      ^[[90m    |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7311450Z      ^[[90m 68 |^[[39m       recent^[[33m.^[[39mbilling^[[33m.^[[39mcollectUnboundAttemptSubscriptionIds(recent^[[33m.^[[39mdb^[[33m,^[[39m ^[[33mCOACH^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7312339Z      ^[[90m 69 |^[[39m     )^[[33m.^[[39mrejects^[[33m.^[[39mtoThrow(^[[35m/still finishing/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7312960Z      ^[[90m 70 |^[[39m     ^[[36mconst^[[39m partial ^[[33m=^[[39m setup()^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:53:22.7313240Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7313432Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	Targeted jest	2026-10-04T19:53:22.7313863Z       at Object.<anonymous> (test/b-recur7a-119-r1.spec.ts:67:11)
+targeted	Targeted jest	2026-10-04T19:53:22.7314120Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7314738Z   ● Sol B-678-4 send authority fences both parties › (failed before) the send holds client and coach FOR KEY SHARE, in id order, before the create
+targeted	Targeted jest	2026-10-04T19:53:22.7315258Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7315436Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:53:22.7315669Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7315767Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T19:53:22.7316260Z     + Received  + 0
+targeted	Targeted jest	2026-10-04T19:53:22.7316483Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7316638Z       Array [
+targeted	Targeted jest	2026-10-04T19:53:22.7317262Z         "11111111-1111-4111-8111-111111111111",
+targeted	Targeted jest	2026-10-04T19:53:22.7317831Z     -   "22222222-2222-4222-8222-222222222222",
+targeted	Targeted jest	2026-10-04T19:53:22.7318316Z       ]
+targeted	Targeted jest	2026-10-04T19:53:22.7318494Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7318778Z     ^[[0m ^[[90m 103 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7320147Z      ^[[90m 104 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m sendFenced(f^[[33m.^[[39mdb^[[33m,^[[39m { ^[[33m...^[[39mf^[[33m.^[[39mrow } ^[[36mas^[[39m any^[[33m,^[[39m ^[[36mnull^[[39m^[[33m,^[[39m f^[[33m.^[[39mcreate)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7322326Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 105 |^[[39m     expect(atCreate)^[[33m.^[[39mtoEqual([^[[33mCLIENT^[[39m^[[33m,^[[39m ^[[33mCOACH^[[39m]^[[33m.^[[39msort())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7323504Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7324729Z      ^[[90m 106 |^[[39m     ^[[36mconst^[[39m sql ^[[33m=^[[39m f^[[33m.^[[39mdb^[[33m.^[[39m$queryRaw^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mmap((a^[[33m:^[[39m any[]) ^[[33m=>^[[39m a[^[[35m0^[[39m]^[[33m.^[[39mjoin(^[[32m'?'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7326020Z      ^[[90m 107 |^[[39m     expect(sql^[[33m.^[[39mevery((q^[[33m:^[[39m string) ^[[33m=>^[[39m ^[[35m/FOR KEY SHARE/^[[39m^[[33m.^[[39mtest(q)))^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7327681Z      ^[[90m 108 |^[[39m     expect(out)^[[33m.^[[39mtoEqual({ sub^[[33m:^[[39m expect^[[33m.^[[39mobjectContaining({ id^[[33m:^[[39m ^[[32m'sub_1'^[[39m })^[[33m,^[[39m bound^[[33m:^[[39m expect^[[33m.^[[39manything() })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:53:22.7328340Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7328559Z       at Object.<anonymous> (test/b-recur7a-119-r1.spec.ts:105:22)
+targeted	Targeted jest	2026-10-04T19:53:22.7328815Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7329329Z   ● Sol B-678-4 send authority fences both parties › (failed before) a coach finalized before the send gets nothing sent
+targeted	Targeted jest	2026-10-04T19:53:22.7329772Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7329954Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:53:22.7330210Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7330308Z     Expected: "closed"
+targeted	Targeted jest	2026-10-04T19:53:22.7334668Z     Received: {"bound": {"billing_type": "recurring", "client_user_id": "11111111-1111-4111-8111-111111111111", "coach_user_id": "22222222-2222-4222-8222-222222222222", "created_at": 2026-10-04T19:43:22.662Z, "current_period_end": 2026-11-03T19:53:22.000Z, "entitlement_active": false, "id": "pur_r7", "idempotency_key": "sub-11111111-1111-4111-8111-111111111111-key", "status": "pending", "stripe_checkout_session_id": "sub_1", "stripe_client_secret": null, "stripe_customer_id": "cus_client", "stripe_destination_account": "acct_coach", "stripe_payment_intent_id": "pi_1", "stripe_subscription_id": "sub_1", "trial_started_at": null, "updated_at": 2026-10-04T19:53:22.690Z}, "sub": {"cancel_at_period_end": false, "created": 1791143602, "current_period_end": 1793735602, "customer": "cus_client", "default_payment_method": null, "id": "sub_1", "items": {"data": [{"price": {"id": "price_4900"}}]}, "latest_invoice": {"amount_due": undefined, "id": "in_1", "payment_intent": {"client_secret": "pi_1_secret_x", "id": "pi_1", "status": "requires_payment_method"}}, "metadata": {"tgp_purchase_id": "pur_r7"}, "pending_setup_intent": null, "status": "incomplete"}}
+targeted	Targeted jest	2026-10-04T19:53:22.7338895Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7339519Z     ^[[0m ^[[90m 114 |^[[39m     f^[[33m.^[[39mdb^[[33m.^[[39m_users[^[[35m1^[[39m]^[[33m.^[[39mdeleted_at ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7340880Z      ^[[90m 115 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m sendFenced(f^[[33m.^[[39mdb^[[33m,^[[39m { ^[[33m...^[[39mf^[[33m.^[[39mrow } ^[[36mas^[[39m any^[[33m,^[[39m ^[[36mnull^[[39m^[[33m,^[[39m f^[[33m.^[[39mcreate)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7341968Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 116 |^[[39m     expect(out)^[[33m.^[[39mtoBe(^[[32m'closed'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7342555Z      ^[[90m     |^[[39m                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7343220Z      ^[[90m 117 |^[[39m     expect(f^[[33m.^[[39mcreate)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7344469Z      ^[[90m 118 |^[[39m     expect(f^[[33m.^[[39mrow^[[33m.^[[39mstripe_checkout_session_id)^[[33m.^[[39mtoBe(^[[32m`sub-retry-sub-${CLIENT}-key`^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7345202Z      ^[[90m 119 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:53:22.7345417Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7345642Z       at Object.<anonymous> (test/b-recur7a-119-r1.spec.ts:116:17)
+targeted	Targeted jest	2026-10-04T19:53:22.7345927Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7346509Z   ● Sol B-678-4 send authority fences both parties › (failed before) a row whose coach changed (erasure sentinel) is never claimed
+targeted	Targeted jest	2026-10-04T19:53:22.7347014Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7347515Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:53:22.7347798Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7347895Z     Expected: "closed"
+targeted	Targeted jest	2026-10-04T19:53:22.7352319Z     Received: {"bound": {"billing_type": "recurring", "client_user_id": "11111111-1111-4111-8111-111111111111", "coach_user_id": "33333333-3333-4333-8333-333333333333", "created_at": 2026-10-04T19:43:22.662Z, "current_period_end": 2026-11-03T19:53:22.000Z, "entitlement_active": false, "id": "pur_r7", "idempotency_key": "sub-11111111-1111-4111-8111-111111111111-key", "status": "pending", "stripe_checkout_session_id": "sub_1", "stripe_client_secret": null, "stripe_customer_id": "cus_client", "stripe_destination_account": "acct_coach", "stripe_payment_intent_id": "pi_1", "stripe_subscription_id": "sub_1", "trial_started_at": null, "updated_at": 2026-10-04T19:53:22.693Z}, "sub": {"cancel_at_period_end": false, "created": 1791143602, "current_period_end": 1793735602, "customer": "cus_client", "default_payment_method": null, "id": "sub_1", "items": {"data": [{"price": {"id": "price_4900"}}]}, "latest_invoice": {"amount_due": undefined, "id": "in_1", "payment_intent": {"client_secret": "pi_1_secret_x", "id": "pi_1", "status": "requires_payment_method"}}, "metadata": {"tgp_purchase_id": "pur_r7"}, "pending_setup_intent": null, "status": "incomplete"}}
+targeted	Targeted jest	2026-10-04T19:53:22.7356216Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7356656Z     ^[[0m ^[[90m 124 |^[[39m     f^[[33m.^[[39mrow^[[33m.^[[39mcoach_user_id ^[[33m=^[[39m ^[[33mOTHER^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7358127Z      ^[[90m 125 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m sendFenced(f^[[33m.^[[39mdb^[[33m,^[[39m stale ^[[36mas^[[39m any^[[33m,^[[39m ^[[36mnull^[[39m^[[33m,^[[39m f^[[33m.^[[39mcreate)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7359385Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 126 |^[[39m     expect(out)^[[33m.^[[39mtoBe(^[[32m'closed'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7359964Z      ^[[90m     |^[[39m                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7360612Z      ^[[90m 127 |^[[39m     expect(f^[[33m.^[[39mcreate)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7361170Z      ^[[90m 128 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:53:22.7361490Z      ^[[90m 129 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:53:22.7361662Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7361888Z       at Object.<anonymous> (test/b-recur7a-119-r1.spec.ts:126:17)
+targeted	Targeted jest	2026-10-04T19:53:22.7362176Z 
+targeted	Targeted jest	2026-10-04T19:53:22.7362363Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T19:53:22.7362704Z Tests:       5 failed, 3 passed, 8 total
+targeted	Targeted jest	2026-10-04T19:53:22.7363018Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:53:22.7363276Z Time:        1.065 s
+targeted	Targeted jest	2026-10-04T19:53:22.7363642Z Ran all test suites matching test/b-recur7a-119-r1.spec.ts.
+targeted	Targeted jest	2026-10-04T19:53:22.7573850Z ##[error]Process completed with exit code 1.

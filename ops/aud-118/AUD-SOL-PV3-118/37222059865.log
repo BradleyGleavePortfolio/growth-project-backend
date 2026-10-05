@@ -1,0 +1,662 @@
+﻿2026-10-04T17:50:55.5415867Z Current runner version: '2.337.0'
+2026-10-04T17:50:55.5433259Z ##[group]Runner Image Provisioner
+2026-10-04T17:50:55.5433777Z Hosted Compute Agent
+2026-10-04T17:50:55.5434240Z Version: 20260901.588
+2026-10-04T17:50:55.5434650Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T17:50:55.5435111Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T17:50:55.5435567Z Worker ID: {d58fffad-ecfb-4995-87dd-0f920a1dac52}
+2026-10-04T17:50:55.5435992Z Azure Region: westus3
+2026-10-04T17:50:55.5436638Z ##[endgroup]
+2026-10-04T17:50:55.5437421Z ##[group]Operating System
+2026-10-04T17:50:55.5437773Z Ubuntu
+2026-10-04T17:50:55.5438172Z 24.04.5
+2026-10-04T17:50:55.5438486Z LTS
+2026-10-04T17:50:55.5439085Z ##[endgroup]
+2026-10-04T17:50:55.5439456Z ##[group]Runner Image
+2026-10-04T17:50:55.5439801Z Image: ubuntu-24.04
+2026-10-04T17:50:55.5440214Z Version: 20260927.320.1
+2026-10-04T17:50:55.5440956Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T17:50:55.5441903Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T17:50:55.5442478Z ##[endgroup]
+2026-10-04T17:50:55.5443211Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T17:50:55.5444400Z Contents: read
+2026-10-04T17:50:55.5444801Z Metadata: read
+2026-10-04T17:50:55.5445136Z Packages: read
+2026-10-04T17:50:55.5445524Z ##[endgroup]
+2026-10-04T17:50:55.5446965Z Secret source: Actions
+2026-10-04T17:50:55.5447567Z Cache mode: write
+2026-10-04T17:50:55.5447991Z Prepare workflow directory
+2026-10-04T17:50:55.5701548Z Prepare all required actions
+2026-10-04T17:50:55.5731809Z Getting action download info
+2026-10-04T17:50:55.8728228Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T17:50:56.0968574Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T17:50:56.4040749Z Complete job name: targeted
+2026-10-04T17:50:56.4362763Z ##[group]Checking docker version
+2026-10-04T17:50:56.4371183Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T17:50:56.5197058Z '1.48'
+2026-10-04T17:50:56.5209841Z Docker daemon API version: '1.48'
+2026-10-04T17:50:56.5210328Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T17:50:56.5339961Z '1.48'
+2026-10-04T17:50:56.5351111Z Docker client API version: '1.48'
+2026-10-04T17:50:56.5354638Z ##[endgroup]
+2026-10-04T17:50:56.5355960Z ##[group]Clean up resources from previous jobs
+2026-10-04T17:50:56.5359504Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=08cbc0"
+2026-10-04T17:50:56.5468966Z ##[command]/usr/bin/docker network prune --force --filter "label=08cbc0"
+2026-10-04T17:50:56.5566822Z ##[endgroup]
+2026-10-04T17:50:56.5567124Z ##[group]Create local container network
+2026-10-04T17:50:56.5573616Z ##[command]/usr/bin/docker network create --label 08cbc0 github_network_2e49fddbdaee4443979eb492ec8e4edd
+2026-10-04T17:50:56.6598692Z 6a0d81c924886957e4ac65d6bc5927ec51b689617a906f61f1263a380470bacb
+2026-10-04T17:50:56.6618658Z ##[endgroup]
+2026-10-04T17:50:56.6635905Z ##[group]Starting redis service container
+2026-10-04T17:50:56.6650358Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T17:50:57.6456664Z 7-alpine: Pulling from library/redis
+2026-10-04T17:50:58.0651167Z 16333ee0c00f: Pulling fs layer
+2026-10-04T17:50:58.0652253Z 83234986c742: Pulling fs layer
+2026-10-04T17:50:58.0652907Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T17:50:58.0653538Z 1522f9c6f453: Pulling fs layer
+2026-10-04T17:50:58.0654164Z 9928009b15c8: Pulling fs layer
+2026-10-04T17:50:58.0654837Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T17:50:58.0655708Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T17:50:58.0656440Z 1522f9c6f453: Waiting
+2026-10-04T17:50:58.0656972Z 9928009b15c8: Waiting
+2026-10-04T17:50:58.0657464Z 4f4fb700ef54: Waiting
+2026-10-04T17:50:58.0658009Z 4eb14bae0e1d: Waiting
+2026-10-04T17:50:58.2511903Z 83234986c742: Verifying Checksum
+2026-10-04T17:50:58.2513007Z 83234986c742: Download complete
+2026-10-04T17:50:58.2560863Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T17:50:58.2561337Z 7eb50503c2b0: Download complete
+2026-10-04T17:50:58.2670534Z 16333ee0c00f: Download complete
+2026-10-04T17:50:58.4431514Z 9928009b15c8: Verifying Checksum
+2026-10-04T17:50:58.4432066Z 9928009b15c8: Download complete
+2026-10-04T17:50:58.4452657Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T17:50:58.4453328Z 4f4fb700ef54: Download complete
+2026-10-04T17:50:58.4710923Z 1522f9c6f453: Verifying Checksum
+2026-10-04T17:50:58.4711154Z 1522f9c6f453: Download complete
+2026-10-04T17:50:58.6556636Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T17:50:58.6557028Z 4eb14bae0e1d: Download complete
+2026-10-04T17:50:58.6983041Z 16333ee0c00f: Pull complete
+2026-10-04T17:51:04.2717628Z 83234986c742: Pull complete
+2026-10-04T17:51:04.3606261Z 7eb50503c2b0: Pull complete
+2026-10-04T17:51:04.6642038Z 1522f9c6f453: Pull complete
+2026-10-04T17:51:04.6716645Z 9928009b15c8: Pull complete
+2026-10-04T17:51:04.6802006Z 4f4fb700ef54: Pull complete
+2026-10-04T17:51:04.6881550Z 4eb14bae0e1d: Pull complete
+2026-10-04T17:51:04.6912353Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T17:51:04.6928030Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T17:51:04.6933937Z docker.io/library/redis:7-alpine
+2026-10-04T17:51:04.6962230Z ##[command]/usr/bin/docker create --name 0d723be0db0c412f9d348cfd2079889e_redis7alpine_2dca44 --label 08cbc0 --network github_network_2e49fddbdaee4443979eb492ec8e4edd --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T17:51:04.7143802Z 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:51:04.7159966Z ##[command]/usr/bin/docker start 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:51:04.9435703Z 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:51:04.9450535Z ##[command]/usr/bin/docker ps --all --filter id=711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T17:51:04.9537344Z 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb Up Less than a second (health: starting)
+2026-10-04T17:51:04.9551647Z ##[command]/usr/bin/docker port 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:51:04.9630900Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T17:51:04.9631195Z 6379/tcp -> [::]:6379
+2026-10-04T17:51:04.9662311Z ##[endgroup]
+2026-10-04T17:51:04.9668077Z ##[group]Waiting for all services to be ready
+2026-10-04T17:51:04.9676490Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:51:04.9755754Z starting
+2026-10-04T17:51:04.9769818Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T17:51:06.9770759Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:51:06.9861138Z starting
+2026-10-04T17:51:06.9878560Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T17:51:10.9989261Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:51:11.0081314Z healthy
+2026-10-04T17:51:11.0094938Z redis service is healthy.
+2026-10-04T17:51:11.0095697Z ##[endgroup]
+2026-10-04T17:51:11.0261818Z ##[group]Run actions/checkout@v6
+2026-10-04T17:51:11.0262065Z with:
+2026-10-04T17:51:11.0262232Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:51:11.0263772Z   token: ***
+2026-10-04T17:51:11.0263915Z   ssh-strict: true
+2026-10-04T17:51:11.0264034Z   ssh-user: git
+2026-10-04T17:51:11.0264157Z   persist-credentials: true
+2026-10-04T17:51:11.0264461Z   clean: true
+2026-10-04T17:51:11.0264586Z   sparse-checkout-cone-mode: true
+2026-10-04T17:51:11.0264729Z   fetch-depth: 1
+2026-10-04T17:51:11.0264849Z   fetch-tags: false
+2026-10-04T17:51:11.0264967Z   show-progress: true
+2026-10-04T17:51:11.0265086Z   lfs: false
+2026-10-04T17:51:11.0265191Z   submodules: false
+2026-10-04T17:51:11.0265310Z   set-safe-directory: true
+2026-10-04T17:51:11.0265450Z   allow-unsafe-pr-checkout: false
+2026-10-04T17:51:11.0265664Z ##[endgroup]
+2026-10-04T17:51:11.0947895Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:51:11.0948800Z ##[group]Getting Git version info
+2026-10-04T17:51:11.0949058Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T17:51:11.0949408Z [command]/usr/bin/git version
+2026-10-04T17:51:11.0949556Z git version 2.55.0
+2026-10-04T17:51:11.0957180Z ##[endgroup]
+2026-10-04T17:51:11.0966425Z Temporarily overriding HOME='/home/runner/work/_temp/12360e8c-b238-42ef-9837-8cb1e8a9cdd9' before making global git config changes
+2026-10-04T17:51:11.0967061Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:51:11.0970039Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:51:11.1009842Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T17:51:11.1012483Z ##[group]Determining repository object format
+2026-10-04T17:51:11.1014250Z ##[endgroup]
+2026-10-04T17:51:11.1014708Z ##[group]Initializing the repository
+2026-10-04T17:51:11.1017633Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:51:11.1102521Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T17:51:11.1102969Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T17:51:11.1103296Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T17:51:11.1103549Z hint: call:
+2026-10-04T17:51:11.1103686Z hint:
+2026-10-04T17:51:11.1103941Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T17:51:11.1104269Z hint:
+2026-10-04T17:51:11.1104648Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T17:51:11.1105064Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T17:51:11.1105391Z hint:
+2026-10-04T17:51:11.1105580Z hint: 	git branch -m <name>
+2026-10-04T17:51:11.1105778Z hint:
+2026-10-04T17:51:11.1106185Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T17:51:11.1106832Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T17:51:11.1112714Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:51:11.1151075Z ##[endgroup]
+2026-10-04T17:51:11.1151375Z ##[group]Disabling automatic garbage collection
+2026-10-04T17:51:11.1153571Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T17:51:11.1176554Z ##[endgroup]
+2026-10-04T17:51:11.1176861Z ##[group]Setting up auth
+2026-10-04T17:51:11.1177377Z Removing SSH command configuration
+2026-10-04T17:51:11.1180853Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:51:11.1203486Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:51:11.1498055Z Removing HTTP extra header
+2026-10-04T17:51:11.1501200Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:51:11.1524234Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:51:11.1684917Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:51:11.1689830Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:51:11.1713603Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:51:11.1883227Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T17:51:11.1912008Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:51:11.1936362Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:51:11.1961985Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:51:11.1985111Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:51:11.2012400Z ##[endgroup]
+2026-10-04T17:51:11.2017443Z ##[group]Fetching the repository
+2026-10-04T17:51:11.2017930Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +aa267a998b600dbdcd0c1ebab6c0e2da91ce1bbc:refs/remotes/origin/ci/B-PRIVFU2-118-700-after
+2026-10-04T17:51:13.1377530Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:51:13.1378312Z  * [new ref]         aa267a998b600dbdcd0c1ebab6c0e2da91ce1bbc -> origin/ci/B-PRIVFU2-118-700-after
+2026-10-04T17:51:13.1387312Z [command]/usr/bin/git branch --list --remote origin/ci/B-PRIVFU2-118-700-after
+2026-10-04T17:51:13.1408601Z   origin/ci/B-PRIVFU2-118-700-after
+2026-10-04T17:51:13.1415018Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-PRIVFU2-118-700-after
+2026-10-04T17:51:13.1433670Z aa267a998b600dbdcd0c1ebab6c0e2da91ce1bbc
+2026-10-04T17:51:13.1437103Z ##[endgroup]
+2026-10-04T17:51:13.1437463Z ##[group]Determining the checkout info
+2026-10-04T17:51:13.1438354Z ##[endgroup]
+2026-10-04T17:51:13.1442225Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T17:51:13.1484750Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T17:51:13.1507264Z ##[group]Checking out the ref
+2026-10-04T17:51:13.1509799Z [command]/usr/bin/git checkout --progress --force -B ci/B-PRIVFU2-118-700-after refs/remotes/origin/ci/B-PRIVFU2-118-700-after
+2026-10-04T17:51:13.3125845Z Switched to a new branch 'ci/B-PRIVFU2-118-700-after'
+2026-10-04T17:51:13.3134939Z branch 'ci/B-PRIVFU2-118-700-after' set up to track 'origin/ci/B-PRIVFU2-118-700-after'.
+2026-10-04T17:51:13.3139078Z ##[endgroup]
+2026-10-04T17:51:13.3180905Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T17:51:13.3196985Z aa267a998b600dbdcd0c1ebab6c0e2da91ce1bbc
+2026-10-04T17:51:13.3401594Z ##[group]Run actions/setup-node@v6
+2026-10-04T17:51:13.3401764Z with:
+2026-10-04T17:51:13.3401881Z   node-version: 20
+2026-10-04T17:51:13.3401998Z   cache: npm
+2026-10-04T17:51:13.3402110Z   check-latest: false
+2026-10-04T17:51:13.3403527Z   token: ***
+2026-10-04T17:51:13.3403653Z   package-manager-cache: true
+2026-10-04T17:51:13.3403800Z ##[endgroup]
+2026-10-04T17:51:13.4297441Z Attempting to download 20...
+2026-10-04T17:51:14.4178592Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T17:51:14.8831119Z Extracting ...
+2026-10-04T17:51:14.8910831Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/24473b3d-1d7c-40e1-aedd-bca814a77c23 -f /home/runner/work/_temp/9cf6caef-d960-4c0f-b442-6a6a2fbea050
+2026-10-04T17:51:15.6436514Z Adding to the cache ...
+2026-10-04T17:51:17.1422585Z ##[group]Environment details
+2026-10-04T17:51:17.2830987Z node: v20.20.2
+2026-10-04T17:51:17.2831237Z npm: 10.8.2
+2026-10-04T17:51:17.2831397Z yarn: 1.22.22
+2026-10-04T17:51:17.2831836Z ##[endgroup]
+2026-10-04T17:51:17.2841987Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T17:51:17.3481757Z /home/runner/.npm
+2026-10-04T17:51:17.5448706Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T17:51:18.7745376Z Received 41943040 of 86828135 (48.3%), 40.0 MBs/sec
+2026-10-04T17:51:19.0968455Z Received 86828135 of 86828135 (100.0%), 62.6 MBs/sec
+2026-10-04T17:51:19.0968802Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T17:51:19.1044884Z [command]/usr/bin/tar -xf /home/runner/work/_temp/502c3c20-04d7-43ca-8053-3aa5eaa3a681/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T17:51:19.2265014Z Cache restored successfully
+2026-10-04T17:51:19.2304522Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T17:51:19.2459038Z ##[group]Run npm ci
+2026-10-04T17:51:19.2459207Z [36;1mnpm ci[0m
+2026-10-04T17:51:19.2620789Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:51:19.2620943Z ##[endgroup]
+2026-10-04T17:51:22.7834748Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T17:51:23.0160657Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T17:51:24.4062732Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:51:25.1402317Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:51:25.1685029Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:51:25.1957020Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:51:33.0454314Z 
+2026-10-04T17:51:33.0455069Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T17:51:33.0457712Z > prisma generate
+2026-10-04T17:51:33.6170028Z 
+2026-10-04T17:51:33.6170720Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T17:51:36.0678137Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T17:51:36.0678452Z 
+2026-10-04T17:51:36.0679223Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.35s
+2026-10-04T17:51:36.0680016Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T17:51:36.0680671Z │                                                         │
+2026-10-04T17:51:36.0680858Z 
+2026-10-04T17:51:36.0681296Z │  This is a major update - please follow the guide at    │
+2026-10-04T17:51:36.0681860Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T17:51:36.0682956Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T17:51:36.0683171Z 
+2026-10-04T17:51:36.0683547Z │                                                         │
+2026-10-04T17:51:36.0683990Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T17:51:36.0684562Z │  Run the following to update                            │
+2026-10-04T17:51:36.0684692Z 
+2026-10-04T17:51:36.0685010Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T17:51:36.0685391Z │    npm i @prisma/client@latest                          │
+2026-10-04T17:51:36.0685778Z └─────────────────────────────────────────────────────────┘
+2026-10-04T17:51:36.1148566Z 
+2026-10-04T17:51:36.1149428Z > growth-project-backend@1.0.0 prepare
+2026-10-04T17:51:36.1150074Z > lefthook install
+2026-10-04T17:51:36.1150355Z 
+2026-10-04T17:51:36.1591957Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T17:51:36.1731726Z 
+2026-10-04T17:51:36.1732471Z added 1115 packages, and audited 1116 packages in 17s
+2026-10-04T17:51:36.1732809Z 
+2026-10-04T17:51:36.1732961Z 202 packages are looking for funding
+2026-10-04T17:51:36.1733270Z   run `npm fund` for details
+2026-10-04T17:51:36.1754073Z 
+2026-10-04T17:51:36.1754403Z 3 high severity vulnerabilities
+2026-10-04T17:51:36.1754556Z 
+2026-10-04T17:51:36.1755170Z To address all issues (including breaking changes), run:
+2026-10-04T17:51:36.1755572Z   npm audit fix --force
+2026-10-04T17:51:36.1755704Z 
+2026-10-04T17:51:36.1755816Z Run `npm audit` for details.
+2026-10-04T17:51:36.2342428Z ##[group]Run npx prisma generate
+2026-10-04T17:51:36.2342622Z [36;1mnpx prisma generate[0m
+2026-10-04T17:51:36.2398210Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:51:36.2398367Z ##[endgroup]
+2026-10-04T17:51:37.0027153Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T17:51:39.2785485Z 
+2026-10-04T17:51:39.2786642Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.18s
+2026-10-04T17:51:39.2786866Z 
+2026-10-04T17:51:39.2787083Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T17:51:39.2787308Z 
+2026-10-04T17:51:39.2787598Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T17:51:39.2787834Z 
+2026-10-04T17:51:39.3759639Z ##[group]Run set -euo pipefail
+2026-10-04T17:51:39.3759852Z [36;1mset -euo pipefail[0m
+2026-10-04T17:51:39.3760068Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T17:51:39.3760331Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T17:51:39.3760525Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T17:51:39.3760686Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T17:51:39.3815056Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T17:51:39.3815246Z env:
+2026-10-04T17:51:39.3815374Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T17:51:39.3815573Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T17:51:39.3815765Z ##[endgroup]
+2026-10-04T17:51:39.3904996Z specs: test/privacy/log-pii.spec.ts test/privacy/no-pii-probe-replays.spec.ts test/privacy/no-pii-in-logs.spec.ts test/email.service.spec.ts test/privacy/aud-opus-fu2-118-coach-name-probe.spec.ts test/privacy/aud-opus-fu2-118-finance-path-probe.spec.ts test/privacy/aud-opus-fu2-118-reset-email-probe.spec.ts test/privacy/audit-sol-fu2-118-boundary.spec.ts test/account.service.spec.ts test/auth-forgot-password-throttle.spec.ts test/auth.service.spec.ts test/checkout-recovery.service.spec.ts test/coach-brief.service.spec.ts test/coach-brief-ttl.spec.ts test/deploy-readiness.spec.ts test/digest.cron.spec.ts test/finance-admin.client.spec.ts test/gdpr-scrub.scheduler.spec.ts test/gdpr-scrub.service.spec.ts test/invite-bulk-email.spec.ts test/auth-apple.spec.ts test/auth-recent-auth-google-session.spec.ts test/auth-recent-auth-token.spec.ts test/coach-practice-type.service.spec.ts test/google-calendar-webhook.controller.spec.ts test/notifications.controller.spec.ts test/finance-federation.service.spec.ts test/federation.service.spec.ts
+2026-10-04T17:51:41.2775790Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [31m  ERROR[39m [38;5;3m[CoachBriefService] [39m[31mCoachBrief Claude call failed for coach=unset mode=solo_coach date=2026-05-25: error=Error[39m
+2026-10-04T17:51:41.2795944Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [31m  ERROR[39m [38;5;3m[CoachBriefService] [39m[31mCoachBrief Anthropic client init failed: error=InternalServerErrorException status=500[39m
+2026-10-04T17:51:41.2858913Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [31m  ERROR[39m [38;5;3m[CoachBriefService] [39m[31mCoachBrief Anthropic client init failed: error=InternalServerErrorException status=500[39m
+2026-10-04T17:51:41.2890230Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [31m  ERROR[39m [38;5;3m[CoachBriefService] [39m[31mCoachBrief Anthropic client init failed: error=InternalServerErrorException status=500[39m
+2026-10-04T17:51:41.3172274Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [31m  ERROR[39m [38;5;3m[CoachBriefService] [39m[31mCoachBrief Claude call failed for coach=unset mode=solo_coach date=2026-05-25: error=AiConsentRequiredException status=403[39m
+2026-10-04T17:51:41.3187808Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [31m  ERROR[39m [38;5;3m[CoachBriefService] [39m[31mCoachBrief Claude call failed for coach=unset mode=solo_coach date=2026-05-25: error=AiConsentRequiredException status=403[39m
+2026-10-04T17:51:41.3253672Z PASS test/coach-brief.service.spec.ts (145 MB heap size)
+2026-10-04T17:51:41.3255267Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [33m   WARN[39m [38;5;3m[CoachBriefService] [39m[33mCoachBrief Claude output failed contract (too_few_sentences:2) for coach=unset mode=solo_coach date=2026-05-25; attempting one repair[39m
+2026-10-04T17:51:41.3256485Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [33m   WARN[39m [38;5;3m[CoachBriefService] [39m[33mCoachBrief Claude repair attempt also failed contract (too_few_sentences:2) for coach=unset mode=solo_coach date=2026-05-25; using fallback[39m
+2026-10-04T17:51:41.3257828Z [95m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [95m  DEBUG[39m [38;5;3m[CoachBriefScheduler] [39m[95mcoach brief push deferred for coach=coach1 — summary not ready yet[39m
+2026-10-04T17:51:41.3258529Z [32m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [32m    LOG[39m [38;5;3m[CoachBriefScheduler] [39m[32mcoach brief push sent: coach=coach1 date=2026-05-25[39m
+2026-10-04T17:51:41.3259678Z [95m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [95m  DEBUG[39m [38;5;3m[CoachBriefScheduler] [39m[95mcoach brief push not delivered for coach=coach1 outcome=transport-error attempt=1/5[39m
+2026-10-04T17:51:41.3260913Z [95m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [95m  DEBUG[39m [38;5;3m[CoachBriefScheduler] [39m[95mcoach brief push already delivered for coach=coach1 date=2026-05-25[39m
+2026-10-04T17:51:41.3262156Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [33m   WARN[39m [38;5;3m[CoachBriefScheduler] [39m[33mcoach brief push retry budget exhausted for coach=coach1 date=2026-05-25 attempts=5[39m
+2026-10-04T17:51:41.3263254Z [95m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [95m  DEBUG[39m [38;5;3m[CoachBriefScheduler] [39m[95mcoach brief push lease held by another instance for coach=coach1[39m
+2026-10-04T17:51:41.3264411Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:51 PM [33m   WARN[39m [38;5;3m[CoachBriefScheduler] [39m[33mcoach brief push failed or timed out for coach coach1 on 2026-05-25: push timeout[39m
+2026-10-04T17:51:41.3265598Z [95m[Nest] 2791  - [39m10/04/2026, 5:51:51 PM [95m  DEBUG[39m [38;5;3m[CoachBriefScheduler] [39m[95mcoach brief push not delivered for coach=coach1 outcome=timeout attempt=1/5[39m
+2026-10-04T17:51:41.3266923Z [95m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [95m  DEBUG[39m [38;5;3m[CoachBriefScheduler] [39m[95mcoach brief notifications skipped — COACH_BRIEF_NOTIFICATIONS_ENABLED=off[39m
+2026-10-04T17:51:41.3268319Z [95m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [95m  DEBUG[39m [38;5;3m[CoachBriefScheduler] [39m[95mcoach brief scheduler skipped — COACH_BRIEF_ENABLED=off[39m
+2026-10-04T17:51:41.3269542Z [32m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=coach.brief reason=no_live_grant clients=1 missing=1[39m
+2026-10-04T17:51:41.3270694Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [33m   WARN[39m [38;5;3m[AiEgressService] [39m[33mai_egress.consent_read_failed (treated as no grant)[39m
+2026-10-04T17:51:41.3271898Z [32m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=coach.brief reason=no_live_grant clients=1 missing=1[39m
+2026-10-04T17:51:41.3273056Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:41 PM [33m   WARN[39m [38;5;3m[AiEgressService] [39m[33mai_egress.consent_read_failed (treated as no grant)[39m
+2026-10-04T17:51:54.5204190Z PASS test/deploy-readiness.spec.ts (13.19 s, 195 MB heap size)
+2026-10-04T17:51:54.5267783Z   ● Console
+2026-10-04T17:51:54.5267897Z 
+2026-10-04T17:51:54.5267983Z     console.log
+2026-10-04T17:51:54.5268272Z       ================ DEPLOY READINESS BOARD (R100) ================
+2026-10-04T17:51:54.5268634Z       mode: INFORMATIONAL (PR / pre-launch)
+2026-10-04T17:51:54.5268866Z       
+2026-10-04T17:51:54.5269123Z       --- STUB VALUES [RED=0] ---
+2026-10-04T17:51:54.5269395Z         BLOCK_SHIP=0  WARN=7  INFO=5
+2026-10-04T17:51:54.5269830Z         [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5270402Z         [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5270947Z         [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5271562Z         [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5272267Z         [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5272893Z         [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5273769Z         [warn] src/scheduling/scheduling.controller.ts:83  Coming soon (tracked debt or low-signal)
+2026-10-04T17:51:54.5274315Z         no blocking stub/placeholder tokens in production-bound src/
+2026-10-04T17:51:54.5274621Z       
+2026-10-04T17:51:54.5274940Z       ---------------------------------------------------------------
+2026-10-04T17:51:54.5275266Z       GATING RED LINES (this run): 0
+2026-10-04T17:51:54.5275537Z       PROD-DEPLOY RED LINES (strict): 0
+2026-10-04T17:51:54.5275878Z       EXIT: ALL CLEAR → SAFE TO DEPLOY
+2026-10-04T17:51:54.5276390Z       ===============================================================
+2026-10-04T17:51:54.5276599Z 
+2026-10-04T17:51:54.5276808Z       at Object.<anonymous> (test/deploy-readiness.spec.ts:1240:15)
+2026-10-04T17:51:54.5277058Z 
+2026-10-04T17:51:54.5277145Z     console.log
+2026-10-04T17:51:54.5277417Z       ================ DEPLOY READINESS BOARD (R100) ================
+2026-10-04T17:51:54.5277755Z       mode: INFORMATIONAL (PR / pre-launch)
+2026-10-04T17:51:54.5278001Z       
+2026-10-04T17:51:54.5278216Z       --- STUB VALUES [RED=0] ---
+2026-10-04T17:51:54.5278482Z         BLOCK_SHIP=0  WARN=7  INFO=5
+2026-10-04T17:51:54.5278937Z         [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5279523Z         [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5280042Z         [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5280628Z         [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5281253Z         [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5282023Z         [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)
+2026-10-04T17:51:54.5282583Z         [warn] src/scheduling/scheduling.controller.ts:83  Coming soon (tracked debt or low-signal)
+2026-10-04T17:51:54.5283111Z         no blocking stub/placeholder tokens in production-bound src/
+2026-10-04T17:51:54.5283409Z       
+2026-10-04T17:51:54.5283662Z       --- PROD SWITCHES [RED=0] ---
+2026-10-04T17:51:54.5284015Z         registry switches: 240   coherence errors: 0
+2026-10-04T17:51:54.5284350Z         switch states: WRONG=0  WARN=31  OK=209
+2026-10-04T17:51:54.5284748Z         [⚠️ WARN] ANDROID_SHA256_FINGERPRINT: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5285045Z         [⚠️ WARN] ANTHROPIC_API_KEY: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5285311Z         [⚠️ WARN] APPLE_AUDIENCES: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5285570Z         [⚠️ WARN] APPLE_TEAM_ID: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5285835Z         [⚠️ WARN] APP_STORE_URL: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5286316Z         [⚠️ WARN] CHECKOUT_RECOVERY_SECRET: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5286601Z         [⚠️ WARN] COACH_BRIEF_ENABLED: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5286915Z         [⚠️ WARN] COACH_BRIEF_NOTIFICATIONS_ENABLED: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5287225Z         [⚠️ WARN] COACH_BRIEF_RETENTION_DAYS: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5287500Z         [⚠️ WARN] CORS_ORIGINS: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5287759Z         [⚠️ WARN] DIRECT_URL: actual=<unset> expected=MUST_SET ⚠️
+2026-10-04T17:51:54.5288025Z         [⚠️ WARN] EXERCISEDB_API_KEY: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5288290Z         [⚠️ WARN] GOOGLE_CLIENT_ID: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5288549Z         [⚠️ WARN] GOOGLE_CLIENT_IDS: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5288824Z         [⚠️ WARN] GUEST_CHECKOUT_PII_SALT: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5289105Z         [⚠️ WARN] PLAY_STORE_URL: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5289382Z         [⚠️ WARN] PUBLIC_INVITE_BASE_URL: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5289793Z         [⚠️ WARN] PUBLIC_WEB_SIGNUP_URL: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5290062Z         [⚠️ WARN] RESEND_API_KEY: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5290323Z         [⚠️ WARN] RESEND_FROM_EMAIL: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5290576Z         [⚠️ WARN] SENTRY_DSN: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5290837Z         [⚠️ WARN] STOREFRONT_BASE_URL: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5291121Z         [⚠️ WARN] STRIPE_CHECKOUT_CANCEL_URL: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5291419Z         [⚠️ WARN] STRIPE_CHECKOUT_SUCCESS_URL: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5291715Z         [⚠️ WARN] STRIPE_PRICE_ID_FITNESS: actual=<unset> expected=ON ⚠️
+2026-10-04T17:51:54.5292090Z         [✅ OK] ADMIN_SERVICE_TOKEN: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5292403Z         [✅ OK] AI_GATEWAY_CAPABILITIES: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5292712Z         [✅ OK] AI_GATEWAY_PROVIDER: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5293022Z         [✅ OK] AI_GATEWAY_REQUIRE_APPROVAL: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5293355Z         [✅ OK] ALLOW_SELF_SERVICE_BECOME_COACH: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5293699Z         [✅ OK] ANDROID_CERT_SHA256_FINGERPRINTS: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5294018Z         [✅ OK] ANDROID_PACKAGE_NAME: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5294310Z         [✅ OK] APPLE_NONCE_REQUIRED: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5294580Z         [✅ OK] APP_URL: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5294862Z         [✅ OK] AUDIT_LOGGING_ENABLED: actual=<unset> expected=STUB_ALLOWED ✅
+2026-10-04T17:51:54.5295153Z       
+2026-10-04T17:51:54.5295309Z       --- ENV REGISTRATION (code invariant) [RED=0] ---
+2026-10-04T17:51:54.5295578Z         env names read by src/: 333   registered in ENV_RULES: 333   unregistered: 0
+2026-10-04T17:51:54.5295843Z         registered but not read by src/ (informational): 0
+2026-10-04T17:51:54.5296174Z         all env reads registered
+2026-10-04T17:51:54.5296313Z       
+2026-10-04T17:51:54.5296492Z       --- OAUTH / INTEGRATION WIRING [RED=7 (informational on PR)] ---
+2026-10-04T17:51:54.5296714Z         providers: WIRED=0  STUB=7  NOT_USED=3
+2026-10-04T17:51:54.5296969Z         [STUB] Supabase (auth + DB)  missing=-  placeholder=SUPABASE_SERVICE_ROLE_KEY
+2026-10-04T17:51:54.5297279Z         [STUB] Stripe  missing=STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET  placeholder=-
+2026-10-04T17:51:54.5297547Z         [STUB] OpenAI  missing=OPENAI_API_KEY  placeholder=-
+2026-10-04T17:51:54.5297792Z         [STUB] SendGrid (email)  missing=SENDGRID_API_KEY  placeholder=-
+2026-10-04T17:51:54.5298073Z         [STUB] Mux (video)  missing=MUX_TOKEN_ID,MUX_TOKEN_SECRET  placeholder=-
+2026-10-04T17:51:54.5298325Z         [STUB] Fly.io  missing=FLY_API_TOKEN  placeholder=-
+2026-10-04T17:51:54.5298572Z         [STUB] Sentry  missing=SENTRY_DSN,SENTRY_AUTH_TOKEN  placeholder=-
+2026-10-04T17:51:54.5298762Z       
+2026-10-04T17:51:54.5298915Z       --- ENV DISCOVERY [RED=44 (informational on PR)] ---
+2026-10-04T17:51:54.5299128Z         env vars discovered: 347   registry size: 240
+2026-10-04T17:51:54.5299317Z         unregistered in code (R108): 44
+2026-10-04T17:51:54.5299559Z         [GAP] AI_GATEWAY_ENABLED referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5299858Z         [GAP] AWS_KMS_KEY_ID referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5300193Z         [GAP] COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5300514Z         [GAP] CONSOLE_URL referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5300823Z         [GAP] DATA_EXPORT_S3_ENDPOINT referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5301235Z         [GAP] DELETION_GRACE_DAYS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5301554Z         [GAP] DELETION_RECEIPT_SECRET referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5301900Z         [GAP] DELETION_RECEIPT_SECRET_PREVIOUS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5302251Z         [GAP] DELETION_TOKEN_TTL_HOURS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5302587Z         [GAP] EMAIL_DIGEST_CLIENT_ENABLED referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5302926Z         [GAP] EMAIL_DIGEST_COACH_ENABLED referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5303245Z         [GAP] EMAIL_FROM_ADDRESS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5303550Z         [GAP] EMAIL_TRANSPORT referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5303861Z         [GAP] FEATURE_BANK_PAYOUTS_V2 referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5304194Z         [GAP] FEATURE_CONTRACTS_ENABLED referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5304528Z         [GAP] FEATURE_MWB_AUTOSAVE_UNDO referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5304859Z         [GAP] FEATURE_ROMAN_CHAT_ENABLED referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5305208Z         [GAP] FEATURE_STRIPE_TREASURY_PAYOUTS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5305534Z         [GAP] JWT_SIGNING_KEY referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5305843Z         [GAP] JWT_SIGNING_KEY_PREVIOUS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5306303Z         [GAP] KMS_PROVIDER referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5306978Z         [GAP] METRICS_AUTH_TOKEN referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5307478Z         [GAP] MUX_SIGNING_KEY_ID referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5307919Z         [GAP] MUX_SIGNING_KEY_PRIVATE referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5308217Z         [GAP] MUX_TOKEN_ID referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5308506Z         [GAP] MUX_TOKEN_SECRET referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5308807Z         [GAP] MUX_WEBHOOK_SECRET referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5309134Z         [GAP] MWB_AUTOSAVE_LOCK_TOKEN_SECRET referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5309463Z         [GAP] PAIR_CODE_TTL_SECONDS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5309779Z         [GAP] PAIR_REDEEM_PER_MIN referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5310093Z         [GAP] POSTMARK_SERVER_TOKEN referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5310410Z         [GAP] SCOUT_RUN_DEADLINE_MS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5310718Z         [GAP] SENDGRID_API_KEY referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5311013Z         [GAP] SENTRY_RELEASE referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5311297Z         [GAP] SMTP_FROM referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5311570Z         [GAP] SMTP_HOST referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5311839Z         [GAP] SMTP_PASS referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5312106Z         [GAP] SMTP_PORT referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5312378Z         [GAP] SMTP_SECURE referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5312655Z         [GAP] SMTP_USER referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5312957Z         [GAP] VOICE_KEY_SIGNING_SECRET referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5313628Z         [GAP] ZOOM_OAUTH_ACCOUNT_ID referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5313946Z         [GAP] ZOOM_OAUTH_CLIENT_ID referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5314266Z         [GAP] ZOOM_OAUTH_CLIENT_SECRET referenced in src/ but absent from prod-switches.yml
+2026-10-04T17:51:54.5314488Z       
+2026-10-04T17:51:54.5314622Z       --- AUTO-FLIPPER [INFO] ---
+2026-10-04T17:51:54.5314833Z         would auto-flip: 3   already current: 0   skipped: 237
+2026-10-04T17:51:54.5315093Z         + COACH_BRIEF_ENABLED ← true   (was unset)
+2026-10-04T17:51:54.5315340Z         + COACH_BRIEF_NOTIFICATIONS_ENABLED ← true   (was unset)
+2026-10-04T17:51:54.5315589Z         + FEATURE_COMMUNITY_SCHEMA ← true   (was unset)
+2026-10-04T17:51:54.5315756Z       
+2026-10-04T17:51:54.5315908Z       --- OPERATOR KEYS [RED=13 (informational on PR)] ---
+2026-10-04T17:51:54.5316249Z         operator keys outstanding: 13
+2026-10-04T17:51:54.5316427Z           MUST_SET switches unset: 3
+2026-10-04T17:51:54.5316614Z           provider credentials missing/placeholder: 10
+2026-10-04T17:51:54.5316828Z         [KEY] fly secrets set DIRECT_URL=<value>   (platform)
+2026-10-04T17:51:54.5317060Z         [KEY] fly secrets set FLY_API_TOKEN=<value>   (platform)
+2026-10-04T17:51:54.5317291Z         [KEY] fly secrets set FLY_APP_NAME=<value>   (platform)
+2026-10-04T17:51:54.5317558Z         [KEY] SUPABASE_SERVICE_ROLE_KEY is a placeholder for Supabase (auth + DB)
+2026-10-04T17:51:54.5317825Z         [KEY] fly secrets set STRIPE_SECRET_KEY=<value>   (Stripe)
+2026-10-04T17:51:54.5318067Z         [KEY] fly secrets set STRIPE_WEBHOOK_SECRET=<value>   (Stripe)
+2026-10-04T17:51:54.5318307Z         [KEY] fly secrets set OPENAI_API_KEY=<value>   (OpenAI)
+2026-10-04T17:51:54.5318659Z         [KEY] fly secrets set SENDGRID_API_KEY=<value>   (SendGrid (email))
+2026-10-04T17:51:54.5318915Z         [KEY] fly secrets set MUX_TOKEN_ID=<value>   (Mux (video))
+2026-10-04T17:51:54.5319164Z         [KEY] fly secrets set MUX_TOKEN_SECRET=<value>   (Mux (video))
+2026-10-04T17:51:54.5319395Z         [KEY] fly secrets set FLY_API_TOKEN=<value>   (Fly.io)
+2026-10-04T17:51:54.5319614Z         [KEY] fly secrets set SENTRY_DSN=<value>   (Sentry)
+2026-10-04T17:51:54.5319841Z         [KEY] fly secrets set SENTRY_AUTH_TOKEN=<value>   (Sentry)
+2026-10-04T17:51:54.5320017Z       
+2026-10-04T17:51:54.5320176Z       ---------------------------------------------------------------
+2026-10-04T17:51:54.5320374Z       GATING RED LINES (this run): 0
+2026-10-04T17:51:54.5320546Z       PROD-DEPLOY RED LINES (strict): 95
+2026-10-04T17:51:54.5320743Z       EXIT: ALL CLEAR → SAFE TO DEPLOY
+2026-10-04T17:51:54.5320925Z       ===============================================================
+2026-10-04T17:51:54.5321053Z 
+2026-10-04T17:51:54.5321174Z       at Object.<anonymous> (test/deploy-readiness.spec.ts:1252:15)
+2026-10-04T17:51:54.5321318Z 
+2026-10-04T17:51:54.8212866Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mrecovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): error=Error[39m
+2026-10-04T17:51:54.8214684Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mrecovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): error=Error[39m
+2026-10-04T17:51:54.8285841Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mrecovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): error=Error[39m
+2026-10-04T17:51:54.8297397Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mrecovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): error=Error[39m
+2026-10-04T17:51:54.8307957Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in production — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+2026-10-04T17:51:54.9185381Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: Redis connect failed in production — refusing to boot: ECONNREFUSED 10.0.0.1:6379[39m
+2026-10-04T17:51:54.9205450Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in <unset> — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+2026-10-04T17:51:54.9856546Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: Redis connect failed in production — refusing to boot: ECONNREFUSED unset-env[39m
+2026-10-04T17:51:54.9866231Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in staging — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+2026-10-04T17:51:55.0507597Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: Redis connect failed in production — refusing to boot: ECONNREFUSED staging[39m
+2026-10-04T17:51:55.1118299Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in production — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+2026-10-04T17:51:55.1127304Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in production — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+2026-10-04T17:51:55.1136621Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in staging — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+2026-10-04T17:51:55.1142555Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in <unset> — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+2026-10-04T17:51:55.1228400Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+2026-10-04T17:51:55.1229500Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+2026-10-04T17:51:55.1230327Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+2026-10-04T17:51:55.1231327Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+2026-10-04T17:51:55.1232145Z PASS test/checkout-recovery.service.spec.ts (269 MB heap size)
+2026-10-04T17:51:55.1232828Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed)[39m
+2026-10-04T17:51:55.1234140Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed)[39m
+2026-10-04T17:51:55.1235133Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+2026-10-04T17:51:55.1236440Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+2026-10-04T17:51:55.1237761Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed)[39m
+2026-10-04T17:51:55.1239084Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+2026-10-04T17:51:55.1239899Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed)[39m
+2026-10-04T17:51:55.1240697Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+2026-10-04T17:51:55.1241581Z [32m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [32m    LOG[39m [38;5;3m[CheckoutRecoveryService] [39m[32mCheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)[39m
+2026-10-04T17:51:55.1242640Z [32m[Nest] 2791  - [39m10/04/2026, 5:51:54 PM [32m    LOG[39m [38;5;3m[CheckoutRecoveryService] [39m[32mCheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)[39m
+2026-10-04T17:51:55.1243627Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mCheckoutRecoveryService: Redis unavailable in development, falling back to in-memory (dev/test only): ECONNREFUSED 127.0.0.1:6379[39m
+2026-10-04T17:51:55.1245203Z [32m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [32m    LOG[39m [38;5;3m[CheckoutRecoveryService] [39m[32mCheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)[39m
+2026-10-04T17:51:55.1246556Z [32m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [32m    LOG[39m [38;5;3m[CheckoutRecoveryService] [39m[32mCheckoutRecoveryService: Redis client quit() OK[39m
+2026-10-04T17:51:55.1247837Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mCheckoutRecoveryService: Redis quit() failed or timed out, forcing disconnect: broker hung[39m
+2026-10-04T17:51:55.1253270Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:57 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mCheckoutRecoveryService: Redis quit() failed or timed out, forcing disconnect: quit-timeout[39m
+2026-10-04T17:51:55.6729603Z [31m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [31m  ERROR[39m [38;5;3m[AuthService] [39m[31mGOOGLE_CLIENT_ID(S) not configured — recent-auth google branch unavailable[39m
+2026-10-04T17:52:03.1827472Z [31m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [31m  ERROR[39m [38;5;3m[AuthService] [39m[31mRECENT_AUTH_SECRET is not configured or shorter than 32 characters — recent-auth token issue blocked[39m
+2026-10-04T17:52:03.1967465Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mrecent-auth google token verify failed for user=u-1: error=Error[39m
+2026-10-04T17:52:03.1968617Z [33m[Nest] 2791  - [39m10/04/2026, 5:51:55 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mrecent-auth google token verify failed for user=u-1: error=Error[39m
+2026-10-04T17:52:03.1969286Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:14 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mrecent-auth supabase timeout: AUTH_TIMEOUT:signInWithPassword[39m
+2026-10-04T17:52:03.1969941Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:14 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mrecent-auth supabase timeout: AUTH_TIMEOUT:signInWithIdToken[39m
+2026-10-04T17:52:03.2024557Z PASS test/auth-recent-auth-token.spec.ts (8.057 s, 348 MB heap size)
+2026-10-04T17:52:03.5374023Z PASS test/privacy/no-pii-in-logs.spec.ts (386 MB heap size)
+2026-10-04T17:52:03.6410287Z [31m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [31m  ERROR[39m [38;5;3m[GdprScrubService] [39m[31mGDPR scrub failed for user=u-old: error=Error[39m
+2026-10-04T17:52:03.6466993Z PASS test/gdpr-scrub.service.spec.ts (398 MB heap size)
+2026-10-04T17:52:03.7589654Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub dry-run: 2 candidate(s) past cutoff 2026-03-29T12:00:00.000Z[39m
+2026-10-04T17:52:03.7590908Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub: scrubbed 2 of 2 candidate(s); errors=0[39m
+2026-10-04T17:52:03.7592005Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub: scrubbed 2 of 2 candidate(s); errors=0[39m
+2026-10-04T17:52:03.7593070Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub: scrubbed 2 of 2 candidate(s); errors=0[39m
+2026-10-04T17:52:03.7594140Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub: scrubbed 1 of 2 candidate(s); errors=1[39m
+2026-10-04T17:52:03.7595804Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub dry-run: 1 candidate(s) past cutoff 2026-03-29T12:00:00.000Z[39m
+2026-10-04T17:52:03.7597158Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub dry-run: 2 candidate(s) past cutoff 2026-03-29T12:00:00.000Z[39m
+2026-10-04T17:52:03.7598275Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub: scrubbed 2 of 2 candidate(s); errors=0[39m
+2026-10-04T17:52:03.7599328Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [32m    LOG[39m [38;5;3m[GdprScrubService] [39m[32mGDPR scrub: scrubbed 2 of 2 candidate(s); errors=0[39m
+2026-10-04T17:52:03.7600041Z PASS test/federation.service.spec.ts (413 MB heap size)
+2026-10-04T17:52:03.9651685Z PASS test/auth-apple.spec.ts (438 MB heap size)
+2026-10-04T17:52:04.2255626Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mapple token verify failed: error=Error[39m
+2026-10-04T17:52:04.2257164Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mappleAuth: no raw_nonce provided — token replay protection not active for this sign-in[39m
+2026-10-04T17:52:04.2258496Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mappleAuth: no raw_nonce provided — token replay protection not active for this sign-in[39m
+2026-10-04T17:52:04.2259677Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33msupabase signInWithIdToken(apple) failed: error=Object[39m
+2026-10-04T17:52:04.2260925Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mappleAuth: no raw_nonce provided — token replay protection not active for this sign-in[39m
+2026-10-04T17:52:04.2262257Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mappleAuth: no raw_nonce provided — token replay protection not active for this sign-in[39m
+2026-10-04T17:52:04.2264044Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mappleAuth: no raw_nonce provided — token replay protection not active for this sign-in[39m
+2026-10-04T17:52:04.2265352Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mappleAuth: no raw_nonce provided — token replay protection not active for this sign-in[39m
+2026-10-04T17:52:04.2266764Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mappleAuth: no raw_nonce provided — token replay protection not active for this sign-in[39m
+2026-10-04T17:52:04.2268084Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:03 PM [33m   WARN[39m [38;5;3m[AuthService] [39m[33mappleAuth invite_code attach failed for user=local-1 code=attach_failed: error=Error[39m
+2026-10-04T17:52:04.5300031Z PASS test/privacy/no-pii-probe-replays.spec.ts (477 MB heap size)
+2026-10-04T17:52:04.6994658Z [31m[Nest] 2791  - [39m10/04/2026, 5:52:04 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=coach-invites-client row=row-1: provider=resend status=422 code=unparsed[39m
+2026-10-04T17:52:04.7013787Z PASS test/email.service.spec.ts (502 MB heap size)
+2026-10-04T17:52:04.7921335Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:04 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32m[email:log] row=row-1 template=coach-invites-client key=invite:abc[39m
+2026-10-04T17:52:04.7922199Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:04 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail send skipped: idempotency hit key=invite:abc[39m
+2026-10-04T17:52:04.7923191Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:04 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=coach-invites-client row=row-1 provider_id=msg_abc[39m
+2026-10-04T17:52:05.0313014Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:04 PM [33m   WARN[39m [38;5;3m[FinanceAdminClient] [39m[33mFinance federation degraded route=clients/by-email reason=http_error[39m
+2026-10-04T17:52:05.2403264Z PASS test/finance-admin.client.spec.ts (508 MB heap size)
+2026-10-04T17:52:05.4322869Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [33m   WARN[39m [38;5;3m[FinanceAdminClient] [39m[33mFinance federation degraded route=clients/by-email reason=timeout[39m
+2026-10-04T17:52:05.4323849Z PASS test/coach-brief-ttl.spec.ts (536 MB heap size)
+2026-10-04T17:52:05.4324852Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [33m   WARN[39m [38;5;3m[FinanceAdminClient] [39m[33mFinance federation degraded route=users/search reason=malformed_response[39m
+2026-10-04T17:52:05.4326256Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [33m   WARN[39m [38;5;3m[FinanceAdminClient] [39m[33mFinance federation degraded route=users/search reason=malformed_response[39m
+2026-10-04T17:52:05.4327597Z [33m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [33m   WARN[39m [38;5;3m[FinanceAdminClient] [39m[33mFinance federation degraded route=clients/by-email reason=malformed_response[39m
+2026-10-04T17:52:05.4328911Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [32m    LOG[39m [38;5;3m[CoachBriefService] [39m[32mCoachBrief TTL prune: deleted 2 rows older than 2026-09-27 (retentionDays=7)[39m
+2026-10-04T17:52:05.4330221Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [32m    LOG[39m [38;5;3m[CoachBriefService] [39m[32mCoachBrief TTL prune: deleted 0 rows older than 2026-09-27 (retentionDays=7)[39m
+2026-10-04T17:52:05.4331538Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [32m    LOG[39m [38;5;3m[CoachBriefService] [39m[32mCoachBrief TTL prune: deleted 0 rows older than 2026-09-27 (retentionDays=7)[39m
+2026-10-04T17:52:05.4332785Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [32m    LOG[39m [38;5;3m[CoachBriefService] [39m[32mCoachBrief TTL prune: deleted 1 rows older than 2026-09-04 (retentionDays=30)[39m
+2026-10-04T17:52:05.4334484Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [32m    LOG[39m [38;5;3m[CoachBriefService] [39m[32mCoachBrief TTL prune: deleted 3 rows older than 2026-09-20 (retentionDays=14)[39m
+2026-10-04T17:52:05.4335794Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [32m    LOG[39m [38;5;3m[CoachBriefService] [39m[32mCoachBrief TTL prune: deleted 0 rows older than 2026-09-27 (retentionDays=7)[39m
+2026-10-04T17:52:05.4337142Z [95m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [95m  DEBUG[39m [38;5;3m[CoachBriefScheduler] [39m[95mcoach brief TTL prune skipped — COACH_BRIEF_ENABLED=off[39m
+2026-10-04T17:52:05.4338376Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:05 PM [32m    LOG[39m [38;5;3m[CoachBriefService] [39m[32mCoachBrief TTL prune: deleted 0 rows older than 2026-09-27 (retentionDays=7)[39m
+2026-10-04T17:52:05.5332423Z PASS test/account.service.spec.ts (546 MB heap size)
+2026-10-04T17:52:05.6089989Z PASS test/digest.cron.spec.ts (548 MB heap size)
+2026-10-04T17:52:05.6896242Z PASS test/finance-federation.service.spec.ts (563 MB heap size)
+2026-10-04T17:52:05.8720853Z PASS test/privacy/audit-sol-fu2-118-boundary.spec.ts (587 MB heap size)
+2026-10-04T17:52:06.1405104Z PASS test/notifications.controller.spec.ts (627 MB heap size)
+2026-10-04T17:52:06.4009969Z PASS test/auth-recent-auth-google-session.spec.ts (669 MB heap size)
+2026-10-04T17:52:06.6418494Z PASS test/invite-bulk-email.spec.ts (289 MB heap size)
+2026-10-04T17:52:06.7871328Z [31m[Nest] 2791  - [39m10/04/2026, 5:52:06 PM [31m  ERROR[39m [38;5;3m[GoogleCalendarWebhookController] [39m[31mGOOGLE_CALENDAR_WEBHOOK_TOKEN not set — rejecting webhook[39m
+2026-10-04T17:52:06.7898725Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:06 PM [32m    LOG[39m [38;5;3m[InviteCodesService] [39m[32mbulkInvite coach=coach-1 requested=2 created=2 rejected=0[39m
+2026-10-04T17:52:06.7899553Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:06 PM [32m    LOG[39m [38;5;3m[InviteCodesService] [39m[32mbulkInvite coach=coach-1 requested=1 created=1 rejected=0[39m
+2026-10-04T17:52:06.7900902Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:06 PM [32m    LOG[39m [38;5;3m[InviteCodesService] [39m[32mbulkInvite coach=coach-1 requested=3 created=1 rejected=2[39m
+2026-10-04T17:52:06.7901366Z PASS test/google-calendar-webhook.controller.spec.ts (311 MB heap size)
+2026-10-04T17:52:06.7901925Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:06 PM [32m    LOG[39m [38;5;3m[InviteCodesService] [39m[32mbulkInvite coach=coach-1 requested=2 created=2 rejected=0[39m
+2026-10-04T17:52:06.7902604Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:06 PM [32m    LOG[39m [38;5;3m[GoogleCalendarWebhookController] [39m[32mGoogleCalendar webhook sync handshake channel=ch-1[39m
+2026-10-04T17:52:06.7903317Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:06 PM [32m    LOG[39m [38;5;3m[GoogleCalendarWebhookController] [39m[32mGoogleCalendar webhook channel=ch-1 state=exists msg=42[39m
+2026-10-04T17:52:06.7904051Z [95m[Nest] 2791  - [39m10/04/2026, 5:52:06 PM [95m  DEBUG[39m [38;5;3m[GoogleCalendarWebhookController] [39m[95mSync trigger is a no-op in v1 — channel=ch-1 state=exists[39m
+2026-10-04T17:52:06.9871352Z PASS test/auth.service.spec.ts (345 MB heap size)
+2026-10-04T17:52:07.0614530Z PASS test/privacy/log-pii.spec.ts (352 MB heap size)
+2026-10-04T17:52:07.1576771Z PASS test/coach-practice-type.service.spec.ts (360 MB heap size)
+2026-10-04T17:52:07.2895002Z PASS test/privacy/aud-opus-fu2-118-coach-name-probe.spec.ts (381 MB heap size)
+2026-10-04T17:52:07.4017397Z [31m[Nest] 2791  - [39m10/04/2026, 5:52:07 PM [31m  ERROR[39m [38;5;3m[GdprScrubScheduler] [39m[31mGDPR scrub cron tick: fatal error: error=Error[39m
+2026-10-04T17:52:07.4071971Z PASS test/gdpr-scrub.scheduler.spec.ts (396 MB heap size)
+2026-10-04T17:52:08.1892601Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:07 PM [32m    LOG[39m [38;5;3m[GdprScrubScheduler] [39m[32mGDPR scrub cron tick: starting daily run[39m
+2026-10-04T17:52:08.1893486Z PASS test/auth-forgot-password-throttle.spec.ts (518 MB heap size)
+2026-10-04T17:52:08.1894966Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:07 PM [32m    LOG[39m [38;5;3m[GdprScrubScheduler] [39m[32mGDPR scrub cron tick: completed; scrubbed=2 considered=2 errors=0[39m
+2026-10-04T17:52:08.1896348Z [32m[Nest] 2791  - [39m10/04/2026, 5:52:07 PM [32m    LOG[39m [38;5;3m[GdprScrubScheduler] [39m[32mGDPR scrub cron tick: starting daily run[39m
+2026-10-04T17:52:08.3701488Z PASS test/privacy/aud-opus-fu2-118-reset-email-probe.spec.ts (544 MB heap size)
+2026-10-04T17:52:08.5887801Z PASS test/privacy/aud-opus-fu2-118-finance-path-probe.spec.ts (550 MB heap size)
+2026-10-04T17:52:08.5902122Z 
+2026-10-04T17:52:08.5907341Z Test Suites: 28 passed, 28 total
+2026-10-04T17:52:08.5907702Z Tests:       16 skipped, 388 passed, 404 total
+2026-10-04T17:52:08.5907981Z Snapshots:   0 total
+2026-10-04T17:52:08.5908196Z Time:        28.684 s
+2026-10-04T17:52:08.5912634Z Ran all test suites matching test/privacy/log-pii.spec.ts|test/privacy/no-pii-probe-replays.spec.ts|test/privacy/no-pii-in-logs.spec.ts|test/email.service.spec.ts|test/privacy/aud-opus-fu2-118-coach-name-probe.spec.ts|test/privacy/aud-opus-fu2-118-finance-path-probe.spec.ts|test/privacy/aud-opus-fu2-118-reset-email-probe.spec.ts|test/privacy/audit-sol-fu2-118-boundary.spec.ts|test/account.service.spec.ts|test/auth-forgot-password-throttle.spec.ts|test/auth.service.spec.ts|test/checkout-recovery.service.spec.ts|test/coach-brief.service.spec.ts|test/coach-brief-ttl.spec.ts|test/deploy-readiness.spec.ts|test/digest.cron.spec.ts|test/finance-admin.client.spec.ts|test/gdpr-scrub.scheduler.spec.ts|test/gdpr-scrub.service.spec.ts|test/invite-bulk-email.spec.ts|test/auth-apple.spec.ts|test/auth-recent-auth-google-session.spec.ts|test/auth-recent-auth-token.spec.ts|test/coach-practice-type.service.spec.ts|test/google-calendar-webhook.controller.spec.ts|test/notifications.controller.spec.ts|test/finance-federation.service.spec.ts|test/federation.service.spec.ts.
+2026-10-04T17:52:08.7922435Z Post job cleanup.
+2026-10-04T17:52:08.8711899Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+2026-10-04T17:52:08.8828600Z Post job cleanup.
+2026-10-04T17:52:08.9377451Z [command]/usr/bin/git version
+2026-10-04T17:52:08.9404328Z git version 2.55.0
+2026-10-04T17:52:08.9428221Z Temporarily overriding HOME='/home/runner/work/_temp/f5cf2a20-581e-4ab4-b505-d8a64bc37df1' before making global git config changes
+2026-10-04T17:52:08.9429002Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:52:08.9431733Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:52:08.9456170Z Removing SSH command configuration
+2026-10-04T17:52:08.9459877Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:52:08.9485309Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:52:08.9659392Z Removing HTTP extra header
+2026-10-04T17:52:08.9662277Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:52:08.9685478Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:52:08.9854362Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:52:08.9859321Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:52:08.9882202Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T17:52:08.9882883Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T17:52:08.9883447Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:52:08.9888992Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:52:08.9890389Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T17:52:08.9908612Z /home/runner/work/_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:52:08.9917296Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:52:08.9943945Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T17:52:08.9961361Z /home/runner/work/_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:52:08.9968111Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:52:08.9994090Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:52:09.0011090Z /github/runner_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:52:09.0016758Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:52:09.0042209Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:52:09.0058639Z /github/runner_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:52:09.0065775Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config
+2026-10-04T17:52:09.0095677Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:52:09.0278746Z Removing credentials config '/home/runner/work/_temp/git-credentials-76c622c8-aafa-4d03-87bc-7402cfdb6982.config'
+2026-10-04T17:52:09.0401472Z Print service container logs: 0d723be0db0c412f9d348cfd2079889e_redis7alpine_2dca44
+2026-10-04T17:52:09.0404508Z ##[command]/usr/bin/docker logs --details 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:52:09.0501283Z  1:C 04 Oct 2026 17:51:04.947 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T17:52:09.0502263Z  1:C 04 Oct 2026 17:51:04.947 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T17:52:09.0502578Z  1:C 04 Oct 2026 17:51:04.947 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T17:52:09.0503073Z  1:C 04 Oct 2026 17:51:04.947 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T17:52:09.0503458Z  1:M 04 Oct 2026 17:51:04.947 * monotonic clock: POSIX clock_gettime
+2026-10-04T17:52:09.0503683Z  1:M 04 Oct 2026 17:51:04.947 * Running mode=standalone, port=6379.
+2026-10-04T17:52:09.0503886Z  1:M 04 Oct 2026 17:51:04.948 * Server initialized
+2026-10-04T17:52:09.0504081Z  1:M 04 Oct 2026 17:51:04.948 * Ready to accept connections tcp
+2026-10-04T17:52:09.0519282Z Stop and remove container: 0d723be0db0c412f9d348cfd2079889e_redis7alpine_2dca44
+2026-10-04T17:52:09.0522653Z ##[command]/usr/bin/docker rm --force 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:52:10.1215365Z 711ad38af2ed219f2654d7619c2a993db5502584d8eb8e7a9f71eed6b83f56eb
+2026-10-04T17:52:10.1240228Z Remove container network: github_network_2e49fddbdaee4443979eb492ec8e4edd
+2026-10-04T17:52:10.1242767Z ##[command]/usr/bin/docker network rm github_network_2e49fddbdaee4443979eb492ec8e4edd
+2026-10-04T17:52:10.1984599Z github_network_2e49fddbdaee4443979eb492ec8e4edd
+2026-10-04T17:52:10.2036816Z Cleaning up orphan processes

@@ -1,0 +1,41 @@
+> **Status (2026-10-03, fix round 2).** Fix round 2 is pushed at `f4679fd8e287e5bcd6c0dc8da69c208786f79802` (merge of main `d27cd3ec` at `7a4ffaab`, fix `f4679fd8`). It closes Sol B-661-1 / B-661-2 and Opus B-661-1 / C-661-4 from the audits at `91625c86` (comments 5964395750, 5964409597). Fix-round table: PR comment "FIX ROUND 2 (B-FEE-9, agent 115)". Needs an independent re-audit. Do not merge without audit.
+
+**Tier:** T4.
+**Why:** Money-path credential handling: the client's Stripe PaymentIntent `client_secret` and customer ephemeral key were returned by owner/admin routes and kept at rest after the payment ended.
+**T4 trigger scan:** payments/Stripe data path: YES (webhook transitions now erase cached credentials; checkout replay answer changes for finished payments). Fix round 2: `payment_intent.succeeded` (and its charge-id prefetch) also claims a `payment_failed` row of the same PaymentIntent (entitlement + split on a retried success): YES; the replay classifier runs before every cached-credential return, including the race-loser poll: YES. Auth/tenancy: no change (route guards untouched; only response shape). Schema/migration: NO. New env name: NO. Workflow, `scripts/ci/*`, branch protection: NO. Logging/redaction: YES (stricter only).
+**T3 trigger scan:** Admin API response shape: the two credential fields disappear from `GET /v1/admin/payments/purchases`, `GET /v1/admin/payments/purchases/:id` and the admin dunning view/actions. All other columns, including every Stripe id, stay. New 409 codes on `POST` payment-intent replay of a finished key: `PAYMENT_ALREADY_COMPLETE`, `PAYMENT_CHECKOUT_CLOSED`, and (fix round 2, C-661-4) `PAYMENT_REFUNDED_OR_IN_REVIEW` for refunded / disputed / chargeback_lost rows.
+**Bounded T1:** none.
+**Builder-owner:** agent 113 (B-FEE-R7 lane, follow-up B-SECRETS-3); fix round 2: agent 115 (B-FEE-9).
+**Acceptance evidence:** Fix round 2: the `B-661-1` / `B-661-2` / `C-661-4` tests in `test/checkout.service.spec.ts` (7 finished statuses with credentials still at rest, failed-payment resume control, P2002 + webhook-settlement interleavings) and the `B-661-1 decline, then a successful retry` block in `test/checkout-webhook-handler.spec.ts`; failing-before on a tests-only branch (see the fix-round comment). Round 1: `test/b-secrets-3-admin-credentials.spec.ts` (new), B-SECRETS-3 cases in `test/checkout-webhook-handler.spec.ts` and `test/checkout.service.spec.ts`. Failing-before: 10 of 11 new tests fail on `origin/main` sources (the 11th is the structural omit-constant control). After: 9 suites, 258 tests pass locally (`jest --runInBand` on the touched suites); ESLint clean on changed files. tsc and full suites run in CI.
+**Promotion triggers:** re-audit if any route starts returning a ClientPurchase row without `ADMIN_PURCHASE_OMIT` / a coach allow-list, or if a new terminal ClientPurchase transition is added without `CLEARED_PAYMENT_SECRETS`. C-661-3: #654 edits the same `applySubscriptionDeleted` data block and stores a first-invoice / SetupIntent secret; whichever of #654 / #661 merges second keeps `...CLEARED_PAYMENT_SECRETS` there and on #654's activation path.
+
+## What changed
+
+| Finding | Change | Commit | Test |
+|---|---|---|---|
+| C-646-1 (Opus): admin purchase list and drill-down return the raw row with `stripe_client_secret` / `stripe_ephemeral_key` | `src/checkout/admin-purchase.select.ts`: `ADMIN_PURCHASE_OMIT` (Prisma `omit`, every other column stays). Applied to `listPurchases` and `getPurchase`. | 91625c86 | "GET /v1/admin/payments/purchases", "GET /v1/admin/payments/purchases/:id" |
+| C-646-1 (Sol): `DunningService.getAdminView` returns the raw purchase (admin dunning view plus advance/reset/cancel responses) | Same omit; `DunningAdminView.purchase` is typed `AdminPurchaseView`. | 91625c86 | "DunningService.getAdminView ..." |
+| C-646-2 (Opus): cached credentials are never cleared | `CLEARED_PAYMENT_SECRETS` is written by `payment_intent.succeeded`, `checkout.session.expired` and `customer.subscription.deleted`. `payment_intent.payment_failed` keeps them (the client retries the same PaymentIntent). A replay of a finished key no longer waits 5 s for a secret that never comes and then answers `PAYMENT_IN_PROGRESS`; it answers 409 `PAYMENT_ALREADY_COMPLETE` ("This payment is already complete. Your package is ready in your account.") or `PAYMENT_CHECKOUT_CLOSED` ("This checkout has closed. Start again from the package page to buy it."). No new Stripe call. | 91625c86 | "payment_intent.succeeded erases ...", "checkout.session.expired erases them too", "a replay after the payment is paid / expired ..." |
+| C-646-2 (Sol): log redaction | `REDACT_KEYS` gains `stripe_client_secret`, `stripe_ephemeral_key`, `ephemeral_key`; any `*_secret` / `*ephemeral_key` key is redacted; Stripe credential values (`pi_/seti_..._secret_...`, `ek_`, `sk_`/`rk_` live/test, `whsec_`) are scrubbed from free text in both `redactObject` and `redactLogLine`. Ids such as `pi_...` stay readable. | 91625c86 | three "log redaction" canary tests |
+| ADMIN_PURCHASE_OMIT guard | Asserts the omit drops exactly the credential columns and that no other credential-like ClientPurchase column exists. | 91625c86 | "ADMIN_PURCHASE_OMIT drops exactly the credential columns" |
+
+## Not in this PR
+
+- **C-627-8 (Opus, stale repay amount in the failed-transfer log):** closed in #627 itself (fix round 9, `6910d747`): the alert now names `owed_cents_at_failure` and the live reconciliation gap to re-read before repaying.
+- Existing rows (C-661-2, operator decision): credentials already cached on finished purchases stay at rest until a data backfill; since fix round 2 the replay API never returns them (status is classified first). Backfill (`UPDATE "ClientPurchase" SET stripe_client_secret = NULL, stripe_ephemeral_key = NULL WHERE status <> 'pending' AND status <> 'payment_failed'`). Not included: it is a production data change and needs an owner call.
+- `payment_intent.canceled` is not a subscribed checkout webhook event today; a canceled PaymentIntent leaves its row pending. Adding it needs the Stripe endpoint event list changed (operator).
+- Mobile should map the two new 409 codes; until then the app shows its standard fallback with the request reference.
+
+## Fix round 2
+
+Full table: PR comment "FIX ROUND 2 (B-FEE-9, agent 115)". Merged origin/main `d27cd3ec` with merge commit `7a4ffaab` (automatic, no conflicts).
+
+| Finding | Change | Commit | Test |
+|---|---|---|---|
+| B-661-1 (Sol): finished rows that still hold credentials return them before the status fence | `classifyPaymentReplay` runs before every cached-credential return: a status other than `pending` / `payment_failed` gets its specific 409 whatever the row holds; `pending` / `payment_failed` with credentials resume; `pending` without credentials waits; `payment_failed` without credentials is closed. | f4679fd8 | "B-661-1: a %s row that still holds its credentials ..." (7 statuses), "(control) a failed payment that holds its credentials resumes", "a failed payment whose credentials are gone" |
+| B-661-2 (Sol) / C-661-4 second half (Opus): race loser waits for an erased secret and answers "in progress" | The loser's poll returns as soon as the row is settled for a replay (credentials published or a finished status), and the loser branch classifies the answer before any credential. | f4679fd8 | `B-661-2 race loser vs webhook settlement` (3 interleavings incl. control) |
+| B-661-1 (Opus): decline, then an in-sheet retry that succeeds, is ignored | `payment_intent.succeeded` and its charge-id prefetch match `status in (pending, payment_failed)`: paid, entitled, `last_error` cleared, credentials erased, split deferred with the charge id. | f4679fd8 | `B-661-1 decline, then a successful retry of the same PaymentIntent` |
+| C-661-4 (Opus): "checkout has closed" for refunded / disputed | `PAYMENT_REFUNDED_OR_IN_REVIEW`: "This payment was refunded or is under review, so it cannot be paid again here. Its status is on the purchase in your account." | f4679fd8 | "C-661-4: a refunded or disputed payment is not called closed" |
+| C-661-2 (operator) / C-661-3 (#654 composition) | No code: operator backfill decision; composition note under Promotion triggers. | - | - |
+
+

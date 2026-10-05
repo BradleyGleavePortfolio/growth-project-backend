@@ -1,0 +1,3131 @@
+diff --git a/.env.example b/.env.example
+index 9f5e2dee..7644e63c 100644
+--- a/.env.example
++++ b/.env.example
+@@ -261,6 +261,7 @@ STRIPE_CHECKOUT_CANCEL_URL=
+ #   customer.subscription.created
+ #   customer.subscription.updated
+ #   customer.subscription.deleted
++#   customer.subscription.trial_will_end   (package free trials, B-TRIALS)
+ #   payment_intent.payment_failed
+ #   invoice.paid
+ #   invoice.payment_failed
+diff --git a/docs/stripe-setup.md b/docs/stripe-setup.md
+index b6c42577..f9ef51fe 100644
+--- a/docs/stripe-setup.md
++++ b/docs/stripe-setup.md
+@@ -74,6 +74,10 @@ Repeat sections 2.1–2.5 once per environment (staging and production are
+    - `customer.subscription.created`
+    - `customer.subscription.updated`
+    - `customer.subscription.deleted`
++   - `customer.subscription.trial_will_end` (package free trials: sends the
++     "your free trial ends on" notice three days before the first charge; a
++     10-minute reconciler also records any notice this event missed, so a
++     missing event delays nothing beyond one sweep)
+    - `invoice.paid`
+    - `invoice.payment_failed`
+    - `customer.updated`
+@@ -418,3 +422,16 @@ disruptive:
+ - Customer Portal config: <https://docs.stripe.com/customer-management>
+ - Companion code: `src/billing/`, `prisma/schema.prisma` (mirror models),
+   `test/stripe-webhook.spec.ts`, `test/subscription.guard.spec.ts`.
++
++## Runbook: free-trial alerts (B-TRIALS-3)
++
++- `TRIAL_CONFLICT_CANCEL_FAILING` (Sentry, tags `purchase_id`): a subscription
++  that tried to start a second free trial with the same coach could not be
++  cancelled after 3 attempts. The sweep keeps retrying every 5 minutes with
++  backoff (max 1 hour). Look up the purchase's `stripe_subscription_id` and
++  cancel it in the Stripe Dashboard before its trial ends; the next
++  `customer.subscription.deleted` event settles the row.
++- `TRIAL_CONFLICT_SUPERSEDED` (Sentry, tags `purchase_id`): every cancel failed
++  until the trial ended and Stripe billed the regular price. The client has
++  access as a regular paid plan without a trial. Offer the client a refund of
++  that first charge through the normal refund path.
+diff --git a/src/billing/billing.service.ts b/src/billing/billing.service.ts
+index d50d3519..7cecb0a5 100644
+--- a/src/billing/billing.service.ts
++++ b/src/billing/billing.service.ts
+@@ -233,6 +233,11 @@ export class BillingService {
+     // sweeper-backed, so a rolled-back tx simply skips this (the descriptor
+     // is captured but never executed) and Stripe's redelivery reconciles.
+     let deferredSplit: DeferredSplitTask | null = null;
++    // B-TRIALS (OR-113-2) — trial-ending notice recorded inside the tx (push +
++    // email go out after commit) and a second-trial subscription to cancel
++    // after commit. Both are dropped if the tx rolls back.
++    let deferredTrialNoticeId: string | null = null;
++    let trialConflictSubscriptionId: string | null = null;
+ 
+     // PR-14 R2 P0-1 — recurring/combo guest subscription backstop. The
+     // PI-succeeded route is the primary trigger for converting a guest
+@@ -287,6 +292,12 @@ export class BillingService {
+           if (result.deferredSplit) {
+             deferredSplit = result.deferredSplit;
+           }
++          if (result.deferredTrialNoticeId) {
++            deferredTrialNoticeId = result.deferredTrialNoticeId;
++          }
++          if (result.trialConflictSubscriptionId) {
++            trialConflictSubscriptionId = result.trialConflictSubscriptionId;
++          }
+         }
+ 
+         // Stream 1 — give the AI credit-pack handler first refusal on
+@@ -339,6 +350,11 @@ export class BillingService {
+           case 'customer.updated':
+             if (!claimedByCheckout) await this.applyCustomerUpdated(event, tx);
+             break;
++          case 'customer.subscription.trial_will_end':
++            // B-TRIALS (OR-113-2) — package trials only; the checkout
++            // handler records the notice above. SaaS coach plans have no
++            // trial notice, so an unclaimed event is acknowledged quietly.
++            break;
+           case 'checkout.session.completed':
+           case 'checkout.session.expired':
+             // Already dispatched to checkoutWebhooks + coachAiPacks above.
+@@ -650,6 +666,25 @@ export class BillingService {
+       await this.checkoutWebhooks.runDeferredSplit(deferredSplit);
+     }
+ 
++    // B-TRIALS (OR-113-2) — outer tx COMMITTED: deliver the trial-ending push
++    // + email (never throws; TrialNoticeService.sweep retries), and cancel a
++    // subscription that tried to start a second free trial with the same
++    // coach (it is trialing, so cancelling now charges nothing).
++    if (
++      deferredTrialNoticeId &&
++      this.checkoutWebhooks &&
++      typeof this.checkoutWebhooks.deliverTrialNotice === 'function'
++    ) {
++      await this.checkoutWebhooks.deliverTrialNotice(deferredTrialNoticeId);
++    }
++    if (
++      trialConflictSubscriptionId &&
++      this.checkoutWebhooks &&
++      typeof this.checkoutWebhooks.cancelTrialConflict === 'function'
++    ) {
++      await this.checkoutWebhooks.cancelTrialConflict(trialConflictSubscriptionId);
++    }
++
+     // PR-14 R2 P0-1 — BACKSTOP for recurring guest checkouts. The PI
+     // event is the PRIMARY trigger (see payment_intent.succeeded above),
+     // but Stripe sometimes delivers the customer.subscription.created /
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index c0374678..abf87fa1 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -12,6 +12,15 @@ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+ import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
+ import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
++import { TrialUsageService } from '../packages/trials/trial-usage.service';
++import {
++  hasSavedPaymentMethod,
++  subscriptionHasPaymentMethod,
++  TrialNoticeService,
++  type TrialWillEndSubscription,
++} from '../packages/trials/trial-notice.service';
++import { TrialConflictService } from '../packages/trials/trial-conflict.service';
++import { trialErrorClass } from '../packages/trials/trial-diagnostics';
+ 
+ // PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
+ // client through `handle(event, tx)` so the entitlement update +
+@@ -25,6 +34,14 @@ import { CoachFirstPaymentService } from '../notifications/coach-first-payment.s
+ // @unique is unchanged.
+ type WebhookTx = Prisma.TransactionClient;
+ 
++/** B-TRIALS — the trial columns and access an event resolves to. */
++type TrialTransition = {
++  data: Prisma.ClientPurchaseUpdateInput;
++  conflict: boolean;
++  entitled: boolean;
++  noticeId?: string;
++};
++
+ // Lifecycle:
+ //
+ //   pending  -- checkout.session.completed   --> paid (one_time) / active (recurring)
+@@ -79,6 +96,31 @@ export interface CheckoutWebhookResult {
+   // because the caller held an outer $transaction. BillingService runs these
+   // after the outer tx commits (see runDeferredSplit below).
+   deferredSplit?: DeferredSplitTask;
++  // B-TRIALS (OR-113-2) — a trial-ending notice recorded inside the tx whose
++  // push + email BillingService delivers after commit (deliverTrialNotice).
++  deferredTrialNoticeId?: string;
++  // B-TRIALS — a trialing subscription that tried to start a second free
++  // trial with the same coach. BillingService cancels it after commit
++  // (cancelTrialConflict) so the client is never charged for it.
++  trialConflictSubscriptionId?: string;
++}
++
++/**
++ * B-TRIALS (OR-113-2) — does this Stripe subscription state grant access?
++ * active / past_due always do (past_due = dunning grace). trialing does only
++ * once a card is saved on the subscription: "card collected up front" is a
++ * server rule, so an abandoned PaymentSheet never yields free access.
++ */
++export function subscriptionGrantsEntitlement(
++  status: string,
++  sub: object | null | undefined,
++): boolean {
++  if (status === 'active' || status === 'past_due') return true;
++  if (status === 'trialing') {
++    const pm = sub && 'default_payment_method' in sub ? sub.default_payment_method : null;
++    return hasSavedPaymentMethod({ default_payment_method: pm });
++  }
++  return false;
+ }
+ 
+ // PR-18 B1 — state that the checkout handler needs from Stripe HTTP but that
+@@ -141,6 +183,12 @@ export class CheckoutWebhookHandlerService {
+     // never reads or writes state. @Optional() so legacy unit-test wiring that
+     // hand-constructs the handler without the full container still works.
+     @Optional() private coachFirstPaymentService?: CoachFirstPaymentService,
++    // B-TRIALS (OR-113-2) — one trial per client per coach + trial notices.
++    // @Optional() so legacy unit-test wiring still constructs the handler.
++    @Optional() private trialUsage?: TrialUsageService,
++    @Optional() private trialNotices?: TrialNoticeService,
++    // B-TRIALS-3 (B-656-1) — durable cancellation of a second trial.
++    @Optional() private trialConflicts?: TrialConflictService,
+   ) {}
+ 
+   /**
+@@ -195,6 +243,9 @@ export class CheckoutWebhookHandlerService {
+         return this.applySubscriptionUpdated(event, tx);
+       case 'customer.subscription.deleted':
+         return this.applySubscriptionDeleted(event, tx);
++      // B-TRIALS (OR-113-2) — three days before a free trial ends.
++      case 'customer.subscription.trial_will_end':
++        return this.applyTrialWillEnd(event, tx);
+       case 'payment_intent.succeeded':
+         return this.applyPaymentIntentSucceeded(event, tx, prefetched);
+       case 'payment_intent.payment_failed':
+@@ -718,6 +769,10 @@ export class CheckoutWebhookHandlerService {
+       cancel_at_period_end?: boolean;
+       canceled_at?: number | null;
+       metadata?: Record<string, string>;
++      trial_start?: number | null;
++      trial_end?: number | null;
++      default_payment_method?: unknown;
++      default_source?: unknown;
+     };
+     if (!sub?.id) return { claimed: false, reason: 'no_sub_id' };
+ 
+@@ -790,10 +845,24 @@ export class CheckoutWebhookHandlerService {
+     });
+ 
+     const status = this.normalizeSubscriptionStatus(sub.status);
+-    const entitlementActive = ['active', 'trialing', 'past_due'].includes(status);
+     const currentPeriodEnd = this.toDate(sub.current_period_end);
+     const canceledAt = this.toDate(sub.canceled_at);
+ 
++    // B-TRIALS (OR-113-2) — trial bookkeeping. A trialing subscription with a
++    // saved card starts the client's one trial with this coach; if another
++    // purchase already holds it, this one gets no free access and is
++    // cancelled after commit (never charged). A trial that already started
++    // keeps access to its end even if the card is later removed.
++    const trial = await this.applyTrialState(
++      db,
++      purchase,
++      status,
++      sub,
++      subscriptionGrantsEntitlement(status, sub),
++      event.id,
++    );
++    const entitlementActive = trial.entitled;
++
+     const accessExpiresAt = this.computeAccessExpiry(
+       pkg,
+       purchase,
+@@ -819,10 +888,205 @@ export class CheckoutWebhookHandlerService {
+           current_period_end: currentPeriodEnd,
+           canceled_at: canceledAt,
+           access_expires_at: accessExpiresAt,
++          ...trial.data,
+         },
+       }),
+     );
+-    return { claimed: true, purchase_id: purchase.id };
++    return {
++      claimed: true,
++      purchase_id: purchase.id,
++      ...(trial.conflict ? { trialConflictSubscriptionId: sub.id } : {}),
++      ...(trial.noticeId ? { deferredTrialNoticeId: trial.noticeId } : {}),
++    };
++  }
++
++  /**
++   * B-TRIALS (OR-113-2) — trial columns to write for a subscription event and
++   * the one-trial-per-coach transition. Runs on the webhook tx.
++   *
++   * B-TRIALS-3: also mirrors whether the subscription holds a card
++   * (card_on_file, B-656-5), records the trial-ending notice when a trial
++   * starts inside the warning window (B-656-3), and turns a lost one-trial
++   * race into a durable owed cancellation that vetoes trial access on every
++   * later event (B-656-1).
++   *
++   * B-TR2-117 (C-671-4) — T1's purchaseTrialView reads a non-trialing
++   * purchase with trial_ends_at as "The trial is over", so trial_ends_at is
++   * written only for a trial that really started: this event starts it, or
++   * an earlier write or the ledger says it did. A never-started attempt
++   * keeps none and reads 'none' (setup_incomplete while it is trialing).
++   */
++  private async applyTrialState(
++    db: WebhookTx | PrismaService,
++    purchase: ClientPurchase,
++    status: string,
++    sub: TrialWillEndSubscription & { id?: string; trial_start?: number | null },
++    entitled: boolean,
++    eventId?: string,
++  ): Promise<TrialTransition> {
++    const out = await this.trialTransition(db, purchase, status, sub, entitled, eventId);
++    const trialEndsAt = this.toDate(sub.trial_end ?? null);
++    if (!trialEndsAt || out.conflict) return out;
++    const started =
++      !!purchase.trial_ends_at ||
++      (status === 'trialing' && out.entitled) ||
++      (!!this.trialUsage && (await this.trialUsage.hasStarted(db, purchase.id)));
++    if (started) out.data.trial_ends_at = trialEndsAt;
++    return out;
++  }
++
++  private async trialTransition(
++    db: WebhookTx | PrismaService,
++    purchase: ClientPurchase,
++    status: string,
++    sub: TrialWillEndSubscription & { id?: string; trial_start?: number | null },
++    entitled: boolean,
++    eventId?: string,
++  ): Promise<TrialTransition> {
++    const trialEndsAt = this.toDate(sub.trial_end ?? null);
++    const trialStart = this.toDate(sub.trial_start ?? null);
++    const data: Prisma.ClientPurchaseUpdateInput = {};
++    if (trialEndsAt && trialStart && !purchase.trial_days) {
++      const days = Math.round((trialEndsAt.getTime() - trialStart.getTime()) / 86_400_000);
++      if (days >= 1 && days <= 30) data.trial_days = days;
++    }
++    // B-656-5 — card state is billing truth, kept apart from access.
++    if (sub && ('default_payment_method' in sub || 'default_source' in sub)) {
++      data.card_on_file = subscriptionHasPaymentMethod(sub);
++    }
++    if (!this.trialUsage) return { data, conflict: false, entitled };
++
++    // B-656-1 — this purchase already lost the one-trial race.
++    const owed = this.trialConflicts ? await this.trialConflicts.find(db, purchase.id) : null;
++    if (owed && this.trialConflicts) {
++      if (status === 'canceled' || status === 'incomplete_expired') {
++        await this.trialConflicts.markCancelled(db, purchase.id);
++        return { data, conflict: false, entitled: false };
++      }
++      if (owed.status === 'superseded') return { data, conflict: false, entitled };
++      if (owed.status === 'owed' && status === 'active') {
++        // Every cancel failed through the whole trial and Stripe billed the
++        // regular price: the client paid, so the plan is a regular paid plan
++        // sold without a trial; support is alerted by the sweep (refund).
++        await this.trialConflicts.supersede(db, purchase.id);
++        return { data, conflict: false, entitled };
++      }
++      // trialing (or past_due: no money taken yet): never any access, and
++      // the owed cancel is re-armed after this commit.
++      return { data, conflict: owed.status === 'owed', entitled: false };
++    }
++
++    if (status === 'trialing' && !entitled) {
++      // B-TRIALS-2 — no card on the subscription right now. Before the trial
++      // started that means no access (card up front). After it started
++      // (the card was saved, then removed) the client keeps the trial they
++      // were promised until its end; Stripe cancels at the trial end
++      // (missing_payment_method=cancel), so nothing is ever charged. Same
++      // rule as B-RECUR's purchase-aware subscriptionGrantsAccess (#654).
++      const started = await this.trialUsage.hasStarted(db, purchase.id);
++      return { data, conflict: false, entitled: started };
++    }
++    if (status === 'trialing' && entitled) {
++      const outcome = await this.trialUsage.markStarted(db, {
++        purchaseId: purchase.id,
++        clientUserId: purchase.client_user_id,
++        coachUserId: purchase.coach_user_id,
++        packageId: purchase.package_id,
++        trialDays: (data.trial_days as number | undefined) ?? purchase.trial_days ?? 0,
++        trialEndsAt,
++      });
++      if (outcome === 'conflict') {
++        if (this.trialConflicts && sub.id) {
++          await this.trialConflicts.owe(db, { purchaseId: purchase.id, subscriptionId: sub.id });
++        }
++        return { data, conflict: true, entitled: false };
++      }
++      // B-656-3 — a trial that starts inside the warning window gets its
++      // notice now (its trial_will_end event may have come before the card).
++      const noticeId = this.trialNotices
++        ? await this.trialNotices.recordIfDue(db, {
++            purchase,
++            sub,
++            trialEndsAt,
++            eventId: eventId ?? null,
++          })
++        : null;
++      return { data, conflict: false, entitled: true, ...(noticeId ? { noticeId } : {}) };
++    }
++    if (status === 'canceled' || status === 'incomplete_expired') {
++      await this.trialUsage.release(db, purchase.id, `subscription_${status}`);
++    }
++    return { data, conflict: false, entitled };
++  }
++
++  /**
++   * B-TRIALS (OR-113-2) — customer.subscription.trial_will_end. Records the
++   * trial-ending notice (ledger + in-app row) on the webhook tx and hands the
++   * notice id back so push + email go out after commit.
++   */
++  private async applyTrialWillEnd(
++    event: StripeEvent,
++    tx?: WebhookTx,
++  ): Promise<CheckoutWebhookResult> {
++    const sub = event.data.object as TrialWillEndSubscription;
++    if (!sub?.id) return { claimed: false, reason: 'no_sub_id' };
++    const db: WebhookTx | PrismaService = tx ?? this.prisma;
++    const purchase = await db.clientPurchase.findUnique({
++      where: { stripe_subscription_id: sub.id },
++    });
++    if (!purchase) return { claimed: false };
++    if (!this.trialNotices) return { claimed: true, purchase_id: purchase.id };
++    // The ledger row and the in-app row share the caller's tx when one is
++    // held (BillingService always threads it); legacy callers autocommit.
++    const noticeId = await this.trialNotices.recordTrialWillEnd(db, {
++      purchase,
++      sub,
++      eventId: event.id,
++    });
++    return {
++      claimed: true,
++      purchase_id: purchase.id,
++      ...(noticeId ? { deferredTrialNoticeId: noticeId } : {}),
++    };
++  }
++
++  /** B-TRIALS — post-commit push + email for a trial notice. Never throws. */
++  async deliverTrialNotice(noticeId: string): Promise<void> {
++    if (!this.trialNotices) return;
++    await this.trialNotices.deliver(noticeId);
++  }
++
++  /**
++   * B-TRIALS — post-commit: cancel a subscription that tried to start a second
++   * free trial with the same coach. It is trialing, so cancelling now means no
++   * invoice and no charge. B-TRIALS-3 (B-656-1): the obligation is the
++   * PackageTrialConflict row written in the webhook tx; this settles it once
++   * now, and TrialConflictService.sweep retries it until Stripe confirms.
++   * Never throws.
++   */
++  async cancelTrialConflict(subscriptionId: string): Promise<void> {
++    if (this.trialConflicts) {
++      try {
++        const rows = await this.prisma.packageTrialConflict.findMany({
++          where: { stripe_subscription_id: subscriptionId, status: 'owed' },
++          select: { purchase_id: true },
++        });
++        for (const row of rows) await this.trialConflicts.settle(row.purchase_id);
++      } catch (err) {
++        this.logger.error(
++          `trial conflict: settle lookup failed (sweep retries): ${trialErrorClass(err)}`,
++        );
++      }
++      return;
++    }
++    try {
++      await this.stripeConnect.cancelSubscription(subscriptionId);
++      this.logger.warn(`trial conflict: cancelled subscription ${subscriptionId} (TRIAL_ALREADY_USED)`);
++    } catch (err) {
++      this.logger.error(
++        `trial conflict: cancel failed for subscription ${subscriptionId} (TRIAL_ALREADY_USED, cancel by hand): ${trialErrorClass(err)}`,
++      );
++    }
+   }
+ 
+   private async applySubscriptionDeleted(
+@@ -850,6 +1114,16 @@ export class CheckoutWebhookHandlerService {
+         canceled_at: this.toDate(sub.canceled_at) ?? new Date(),
+       },
+     });
++    // B-TRIALS (OR-113-2) — a trial that never started (no card saved) gives
++    // the client their trial back; a started trial stays used.
++    if (this.trialUsage) {
++      await this.trialUsage.release(db, purchase.id, 'subscription_deleted');
++    }
++    // B-TRIALS-3 (B-656-1) — Stripe confirmed the end: an owed conflict
++    // cancellation is settled.
++    if (this.trialConflicts) {
++      await this.trialConflicts.markCancelled(db, purchase.id);
++    }
+     // PR-16 — cancel any not-yet-fired drops for this purchase. Runs in
+     // the SAME outer $transaction as the entitlement flip (when caller
+     // provides a tx) so revoke + cancel commit-or-rollback together.
+@@ -1049,6 +1323,8 @@ export class CheckoutWebhookHandlerService {
+     // Resync subscription state from Stripe so current_period_end and
+     // entitlement window are fresh after a renewal.
+     let updated = purchase;
++    let trialConflictSubscriptionId: string | undefined;
++    let trialNoticeId: string | undefined;
+     try {
+       // PR-18 B1 — NEVER perform Stripe HTTP while a DB transaction is held.
+       // When BillingService threads its outer tx, it ALSO pre-resolves the
+@@ -1075,6 +1351,16 @@ export class CheckoutWebhookHandlerService {
+       });
+       const status = this.normalizeSubscriptionStatus(sub.status);
+       const currentPeriodEnd = this.toDate(sub.current_period_end);
++      const trial = await this.applyTrialState(
++        db,
++        purchase,
++        status,
++        sub as TrialWillEndSubscription & { id?: string; trial_start?: number | null },
++        subscriptionGrantsEntitlement(status, sub),
++        event.id,
++      );
++      if (trial.conflict) trialConflictSubscriptionId = sub.id;
++      if (trial.noticeId) trialNoticeId = trial.noticeId;
+       updated = await this.activateUnderPackageLock(
+         tx,
+         purchase.package_id,
+@@ -1083,9 +1369,11 @@ export class CheckoutWebhookHandlerService {
+             where: { id: purchase.id },
+             data: {
+               status,
+-              entitlement_active: ['active', 'trialing', 'past_due'].includes(
+-                status,
+-              ),
++              // B-TRIALS — a $0 trial invoice is "paid" before any card is
++              // saved; trialing grants access only with a saved card (or a
++              // trial that already started), and never to a subscription
++              // that lost the one-trial race.
++              entitlement_active: trial.entitled,
+               current_period_end: currentPeriodEnd,
+               access_expires_at: this.computeAccessExpiry(
+                 pkg,
+@@ -1094,6 +1382,7 @@ export class CheckoutWebhookHandlerService {
+                 currentPeriodEnd,
+               ),
+               last_error: null,
++              ...trial.data,
+             },
+           }),
+       );
+@@ -1137,7 +1426,13 @@ export class CheckoutWebhookHandlerService {
+         );
+       }
+     }
+-    return { claimed: true, purchase_id: purchase.id, deferredSplit };
++    return {
++      claimed: true,
++      purchase_id: purchase.id,
++      deferredSplit,
++      ...(trialConflictSubscriptionId ? { trialConflictSubscriptionId } : {}),
++      ...(trialNoticeId ? { deferredTrialNoticeId: trialNoticeId } : {}),
++    };
+   }
+ 
+   private async applyInvoicePaymentFailed(
+diff --git a/src/checkout/checkout.module.ts b/src/checkout/checkout.module.ts
+index cba6bd07..2d5c3235 100644
+--- a/src/checkout/checkout.module.ts
++++ b/src/checkout/checkout.module.ts
+@@ -11,6 +11,7 @@ import {
+ } from './checkout.controller';
+ import { CheckoutService } from './checkout.service';
+ import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
++import { TrialConflictService } from '../packages/trials/trial-conflict.service';
+ import { DunningService } from './dunning.service';
+ import { DunningV2Module } from './dunning-v2/dunning-v2.module';
+ import {
+@@ -79,6 +80,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+   providers: [
+     CheckoutService,
+     CheckoutWebhookHandlerService,
++    // B-TRIALS-3 (B-656-1) — durable second-trial cancellation + its sweep.
++    TrialConflictService,
+     PurchaseSplitHandlerService,
+     DunningService,
+     RefundDisputeHandlerService,
+diff --git a/src/checkout/checkout.service.ts b/src/checkout/checkout.service.ts
+index ed99b2f0..e3c7e38b 100644
+--- a/src/checkout/checkout.service.ts
++++ b/src/checkout/checkout.service.ts
+@@ -18,6 +18,7 @@ import { PackagesService } from '../packages/packages.service';
+ import { BUYER_VISIBLE_DROP_STATUSES, buyerDropStatus } from '../packages/drop-status';
+ import { CheckoutContractGate } from '../contracts/checkout-contract-gate.service';
+ import { CLIENT_PURCHASE_SELECT, type ClientPurchaseView } from './client-purchases.select';
++import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/trial-view';
+ import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
+ import { ContractRequiredException } from '../contracts/contract-required.exception';
+ 
+@@ -745,7 +746,10 @@ export class CheckoutService {
+   async listForClient(
+     clientUserId: string,
+     opts: { cursor?: string; limit?: number } = {},
+-  ): Promise<{ items: ClientPurchaseView[]; hasMore: boolean }> {
++  ): Promise<{
++    items: Array<ClientPurchaseView & { trial: PurchaseTrialView }>;
++    hasMore: boolean;
++  }> {
+     const take = Math.min(opts.limit ?? 50, 100);
+     const rows = await this.prisma.clientPurchase.findMany({
+       where: { client_user_id: clientUserId },
+@@ -755,7 +759,42 @@ export class CheckoutService {
+       select: CLIENT_PURCHASE_SELECT,
+     });
+     const hasMore = rows.length > take;
+-    return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
++    const page = hasMore ? rows.slice(0, take) : rows;
++    // B-TRIALS (OR-113-2) — derived trial status for Home / Your plan.
++    // B-TRIALS-3 (B-656-5) — the trial view also needs the customer's default
++    // card and whether a purchase lost the one-trial race; both are read only
++    // when the page holds a trial.
++    const now = new Date();
++    const trialRows = page.filter((r) => r.trial_ends_at || (r.trial_days ?? 0) > 0);
++    let customerDefaultCard = false;
++    let conflicts = new Set<string>();
++    if (trialRows.length > 0) {
++      const [customer, conflictRows] = await Promise.all([
++        this.prisma.connectCustomer.findUnique({
++          where: { client_user_id: clientUserId },
++          select: { default_payment_method_id: true },
++        }),
++        this.prisma.packageTrialConflict.findMany({
++          where: {
++            purchase_id: { in: trialRows.map((r) => r.id) },
++            status: { in: ['owed', 'cancelled'] },
++          },
++          select: { purchase_id: true },
++        }),
++      ]);
++      customerDefaultCard = !!customer?.default_payment_method_id;
++      conflicts = new Set(conflictRows.map((c) => c.purchase_id));
++    }
++    return {
++      items: page.map((row) => ({
++        ...row,
++        trial: purchaseTrialView(row, now, {
++          customerDefaultCard,
++          trialConflict: conflicts.has(row.id),
++        }),
++      })),
++      hasMore,
++    };
+   }
+ 
+   // PR-15A — Buyer-visible drops feed.
+diff --git a/src/checkout/client-purchases.select.ts b/src/checkout/client-purchases.select.ts
+index ac8de921..af6cdddb 100644
+--- a/src/checkout/client-purchases.select.ts
++++ b/src/checkout/client-purchases.select.ts
+@@ -34,6 +34,12 @@ export const CLIENT_PURCHASE_SELECT = {
+   canceled_at: true,
+   last_error: true,
+   source: true,
++  // B-TRIALS (OR-113-2) — trial snapshot + Stripe trial_end mirror; the list
++  // also derives purchases[].trial (see src/packages/trials/trial-view.ts).
++  trial_days: true,
++  trial_ends_at: true,
++  // B-TRIALS-3 (B-656-5) — card state behind purchases[].trial.will_charge.
++  card_on_file: true,
+   created_at: true,
+   updated_at: true,
+ } as const satisfies Prisma.ClientPurchaseSelect;
+diff --git a/src/packages/trials/trial-conflict.service.ts b/src/packages/trials/trial-conflict.service.ts
+new file mode 100644
+index 00000000..fd8b3ebe
+--- /dev/null
++++ b/src/packages/trials/trial-conflict.service.ts
+@@ -0,0 +1,402 @@
++import { randomUUID } from 'crypto';
++import { Injectable, Logger, Optional } from '@nestjs/common';
++import { Cron } from '@nestjs/schedule';
++import type { Prisma } from '@prisma/client';
++import * as Sentry from '@sentry/node';
++import { trialErrorClass, trialHttpCode } from './trial-diagnostics';
++import {
++  StripeConnectApiError,
++  StripeConnectApiService,
++} from '../../connect/stripe-connect-api.service';
++import { PrismaService } from '../../prisma.service';
++
++// B-TRIALS-3 (B-656-1) — the cancellation a second free trial with the same
++// coach owes, as durable state.
++//
++// Before: the webhook handed the subscription id to an in-memory post-commit
++// hook; one transient Stripe failure was logged and forgotten, and a Stripe
++// redelivery of the same event was already processed, so a saved-card trial
++// stayed scheduled to charge with no access.
++//
++// Now:
++//   owe()      inside the webhook transaction: one PackageTrialConflict row per
++//              purchase (INSERT ... ON CONFLICT DO NOTHING, safe in the tx). It
++//              commits with the denied entitlement or not at all.
++//   settle()   right after commit, and from sweep() every 5 minutes: an
++//              exclusive lease (compare-and-set), one bounded Stripe cancel,
++//              and a fenced outcome. Success, or Stripe saying the
++//              subscription is already gone, settles it as cancelled; any
++//              other failure keeps it owed with exponential backoff.
++//   isBlocked() every later subscription / invoice event for the purchase: a
++//              purchase with a conflict row never gets trial access.
++//   supersede() the trial ended before any cancel succeeded and Stripe moved
++//              the subscription to active/past_due (billing started). A
++//              cancel can no longer prevent that charge, and cancelling now
++//              would leave a paying client with nothing, so the obligation
++//              closes, the plan is treated as a regular paid plan sold
++//              without a trial (the TRIAL_ALREADY_USED rule), and the sweep
++//              alerts support once (ids only) to offer a refund.
++// After TRIAL_CONFLICT_ALERT_AFTER failed attempts Sentry gets one alert
++// (ids and codes only) so a person can cancel by hand well before the trial
++// ends; the sweep keeps retrying regardless.
++//
++// B-TR3-118 (agent 118) — Sol B-673-1: an owed row is not proof that the
++// subscription is still a free trial (its active webhook can be late or
++// missing). settle() reads Stripe's current subscription first and cancels
++// only one that has not billed (trialConflictAction); billing started
++// supersedes it as the active webhook does (paid plan kept, billed alert),
++// and a failed or unknown read cancels nothing. Sol C-673-2: every lease,
++// admission and backoff reads a fresh clock, never the sweep's start time.
++
++export const TRIAL_CONFLICT_LEASE_MS = 60 * 1000;
++export const TRIAL_CONFLICT_CANCEL_TIMEOUT_MS = 20 * 1000;
++export const TRIAL_CONFLICT_ALERT_AFTER = 3;
++const BACKOFF_BASE_MS = 5 * 60 * 1000;
++const BACKOFF_MAX_MS = 60 * 60 * 1000;
++const SWEEP_BATCH = 50;
++
++type Db = Prisma.TransactionClient | PrismaService;
++
++export type TrialConflictSettleOutcome =
++  'cancelled' | 'superseded' | 'retry' | 'busy' | 'not_owed' | 'stale';
++
++/** Stripe states with nothing billed for the current period: a cancel takes no money back. */
++const UNBILLED_STATUSES = new Set(['trialing', 'past_due', 'unpaid', 'incomplete', 'paused']);
++
++export type TrialConflictAction =
++  'cancel' | 'gone' | 'billed' | 'trial_ending' | 'lease_exhausted' | 'state_unknown';
++
++/**
++ * B-673-1 — what an owed conflict may do, from Stripe's subscription as read
++ * now: cancel (nothing billed, and the cancel lands before the trial ends and
++ * inside the lease), gone (already ended), billed (billing started: supersede,
++ * never cancel), or a retry code (an unknown state, the trial ends before the
++ * cancel can land, or the lease has no room left).
++ */
++export function trialConflictAction(
++  sub: { status?: unknown; trial_end?: unknown } | null | undefined,
++  at: Date,
++  leaseUntil: Date,
++): TrialConflictAction {
++  const status = typeof sub?.status === 'string' ? sub.status : '';
++  if (status === 'canceled' || status === 'incomplete_expired') return 'gone';
++  if (status === 'active') return 'billed';
++  if (!UNBILLED_STATUSES.has(status)) return 'state_unknown';
++  if (at.getTime() + TRIAL_CONFLICT_CANCEL_TIMEOUT_MS >= leaseUntil.getTime()) {
++    return 'lease_exhausted';
++  }
++  if (status !== 'trialing') return 'cancel';
++  const end = typeof sub?.trial_end === 'number' ? sub.trial_end * 1000 : Number.NaN;
++  // A cancel racing Stripe's trial-end charge could cancel a just-paid plan.
++  return end > at.getTime() + TRIAL_CONFLICT_LEASE_MS ? 'cancel' : 'trial_ending';
++}
++
++export function trialConflictBackoffMs(attempts: number): number {
++  const n = Math.max(1, attempts);
++  return Math.min(BACKOFF_BASE_MS * 2 ** (n - 1), BACKOFF_MAX_MS);
++}
++
++/** Stripe says the subscription no longer exists or is already cancelled. */
++export function isAlreadyCancelledError(err: unknown): boolean {
++  if (err instanceof StripeConnectApiError) {
++    if (err.httpStatus === 404 || err.stripeCode === 'resource_missing') return true;
++    return /No such subscription|already (been )?cancel+ed|status of canceled/i.test(err.message);
++  }
++  return false;
++}
++
++/** A short, closed error code for the row and logs (never a message body). */
++function errorCode(err: unknown): string {
++  if (err instanceof TrialConflictTimeoutError) return 'timeout';
++  // B-656-7 — the HTTP status only; a Stripe code is free text to this log.
++  if (err instanceof StripeConnectApiError) return trialHttpCode(err.httpStatus);
++  return trialErrorClass(err);
++}
++
++export class TrialConflictTimeoutError extends Error {
++  readonly code = 'TRIAL_CONFLICT_CANCEL_TIMEOUT';
++  constructor() {
++    super('trial conflict cancel timed out');
++    this.name = 'TrialConflictTimeoutError';
++  }
++}
++
++@Injectable()
++export class TrialConflictService {
++  private readonly logger = new Logger(TrialConflictService.name);
++
++  constructor(
++    private readonly prisma: PrismaService,
++    @Optional() private readonly stripe?: StripeConnectApiService,
++  ) {}
++
++  /** Record the owed cancellation on the caller's transaction (idempotent). */
++  async owe(
++    db: Db,
++    args: { purchaseId: string; subscriptionId: string; now?: Date },
++  ): Promise<void> {
++    await db.packageTrialConflict.createMany({
++      data: [
++        {
++          purchase_id: args.purchaseId,
++          stripe_subscription_id: args.subscriptionId,
++          status: 'owed',
++          next_attempt_at: args.now ?? new Date(),
++        },
++      ],
++      skipDuplicates: true,
++    });
++  }
++
++  /** Any conflict row (owed, cancelled or superseded) for this purchase. */
++  async find(
++    db: Db,
++    purchaseId: string,
++  ): Promise<{ status: string; stripe_subscription_id: string } | null> {
++    return db.packageTrialConflict.findUnique({
++      where: { purchase_id: purchaseId },
++      select: { status: true, stripe_subscription_id: true },
++    });
++  }
++
++  /** Purchases (of a page) that lost the one-trial race. */
++  async blockedPurchaseIds(db: Db, purchaseIds: string[]): Promise<Set<string>> {
++    if (purchaseIds.length === 0) return new Set();
++    const rows = await db.packageTrialConflict.findMany({
++      where: { purchase_id: { in: purchaseIds }, status: { in: ['owed', 'cancelled'] } },
++      select: { purchase_id: true },
++    });
++    return new Set(rows.map((r) => r.purchase_id));
++  }
++
++  /** Stripe confirmed the subscription ended (customer.subscription.deleted). */
++  async markCancelled(db: Db, purchaseId: string, now: Date = new Date()): Promise<void> {
++    await db.packageTrialConflict.updateMany({
++      where: { purchase_id: purchaseId, status: 'owed' },
++      data: { status: 'cancelled', settled_at: now, lease_token: null, lease_until: null },
++    });
++  }
++
++  /**
++   * Billing started before any cancel succeeded (see the header). Closes the
++   * obligation on the caller's transaction and returns true when this call
++   * closed it (the sweep alerts support once, after commit).
++   */
++  async supersede(db: Db, purchaseId: string, now: Date = new Date()): Promise<boolean> {
++    const res = await db.packageTrialConflict.updateMany({
++      where: { purchase_id: purchaseId, status: 'owed' },
++      data: {
++        status: 'superseded',
++        settled_at: now,
++        lease_token: null,
++        lease_until: null,
++        last_error: 'billing_started',
++      },
++    });
++    return res.count === 1;
++  }
++
++  /**
++   * Try to cancel one owed subscription now. Exclusive (lease), bounded
++   * (timeout shorter than the lease) and fenced (only the lease holder writes
++   * the outcome). B-673-1: Stripe's current state decides first (see the
++   * header). Never throws.
++   */
++  async settle(purchaseId: string, now: Date = new Date()): Promise<TrialConflictSettleOutcome> {
++    const clock = elapsedClock(now);
++    try {
++      const row = await this.prisma.packageTrialConflict.findUnique({
++        where: { purchase_id: purchaseId },
++      });
++      if (!row || row.status !== 'owed') return 'not_owed';
++      if (!this.stripe) return 'retry';
++      const token = randomUUID();
++      const at = clock();
++      const until = new Date(at.getTime() + TRIAL_CONFLICT_LEASE_MS);
++      const claimed = await this.prisma.packageTrialConflict.updateMany({
++        where: {
++          id: row.id,
++          status: 'owed',
++          OR: [{ lease_until: null }, { lease_until: { lt: at } }],
++        },
++        data: { attempts: { increment: 1 }, lease_token: token, lease_until: until },
++      });
++      if (claimed.count !== 1) return 'busy';
++      const attempts = row.attempts + 1;
++
++      let outcome: 'cancelled' | 'superseded' | 'retry';
++      let code: string | null = null;
++      try {
++        const sub = await withDeadline(
++          this.stripe.retrieveSubscription(row.stripe_subscription_id),
++          TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
++        );
++        // Decided and sent with no await in between (the admission point).
++        const action = trialConflictAction(sub, clock(), until);
++        if (action === 'cancel') {
++          await withDeadline(
++            this.stripe.cancelSubscription(row.stripe_subscription_id),
++            TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
++          );
++          outcome = 'cancelled';
++        } else if (action === 'gone') {
++          outcome = 'cancelled';
++          code = 'already_cancelled';
++        } else {
++          outcome = action === 'billed' ? 'superseded' : 'retry';
++          code = action === 'billed' ? 'billing_started' : action;
++        }
++      } catch (err) {
++        if (isAlreadyCancelledError(err)) {
++          outcome = 'cancelled';
++          code = 'already_cancelled';
++        } else {
++          outcome = 'retry';
++          code = errorCode(err);
++        }
++      }
++
++      // Fenced: a webhook that superseded or cancelled the row meanwhile wins.
++      const fenced = await this.prisma.packageTrialConflict.updateMany({
++        where: { id: row.id, lease_token: token, status: 'owed' },
++        data:
++          outcome === 'retry'
++            ? {
++                lease_token: null,
++                lease_until: null,
++                last_error: code,
++                next_attempt_at: new Date(clock().getTime() + trialConflictBackoffMs(attempts)),
++              }
++            : {
++                status: outcome,
++                settled_at: clock(),
++                lease_token: null,
++                lease_until: null,
++                last_error: code,
++              },
++      });
++      if (fenced.count !== 1) return 'stale';
++
++      if (outcome === 'superseded') {
++        // The billed alert goes out from alertSuperseded() (its own receipt).
++        this.logger.warn(
++          `trial conflict: purchase ${purchaseId} billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)`,
++        );
++        return 'superseded';
++      }
++      if (outcome === 'cancelled') {
++        this.logger.warn(
++          `trial conflict: cancelled subscription for purchase ${purchaseId} (TRIAL_ALREADY_USED)`,
++        );
++        return 'cancelled';
++      }
++      this.logger.error(
++        `trial conflict: cancel not done for purchase ${purchaseId} attempt=${attempts} code=${code} (TRIAL_ALREADY_USED, retried by the sweep)`,
++      );
++      if (attempts >= TRIAL_CONFLICT_ALERT_AFTER && !row.alerted_at) {
++        const first = await this.prisma.packageTrialConflict.updateMany({
++          where: { id: row.id, alerted_at: null },
++          data: { alerted_at: new Date() },
++        });
++        if (first.count === 1) {
++          try {
++            Sentry.captureMessage('trial conflict cancel still failing', {
++              level: 'error',
++              tags: {
++                code: 'TRIAL_CONFLICT_CANCEL_FAILING',
++                purchase_id: purchaseId,
++                last: code ?? 'error',
++              },
++            });
++          } catch (err) {
++            this.logger.warn(`trial conflict alert not sent: ${trialErrorClass(err)}`);
++          }
++        }
++      }
++      return 'retry';
++    } catch (err) {
++      this.logger.error(
++        `trial conflict settle errored for purchase ${purchaseId}: ${trialErrorClass(err)}`,
++      );
++      return 'retry';
++    }
++  }
++
++  /** Retry every owed cancellation whose backoff has passed. */
++  @Cron('*/5 * * * *', { name: 'trial-conflict-sweep', timeZone: 'UTC' })
++  async sweep(now: Date = new Date()): Promise<number> {
++    const clock = elapsedClock(now);
++    const due = await this.prisma.packageTrialConflict.findMany({
++      where: { status: 'owed', next_attempt_at: { lte: now } },
++      orderBy: { next_attempt_at: 'asc' },
++      take: SWEEP_BATCH,
++      select: { purchase_id: true },
++    });
++    // C-673-2 — each row starts from the time it is reached, not the sweep's start.
++    for (const row of due) await this.settle(row.purchase_id, clock());
++    await this.alertSuperseded();
++    return due.length;
++  }
++
++  /**
++   * Superseded conflicts (billing started before any cancel succeeded) alert
++   * support exactly once, after the webhook transaction that closed them
++   * committed (ids and codes only). Never throws.
++   */
++  async alertSuperseded(): Promise<number> {
++    try {
++      const rows = await this.prisma.packageTrialConflict.findMany({
++        // B-656-6 — its own receipt: an earlier cancel-failing alert
++        // (alerted_at) never suppresses the billed alert.
++        where: { status: 'superseded', billed_alerted_at: null },
++        take: SWEEP_BATCH,
++        select: { id: true, purchase_id: true },
++      });
++      let sent = 0;
++      for (const row of rows) {
++        const first = await this.prisma.packageTrialConflict.updateMany({
++          where: { id: row.id, status: 'superseded', billed_alerted_at: null },
++          data: { billed_alerted_at: new Date() },
++        });
++        if (first.count !== 1) continue;
++        sent += 1;
++        this.logger.error(
++          `trial conflict superseded: purchase ${row.purchase_id} started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)`,
++        );
++        try {
++          Sentry.captureMessage('trial conflict billed before cancel', {
++            level: 'error',
++            tags: { code: 'TRIAL_CONFLICT_SUPERSEDED', purchase_id: row.purchase_id },
++          });
++        } catch (err) {
++          this.logger.warn(`trial conflict alert not sent: ${trialErrorClass(err)}`);
++        }
++      }
++      return sent;
++    } catch (err) {
++      this.logger.error(`trial conflict alert sweep failed: ${trialErrorClass(err)}`);
++      return 0;
++    }
++  }
++}
++
++/** A clock that starts at `start` and advances with real elapsed time (C-673-2). */
++function elapsedClock(start: Date): () => Date {
++  const wallAtStart = Date.now();
++  return () => new Date(start.getTime() + (Date.now() - wallAtStart));
++}
++
++/** Resolve the promise or reject with TrialConflictTimeoutError after ms. */
++export async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
++  let timer: NodeJS.Timeout | undefined;
++  try {
++    return await Promise.race([
++      promise,
++      new Promise<never>((_, reject) => {
++        timer = setTimeout(() => reject(new TrialConflictTimeoutError()), ms);
++      }),
++    ]);
++  } finally {
++    if (timer) clearTimeout(timer);
++  }
++}
+diff --git a/test/b-trials-3-fix-round.spec.ts b/test/b-trials-3-fix-round.spec.ts
+new file mode 100644
+index 00000000..55da3845
+--- /dev/null
++++ b/test/b-trials-3-fix-round.spec.ts
+@@ -0,0 +1,1263 @@
++// B-TRIALS-3 (agent 115) — fix round for GPT-6.1 Sol REQUEST CHANGES on #656
++// @ 079e9e39 (B-656-1..5) and the card-removed-mid-trial backlog item.
++//
++// Every block failed before this round (on 079e9e39):
++//   B-656-1  a lost one-trial race left no durable trace: a failed post-commit
++//            cancel was forgotten (no PackageTrialConflict table, no sweep).
++//   B-656-2  the attempt counter was not an exclusive claim: a staggered second
++//            caller sent again and a stale outcome overwrote 'delivered'.
++//   B-656-3  a trial_will_end event that arrived before the card was saved was
++//            dropped, and nothing recorded the notice once the trial started.
++//   B-656-4  the push ignored a global mute.
++//   B-656-5  a trial whose card was removed still read will_charge:true and got
++//            no notice.
++import { Logger } from '@nestjs/common';
++import * as Sentry from '@sentry/node';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { CheckoutService } from '../src/checkout/checkout.service';
++import {
++  StripeConnectApiError,
++  StripeConnectApiService,
++  type StripeSubscriptionObject,
++} from '../src/connect/stripe-connect-api.service';
++import {
++  TRIAL_CONFLICT_ALERT_AFTER,
++  TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
++  TrialConflictService,
++  trialConflictBackoffMs,
++} from '../src/packages/trials/trial-conflict.service';
++import { trialEndingCopy, willChargeCard } from '../src/packages/trials/trial-copy';
++import { assertValidTrial } from '../src/packages/trials/trial-rules';
++import {
++  TRIAL_NOTICE_LEAD_MS,
++  TRIAL_NOTICE_ABORT_GRACE_MS,
++  TRIAL_NOTICE_LEASE_MS,
++  TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS,
++  TrialNoticeService,
++} from '../src/packages/trials/trial-notice.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { purchaseTrialView } from '../src/packages/trials/trial-view';
++import {
++  makeTable,
++  makeTrialConflictTable,
++  makeTrialNoticeTable,
++  makeTrialUsageTable,
++  stub,
++} from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const TRIAL_END = new Date('2026-10-12T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const CHARGE =
++  'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.';
++const NO_CARD =
++  'Your free trial ends on Oct 12. No card is saved, so nothing will be charged and your plan ends then.';
++
++function deferred<T>() {
++  let resolve!: (v: T) => void;
++  const promise = new Promise<T>((r) => {
++    resolve = r;
++  });
++  return { promise, resolve };
++}
++
++function purchaseRow(over: Record<string, unknown> = {}) {
++  return {
++    id: 'pur-1',
++    client_user_id: 'client-1',
++    coach_user_id: 'coach-1',
++    package_id: 'pkg-1',
++    amount_cents: 4900,
++    currency: 'usd',
++    billing_type: 'recurring',
++    status: 'trialing',
++    entitlement_active: true,
++    stripe_subscription_id: 'sub_1',
++    stripe_customer_id: 'cus_1',
++    cancel_at_period_end: false,
++    card_on_file: true as boolean | null,
++    trial_days: 7,
++    trial_ends_at: TRIAL_END as Date | null,
++    created_at: new Date('2026-10-05T17:00:00Z'),
++    ...over,
++  };
++}
++
++function trialSub(over: Record<string, unknown> = {}) {
++  return {
++    id: 'sub_1',
++    status: 'trialing',
++    trial_start: epoch(new Date('2026-10-05T17:00:00Z')),
++    trial_end: epoch(TRIAL_END),
++    current_period_end: epoch(TRIAL_END),
++    cancel_at_period_end: false,
++    default_payment_method: 'pm_card_visa',
++    items: { data: [{ quantity: 1, price: { unit_amount: 4900, currency: 'usd' } }] },
++    ...over,
++  };
++}
++
++const event = (type: string, object: Record<string, unknown>, id = 'evt_1') => ({
++  id,
++  type,
++  data: { object },
++});
++
++function world(
++  opts: {
++    muted?: boolean;
++    pushCode?: string;
++    customerDefault?: string | null;
++    purchase?: Record<string, unknown>;
++  } = {},
++) {
++  const notices = makeTrialNoticeTable();
++  const usage = makeTrialUsageTable();
++  const conflicts = makeTrialConflictTable();
++  const purchases = makeTable([['id']], () => ({}));
++  purchases.rows.push(purchaseRow(opts.purchase));
++  const withRelations = (row: Record<string, unknown>) => ({
++    ...row,
++    package: { name: 'GP Monthly', interval: 'month', interval_count: 1 },
++    coach: { name: 'Bradley Coach' },
++    client: { email: 'client@example.test', name: 'Ana Client' },
++  });
++  const prisma: Record<string, unknown> = {
++    packageTrialNotice: notices,
++    packageTrialUsage: usage,
++    packageTrialConflict: conflicts,
++    notificationPreferences: {
++      // B-TR2-117 — the client's own (stamped) zone: the date reads bare (C-672-7).
++      findUnique: jest.fn(async () => ({
++        timezone: 'America/Los_Angeles',
++        timezone_updated_at: NOW,
++      })),
++    },
++    connectCustomer: {
++      findUnique: jest.fn(async () =>
++        opts.customerDefault ? { default_payment_method_id: opts.customerDefault } : null,
++      ),
++    },
++    coachPackage: {
++      findUnique: jest.fn(async () => ({ id: 'pkg-1', duration_periods: null, trial_days: 7 })),
++    },
++    clientPurchase: {
++      findUnique: jest.fn(async ({ where }: { where: Record<string, string> }) => {
++        const row = purchases.rows.find(
++          (p) =>
++            (where.id && p.id === where.id) ||
++            (where.stripe_subscription_id &&
++              p.stripe_subscription_id === where.stripe_subscription_id),
++        );
++        return row ? withRelations(row) : null;
++      }),
++      findMany: purchases.findMany,
++      update: jest.fn(
++        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
++          const row = purchases.rows.find((p) => p.id === where.id);
++          if (!row) throw new Error('not found');
++          Object.assign(row, data);
++          return { ...row };
++        },
++      ),
++    },
++    $queryRaw: jest.fn(async () => []),
++  };
++  prisma.$transaction = jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> =>
++    cb(prisma),
++  );
++  const notifications = {
++    createNotification: jest.fn(async (input: Record<string, unknown>, _tx?: unknown) => ({
++      id: 'n-1',
++      ...input,
++    })),
++    getPreferences: jest.fn(async () => ({ muted: !!opts.muted })),
++    pushToUser: jest.fn(
++      async (..._args: unknown[]): Promise<{ delivered: boolean; code: string }> =>
++        opts.pushCode
++          ? { delivered: false, code: opts.pushCode }
++          : { delivered: true, code: 'delivered' },
++    ),
++  };
++  const email = {
++    send: jest.fn(async (input: { idempotencyKey: string }): Promise<Record<string, unknown>> => ({
++      status: 'sent',
++      providerMessageId: 'm',
++      idempotencyKey: input.idempotencyKey,
++    })),
++  };
++  const noticeSvc = new TrialNoticeService(
++    stub<ConstructorParameters<typeof TrialNoticeService>[0]>(prisma),
++    stub<ConstructorParameters<typeof TrialNoticeService>[1]>(notifications),
++    stub<ConstructorParameters<typeof TrialNoticeService>[2]>(email),
++  );
++  const usageSvc = new TrialUsageService(
++    stub<ConstructorParameters<typeof TrialUsageService>[0]>(prisma),
++  );
++  const cancelSubscription = jest.fn(
++    async (_id: string): Promise<{ id: string; status: string }> => ({
++      id: 'sub_1',
++      status: 'canceled',
++    }),
++  );
++  const stripe = stub<StripeConnectApiService>({
++    cancelSubscription,
++    // B-TR3-118 (B-673-1) — the worker reads Stripe's state first: still trialing.
++    retrieveSubscription: jest.fn(async (id: string) => ({
++      id,
++      status: 'trialing',
++      trial_end: epoch(new Date(Date.now() + 30 * 864e5)),
++    })),
++  });
++  const conflictSvc = new TrialConflictService(
++    stub<ConstructorParameters<typeof TrialConflictService>[0]>(prisma),
++    stripe,
++  );
++  const handler = new CheckoutWebhookHandlerService(
++    stub<ConstructorParameters<typeof CheckoutWebhookHandlerService>[0]>(prisma),
++    stripe,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    usageSvc,
++    noticeSvc,
++    conflictSvc,
++  );
++  const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(prisma);
++  const purchase = () => purchases.rows[0];
++  return {
++    prisma,
++    notices,
++    usage,
++    conflicts,
++    purchases,
++    purchase,
++    notifications,
++    email,
++    noticeSvc,
++    usageSvc,
++    conflictSvc,
++    handler,
++    cancelSubscription,
++    stripe,
++    tx,
++  };
++}
++
++type World = ReturnType<typeof world>;
++type NoticeDeps = ConstructorParameters<typeof TrialNoticeService>;
++/** B-TR2-117 — another replica: one process never starts a second send of a channel (B-672-4). */
++const replica = (w: World) =>
++  new TrialNoticeService(
++    stub<NoticeDeps[0]>(w.prisma),
++    stub<NoticeDeps[1]>(w.notifications),
++    stub<NoticeDeps[2]>(w.email),
++  );
++
++/** Another purchase already holds this client's trial with coach-1. */
++function trialAlreadyStartedElsewhere(w: World) {
++  w.usage.rows.push({
++    id: 'u-old',
++    client_user_id: 'client-1',
++    coach_user_id: 'coach-1',
++    package_id: 'pkg-0',
++    purchase_id: 'pur-0',
++    trial_days: 7,
++    status: 'started',
++    reserved_at: new Date(),
++  });
++}
++
++async function recordNotice(w: World, sub = trialSub()) {
++  const id = await w.noticeSvc.recordTrialWillEnd(
++    stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[0]>(w.prisma),
++    {
++      purchase: stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(
++        w.purchase(),
++      ),
++      sub,
++      eventId: 'evt_1',
++      now: NOW,
++    },
++  );
++  if (!id) throw new Error('expected a notice');
++  return id;
++}
++
++beforeEach(() => {
++  jest.mocked(Sentry.captureMessage).mockClear();
++});
++
++describe('B-656-1 — a second trial owes a durable cancellation', () => {
++  it('the lost race writes an owed PackageTrialConflict row on the webhook tx and denies access', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    const res = await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    expect(w.purchase().entitlement_active).toBe(false);
++    expect(res.trialConflictSubscriptionId).toBe('sub_1');
++    expect(w.conflicts.rows).toHaveLength(1);
++    expect(w.conflicts.rows[0]).toMatchObject({
++      purchase_id: 'pur-1',
++      stripe_subscription_id: 'sub_1',
++      status: 'owed',
++    });
++    expect(w.cancelSubscription).not.toHaveBeenCalled(); // never inside the tx
++  });
++
++  it('a transient cancel failure stays owed with backoff; redelivery is a no-op but the sweep settles it', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    w.cancelSubscription.mockRejectedValueOnce(
++      new StripeConnectApiError('api down', 503, null, 'api_error'),
++    );
++    await w.handler.cancelTrialConflict('sub_1');
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(1);
++    const row = w.conflicts.rows[0];
++    expect(row).toMatchObject({
++      status: 'owed',
++      attempts: 1,
++      last_error: 'http_503',
++      lease_token: null,
++    });
++    expect((row.next_attempt_at as Date).getTime()).toBeGreaterThan(Date.now());
++
++    // Too early for the backoff: nothing is retried.
++    expect(await w.conflictSvc.sweep(new Date())).toBe(0);
++    // After the backoff the sweep cancels it once.
++    const later = new Date(Date.now() + trialConflictBackoffMs(1) + 1000);
++    expect(await w.conflictSvc.sweep(later)).toBe(1);
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(2);
++    expect(w.conflicts.rows[0]).toMatchObject({ status: 'cancelled' });
++    expect(await w.conflictSvc.sweep(new Date(later.getTime() + 864e5))).toBe(0);
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(2);
++  });
++
++  it('process stop after commit: the post-commit settle never ran, the sweep cancels it', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    expect(await w.conflictSvc.sweep(new Date(Date.now() + 1000))).toBe(1);
++    expect(w.cancelSubscription).toHaveBeenCalledWith('sub_1');
++    expect(w.conflicts.rows[0].status).toBe('cancelled');
++  });
++
++  it('a later trialing event with a card never grants access and re-arms the cancel', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    const again = await w.handler.handle(
++      event('customer.subscription.updated', trialSub({ cancel_at_period_end: false }), 'evt_2'),
++      w.tx,
++    );
++    expect(w.purchase().entitlement_active).toBe(false);
++    expect(again.trialConflictSubscriptionId).toBe('sub_1');
++    // invoice.paid for the $0 trial invoice: still no access.
++    await w.handler.handle(
++      event('invoice.paid', { id: 'in_0', subscription: 'sub_1', amount_paid: 0 }, 'evt_3'),
++      w.tx,
++      {
++        invoiceSubscription:
++          stub<
++            NonNullable<
++              Parameters<CheckoutWebhookHandlerService['handle']>[2]
++            >['invoiceSubscription']
++          >(trialSub()),
++      },
++    );
++    expect(w.purchase().entitlement_active).toBe(false);
++    expect(w.conflicts.rows).toHaveLength(1);
++  });
++
++  it('two settles at once make one Stripe call (lease)', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    const gate = deferred<{ id: string; status: string }>();
++    w.cancelSubscription.mockImplementationOnce(() => gate.promise);
++    const a = w.conflictSvc.settle('pur-1');
++    for (let i = 0; i < 20 && w.cancelSubscription.mock.calls.length === 0; i += 1) {
++      await new Promise((r) => setImmediate(r));
++    }
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(1);
++    expect(await w.conflictSvc.settle('pur-1')).toBe('busy');
++    gate.resolve({ id: 'sub_1', status: 'canceled' });
++    expect(await a).toBe('cancelled');
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(1);
++  });
++
++  it('Stripe says the subscription is already gone: settled as cancelled', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    w.cancelSubscription.mockRejectedValueOnce(
++      new StripeConnectApiError(
++        'No such subscription',
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      ),
++    );
++    expect(await w.conflictSvc.settle('pur-1')).toBe('cancelled');
++    expect(w.conflicts.rows[0]).toMatchObject({
++      status: 'cancelled',
++      last_error: 'already_cancelled',
++    });
++  });
++
++  it('a hung Stripe call is bounded by the timeout and retried later', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    try {
++      const w = world({ purchase: { entitlement_active: false } });
++      trialAlreadyStartedElsewhere(w);
++      await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++      w.cancelSubscription.mockImplementationOnce(
++        () => new Promise<{ id: string; status: string }>(() => undefined),
++      );
++      const p = w.conflictSvc.settle('pur-1', NOW);
++      for (let i = 0; i < 20 && w.cancelSubscription.mock.calls.length === 0; i += 1) {
++        await new Promise((r) => setImmediate(r));
++      }
++      jest.advanceTimersByTime(TRIAL_CONFLICT_CANCEL_TIMEOUT_MS + 1);
++      expect(await p).toBe('retry');
++      expect(w.conflicts.rows[0]).toMatchObject({
++        status: 'owed',
++        last_error: 'timeout',
++        lease_token: null,
++      });
++    } finally {
++      jest.useRealTimers();
++    }
++  });
++
++  it(`after ${TRIAL_CONFLICT_ALERT_AFTER} failures support gets one alert with ids only`, async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    w.cancelSubscription.mockRejectedValue(
++      new StripeConnectApiError('down', 500, null, 'api_error'),
++    );
++    let t = Date.now();
++    for (let i = 0; i < TRIAL_CONFLICT_ALERT_AFTER + 2; i += 1) {
++      t += 2 * 60 * 60 * 1000;
++      await w.conflictSvc.settle('pur-1', new Date(t));
++    }
++    const calls = jest.mocked(Sentry.captureMessage).mock.calls;
++    expect(calls).toHaveLength(1);
++    expect(calls[0][1]).toMatchObject({
++      level: 'error',
++      tags: { code: 'TRIAL_CONFLICT_CANCEL_FAILING', purchase_id: 'pur-1' },
++    });
++    expect(w.conflicts.rows[0].status).toBe('owed'); // still retried
++  });
++
++  it('billing started before any cancel succeeded: superseded, the paying client gets access, support alerted once', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    await w.handler.handle(
++      event(
++        'customer.subscription.updated',
++        trialSub({ status: 'active', trial_end: epoch(NOW) }),
++        'evt_9',
++      ),
++      w.tx,
++    );
++    expect(w.conflicts.rows[0].status).toBe('superseded');
++    expect(w.purchase().entitlement_active).toBe(true);
++    await w.conflictSvc.sweep(new Date());
++    await w.conflictSvc.sweep(new Date());
++    const calls = jest.mocked(Sentry.captureMessage).mock.calls;
++    expect(calls).toHaveLength(1);
++    expect(calls[0][1]).toMatchObject({
++      tags: { code: 'TRIAL_CONFLICT_SUPERSEDED', purchase_id: 'pur-1' },
++    });
++  });
++
++  it('customer.subscription.deleted settles an owed conflict as cancelled', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    await w.handler.handle(event('customer.subscription.deleted', { id: 'sub_1' }, 'evt_d'), w.tx);
++    expect(w.conflicts.rows[0].status).toBe('cancelled');
++    expect(await w.conflictSvc.sweep(new Date(Date.now() + 864e5))).toBe(0);
++    expect(w.cancelSubscription).not.toHaveBeenCalled();
++  });
++
++  it('the purchase list says not_eligible (never "will charge") for a lost race', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    const findMany = jest.fn(async () => [w.purchase()]);
++    type Ctor = ConstructorParameters<typeof CheckoutService>;
++    const svc = new CheckoutService(
++      stub<Ctor[0]>({ ...w.prisma, clientPurchase: { findMany } }),
++      stub<Ctor[1]>({}),
++      stub<Ctor[2]>({}),
++      stub<Ctor[3]>({}),
++      stub<Ctor[4]>({}),
++      stub<Ctor[5]>({}),
++    );
++    const out = await svc.listForClient('client-1');
++    expect(out.items[0].trial).toMatchObject({ state: 'not_eligible', will_charge: false });
++  });
++});
++
++describe('B-656-2 — exclusive, fenced, bounded channel delivery', () => {
++  it('staggered entry: a second caller while the first push is in flight sends nothing', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    const gate = deferred<{ delivered: boolean; code: string }>();
++    w.notifications.pushToUser.mockImplementationOnce(() => gate.promise);
++    const a = w.noticeSvc.deliver(id, NOW);
++    for (let i = 0; i < 20 && w.notifications.pushToUser.mock.calls.length === 0; i += 1) {
++      await new Promise((r) => setImmediate(r));
++    }
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    // B enters from the durable row (attempts already 1, status pending).
++    await w.noticeSvc.deliver(id, new Date(NOW.getTime() + 1000));
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    gate.resolve({ delivered: false, code: 'transport-error' });
++    await a;
++    expect(w.notices.rows[0]).toMatchObject({
++      push_status: 'pending',
++      push_attempts: 1,
++      push_lease_token: null,
++    });
++  });
++
++  it('a stale holder (lease expired, another caller delivered) can never overwrite delivered', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    const gate = deferred<{ delivered: boolean; code: string }>();
++    w.notifications.pushToUser.mockImplementationOnce(() => gate.promise);
++    const a = w.noticeSvc.deliver(id, NOW);
++    for (let i = 0; i < 20 && w.notifications.pushToUser.mock.calls.length === 0; i += 1) {
++      await new Promise((r) => setImmediate(r));
++    }
++    await replica(w).deliver(id, new Date(NOW.getTime() + TRIAL_NOTICE_LEASE_MS + 1000));
++    expect(w.notices.rows[0].push_status).toBe('delivered');
++    gate.resolve({ delivered: false, code: 'transport-error' });
++    await a;
++    expect(w.notices.rows[0]).toMatchObject({ push_status: 'delivered', push_lease_token: null });
++    await w.noticeSvc.sweep(new Date(NOW.getTime() + 60 * 60 * 1000));
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(2); // at-least-once, never a third
++  });
++
++  it('email: a stale failure cannot overwrite sent; a retry after a definite failure uses a new key', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    const gate = deferred<Record<string, unknown>>();
++    w.email.send.mockImplementationOnce(() => gate.promise);
++    const a = w.noticeSvc.deliver(id, NOW);
++    for (let i = 0; i < 30 && w.email.send.mock.calls.length === 0; i += 1) {
++      await new Promise((r) => setImmediate(r));
++    }
++    await replica(w).deliver(id, new Date(NOW.getTime() + TRIAL_NOTICE_LEASE_MS + 1000));
++    expect(w.notices.rows[0].email_status).toBe('sent');
++    gate.resolve({ status: 'failed', error: 'x' });
++    await a;
++    expect(w.notices.rows[0].email_status).toBe('sent');
++    const keys = w.email.send.mock.calls.map((c) => c[0].idempotencyKey);
++    expect(keys).toEqual([
++      `trial-ending:pur-1:${TRIAL_END.getTime()}`,
++      `trial-ending:pur-1:${TRIAL_END.getTime()}:a2`,
++    ]);
++  });
++
++  it('a hung push that ignores its abort: delivery returns, the row stays pending, the lease is held', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    try {
++      const w = world();
++      const id = await recordNotice(w);
++      w.notifications.pushToUser.mockImplementationOnce(
++        () => new Promise<{ delivered: boolean; code: string }>(() => undefined),
++      );
++      const p = w.noticeSvc.deliver(id, NOW);
++      for (let i = 0; i < 20 && w.notifications.pushToUser.mock.calls.length === 0; i += 1) {
++        await new Promise((r) => setImmediate(r));
++      }
++      await jest.advanceTimersByTimeAsync(
++        TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS + TRIAL_NOTICE_ABORT_GRACE_MS + 1,
++      );
++      await p;
++      // B-TR2-117 (B-672-4) — the push may still reach the device: no retry
++      // may start until it ends, so its lease is kept (renewed) meanwhile.
++      expect(w.notices.rows[0]).toMatchObject({
++        push_status: 'pending',
++        last_error: expect.stringMatching(/^(push:timeout|email:)/),
++        push_lease_token: expect.any(String),
++      });
++      expect(TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS).toBeLessThan(TRIAL_NOTICE_LEASE_MS);
++    } finally {
++      jest.useRealTimers();
++    }
++  });
++});
++
++describe('B-656-3 — a trial_will_end event before the card is saved is not lost', () => {
++  it('one-day trial: event during setup records nothing, the card save records and delivers the notice', async () => {
++    const oneDayEnd = new Date(Date.now() + 864e5);
++    const w = world({
++      purchase: {
++        entitlement_active: false,
++        trial_ends_at: null,
++        trial_days: 1,
++        card_on_file: null,
++      },
++    });
++    const sub = trialSub({
++      trial_start: epoch(new Date()),
++      trial_end: epoch(oneDayEnd),
++      default_payment_method: null,
++    });
++    const early = await w.handler.handle(event('customer.subscription.trial_will_end', sub), w.tx);
++    expect(early.claimed).toBe(true);
++    expect(early.deferredTrialNoticeId).toBeUndefined();
++    expect(w.notices.rows).toHaveLength(0);
++
++    const saved = await w.handler.handle(
++      event(
++        'customer.subscription.updated',
++        { ...sub, default_payment_method: 'pm_card_visa' },
++        'evt_2',
++      ),
++      w.tx,
++    );
++    expect(w.purchase().entitlement_active).toBe(true);
++    expect(saved.deferredTrialNoticeId).toEqual(expect.any(String));
++    expect(w.notices.rows[0]).toMatchObject({ source: 'trial_start', stripe_event_id: 'evt_2' });
++    await w.handler.deliverTrialNotice(saved.deferredTrialNoticeId as string);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.email.send).toHaveBeenCalledTimes(1);
++  });
++
++  it('a trial that starts outside the warning window gets no notice at start', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    const far = trialSub({ trial_end: epoch(new Date(Date.now() + 10 * 864e5)) });
++    const res = await w.handler.handle(event('customer.subscription.updated', far), w.tx);
++    expect(w.purchase().entitlement_active).toBe(true);
++    expect(res.deferredTrialNoticeId).toBeUndefined();
++    expect(w.notices.rows).toHaveLength(0);
++  });
++
++  it('the reconciler records and delivers a due notice no event produced, exactly once', async () => {
++    const w = world({ purchase: { trial_ends_at: TRIAL_END } });
++    expect(await w.noticeSvc.reconcileDue(NOW)).toBe(1);
++    expect(w.notices.rows[0]).toMatchObject({ source: 'sweep', stripe_event_id: null });
++    expect(w.notifications.createNotification).toHaveBeenCalledTimes(1);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.email.send).toHaveBeenCalledTimes(1);
++    expect(await w.noticeSvc.reconcileDue(new Date(NOW.getTime() + 600_000))).toBe(0);
++    expect(w.notices.rows).toHaveLength(1);
++  });
++
++  it('the reconciler skips a trial without access and a trial ending later than the window', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    expect(await w.noticeSvc.reconcileDue(NOW)).toBe(0);
++    w.purchase().entitlement_active = true;
++    w.purchase().trial_ends_at = new Date(NOW.getTime() + TRIAL_NOTICE_LEAD_MS + 60_000);
++    expect(await w.noticeSvc.reconcileDue(NOW)).toBe(0);
++    expect(w.notices.rows).toHaveLength(0);
++  });
++});
++
++describe('B-656-4 — the push honours the client notification preferences', () => {
++  it('global mute: push suppressed (no send), preferences read at delivery, billing email still sent', async () => {
++    const w = world({ muted: true });
++    const id = await recordNotice(w);
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.getPreferences).toHaveBeenCalledWith('client-1');
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.notices.rows[0]).toMatchObject({ push_status: 'suppressed', email_status: 'sent' });
++    expect(await w.noticeSvc.sweep(new Date(NOW.getTime() + 600_000))).toBe(0);
++  });
++
++  it('muted after the notice was recorded still suppresses', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    w.notifications.getPreferences.mockResolvedValueOnce({ muted: true });
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.notices.rows[0].push_status).toBe('suppressed');
++  });
++
++  it('token revoked after the notice was recorded: no_token, not retried', async () => {
++    const w = world({ pushCode: 'no-token' });
++    const id = await recordNotice(w);
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notices.rows[0].push_status).toBe('no_token');
++    expect(await w.noticeSvc.sweep(new Date(NOW.getTime() + 600_000))).toBe(0);
++  });
++});
++
++describe('B-656-5 — card removed mid-trial: access kept, the truth told', () => {
++  it('activation -> card removal: access stays, card_on_file=false, will_charge=false (no_card)', async () => {
++    const w = world({ purchase: { entitlement_active: false, card_on_file: null } });
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    expect(w.purchase()).toMatchObject({ entitlement_active: true, card_on_file: true });
++    await w.handler.handle(
++      event('customer.subscription.updated', trialSub({ default_payment_method: null }), 'evt_2'),
++      w.tx,
++    );
++    expect(w.purchase()).toMatchObject({ entitlement_active: true, card_on_file: false });
++    const view = purchaseTrialView(
++      stub<Parameters<typeof purchaseTrialView>[0]>(w.purchase()),
++      NOW,
++    );
++    expect(view).toMatchObject({
++      state: 'trialing',
++      will_charge: false,
++      no_charge_reason: 'no_card',
++    });
++  });
++
++  it('a customer default card still charges: will_charge stays true', () => {
++    const row = stub<Parameters<typeof purchaseTrialView>[0]>(purchaseRow({ card_on_file: false }));
++    expect(purchaseTrialView(row, NOW, { customerDefaultCard: true })).toMatchObject({
++      will_charge: true,
++      no_charge_reason: null,
++    });
++    expect(willChargeCard(null, false)).toBe(true); // unknown never claims "no charge"
++    expect(willChargeCard(false, false)).toBe(false);
++  });
++
++  it('trial_will_end after the card was removed: the notice is sent and says nothing will be charged', async () => {
++    // Stripe's second precision: the purchase mirrors the event's trial_end.
++    const end = new Date(epoch(new Date(Date.now() + 2 * 864e5)) * 1000);
++    const w = world({ purchase: { card_on_file: false, trial_ends_at: end } });
++    const res = await w.handler.handle(
++      event(
++        'customer.subscription.trial_will_end',
++        trialSub({ trial_end: epoch(end), default_payment_method: null }),
++      ),
++      w.tx,
++    );
++    expect(res.deferredTrialNoticeId).toEqual(expect.any(String));
++    const expected = trialEndingCopy({
++      trialEndsAt: new Date(epoch(end) * 1000),
++      amountCents: 4900,
++      currency: 'usd',
++      timeZone: 'America/Los_Angeles',
++      cancelAtPeriodEnd: false,
++      cardOnFile: false,
++    }).body;
++    expect(expected).toMatch(/No card is saved, so nothing will be charged/);
++    const [input] = w.notifications.createNotification.mock.calls[0];
++    expect(input).toMatchObject({
++      body: expected,
++      payload: expect.objectContaining({ will_charge: false, card_on_file: false }),
++    });
++    await w.noticeSvc.deliver(res.deferredTrialNoticeId as string);
++    expect(w.notifications.pushToUser.mock.calls[0][2]).toBe(expected);
++    expect(w.email.send.mock.calls[0][0]).toMatchObject({
++      data: expect.objectContaining({ will_charge: false, no_card: true }),
++    });
++  });
++
++  it('delivery re-reads the card: recorded with a card, removed before delivery, sends the no-card copy', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    expect(w.notifications.createNotification.mock.calls[0][0]).toMatchObject({ body: CHARGE });
++    w.purchase().card_on_file = false;
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser.mock.calls[0][2]).toBe(NO_CARD);
++  });
++
++  it('the no-card copy follows the voice rules', () => {
++    const { title, body } = trialEndingCopy({
++      trialEndsAt: TRIAL_END,
++      amountCents: 4900,
++      currency: 'usd',
++      timeZone: 'America/Los_Angeles',
++      cancelAtPeriodEnd: false,
++      cardOnFile: false,
++    });
++    expect(body).toBe(NO_CARD);
++    for (const text of [title, body]) {
++      expect(text).not.toMatch(/!/);
++      expect(text).not.toMatch(/\b(we|us|our)\b/i);
++      expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
++    }
++  });
++});
++
++describe('C-338-2 (Opus, mobile #338) — refusal copy names a fix the editor offers', () => {
++  it('no trial refusal tells the coach to "set the trial to 0 days" (the editor offers None)', () => {
++    const shapes = [
++      { trial_days: 7, amount_cents: 0, billing_type: 'recurring' },
++      { trial_days: 7, amount_cents: 4900, billing_type: 'one_time' },
++      { trial_days: 7, amount_cents: 4900, billing_type: 'recurring', recurring_amount_cents: 900 },
++    ];
++    for (const shape of shapes) {
++      let message = '';
++      try {
++        assertValidTrial(stub<Parameters<typeof assertValidTrial>[0]>(shape));
++      } catch (err) {
++        const body = (err as { getResponse?: () => unknown }).getResponse?.();
++        message = String((body as { message?: unknown } | undefined)?.message ?? '');
++      }
++      expect(message).toMatch(/remove the trial|or the trial/i);
++      expect(message).not.toMatch(/0 days/);
++    }
++  });
++});
++
++// ---------------------------------------------------------------------------
++// FIX ROUND 5 — GPT-6.1 Sol REQUEST CHANGES @ b9939d02 (B-656-3/5 narrowed,
++// B-656-6, B-656-7). Each block failed on b9939d02.
++// ---------------------------------------------------------------------------
++
++/** Started trials due inside the window; the first `noticed` already have a notice. */
++function seedDue(
++  w: World,
++  n: number,
++  opts: { noticed: number; sameEnd?: boolean; reverse?: boolean },
++) {
++  w.purchase().status = 'canceled'; // keep pur-1 out of the due set
++  const base = NOW.getTime() + 864e5;
++  const rows = Array.from({ length: n }, (_, i) => {
++    const id = `p-${String(i).padStart(4, '0')}`;
++    const end = new Date(opts.sameEnd ? base : base + i * 60_000);
++    return purchaseRow({ id, stripe_subscription_id: `sub_${id}`, trial_ends_at: end });
++  });
++  for (const row of opts.reverse ? [...rows].reverse() : rows) w.purchases.rows.push(row);
++  for (const row of rows.slice(0, opts.noticed)) {
++    w.notices.rows.push({
++      id: `n-${row.id}`,
++      purchase_id: row.id,
++      client_user_id: 'client-1',
++      trial_ends_at: new Date((row.trial_ends_at as Date).getTime()),
++      amount_cents: 4900,
++      currency: 'usd',
++      source: 'trial_will_end',
++      stripe_event_id: 'evt_x',
++      push_status: 'delivered',
++      push_attempts: 1,
++      push_lease_token: null,
++      push_lease_until: null,
++      email_status: 'sent',
++      email_attempts: 1,
++      email_lease_token: null,
++      email_lease_until: null,
++      last_error: null,
++    });
++  }
++  return rows;
++}
++
++const noticesFor = (w: World, id: string) => w.notices.rows.filter((n) => n.purchase_id === id);
++
++describe('B-656-3 (round 5) — the reconciler pages past already-noticed trials', () => {
++  it('a full first page of noticed trials does not hide the 20 due trials behind it', async () => {
++    const w = world();
++    const rows = seedDue(w, 120, { noticed: 100 });
++    expect(await w.noticeSvc.reconcileDue(NOW)).toBe(20);
++    for (const row of rows) expect(noticesFor(w, row.id)).toHaveLength(1);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(20);
++    expect(await w.noticeSvc.reconcileDue(new Date(NOW.getTime() + 600_000))).toBe(0);
++  });
++
++  it('equal trial ends (ties) page by id, whatever the insert order', async () => {
++    const w = world();
++    const rows = seedDue(w, 150, { noticed: 100, sameEnd: true, reverse: true });
++    expect(await w.noticeSvc.reconcileDue(NOW)).toBe(50);
++    for (const row of rows) expect(noticesFor(w, row.id)).toHaveLength(1);
++  });
++
++  it('two sweeps at once record each missing notice once and push it once', async () => {
++    const w = world();
++    const rows = seedDue(w, 30, { noticed: 0 });
++    const [a, b] = await Promise.all([
++      w.noticeSvc.reconcileDue(NOW),
++      w.noticeSvc.reconcileDue(NOW),
++    ]);
++    expect(a + b).toBe(30);
++    for (const row of rows) expect(noticesFor(w, row.id)).toHaveLength(1);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(30);
++  });
++});
++
++describe('B-656-5 (round 5) — an unknown card is never reported as "no card"', () => {
++  it('the customer-default read fails at delivery: nothing is sent; the next delivery tells the truth', async () => {
++    const w = world({ customerDefault: 'pm_default', purchase: { card_on_file: false } });
++    const id = await recordNotice(w, trialSub({ default_payment_method: null }));
++    expect(w.notifications.createNotification.mock.calls[0][0]).toMatchObject({ body: CHARGE });
++    const lookup = w.prisma.connectCustomer as { findUnique: jest.Mock };
++    lookup.findUnique.mockRejectedValueOnce(new Error('connection reset'));
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.email.send).not.toHaveBeenCalled();
++    expect(w.notices.rows[0]).toMatchObject({
++      push_status: 'pending',
++      push_attempts: 0,
++      email_status: 'pending',
++      email_attempts: 0,
++    });
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser.mock.calls[0][2]).toBe(CHARGE);
++  });
++
++  it('the read fails while recording: no notice with a wrong promise; the reconciler records it once the read works', async () => {
++    const end = new Date(Date.now() + 2 * 864e5);
++    const w = world({
++      customerDefault: 'pm_default',
++      purchase: { card_on_file: false, trial_ends_at: end },
++    });
++    const lookup = w.prisma.connectCustomer as { findUnique: jest.Mock };
++    lookup.findUnique.mockRejectedValueOnce(new Error('connection reset'));
++    const res = await w.handler.handle(
++      event(
++        'customer.subscription.trial_will_end',
++        trialSub({ trial_end: epoch(end), default_payment_method: null }),
++      ),
++      w.tx,
++    );
++    expect(res.deferredTrialNoticeId).toBeUndefined();
++    expect(w.notices.rows).toHaveLength(0);
++    expect(await w.noticeSvc.reconcileDue(new Date())).toBe(1);
++    expect(w.notifications.createNotification.mock.calls[0][0].body).toMatch(
++      /Your card will be charged \$49 then/,
++    );
++  });
++
++  it('confirmed present and confirmed absent still read as before', () => {
++    expect(willChargeCard(true, false)).toBe(true);
++    expect(willChargeCard(false, true)).toBe(true);
++    expect(willChargeCard(false, false)).toBe(false);
++  });
++});
++
++describe('B-656-6 — a cancel-failing alert never suppresses the billed alert', () => {
++  async function failThrice(w: World) {
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    w.cancelSubscription.mockRejectedValue(
++      new StripeConnectApiError('down', 500, null, 'api_error'),
++    );
++    let t = Date.now();
++    for (let i = 0; i < TRIAL_CONFLICT_ALERT_AFTER; i += 1) {
++      t += 2 * 60 * 60 * 1000;
++      await w.conflictSvc.settle('pur-1', new Date(t));
++    }
++  }
++  const codes = () =>
++    jest
++      .mocked(Sentry.captureMessage)
++      .mock.calls.map((c) => (c[1] as { tags?: { code?: string } } | undefined)?.tags?.code);
++
++  it('failing alert, then billing starts: the billed alert still fires once', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    await failThrice(w);
++    expect(codes()).toEqual(['TRIAL_CONFLICT_CANCEL_FAILING']);
++    await w.handler.handle(
++      event(
++        'customer.subscription.updated',
++        trialSub({ status: 'active', trial_end: epoch(NOW) }),
++        'evt_9',
++      ),
++      w.tx,
++    );
++    expect(w.conflicts.rows[0].status).toBe('superseded');
++    await w.conflictSvc.sweep(new Date());
++    await w.conflictSvc.sweep(new Date());
++    expect(codes()).toEqual(['TRIAL_CONFLICT_CANCEL_FAILING', 'TRIAL_CONFLICT_SUPERSEDED']);
++  });
++
++  it('two alert sweeps at once send the billed alert once', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    await failThrice(w);
++    await w.handler.handle(
++      event(
++        'customer.subscription.updated',
++        trialSub({ status: 'active', trial_end: epoch(NOW) }),
++        'evt_9',
++      ),
++      w.tx,
++    );
++    const [a, b] = await Promise.all([
++      w.conflictSvc.alertSuperseded(),
++      w.conflictSvc.alertSuperseded(),
++    ]);
++    expect(a + b).toBe(1);
++    expect(codes().filter((c) => c === 'TRIAL_CONFLICT_SUPERSEDED')).toHaveLength(1);
++  });
++});
++
++describe('B-656-7 — trial workers log closed codes only', () => {
++  const CANARY = 'AUDIT_FREE_TEXT_NAME_contact_at_example_invalid';
++  const canary = () => Object.assign(new Error('contact@example.invalid'), { name: CANARY });
++  let lines: string[] = [];
++  beforeEach(() => {
++    lines = [];
++    for (const level of ['error', 'warn', 'log', 'debug'] as const) {
++      jest.spyOn(Logger.prototype, level).mockImplementation((...args: unknown[]) => {
++        lines.push(args.map(String).join(' '));
++      });
++    }
++  });
++  afterEach(() => jest.restoreAllMocks());
++  const leaked = () =>
++    [...lines, JSON.stringify(jest.mocked(Sentry.captureMessage).mock.calls)].filter((l) =>
++      /contact_at_example|contact@example/.test(l),
++    );
++
++  it('cancel failures (arbitrary Error.name, Stripe code) and the alert path', async () => {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    w.cancelSubscription.mockRejectedValueOnce(canary());
++    await w.conflictSvc.settle('pur-1', new Date(Date.now() + 1000));
++    expect(w.conflicts.rows[0].last_error).toBe('unclassified');
++    w.cancelSubscription.mockRejectedValue(
++      new StripeConnectApiError(
++        'contact@example.invalid',
++        503,
++        'contact_at_example_invalid',
++        'api_error',
++      ),
++    );
++    let t = Date.now();
++    for (let i = 0; i < 3; i += 1) {
++      t += 2 * 60 * 60 * 1000;
++      await w.conflictSvc.settle('pur-1', new Date(t));
++    }
++    expect(w.conflicts.rows[0].last_error).toBe('http_503');
++    // the alert transport itself throws an arbitrary error
++    jest.mocked(Sentry.captureMessage).mockImplementationOnce(() => {
++      throw canary();
++    });
++    w.conflicts.rows[0].status = 'superseded';
++    await w.conflictSvc.alertSuperseded();
++    // the handler's settle lookup fails
++    (w.prisma.packageTrialConflict as { findMany: unknown }).findMany = jest.fn(async () => {
++      throw canary();
++    });
++    await w.handler.cancelTrialConflict('sub_1');
++    expect(lines.length).toBeGreaterThan(0);
++    expect(leaked()).toEqual([]);
++  });
++
++  it('notice reconcile, delivery, card lookup, push code and email failures', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    w.notifications.pushToUser.mockResolvedValueOnce({ delivered: false, code: CANARY });
++    w.email.send.mockRejectedValueOnce(canary());
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notices.rows[0].last_error).toBe('email:unclassified');
++    w.notices.rows[0].push_lease_token = null;
++    expect(w.notices.rows[0].push_status).toBe('pending');
++    w.notifications.getPreferences.mockRejectedValueOnce(canary());
++    await w.noticeSvc.deliver(id, NOW);
++    const lookup = w.prisma.connectCustomer as { findUnique: jest.Mock };
++    lookup.findUnique.mockRejectedValueOnce(canary());
++    w.purchase().card_on_file = false;
++    await w.noticeSvc.deliver(id, NOW);
++    seedDue(w, 1, { noticed: 0 });
++    (w.prisma as { $transaction: unknown }).$transaction = jest.fn(async () => {
++      throw canary();
++    });
++    await w.noticeSvc.reconcileDue(NOW);
++    expect(lines.length).toBeGreaterThan(2);
++    expect(leaked()).toEqual([]);
++  });
++
++  it('push transport codes are closed', async () => {
++    const w = world({ pushCode: CANARY });
++    const id = await recordNotice(w);
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notices.rows[0].last_error).toBe('push:unclassified');
++  });
++});
++
++// B-TR3-118 (agent 118) — fix round 9. Every test below fails on T3 df76889f
++// (T2 c5e7ed8e) and passes after: Sol B-672-3 (the copy was built before the
++// claim), Sol B-673-1 (an owed retry cancelled without reading Stripe) and
++// Sol C-673-2 (the lease came from the sweep's start time).
++describe('B-672-3 (round 9) — a change committed during preparation is never sent on the old copy', () => {
++  const EXTENDED = new Date('2026-10-14T17:00:00Z');
++  const duringPrefs = (w: World, change: () => void) =>
++    w.notifications.getPreferences.mockImplementationOnce(async () => {
++      change();
++      return { muted: false };
++    });
++
++  it('an extension retires the old notice: nothing sent, the attempt given back', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    duringPrefs(w, () => (w.purchase().trial_ends_at = EXTENDED));
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.email.send).not.toHaveBeenCalled();
++    expect(w.notices.rows[0]).toMatchObject({
++      push_status: 'skipped',
++      email_status: 'skipped',
++      push_attempts: 0,
++      push_lease_token: null,
++      last_error: 'skip:trial_superseded',
++    });
++  });
++
++  it.each([
++    ['converted early (paid)', (w: World) => (w.purchase().status = 'active'), 'skip:trial_ended'],
++    ['canceled', (w: World) => (w.purchase().status = 'canceled'), 'skip:purchase_canceled'],
++    [
++      'deleted (account deletion)',
++      (w: World) => w.purchases.rows.splice(0),
++      'skip:purchase_missing',
++    ],
++  ])('%s: nothing is sent', async (_name, change, code) => {
++    const w = world();
++    const id = await recordNotice(w);
++    duringPrefs(w, () => change(w));
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.email.send).not.toHaveBeenCalled();
++    expect(w.notices.rows[0].last_error).toBe(code);
++  });
++
++  it('cancel at period end: the push and the email never say the card will be charged', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    duringPrefs(w, () => (w.purchase().cancel_at_period_end = true));
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser.mock.calls[0][2]).toContain('will not be charged');
++    expect(w.email.send.mock.calls[0][0]).toMatchObject({ data: { will_charge: false } });
++  });
++
++  it('the card removed: the push sends the no-card copy', async () => {
++    const w = world();
++    const id = await recordNotice(w);
++    duringPrefs(w, () => (w.purchase().card_on_file = false));
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser.mock.calls[0][2]).toBe(NO_CARD);
++  });
++
++  it('email: an extension committed during the email claim is not mailed on the old date', async () => {
++    const w = world({ muted: true });
++    const id = await recordNotice(w);
++    const claim = w.notices.updateMany;
++    w.notices.updateMany = async (args: Parameters<typeof claim>[0]) => {
++      if (typeof args.data.email_lease_token === 'string') w.purchase().trial_ends_at = EXTENDED;
++      return claim(args);
++    };
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.email.send).not.toHaveBeenCalled();
++    expect(w.notices.rows[0]).toMatchObject({ email_status: 'skipped', email_attempts: 0 });
++  });
++});
++
++describe('B-673-1 (round 9) — an owed retry reads Stripe before it cancels', () => {
++  const codes = () =>
++    jest
++      .mocked(Sentry.captureMessage)
++      .mock.calls.map((c) => (c[1] as { tags?: { code?: string } } | undefined)?.tags?.code);
++  async function owed(remote?: Record<string, unknown>) {
++    const w = world({ purchase: { entitlement_active: false } });
++    trialAlreadyStartedElsewhere(w);
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    const sub = stub<StripeSubscriptionObject>(trialSub(remote));
++    if (remote) jest.mocked(w.stripe.retrieveSubscription).mockResolvedValue(sub);
++    return w;
++  }
++  const active = trialSub({ status: 'active', trial_end: epoch(NOW) });
++
++  it('billed with its active webhook missing: no cancel, superseded, one billed alert; the late event grants access', async () => {
++    const w = await owed({ status: 'active', trial_end: epoch(NOW) });
++    expect(await w.conflictSvc.settle('pur-1')).toBe('superseded');
++    expect(w.cancelSubscription).not.toHaveBeenCalled();
++    expect(w.conflicts.rows[0]).toMatchObject({
++      status: 'superseded',
++      last_error: 'billing_started',
++      lease_token: null,
++    });
++    await w.conflictSvc.sweep();
++    await w.handler.handle(event('customer.subscription.updated', active, 'evt_9'), w.tx);
++    await w.conflictSvc.sweep();
++    expect(w.purchase().entitlement_active).toBe(true);
++    expect(codes()).toEqual(['TRIAL_CONFLICT_SUPERSEDED']);
++  });
++
++  it('an unknown Stripe state (read failed, or unrecognised) cancels nothing and stays owed', async () => {
++    const w = await owed({ status: 'mystery' });
++    jest
++      .mocked(w.stripe.retrieveSubscription)
++      .mockRejectedValueOnce(new StripeConnectApiError('down', 503, null, 'api_error'));
++    expect(await w.conflictSvc.settle('pur-1')).toBe('retry');
++    expect(w.conflicts.rows[0].last_error).toBe('http_503');
++    expect(await w.conflictSvc.settle('pur-1')).toBe('retry');
++    expect(w.cancelSubscription).not.toHaveBeenCalled();
++    expect(w.conflicts.rows[0]).toMatchObject({ status: 'owed', last_error: 'state_unknown' });
++  });
++
++  it.each([
++    ['canceled', 'cancelled', 'already_cancelled', 0],
++    ['past_due', 'cancelled', null, 1],
++  ])('Stripe says %s: %s', async (status, outcome, code, deletes) => {
++    const w = await owed({ status });
++    expect(await w.conflictSvc.settle('pur-1')).toBe(outcome);
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(deletes);
++    expect(w.conflicts.rows[0]).toMatchObject({ status: outcome, last_error: code });
++  });
++
++  it('the trial ends before a cancel can land, and the webhook supersedes meanwhile: no cancel, stale', async () => {
++    const w = await owed();
++    jest.mocked(w.stripe.retrieveSubscription).mockImplementationOnce(async () => {
++      await w.handler.handle(event('customer.subscription.updated', active, 'evt_9'), w.tx);
++      return stub<StripeSubscriptionObject>(trialSub());
++    });
++    expect(await w.conflictSvc.settle('pur-1', new Date(TRIAL_END.getTime() - 10_000))).toBe(
++      'stale',
++    );
++    expect(w.cancelSubscription).not.toHaveBeenCalled();
++    expect(w.conflicts.rows[0].status).toBe('superseded');
++    expect(w.purchase().entitlement_active).toBe(true);
++  });
++
++  it('C-673-2: a row reached late in a slow sweep holds a fresh lease; a replica stays out', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    try {
++      jest.setSystemTime(NOW);
++      const table = makeTrialConflictTable();
++      for (let i = 0; i < 8; i += 1) {
++        await table.createMany({
++          data: [
++            { purchase_id: `p-${i}`, stripe_subscription_id: `sub-${i}`, next_attempt_at: NOW },
++          ],
++        });
++      }
++      const held = deferred<{ id: string; status: string }>();
++      let late = 0;
++      const stripe = stub<StripeConnectApiService>({
++        retrieveSubscription: jest.fn(async (id: string) => trialSub({ id })),
++        // Seven nine-second cancels, each under both transport bounds.
++        cancelSubscription: jest.fn(async (id: string) => {
++          if (id !== 'sub-7') jest.setSystemTime(Date.now() + 9000);
++          else if (++late === 1) return held.promise;
++          return { id, status: 'canceled' };
++        }),
++      });
++      const db = stub<ConstructorParameters<typeof TrialConflictService>[0]>({
++        packageTrialConflict: table,
++      });
++      const sweep = new TrialConflictService(db, stripe).sweep(NOW);
++      for (let i = 0; i < 200 && late === 0; i += 1) await new Promise((r) => setImmediate(r));
++      jest.setSystemTime(Date.now() + 5000);
++      expect(await new TrialConflictService(db, stripe).settle('p-7')).toBe('busy');
++      held.resolve({ id: 'sub-7', status: 'canceled' });
++      await sweep;
++      expect(late).toBe(1);
++    } finally {
++      jest.useRealTimers();
++    }
++  });
++});
+diff --git a/test/b-trials-idempotent-create-compose.spec.ts b/test/b-trials-idempotent-create-compose.spec.ts
+new file mode 100644
+index 00000000..12676cd7
+--- /dev/null
++++ b/test/b-trials-idempotent-create-compose.spec.ts
+@@ -0,0 +1,68 @@
++// B-TRIALS-2 (agent 114) — #656 x #641 composition seam.
++//
++// Backend #641 adds PackagesService.createIdempotent (Idempotency-Key create,
++// which builds its own create data). Trial rules run inside
++// assertValidPricing, so that path refuses an invalid trial too. This spec
++// runs once both PRs are on main; until #641 lands the method is absent and
++// the block is skipped, so either merge order is covered by the CI of the
++// PR that merges second.
++import 'reflect-metadata';
++import { BadRequestException } from '@nestjs/common';
++import { PackagesService } from '../src/packages/packages.service';
++
++function harness() {
++  const tx = {
++    workoutBuilderIdempotencyKey: {
++      create: jest.fn(async () => ({ id: 'claim-1' })),
++      update: jest.fn(async () => ({})),
++    },
++    coachPackage: {
++      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'pkg-1', ...data })),
++    },
++  };
++  const prisma = { ...tx, $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)) };
++  const svc = Reflect.construct(PackagesService, [prisma, {}]);
++  const createIdempotent = Reflect.get(svc, 'createIdempotent');
++  const call = (input: Record<string, unknown>, key: string) =>
++    Reflect.apply(createIdempotent, svc, ['coach-1', input, key]);
++  return { tx, call, present: typeof createIdempotent === 'function' };
++}
++
++const base = { name: 'Pro', amount_cents: 4900, billing_type: 'recurring', interval: 'month' };
++const describeIfComposed = harness().present ? describe : describe.skip;
++
++describeIfComposed('B-TRIALS x #641 — Idempotency-Key create applies the trial rules', () => {
++  it('refuses 45 days and writes nothing', async () => {
++    const h = harness();
++    await expect(h.call({ ...base, trial_days: 45 }, 'key-trial-45')).rejects.toBeInstanceOf(
++      BadRequestException,
++    );
++    expect(h.tx.coachPackage.create).not.toHaveBeenCalled();
++    expect(h.tx.workoutBuilderIdempotencyKey.create).not.toHaveBeenCalled();
++  });
++
++  it('refuses a trial on a one-time package', async () => {
++    const h = harness();
++    await expect(
++      h.call({ ...base, billing_type: 'one_time', interval: null, trial_days: 7 }, 'key-trial-ot'),
++    ).rejects.toBeInstanceOf(BadRequestException);
++  });
++
++  it('stores the trial on the package it creates', async () => {
++    const h = harness();
++    await expect(h.call({ ...base, trial_days: 7 }, 'key-trial-07')).resolves.toMatchObject({
++      pkg: { trial_days: 7 },
++    });
++  });
++});
++
++it('B-TRIALS create seam: plain create refuses 45 days', async () => {
++  const h = harness();
++  const svc = Reflect.construct(PackagesService, [
++    { coachPackage: h.tx.coachPackage },
++    {},
++  ]);
++  await expect(svc.create('coach-1', { ...base, billing_type: 'recurring', trial_days: 45 })).rejects.toBeInstanceOf(
++    BadRequestException,
++  );
++});
+diff --git a/test/b-trials-notice-and-webhook.spec.ts b/test/b-trials-notice-and-webhook.spec.ts
+new file mode 100644
+index 00000000..c5726972
+--- /dev/null
++++ b/test/b-trials-notice-and-webhook.spec.ts
+@@ -0,0 +1,742 @@
++// B-TRIALS (OR-113-2) — trial-ending notice (timing, idempotency, copy,
++// channels) and the webhook trial lifecycle (card up front, one trial per
++// coach, release on abandon, post-commit hooks). All of these failed before:
++// customer.subscription.trial_will_end was unhandled (claimed: false), a
++// trialing subscription was entitled with no card, and nothing recorded a
++// client's trial.
++import { BillingService } from '../src/billing/billing.service';
++import { EmailService } from '../src/email/email.service';
++import { EmailTemplateKey } from '../src/email/email.types';
++import { NotificationsService } from '../src/notifications/notifications.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import {
++  TrialNoticeService,
++  upcomingChargeCents,
++} from '../src/packages/trials/trial-notice.service';
++import {
++  trialEndingCopy,
++  formatTrialAmount,
++  formatTrialDate,
++} from '../src/packages/trials/trial-copy';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { purchaseTrialView } from '../src/packages/trials/trial-view';
++import { makeTrialNoticeTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const TRIAL_END = new Date('2026-10-12T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++
++function purchaseRow(over: Record<string, unknown> = {}) {
++  return {
++    id: 'pur-1',
++    client_user_id: 'client-1',
++    coach_user_id: 'coach-1',
++    package_id: 'pkg-1',
++    amount_cents: 4900,
++    currency: 'usd',
++    billing_type: 'recurring',
++    status: 'trialing',
++    entitlement_active: true,
++    stripe_subscription_id: 'sub_1',
++    stripe_customer_id: 'cus_1',
++    cancel_at_period_end: false,
++    trial_days: 7,
++    trial_ends_at: TRIAL_END,
++    created_at: new Date('2026-10-05T17:00:00Z'),
++    ...over,
++  };
++}
++
++function trialSub(over: Record<string, unknown> = {}) {
++  return {
++    id: 'sub_1',
++    status: 'trialing',
++    trial_start: epoch(new Date('2026-10-05T17:00:00Z')),
++    trial_end: epoch(TRIAL_END),
++    current_period_end: epoch(TRIAL_END),
++    cancel_at_period_end: false,
++    default_payment_method: 'pm_card_visa',
++    items: { data: [{ quantity: 1, price: { unit_amount: 4900, currency: 'usd' } }] },
++    ...over,
++  };
++}
++
++function world(opts: { tz?: string | null; email?: string | null; pushCode?: string } = {}) {
++  const notices = makeTrialNoticeTable();
++  const usage = makeTrialUsageTable();
++  const purchases = [purchaseRow()];
++  const prisma = {
++    packageTrialNotice: notices,
++    packageTrialUsage: usage,
++    // B-TRIALS-3 (B-656-5) — a completed read: this client has no customer
++    // default card (an unreadable one is "unknown" and defers delivery).
++    connectCustomer: { findUnique: jest.fn(async () => null) },
++    notificationPreferences: {
++      findUnique: jest.fn(async () =>
++        // B-TR2-117 — the client's own (stamped) zone: the date reads bare (C-672-7).
++        opts.tz === null
++          ? null
++          : { timezone: opts.tz ?? 'America/Los_Angeles', timezone_updated_at: NOW },
++      ),
++    },
++    coachPackage: {
++      findUnique: jest.fn(async () => ({ id: 'pkg-1', duration_periods: null, trial_days: 7 })),
++    },
++    clientPurchase: {
++      findUnique: jest.fn(async ({ where }: { where: Record<string, string> }) => {
++        const row = purchases.find(
++          (p) =>
++            (where.id && p.id === where.id) ||
++            (where.stripe_subscription_id &&
++              p.stripe_subscription_id === where.stripe_subscription_id),
++        );
++        if (!row) return null;
++        return {
++          ...row,
++          package: { name: 'GP Monthly', interval: 'month', interval_count: 1 },
++          coach: { name: 'Bradley Coach' },
++          client: {
++            email: opts.email === undefined ? 'client@example.test' : opts.email,
++            name: 'Ana Client',
++          },
++        };
++      }),
++      update: jest.fn(
++        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
++          const row = purchases.find((p) => p.id === where.id);
++          if (!row) throw new Error('not found');
++          Object.assign(row, data);
++          return { ...row };
++        },
++      ),
++    },
++    $queryRaw: jest.fn(async () => []),
++    $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)),
++  };
++  const notifications = {
++    createNotification: jest.fn(async (input: Record<string, unknown>, _tx?: unknown) => ({
++      id: 'n-1',
++      ...input,
++      _tx,
++    })),
++    // B-TRIALS-3 (B-656-4) — delivery re-reads the client's preferences.
++    getPreferences: jest.fn(async () => ({ muted: false })),
++    pushToUser: jest.fn(async () =>
++      opts.pushCode
++        ? { delivered: false, code: opts.pushCode }
++        : { delivered: true, code: 'delivered' },
++    ),
++  };
++  const email = {
++    send: jest.fn(async (input: { idempotencyKey: string }) => ({
++      status: 'sent',
++      providerMessageId: 'm',
++      idempotencyKey: input.idempotencyKey,
++    })),
++  };
++  const noticeSvc = new TrialNoticeService(
++    stub<ConstructorParameters<typeof TrialNoticeService>[0]>(prisma),
++    stub<ConstructorParameters<typeof TrialNoticeService>[1]>(notifications),
++    stub<ConstructorParameters<typeof TrialNoticeService>[2]>(email),
++  );
++  const usageSvc = new TrialUsageService(
++    stub<ConstructorParameters<typeof TrialUsageService>[0]>(prisma),
++  );
++  const stripe = stub<StripeConnectApiService>({
++    cancelSubscription: jest.fn(async () => ({ id: 'sub_x', status: 'canceled' })),
++    retrieveSubscription: jest.fn(),
++  });
++  const handler = new CheckoutWebhookHandlerService(
++    stub<ConstructorParameters<typeof CheckoutWebhookHandlerService>[0]>(prisma),
++    stripe,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    usageSvc,
++    noticeSvc,
++  );
++  const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(prisma);
++  return {
++    prisma,
++    notices,
++    usage,
++    purchases,
++    notifications,
++    email,
++    noticeSvc,
++    usageSvc,
++    handler,
++    stripe,
++    tx,
++  };
++}
++
++const event = (type: string, object: Record<string, unknown>, id = 'evt_1') => ({
++  id,
++  type,
++  data: { object },
++});
++
++describe('B-TRIALS — trial-ending copy', () => {
++  it('matches the owner spec word for word', () => {
++    const copy = trialEndingCopy({
++      trialEndsAt: TRIAL_END,
++      amountCents: 4900,
++      currency: 'usd',
++      timeZone: 'America/Los_Angeles',
++      cancelAtPeriodEnd: false,
++    });
++    expect(copy.body).toBe(
++      'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.',
++    );
++  });
++
++  it('after a cancel it says nothing will be charged', () => {
++    const copy = trialEndingCopy({
++      trialEndsAt: TRIAL_END,
++      amountCents: 4900,
++      currency: 'usd',
++      cancelAtPeriodEnd: true,
++    });
++    expect(copy.body).toBe(
++      'Your free trial ends on Oct 12. Your card will not be charged, and your plan ends then.',
++    );
++  });
++
++  it('formats cents, other currencies, and the date in the client time zone', () => {
++    expect(formatTrialAmount(4999, 'usd')).toBe('$49.99');
++    expect(formatTrialAmount(4900, 'gbp')).toBe('£49');
++    // 2026-10-12T03:00Z is still Oct 11 in Los Angeles.
++    expect(formatTrialDate(new Date('2026-10-12T03:00:00Z'), 'America/Los_Angeles')).toBe('Oct 11');
++    expect(formatTrialDate(new Date('2026-10-12T03:00:00Z'), 'Not/AZone')).toBe('Oct 12');
++  });
++
++  it('never uses emojis, exclamation marks or first person', () => {
++    for (const cancel of [false, true]) {
++      const { title, body } = trialEndingCopy({
++        trialEndsAt: TRIAL_END,
++        amountCents: 4900,
++        currency: 'usd',
++        cancelAtPeriodEnd: cancel,
++      });
++      for (const text of [title, body]) {
++        expect(text).not.toMatch(/!/);
++        expect(text).not.toMatch(/\b(we|us|our)\b/i);
++        expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
++      }
++    }
++  });
++
++  it('the email template renders the date and amount, with a plain subject', () => {
++    const prev = process.env.EMAIL_TRANSPORT;
++    delete process.env.EMAIL_TRANSPORT;
++    const svc = new EmailService(
++      stub<ConstructorParameters<typeof EmailService>[0]>({ emailSendLog: {} }),
++      stub<ConstructorParameters<typeof EmailService>[1]>({ get: () => undefined }),
++    );
++    if (prev !== undefined) process.env.EMAIL_TRANSPORT = prev;
++    const { html, subject } = svc.render(EmailTemplateKey.TRIAL_ENDING, {
++      recipient_name: 'Ana',
++      plan_name: 'GP Monthly',
++      coach_name: 'Bradley Coach',
++      trial_end_date: 'Oct 12',
++      amount_display: '$49',
++      cadence: 'monthly',
++      will_charge: true,
++    });
++    expect(subject).toBe('Your free trial ends on Oct 12');
++    const flat = html.replace(/\s+/g, ' ');
++    expect(flat).toContain('Your card will be charged <strong>$49</strong> then');
++    expect(flat).toContain('cancel anytime before Oct 12');
++    // Text between tags only (split, not a tag-stripping replace: this is a
++    // copy assertion, not sanitization). No exclamation mark in any copy.
++    const textNodes = html.split(/<[^>]*>/).join(' ');
++    expect(textNodes).not.toMatch(/!/);
++  });
++});
++
++describe('B-TRIALS — recordTrialWillEnd timing and idempotency', () => {
++  it('records once per (purchase, trial end): a redelivery or a second event is a no-op', async () => {
++    const w = world();
++    const purchase =
++      stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(purchaseRow());
++    const tx = stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[0]>(w.prisma);
++    const first = await w.noticeSvc.recordTrialWillEnd(tx, {
++      purchase,
++      sub: trialSub(),
++      eventId: 'evt_1',
++      now: NOW,
++    });
++    const again = await w.noticeSvc.recordTrialWillEnd(tx, {
++      purchase,
++      sub: trialSub(),
++      eventId: 'evt_2',
++      now: NOW,
++    });
++    expect(first).toEqual(expect.any(String));
++    expect(again).toBeNull();
++    expect(w.notices.rows).toHaveLength(1);
++    expect(w.notifications.createNotification).toHaveBeenCalledTimes(1);
++    const [input, passedTx] = w.notifications.createNotification.mock.calls[0];
++    expect(passedTx).toBe(tx); // in-app row rides the webhook transaction
++    expect(input).toMatchObject({
++      user_id: 'client-1',
++      kind: 'trial_ending',
++      channel: 'inapp',
++      body: 'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.',
++    });
++  });
++
++  it('RACE: two concurrent deliveries of the event write one notice', async () => {
++    const w = world();
++    const purchase =
++      stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(purchaseRow());
++    const tx = stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[0]>(w.prisma);
++    const ids = await Promise.all([
++      w.noticeSvc.recordTrialWillEnd(tx, { purchase, sub: trialSub(), eventId: 'evt_1', now: NOW }),
++      w.noticeSvc.recordTrialWillEnd(tx, {
++        purchase,
++        sub: trialSub(),
++        eventId: 'evt_1b',
++        now: NOW,
++      }),
++    ]);
++    expect(ids.filter(Boolean)).toHaveLength(1);
++    expect(w.notifications.createNotification).toHaveBeenCalledTimes(1);
++  });
++
++  it('an extended trial (new trial end) gets its own notice', async () => {
++    const w = world();
++    const purchase =
++      stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(purchaseRow());
++    const tx = stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[0]>(w.prisma);
++    await w.noticeSvc.recordTrialWillEnd(tx, {
++      purchase,
++      sub: trialSub(),
++      eventId: 'evt_1',
++      now: NOW,
++    });
++    const later = epoch(new Date('2026-10-19T17:00:00Z'));
++    expect(
++      await w.noticeSvc.recordTrialWillEnd(tx, {
++        purchase,
++        sub: trialSub({ trial_end: later }),
++        eventId: 'evt_3',
++        now: NOW,
++      }),
++    ).toEqual(expect.any(String));
++    expect(w.notices.rows).toHaveLength(2);
++  });
++
++  it('skips a trial that already ended (trial_end=now), a non-trialing sub, and a trial that has not started (no card saved yet)', async () => {
++    const w = world();
++    const purchase =
++      stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(purchaseRow());
++    const notStarted = stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(
++      purchaseRow({ entitlement_active: false }),
++    );
++    const tx = stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[0]>(w.prisma);
++    const cases = [
++      { purchase, sub: trialSub({ trial_end: epoch(NOW) }) },
++      { purchase, sub: trialSub({ status: 'active' }) },
++      // B-TRIALS-3: a started trial whose card was removed IS noticed (with
++      // the no-card copy, see b-trials-3-fix-round); one that never started
++      // is noticed once the card is saved.
++      { purchase: notStarted, sub: trialSub({ default_payment_method: null }) },
++    ];
++    for (const c of cases) {
++      expect(await w.noticeSvc.recordTrialWillEnd(tx, { ...c, eventId: 'e', now: NOW })).toBeNull();
++    }
++    expect(w.notices.rows).toHaveLength(0);
++    expect(w.notifications.createNotification).not.toHaveBeenCalled();
++  });
++
++  it('the amount is what Stripe will charge (items), falling back to the purchase price', () => {
++    expect(
++      upcomingChargeCents(
++        trialSub({ items: { data: [{ quantity: 2, price: { unit_amount: 2500 } }] } }),
++        4900,
++      ),
++    ).toBe(5000);
++    expect(upcomingChargeCents(trialSub({ items: null }), 4900)).toBe(4900);
++  });
++});
++
++describe('B-TRIALS — delivery (push + email after commit, retried by the sweep)', () => {
++  async function recorded(w: ReturnType<typeof world>) {
++    const purchase =
++      stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(purchaseRow());
++    const tx = stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[0]>(w.prisma);
++    const id = await w.noticeSvc.recordTrialWillEnd(tx, {
++      purchase,
++      sub: trialSub(),
++      eventId: 'evt_1',
++      now: NOW,
++    });
++    if (!id) throw new Error('expected a notice');
++    return id;
++  }
++
++  it('sends one push and one email with the exact copy and a stable idempotency key', async () => {
++    const w = world();
++    const id = await recorded(w);
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notifications.pushToUser).toHaveBeenCalledWith(
++      'client-1',
++      'Your free trial',
++      'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.',
++      expect.objectContaining({
++        kind: 'trial_ending',
++        purchase_id: 'pur-1',
++        actionScreen: 'ClientPackages',
++      }),
++      // B-TRIALS-3 (B-656-2) — the push is bounded: an abort signal fires
++      // when the transport outlives TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS.
++      expect.any(AbortSignal),
++    );
++    expect(w.email.send).toHaveBeenCalledTimes(1);
++    expect(w.email.send.mock.calls[0][0]).toMatchObject({
++      to: 'client@example.test',
++      template: 'trial-ending',
++      idempotencyKey: `trial-ending:pur-1:${TRIAL_END.getTime()}`,
++    });
++    expect(w.notices.rows[0]).toMatchObject({ push_status: 'delivered', email_status: 'sent' });
++    // A second delivery (sweep, duplicate hook) sends nothing more.
++    await w.noticeSvc.deliver(id, NOW);
++    await w.noticeSvc.sweep(new Date(NOW.getTime() + 60 * 60 * 1000));
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.email.send).toHaveBeenCalledTimes(1);
++  });
++
++  it('RACE: two concurrent deliveries send the push once', async () => {
++    const w = world();
++    const id = await recorded(w);
++    await Promise.all([w.noticeSvc.deliver(id, NOW), w.noticeSvc.deliver(id, NOW)]);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.email.send).toHaveBeenCalledTimes(1);
++  });
++
++  it('a transport failure stays pending and the sweep retries it', async () => {
++    const w = world({ pushCode: 'transport-error' });
++    const id = await recorded(w);
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notices.rows[0].push_status).toBe('pending');
++    w.notifications.pushToUser.mockResolvedValueOnce({ delivered: true, code: 'delivered' });
++    const swept = await w.noticeSvc.sweep(new Date(NOW.getTime() + 10 * 60 * 1000));
++    expect(swept).toBe(1);
++    expect(w.notices.rows[0].push_status).toBe('delivered');
++  });
++
++  it('no push token or no email is recorded, not retried forever', async () => {
++    const w = world({ pushCode: 'no-token', email: null });
++    const id = await recorded(w);
++    await w.noticeSvc.deliver(id, NOW);
++    expect(w.notices.rows[0]).toMatchObject({ push_status: 'no_token', email_status: 'no_email' });
++    expect(await w.noticeSvc.sweep(new Date(NOW.getTime() + 10 * 60 * 1000))).toBe(0);
++  });
++
++  it('nothing is sent once the trial has ended', async () => {
++    const w = world();
++    const id = await recorded(w);
++    await w.noticeSvc.deliver(id, new Date(TRIAL_END.getTime() + 1000));
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.email.send).not.toHaveBeenCalled();
++  });
++});
++
++describe('B-TRIALS — webhook trial lifecycle', () => {
++  it('customer.subscription.trial_will_end is claimed and hands the notice to post-commit delivery', async () => {
++    const w = world();
++    // B-TR2-117 — the purchase mirrors the trial end the event announces.
++    const end = new Date(epoch(new Date(Date.now() + 3 * 864e5)) * 1000);
++    w.purchases[0].trial_ends_at = end;
++    const res = await w.handler.handle(
++      event('customer.subscription.trial_will_end', trialSub({ trial_end: epoch(end) })),
++      w.tx,
++    );
++    expect(res.claimed).toBe(true);
++    expect(res.deferredTrialNoticeId).toEqual(expect.any(String));
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled(); // never inside the tx
++    await w.handler.deliverTrialNotice(res.deferredTrialNoticeId as string);
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++  });
++
++  it('a trialing subscription WITHOUT a saved card grants no access (card up front)', async () => {
++    const w = world();
++    w.purchases[0].entitlement_active = false;
++    await w.handler.handle(
++      event('customer.subscription.updated', trialSub({ default_payment_method: null })),
++      w.tx,
++    );
++    expect(w.purchases[0].entitlement_active).toBe(false);
++    expect(w.usage.rows).toHaveLength(0);
++  });
++
++  it('C-671-4 (B-TR2-117) — a trial that never started keeps no trial end: never "The trial is over"', async () => {
++    const w = world();
++    Object.assign(w.purchases[0], { entitlement_active: false, trial_ends_at: null });
++    const noCard = trialSub({ default_payment_method: null });
++    await w.handler.handle(event('customer.subscription.updated', noCard), w.tx);
++    expect(w.purchases[0].trial_ends_at).toBeNull();
++    expect(purchaseTrialView(w.purchases[0]).state).toBe('setup_incomplete');
++    const gone = trialSub({ status: 'canceled', default_payment_method: null });
++    await w.handler.handle(event('customer.subscription.updated', gone, 'evt_2'), w.tx);
++    expect(w.purchases[0]).toMatchObject({ status: 'canceled', trial_ends_at: null });
++    expect(purchaseTrialView(w.purchases[0]).state).toBe('none');
++    // Control: a trial that started keeps its end through the cancel and reads 'ended'.
++    const s = world();
++    Object.assign(s.purchases[0], { entitlement_active: false, trial_ends_at: null });
++    await s.handler.handle(event('customer.subscription.updated', trialSub()), s.tx);
++    await s.handler.handle(
++      event('customer.subscription.updated', trialSub({ status: 'canceled' }), 'evt_2'),
++      s.tx,
++    );
++    expect(s.purchases[0].trial_ends_at).toEqual(TRIAL_END);
++    expect(purchaseTrialView(s.purchases[0]).state).toBe('ended');
++  });
++
++  it('a trialing subscription WITH a saved card grants access, records trial_ends_at and starts the trial', async () => {
++    const w = world();
++    w.purchases[0].entitlement_active = false;
++    w.purchases[0].trial_days = 0;
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    expect(w.purchases[0]).toMatchObject({
++      entitlement_active: true,
++      status: 'trialing',
++      trial_days: 7,
++    });
++    expect((w.purchases[0].trial_ends_at as Date).toISOString()).toBe(TRIAL_END.toISOString());
++    expect(w.usage.rows[0]).toMatchObject({ status: 'started', purchase_id: 'pur-1' });
++  });
++
++  it('a second trial with the same coach gets no access and is cancelled after commit', async () => {
++    const w = world();
++    w.usage.rows.push({
++      id: 'u-old',
++      client_user_id: 'client-1',
++      coach_user_id: 'coach-1',
++      package_id: 'pkg-0',
++      purchase_id: 'pur-0',
++      trial_days: 7,
++      status: 'started',
++      reserved_at: new Date(),
++    });
++    const res = await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    expect(w.purchases[0].entitlement_active).toBe(false);
++    expect(res.trialConflictSubscriptionId).toBe('sub_1');
++    await w.handler.cancelTrialConflict('sub_1');
++    expect(w.stripe.cancelSubscription).toHaveBeenCalledWith('sub_1');
++  });
++
++  it('a subscription deleted before the card was saved gives the trial back; a started one stays used', async () => {
++    const w = world();
++    await w.usageSvc.reserve(stub<Parameters<TrialUsageService['reserve']>[0]>(w.prisma), {
++      clientUserId: 'client-1',
++      coachUserId: 'coach-1',
++      packageId: 'pkg-1',
++      purchaseId: 'pur-1',
++      trialDays: 7,
++    });
++    await w.handler.handle(event('customer.subscription.deleted', { id: 'sub_1' }), w.tx);
++    expect(w.usage.rows[0].status).toBe('released');
++  });
++
++  it('B-TRIALS-2: a started trial keeps access to its end when the card is later removed (no charge: Stripe cancels at trial end)', async () => {
++    const w = world();
++    w.purchases[0].entitlement_active = false;
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    expect(w.purchases[0].entitlement_active).toBe(true);
++    await w.handler.handle(
++      event('customer.subscription.updated', trialSub({ default_payment_method: null }), 'evt_2'),
++      w.tx,
++    );
++    expect(w.purchases[0].entitlement_active).toBe(true);
++    expect(w.usage.rows[0]).toMatchObject({ status: 'started', purchase_id: 'pur-1' });
++  });
++
++  it('B-TRIALS-2: a reserved (never started) trial without a card still grants nothing', async () => {
++    const w = world();
++    w.purchases[0].entitlement_active = false;
++    await w.usageSvc.reserve(stub<Parameters<TrialUsageService['reserve']>[0]>(w.prisma), {
++      clientUserId: 'client-1',
++      coachUserId: 'coach-1',
++      packageId: 'pkg-1',
++      purchaseId: 'pur-1',
++      trialDays: 7,
++    });
++    await w.handler.handle(
++      event('customer.subscription.updated', trialSub({ default_payment_method: null })),
++      w.tx,
++    );
++    expect(w.purchases[0].entitlement_active).toBe(false);
++    expect(w.usage.rows[0].status).toBe('reserved');
++  });
++
++  it('invoice.paid for the $0 trial invoice does not grant access without a card', async () => {
++    const w = world();
++    w.purchases[0].entitlement_active = false;
++    const res = await w.handler.handle(
++      event('invoice.paid', { id: 'in_1', subscription: 'sub_1', amount_paid: 0 }),
++      w.tx,
++      {
++        invoiceSubscription: stub<
++          NonNullable<Parameters<CheckoutWebhookHandlerService['handle']>[2]>['invoiceSubscription']
++        >(trialSub({ default_payment_method: null })),
++      },
++    );
++    expect(res.claimed).toBe(true);
++    expect(w.purchases[0].entitlement_active).toBe(false);
++  });
++});
++
++describe('B-TRIALS — purchase trial view (Home / Your plan)', () => {
++  const row = {
++    status: 'trialing',
++    entitlement_active: true,
++    amount_cents: 4900,
++    currency: 'usd',
++    cancel_at_period_end: false,
++    trial_days: 7,
++    trial_ends_at: TRIAL_END,
++  };
++  it('trialing with a card: will charge at the trial end', () => {
++    expect(purchaseTrialView(row, NOW)).toEqual({
++      state: 'trialing',
++      trial_days: 7,
++      ends_at: TRIAL_END.toISOString(),
++      will_charge: true,
++      no_charge_reason: null,
++      charge_amount_cents: 4900,
++      currency: 'usd',
++    });
++  });
++  it('cancelled during the trial: no charge', () => {
++    expect(purchaseTrialView({ ...row, cancel_at_period_end: true }, NOW)).toMatchObject({
++      state: 'trialing',
++      will_charge: false,
++      no_charge_reason: 'cancelled',
++    });
++  });
++  it('no card yet, trial over, and no trial', () => {
++    expect(purchaseTrialView({ ...row, entitlement_active: false }, NOW).state).toBe(
++      'setup_incomplete',
++    );
++    expect(purchaseTrialView({ ...row, status: 'active' }, NOW).state).toBe('ended');
++    expect(
++      purchaseTrialView({ ...row, trial_days: 0, trial_ends_at: null, status: 'active' }, NOW)
++        .state,
++    ).toBe('none');
++  });
++});
++
++describe('B-TRIALS — TRIAL_ENDING is never dropped by notification preferences', () => {
++  it('writes the in-app row even though digest defaults are off', async () => {
++    const create = jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
++      id: 'n',
++      ...data,
++    }));
++    const prisma = { notification: { create } };
++    const svc = new NotificationsService(
++      stub<ConstructorParameters<typeof NotificationsService>[0]>(prisma),
++    );
++    jest.spyOn(svc, 'getPreferences').mockResolvedValue(
++      stub<Awaited<ReturnType<NotificationsService['getPreferences']>>>({
++        muted: false,
++        digest_inapp: false,
++        digest_push: false,
++      }),
++    );
++    const row = await svc.createNotification({
++      user_id: 'client-1',
++      kind: 'trial_ending',
++      body: 'x',
++      channel: 'inapp',
++    });
++    expect(row).not.toBeNull();
++    expect(create).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('B-TRIALS — BillingService runs trial side effects only after commit', () => {
++  function build(opts: { failInTx?: boolean } = {}) {
++    const order: string[] = [];
++    const processed: Array<Record<string, unknown>> = [];
++    const prisma: Record<string, unknown> = {
++      stripeProcessedEvent: {
++        findUnique: jest.fn(async () => null),
++        updateMany: jest.fn(async () => ({ count: 1 })),
++        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++          processed.push(data);
++          if (opts.failInTx) throw new Error('db down');
++          return data;
++        }),
++      },
++      coachProfile: { findFirst: jest.fn(async () => null) },
++    };
++    prisma.$transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
++      const out = await cb(prisma);
++      order.push('commit');
++      return out;
++    });
++    const checkout = {
++      handle: jest.fn(async () => ({
++        claimed: true,
++        purchase_id: 'pur-1',
++        deferredTrialNoticeId: 'notice-1',
++        trialConflictSubscriptionId: 'sub_dup',
++      })),
++      deliverTrialNotice: jest.fn(async () => {
++        order.push('deliver');
++      }),
++      cancelTrialConflict: jest.fn(async () => {
++        order.push('cancel');
++      }),
++    };
++    type Ctor = ConstructorParameters<typeof BillingService>;
++    const svc = new BillingService(
++      stub<Ctor[0]>(prisma),
++      stub<Ctor[1]>({ capture: jest.fn(), identify: jest.fn() }),
++      stub<Ctor[2]>({ write: jest.fn(async () => undefined), list: jest.fn(async () => []) }),
++      stub<Ctor[3]>({
++        syncFromStripe: jest.fn(async () => null),
++        markDeauthorized: jest.fn(async () => undefined),
++      }),
++      stub<Ctor[4]>(checkout),
++    );
++    return { svc, checkout, order };
++  }
++
++  it('delivers the notice and cancels the duplicate trial after the transaction commits', async () => {
++    const { svc, checkout, order } = build();
++    await svc.handleEvent(
++      stub<Parameters<BillingService['handleEvent']>[0]>({
++        id: 'evt_t',
++        type: 'customer.subscription.trial_will_end',
++        data: { object: { id: 'sub_1' } },
++      }),
++    );
++    expect(checkout.deliverTrialNotice).toHaveBeenCalledWith('notice-1');
++    expect(checkout.cancelTrialConflict).toHaveBeenCalledWith('sub_dup');
++    expect(order).toEqual(['commit', 'deliver', 'cancel']);
++  });
++
++  it('sends nothing when the transaction rolls back (Stripe retries the event)', async () => {
++    const { svc, checkout } = build({ failInTx: true });
++    await expect(
++      svc.handleEvent(
++        stub<Parameters<BillingService['handleEvent']>[0]>({
++          id: 'evt_t2',
++          type: 'customer.subscription.trial_will_end',
++          data: { object: { id: 'sub_1' } },
++        }),
++      ),
++    ).rejects.toThrow();
++    expect(checkout.deliverTrialNotice).not.toHaveBeenCalled();
++    expect(checkout.cancelTrialConflict).not.toHaveBeenCalled();
++  });
++});

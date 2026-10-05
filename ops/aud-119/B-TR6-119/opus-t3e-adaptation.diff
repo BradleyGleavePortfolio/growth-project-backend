@@ -1,0 +1,3 @@
+76a77,78
+>       // B-TR6-119 adaptation (only change): the new uncollectible list answers a complete empty page.
+>       if (status === 'uncollectible') return reply(page([]));

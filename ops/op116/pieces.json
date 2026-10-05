@@ -1,0 +1,1671 @@
+[
+ {
+  "k": "backend",
+  "n": 681,
+  "add": 1847,
+  "base": "main",
+  "dele": 656,
+  "draft": true,
+  "head": "5a19178de2d6017ba0b9be73ff6ea2c365a20d55",
+  "state": "open",
+  "agg": {
+   "source": 1871,
+   "tests": 301,
+   "migrations": 331,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 27,
+  "dirs": [
+   [
+    "src/connect/fees",
+    584
+   ],
+   [
+    "src/connect/stripe-connect-api.service.ts",
+    379
+   ],
+   [
+    "prisma/migrations",
+    331
+   ],
+   [
+    "src/payouts-v2/platform-fee.service.ts",
+    263
+   ],
+   [
+    "prisma/schema.prisma",
+    241
+   ],
+   [
+    "src/storefront/guest-checkout.service.ts",
+    132
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 19
+ },
+ {
+  "k": "backend",
+  "n": 682,
+  "add": 2413,
+  "base": "agent115/fee-split-1-ledger-foundation",
+  "dele": 116,
+  "draft": true,
+  "head": "007d3dcbb69ebb1b31f406602ab3b7db65889896",
+  "state": "open",
+  "agg": {
+   "source": 1417,
+   "tests": 1112,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 6,
+  "dirs": [
+   [
+    "src/connect/fees",
+    1417
+   ],
+   [
+    "test/utils/settlement-fakes.ts",
+    771
+   ],
+   [
+    "test/transfer-orchestrator.service.spec.ts",
+    205
+   ],
+   [
+    "test/s-fee-r9-send-boundary.spec.ts",
+    100
+   ],
+   [
+    "test/s-fee-r7-transfer-match.spec.ts",
+    36
+   ]
+  ],
+  "fail": [
+   "build-and-test",
+   "Schema parity (migrations match schema.prisma)",
+   "build-and-test"
+  ],
+  "pend": [],
+  "nchecks": 23
+ },
+ {
+  "k": "backend",
+  "n": 683,
+  "add": 2870,
+  "base": "agent115/fee-split-2-transfer-orchestrator",
+  "dele": 25,
+  "draft": true,
+  "head": "e2af8ca1fe872ca3c319b52b3ac3b8fca17de7bd",
+  "state": "open",
+  "agg": {
+   "source": 2309,
+   "tests": 586,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 3,
+  "dirs": [
+   [
+    "src/connect/fees",
+    2309
+   ],
+   [
+    "test/s-fee-charge-settlement.spec.ts",
+    586
+   ]
+  ],
+  "fail": [
+   "build-and-test"
+  ],
+  "pend": [],
+  "nchecks": 14
+ },
+ {
+  "k": "backend",
+  "n": 684,
+  "add": 2183,
+  "base": "agent115/fee-split-3-charge-settlement",
+  "dele": 423,
+  "draft": true,
+  "head": "42e9ca13b0b365315fade00f0fce869f5e25834b",
+  "state": "open",
+  "agg": {
+   "source": 1565,
+   "tests": 1041,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 22,
+  "dirs": [
+   [
+    "src/checkout/payout-notice.service.ts",
+    548
+   ],
+   [
+    "src/checkout/refund-dispute-handler.service.ts",
+    504
+   ],
+   [
+    "test/purchase-split-handler.service.spec.ts",
+    429
+   ],
+   [
+    "test/s-fee-settlement-sweep.spec.ts",
+    359
+   ],
+   [
+    "src/checkout/purchase-split-handler.service.ts",
+    151
+   ],
+   [
+    "src/checkout/settlement-sweep.cron.ts",
+    136
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 12
+ },
+ {
+  "k": "backend",
+  "n": 685,
+  "add": 2958,
+  "base": "agent115/fee-split-4-checkout-wiring",
+  "dele": 0,
+  "draft": true,
+  "head": "858d37165662ad83af7c380f5f57700fd3d47afa",
+  "state": "open",
+  "agg": {
+   "source": 0,
+   "tests": 2958,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 4,
+  "dirs": [
+   [
+    "test/s-fee-r5-or-111-1.spec.ts",
+    1005
+   ],
+   [
+    "test/s-fee-r4-money-protocol.spec.ts",
+    836
+   ],
+   [
+    "test/s-fee-charge-concurrency.spec.ts",
+    592
+   ],
+   [
+    "test/s-fee-r9-paused-sender.spec.ts",
+    525
+   ]
+  ],
+  "fail": [
+   "Schema parity (migrations match schema.prisma)"
+  ],
+  "pend": [],
+  "nchecks": 23
+ },
+ {
+  "k": "backend",
+  "n": 686,
+  "add": 1355,
+  "base": "agent115/fee-split-5-money-protocol-specs",
+  "dele": 0,
+  "draft": true,
+  "head": "7be7d396dcaab5f62c941a78e6e071ce3518ad28",
+  "state": "open",
+  "agg": {
+   "source": 0,
+   "tests": 1355,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 3,
+  "dirs": [
+   [
+    "test/s-fee-r8-transfer-in-flight.spec.ts",
+    540
+   ],
+   [
+    "test/s-fee-r7-transfer-create-recovery.spec.ts",
+    495
+   ],
+   [
+    "test/s-fee-renewal-backfill.spec.ts",
+    320
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 13
+ },
+ {
+  "k": "backend",
+  "n": 671,
+  "add": 1727,
+  "base": "main",
+  "dele": 0,
+  "draft": true,
+  "head": "a6a2b589c7b641bb3d2e53f4b7445de0d52ddda4",
+  "state": "open",
+  "agg": {
+   "source": 914,
+   "tests": 515,
+   "migrations": 298,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 14,
+  "dirs": [
+   [
+    "src/packages/trials",
+    768
+   ],
+   [
+    "prisma/migrations",
+    298
+   ],
+   [
+    "test/b-trials-one-trial-rule.spec.ts",
+    295
+   ],
+   [
+    "test/utils/trial-fakes.ts",
+    220
+   ],
+   [
+    "prisma/schema.prisma",
+    138
+   ],
+   [
+    "src/account-deletion/account-deletion.manifest.ts",
+    8
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 18
+ },
+ {
+  "k": "backend",
+  "n": 672,
+  "add": 1326,
+  "base": "agent115/trials-split-1-model-rules",
+  "dele": 2,
+  "draft": true,
+  "head": "e06b5b13691d3f869b92009c87159c0672df517c",
+  "state": "open",
+  "agg": {
+   "source": 914,
+   "tests": 414,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 12,
+  "dirs": [
+   [
+    "src/packages/trials",
+    780
+   ],
+   [
+    "test/b-trials-package-rules.spec.ts",
+    406
+   ],
+   [
+    "src/email/templates",
+    37
+   ],
+   [
+    "src/packages/packages.service.ts",
+    37
+   ],
+   [
+    "src/packages/packages.dto.ts",
+    18
+   ],
+   [
+    "src/packages/packages.controller.ts",
+    14
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 11
+ },
+ {
+  "k": "backend",
+  "n": 673,
+  "add": 2548,
+  "base": "agent115/trials-split-2-editor-notices",
+  "dele": 8,
+  "draft": true,
+  "head": "5743e51fb0ee13e7fe95a865a809f05b6108abc2",
+  "state": "open",
+  "agg": {
+   "source": 700,
+   "tests": 1839,
+   "migrations": 0,
+   "docs": 17,
+   "excluded": 0
+  },
+  "files": 11,
+  "dirs": [
+   [
+    "test/b-trials-3-fix-round.spec.ts",
+    1055
+   ],
+   [
+    "test/b-trials-notice-and-webhook.spec.ts",
+    716
+   ],
+   [
+    "src/packages/trials",
+    332
+   ],
+   [
+    "src/checkout/checkout-webhook-handler.service.ts",
+    280
+   ],
+   [
+    "test/b-trials-idempotent-create-compose.spec.ts",
+    68
+   ],
+   [
+    "src/checkout/checkout.service.ts",
+    43
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 11
+ },
+ {
+  "k": "backend",
+  "n": 674,
+  "add": 2085,
+  "base": "main",
+  "dele": 43,
+  "draft": true,
+  "head": "9a512028f49682073227c04ef1268c81102716fd",
+  "state": "open",
+  "agg": {
+   "source": 867,
+   "tests": 1176,
+   "migrations": 50,
+   "docs": 35,
+   "excluded": 0
+  },
+  "files": 17,
+  "dirs": [
+   [
+    "src/checkout/refund-dispute-handler.service.ts",
+    641
+   ],
+   [
+    "test/refund-reversal-once.spec.ts",
+    313
+   ],
+   [
+    "test/refund-reversal-reconcile.spec.ts",
+    300
+   ],
+   [
+    "test/refund-reversal-review.spec.ts",
+    276
+   ],
+   [
+    "test/support/refund-reversal-harness.ts",
+    205
+   ],
+   [
+    "src/connect/fees",
+    102
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 18
+ },
+ {
+  "k": "backend",
+  "n": 676,
+  "add": 2783,
+  "base": "agent115/money-split-1-refund-reversal",
+  "dele": 16,
+  "draft": true,
+  "head": "564f33bf1469e483a253df29ecaac750c5c43a22",
+  "state": "open",
+  "agg": {
+   "source": 2021,
+   "tests": 766,
+   "migrations": 0,
+   "docs": 12,
+   "excluded": 0
+  },
+  "files": 16,
+  "dirs": [
+   [
+    "src/coach-money/coach-money.service.ts",
+    1638
+   ],
+   [
+    "test/coach-money-production-writes.spec.ts",
+    496
+   ],
+   [
+    "test/support/money-read-double.ts",
+    180
+   ],
+   [
+    "src/coach-money/coach-money.controller.ts",
+    148
+   ],
+   [
+    "src/coach-connect/coach-connect.service.ts",
+    125
+   ],
+   [
+    "src/connect/connect-onboarding-return.controller.ts",
+    73
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 11
+ },
+ {
+  "k": "backend",
+  "n": 677,
+  "add": 1244,
+  "base": "agent115/money-split-3-coach-money-api",
+  "dele": 0,
+  "draft": true,
+  "head": "4aaee4ed601bb0afb3f00828e28ace286a80512e",
+  "state": "open",
+  "agg": {
+   "source": 0,
+   "tests": 1244,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 1,
+  "dirs": [
+   [
+    "test/coach-money.service.spec.ts",
+    1244
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 11
+ },
+ {
+  "k": "backend",
+  "n": 675,
+  "add": 559,
+  "base": "main",
+  "dele": 8,
+  "draft": true,
+  "head": "d1c98430047a5972facfdfc5cf4270ab68f9f87a",
+  "state": "open",
+  "agg": {
+   "source": 201,
+   "tests": 366,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 3,
+  "dirs": [
+   [
+    "test/packages-create-idempotency.spec.ts",
+    366
+   ],
+   [
+    "src/packages/packages.service.ts",
+    182
+   ],
+   [
+    "src/packages/packages.controller.ts",
+    19
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 16
+ },
+ {
+  "k": "backend",
+  "n": 687,
+  "add": 1753,
+  "base": "main",
+  "dele": 87,
+  "draft": true,
+  "head": "c2a901a8f2552a166edc81b97454c9b7cd55df1c",
+  "state": "open",
+  "agg": {
+   "source": 657,
+   "tests": 1016,
+   "migrations": 167,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 22,
+  "dirs": [
+   [
+    "test/support/fake-stripe-billing.ts",
+    477
+   ],
+   [
+    "test/support/dunning-v2-fake-prisma.ts",
+    382
+   ],
+   [
+    "src/connect/stripe-connect-api.service.ts",
+    330
+   ],
+   [
+    "prisma/migrations",
+    167
+   ],
+   [
+    "test/fixtures/stripe",
+    157
+   ],
+   [
+    "prisma/schema.prisma",
+    118
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 19
+ },
+ {
+  "k": "backend",
+  "n": 688,
+  "add": 2166,
+  "base": "agent115/dunning-split-1-foundation",
+  "dele": 709,
+  "draft": true,
+  "head": "6627044cce3c7a210099b77b72e53f782cba2801",
+  "state": "open",
+  "agg": {
+   "source": 2131,
+   "tests": 744,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 6,
+  "dirs": [
+   [
+    "src/checkout/dunning-v2",
+    2004
+   ],
+   [
+    "test/dunning-v2-service.spec.ts",
+    740
+   ],
+   [
+    "src/checkout/dunning.service.ts",
+    127
+   ],
+   [
+    "test/dunning-v2-cadence.spec.ts",
+    4
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 14
+ },
+ {
+  "k": "backend",
+  "n": 689,
+  "add": 2462,
+  "base": "agent115/dunning-split-2-dunning-service",
+  "dele": 0,
+  "draft": true,
+  "head": "9e77159a710fe9022fd8016374f1fd9067337b0f",
+  "state": "open",
+  "agg": {
+   "source": 2462,
+   "tests": 0,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 2,
+  "dirs": [
+   [
+    "src/checkout/client-billing.service.ts",
+    2414
+   ],
+   [
+    "src/checkout/client-billing.reconciler.ts",
+    48
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 11
+ },
+ {
+  "k": "backend",
+  "n": 690,
+  "add": 2229,
+  "base": "agent115/dunning-split-3-client-billing",
+  "dele": 186,
+  "draft": true,
+  "head": "f72668c26f8bea505dea7e47594e98ac4a921398",
+  "state": "open",
+  "agg": {
+   "source": 859,
+   "tests": 1556,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 20,
+  "dirs": [
+   [
+    "test/dunning-r2-native-card-1a-2a-e2e.spec.ts",
+    902
+   ],
+   [
+    "src/checkout/checkout-webhook-handler.service.ts",
+    383
+   ],
+   [
+    "test/dunning-r2-surfaces.spec.ts",
+    351
+   ],
+   [
+    "src/checkout/client-billing.controller.ts",
+    217
+   ],
+   [
+    "test/dunning-r3-http-codes.spec.ts",
+    153
+   ],
+   [
+    "src/checkout/dunning-v2",
+    151
+   ]
+  ],
+  "fail": [
+   "Schema parity (migrations match schema.prisma)"
+  ],
+  "pend": [],
+  "nchecks": 23
+ },
+ {
+  "k": "backend",
+  "n": 691,
+  "add": 2742,
+  "base": "agent115/dunning-split-4-lockout-webhooks",
+  "dele": 0,
+  "draft": true,
+  "head": "70bcaa43a11fdafc4884519e1b3da45bfcaa6e9f",
+  "state": "open",
+  "agg": {
+   "source": 0,
+   "tests": 2742,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 2,
+  "dirs": [
+   [
+    "test/dunning-r3-money-truth-e2e.spec.ts",
+    2107
+   ],
+   [
+    "test/dunning-v2-e2e-lifecycle.spec.ts",
+    635
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 11
+ },
+ {
+  "k": "mobile",
+  "n": 359,
+  "add": 1276,
+  "base": "main",
+  "dele": 0,
+  "draft": true,
+  "head": "e0f3d2a75bf6e462a53e7c0ad4f18e388e72189d",
+  "state": "open",
+  "agg": {
+   "source": 857,
+   "tests": 419,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 8,
+  "dirs": [
+   [
+    "src/services/health",
+    995
+   ],
+   [
+    "contracts/wearables-ingest-v1.fixture.json",
+    262
+   ],
+   [
+    "src/api/wearablesConnectionsApi.ts",
+    19
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 4
+ },
+ {
+  "k": "mobile",
+  "n": 360,
+  "add": 1678,
+  "base": "agent115/wear-split-1-ingest-foundation",
+  "dele": 969,
+  "draft": true,
+  "head": "4a508d8bc01c2fa080fd120cbe02c7824ce06cdf",
+  "state": "open",
+  "agg": {
+   "source": 1243,
+   "tests": 1404,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 24,
+  "dirs": [
+   [
+    "src/services/health",
+    2283
+   ],
+   [
+    "src/hooks/useHealthConnectSync.test.tsx",
+    144
+   ],
+   [
+    "src/hooks/__tests__",
+    95
+   ],
+   [
+    "src/hooks/useHealthConnectSync.ts",
+    74
+   ],
+   [
+    "src/hooks/useHealthKitSync.ts",
+    51
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 361,
+  "add": 1782,
+  "base": "agent115/wear-split-2-platform-sync",
+  "dele": 11,
+  "draft": true,
+  "head": "85b2439b3fbd330c84368b0f9e56a51a5acfe77e",
+  "state": "open",
+  "agg": {
+   "source": 1031,
+   "tests": 737,
+   "migrations": 0,
+   "docs": 25,
+   "excluded": 0
+  },
+  "files": 10,
+  "dirs": [
+   [
+    "src/screens/client",
+    971
+   ],
+   [
+    "src/services/health",
+    778
+   ],
+   [
+    "src/config/featureFlags.ts",
+    14
+   ],
+   [
+    "docs/mobile",
+    13
+   ],
+   [
+    "docs/android-health-connect-build-switch.md",
+    12
+   ],
+   [
+    "config/expected-env.json",
+    5
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 362,
+  "add": 2140,
+  "base": "agent115/wear-split-3-ondevice-sync-copy",
+  "dele": 144,
+  "draft": true,
+  "head": "61cb0fac0d38ed7c4a730ad4b553ba694d1ef035",
+  "state": "open",
+  "agg": {
+   "source": 1082,
+   "tests": 1202,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 21,
+  "dirs": [
+   [
+    "src/screens/client",
+    1963
+   ],
+   [
+    "src/screens/coach",
+    82
+   ],
+   [
+    "src/hooks/useWearableConnections.ts",
+    63
+   ],
+   [
+    "src/screens/community",
+    52
+   ],
+   [
+    "src/navigation/__tests__",
+    51
+   ],
+   [
+    "src/services/__tests__",
+    32
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 363,
+  "add": 982,
+  "base": "agent115/wear-split-4-connect-ui",
+  "dele": 0,
+  "draft": true,
+  "head": "9ab951f640cca9dd8db1a7b9686ab0e1ddc41397",
+  "state": "open",
+  "agg": {
+   "source": 0,
+   "tests": 982,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 3,
+  "dirs": [
+   [
+    "src/screens/client",
+    982
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 364,
+  "add": 699,
+  "base": "agent115/wear-split-5-sheet-race-tests",
+  "dele": 2183,
+  "draft": true,
+  "head": "78ee52c0ee13d855a3d4e776e427d0260cbf962d",
+  "state": "open",
+  "agg": {
+   "source": 1281,
+   "tests": 1601,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 19,
+  "dirs": [
+   [
+    "src/services/health",
+    2496
+   ],
+   [
+    "src/hooks/useSamsungHealthSync.test.tsx",
+    143
+   ],
+   [
+    "plugins/withHealthConnectPermissionDelegate.js",
+    101
+   ],
+   [
+    "src/hooks/useSamsungHealthSync.ts",
+    63
+   ],
+   [
+    "src/config/__tests__",
+    38
+   ],
+   [
+    "app.config.js",
+    27
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 355,
+  "add": 1711,
+  "base": "main",
+  "dele": 5,
+  "draft": true,
+  "head": "902c64a64156255ce9ce54147db896ac2142a954",
+  "state": "open",
+  "agg": {
+   "source": 1078,
+   "tests": 638,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 16,
+  "dirs": [
+   [
+    "src/api/programsApi.ts",
+    403
+   ],
+   [
+    "src/utils/programErrors.ts",
+    343
+   ],
+   [
+    "src/api/__tests__",
+    259
+   ],
+   [
+    "src/utils/__tests__",
+    229
+   ],
+   [
+    "src/hooks/useAutosave.ts",
+    95
+   ],
+   [
+    "src/hooks/usePrograms.ts",
+    90
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 4
+ },
+ {
+  "k": "mobile",
+  "n": 356,
+  "add": 1496,
+  "base": "agent115/programs-split-1-data",
+  "dele": 5,
+  "draft": true,
+  "head": "40ee678adf7a70bdfa18c49cafdbd64a2dc589a5",
+  "state": "open",
+  "agg": {
+   "source": 612,
+   "tests": 889,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 5,
+  "dirs": [
+   [
+    "src/__tests__/coachWorkoutBuilderUndo.test.tsx",
+    748
+   ],
+   [
+    "src/screens/coach",
+    711
+   ],
+   [
+    "src/__tests__/coachWorkoutBuilderAutosave.test.tsx",
+    42
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 357,
+  "add": 2421,
+  "base": "agent115/programs-split-2-builder-undo",
+  "dele": 0,
+  "draft": true,
+  "head": "b364b9eaaedfb6d297f55a40e4b6a15ac4d2a381",
+  "state": "open",
+  "agg": {
+   "source": 2145,
+   "tests": 276,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 7,
+  "dirs": [
+   [
+    "src/screens/coach",
+    2421
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 358,
+  "add": 1319,
+  "base": "agent115/programs-split-3-program-editor",
+  "dele": 4,
+  "draft": true,
+  "head": "4dcf0aff2644ff54fc5fe4de2c97751d7ac7cf94",
+  "state": "open",
+  "agg": {
+   "source": 1065,
+   "tests": 258,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 7,
+  "dirs": [
+   [
+    "src/screens/coach",
+    1235
+   ],
+   [
+    "src/navigation/ProgramsStackNavigator.tsx",
+    72
+   ],
+   [
+    "src/navigation/CoachNavigator.tsx",
+    16
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 352,
+  "add": 1768,
+  "base": "main",
+  "dele": 6,
+  "draft": true,
+  "head": "58b80914feb62101aca2c7b5e8985d32912b80b0",
+  "state": "open",
+  "agg": {
+   "source": 1595,
+   "tests": 151,
+   "migrations": 0,
+   "docs": 28,
+   "excluded": 0
+  },
+  "files": 11,
+  "dirs": [
+   [
+    "src/entitlements/dunning",
+    1656
+   ],
+   [
+    "src/services/__tests__",
+    84
+   ],
+   [
+    "src/services/api.ts",
+    18
+   ],
+   [
+    "src/constants/support.ts",
+    15
+   ],
+   [
+    "src/services/README.md",
+    1
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 4
+ },
+ {
+  "k": "mobile",
+  "n": 353,
+  "add": 1686,
+  "base": "agent115/lockout-split-1-dunning-data",
+  "dele": 44,
+  "draft": true,
+  "head": "e22acc84b3ee99c94f3ec77793b38ca0c8157241",
+  "state": "open",
+  "agg": {
+   "source": 1255,
+   "tests": 465,
+   "migrations": 0,
+   "docs": 10,
+   "excluded": 0
+  },
+  "files": 20,
+  "dirs": [
+   [
+    "src/entitlements/dunning",
+    1471
+   ],
+   [
+    "src/navigation/RootNavigator.tsx",
+    68
+   ],
+   [
+    "src/screens/client",
+    67
+   ],
+   [
+    "src/__tests__/rootNavigatorUpdateCardLink.test.tsx",
+    57
+   ],
+   [
+    "src/__tests__/rootNavigatorOnboardingField.test.tsx",
+    13
+   ],
+   [
+    "src/__tests__/rootNavigatorPackagePromptGate.test.tsx",
+    13
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 354,
+  "add": 1119,
+  "base": "agent115/lockout-split-2-lockout-screens",
+  "dele": 0,
+  "draft": true,
+  "head": "37ed3d56c3ed1173f7da8791408e4887de3898bf",
+  "state": "open",
+  "agg": {
+   "source": 0,
+   "tests": 1119,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 1,
+  "dirs": [
+   [
+    "src/entitlements/dunning",
+    1119
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 345,
+  "add": 1878,
+  "base": "main",
+  "dele": 0,
+  "draft": true,
+  "head": "a4e4958820053b5aaa0f2d4a8c14f140816541b2",
+  "state": "open",
+  "agg": {
+   "source": 1768,
+   "tests": 88,
+   "migrations": 0,
+   "docs": 22,
+   "excluded": 0
+  },
+  "files": 11,
+  "dirs": [
+   [
+    "src/lib/coachSetup",
+    865
+   ],
+   [
+    "src/vendor/toqr",
+    547
+   ],
+   [
+    "src/api/coachSetupApi.ts",
+    305
+   ],
+   [
+    "src/components/coach",
+    143
+   ],
+   [
+    "src/api/packagesApi.ts",
+    18
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 4
+ },
+ {
+  "k": "mobile",
+  "n": 346,
+  "add": 1922,
+  "base": "agent115/wizard-split-1-setup-data",
+  "dele": 0,
+  "draft": true,
+  "head": "4522eb8e550119a5cb770b93b9525290b4ffb03f",
+  "state": "open",
+  "agg": {
+   "source": 1459,
+   "tests": 463,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 12,
+  "dirs": [
+   [
+    "src/components/coach",
+    1756
+   ],
+   [
+    "src/screens/coach",
+    162
+   ],
+   [
+    "src/navigation/CoachNavigator.tsx",
+    4
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 347,
+  "add": 2308,
+  "base": "agent115/wizard-split-2-setup-components",
+  "dele": 284,
+  "draft": true,
+  "head": "ea2c72d1b37b33ecf418c3ff1e198ebb2566c622",
+  "state": "open",
+  "agg": {
+   "source": 1331,
+   "tests": 1261,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 6,
+  "dirs": [
+   [
+    "src/components/coach",
+    1027
+   ],
+   [
+    "src/navigation/CoachWizardNavigator.tsx",
+    844
+   ],
+   [
+    "src/screens/coach",
+    487
+   ],
+   [
+    "src/__tests__/CoachPackageEditScreen.idempotency.test.tsx",
+    231
+   ],
+   [
+    "src/__tests__/CoachPackageContentsScreen.test.tsx",
+    3
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 348,
+  "add": 1339,
+  "base": "agent115/wizard-split-3-wizard-navigator",
+  "dele": 4,
+  "draft": true,
+  "head": "90501f847e03cf4cc1071503436acdd459643103",
+  "state": "open",
+  "agg": {
+   "source": 1343,
+   "tests": 0,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 6,
+  "dirs": [
+   [
+    "src/api/coachMoneyApi.ts",
+    886
+   ],
+   [
+    "src/lib/money",
+    383
+   ],
+   [
+    "src/lib/coachSetup",
+    69
+   ],
+   [
+    "src/components/coach",
+    5
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 349,
+  "add": 2499,
+  "base": "agent115/cmoney-split-1-money-data",
+  "dele": 88,
+  "draft": true,
+  "head": "35aa81634d377acebf55d1b497abadc4b7b8e7db",
+  "state": "open",
+  "agg": {
+   "source": 2217,
+   "tests": 370,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 18,
+  "dirs": [
+   [
+    "src/screens/coach",
+    2035
+   ],
+   [
+    "src/components/coach",
+    316
+   ],
+   [
+    "src/navigation/__tests__",
+    169
+   ],
+   [
+    "src/navigation/CoachNavigator.tsx",
+    39
+   ],
+   [
+    "src/components/command-center",
+    26
+   ],
+   [
+    "src/navigation/CoachWizardNavigator.tsx",
+    2
+   ]
+  ],
+  "fail": [
+   "Typecheck, lint, test"
+  ],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 350,
+  "add": 1722,
+  "base": "agent115/cmoney-split-2-money-screens",
+  "dele": 0,
+  "draft": true,
+  "head": "6fb21216ce40f92ae0369034bfb6268e7c026bac",
+  "state": "open",
+  "agg": {
+   "source": 0,
+   "tests": 1722,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 1,
+  "dirs": [
+   [
+    "src/screens/coach",
+    1722
+   ]
+  ],
+  "fail": [
+   "Typecheck, lint, test"
+  ],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 351,
+  "add": 66,
+  "base": "agent115/cmoney-split-3-money-tests",
+  "dele": 1785,
+  "draft": true,
+  "head": "352d768ef2a72c59458286f9274bec3ad132e0c4",
+  "state": "open",
+  "agg": {
+   "source": 1670,
+   "tests": 181,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 9,
+  "dirs": [
+   [
+    "src/screens/coach",
+    1414
+   ],
+   [
+    "src/api/coachEarningsApi.ts",
+    162
+   ],
+   [
+    "src/__tests__/paymentsConnectPackages.test.ts",
+    150
+   ],
+   [
+    "src/api/packagesApi.ts",
+    94
+   ],
+   [
+    "src/__tests__/coachSaasBlockers.test.ts",
+    16
+   ],
+   [
+    "src/components/roman",
+    15
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 342,
+  "add": 1676,
+  "base": "main",
+  "dele": 9,
+  "draft": true,
+  "head": "728214956d999e741ae65e99cee93b1ea0157385",
+  "state": "open",
+  "agg": {
+   "source": 1600,
+   "tests": 85,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 9,
+  "dirs": [
+   [
+    "src/lib/packagePayment.ts",
+    1025
+   ],
+   [
+    "src/lib/planTerms.ts",
+    385
+   ],
+   [
+    "src/config/__tests__",
+    85
+   ],
+   [
+    "src/config/wallets.ts",
+    70
+   ],
+   [
+    "app.config.js",
+    43
+   ],
+   [
+    "src/components/purchase",
+    41
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 4
+ },
+ {
+  "k": "mobile",
+  "n": 343,
+  "add": 2180,
+  "base": "agent115/sheet-split-1-payment-core",
+  "dele": 258,
+  "draft": true,
+  "head": "af984441a5328c9738bc12e3bdc09a44d3664477",
+  "state": "open",
+  "agg": {
+   "source": 1951,
+   "tests": 487,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 6,
+  "dirs": [
+   [
+    "src/hooks/usePackagePurchase.ts",
+    1120
+   ],
+   [
+    "src/components/__tests__",
+    467
+   ],
+   [
+    "src/components/PackageSelectionSheet.tsx",
+    416
+   ],
+   [
+    "src/components/purchase",
+    415
+   ],
+   [
+    "src/config/__tests__",
+    20
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ },
+ {
+  "k": "mobile",
+  "n": 344,
+  "add": 1832,
+  "base": "agent115/sheet-split-2-purchase-hook-sheet",
+  "dele": 247,
+  "draft": true,
+  "head": "f629e0f9c0ca4fdda5985dad5a775efa80f47a22",
+  "state": "open",
+  "agg": {
+   "source": 694,
+   "tests": 1385,
+   "migrations": 0,
+   "docs": 0,
+   "excluded": 0
+  },
+  "files": 8,
+  "dirs": [
+   [
+    "src/components/__tests__",
+    1143
+   ],
+   [
+    "src/screens/client",
+    435
+   ],
+   [
+    "src/components/purchase",
+    259
+   ],
+   [
+    "src/__tests__/ClientPackagesScreen.purchase.test.tsx",
+    157
+   ],
+   [
+    "src/__tests__/PackageCheckoutScreen.buyer.test.tsx",
+    85
+   ]
+  ],
+  "fail": [],
+  "pend": [],
+  "nchecks": 1
+ }
+]

@@ -1,0 +1,56 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#673 @ 5fdb5f5cf6fb09a23dd56382a47aafa4d0089c5d — VERDICT: REQUEST CHANGES
+A/B/C = 0/2/1
+
+Reviewer: AUD-SOL-T23-119, agent 119. Independent T4 review of T3 checkout/billing/webhook/module boundaries, full conflict worker, purchase view, tests and round-9 delta; no approved-code evidence reused because this lens never approved original #656 or a preceding T3 head. [Prior Sol](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/673#issuecomment-5982336690), [Original Sol](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/656#issuecomment-5972091723).
+
+### Prior findings first
+
+The exact **B-673-1 active/paid-with-missing-webhook input now passes**: actual TrialConflictService + actual StripeConnectApiService over intercepted fetch issues GET without DELETE and durably supersedes the conflict; the finding remains narrowly open for the paid-history inputs below. [Round 9](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/673#issuecomment-5982762294), [Independent replay](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228826610).
+
+**Sol C-673-2 closes:** the retained eight-row/seven-nine-second cancellation probe now obtains a fresh lease and the replica returns busy; the sole adaptation is adding a `retrieveSubscription` stub returning a still-trialing subscription, preserving the original timing and assertions. [Independent replay](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228826610).
+
+Original B-656-1/6/7 stay closed at their previously reported durable-obligation, separate billed-alert receipt and direct-worker diagnostic boundaries, and C-671-4 remains closed at the writer; current candidate controls pass. [Prior dispositions](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/673#issuecomment-5982336690), [Executed controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228826610).
+
+Builder failing-before reports 12 behavioral failures / 40 passing controls, and passing-after reports 183/183; those tests confirm the stated fixes but do not cover the two cancellation-admission boundaries below. [Before](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37221109080), [After](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37221153162).
+
+### B-673-1 — narrowed: present past_due/unpaid status is not proof that the conflict never billed
+
+**File:line:** `src/packages/trials/trial-conflict.service.ts:63–91,230–247,346–351`: `UNBILLED_STATUSES` treats `past_due`/`unpaid` as safe to cancel, although the subscription read contains no complete historical paid-invoice evidence. [Decision](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5fdb5f5cf6fb09a23dd56382a47aafa4d0089c5d/src/packages/trials/trial-conflict.service.ts#L63-L91), [Dispatch](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5fdb5f5cf6fb09a23dd56382a47aafa4d0089c5d/src/packages/trials/trial-conflict.service.ts#L230-L247).
+
+**Executed counterexample:** durable owed conflict survives an outage, first regular invoice is paid, active events are delayed/missing, and a later renewal is now past_due or unpaid; actual worker/API over intercepted fetch issues **GET then DELETE** in both modeled states and records cancellation instead of preserving the paid-plan/refund-alert recovery path. [Two behavioral failures](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228826610).
+
+Stripe defines past_due by failed/unattempted payment of the applicable invoice and unpaid by unsettled invoices governing current status—not by absence of previous paid invoices; a missing active observation therefore cannot establish never-billed history. [Stripe subscription status documentation](https://docs.stripe.com/billing/subscriptions/overview).
+
+The builder's policy note acknowledges this all-active-observations-missed case, which is within the prior finding's delayed/missing-event and outage boundary, not a new refund-policy request. [Round-9 policy note](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/673#issuecomment-5982762294).
+
+**Minimal fix rule:** preserve already-billed conversion and its billed alert; fail closed on ambiguous paid history instead of inferring never-billed from present status. Authoritative billing evidence must establish the safe destructive action; any lists used for that decision must be complete and bounded.
+
+**Verification:** retain paid-active and both paid-history status probes; cover never-billed first-payment failure as a separate control, prior positive payment evidence, unknown/incomplete evidence, terminal states and alert deduplication.
+
+### B-673-2 — new: committed webhook supersession during GET does not veto an obsolete DELETE
+
+**File:line:** `trial-conflict.service.ts:230–240,259–278`: the worker checks owed status only before claiming; after the awaited remote read it dispatches DELETE without checking current owed status/token, and fences only the final local outcome. [Read/dispatch](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5fdb5f5cf6fb09a23dd56382a47aafa4d0089c5d/src/packages/trials/trial-conflict.service.ts#L205-L240), [Too-late outcome fence](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5fdb5f5cf6fb09a23dd56382a47aafa4d0089c5d/src/packages/trials/trial-conflict.service.ts#L259-L278).
+
+**Executed actual-handler counterexample:** Stripe GET captured trialing with a future end; an early paid conversion's active webhook commits supersession and grants access before that response arrives; the older response still admits DELETE, its subscription-deleted webhook removes the newly granted access, and the worker returns **stale** while the conflict row remains **superseded**. [Actual CheckoutWebhookHandlerService + actual Stripe API over intercepted fetch](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228997327).
+
+The refined probe observes **GET, DELETE; paidAccess=false** instead of GET-only with access retained; this proves external damage despite the apparently correct final row fence, not merely a duplicate idempotent cancel. [Behavioral result](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228997327).
+
+Stripe supports ending a trial immediately with `trial_end=now`; the date-distance guard does not protect a stale response from such early conversion, and the candidate already explicitly tests early paid conversion and webhook supersession. [Stripe trial API](https://docs.stripe.com/api/subscriptions/update), [Candidate round-9 tests](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5fdb5f5cf6fb09a23dd56382a47aafa4d0089c5d/test/b-trials-3-fix-round.spec.ts#L1203-L1217).
+
+**Minimal fix rule:** after remote preparation and before destructive dispatch, revalidate that the conflict remains owed and this worker still owns its current lease; committed supersession, terminal state or ownership loss must veto the DELETE. Keep completion fencing and fresh deadline admission; do not hold a DB transaction across provider HTTP.
+
+**Verification:** retain actual-handler race and existing near-trial-end control; add supersession/terminal/ownership changes during GET with an end still far away, alongside unchanged still-trialing cancellation and paid-active preservation.
+
+### C-673-1 — integrated recurring/trials qualification retained
+
+`src/checkout/checkout.module.ts:49–83` and the trial webhook seam still require the #680 composition list, unified trial schema/reservation/release/capability/entitlement authority, never-billed-trial MRR/churn exclusion, mobile #338 pairing and configured trial-ending event; the T2 customer-card B belongs to #672 and is not double-counted here. [Existing qualification](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/673#issuecomment-5982762294), [Prior Sol gate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/673#issuecomment-5982336690).
+
+### Evidence / size / CI
+
+First test-only child `817b92b8` directly based on this head reports **4 deliberate failures / 142 passing controls** across eight suites; three failures concern T3, one concerns T2; refinement `ca2e8a56` adds only tests and reports **4 behavioral failures / 3 passing controls**, including the actual-handler paid-access race and retained prior probes. [First run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228826610), [Refinement](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228997327).
+
+Receipts `0f3f082d883baaab723e4d9e333c557cf1191d47` and `7d00c5ca091de413ba2f2939127e3eb6100d73ef` add only CI-lane files; candidate source/schema/dependencies remain unchanged, and no compilation/fixture error is counted as a defect. [First execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228826610), [Refined execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37228997327).
+
+Applicable exact-head stacked checks pass; deploy-readiness is skipped and main-only CodeQL/danger/banned-casts/SBOM remain landing gates; size **2,887** leaves **113** lines under the hard cap and the operator already posted KEEP. [Candidate CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37221526092), [SIZE ASSESSMENT](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/673#issuecomment-5982776246).
+
+Other-lens optional follow-ups remain report/ticket items. No candidate-source edits, heavy local execution, real provider/customer action, merge or production action.

@@ -1,0 +1,267 @@
+diff --git a/src/services/authActions.ts b/src/services/authActions.ts
+index fa49fc3c..5e2163c3 100644
+--- a/src/services/authActions.ts
++++ b/src/services/authActions.ts
+@@ -297,7 +297,19 @@ export async function signOut(userId?: string | null): Promise<void> {
+   stopOnDeviceHealthWork();
+   // Sol B-362-7: health grants and progress leave through their own chain.
+   const healthStateRetired = retireOnDeviceStateAtSignOut();
++  try {
++    await signOutWhileHealthRetires(userId, healthStateRetired);
++  } finally {
++    // Sol B-362-9: even when the rest of sign-out throws, it settles only after
++    // the health retirement (which never rejects) has finished.
++    await healthStateRetired;
++  }
++}
+ 
++async function signOutWhileHealthRetires(
++  userId: string | null | undefined,
++  healthStateRetired: Promise<void>,
++): Promise<void> {
+   // Clear all auth + session state and notify the root navigator.
+   // We surface failures via console.error instead of Alert because a sign-out
+   // button that appears to do nothing is worse than one that logs a warning.
+@@ -391,7 +403,6 @@ export async function signOut(userId?: string | null): Promise<void> {
+       // `logout` is emitted below. clearAllStorage() also wipes the namespace;
+       // this is the explicit, mirror-aware path.
+       clearUserCache(),
+-      healthStateRetired,
+       ...SECURE_SIGN_OUT_KEYS.map((k) => secureStorage.removeItem(k)),
+       AsyncStorage.removeMany([...ASYNC_SIGN_OUT_KEYS, ...prefixedKeys, ...perUserKeys]),
+       // R15 (PR #161): route new user-scoped MMKV keys through proper storage
+@@ -407,6 +418,10 @@ export async function signOut(userId?: string | null): Promise<void> {
+     ]);
+   } catch (err) {
+     logger.error('AuthActions', 'signOut: clear failed', err);
++  } finally {
++    // Sol B-362-9: a rejection above (clearUserCache, clearAllStorage, ...)
++    // never skips the health drain: `logout` is emitted only after it.
++    await healthStateRetired;
+   }
+   // Clear Sentry user binding so post-logout errors aren't tagged with the
+   // previous user's id. No-ops when Sentry is not configured.
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index da561006..1e54217e 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -19,15 +19,45 @@
+  *     page token, so a failed or truncated read is retried instead of being
+  *     marked complete.
+  *
+- * This module has no native imports, so it is safe to load from auth code.
++ * Every stored authorization is also bound to this phone's consent session
++ * ({@link ON_DEVICE_CONSENT_SESSION_KEY}); sign-out replaces that session
++ * before it removes anything, so a grant left on disk by a failed removal
++ * never authorizes again, in the same run or after a restart (Sol B-362-8).
++ * It is bound as well to the consent authority in SecureStore
++ * ({@link ON_DEVICE_CONSENT_AUTHORITY_KEY}), a different store that sign-out
++ * revokes first, so even an outage of every AsyncStorage write at sign-out
++ * leaves the old grant void after a restart (Sol B-369-1).
++ *
++ * Its only native import is expo-secure-store, which auth code already loads.
+  */
+ 
+ import AsyncStorage from '@react-native-async-storage/async-storage';
++import * as SecureStore from 'expo-secure-store';
+ import { OnDeviceSessionChangedError } from './sessionFence';
+ 
+ /** Every key this module writes starts with this prefix. */
+ export const ON_DEVICE_STATE_PREFIX = 'wearables_on_device:';
+ 
++/**
++ * Sol B-362-8: the consent session every stored grant is bound to. Sign-out
++ * writes a new value first, so every grant already on disk stops matching.
++ * Outside {@link ON_DEVICE_STATE_PREFIX} so the prefix sweep never removes
++ * it; an absent or unreadable value authorizes nothing (fail closed), and the
++ * next Connect starts a new session. Holds a random nonce, nothing personal.
++ */
++export const ON_DEVICE_CONSENT_SESSION_KEY = 'wearables_on_device_session';
++
++/**
++ * Sol B-369-1: the consent authority every stored grant is also bound to. It
++ * lives in SecureStore (Keychain / Keystore), not in the AsyncStorage backing
++ * store, so revoking it does not share a failure with the removals that
++ * follow. Sign-out deletes it before any AsyncStorage write (a fresh random
++ * value replaces it when the delete fails); an absent or unreadable value
++ * authorizes nothing, and the next Connect starts a new one. Holds a random
++ * nonce, nothing personal.
++ */
++export const ON_DEVICE_CONSENT_AUTHORITY_KEY = 'wearables_on_device_authority';
++
+ /** The on-device sources this lane supports. */
+ export type OnDeviceSource = 'APPLE_HEALTHKIT' | 'HEALTH_CONNECT';
+ 
+@@ -80,6 +110,34 @@ function isRecord(x: unknown): x is Record<string, unknown> {
+   return typeof x === 'object' && x !== null && !Array.isArray(x);
+ }
+ 
++function newConsentSession(): string {
++  return `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 12)}`;
++}
++
++/** The stored consent session, or null when absent (a rejection propagates). */
++async function readConsentSession(): Promise<string | null> {
++  const raw = await AsyncStorage.getItem(ON_DEVICE_CONSENT_SESSION_KEY);
++  return typeof raw === 'string' && raw.length > 0 ? raw : null;
++}
++
++/** The consent authority in SecureStore, or null when absent (a rejection propagates). */
++async function readConsentAuthority(): Promise<string | null> {
++  const raw = await SecureStore.getItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY);
++  return typeof raw === 'string' && raw.length > 0 ? raw : null;
++}
++
++/** Void every grant through the SecureStore authority. Never rejects. */
++async function revokeConsentAuthority(): Promise<void> {
++  try {
++    await SecureStore.deleteItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY);
++  } catch {
++    // A new value voids every grant as well.
++    await SecureStore.setItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY, newConsentSession()).catch(
++      () => undefined,
++    );
++  }
++}
++
+ async function readJson(key: string): Promise<unknown> {
+   try {
+     const raw = await AsyncStorage.getItem(key);
+@@ -97,6 +155,8 @@ async function readJson(key: string): Promise<unknown> {
+  */
+ let authWriteSeq = 0;
+ const authWrittenAt = new Map<string, number>();
++/** C-362-13 remainder: the sequence of the latest grant per key that reached disk. */
++const authCommittedAt = new Map<string, number>();
+ 
+ /**
+  * Sol B-362-2 / Opus C-362-11: Android AsyncStorage runs each native call on
+@@ -149,15 +209,33 @@ export async function recordLocalAuthorization(
+   const key = authKey(scope.userId, scope.source);
+   authWriteSeq += 1; // before the await: a retirement already running sees it (Sol B-362-2)
+   const seq = authWriteSeq;
+-  const prior = authWrittenAt.get(key);
+   authWrittenAt.set(key, seq);
+   try {
+-    await serialWrite(() => AsyncStorage.setItem(key, JSON.stringify(record)));
++    await serialWrite(async () => {
++      // Sol B-362-8: bind the grant to the current consent session (start one
++      // when none is stored). A sign-out that starts meanwhile is queued
++      // behind this write and replaces that session, so the grant stays void.
++      let session = await readConsentSession();
++      if (session == null) {
++        session = newConsentSession();
++        await AsyncStorage.setItem(ON_DEVICE_CONSENT_SESSION_KEY, session);
++      }
++      // Sol B-369-1: and to the SecureStore authority (same rule).
++      let authority = await readConsentAuthority();
++      if (authority == null) {
++        authority = newConsentSession();
++        await SecureStore.setItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY, authority);
++      }
++      await AsyncStorage.setItem(key, JSON.stringify({ ...record, session, authority }));
++      authCommittedAt.set(key, seq);
++    });
+   } catch (err) {
+-    // Opus C-362-13: a grant that failed or was dropped never counts as newer.
++    // Opus C-362-13 (and its remainder): a grant that failed or was dropped
++    // never counts as newer; the latest grant that reached disk does.
+     if (authWrittenAt.get(key) === seq) {
+-      if (prior === undefined) authWrittenAt.delete(key);
+-      else authWrittenAt.set(key, prior);
++      const committed = authCommittedAt.get(key);
++      if (committed === undefined) authWrittenAt.delete(key);
++      else authWrittenAt.set(key, committed);
+     }
+     throw err;
+   }
+@@ -170,6 +248,7 @@ export async function getLocalAuthorization(
+   source: OnDeviceSource,
+ ): Promise<LocalAuthorization | null> {
+   await storageTail; // every write already queued has settled
++  const epoch = signOutEpoch;
+   const key = authKey(userId, source);
+   if (signOutEpoch > 0 && (authWrittenAt.get(key) ?? 0) <= signedOutThroughSeq) return null;
+   const parsed = await readJson(key);
+@@ -180,10 +259,27 @@ export async function getLocalAuthorization(
+     parsed.source !== source ||
+     typeof parsed.connectionId !== 'string' ||
+     parsed.connectionId.length === 0 ||
+-    typeof parsed.grantedAt !== 'string'
++    typeof parsed.grantedAt !== 'string' ||
++    typeof parsed.session !== 'string' ||
++    parsed.session.length === 0 ||
++    typeof parsed.authority !== 'string' ||
++    parsed.authority.length === 0
+   ) {
+     return null;
+   }
++  // Sol B-362-8: a grant from an earlier consent session (a sign-out happened
++  // since, even in an earlier app run) or an unreadable session is no grant.
++  // Sol B-369-1: the same for the SecureStore authority.
++  let session: string | null;
++  let authority: string | null;
++  try {
++    session = await readConsentSession();
++    authority = await readConsentAuthority();
++  } catch {
++    return null;
++  }
++  if (session !== parsed.session || authority !== parsed.authority) return null;
++  if (epoch !== signOutEpoch) return null; // a sign-out started during the reads
+   return {
+     v: 1,
+     userId,
+@@ -196,12 +292,14 @@ export async function getLocalAuthorization(
+ /**
+  * Remove local authorizations and progress. With a source, only that
+  * source's records (all users) are removed (disconnect); without one,
+- * everything this module wrote (sign-out sweeps the same prefix).
++ * everything this module wrote, the consent session included.
+  */
+ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void> {
+   await storageTail;
++  if (!source) await serialStorage(revokeConsentAuthority);
+   const keys = await AsyncStorage.getAllKeys();
+   const doomed = keys.filter((k) => {
++    if (!source && k === ON_DEVICE_CONSENT_SESSION_KEY) return true; // voids every grant too
+     if (!k.startsWith(ON_DEVICE_STATE_PREFIX)) return false;
+     if (!source) return true;
+     return (
+@@ -214,16 +312,31 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+ 
+ /**
+  * Sign-out (Sol B-362-7). Synchronously drops every queued write and voids
+- * every grant written so far (even if the removal below fails), then, in the
+- * same chain, waits for the native operation in flight and removes every key
+- * under the prefix. Never rejects: sign-out always completes.
++ * every grant written so far in this run, and at once revokes the SecureStore
++ * authority (Sol B-369-1: a different store, so an AsyncStorage outage, or an
++ * app exit before the chain below runs, cannot keep a grant valid). Then, in
++ * the same chain, it waits for the native operation in flight, revokes the
++ * authority again (a grant write in flight may have started a new one),
++ * replaces the consent session before any removal (Sol B-362-8: when the new
++ * value cannot be written the stored one is removed, which also voids every
++ * grant) and removes every key under the prefix.
++ * Never rejects: sign-out always completes.
+  */
+ export function retireOnDeviceStateAtSignOut(): Promise<void> {
+   signOutEpoch += 1;
+   signedOutThroughSeq = authWriteSeq;
++  const revoked = revokeConsentAuthority();
+   return serialStorage(async () => {
+-    const keys = await AsyncStorage.getAllKeys();
+-    const doomed = keys.filter((k) => k.startsWith(ON_DEVICE_STATE_PREFIX));
++    await revoked;
++    await revokeConsentAuthority();
++    const keys = await AsyncStorage.getAllKeys().catch(() => null);
++    // Before any removal and whether or not enumeration worked.
++    try {
++      await AsyncStorage.setItem(ON_DEVICE_CONSENT_SESSION_KEY, newConsentSession());
++    } catch {
++      await AsyncStorage.removeItem(ON_DEVICE_CONSENT_SESSION_KEY).catch(() => undefined);
++    }
++    const doomed = (keys ?? []).filter((k) => k.startsWith(ON_DEVICE_STATE_PREFIX));
+     if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
+   }).catch(() => undefined);
+ }

@@ -1,0 +1,4 @@
++import { ADMIN_PURCHASE_OMIT } from './admin-purchase.select';
++      // B-SECRETS-3: never the client's cached payment credentials.
++      omit: ADMIN_PURCHASE_OMIT,
++      omit: ADMIN_PURCHASE_OMIT,

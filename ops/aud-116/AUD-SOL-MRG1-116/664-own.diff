@@ -1,0 +1,157 @@
+diff --git a/docs/dependencies/2026-09-op81-dependency-repair.md b/docs/dependencies/2026-09-op81-dependency-repair.md
+index 03ee1d1d..19c7ba47 100644
+--- a/docs/dependencies/2026-09-op81-dependency-repair.md
++++ b/docs/dependencies/2026-09-op81-dependency-repair.md
+@@ -43,13 +43,13 @@ CI step (audit findings A-F04 / B-13).
+ 
+ ## Override register
+ 
+-| Override                                                    | Intended consumer                                                                                                                                                                                                                                                                                      | Resolved on this SHA                              | Advisory evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Removal condition                                                                                                                                                                                                                                                                                                                                                                                                       |
+-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+-| `"@prisma/config@6.19.3": { "deepmerge-ts": "8.0.0" }`      | `@prisma/config` 6.19.3, which declares `deepmerge-ts` exactly `7.1.5`                                                                                                                                                                                                                                 | `deepmerge-ts@8.0.0`                              | Uncontrolled recursion / stack exhaustion on recursive object graphs in `deepmerge()` and `deepmergeInto()`, affected `< 8.0.0`, patched `8.0.0`: [GitHub Advisory GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx), [NVD CVE-2026-40345](https://nvd.nist.gov/vuln/detail/CVE-2026-40345)                                                                                                                                                                    | Remove when `@prisma/config` itself declares `deepmerge-ts >= 8.0.0` (verify with the resolved-floor test, then drop the key). This is a cross-major force (7.x → 8.x), so removal or re-keying must be accompanied by the CommonJS, ESM and real `loadConfigFromFile` probes passing on the new parent.                                                                                                                |
+-| `"@nestjs/platform-express@11.1.26": { "multer": "2.3.0" }` | `@nestjs/platform-express` 11.1.26, which declares `multer` exactly `2.1.1`                                                                                                                                                                                                                            | `multer@2.3.0`                                    | Four denial-of-service issues fixed in `2.3.0`: CVE-2026-77037 / GHSA-qfvm-cv95-jqjf (fd leak on aborted uploads), CVE-2026-77078 / GHSA-wc9g-mqfw-jrwm (uncaught `RangeError` from crafted field names), CVE-2026-82333 / GHSA-535w-7cp7-47q4 (oversized array index blocks the event loop), CVE-2026-77063 / GHSA-qvfw-j98x-7q72 (`fileSize` bypass via async `fileFilter`) — [Express security releases, 2026-08-31](https://expressjs.com/en/blog/2026-08-31-security-releases/) | Remove when `@nestjs/platform-express` declares `multer >= 2.3.0`. Multipart success, truncated-body and `LIMIT_FILE_SIZE` probes must pass under the new parent first.                                                                                                                                                                                                                                                 |
+-| `"@nestjs/swagger@11.4.4": { "js-yaml": "4.3.2" }`          | `@nestjs/swagger` 11.4.4, which declares `js-yaml` exactly `4.1.1`                                                                                                                                                                                                                                     | `js-yaml@4.3.2` (shared with the root direct pin) | `maxTotalMergeKeys` does not limit CPU use for empty merge sources; affected `>= 4.0.0, < 4.3.2` and `>= 3.0.0, < 3.15.2`, patched `4.3.2` / `3.15.2`: [GHSA-2883-xcg3-v3hh](https://github.com/nodeca/js-yaml/security/advisories/GHSA-2883-xcg3-v3hh), CVE-2026-84375                                                                                                                                                                                                              | Remove when `@nestjs/swagger` declares `js-yaml >= 4.3.2`. Swagger `load`/`dump` and duplicate-key behaviour must stay asserted.                                                                                                                                                                                                                                                                                        |
+-| `"qs": "6.16.0"` (unscoped)                                 | `express` (`^6.14.0`) and `body-parser` (`^6.15.2`) reached through `@nestjs/platform-express → express` and `@nestjs/platform-express → express → body-parser`, plus `@dropbox/sign` and `@gitbeaker/*` — all declare `^6.x`, so one patched 6.x satisfies every consumer without a cross-major force | `qs@6.16.0`                                       | Denial of service via attacker-controlled `isBuffer`; affected `>= 2.2.5, <= 6.15.3`, patched `6.16.0`: [GHSA-4mjr-xmp4-gh2g](https://github.com/ljharb/qs/security/advisories/GHSA-4mjr-xmp4-gh2g), CVE-2026-82417                                                                                                                                                                                                                                                                  | Remove when every consumer's own range floor is at or above `6.16.0`. Kept unscoped precisely because it stays inside major 6 and needs no per-parent keying.                                                                                                                                                                                                                                                           |
+-| `"diff": "9.0.0"` (unscoped, narrowed from `^9.0.0`)        | `ts-node` (`^4.0.1`) and `@flydotio/dockerfile` (`^7.0.0`), both development-only                                                                                                                                                                                                                      | `diff@9.0.0`                                      | `parsePatch` infinite loop on `\r`, `U+2028`, `U+2029` in filename headers. The advisory patches each affected line separately: `3.5.1`, `4.0.4`, `5.2.2`, and `8.0.3` for the `>= 6.0.0, < 8.0.3` range: [GHSA-73rr-hh4g-fpgx](https://github.com/advisories/GHSA-73rr-hh4g-fpgx), CVE-2026-24001. `9.0.0` is outside every affected range; the change on this SHA is the removal of the floating `^` (R114), not a new security fix.                                               | Removable once each consumer resolves a version patched **in its own line** — `4.0.4` satisfies `ts-node`'s `^4.0.1` and `5.2.2` patches the 5.x line, so a compatible older major is an acceptable outcome and not every `< 8.0.3` version is vulnerable. Configure that line's floor in the invariant test before dropping the override; bump the exact value when a newer `diff` is adopted, do not restore a range. |
++| Override                                                    | Intended consumer                                                                                                                                                                                                                                                                                      | Resolved on this SHA                              | Advisory evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Removal condition                                                                                                                                                                                                                                                                                                                                                                                                       |
++| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
++| `"@prisma/config@6.19.3": { "deepmerge-ts": "8.0.0" }`      | `@prisma/config` 6.19.3, which declares `deepmerge-ts` exactly `7.1.5`                                                                                                                                                                                                                                 | `deepmerge-ts@8.0.0`                              | Uncontrolled recursion / stack exhaustion on recursive object graphs in `deepmerge()` and `deepmergeInto()`, affected `< 8.0.0`, patched `8.0.0`: [GitHub Advisory GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx), [NVD CVE-2026-40345](https://nvd.nist.gov/vuln/detail/CVE-2026-40345)                                                                                                                                                                                                                                                                                                                                                                                            | Remove when `@prisma/config` itself declares `deepmerge-ts >= 8.0.0` (verify with the resolved-floor test, then drop the key). This is a cross-major force (7.x → 8.x), so removal or re-keying must be accompanied by the CommonJS, ESM and real `loadConfigFromFile` probes passing on the new parent.                                                                                                                |
++| `"@nestjs/platform-express@11.1.26": { "multer": "2.4.0" }` | `@nestjs/platform-express` 11.1.26, which declares `multer` exactly `2.1.1`                                                                                                                                                                                                                            | `multer@2.4.0`                                    | Four denial-of-service issues fixed in `2.3.0`: CVE-2026-77037 / GHSA-qfvm-cv95-jqjf (fd leak on aborted uploads), CVE-2026-77078 / GHSA-wc9g-mqfw-jrwm (uncaught `RangeError` from crafted field names), CVE-2026-82333 / GHSA-535w-7cp7-47q4 (oversized array index blocks the event loop), CVE-2026-77063 / GHSA-qvfw-j98x-7q72 (`fileSize` bypass via async `fileFilter`) — [Express security releases, 2026-08-31](https://expressjs.com/en/blog/2026-08-31-security-releases/). Raised to `2.4.0` on 2026-10-02 for CVE-2026-88932 / GHSA-3pph-fpjx-jg34 (moderate DoS via orphaned disk writes on aborted uploads) — [multer v2.4.0 release](https://github.com/expressjs/multer/releases/tag/v2.4.0) | Remove when `@nestjs/platform-express` declares `multer >= 2.4.0`. Multipart success, truncated-body and `LIMIT_FILE_SIZE` probes must pass under the new parent first.                                                                                                                                                                                                                                                 |
++| `"@nestjs/swagger@11.4.4": { "js-yaml": "4.3.2" }`          | `@nestjs/swagger` 11.4.4, which declares `js-yaml` exactly `4.1.1`                                                                                                                                                                                                                                     | `js-yaml@4.3.2` (shared with the root direct pin) | `maxTotalMergeKeys` does not limit CPU use for empty merge sources; affected `>= 4.0.0, < 4.3.2` and `>= 3.0.0, < 3.15.2`, patched `4.3.2` / `3.15.2`: [GHSA-2883-xcg3-v3hh](https://github.com/nodeca/js-yaml/security/advisories/GHSA-2883-xcg3-v3hh), CVE-2026-84375                                                                                                                                                                                                                                                                                                                                                                                                                                      | Remove when `@nestjs/swagger` declares `js-yaml >= 4.3.2`. Swagger `load`/`dump` and duplicate-key behaviour must stay asserted.                                                                                                                                                                                                                                                                                        |
++| `"qs": "6.16.0"` (unscoped)                                 | `express` (`^6.14.0`) and `body-parser` (`^6.15.2`) reached through `@nestjs/platform-express → express` and `@nestjs/platform-express → express → body-parser`, plus `@dropbox/sign` and `@gitbeaker/*` — all declare `^6.x`, so one patched 6.x satisfies every consumer without a cross-major force | `qs@6.16.0`                                       | Denial of service via attacker-controlled `isBuffer`; affected `>= 2.2.5, <= 6.15.3`, patched `6.16.0`: [GHSA-4mjr-xmp4-gh2g](https://github.com/ljharb/qs/security/advisories/GHSA-4mjr-xmp4-gh2g), CVE-2026-82417                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Remove when every consumer's own range floor is at or above `6.16.0`. Kept unscoped precisely because it stays inside major 6 and needs no per-parent keying.                                                                                                                                                                                                                                                           |
++| `"diff": "9.0.0"` (unscoped, narrowed from `^9.0.0`)        | `ts-node` (`^4.0.1`) and `@flydotio/dockerfile` (`^7.0.0`), both development-only                                                                                                                                                                                                                      | `diff@9.0.0`                                      | `parsePatch` infinite loop on `\r`, `U+2028`, `U+2029` in filename headers. The advisory patches each affected line separately: `3.5.1`, `4.0.4`, `5.2.2`, and `8.0.3` for the `>= 6.0.0, < 8.0.3` range: [GHSA-73rr-hh4g-fpgx](https://github.com/advisories/GHSA-73rr-hh4g-fpgx), CVE-2026-24001. `9.0.0` is outside every affected range; the change on this SHA is the removal of the floating `^` (R114), not a new security fix.                                                                                                                                                                                                                                                                       | Removable once each consumer resolves a version patched **in its own line** — `4.0.4` satisfies `ts-node`'s `^4.0.1` and `5.2.2` patches the 5.x line, so a compatible older major is an acceptable outcome and not every `< 8.0.3` version is vulnerable. Configure that line's floor in the invariant test before dropping the override; bump the exact value when a newer `diff` is adopted, do not restore a range. |
+ 
+ ## Override removed on this SHA
+ 
+diff --git a/package-lock.json b/package-lock.json
+index 8b278cdb..d7f9dbb3 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -7111,6 +7111,7 @@
+       "version": "1.1.2",
+       "resolved": "https://registry.npmjs.org/buffer-from/-/buffer-from-1.1.2.tgz",
+       "integrity": "sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ==",
++      "dev": true,
+       "license": "MIT"
+     },
+     "node_modules/busboy": {
+@@ -7579,21 +7580,6 @@
+       "dev": true,
+       "license": "MIT"
+     },
+-    "node_modules/concat-stream": {
+-      "version": "2.0.0",
+-      "resolved": "https://registry.npmjs.org/concat-stream/-/concat-stream-2.0.0.tgz",
+-      "integrity": "sha512-MWufYdFw53ccGjCA+Ol7XJYpAlW6/prSMzuPOTRnJGcGzuhLn4Scrz7qf6o8bROZ514ltazcIFJZevcfbo0x7A==",
+-      "engines": [
+-        "node >= 6.0"
+-      ],
+-      "license": "MIT",
+-      "dependencies": {
+-        "buffer-from": "^1.0.0",
+-        "inherits": "^2.0.3",
+-        "readable-stream": "^3.0.2",
+-        "typedarray": "^0.0.6"
+-      }
+-    },
+     "node_modules/confbox": {
+       "version": "0.2.4",
+       "resolved": "https://registry.npmjs.org/confbox/-/confbox-0.2.4.tgz",
+@@ -12487,14 +12473,13 @@
+       "license": "MIT"
+     },
+     "node_modules/multer": {
+-      "version": "2.3.0",
+-      "resolved": "https://registry.npmjs.org/multer/-/multer-2.3.0.tgz",
+-      "integrity": "sha512-cjNbm3sttszgZeGfJR124D+jFEfkXCVAsoPBmFn9X7UxmDSFHWqE2CoEj0vrmSpuAFnqWR1Szcm9QTsiHr60Xw==",
++      "version": "2.4.0",
++      "resolved": "https://registry.npmjs.org/multer/-/multer-2.4.0.tgz",
++      "integrity": "sha512-7dqa0ZcFfzbefdTuIkzOSMvZWC0J7FLqBOjJUZvDCXShIURWKxAyTT1wHhnE5q19c7jOJf43IYYKjBmZVZmvhg==",
+       "license": "MIT",
+       "dependencies": {
+         "append-field": "^1.0.0",
+         "busboy": "^1.6.0",
+-        "concat-stream": "^2.0.0",
+         "type-is": "^1.6.18"
+       },
+       "engines": {
+@@ -13561,6 +13546,7 @@
+       "version": "3.6.2",
+       "resolved": "https://registry.npmjs.org/readable-stream/-/readable-stream-3.6.2.tgz",
+       "integrity": "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA==",
++      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "inherits": "^2.0.3",
+@@ -13870,6 +13856,7 @@
+       "version": "5.2.1",
+       "resolved": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz",
+       "integrity": "sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==",
++      "dev": true,
+       "funding": [
+         {
+           "type": "github",
+@@ -14306,6 +14293,7 @@
+       "version": "1.3.0",
+       "resolved": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz",
+       "integrity": "sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==",
++      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "safe-buffer": "~5.2.0"
+@@ -15135,12 +15123,6 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
+-    "node_modules/typedarray": {
+-      "version": "0.0.6",
+-      "resolved": "https://registry.npmjs.org/typedarray/-/typedarray-0.0.6.tgz",
+-      "integrity": "sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==",
+-      "license": "MIT"
+-    },
+     "node_modules/typescript": {
+       "version": "5.9.3",
+       "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+@@ -15408,6 +15390,7 @@
+       "version": "1.0.2",
+       "resolved": "https://registry.npmjs.org/util-deprecate/-/util-deprecate-1.0.2.tgz",
+       "integrity": "sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==",
++      "dev": true,
+       "license": "MIT"
+     },
+     "node_modules/v8-compile-cache-lib": {
+diff --git a/package.json b/package.json
+index f314b892..6573e221 100644
+--- a/package.json
++++ b/package.json
+@@ -96,7 +96,7 @@
+       "deepmerge-ts": "8.0.0"
+     },
+     "@nestjs/platform-express@11.1.26": {
+-      "multer": "2.3.0"
++      "multer": "2.4.0"
+     },
+     "@nestjs/swagger@11.4.4": {
+       "js-yaml": "4.3.2"
+diff --git a/test/dependency-compatibility.spec.ts b/test/dependency-compatibility.spec.ts
+index 47d2a2cd..9919f189 100644
+--- a/test/dependency-compatibility.spec.ts
++++ b/test/dependency-compatibility.spec.ts
+@@ -306,7 +306,7 @@ describe('locked dependency compatibility', () => {
+       // 'that major has no patched release'.
+       const patchedByMajor = {
+         'deepmerge-ts': { 8: '8.0.0' },
+-        multer: { 2: '2.3.0' },
++        multer: { 2: '2.4.0' },
+         qs: { 6: '6.16.0' },
+         'js-yaml': { 3: '3.15.2', 4: '4.3.2' },
+         minimatch: {
+@@ -372,7 +372,7 @@ describe('locked dependency compatibility', () => {
+         swaggerYaml: resolved['@nestjs/swagger/package.json -> js-yaml'],
+         diff: resolved['ts-node -> diff']
+       }, {
+-        deepmerge: '8.0.0', multer: '2.3.0', expressQs: '6.16.0',
++        deepmerge: '8.0.0', multer: '2.4.0', expressQs: '6.16.0',
+         bodyParserQs: '6.16.0', swaggerYaml: '4.3.2', diff: '9.0.0'
+       });
+     `);

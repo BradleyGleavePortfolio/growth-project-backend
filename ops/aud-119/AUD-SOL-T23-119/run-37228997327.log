@@ -1,0 +1,122 @@
+﻿2026-10-04T19:38:38.8307638Z ##[group]Run set -euo pipefail
+2026-10-04T19:38:38.8308000Z [36;1mset -euo pipefail[0m
+2026-10-04T19:38:38.8308398Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T19:38:38.8308902Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T19:38:38.8309275Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T19:38:38.8309577Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T19:38:38.8374281Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T19:38:38.8374655Z env:
+2026-10-04T19:38:38.8374873Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T19:38:38.8375226Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T19:38:38.8375544Z ##[endgroup]
+2026-10-04T19:38:38.8473747Z specs: test/audit-sol-t23-119-673.spec.ts
+2026-10-04T19:38:42.4022771Z [33m[Nest] 3077  - [39m10/09/2026, 5:00:09 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-0 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4028961Z [33m[Nest] 3077  - [39m10/09/2026, 5:00:18 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4034331Z [33m[Nest] 3077  - [39m10/09/2026, 5:00:27 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-2 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4038854Z [33m[Nest] 3077  - [39m10/09/2026, 5:00:36 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-3 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4045298Z [33m[Nest] 3077  - [39m10/09/2026, 5:00:45 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-4 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4050990Z [33m[Nest] 3077  - [39m10/09/2026, 5:00:54 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-5 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4057121Z [33m[Nest] 3077  - [39m10/09/2026, 5:01:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-6 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4072227Z [33m[Nest] 3077  - [39m10/09/2026, 5:01:08 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-7 (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4376518Z [33m[Nest] 3077  - [39m10/04/2026, 7:38:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-late (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4412390Z [33m[Nest] 3077  - [39m10/04/2026, 7:38:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-late (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4464849Z [33m[Nest] 3077  - [39m10/04/2026, 7:38:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-control (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4487466Z [33m[Nest] 3077  - [39m10/04/2026, 7:38:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: purchase purchase-paid billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)[39m
+2026-10-04T19:38:42.4491309Z [31m[Nest] 3077  - [39m10/04/2026, 7:38:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase purchase-paid started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T19:38:42.4823333Z FAIL test/audit-sol-t23-119-673.spec.ts (173 MB heap size)
+2026-10-04T19:38:42.4852747Z   AUD-SOL-T23-118 — actual cancellation admission clocks
+2026-10-04T19:38:42.4882535Z     ✓ a late-row cancellation holds a fresh lease while its bounded Stripe operation runs (21 ms)
+2026-10-04T19:38:42.4912418Z   AUD-SOL-T23-119 — cancellation safety beyond one active snapshot
+2026-10-04T19:38:42.4913952Z     ✕ actual active webhook during intercepted Stripe GET preserves its new paid access against obsolete DELETE (10 ms)
+2026-10-04T19:38:42.4942670Z     ✕ does not infer never-billed from past_due when previous paid conversion evidence is unavailable (3 ms)
+2026-10-04T19:38:42.4972633Z     ✕ does not infer never-billed from unpaid when previous paid conversion evidence is unavailable (3 ms)
+2026-10-04T19:38:42.4992793Z     ✕ a superseding webhook committed during the GET vetoes DELETE even when its older response says trialing far from end (2 ms)
+2026-10-04T19:38:42.5002468Z     ✓ an unchanged, still-unbilled trial far from end cancels once (2 ms)
+2026-10-04T19:38:42.5032432Z   AUD-SOL-T23-118 — cancellation retry after the card was charged
+2026-10-04T19:38:42.5062641Z     ✓ a missed active webhook must not let an owed conflict cancel a paid active plan without the billed alert (4 ms)
+2026-10-04T19:38:42.5071755Z 
+2026-10-04T19:38:42.5090853Z   ● AUD-SOL-T23-119 — cancellation safety beyond one active snapshot › actual active webhook during intercepted Stripe GET preserves its new paid access against obsolete DELETE
+2026-10-04T19:38:42.5092177Z 
+2026-10-04T19:38:42.5092510Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T19:38:42.5092904Z 
+2026-10-04T19:38:42.5093062Z     - Expected  - 1
+2026-10-04T19:38:42.5093944Z     + Received  + 2
+2026-10-04T19:38:42.5094144Z 
+2026-10-04T19:38:42.5094280Z       Object {
+2026-10-04T19:38:42.5094601Z         "calls": Array [
+2026-10-04T19:38:42.5094967Z           "GET",
+2026-10-04T19:38:42.5095289Z     +     "DELETE",
+2026-10-04T19:38:42.5095604Z         ],
+2026-10-04T19:38:42.5095948Z     -   "paidAccess": true,
+2026-10-04T19:38:42.5096343Z     +   "paidAccess": false,
+2026-10-04T19:38:42.5096706Z       }
+2026-10-04T19:38:42.5096867Z 
+2026-10-04T19:38:42.5097436Z     [0m [90m 135 |[39m       expect(result)[33m.[39mtoBe([32m'stale'[39m)[33m;[39m
+2026-10-04T19:38:42.5098800Z      [90m 136 |[39m       expect(table[33m.[39mrows[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'superseded'[39m)[33m;[39m
+2026-10-04T19:38:42.5100518Z     [31m[1m>[22m[39m[90m 137 |[39m       expect({ calls[33m,[39m paidAccess[33m:[39m purchase[33m.[39mentitlement_active })[33m.[39mtoEqual({
+2026-10-04T19:38:42.5101962Z      [90m     |[39m                                                                  [31m[1m^[22m[39m
+2026-10-04T19:38:42.5103041Z      [90m 138 |[39m         calls[33m:[39m [[32m'GET'[39m][33m,[39m paidAccess[33m:[39m [36mtrue[39m[33m,[39m
+2026-10-04T19:38:42.5103854Z      [90m 139 |[39m       })[33m;[39m
+2026-10-04T19:38:42.5104422Z      [90m 140 |[39m     } [36mfinally[39m {[0m
+2026-10-04T19:38:42.5104735Z 
+2026-10-04T19:38:42.5105107Z       at Object.<anonymous> (test/audit-sol-t23-119-673.spec.ts:137:66)
+2026-10-04T19:38:42.5105535Z 
+2026-10-04T19:38:42.5106724Z   ● AUD-SOL-T23-119 — cancellation safety beyond one active snapshot › does not infer never-billed from past_due when previous paid conversion evidence is unavailable
+2026-10-04T19:38:42.5107669Z 
+2026-10-04T19:38:42.5107941Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T19:38:42.5108285Z 
+2026-10-04T19:38:42.5108532Z     Expected value: not "DELETE"
+2026-10-04T19:38:42.5108995Z     Received array:     ["GET", "DELETE"]
+2026-10-04T19:38:42.5109290Z 
+2026-10-04T19:38:42.5109572Z     [0m [90m 176 |[39m         )[33m;[39m
+2026-10-04T19:38:42.5110366Z      [90m 177 |[39m         [36mawait[39m service[33m.[39msweep([33mNOW[39m)[33m;[39m
+2026-10-04T19:38:42.5111817Z     [31m[1m>[22m[39m[90m 178 |[39m         expect(calls)[33m.[39mnot[33m.[39mtoContain([32m'DELETE'[39m)[33m;[39m
+2026-10-04T19:38:42.5112796Z      [90m     |[39m                           [31m[1m^[22m[39m
+2026-10-04T19:38:42.5113976Z      [90m 179 |[39m         expect(table[33m.[39mrows[[35m0[39m][33m.[39mstatus)[33m.[39mnot[33m.[39mtoBe([32m'cancelled'[39m)[33m;[39m
+2026-10-04T19:38:42.5115265Z      [90m 180 |[39m       } [36mfinally[39m {
+2026-10-04T19:38:42.5116642Z      [90m 181 |[39m         [36mif[39m (originalSecret [33m===[39m undefined) [36mdelete[39m process[33m.[39menv[33m.[39m[33mSTRIPE_SECRET_KEY[39m[33m;[39m[0m
+2026-10-04T19:38:42.5117577Z 
+2026-10-04T19:38:42.5117830Z       at test/audit-sol-t23-119-673.spec.ts:178:27
+2026-10-04T19:38:42.5118167Z 
+2026-10-04T19:38:42.5119263Z   ● AUD-SOL-T23-119 — cancellation safety beyond one active snapshot › does not infer never-billed from unpaid when previous paid conversion evidence is unavailable
+2026-10-04T19:38:42.5120250Z 
+2026-10-04T19:38:42.5120529Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T19:38:42.5120879Z 
+2026-10-04T19:38:42.5121077Z     Expected value: not "DELETE"
+2026-10-04T19:38:42.5121857Z     Received array:     ["GET", "DELETE"]
+2026-10-04T19:38:42.5122176Z 
+2026-10-04T19:38:42.5122506Z     [0m [90m 176 |[39m         )[33m;[39m
+2026-10-04T19:38:42.5125210Z      [90m 177 |[39m         [36mawait[39m service[33m.[39msweep([33mNOW[39m)[33m;[39m
+2026-10-04T19:38:42.5126515Z     [31m[1m>[22m[39m[90m 178 |[39m         expect(calls)[33m.[39mnot[33m.[39mtoContain([32m'DELETE'[39m)[33m;[39m
+2026-10-04T19:38:42.5127490Z      [90m     |[39m                           [31m[1m^[22m[39m
+2026-10-04T19:38:42.5128940Z      [90m 179 |[39m         expect(table[33m.[39mrows[[35m0[39m][33m.[39mstatus)[33m.[39mnot[33m.[39mtoBe([32m'cancelled'[39m)[33m;[39m
+2026-10-04T19:38:42.5130063Z      [90m 180 |[39m       } [36mfinally[39m {
+2026-10-04T19:38:42.5131387Z      [90m 181 |[39m         [36mif[39m (originalSecret [33m===[39m undefined) [36mdelete[39m process[33m.[39menv[33m.[39m[33mSTRIPE_SECRET_KEY[39m[33m;[39m[0m
+2026-10-04T19:38:42.5132449Z 
+2026-10-04T19:38:42.5132706Z       at test/audit-sol-t23-119-673.spec.ts:178:27
+2026-10-04T19:38:42.5133044Z 
+2026-10-04T19:38:42.5134335Z   ● AUD-SOL-T23-119 — cancellation safety beyond one active snapshot › a superseding webhook committed during the GET vetoes DELETE even when its older response says trialing far from end
+2026-10-04T19:38:42.5135391Z 
+2026-10-04T19:38:42.5135628Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-04T19:38:42.5135946Z 
+2026-10-04T19:38:42.5136161Z     Expected number of calls: 0
+2026-10-04T19:38:42.5136603Z     Received number of calls: 1
+2026-10-04T19:38:42.5136857Z 
+2026-10-04T19:38:42.5136997Z     1: "sub-race"
+2026-10-04T19:38:42.5137186Z 
+2026-10-04T19:38:42.5137701Z     [0m [90m 205 |[39m     expect(result)[33m.[39mtoBe([32m'stale'[39m)[33m;[39m
+2026-10-04T19:38:42.5138956Z      [90m 206 |[39m     expect(table[33m.[39mrows[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'superseded'[39m)[33m;[39m
+2026-10-04T19:38:42.5140390Z     [31m[1m>[22m[39m[90m 207 |[39m     expect(cancelSubscription)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T19:38:42.5141447Z      [90m     |[39m                                    [31m[1m^[22m[39m
+2026-10-04T19:38:42.5142253Z      [90m 208 |[39m   })[33m;[39m
+2026-10-04T19:38:42.5142715Z      [90m 209 |[39m
+2026-10-04T19:38:42.5143935Z      [90m 210 |[39m   it([32m'an unchanged, still-unbilled trial far from end cancels once'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T19:38:42.5144735Z 
+2026-10-04T19:38:42.5145149Z       at Object.<anonymous> (test/audit-sol-t23-119-673.spec.ts:207:36)
+2026-10-04T19:38:42.5145609Z 
+2026-10-04T19:38:42.5145871Z Test Suites: 1 failed, 1 total
+2026-10-04T19:38:42.5146430Z Tests:       4 failed, 3 passed, 7 total
+2026-10-04T19:38:42.5146942Z Snapshots:   0 total
+2026-10-04T19:38:42.5147318Z Time:        2.806 s
+2026-10-04T19:38:42.5147716Z Ran all test suites matching test/audit-sol-t23-119-673.spec.ts.
+2026-10-04T19:38:42.5622321Z ##[error]Process completed with exit code 1.

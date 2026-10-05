@@ -1,0 +1,107 @@
+=== 5977096406 BradleyGleavePortfolio 2026-10-04T05:54:40Z
+agent 117, job B-PRIV-FU-117 (builder Claude Opus 5.5): READY at `2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc`
+
+| Finding | Change | Commit | Test |
+|---|---|---|---|
+| AUD-OPUS-PRIV3-117 operator item 1: `APPLE_FALLBACK` gave Sign-In & Security as an iPhone step and said "Apple ID" | Backend sentence (#611 / #700): iOS 18 or later iPhone steps, account.apple.com steps for earlier iOS and other devices, "Apple Account" | `5d8ec12c` | `APPLE_FALLBACK: Apple’s current names and steps` (4 tests) |
+| Revoked view said "Apple ID" | "...no longer has access to your Apple Account." | `5d8ec12c` | `the revoked view names the Apple Account`; `outcome %s: the scheduled view says Apple Account, never Apple ID` (3 outcomes) |
+| Form note used "we" and "Apple ID", and said the app asks Apple to remove access | `APPLE_FORM_NOTE`: true for every `apple_revocation` outcome, no first person | `5d8ec12c` | `the form says Apple Account, and its Apple note has no first person` |
+| CodeQL alert (bare host name in `includes()`) on the new test | Match the phrase | `2216ad1d` | same test, CodeQL check green |
+
+- **Failing-before:** CI-lane run [37180664588](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37180664588) at the test-only commit `018ad155` (lane head `cb4a34ab`): 9 failed, 38 passed. The 9 failures are exactly the new tests above.
+- **At this head:** Typecheck, lint, test [111373456068](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37181021867/job/111373456068) (452 suites, 6319 tests passed, `DeleteAccountScreen.test.tsx` PASS); Analyze (javascript-typescript) and Analyze (actions) green; CodeQL green.
+- **Size:** 3 files, 75 test lines, 34 non-test lines. No logic change: when each card shows is unchanged.
+- **Out of scope:** "Apple ID" in sign-in copy elsewhere (`CreateAccountScreen.tsx:1015`, `utils/authFailure.ts:183`, `lib/signupRoleNotice.ts:53`); the status-load error "We could not check ..." on this screen.
+
+READY FOR AUDIT
+
+=== 5982340884 BradleyGleavePortfolio 2026-10-04T16:59:48Z
+AUDIT GPT-6.1 Sol — growth-project-mobile#368 @ 2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc — VERDICT: REQUEST CHANGES
+A/B/C = 0/1/0
+
+Independent T4 audit: AUD-SOL-FU2-118, agent 118; complete three-file diff reviewed, 112 changed lines, with no candidate implementation edit. [Reviewed comparison](https://github.com/BradleyGleavePortfolio/growth-project-mobile/compare/7fdb629a798d44e76475dbece1b14e68f360ab91...2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc)
+
+## B-368-1 — new Apple outcome promise is not true when provider discovery is unavailable
+
+**File:line:** `src/screens/settings/DeleteAccountScreen.tsx:99-102,578-582` (new unconditional form note), with the existing scheduled-view gate at `:433-434,461-477`; the note promises a result and manual-removal guidance after confirmation, but the gate can hide both. [Reviewed screen](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc/src%2Fscreens%2Fsettings%2FDeleteAccountScreen.tsx)
+
+**Concrete supported counterexample:** `getSignInProviders()` returns `null`, which intentionally offers all available re-auth methods; the person confirms with Apple and gets an identity token but a nullable authorization code. Deletion succeeds with `apple_revocation="not_requested"` (the backend's defined no-code outcome), yet `isAppleAccount=false` and the `not_requested` exclusion make both `apple-revoked` and `apple-fallback` absent, contradicting the newly stated guarantee. The optional missing-outcome response has the same result. [Executed rendered-screen probe 37218572318](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218572318), [backend no-code outcome](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/66569a616fed254e2d5022bbc277013e4652788b/src/account-deletion/apple-token-revocation.service.ts)
+
+**Proof:** two new assertions reach the scheduled deletion view and fail because `apple-fallback` is `null`; the original 47 screen tests all pass alongside them. This is a finding on the new promise, not an unrelated request to redesign deletion or provider authentication. [Corrected probe run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218572318)
+
+**Minimal fix rule:** preserve the truthful promise by showing conditional manual-removal guidance whenever Apple was used to confirm, or the provider is unknown and revocation is not proven; do not depend exclusively on the earlier provider lookup and do not claim `not_requested` proves success or failure. Keep the iOS-version-specific steps, and test unknown-provider `not_requested`/missing-outcome paths plus known non-Apple and `revoked` controls. [Affected view and promise](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc/src%2Fscreens%2Fsettings%2FDeleteAccountScreen.tsx)
+
+## Prior follow-up and Apple source truth
+
+The prior Sol #611 review's separate mobile iPhone/web-menu follow-up is implemented: the iOS 18+ Settings route, web route for earlier versions/other devices and Apple Account name match both backend #700's shared policy/help constant and Apple's official sources. No previous #368 Sol approval is reused; this is a full new-copy and call-site audit. [Prior Sol follow-up](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5976633102), [backend shared wording](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/66569a616fed254e2d5022bbc277013e4652788b/src%2Fpublic-pages%2Ftrust-pages.html.ts), [Apple Support 102571](https://support.apple.com/en-us/102571), [iOS 18 guide](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/18.0/ios/18.0), [iOS 17 guide](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/17.0/ios/17.0)
+
+The revised revoked card remains gated on the server's explicit `revoked` outcome, and the new fallback/form strings remove old Apple terminology and first person; the remaining defect is the unsupported form guarantee in the recovery case above. [Complete candidate diff](https://github.com/BradleyGleavePortfolio/growth-project-mobile/compare/7fdb629a798d44e76475dbece1b14e68f360ab91...2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc)
+
+## CI and evidence limits
+
+Required contexts are **3/3 green** at the exact candidate SHA; full CI reports **452 passed suites / 6,319 passed tests**, including the changed screen suite. [Exact-head build](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37181021867/job/111373456068)
+
+The independent, probe-only lane is deliberately red: **2 failed / 47 passed**; lane SHA `4dd587fc10658b783dab3d88e3a6e14e11fe156c` contains only lane files over probe commits `8ef87519c42b8bbbf1ec3202e1ab6e49cdaa2df6` and `5b9a085a95d1e2f8bef6f4b1e51e0973d28f14a1`, over the exact candidate. [Executed probe](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218572318), [lane commit](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/4dd587fc10658b783dab3d88e3a6e14e11fe156c)
+
+The earlier independent run `37218370876` is **not behavioral evidence**: the new harness omitted `await render()` for this testing-library version; that was corrected before the above run. The builder's genuine failing-before evidence was separately verified as 9 failed / 38 passed; no installed-device or production Apple-setting verification is claimed. [Discarded harness run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218370876), [verified builder before-run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37180664588)
+
+=== 5982447325 BradleyGleavePortfolio 2026-10-04T17:12:51Z
+AUDIT Claude Opus 5.5 — growth-project-mobile#368 @ 2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc — VERDICT: REQUEST CHANGES
+A/B/C = 0/1/3
+
+Lens: agent 118, job AUD-OPUS-FU2-118.
+- Audited at **T4** (account-deletion copy), not the T3 in the body.
+- I read all 3 files line by line. Base = main `7fdb629a`; size 112 lines.
+- Required checks are green at this head: Typecheck, lint, test (job 111373456068), Analyze (javascript-typescript) and Analyze (actions). The merge state is CLEAN.
+
+## Prior finding of this lens: closed
+- AUD-OPUS-PRIV3-117, operator item 1: `APPLE_FALLBACK` gave Sign-In & Security as an iPhone step and said "Apple ID".
+- It is closed at `DeleteAccountScreen.tsx:94-97`.
+
+## Copy truth
+I checked Apple's pages today: Apple Support 102571 (published 2026-09-14) and the iPhone User Guide 18.0, current, 17.0 and 16.0.
+- **`APPLE_FALLBACK` (`:94-97`):**
+  - iOS 18 and later: Settings > your name > Sign in with Apple > app > Delete > confirm. That is Apple's path.
+  - Earlier iOS (the floor is 16.4) and other devices: account.apple.com > Sign-In & Security > Sign in with Apple. That is Apple's web path, and it does not depend on the iOS version.
+  - It gives the same steps, in the same order, as backend #700 `SIGN_IN_WITH_APPLE_DELETION_TEXT` (`trust-pages.html.ts:95-98`). Only "the app" vs "this app" differs.
+- **Revoked card (`:463-465`):** shown only when `apple_revocation === 'revoked'`. "Apple Account" is Apple's current name.
+- **`APPLE_FORM_NOTE` (`:101-102`):** no first person, and no revocation claim before the server reports one. The old "we also ask Apple" is gone.
+- **No logic change:** `showAppleFallback` (`:433-434`) and the revoked condition are identical to main (`:419-420` there).
+- **Failing-before run 37180664588: genuine.** Lane head `cb4a34ab` = `018ad155` + lane files, and `018ad155` = main + the test file only. The 9 failures are exactly the 9 new tests.
+
+## B-368-1: the new form note promises something the status view does not always show
+- **The promise:** `APPLE_FORM_NOTE` (`:101-102`, new in this diff, rendered unconditionally at `:576-582`) says: "If you signed in with Apple, after you confirm you will see whether Apple removed this app's access to your Apple Account, and how to remove it yourself if not." The PR body says this is "True for every `apple_revocation` outcome".
+- **Why it can fail:**
+  - The status view shows an Apple card only when `appleOutcome === 'revoked'` (`:461`) or `showAppleFallback` (`:433-434`): `appleOutcome !== 'revoked' && (isAppleAccount || (appleOutcome !== null && appleOutcome !== 'not_requested'))`.
+  - `isAppleAccount` (`:375`) is false whenever `getSignInProviders()` returns null. That is a designed state (`utils/authProviders.ts:35-58`): the token has no `app_metadata` providers, and the form then offers every method.
+  - If the person then confirms with Apple and (a) the authorization code is null, the server answers `not_requested` (`apple-token-revocation.service.ts:114`); or (b) the response carries no `apple_revocation`. Either way, neither card renders.
+- **Grade:** I found this path myself (my draft rated it C before I read the Sol verdict). I raise it to B because the job requires every public sentence to be true of the code, and this sentence is new in this diff.
+- **Probe:** run https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37219296106 (branch `audit/AUD-OPUS-FU2-118/368-applenote`; head `389950f2` = this head + one probe block appended to `DeleteAccountScreen.test.tsx` + lane files).
+  - 2 failed and 48 passed.
+  - Both promise tests fail with "Expected: true, Received: false" (no `apple-revoked` and no `apple-fallback`).
+  - The control (Apple confirm, code sent, `not_configured`, shows the fallback) and all 47 existing tests pass.
+- **Fix rule:**
+  - Track that the person confirmed with Apple (method `apple`) and show `APPLE_FALLBACK` whenever Apple was used, or the provider is unknown, and the outcome is not `revoked`. Do not rely only on the provider lookup.
+  - Alternatively, word the note so it is true without that guarantee.
+  - Add tests for providers-null + Apple confirm with `not_requested`, with a missing outcome, and with password; plus known non-Apple and `revoked` controls.
+- **Verify:** the probe block passes.
+
+## C (optional)
+- **C-368-1: in non-revoked outcomes, the "not removed" part of the note is shown only by omission.**
+  - `APPLE_FALLBACK` starts "You can also remove...".
+  - Fix rule: start the fallback card with "Apple has not confirmed that this app's access was removed.", then give the steps.
+- **C-368-2 (same file, outside this diff): first person left on this screen.**
+  - `:80` (`KEPT_RECORDS`): "Our own copies keep only ...".
+  - `:138`: "We could not check your account deletion status ...".
+  - Fix rule: "The app's own copies ..." and "The account deletion status could not be checked ...". Keep `KEPT_RECORDS` worded the same as the backend manifest and policy.
+- **C-368-3 (outside this diff; the builder disclosed it): "Apple ID" and first person in sign-in copy.**
+  - `src/lib/signupRoleNotice.ts:53` and `src/screens/auth/CreateAccountScreen.tsx:1015`.
+  - Fix rule: say "Apple Account", with no "we".
+
+## Merge note
+- Land #368 together with backend #700 so the app and /privacy give the same steps.
+- Neither depends on the other at runtime. Live /privacy still has the #611 sentence, without the iOS 18 qualifier.
+
+## Evidence reuse (G09)
+None. This lens had not approved #368 before, so I audited every line.
+

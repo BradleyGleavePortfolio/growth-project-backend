@@ -1,0 +1,12 @@
+src/hooks/useWearableConnections.sol119.test.tsx
+src/hooks/useWearableConnections.sol118.test.tsx
+src/hooks/useWearableConnections.disconnect.test.tsx
+src/screens/client/wearables/__tests__/ConnectionsScreen.sol118.test.tsx
+src/screens/client/wearables/__tests__/audit364.samsungRetirement.test.tsx
+src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.test.tsx
+src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
+src/screens/client/wearables/__tests__/WearablesShell.test.tsx
+src/services/health/__tests__/healthPlatformConfig.test.ts
+src/services/health/__tests__/ingestContract.test.ts
+src/config/__tests__/androidHealthConnectConfig.test.js
+scripts/__tests__/easUpdateGuard.test.js

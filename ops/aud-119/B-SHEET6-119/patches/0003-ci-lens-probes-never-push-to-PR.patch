@@ -1,0 +1,3891 @@
+From ebe2fb5e2bbc9f8a30a7675d60d85c0605e9f10a Mon Sep 17 00:00:00 2001
+From: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date: Sun, 4 Oct 2026 22:01:08 +0000
+Subject: [PATCH 3/4] ci: lens probes (never push to PR)
+
+---
+ .../__tests__/audOpusP12117.probe343.test.tsx | 147 ++++++
+ .../audOpusS123119.plans344.test.tsx          | 192 +++++++
+ .../audOpusS123119.probe343.test.tsx          | 238 +++++++++
+ .../__tests__/audOpusS3D119.delta344.test.tsx | 221 ++++++++
+ .../__tests__/audOpusSH3118.replay.test.tsx   | 196 +++++++
+ .../__tests__/audOpusSh118.probe343.test.tsx  | 164 ++++++
+ .../audSolP12117.paymentTheme.test.tsx        |  54 ++
+ .../audSolS123119.openPlanAction.test.tsx     | 498 ++++++++++++++++++
+ .../audSolS123119.planAuthority.test.tsx      |  93 ++++
+ .../audSolS123119.planRecovery.test.tsx       | 189 +++++++
+ .../audSolS3D119.deltaProbes.test.tsx         | 115 ++++
+ .../audSolSh118.openPlanAction.test.tsx       | 494 +++++++++++++++++
+ .../audSolP12117.purchaseBoundary.test.tsx    | 174 ++++++
+ .../audSolS123119.nativeRejection.test.tsx    | 135 +++++
+ .../audSolSh118.endedIsNotUnpaid.test.tsx     |  71 +++
+ .../audSolSh118.remainingBoundary.test.tsx    | 276 ++++++++++
+ .../__tests__/audOpusP12117.probe342.test.ts  |  87 +++
+ .../__tests__/audOpusS123119.probe342.test.ts | 110 ++++
+ .../__tests__/audOpusSh118.probe342.test.ts   | 128 +++++
+ .../audSolP12117.paymentContract.test.ts      |  65 +++
+ .../__tests__/audSolSh118.minorUnits.test.ts  |  28 +
+ .../audSolSh118.transportUnknown.test.ts      |  29 +
+ 22 files changed, 3704 insertions(+)
+ create mode 100644 src/components/__tests__/audOpusP12117.probe343.test.tsx
+ create mode 100644 src/components/__tests__/audOpusS123119.plans344.test.tsx
+ create mode 100644 src/components/__tests__/audOpusS123119.probe343.test.tsx
+ create mode 100644 src/components/__tests__/audOpusS3D119.delta344.test.tsx
+ create mode 100644 src/components/__tests__/audOpusSH3118.replay.test.tsx
+ create mode 100644 src/components/__tests__/audOpusSh118.probe343.test.tsx
+ create mode 100644 src/components/__tests__/audSolP12117.paymentTheme.test.tsx
+ create mode 100644 src/components/__tests__/audSolS123119.openPlanAction.test.tsx
+ create mode 100644 src/components/__tests__/audSolS123119.planAuthority.test.tsx
+ create mode 100644 src/components/__tests__/audSolS123119.planRecovery.test.tsx
+ create mode 100644 src/components/__tests__/audSolS3D119.deltaProbes.test.tsx
+ create mode 100644 src/components/__tests__/audSolSh118.openPlanAction.test.tsx
+ create mode 100644 src/hooks/__tests__/audSolP12117.purchaseBoundary.test.tsx
+ create mode 100644 src/hooks/__tests__/audSolS123119.nativeRejection.test.tsx
+ create mode 100644 src/hooks/__tests__/audSolSh118.endedIsNotUnpaid.test.tsx
+ create mode 100644 src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx
+ create mode 100644 src/lib/__tests__/audOpusP12117.probe342.test.ts
+ create mode 100644 src/lib/__tests__/audOpusS123119.probe342.test.ts
+ create mode 100644 src/lib/__tests__/audOpusSh118.probe342.test.ts
+ create mode 100644 src/lib/__tests__/audSolP12117.paymentContract.test.ts
+ create mode 100644 src/lib/__tests__/audSolSh118.minorUnits.test.ts
+ create mode 100644 src/lib/__tests__/audSolSh118.transportUnknown.test.ts
+
+diff --git a/src/components/__tests__/audOpusP12117.probe343.test.tsx b/src/components/__tests__/audOpusP12117.probe343.test.tsx
+new file mode 100644
+index 0000000..ada2889
+--- /dev/null
++++ b/src/components/__tests__/audOpusP12117.probe343.test.tsx
+@@ -0,0 +1,147 @@
++/**
++ * AUD-OPUS-P12-117 probe (audit only, never merge) — mobile #343 @ af984441.
++ * Real sheet, hook and copy; only network, Stripe native module, storage,
++ * theme and Sentry are mocked (same harness as PackageSelectionSheet.recur3).
++ *
++ * B-343-1: a one-time card step that ended WITHOUT a clear answer shows
++ * "Payment received. Setting up your plan." while the purchase is being read,
++ * before the app knows whether anything was charged.
++ * B-342-1 (through this hook): PAYMENT_RETRY from subscription-intent (backend
++ * #679 inProgress(true): result not confirmed, incl. paid after close) is told
++ * as "nothing was charged".
++ */
++import React from 'react';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++const PKG_MONTHLY = '99999999-8888-4777-8666-555555555555';
++const PKG_ONCE = 'dddddddd-eeee-4fff-8000-111111111111';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({ tokens: realTokens, semanticColors: realTokens.lightTokens, colorScheme: 'light' }),
++  };
++});
++jest.mock('../../storage/mmkv', () => ({
++  prefsStorage: { getStringAsync: jest.fn(async () => null), set: jest.fn(async () => undefined) },
++}));
++jest.mock('../../hooks/useCurrentUser', () => ({ useCurrentUser: () => ({ id: 'client-1', role: 'student' }) }));
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++const mockGetEntitlement = jest.fn();
++const mockGetPurchases = jest.fn();
++jest.mock('../../api/clientPaymentsApi', () => ({
++  clientPaymentsApi: {
++    getEntitlement: () => mockGetEntitlement(),
++    getPurchases: () => mockGetPurchases(),
++  },
++}));
++const mockCapture = jest.fn();
++jest.mock('../../services/sentry', () => ({ captureError: (...a: unknown[]) => mockCapture(...a) }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++const mockInitStripe = jest.fn();
++const mockInitPaymentSheet = jest.fn();
++const mockPresent = jest.fn();
++jest.mock('@stripe/stripe-react-native', () => ({
++  initStripe: (...a: unknown[]) => mockInitStripe(...a),
++  initPaymentSheet: (...a: unknown[]) => mockInitPaymentSheet(...a),
++  presentPaymentSheet: (...a: unknown[]) => mockPresent(...a),
++}));
++
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const PackageSelectionSheet: typeof import('../PackageSelectionSheet').default =
++  require('../PackageSelectionSheet').default;
++
++const PACKAGES = [
++  { id: PKG_MONTHLY, name: 'Monthly coaching', amount_cents: 9900, currency: 'usd', billing_type: 'recurring', interval: 'month', description: null },
++  { id: PKG_ONCE, name: 'Strength 12 weeks', amount_cents: 14900, currency: 'usd', billing_type: 'one_time', interval: null, description: null },
++];
++
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: {} },
++    config: { headers: {} },
++  });
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_build';
++  mockGet.mockImplementation(async (url: string) => {
++    if (url === '/v1/clients/me/coach/packages') return { data: { packages: PACKAGES } };
++    throw httpError(404, { error: 'Not Found' });
++  });
++  mockPost.mockImplementation(async (url: string) => {
++    if (url === '/v1/checkout/payment-intent') {
++      return { data: { client_secret: 'pi_once_secret_q', ephemeral_key: 'ek_once', customer_id: 'cus_once', publishable_key: 'pk_test_backend' } };
++    }
++    throw httpError(404, { error: 'Not Found' });
++  });
++  mockInitStripe.mockResolvedValue(undefined);
++  mockInitPaymentSheet.mockResolvedValue({});
++  mockPresent.mockResolvedValue({});
++  mockGetEntitlement.mockResolvedValue({ ok: true, data: { active: false } });
++  mockGetPurchases.mockResolvedValue({ ok: true, data: [] });
++});
++
++async function mountAndSelect(pkgId: string) {
++  const r = await render(
++    <PackageSelectionSheet
++      visible
++      onDismiss={jest.fn()}
++      onPaymentSuccess={jest.fn()}
++      onOpenPlan={jest.fn()}
++      planPollDelaysMs={[0, 0, 0]}
++      entitlementPollDelaysMs={[0, 0]}
++      recheckDelaysMs={[0, 0]}
++    />,
++  );
++  await waitFor(() => expect(r.getByTestId(`package-card-${pkgId}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`package-card-${pkgId}`));
++  return r;
++}
++
++describe('B-343-1 an unknown one-time outcome is never shown as a received payment', () => {
++  it('the native call threw; while the purchase is read the sheet must not say "Payment received"', async () => {
++    let release: (v: unknown) => void = () => undefined;
++    mockPresent.mockRejectedValueOnce(new Error('bridge lost the response'));
++    mockGetPurchases.mockImplementation(
++      () =>
++        new Promise((res) => {
++          release = res;
++        }),
++    );
++    const r = await mountAndSelect(PKG_ONCE);
++    await fireEvent.press(r.getByTestId('select-plan-btn'));
++    await waitFor(() => expect(mockGetPurchases).toHaveBeenCalled());
++    const progress = r.queryByTestId('payment-confirming');
++    const text = progress ? String(progress.props.children) : '';
++    release({ ok: true, data: [] });
++    expect(text).not.toMatch(/payment received/i);
++  });
++});
++
++describe('B-342-1 through the hook: PAYMENT_RETRY on subscription-intent', () => {
++  it('a result the backend has not confirmed is never told as "nothing was charged"', async () => {
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/subscription-intent') {
++        throw httpError(503, {
++          code: 'PAYMENT_RETRY',
++          error: 'PAYMENT_RETRY',
++          message:
++            'The last attempt to start this plan did not finish, and its result is not confirmed yet. Open Your plan to check whether it started before you try again.',
++        });
++      }
++      throw httpError(404, { error: 'Not Found' });
++    });
++    const r = await mountAndSelect(PKG_MONTHLY);
++    await fireEvent.press(r.getByTestId('select-plan-btn'));
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    expect(String(r.getByTestId('payment-error').props.children)).not.toMatch(/nothing was charged/i);
++  });
++});
+diff --git a/src/components/__tests__/audOpusS123119.plans344.test.tsx b/src/components/__tests__/audOpusS123119.plans344.test.tsx
+new file mode 100644
+index 0000000..4b806f4
+--- /dev/null
++++ b/src/components/__tests__/audOpusS123119.plans344.test.tsx
+@@ -0,0 +1,192 @@
++/**
++ * AUD-OPUS-S123-119 probe (Claude Opus 5.5 lens, agent 119) — mobile #344 @ 7e17d142.
++ * Probe only; never merged. Real YourPlansPanel, planActions and packagePayment;
++ * only the network, theme and Sentry are mocked.
++ *   P1 FINDING  a free trial ended with End my plan: the outcome line must not
++ *               say the client paid for the period (nothing was ever charged).
++ *   P2 EVIDENCE a dispute-paused plan as backend D2c #705 + R2 #679 planView
++ *               emit it (Stripe status active, entitlement false -> state
++ *               'confirming', no actions): what the card says.
++ *   P3 copy rules over every Your plans / plan-action / list string.
++ *   P4 control  2A outcome in a zero-decimal currency: whole yen, never /100.
++ *   P5 control  a failed Keep my plan retries with the same key; success
++ *               shows the canonical view even when the refresh read fails.
++ *   P6 EVIDENCE scheduled outcome wording on a paid active plan.
++ */
++import React from 'react';
++import { Alert } from 'react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({ tokens: realTokens, semanticColors: realTokens.lightTokens, colorScheme: 'light' }),
++  };
++});
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const panelModule = require('../purchase/YourPlansPanel') as typeof import('../purchase/YourPlansPanel');
++const YourPlansPanel = panelModule.default;
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const actions = require('../../lib/planActions') as typeof import('../../lib/planActions');
++
++const PURCHASE = '0f0e0d0c-0b0a-4908-8706-050403020100';
++const PERIOD_END = '2026-11-02T12:00:00.000Z';
++function planView(state: string, overrides: Record<string, unknown> = {}) {
++  return {
++    purchase_id: PURCHASE, package_id: 'pkg-monthly', package_name: 'Monthly coaching', coach_user_id: 'coach-1',
++    state, status: state, entitlement_active: state !== 'ended' && state !== 'confirming',
++    amount_cents: 9900, currency: 'usd', interval: 'month', interval_count: 1,
++    current_period_end: PERIOD_END, next_charge_at: state === 'ended' ? null : PERIOD_END,
++    cancel_at_period_end: false, access_ends_at: null, trial_days: 0,
++    trial_ends_at: state === 'trialing' ? PERIOD_END : null,
++    can_cancel: ['active', 'trialing', 'past_due'].includes(state), can_resume: false, can_resubscribe: state === 'ended',
++    last_payment_error: null, checkout_state: null,
++    ...overrides,
++  };
++}
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: { 'x-request-id': 'req-7f3a9c21-aaaa' } },
++    config: { headers: { 'X-Request-Id': 'req-7f3a9c21-aaaa' } },
++  });
++}
++let lists: unknown[][] = [];
++function confirmDestructive() {
++  return jest.spyOn(Alert, 'alert').mockImplementation((_t, _b, buttons) => {
++    (buttons ?? []).find((b) => b.style === 'destructive')?.onPress?.();
++  });
++}
++const lineOf = (r: Awaited<ReturnType<typeof render>>) =>
++  String(r.getByTestId(`your-plan-line-${PURCHASE}`).props.children);
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  lists = [[planView('active')]];
++  mockGet.mockImplementation(async (url: string) => {
++    if (url === '/v1/checkout/subscriptions') {
++      const next = lists.length > 1 ? lists.shift() : lists[0];
++      if (next instanceof Error) throw next;
++      return { data: { plans: next } };
++    }
++    throw httpError(404, { error: 'Not Found' });
++  });
++});
++
++describe('P1 FINDING ending a free trial', () => {
++  it('the scheduled outcome never says the period was paid for', async () => {
++    lists = [
++      [planView('trialing', { trial_days: 7 })],
++      [planView('trialing', { trial_days: 7, cancel_at_period_end: true, next_charge_at: null, access_ends_at: PERIOD_END, can_cancel: false, can_resume: true })],
++    ];
++    mockPost.mockImplementation(async () => ({
++      data: {
++        outcome: 'scheduled', purchase_id: PURCHASE, access_ends_at: PERIOD_END, voided_invoice_count: 0,
++        voided_amount_cents: 0, currency: 'usd', paid_period_kept: false, message: 'x',
++      },
++    }));
++    const spy = confirmDestructive();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(mockGet.mock.calls.length).toBe(2));
++    const line = lineOf(r);
++    // eslint-disable-next-line no-console
++    console.log(`P1 trial outcome line: ${line}`);
++    expect(line).not.toMatch(/paid for/);
++    spy.mockRestore();
++  });
++});
++
++describe('P2 EVIDENCE dispute-paused plan (R-DISPUTE-PAUSE) as the backend lists it today', () => {
++  it('records the card line and actions', async () => {
++    lists = [[planView('confirming', { status: 'active', entitlement_active: false, can_cancel: false, can_resume: false, next_charge_at: null })]];
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-line-${PURCHASE}`)).toBeTruthy());
++    const line = lineOf(r);
++    // eslint-disable-next-line no-console
++    console.log(`P2 dispute-paused card line: ${line}`);
++    expect(line).toBe('Confirming this plan with Stripe. It shows here within a minute.');
++    expect(r.queryByTestId(`your-plan-end-${PURCHASE}`)).toBeNull();
++    expect(r.queryByTestId(`your-plan-keep-${PURCHASE}`)).toBeNull();
++  });
++});
++
++describe('P3 copy rules', () => {
++  const strings: string[] = [];
++  const Y = panelModule.YOUR_PLANS_COPY as Record<string, unknown>;
++  const A = actions.PLAN_ACTION_COPY as Record<string, unknown>;
++  const L = actions.PLANS_LIST_COPY as Record<string, unknown>;
++  const outcomes = [
++    { outcome: 'ended', accessEndsAt: PERIOD_END, voidedAmountCents: 9900, currency: 'usd', paidPeriodKept: false },
++    { outcome: 'ended', accessEndsAt: PERIOD_END, voidedAmountCents: 0, currency: null, paidPeriodKept: false },
++    { outcome: 'scheduled', accessEndsAt: PERIOD_END, voidedAmountCents: 0, currency: 'usd', paidPeriodKept: true },
++    { outcome: 'scheduled', accessEndsAt: null, voidedAmountCents: 0, currency: 'usd', paidPeriodKept: false },
++    { outcome: 'already_ended', accessEndsAt: null, voidedAmountCents: 0, currency: 'usd', paidPeriodKept: false },
++  ] as const;
++  for (const src of [Y, A, L]) {
++    for (const [k, v] of Object.entries(src)) {
++      if (typeof v === 'string') strings.push(v);
++      else if (typeof v === 'function' && k !== 'outcome') {
++        for (const arg of [['cancel', 'abcd1234'], ['resume', null], ['November 2, 2026', null], ['$99.00', 'November 2, 2026']])
++          strings.push(String((v as (...a: unknown[]) => unknown)(...arg)));
++      }
++    }
++  }
++  for (const o of outcomes) strings.push(actions.PLAN_ACTION_COPY.outcome(o as never));
++  it.each(strings.map((s) => [s]))('%s', (s) => {
++    expect(s).not.toMatch(/\b(we|our|us|I)\b/i);
++    expect(s).not.toMatch(/!/);
++    expect(s).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
++    expect(s).not.toMatch(/undefined|null|NaN/);
++  });
++});
++
++describe('P4 control 2A outcome in a zero-decimal currency', () => {
++  it('JPY voided amount is whole yen', () => {
++    const s = actions.PLAN_ACTION_COPY.outcome({ outcome: 'ended', accessEndsAt: null, voidedAmountCents: 500, currency: 'jpy', paidPeriodKept: false });
++    expect(s).toMatch(/500/);
++    expect(s).not.toMatch(/5\.00/);
++  });
++});
++
++describe('P5 control Keep my plan', () => {
++  it('a failed resume retries with the same key; success shows the canonical view though the refresh fails', async () => {
++    const scheduled = planView('active', { cancel_at_period_end: true, next_charge_at: null, access_ends_at: PERIOD_END, can_cancel: false, can_resume: true });
++    lists = [[scheduled], [scheduled], httpError(503, { error: 'SERVICE_UNAVAILABLE' }) as never];
++    let n = 0;
++    mockPost.mockImplementation(async () => {
++      n += 1;
++      if (n === 1) throw httpError(503, { code: 'PLAN_CHANGE_RESULT_UNKNOWN', error: 'PLAN_CHANGE_RESULT_UNKNOWN' });
++      return { data: planView('active') };
++    });
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-keep-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-keep-${PURCHASE}`));
++    await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
++    await waitFor(() => expect(r.getByTestId(`your-plan-keep-${PURCHASE}`).props.accessibilityState.disabled).toBe(false));
++    await fireEvent.press(r.getByTestId(`your-plan-keep-${PURCHASE}`));
++    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
++    const keys = mockPost.mock.calls.map((c) => (c[1] as { idempotency_key: string }).idempotency_key);
++    expect(keys[0]).toBe(keys[1]);
++    await waitFor(() => expect(lineOf(r)).toMatch(/^Next charge of/));
++    expect(lineOf(r)).not.toMatch(/Nothing more is charged/);
++  });
++});
++
++describe('P6 EVIDENCE scheduled outcome wording on a paid plan', () => {
++  it('records the line', () => {
++    const s = actions.PLAN_ACTION_COPY.outcome({ outcome: 'scheduled', accessEndsAt: PERIOD_END, voidedAmountCents: 0, currency: 'usd', paidPeriodKept: false });
++    // eslint-disable-next-line no-console
++    console.log(`P6 scheduled line: ${s}`);
++    expect(s).toMatch(/^Your plan is ended\. Access continues until/);
++  });
++});
+diff --git a/src/components/__tests__/audOpusS123119.probe343.test.tsx b/src/components/__tests__/audOpusS123119.probe343.test.tsx
+new file mode 100644
+index 0000000..6ab7dc5
+--- /dev/null
++++ b/src/components/__tests__/audOpusS123119.probe343.test.tsx
+@@ -0,0 +1,238 @@
++/**
++ * AUD-OPUS-S12-119 probe (Claude Opus 5.5 lens, agent 119 wave) on #343 @ 19678ce7.
++ * Real PackageSelectionSheet + real usePackagePurchase; only the network, the
++ * Stripe native module, storage, theme and Sentry are synthetic.
++ *   Q1 controls: no HTTP answer on payment-intent -> not-confirmed copy with the
++ *      key reference; the next tap replays the SAME idempotency key.
++ *   Q2 control: renewing sheet confirmed, then the plan read says ended ->
++ *      neutral ended copy with support + reference, never a no-charge claim.
++ *   Q3 control: "Continue to the app" (no onOpenPlan) closes through onDismiss,
++ *      never onPaymentSuccess, and writes no 24-hour skip timestamp.
++ *   Q4 control: one-time plan made free since the list loaded: "Adding your
++ *      free plan." while the claim runs (Opus B-343-6 replay).
++ *   Q5 INFO (C-343-8): PAYMENT_ALREADY_COMPLETE without onOpenPlan: the notice
++ *      says "Open your plan" while the only action reads "Continue to the app".
++ */
++import React from 'react';
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const { authEvents } = require('../../utils/authEvents') as typeof import('../../utils/authEvents');
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++const PKG_A = '3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f';
++const PKG_MONTHLY = '99999999-8888-4777-8666-555555555555';
++const SECRETS = {
++  client_secret: 'pi_synthetic_secret_example',
++  ephemeral_key: 'ek_synthetic',
++  customer_id: 'cus_synthetic',
++  publishable_key: 'pk_test_synthetic',
++};
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({ tokens: realTokens, semanticColors: realTokens.lightTokens, colorScheme: 'light' }),
++  };
++});
++jest.mock('../../storage/mmkv', () => ({
++  prefsStorage: { getStringAsync: jest.fn(async () => null), set: jest.fn(async () => undefined) },
++}));
++jest.mock('../../hooks/useCurrentUser', () => ({ useCurrentUser: () => ({ id: 'client-1', role: 'student' }) }));
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++const mockGetEntitlement = jest.fn();
++const mockGetPurchases = jest.fn();
++jest.mock('../../api/clientPaymentsApi', () => ({
++  clientPaymentsApi: { getEntitlement: () => mockGetEntitlement(), getPurchases: () => mockGetPurchases() },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++const mockInitPaymentSheet = jest.fn();
++const mockPresent = jest.fn();
++const mockStripeModule: Record<string, unknown> = {};
++function installStripe() {
++  mockStripeModule.initStripe = async () => undefined;
++  mockStripeModule.initPaymentSheet = (...a: unknown[]) => mockInitPaymentSheet(...a);
++  mockStripeModule.presentPaymentSheet = (...a: unknown[]) => mockPresent(...a);
++}
++installStripe();
++jest.mock('@stripe/stripe-react-native', () => mockStripeModule);
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const PackageSelectionSheet: typeof import('../PackageSelectionSheet').default = require('../PackageSelectionSheet').default;
++
++const PACKAGES = [
++  { id: PKG_A, name: 'Strength 12 weeks', amount_cents: 14900, currency: 'usd', billing_type: 'one_time', interval: null },
++  { id: PKG_MONTHLY, name: 'Monthly coaching', amount_cents: 9900, currency: 'usd', billing_type: 'recurring', interval: 'month' },
++];
++
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: {} },
++    config: { headers: {} },
++  });
++}
++function deferred<T>() {
++  let resolve!: (v: T) => void;
++  const promise = new Promise<T>((r) => { resolve = r; });
++  return { promise, resolve };
++}
++async function mountAndSelect(pkgId: string, extra: Record<string, unknown> = {}) {
++  const onDismiss = jest.fn();
++  const onPaymentSuccess = jest.fn();
++  const r = await render(
++    <PackageSelectionSheet
++      visible onDismiss={onDismiss} onPaymentSuccess={onPaymentSuccess}
++      entitlementPollDelaysMs={[0]} planPollDelaysMs={[0]} recheckDelaysMs={[0]} {...extra}
++    />,
++  );
++  await waitFor(() => expect(r.getByTestId(`package-card-${pkgId}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`package-card-${pkgId}`));
++  await fireEvent.press(r.getByTestId('select-plan-btn'));
++  return Object.assign(r, { onDismiss, onPaymentSuccess });
++}
++
++const PURCHASE = 'abcdef12-3456-4789-8abc-def012345678';
++const NO_CHARGE = /nothing was charged|not charged|did not go through|did not start/i;
++const SUB_INTENT = {
++  mode: 'payment', purchase_id: PURCHASE, ...SECRETS,
++  plan: { amount_cents: 9900, currency: 'usd', interval: 'month', interval_count: 1, first_charge_cents: 9900, one_time_cents: 0, trial_days: 0 },
++};
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const mmkv = require('../../storage/mmkv') as { prefsStorage: { set: jest.Mock } };
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  installStripe();
++  process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_build';
++  mockGet.mockResolvedValue({ data: { packages: PACKAGES } });
++  mockInitPaymentSheet.mockResolvedValue({});
++  mockPresent.mockResolvedValue({});
++  mockGetEntitlement.mockResolvedValue({ ok: true, data: { active: true } });
++  mockGetPurchases.mockResolvedValue({ ok: true, data: [] });
++});
++
++const keysOf = (url: string) =>
++  mockPost.mock.calls.filter((c) => c[0] === url).map((c) => (c[1] as { idempotency_key: string }).idempotency_key);
++
++describe('Q1 no HTTP answer on payment-intent', () => {
++  it('not-confirmed copy with the key reference; the next tap replays the same key', async () => {
++    const timeout = Object.assign(new Error('timeout of 15000ms exceeded'), { code: 'ECONNABORTED', request: {}, config: {} });
++    mockPost.mockImplementation((url: string) => {
++      if (url === '/v1/checkout/payment-intent') return Promise.reject(timeout);
++      return Promise.reject(httpError(404, { error: 'Not Found' }));
++    });
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    const msg = r.getByTestId('payment-error').props.children as string;
++    const [k1] = keysOf('/v1/checkout/payment-intent');
++    expect(msg).not.toMatch(NO_CHARGE);
++    expect(msg).toContain(k1.slice(0, 8));
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++    await fireEvent.press(r.getByTestId('select-plan-btn'));
++    await waitFor(() => expect(keysOf('/v1/checkout/payment-intent')).toHaveLength(2));
++    expect(keysOf('/v1/checkout/payment-intent')[1]).toBe(k1);
++  });
++});
++
++describe('Q2 renewing sheet confirmed, then the plan read says ended', () => {
++  it('neutral ended copy, support and reference, never a no-charge claim', async () => {
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/subscription-intent') return { data: SUB_INTENT };
++      throw httpError(404, { error: 'Not Found' });
++    });
++    mockGet.mockImplementation(async (url: string) => {
++      if (url.startsWith('/v1/checkout/subscriptions/'))
++        return { data: { purchase_id: PURCHASE, package_id: PKG_MONTHLY, state: 'ended', entitlement_active: false, checkout_state: 'ended' } };
++      return { data: { packages: PACKAGES } };
++    });
++    const r = await mountAndSelect(PKG_MONTHLY);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    const msg = r.getByTestId('payment-error').props.children as string;
++    expect(mockPresent).toHaveBeenCalledTimes(1);
++    expect(msg).not.toMatch(NO_CHARGE);
++    expect(msg).toContain('abcdef12');
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(r.queryByTestId('payment-success')).toBeNull();
++  });
++});
++
++describe('Q3 Continue to the app without a plan destination', () => {
++  it('closes through onDismiss, never onPaymentSuccess, and writes no skip timestamp', async () => {
++    mockPost.mockImplementation(() => Promise.reject(httpError(500, { error: 'INTERNAL', request_id: 'f00dbabe-1234' })));
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(r.getByTestId('payment-open-plan')).toBeTruthy());
++    expect(r.getByText('Continue to the app')).toBeTruthy();
++    mmkv.prefsStorage.set.mockClear();
++    await fireEvent.press(r.getByTestId('payment-open-plan'));
++    expect(r.onDismiss).toHaveBeenCalledTimes(1);
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++    expect(mmkv.prefsStorage.set).not.toHaveBeenCalled();
++  });
++});
++
++describe('Q4 one-time plan made free since the list loaded', () => {
++  it('"Adding your free plan." while the claim runs, never "Payment received"', async () => {
++    const held = deferred<{ data: { active: boolean } }>();
++    mockPost.mockImplementation((url: string) => {
++      if (url === '/v1/checkout/payment-intent')
++        return Promise.reject(httpError(400, { error: 'PACKAGE_IS_FREE', message: 'This package is free.' }));
++      if (url === `/v1/packages/${PKG_A}/claim-free`) return held.promise;
++      return Promise.reject(httpError(404, { error: 'Not Found' }));
++    });
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(`/v1/packages/${PKG_A}/claim-free`));
++    expect(r.getByTestId('payment-confirming').props.children).toBe('Adding your free plan.');
++    held.resolve({ data: { active: true } });
++    await waitFor(() => expect(r.getByTestId('payment-success')).toBeTruthy());
++  });
++});
++
++describe('Q5 INFO (C-343-8) PAYMENT_ALREADY_COMPLETE without a plan destination', () => {
++  it('a notice that says "Open your plan" offers an action with that name', async () => {
++    mockPost.mockImplementation(() => Promise.reject(httpError(409, { error: 'PAYMENT_ALREADY_COMPLETE' })));
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    const msg = r.getByTestId('payment-error').props.children as string;
++    expect(msg).toMatch(/Open your plan/);
++    expect(r.queryByText('Open your plan')).toBeTruthy();
++  });
++});
++
++// ── AUD-OPUS-S123-119 additions at #343 @ 691e0cf0 ─────────────────────────
++describe('Q6 B-343-1 residual: rejected native init after an account change (screen level)', () => {
++  it.each([['logout'], ['login']] as const)('initPaymentSheet rejects after %s: no notice, no report, no sheet', async (event) => {
++    // eslint-disable-next-line @typescript-eslint/no-var-requires
++    const sentry = require('../../services/sentry') as { captureError: jest.Mock };
++    const held = deferred<never>();
++    let reject!: (e: unknown) => void;
++    const p = new Promise<never>((_r, j) => { reject = j; });
++    void held;
++    mockInitPaymentSheet.mockReturnValueOnce(p);
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/payment-intent') return { data: SECRETS };
++      throw httpError(404, { error: 'Not Found' });
++    });
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(mockInitPaymentSheet).toHaveBeenCalledTimes(1));
++    authEvents.emit(event);
++    reject(new Error('Synthetic native rejection after account change'));
++    await new Promise((res) => setTimeout(res, 20));
++    expect(r.queryByTestId('payment-error')).toBeNull();
++    expect(mockPresent).not.toHaveBeenCalled();
++    expect(sentry.captureError).not.toHaveBeenCalled();
++  });
++  it('control: initPaymentSheet rejects on the same account: an actionable notice with support', async () => {
++    mockInitPaymentSheet.mockRejectedValueOnce(new Error('Synthetic native failure'));
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/payment-intent') return { data: SECRETS };
++      throw httpError(404, { error: 'Not Found' });
++    });
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++  });
++});
+diff --git a/src/components/__tests__/audOpusS3D119.delta344.test.tsx b/src/components/__tests__/audOpusS3D119.delta344.test.tsx
+new file mode 100644
+index 0000000..ac4f297
+--- /dev/null
++++ b/src/components/__tests__/audOpusS3D119.delta344.test.tsx
+@@ -0,0 +1,221 @@
++/**
++ * AUD-OPUS-S3D-119 probe (Claude Opus 5.5 lens, agent 119) — mobile #344 @ bc4387ac (FIX ROUND 5 delta).
++ * Probe only; never merged. Real YourPlansPanel, planActions and packagePayment; only the network,
++ * theme and Sentry are mocked. Plan views follow backend R2 planView (subscription-plan.ts @23d2c04c)
++ * and the cancel replies follow D4 client-billing.service.ts @06307883 (cancelAtPeriodEnd persists
++ * cancel_at_period_end before replying; endAccessNow sets status canceled).
++ *   D1 2A ended receipt survives the post-cancel read that lists the plan as ended (card stays).
++ *   D2 paid-meanwhile receipt survives the post-cancel read (active + cancel_at_period_end).
++ *   D3 a list read started before End my plan and answered after it never overwrites the receipt.
++ *   D4 a trial receipt is kept through a failed read, then dropped when a newer read shows renewing.
++ *   D5 stale gate also covers a past_due card (no POST, no destructive button) and an offline failure.
++ *   D6 trial whose scheduled end is after the trial end (converted) gets the paid wording.
++ *   D7 copy rules over the new strings and both outcome wordings.
++ *   D8 EVIDENCE the consent dialog body on a trialing plan.
++ */
++import React from 'react';
++import { Alert } from 'react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({ tokens: realTokens, semanticColors: realTokens.lightTokens, colorScheme: 'light' }),
++  };
++});
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const panelModule = require('../purchase/YourPlansPanel') as typeof import('../purchase/YourPlansPanel');
++const YourPlansPanel = panelModule.default;
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const actions = require('../../lib/planActions') as typeof import('../../lib/planActions');
++
++const PURCHASE = '0f0e0d0c-0b0a-4908-8706-050403020100';
++const PERIOD_END = '2026-11-02T12:00:00.000Z';
++const LATER_END = '2026-12-02T12:00:00.000Z';
++function planView(state: string, overrides: Record<string, unknown> = {}) {
++  return {
++    purchase_id: PURCHASE, package_id: 'pkg-monthly', package_name: 'Monthly coaching', coach_user_id: 'coach-1',
++    state, status: state, entitlement_active: state !== 'ended' && state !== 'confirming',
++    amount_cents: 9900, currency: 'usd', interval: 'month', interval_count: 1,
++    current_period_end: PERIOD_END, next_charge_at: state === 'ended' || state === 'trialing' ? null : PERIOD_END,
++    cancel_at_period_end: false, access_ends_at: null, trial_days: 0,
++    trial_ends_at: state === 'trialing' ? PERIOD_END : null,
++    can_cancel: ['active', 'trialing', 'past_due'].includes(state), can_resume: false, can_resubscribe: state === 'ended',
++    last_payment_error: null, checkout_state: null,
++    ...overrides,
++  };
++}
++const ENDED_VIEW = planView('ended', { status: 'canceled', access_ends_at: '2026-10-04T21:00:00.000Z', can_cancel: false });
++const SCHEDULED_VIEW = (state: string) =>
++  planView(state, { cancel_at_period_end: true, next_charge_at: null, access_ends_at: PERIOD_END, can_cancel: false, can_resume: true });
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: { 'x-request-id': 'req-7f3a9c21-aaaa' } },
++    config: { headers: { 'X-Request-Id': 'req-7f3a9c21-aaaa' } },
++  });
++}
++const offlineError = () => Object.assign(new Error('Network Error'), { request: {}, config: { headers: {} } });
++const reply = (o: Record<string, unknown>) => ({
++  data: { purchase_id: PURCHASE, voided_invoice_count: 0, voided_amount_cents: 0, currency: 'usd', paid_period_kept: false, message: 'x', ...o },
++});
++let lists: unknown[] = [];
++const listCalls = () => mockGet.mock.calls.filter((c) => c[0] === '/v1/checkout/subscriptions').length;
++function confirmDestructive() {
++  return jest.spyOn(Alert, 'alert').mockImplementation((_t, _b, buttons) => {
++    (buttons ?? []).find((b) => b.style === 'destructive')?.onPress?.();
++  });
++}
++const lineOf = (r: Awaited<ReturnType<typeof render>>) =>
++  String(r.getByTestId(`your-plan-line-${PURCHASE}`).props.children);
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  jest.restoreAllMocks();
++  lists = [[planView('active')]];
++  mockGet.mockImplementation(async (url: string) => {
++    if (url === '/v1/checkout/subscriptions') {
++      const next = lists.length > 1 ? lists.shift() : lists[0];
++      if (next instanceof Error) throw next;
++      if (typeof next === 'function') return (next as () => Promise<unknown>)();
++      return { data: { plans: next } };
++    }
++    throw httpError(404, { error: 'Not Found' });
++  });
++});
++
++describe('D1 2A ended receipt vs the post-cancel read', () => {
++  it('keeps the voided-amount line and the card when the read lists the plan as ended', async () => {
++    lists = [[planView('active')], [ENDED_VIEW]];
++    mockPost.mockResolvedValue(reply({ outcome: 'ended', access_ends_at: '2026-10-04T21:00:00.000Z', voided_amount_cents: 9900, voided_invoice_count: 1 }));
++    confirmDestructive();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(listCalls()).toBe(2));
++    await waitFor(() => expect(lineOf(r)).toMatch(/^This plan has ended, and access ended today\. The unpaid \$99\.00 is canceled/));
++    expect(r.queryByTestId('your-plans-stale')).toBeNull();
++  });
++});
++
++describe('D2 paid-meanwhile receipt vs the post-cancel read', () => {
++  it('keeps the paid-period line when the read shows active with cancel_at_period_end', async () => {
++    lists = [[planView('past_due')], [SCHEDULED_VIEW('active')]];
++    mockPost.mockResolvedValue(reply({ outcome: 'scheduled', access_ends_at: PERIOD_END, paid_period_kept: true }));
++    confirmDestructive();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(listCalls()).toBe(2));
++    await waitFor(() => expect(lineOf(r)).toMatch(/^The latest payment went through before the plan ended/));
++  });
++});
++
++describe('D3 a slow read answered after End my plan', () => {
++  it('never overwrites the receipt or brings back End my plan', async () => {
++    let release: (v: unknown) => void = () => undefined;
++    const slow = () => new Promise((res) => { release = res; });
++    lists = [[planView('trialing')], slow, [SCHEDULED_VIEW('trialing')]];
++    mockPost.mockResolvedValue(reply({ outcome: 'scheduled', access_ends_at: PERIOD_END }));
++    confirmDestructive();
++    const r = await render(<YourPlansPanel reloadKey={0} />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    // a pull-to-refresh style reload that hangs; reloadKey change also clears receipts, so use the same key path:
++    await r.rerender(<YourPlansPanel reloadKey={1} />);
++    await waitFor(() => expect(listCalls()).toBe(2));
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(listCalls()).toBe(3));
++    await waitFor(() => expect(lineOf(r)).toBe('Your free trial ends on November 2, 2026, and nothing is charged.'));
++    release({ data: { plans: [planView('trialing')] } });
++    await new Promise((res) => setTimeout(res, 20));
++    expect(lineOf(r)).toBe('Your free trial ends on November 2, 2026, and nothing is charged.');
++    expect(r.queryByTestId(`your-plan-end-${PURCHASE}`)).toBeNull();
++  });
++});
++
++describe('D4 trial receipt through failure, then superseded', () => {
++  it('kept while reads fail, dropped when a newer read shows the trial renewing again', async () => {
++    lists = [[planView('trialing')], httpError(503, { code: 'X_DOWN' }), httpError(503, { code: 'X_DOWN' }), [planView('trialing')]];
++    mockPost.mockResolvedValue(reply({ outcome: 'scheduled', access_ends_at: PERIOD_END }));
++    confirmDestructive();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++    expect(lineOf(r)).toBe('Your free trial ends on November 2, 2026, and nothing is charged.');
++    await fireEvent.press(r.getByTestId('your-plans-retry'));
++    await waitFor(() => expect(listCalls()).toBe(3));
++    expect(lineOf(r)).toBe('Your free trial ends on November 2, 2026, and nothing is charged.');
++    await fireEvent.press(r.getByTestId('your-plans-retry'));
++    await waitFor(() => expect(lineOf(r)).toBe('Free trial until November 2, 2026, then $99.00 a month.'));
++  });
++});
++
++describe('D5 stale gate', () => {
++  it.each([
++    ['past_due 503', planView('past_due'), httpError(503, { code: 'X_DOWN' })],
++    ['active offline', planView('active'), offlineError()],
++    ['trialing 500', planView('trialing'), httpError(500, { code: 'INTERNAL' })],
++  ])('%s: End my plan sends nothing and offers a refresh', async (_n, plan, err) => {
++    lists = [[plan], err, err];
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const r = await render(<YourPlansPanel reloadKey={0} />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await r.rerender(<YourPlansPanel reloadKey={1} />);
++    await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    expect(alert.mock.calls[0][0]).toBe('Refresh your plans first');
++    expect((alert.mock.calls[0][2] ?? []).some((b) => b.style === 'destructive')).toBe(false);
++    expect(mockPost).not.toHaveBeenCalled();
++  });
++});
++
++describe('D6 converted trial', () => {
++  it('a scheduled end after the trial end gets the paid wording', async () => {
++    lists = [[planView('trialing')], [SCHEDULED_VIEW('active')]];
++    mockPost.mockResolvedValue(reply({ outcome: 'scheduled', access_ends_at: LATER_END }));
++    confirmDestructive();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(listCalls()).toBe(2));
++    await waitFor(() => expect(lineOf(r)).toBe('Your plan will not renew. Access continues until December 2, 2026, and nothing more is charged.'));
++  });
++});
++
++describe('D7 copy rules on the round-5 strings', () => {
++  const Y = panelModule.YOUR_PLANS_COPY;
++  const o = { outcome: 'scheduled', accessEndsAt: PERIOD_END, voidedAmountCents: 0, currency: 'usd', paidPeriodKept: false } as const;
++  const strings = [
++    Y.staleTitle, Y.staleBody, Y.staleRefresh, Y.endConfirmBody('November 2, 2026'), Y.endConfirmBody(null),
++    actions.PLAN_ACTION_COPY.outcome(o, true), actions.PLAN_ACTION_COPY.outcome(o, false),
++    actions.PLAN_ACTION_COPY.outcome({ ...o, accessEndsAt: null }, true),
++  ];
++  it.each(strings.map((s) => [s]))('%s', (s) => {
++    expect(s).not.toMatch(/\b(we|our|us|I)\b/i);
++    expect(s).not.toMatch(/!/);
++    expect(s).not.toMatch(/undefined|null|NaN/);
++    expect(s).not.toMatch(/paid for/);
++  });
++});
++
++describe('D8 EVIDENCE trial consent dialog', () => {
++  it('records the body', async () => {
++    lists = [[planView('trialing')]];
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    // eslint-disable-next-line no-console
++    console.log(`D8 trial consent: ${alert.mock.calls[0][0]} | ${alert.mock.calls[0][1]}`);
++    expect(alert.mock.calls[0][1]).toMatch(/until November 2, 2026/);
++  });
++});
+diff --git a/src/components/__tests__/audOpusSH3118.replay.test.tsx b/src/components/__tests__/audOpusSH3118.replay.test.tsx
+new file mode 100644
+index 0000000..cefc0cc
+--- /dev/null
++++ b/src/components/__tests__/audOpusSH3118.replay.test.tsx
+@@ -0,0 +1,196 @@
++/**
++ * AUD-OPUS-SH3-118 probe (Claude Opus 5.5 lens, agent 118) — mobile #344 @ e7fcc5d2.
++ * Probe only; never merged. Real YourPlansPanel, real packagePayment copy;
++ * only the network, theme and Sentry are mocked.
++ *
++ *   B-344-1  End my plan on a plan in dunning (state past_due, can_cancel true,
++ *            backend #628 / D4 #690 runDunningCancel = owner ruling 2A: void the
++ *            open invoice and end access NOW). The confirmation must not promise
++ *            access until the period end, and the ended-now outcome must be told.
++ *   B-344-2  A failed End my plan says what happened to the PLAN and offers a
++ *            working support path (Email support + reference) for an unknown
++ *            failure; offline copy never talks about a payment that "did not start".
++ *   Controls: an active plan keeps the period-end copy; PLAN_ALREADY_ENDED copy.
++ */
++import React from 'react';
++import { Alert } from 'react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({ tokens: realTokens, semanticColors: realTokens.lightTokens, colorScheme: 'light' }),
++  };
++});
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const YourPlansPanel: typeof import('../purchase/YourPlansPanel').default = require('../purchase/YourPlansPanel').default;
++
++const PURCHASE = '0f0e0d0c-0b0a-4908-8706-050403020100';
++function planView(state: string, overrides: Record<string, unknown> = {}) {
++  return {
++    purchase_id: PURCHASE, package_id: 'pkg-monthly', package_name: 'Monthly coaching', coach_user_id: 'coach-1',
++    state, status: state, entitlement_active: state !== 'ended',
++    amount_cents: 9900, currency: 'usd', interval: 'month', interval_count: 1,
++    current_period_end: '2026-11-02T12:00:00.000Z', next_charge_at: state === 'ended' ? null : '2026-11-02T12:00:00.000Z',
++    cancel_at_period_end: false, access_ends_at: null, trial_days: 0, trial_ends_at: null,
++    can_cancel: state !== 'ended', can_resume: false, can_resubscribe: state === 'ended',
++    last_payment_error: state === 'past_due' ? 'Your last payment did not go through.' : null,
++    checkout_state: null,
++    ...overrides,
++  };
++}
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: { 'x-request-id': 'req-7f3a9c21-aaaa' } },
++    config: { headers: { 'X-Request-Id': 'req-7f3a9c21-aaaa' } },
++  });
++}
++let lists: unknown[][] = [];
++function pressEndAndConfirm() {
++  return jest.spyOn(Alert, 'alert').mockImplementation((_t, _b, buttons) => {
++    (buttons ?? []).find((b) => b.style === 'destructive')?.onPress?.();
++  });
++}
++const allText = (r: ReturnType<typeof render>) =>
++  r.toJSON() ? JSON.stringify(r.toJSON()) : '';
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  lists = [[planView('active')]];
++  mockGet.mockImplementation(async (url: string) => {
++    if (url === '/v1/checkout/subscriptions') {
++      const next = lists.length > 1 ? lists.shift() : lists[0];
++      return { data: { plans: next } };
++    }
++    throw httpError(404, { error: 'Not Found' });
++  });
++  mockPost.mockImplementation(async () => ({ data: {} }));
++});
++
++describe('B-344-1 End my plan during dunning (owner ruling 2A: access ends now)', () => {
++  it('the confirmation for a past_due plan does not promise access until the period end', async () => {
++    lists = [[planView('past_due')]];
++    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    const body = String(alertSpy.mock.calls[0][1]);
++    expect(body).not.toMatch(/stays active until/);
++    alertSpy.mockRestore();
++  });
++
++  it('after the backend ends the plan now (outcome ended), the panel tells the client it ended', async () => {
++    lists = [[planView('past_due')], [planView('ended', { access_ends_at: '2026-10-04T17:00:00.000Z' })]];
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === `/v1/checkout/subscriptions/${PURCHASE}/cancel`) {
++        return {
++          data: {
++            outcome: 'ended', purchase_id: PURCHASE, access_ends_at: '2026-10-04T17:00:00.000Z',
++            voided_invoice_count: 1, voided_amount_cents: 9900, currency: 'usd', paid_period_kept: false,
++            message: 'x',
++          },
++        };
++      }
++      throw new Error(`unexpected POST ${url}`);
++    });
++    const alertSpy = pressEndAndConfirm();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(mockGet.mock.calls.filter((c) => c[0] === '/v1/checkout/subscriptions').length).toBe(2));
++    // Some confirmation of what happened must remain on screen.
++    expect(allText(r)).toMatch(/ended/i);
++    alertSpy.mockRestore();
++  });
++});
++
++describe('B-344-2 a failed plan action says what happened to the plan, with a working next action', () => {
++  it('an unknown failure (Stripe error on cancel) offers Email support with a reference', async () => {
++    mockPost.mockImplementation(async () => {
++      throw httpError(502, { code: 'STRIPE_REQUEST_FAILED', error: 'STRIPE_REQUEST_FAILED', message: 'x' });
++    });
++    const alertSpy = pressEndAndConfirm();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
++    expect(allText(r)).toMatch(/req-7f3a/);
++    expect(r.queryByText('Email support')).toBeTruthy();
++    alertSpy.mockRestore();
++  });
++
++  it('offline: the copy is about the plan change, not a payment that did not start', async () => {
++    mockPost.mockImplementation(async () => {
++      throw Object.assign(new Error('Network Error'), { config: { headers: {} } });
++    });
++    const alertSpy = pressEndAndConfirm();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
++    expect(allText(r)).not.toMatch(/payment did not start/);
++    alertSpy.mockRestore();
++  });
++
++  it('recurring deployed without the cancel route (bare Nest 404): the copy says the plan did not change, not that the result is unconfirmed', async () => {
++    mockPost.mockImplementation(async (url: string) => {
++      throw httpError(404, { statusCode: 404, message: `Cannot POST ${url}`, error: 'Not Found' });
++    });
++    const alertSpy = pressEndAndConfirm();
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
++    expect(allText(r)).not.toMatch(/not confirmed yet/);
++    alertSpy.mockRestore();
++  });
++});
++
++describe('controls (expected to pass at the PR head)', () => {
++  it('today\'s production backend (no GET /v1/checkout/subscriptions, bare 404): the panel stays hidden', async () => {
++    mockGet.mockImplementation(async () => {
++      throw httpError(404, { statusCode: 404, message: 'Cannot GET /v1/checkout/subscriptions', error: 'Not Found' });
++    });
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/v1/checkout/subscriptions'));
++    expect(r.queryByTestId('your-plans')).toBeNull();
++  });
++  it('an active plan keeps the period-end confirmation', async () => {
++    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-end-${PURCHASE}`));
++    expect(String(alertSpy.mock.calls[0][1])).toBe(
++      'Your plan stays active until November 2, 2026, and nothing more is charged after that.',
++    );
++    alertSpy.mockRestore();
++  });
++
++  it('a past_due plan shows the past-due line and still offers End my plan (can_cancel from the backend)', async () => {
++    lists = [[planView('past_due')]];
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-end-${PURCHASE}`)).toBeTruthy());
++    expect(allText(r)).toMatch(/The last payment did not go through/);
++  });
++
++  it('PLAN_ALREADY_ENDED on Keep my plan gets its own copy', async () => {
++    lists = [[planView('active', { cancel_at_period_end: true, can_cancel: false, can_resume: true, next_charge_at: null, access_ends_at: '2026-11-02T12:00:00.000Z' })]];
++    mockPost.mockImplementation(async () => {
++      throw httpError(409, { code: 'PLAN_ALREADY_ENDED', error: 'PLAN_ALREADY_ENDED', message: 'x' });
++    });
++    const r = await render(<YourPlansPanel />);
++    await waitFor(() => expect(r.getByTestId(`your-plan-keep-${PURCHASE}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`your-plan-keep-${PURCHASE}`));
++    await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
++    expect(allText(r)).toMatch(/This plan has already ended, so nothing changed/);
++  });
++});
+diff --git a/src/components/__tests__/audOpusSh118.probe343.test.tsx b/src/components/__tests__/audOpusSh118.probe343.test.tsx
+new file mode 100644
+index 0000000..d0079f9
+--- /dev/null
++++ b/src/components/__tests__/audOpusSh118.probe343.test.tsx
+@@ -0,0 +1,164 @@
++/**
++ * AUD-OPUS-SH-118 probe (Claude Opus 5.5 lens, agent 118 wave) on #343 @ fd739d58.
++ * Real PackageSelectionSheet + real usePackagePurchase; only the network, the
++ * Stripe native module, storage, theme and Sentry are synthetic.
++ *
++ *   P1 (finding candidate): a one-time plan the coach made free since the list
++ *      loaded is rerouted to claim-free, and while that claim runs the sheet
++ *      must not say "Payment received" (no payment exists).
++ *   P2..P4: controls (must pass).
++ */
++import React from 'react';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++const PKG_A = '3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f';
++const PKG_MONTHLY = '99999999-8888-4777-8666-555555555555';
++const SECRETS = {
++  client_secret: 'pi_synthetic_secret_example',
++  ephemeral_key: 'ek_synthetic',
++  customer_id: 'cus_synthetic',
++  publishable_key: 'pk_test_synthetic',
++};
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({ tokens: realTokens, semanticColors: realTokens.lightTokens, colorScheme: 'light' }),
++  };
++});
++jest.mock('../../storage/mmkv', () => ({
++  prefsStorage: { getStringAsync: jest.fn(async () => null), set: jest.fn(async () => undefined) },
++}));
++jest.mock('../../hooks/useCurrentUser', () => ({ useCurrentUser: () => ({ id: 'client-1', role: 'student' }) }));
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++const mockGetEntitlement = jest.fn();
++const mockGetPurchases = jest.fn();
++jest.mock('../../api/clientPaymentsApi', () => ({
++  clientPaymentsApi: { getEntitlement: () => mockGetEntitlement(), getPurchases: () => mockGetPurchases() },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++const mockInitPaymentSheet = jest.fn();
++const mockPresent = jest.fn();
++const mockStripeModule: Record<string, unknown> = {};
++function installStripe() {
++  mockStripeModule.initStripe = async () => undefined;
++  mockStripeModule.initPaymentSheet = (...a: unknown[]) => mockInitPaymentSheet(...a);
++  mockStripeModule.presentPaymentSheet = (...a: unknown[]) => mockPresent(...a);
++}
++installStripe();
++jest.mock('@stripe/stripe-react-native', () => mockStripeModule);
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const PackageSelectionSheet: typeof import('../PackageSelectionSheet').default = require('../PackageSelectionSheet').default;
++
++const PACKAGES = [
++  { id: PKG_A, name: 'Strength 12 weeks', amount_cents: 14900, currency: 'usd', billing_type: 'one_time', interval: null },
++  { id: PKG_MONTHLY, name: 'Monthly coaching', amount_cents: 9900, currency: 'usd', billing_type: 'recurring', interval: 'month' },
++];
++
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: {} },
++    config: { headers: {} },
++  });
++}
++function deferred<T>() {
++  let resolve!: (v: T) => void;
++  const promise = new Promise<T>((r) => { resolve = r; });
++  return { promise, resolve };
++}
++async function mountAndSelect(pkgId: string) {
++  const r = await render(
++    <PackageSelectionSheet visible onDismiss={jest.fn()} onPaymentSuccess={jest.fn()} entitlementPollDelaysMs={[0]} />,
++  );
++  await waitFor(() => expect(r.getByTestId(`package-card-${pkgId}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`package-card-${pkgId}`));
++  await fireEvent.press(r.getByTestId('select-plan-btn'));
++  return r;
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  installStripe();
++  process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_build';
++  mockGet.mockResolvedValue({ data: { packages: PACKAGES } });
++  mockInitPaymentSheet.mockResolvedValue({});
++  mockPresent.mockResolvedValue({});
++  mockGetEntitlement.mockResolvedValue({ ok: true, data: { active: true } });
++  mockGetPurchases.mockResolvedValue({ ok: true, data: [] });
++});
++
++describe('P1 one-time plan made free since the list loaded (reroute to claim-free)', () => {
++  it('never says "Payment received" while the free claim runs', async () => {
++    const held = deferred<{ data: { active: boolean } }>();
++    mockPost.mockImplementation((url: string) => {
++      if (url === '/v1/checkout/payment-intent')
++        return Promise.reject(httpError(400, { error: 'PACKAGE_IS_FREE', message: 'This package is free.' }));
++      if (url === `/v1/packages/${PKG_A}/claim-free`) return held.promise;
++      return Promise.reject(httpError(404, { error: 'Not Found' }));
++    });
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(`/v1/packages/${PKG_A}/claim-free`));
++    const progress = r.getByTestId('payment-confirming').props.children as string;
++    expect(mockPresent).not.toHaveBeenCalled();
++    expect(progress).not.toMatch(/payment received/i);
++    expect(progress).toBe('Adding your free plan.');
++    held.resolve({ data: { active: true } });
++    await waitFor(() => expect(r.getByTestId('payment-success')).toBeTruthy());
++  });
++});
++
++describe('controls', () => {
++  it('P2 "Payment received" appears only after Stripe confirmed the one-time sheet', async () => {
++    const held = deferred<{ ok: boolean; data: { active: boolean } }>();
++    mockGetEntitlement.mockReturnValueOnce(held.promise);
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/payment-intent') return { data: { ...SECRETS } };
++      throw httpError(404, { error: 'Not Found' });
++    });
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(mockPresent).toHaveBeenCalledTimes(1));
++    await waitFor(() => expect(r.getByTestId('payment-confirming').props.children).toBe('Payment received. Setting up your plan.'));
++    held.resolve({ ok: true, data: { active: true } });
++    await waitFor(() => expect(r.getByTestId('payment-success')).toBeTruthy());
++  });
++
++  it('P3 production backend 643817b3 (no subscription-intent route): truthful renewing fallback, no sheet', async () => {
++    mockPost.mockImplementation(async (url: string) => {
++      // Exactly the HttpExceptionFilter envelope for an unmounted route.
++      throw httpError(404, {
++        statusCode: 404, message: `Cannot POST ${url}`, error: 'Not Found',
++        timestamp: '2026-10-04T17:00:00.000Z', path: url, request_id: 'cafe0123-0000-4000-8000-000000000000',
++      });
++    });
++    const r = await mountAndSelect(PKG_MONTHLY);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    expect(mockPost.mock.calls[0][0]).toBe('/v1/checkout/subscription-intent');
++    expect(mockPost.mock.calls.map((c) => c[0])).not.toContain('/v1/checkout/payment-intent');
++    expect(r.getByTestId('payment-error').props.children).toBe(
++      'This plan renews automatically, and renewing plans cannot be started from the app yet, so this plan did not start and nothing was charged. Message your coach to arrange it.',
++    );
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++  });
++
++  it('P4 one-time sheet threw: neutral checking copy, then outcome unknown with Check again', async () => {
++    const held = deferred<{ ok: boolean; data: unknown[] }>();
++    mockGetPurchases.mockReturnValueOnce(held.promise);
++    mockPresent.mockRejectedValueOnce(new Error('synthetic lost answer'));
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/payment-intent') return { data: { ...SECRETS } };
++      throw httpError(404, { error: 'Not Found' });
++    });
++    const r = await mountAndSelect(PKG_A);
++    await waitFor(() => expect(mockGetPurchases).toHaveBeenCalledTimes(1));
++    expect(r.getByTestId('payment-confirming').props.children).toBe('Checking whether the payment went through.');
++    held.resolve({ ok: true, data: [] });
++    await waitFor(() => expect(r.getByTestId('payment-check-again')).toBeTruthy());
++    expect(r.getByTestId('payment-error').props.children).not.toMatch(/nothing was charged/i);
++  });
++});
+diff --git a/src/components/__tests__/audSolP12117.paymentTheme.test.tsx b/src/components/__tests__/audSolP12117.paymentTheme.test.tsx
+new file mode 100644
+index 0000000..4808186
+--- /dev/null
++++ b/src/components/__tests__/audSolP12117.paymentTheme.test.tsx
+@@ -0,0 +1,54 @@
++import React from 'react';
++import { StyleSheet } from 'react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const t = jest.requireActual('../../theme/tokens');
++  return { useTheme: () => ({ tokens: t.default, semanticColors: t.darkTokens, colorScheme: 'dark' }) };
++});
++jest.mock('../../storage/mmkv', () => ({
++  prefsStorage: { getStringAsync: jest.fn(async () => null), set: jest.fn(async () => undefined) },
++}));
++jest.mock('../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'synthetic-client', role: 'student' }),
++}));
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(async () => ({ data: { packages: [{
++    id: '11111111-2222-4333-8444-555555555555', name: 'Synthetic recurring',
++    amount_cents: 4900, currency: 'usd', billing_type: 'recurring', interval: 'month',
++  }] } })) },
++}));
++jest.mock('../../hooks/usePackagePurchase', () => ({
++  usePackagePurchase: () => ({
++    busy: false, state: { phase: 'idle' }, clearNotice: jest.fn(), start: jest.fn(),
++  }),
++}));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++const Sheet: typeof import('../PackageSelectionSheet').default = require('../PackageSelectionSheet').default;
++
++function luminance(hex: string) {
++  const channels = [1, 3, 5].map((i) => {
++    const s = parseInt(hex.slice(i, i + 2), 16) / 255;
++    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
++  });
++  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
++}
++
++it('AUD-SOL-P12-117: actual selected card must keep the newly added payment terms AA-readable in dark mode', async () => {
++  const r = await render(<Sheet visible onDismiss={jest.fn()} onPaymentSuccess={jest.fn()} />);
++  const id = 'package-card-11111111-2222-4333-8444-555555555555';
++  await waitFor(() => expect(r.getByTestId(id)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(id));
++  const background = StyleSheet.flatten(r.getByTestId(id).props.style).backgroundColor;
++  const foreground = StyleSheet.flatten(r.getByTestId('plan-terms-first-charge').props.style).color;
++  const a = luminance(background);
++  const b = luminance(foreground);
++  const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
++  // Body-sized first-charge / renewal consent text must be >= 4.5:1.
++  expect({ foreground, background, ratio }).toEqual(expect.objectContaining({
++    ratio: expect.any(Number),
++  }));
++  expect(ratio).toBeGreaterThanOrEqual(4.5);
++});
+diff --git a/src/components/__tests__/audSolS123119.openPlanAction.test.tsx b/src/components/__tests__/audSolS123119.openPlanAction.test.tsx
+new file mode 100644
+index 0000000..dd599bb
+--- /dev/null
++++ b/src/components/__tests__/audSolS123119.openPlanAction.test.tsx
+@@ -0,0 +1,498 @@
++/**
++ * OR-112-22: the Day 1 / package_prompt sheet takes payment for ONE-TIME
++ * plans through POST /v1/checkout/payment-intent and the native PaymentSheet.
++ * Renewing plans: PackageSelectionSheet.subscription.test.tsx (B-RECUR-MOB).
++ *
++ * Failing before: on main the sheet POSTed { package_id, idempotency_key } to
++ * /v1/checkout/sessions (400 under forbidNonWhitelisted; that route never
++ * returns PaymentSheet secrets), passed no customerId, and showed the same
++ * generic "Payment failed. Please try again." for every cause.
++ *
++ * The real sheet is mounted; only the network (api), the Stripe native module,
++ * storage, theme and Sentry are mocked. Copy is asserted as literal strings so
++ * this file does not depend on the new module to load.
++ */
++import React from 'react';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++// Backend contract, growth-project-backend main 9cfd70d6:
++//   src/checkout/checkout.controller.ts
++//     export class CreatePaymentIntentDto {
++//       @IsUUID() package_id!: string;
++//       @IsUUID() idempotency_key!: string;
++//     }
++//     @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
++//     @Post('payment-intent')   (controller prefix 'v1/checkout')
++//   src/checkout/checkout.service.ts createPaymentIntentForClient returns
++//     { client_secret, ephemeral_key, customer_id, publishable_key }
++const BACKEND_DTO_FIELDS = ['idempotency_key', 'package_id'];
++// class-validator IsUUID() (version 'all' via validator.js isUUID).
++const IS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
++
++const PKG_A = '3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f';
++const PKG_B = '7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d';
++const PKG_FREE = '11111111-2222-4333-8444-555555555555';
++const PKG_MONTHLY = '99999999-8888-4777-8666-555555555555';
++
++const SECRETS = {
++  client_secret: 'pi_test_123_secret_abc',
++  ephemeral_key: 'ek_test_456',
++  customer_id: 'cus_test_789',
++  publishable_key: 'pk_test_backend',
++};
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({
++      tokens: realTokens,
++      semanticColors: realTokens.lightTokens,
++      colorScheme: 'light',
++    }),
++  };
++});
++jest.mock('../../storage/mmkv', () => ({
++  prefsStorage: {
++    getStringAsync: jest.fn(async () => null),
++    set: jest.fn(async () => undefined),
++  },
++}));
++jest.mock('../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'client-1', role: 'student' }),
++}));
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: {
++    get: (...a: unknown[]) => mockGet(...a),
++    post: (...a: unknown[]) => mockPost(...a),
++  },
++}));
++const mockGetEntitlement = jest.fn();
++jest.mock('../../api/clientPaymentsApi', () => ({
++  clientPaymentsApi: { getEntitlement: () => mockGetEntitlement() },
++}));
++const mockCapture = jest.fn();
++jest.mock('../../services/sentry', () => ({
++  captureError: (...a: unknown[]) => mockCapture(...a),
++}));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++const mockInitStripe = jest.fn();
++const mockInitPaymentSheet = jest.fn();
++const mockPresent = jest.fn();
++// Mutable so one test can remove the native module.
++const mockStripeModule: Record<string, unknown> = {};
++function installStripe() {
++  mockStripeModule.initStripe = (...a: unknown[]) => mockInitStripe(...a);
++  mockStripeModule.initPaymentSheet = (...a: unknown[]) => mockInitPaymentSheet(...a);
++  mockStripeModule.presentPaymentSheet = (...a: unknown[]) => mockPresent(...a);
++  mockStripeModule.useStripe = () => ({
++    initPaymentSheet: (...a: unknown[]) => mockInitPaymentSheet(...a),
++    presentPaymentSheet: (...a: unknown[]) => mockPresent(...a),
++  });
++}
++installStripe();
++jest.mock('@stripe/stripe-react-native', () => mockStripeModule);
++
++// Required (not imported) so the Stripe mock is populated before the sheet
++// module loads: main's sheet read `useStripe` once at module load, and an
++// import would be hoisted above installStripe().
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const PackageSelectionSheet: typeof import('../PackageSelectionSheet').default =
++  require('../PackageSelectionSheet').default;
++
++const PACKAGES = [
++  { id: PKG_A, name: 'Strength 12 weeks', amount_cents: 14900, currency: 'usd', billing_type: 'one_time', interval: null, description: null },
++  { id: PKG_B, name: 'Starter 4 weeks', amount_cents: 4900, currency: 'usd', billing_type: 'one_time', interval: null, description: null },
++  { id: PKG_FREE, name: 'Free taster', amount_cents: 0, currency: 'usd', billing_type: 'one_time', interval: null, description: null },
++  { id: PKG_MONTHLY, name: 'Monthly coaching', amount_cents: 9900, currency: 'usd', billing_type: 'recurring', interval: 'month', description: null },
++];
++
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: {} },
++    config: { headers: { 'X-Request-Id': 'abcdef12-sent-0000-0000-000000000000' } },
++  });
++}
++
++/** Owner copy rules: no generic "try again later", no first person, no exclamation marks. */
++function expectCopyRules(text: string) {
++  expect(text).not.toMatch(/try again later/i);
++  expect(text).not.toMatch(/something went wrong/i);
++  expect(text).not.toMatch(/^please try again\.?$/i);
++  expect(text).not.toMatch(/!/);
++  expect(text).not.toMatch(/\b(we|we're|our|us|I|I'm|me|my)\b/);
++}
++
++async function mountAndSelect(pkgId = PKG_A, props: Partial<React.ComponentProps<typeof PackageSelectionSheet>> = {}) {
++  const onPaymentSuccess = jest.fn();
++  const onDismiss = jest.fn();
++  const r = await render(
++    <PackageSelectionSheet
++      visible
++      onDismiss={onDismiss}
++      onPaymentSuccess={onPaymentSuccess}
++      entitlementPollDelaysMs={[0, 0]}
++      {...props}
++    />,
++  );
++  await waitFor(() => expect(r.getByTestId(`package-card-${pkgId}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`package-card-${pkgId}`));
++  return { ...r, onPaymentSuccess, onDismiss };
++}
++
++async function pressSelect(r: Awaited<ReturnType<typeof mountAndSelect>>) {
++  await fireEvent.press(r.getByTestId('select-plan-btn'));
++}
++
++/** The success moment shows; Continue leaves the sheet the paid way. */
++async function finishSuccess(r: Awaited<ReturnType<typeof mountAndSelect>>) {
++  await waitFor(() => expect(r.getByTestId('payment-success')).toBeTruthy());
++  expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++  await fireEvent.press(r.getByTestId('payment-continue'));
++  expect(r.onPaymentSuccess).toHaveBeenCalledTimes(1);
++}
++
++function paymentIntentCalls() {
++  return mockPost.mock.calls.filter((c) => c[0] === '/v1/checkout/payment-intent');
++}
++
++const savedKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
++afterAll(() => {
++  if (savedKey === undefined) delete process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
++  else process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = savedKey;
++});
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  installStripe();
++  // A build key is present, as in an EAS build (main checked it before the POST).
++  process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_build';
++  mockGet.mockResolvedValue({ data: { packages: PACKAGES } });
++  mockPost.mockImplementation(async (url: string) => {
++    if (url === '/v1/checkout/payment-intent') return { data: { ...SECRETS } };
++    throw httpError(404, { error: 'Not Found', message: `Cannot POST ${url}` });
++  });
++  mockInitStripe.mockResolvedValue(undefined);
++  mockInitPaymentSheet.mockResolvedValue({});
++  mockPresent.mockResolvedValue({});
++  mockGetEntitlement.mockResolvedValue({ ok: true, data: { active: true } });
++});
++
++describe('PackageSelectionSheet pays through POST /v1/checkout/payment-intent', () => {
++  it('sends exactly the backend DTO body and gives PaymentSheet the customer, ephemeral key and client secret', async () => {
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(mockPost).toHaveBeenCalled());
++
++    // The request: route and a body the backend DTO accepts (no extra field).
++    expect(mockPost.mock.calls[0][0]).toBe('/v1/checkout/payment-intent');
++    const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
++    expect(Object.keys(body).sort()).toEqual(BACKEND_DTO_FIELDS);
++    expect(body.package_id).toBe(PKG_A);
++    expect(body.package_id).toMatch(IS_UUID);
++    expect(body.idempotency_key).toMatch(IS_UUID);
++
++    await finishSuccess(r);
++    expect(mockPost.mock.calls.map((c) => c[0])).toEqual(['/v1/checkout/payment-intent']);
++
++    expect(mockInitStripe).toHaveBeenCalledWith(
++      expect.objectContaining({ publishableKey: 'pk_test_backend' }),
++    );
++    expect(mockInitPaymentSheet).toHaveBeenCalledTimes(1);
++    const params = mockInitPaymentSheet.mock.calls[0][0] as Record<string, unknown>;
++    expect(params).toEqual(
++      expect.objectContaining({
++        customerId: 'cus_test_789',
++        customerEphemeralKeySecret: 'ek_test_456',
++        paymentIntentClientSecret: 'pi_test_123_secret_abc',
++        merchantDisplayName: 'The Growth Project',
++        allowsDelayedPaymentMethods: false,
++      }),
++    );
++    // TGP theme (OR-110-2): the sheet follows the app's tokens and colour scheme.
++    expect(params.style).toBe('alwaysLight');
++    expect(params.appearance).toEqual(expect.objectContaining({ colors: expect.any(Object) }));
++    expect(mockPresent).toHaveBeenCalledTimes(1);
++    // Success waits for the webhook-driven entitlement, as the rest of the app reads it.
++    expect(mockGetEntitlement).toHaveBeenCalled();
++    expect(mockCapture).not.toHaveBeenCalled();
++  });
++
++  it('uses the build publishable key when the backend sends none', async () => {
++    mockPost.mockResolvedValueOnce({ data: { ...SECRETS, publishable_key: '' } });
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await finishSuccess(r);
++    expect(mockInitStripe).toHaveBeenCalledWith(expect.objectContaining({ publishableKey: 'pk_test_build' }));
++  });
++
++  it('a 200 without the PaymentSheet secrets is a support case, never a sheet with empty keys', async () => {
++    mockPost.mockResolvedValueOnce({ data: { client_secret: 'pi_test_123_secret_abc', ephemeral_key: '', customer_id: '' } });
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(JSON.stringify(mockCapture.mock.calls)).not.toContain('pi_test_123_secret_abc');
++  });
++
++  it('shows the price from amount_cents (the backend field)', async () => {
++    const r = await mountAndSelect();
++    expect(r.getByText('$149.00 once')).toBeTruthy();
++    expect(r.getByText('$99.00 a month')).toBeTruthy();
++    expect(r.getByText('Free')).toBeTruthy();
++    expect(r.queryByText(/NaN/)).toBeNull();
++  });
++
++  it('cancel shows no error, does not finish, and the retry reuses the same idempotency key', async () => {
++    mockPresent.mockResolvedValueOnce({ error: { code: 'Canceled', message: 'The payment flow has been canceled' } });
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(mockPresent).toHaveBeenCalledTimes(1));
++    await waitFor(() => expect(r.getByTestId('select-plan-btn').props.accessibilityState.disabled).toBe(false));
++    expect(r.queryByTestId('payment-error')).toBeNull();
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++
++    await pressSelect(r);
++    await finishSuccess(r);
++    const keys = paymentIntentCalls().map((c) => (c[1] as { idempotency_key: string }).idempotency_key);
++    expect(keys).toHaveLength(2);
++    expect(keys[0]).toBe(keys[1]);
++  });
++
++  it('a different package gets a new idempotency key', async () => {
++    mockPresent.mockResolvedValueOnce({ error: { code: 'Canceled', message: 'canceled' } });
++    const r = await mountAndSelect(PKG_A);
++    await pressSelect(r);
++    await waitFor(() => expect(mockPresent).toHaveBeenCalledTimes(1));
++    await fireEvent.press(r.getByTestId(`package-card-${PKG_B}`));
++    await pressSelect(r);
++    await finishSuccess(r);
++    const calls = paymentIntentCalls().map((c) => c[1] as { package_id: string; idempotency_key: string });
++    expect(calls.map((c) => c.package_id)).toEqual([PKG_A, PKG_B]);
++    expect(calls[0].idempotency_key).not.toBe(calls[1].idempotency_key);
++  });
++
++  it('when the entitlement has not landed yet, says the payment went through and offers Continue', async () => {
++    mockGetEntitlement.mockResolvedValue({ ok: true, data: { active: false } });
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-confirmed-pending')).toBeTruthy());
++    expect(r.getByText(
++      'Your payment went through. Your plan can take a minute to show in the app. Choose Continue to carry on.',
++    )).toBeTruthy();
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++    await fireEvent.press(r.getByTestId('payment-continue'));
++    expect(r.onPaymentSuccess).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('specific copy per cause', () => {
++  async function failWith(setup: () => void) {
++    setup();
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    const text = r.getByTestId('payment-error').props.children as string;
++    expectCopyRules(text);
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++    return { r, text };
++  }
++
++  it('no response: uncertainty, plan recovery and support, no Stripe call', async () => {
++    const { r, text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(Object.assign(new Error('Network Error'), { config: {} })),
++    );
++    // B-342-1 supersedes the historical false no-charge pin; keep recovery
++    // action, same-key and rendered-surface assertions unchanged.
++    expect(text).toMatch(/^The app could not reach the server, so this step is not confirmed\./);
++    expect(text).not.toMatch(/nothing was charged/);
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++    // The neutral B-342-1 branch intentionally offers support because an
++    // unanswered attempt may have succeeded; absence was an old-copy pin.
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++  });
++
++  it('card declined (Stripe Failed + declineCode)', async () => {
++    const { text } = await failWith(() =>
++      mockPresent.mockResolvedValueOnce({ error: { code: 'Failed', message: 'Your card was declined.', declineCode: 'generic_decline', type: 'card_error' } }),
++    );
++    expect(text).toBe(
++      'Your bank declined this card, so nothing was charged. Start again with a different card, or ask your bank about the decline.',
++    );
++  });
++
++  it('insufficient funds', async () => {
++    const { text } = await failWith(() =>
++      mockPresent.mockResolvedValueOnce({ error: { code: 'Failed', message: 'x', declineCode: 'insufficient_funds', type: 'card_error' } }),
++    );
++    expect(text).toBe('This card does not have enough funds, so nothing was charged. Start again with a different card.');
++  });
++
++  it('bank authentication failed (3DS)', async () => {
++    const { text } = await failWith(() =>
++      mockPresent.mockResolvedValueOnce({ error: { code: 'Failed', message: 'x', stripeErrorCode: 'payment_intent_authentication_failure' } }),
++    );
++    expect(text).toBe(
++      'Your bank could not confirm this payment, so nothing was charged. Start again to confirm with your bank, or use a different card.',
++    );
++  });
++
++  it('package no longer offered (404 PACKAGE_NOT_FOUND)', async () => {
++    const { text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(404, { error: 'PACKAGE_NOT_FOUND', message: 'Package not available' })),
++    );
++    expect(text).toMatch(/^This plan is no longer offered, so it cannot be started from here\./);
++    expect(text).not.toMatch(/nothing was charged/);
++    expect(mockCapture).not.toHaveBeenCalled();
++  });
++
++  it('coach not set up for payments (409 COACH_NOT_PAYOUT_READY)', async () => {
++    const { text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(409, { error: 'COACH_NOT_PAYOUT_READY', message: 'x' })),
++    );
++    expect(text).toBe(
++      'Your coach cannot take card payments right now, so this plan cannot start and nothing was charged. Message your coach, then choose the plan once they are ready.',
++    );
++  });
++
++  it('payment still being set up (503 PAYMENT_IN_PROGRESS) and the retry keeps the key', async () => {
++    const { r, text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(503, { error: 'PAYMENT_IN_PROGRESS', message: 'x' })),
++    );
++    expect(text).toBe(
++      'This payment is still being set up. Wait a few seconds, then start again. You will not be charged twice.',
++    );
++    await pressSelect(r);
++    await finishSuccess(r);
++    const keys = paymentIntentCalls().map((c) => (c[1] as { idempotency_key: string }).idempotency_key);
++    expect(keys[0]).toBe(keys[1]);
++  });
++
++  it('too many attempts (429) names the wait', async () => {
++    const { text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(429, { statusCode: 429, error: 'Too Many Requests', message: 'x', retryAfter: 3600 })),
++    );
++    expect(text).toBe('There have been too many payment attempts, so this one did not start. Wait 60 minutes, then start again.');
++  });
++
++  it('payments not configured (503 CONNECT_NOT_CONFIGURED): support email, reference, Sentry', async () => {
++    const { r, text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(
++        httpError(503, { error: 'CONNECT_NOT_CONFIGURED', message: 'x', request_id: 'req98765-aaaa-bbbb' }),
++      ),
++    );
++    expect(text).toBe('Card payments are not switched on for this app yet, so nothing was charged. Email support and quote reference req98765.');
++    expect(r.getByTestId('payment-error-reference').props.children).toBe('Reference req98765');
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++  });
++
++  it('anything else: support email with the server reference, reported to Sentry without secrets', async () => {
++    const { r, text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(500, { error: 'INTERNAL', message: 'boom', request_id: 'f00dbabe-1234' })),
++    );
++    // B-342-1: an unmapped answer proves nothing about money: no no-charge claim.
++    expect(text).toBe(
++      'This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference f00dbabe.',
++    );
++    expect(r.getByTestId('payment-open-plan')).toBeTruthy();
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++    const [err, ctx] = mockCapture.mock.calls[0];
++    expect(err).toBeInstanceOf(Error);
++    expect(ctx).toEqual(expect.objectContaining({ status: 500, code: 'INTERNAL', reference: 'f00dbabe' }));
++  });
++
++  it('an unknown PaymentSheet failure never sends the client secret or ephemeral key to Sentry', async () => {
++    const { r } = await failWith(() =>
++      mockPresent.mockResolvedValueOnce({ error: { code: 'Failed', message: 'pi_test_123_secret_abc is in a bad state' } }),
++    );
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++    const sent = JSON.stringify(mockCapture.mock.calls.map(([e, c]) => [String((e as Error).message), c]));
++    expect(sent).not.toContain('pi_test_123_secret_abc');
++    expect(sent).not.toContain('ek_test_456');
++    expect(sent).not.toContain('secret');
++    // The reference is this attempt's key prefix, which support can find on the purchase row.
++    const key = (paymentIntentCalls()[0][1] as { idempotency_key: string }).idempotency_key;
++    expect(r.getByTestId('payment-error-reference').props.children).toBe(`Reference ${key.slice(0, 8)}`);
++  });
++
++  it('no publishable key anywhere: payments-off copy with support, nothing presented', async () => {
++    const { r, text } = await failWith(() => {
++      delete process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
++      mockPost.mockResolvedValueOnce({ data: { ...SECRETS, publishable_key: '' } });
++    });
++    const key = (paymentIntentCalls()[0][1] as { idempotency_key: string }).idempotency_key;
++    expect(text).toBe(
++      `Card payments are not switched on for this app yet, so nothing was charged. Email support and quote reference ${key.slice(0, 8)}.`,
++    );
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++  });
++
++  it('a build without the Stripe native module says to update the app and never mints a PaymentIntent', async () => {
++    const { text } = await failWith(() => {
++      delete mockStripeModule.initStripe;
++      delete mockStripeModule.initPaymentSheet;
++      delete mockStripeModule.presentPaymentSheet;
++      delete mockStripeModule.useStripe;
++    });
++    expect(text).toBe(
++      'Card payments need the latest version of the app. Update the app from your app store, then choose your plan again.',
++    );
++    expect(paymentIntentCalls()).toHaveLength(0);
++  });
++});
++
++describe('plans the payment-intent route must not charge', () => {
++  it('a $0 plan is claimed through /claim-free and never reaches Stripe', async () => {
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === `/v1/packages/${PKG_FREE}/claim-free`) return { data: { active: true, status: 'created' } };
++      throw httpError(404, { error: 'Not Found', message: 'x' });
++    });
++    const r = await mountAndSelect(PKG_FREE);
++    await pressSelect(r);
++    await finishSuccess(r);
++    expect(mockPost.mock.calls.map((c) => c[0])).toEqual([`/v1/packages/${PKG_FREE}/claim-free`]);
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++  });
++
++  it('a renewing plan is never sold as a one-off PaymentIntent (it goes to subscription-intent)', async () => {
++    const r = await mountAndSelect(PKG_MONTHLY);
++    await pressSelect(r);
++    await waitFor(() => expect(mockPost).toHaveBeenCalled());
++    expect(paymentIntentCalls()).toHaveLength(0);
++    expect(mockPost.mock.calls[0][0]).toBe('/v1/checkout/subscription-intent');
++  });
++});
++
++describe('AUD-SOL-SH-118 B-343-3 actual Day 1 callback configuration', () => {
++  it('an uncertain Open your plan action cannot silently use the payment-success/leave-onboarding callback', async () => {
++    // Both actual Day1WinScreen call sites omit onOpenPlan. RootNavigator's
++    // onComplete callback enters the main app or a logger, not Membership.
++    mockPost.mockRejectedValueOnce(httpError(500, { error: 'INTERNAL', request_id: 'f00dbabe-1234' }));
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-open-plan')).toBeTruthy());
++    expect(r.queryByTestId('payment-success')).toBeNull();
++    await fireEvent.press(r.getByTestId('payment-open-plan'));
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++  });
++
++  it('control: an explicit plan-navigation callback receives the unknown plan id without payment success', async () => {
++    const onOpenPlan = jest.fn();
++    mockPost.mockRejectedValueOnce(httpError(500, { error: 'INTERNAL', request_id: 'f00dbabe-1234' }));
++    const r = await mountAndSelect(PKG_A, { onOpenPlan });
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-open-plan')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('payment-open-plan'));
++    expect(onOpenPlan).toHaveBeenCalledWith(null);
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++  });
++});
+diff --git a/src/components/__tests__/audSolS123119.planAuthority.test.tsx b/src/components/__tests__/audSolS123119.planAuthority.test.tsx
+new file mode 100644
+index 0000000..f81c480
+--- /dev/null
++++ b/src/components/__tests__/audSolS123119.planAuthority.test.tsx
+@@ -0,0 +1,93 @@
++/**
++ * Independent exact-head P3 tests: cancellation consent and the authority
++ * of successful reads after an earlier action receipt.
++ */
++import React from 'react';
++import { Alert } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import YourPlansPanel from '../purchase/YourPlansPanel';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const tokens = jest.requireActual('../../theme/tokens').default;
++  return { useTheme: () => ({ tokens, semanticColors: tokens.lightTokens, colorScheme: 'light' }) };
++});
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++const ID = 'purchase-1';
++const PLAN = {
++  purchase_id: ID, package_id: 'pkg-1', package_name: 'Monthly coaching', state: 'active',
++  entitlement_active: true, amount_cents: 9900, currency: 'usd', interval: 'month', interval_count: 1,
++  next_charge_at: '2026-11-02T12:00:00.000Z', cancel_at_period_end: false, access_ends_at: null,
++  can_cancel: true, can_resume: false,
++};
++const ENDING = { ...PLAN, next_charge_at: null, cancel_at_period_end: true, access_ends_at: PLAN.next_charge_at, can_cancel: false, can_resume: true };
++const ok = (plan: object) => ({ data: { plans: [plan] } });
++const fail = () => Object.assign(new Error('Synthetic read failure'), { response: { status: 503, data: { code: 'STRIPE_UNAVAILABLE' } } });
++const receipt = (outcome: 'ended' | 'scheduled') => ({
++  data: { outcome, purchase_id: ID, access_ends_at: outcome === 'ended' ? '2026-10-04T20:00:00Z' : PLAN.next_charge_at, voided_amount_cents: outcome === 'ended' ? 9900 : 0, currency: 'usd', paid_period_kept: false },
++});
++const confirm = () => jest.spyOn(Alert, 'alert').mockImplementation((_t, _b, buttons) => {
++  (buttons ?? []).find((b) => b.style === 'destructive')?.onPress?.();
++});
++beforeEach(() => jest.clearAllMocks());
++afterEach(() => jest.restoreAllMocks());
++
++it('a newer successful retry read supersedes the old cancel receipt if another session kept the plan', async () => {
++  mockGet.mockResolvedValueOnce(ok(PLAN)).mockRejectedValueOnce(fail()).mockResolvedValue(ok(PLAN));
++  mockPost.mockResolvedValue(receipt('scheduled'));
++  confirm();
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++  expect(r.getByTestId(`your-plan-line-${ID}`).props.children).toMatch(/nothing more is charged/i);
++  await fireEvent.press(r.getByTestId('your-plans-retry'));
++  await waitFor(() => expect(r.queryByTestId('your-plans-stale')).toBeNull());
++  expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy();
++  expect(r.getByTestId(`your-plan-line-${ID}`).props.children).toMatch(/Next charge of \$99\.00 a month/);
++  expect(r.getByTestId(`your-plan-line-${ID}`).props.children).not.toMatch(/nothing more is charged/i);
++});
++
++it('control: a scheduled receipt survives the immediate failed reload until an authoritative refresh', async () => {
++  mockGet.mockResolvedValueOnce(ok(PLAN)).mockRejectedValue(fail());
++  mockPost.mockResolvedValue(receipt('scheduled'));
++  confirm();
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++  expect(r.getByTestId(`your-plan-line-${ID}`).props.children).toMatch(/Access continues until November 2, 2026/);
++});
++
++it('a stale active card warns about immediate ending if the plan entered dunning before cancel', async () => {
++  mockGet.mockResolvedValueOnce(ok(PLAN)).mockRejectedValue(fail());
++  const dialog = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  const r = await render(<YourPlansPanel reloadKey={0} />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await r.rerender(<YourPlansPanel reloadKey={1} />);
++  await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  // The billing route branches on the current server state, not this stale
++  // active card: dunning cancellation voids the open invoice and ends now.
++  expect(dialog.mock.calls[0][1]).toMatch(/access.*(now|immediately)|ends.*(now|immediately)|check.*(current|latest)|refresh.*before/i);
++});
++
++it('control: period-end cancel uses its canonical returned outcome and Keep my plan uses its canonical resumed view', async () => {
++  mockGet.mockResolvedValueOnce(ok(PLAN)).mockResolvedValueOnce(ok(ENDING)).mockRejectedValue(fail());
++  mockPost.mockResolvedValueOnce(receipt('scheduled')).mockResolvedValueOnce({ data: PLAN });
++  confirm();
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  await waitFor(() => expect(r.getByTestId(`your-plan-keep-${ID}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-keep-${ID}`));
++  await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++  expect(r.getByTestId(`your-plan-line-${ID}`).props.children).toMatch(/Next charge of \$99\.00 a month/);
++});
+diff --git a/src/components/__tests__/audSolS123119.planRecovery.test.tsx b/src/components/__tests__/audSolS123119.planRecovery.test.tsx
+new file mode 100644
+index 0000000..54848c0
+--- /dev/null
++++ b/src/components/__tests__/audSolS123119.planRecovery.test.tsx
+@@ -0,0 +1,189 @@
++/**
++ * Independent AUD-SOL-SH3-118 probes at mobile #344 e7fcc5d2.
++ * Real panel, API adapter, error mapper and copy; synthetic transport only.
++ * Replayed by B-SHEET3-119 (agent 119) with three harness changes, no
++ * assertion weakened: expo-clipboard is mocked (the support fallback imports
++ * it); B-344-1 uses queryAllByText (the copy and the Email support action
++ * both match the alternation); B-344-3 waits on End my plan, because the
++ * canonical resume answer (can_resume false) removes Keep my plan.
++ */
++import React from 'react';
++import { Alert } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const tokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({
++      tokens,
++      semanticColors: tokens.lightTokens,
++      colorScheme: 'light',
++    }),
++  };
++});
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: {
++    get: (...a: unknown[]) => mockGet(...a),
++    post: (...a: unknown[]) => mockPost(...a),
++  },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++import YourPlansPanel from '../purchase/YourPlansPanel';
++
++const PLAN = {
++  purchase_id: 'purchase-1',
++  package_id: 'pkg-monthly',
++  package_name: 'Monthly coaching',
++  state: 'active',
++  entitlement_active: true,
++  amount_cents: 9900,
++  currency: 'usd',
++  interval: 'month',
++  interval_count: 1,
++  next_charge_at: '2026-11-02T12:00:00.000Z',
++  cancel_at_period_end: false,
++  access_ends_at: null,
++  can_cancel: true,
++  can_resume: false,
++};
++const ENDING = {
++  ...PLAN,
++  next_charge_at: null,
++  cancel_at_period_end: true,
++  access_ends_at: '2026-11-02T12:00:00.000Z',
++  can_cancel: false,
++  can_resume: true,
++};
++const LIST = '/v1/checkout/subscriptions';
++const RESUME = `${LIST}/purchase-1/resume`;
++const CANCEL = `${LIST}/purchase-1/cancel`;
++const httpError = (status: number, code: string) =>
++  Object.assign(new Error('synthetic HTTP error'), {
++    response: {
++      status,
++      data: { code, error: code, request_id: 'abcd1234-ffff' },
++      headers: {},
++    },
++    config: { headers: {} },
++  });
++const response = (plan: Record<string, unknown>) => ({ data: { plans: [plan] } });
++
++function deferred<T>() {
++  let resolve: (v: T) => void = () => undefined;
++  const promise = new Promise<T>((res) => { resolve = res; });
++  return { promise, resolve };
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockGet.mockResolvedValue(response(PLAN));
++  mockPost.mockResolvedValue({ data: PLAN });
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++});
++
++it('control: a healthy active plan has a next charge and a cancellation action', async () => {
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId('your-plan-end-purchase-1')).toBeTruthy());
++  expect(r.getByText(/Next charge of \$99\.00 a month/)).toBeTruthy();
++});
++
++it('control: a successful Keep my plan with a healthy reload shows renewing, not ending', async () => {
++  mockGet.mockResolvedValueOnce(response(ENDING)).mockResolvedValue(response(PLAN));
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId('your-plan-keep-purchase-1')).toBeTruthy());
++  await fireEvent.press(r.getByTestId('your-plan-keep-purchase-1'));
++  await waitFor(() => expect(r.getByTestId('your-plan-end-purchase-1')).toBeTruthy());
++  expect(mockPost).toHaveBeenCalledWith(RESUME, expect.objectContaining({ idempotency_key: expect.any(String) }));
++  expect(r.queryByText(/Nothing more is charged/)).toBeNull();
++});
++
++it.each([404, 503])(
++  'B-344-1: a subscriptions list HTTP %s has a visible truthful recovery instead of disappearing',
++  async (status) => {
++    mockGet.mockRejectedValue(httpError(status, status === 404 ? 'Not Found' : 'STRIPE_CHECKOUT_ERROR'));
++    const r = await render(<YourPlansPanel />);
++    await act(async () => { await Promise.resolve(); });
++    expect(mockGet).toHaveBeenCalledWith(LIST);
++    expect(r.queryAllByText(/could not load|cannot load|not available|not.*switched on|message.*coach|email support|check.*connection/i).length).toBeGreaterThan(0);
++  },
++);
++
++it('B-344-2: End my plan during dunning warns that access ends immediately, not at the paid period end', async () => {
++  mockGet.mockResolvedValue(response({
++    ...PLAN,
++    state: 'past_due',
++    next_charge_at: null,
++    entitlement_active: true,
++  }));
++  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId('your-plan-end-purchase-1')).toBeTruthy());
++  await fireEvent.press(r.getByTestId('your-plan-end-purchase-1'));
++  expect(alert).toHaveBeenCalledTimes(1);
++  expect(alert.mock.calls[0][1]).toMatch(/access.*(now|immediately)|ends.*(now|immediately)/i);
++  expect(alert.mock.calls[0][1]).not.toMatch(/stays active until the end of the period/i);
++});
++
++it('B-344-3: a confirmed resume is not still described as ending/no-more-charges when its reload fails', async () => {
++  mockGet.mockResolvedValueOnce(response(ENDING)).mockRejectedValue(httpError(503, 'STRIPE_CHECKOUT_ERROR'));
++  mockPost.mockResolvedValue({ data: PLAN });
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId('your-plan-keep-purchase-1')).toBeTruthy());
++  await fireEvent.press(r.getByTestId('your-plan-keep-purchase-1'));
++  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
++  await waitFor(() => expect(r.getByTestId('your-plan-end-purchase-1').props.accessibilityState.busy).toBe(false));
++  expect(mockPost.mock.calls[0][0]).toBe(RESUME);
++  expect(r.queryByText(/Ends on .*Nothing more is charged/)).toBeNull();
++});
++
++it('B-344-3: an older reload cannot overwrite a newer authoritative cancellation reload', async () => {
++  const old = deferred<ReturnType<typeof response>>();
++  mockGet.mockResolvedValueOnce(response(PLAN))
++    .mockImplementationOnce(() => old.promise)
++    .mockResolvedValue(response(ENDING));
++  const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _b, buttons) => {
++    (buttons ?? []).find((b) => b.style === 'destructive')?.onPress?.();
++  });
++  const r = await render(<YourPlansPanel reloadKey={0} />);
++  await waitFor(() => expect(r.getByTestId('your-plan-end-purchase-1')).toBeTruthy());
++  await r.rerender(<YourPlansPanel reloadKey={1} />);
++  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
++  await fireEvent.press(r.getByTestId('your-plan-end-purchase-1'));
++  await waitFor(() => expect(r.getByTestId('your-plan-keep-purchase-1')).toBeTruthy());
++  expect(alert).toHaveBeenCalledTimes(1);
++  expect(mockPost).toHaveBeenCalledWith(CANCEL, {});
++  await act(async () => { old.resolve(response(PLAN)); await old.promise; });
++  expect(r.queryByTestId('your-plan-end-purchase-1')).toBeNull();
++  expect(r.getByTestId('your-plan-keep-purchase-1')).toBeTruthy();
++});
++
++it('B-344-4: an action failure asking for Email support exposes a working support action', async () => {
++  mockGet.mockResolvedValue(response(ENDING));
++  mockPost.mockRejectedValue(httpError(503, 'SUBSCRIPTION_SETUP_UNAVAILABLE'));
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId('your-plan-keep-purchase-1')).toBeTruthy());
++  await fireEvent.press(r.getByTestId('your-plan-keep-purchase-1'));
++  await waitFor(() => expect(r.getByTestId('your-plan-error')).toBeTruthy());
++  expect(r.getByTestId('your-plan-error').props.children[0]).toMatch(/email support/i);
++  expect(r.queryByRole('button', { name: /Email support/i })).not.toBeNull();
++});
++
++it('C-344-3: a held successful action does not launch a fresh list read after unmount', async () => {
++  const held = deferred<{ data: typeof PLAN }>();
++  mockGet.mockResolvedValue(response(ENDING));
++  mockPost.mockImplementation(() => held.promise);
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId('your-plan-keep-purchase-1')).toBeTruthy());
++  await fireEvent.press(r.getByTestId('your-plan-keep-purchase-1'));
++  await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
++  await r.unmount();
++  await act(async () => { held.resolve({ data: PLAN }); await held.promise; });
++  expect(mockGet).toHaveBeenCalledTimes(1);
++});
+diff --git a/src/components/__tests__/audSolS3D119.deltaProbes.test.tsx b/src/components/__tests__/audSolS3D119.deltaProbes.test.tsx
+new file mode 100644
+index 0000000..17eecd7
+--- /dev/null
++++ b/src/components/__tests__/audSolS3D119.deltaProbes.test.tsx
+@@ -0,0 +1,115 @@
++/** Exact-head round-5 authority and consent challenges; transport only is synthetic. */
++import React from 'react';
++import { Alert } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import YourPlansPanel from '../purchase/YourPlansPanel';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const tokens = jest.requireActual('../../theme/tokens').default;
++  return { useTheme: () => ({ tokens, semanticColors: tokens.lightTokens, colorScheme: 'light' }) };
++});
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++const ID = 'purchase-1';
++const DATE = '2026-11-02T12:00:00.000Z';
++const NEW_DATE = '2026-12-02T12:00:00.000Z';
++const PLAN = {
++  purchase_id: ID, package_id: 'pkg-1', package_name: 'Monthly coaching', state: 'active',
++  entitlement_active: true, amount_cents: 9900, currency: 'usd', interval: 'month', interval_count: 1,
++  next_charge_at: DATE, cancel_at_period_end: false, access_ends_at: null,
++  can_cancel: true, can_resume: false,
++};
++const TRIAL = { ...PLAN, state: 'trialing', next_charge_at: null, trial_ends_at: DATE };
++const ending = (p: object, date = DATE) => ({
++  ...p, next_charge_at: null, cancel_at_period_end: true, access_ends_at: date, can_cancel: false, can_resume: true,
++});
++const ok = (p: object) => ({ data: { plans: [p] } });
++const failure = (status = 503) => Object.assign(new Error('Synthetic failure'), {
++  response: { status, data: status === 404 ? { error: 'Not Found' } : { code: 'STRIPE_UNAVAILABLE' } },
++});
++const receipt = () => ({ data: {
++  outcome: 'scheduled', purchase_id: ID, access_ends_at: DATE, voided_amount_cents: 0,
++  currency: 'usd', paid_period_kept: false,
++} });
++const confirm = () => jest.spyOn(Alert, 'alert').mockImplementation((_t, _b, buttons) => {
++  (buttons ?? []).find((b) => b.style === 'destructive')?.onPress?.();
++});
++const line = (r: Awaited<ReturnType<typeof render>>) => r.getByTestId(`your-plan-line-${ID}`).props.children;
++beforeEach(() => { mockGet.mockReset(); mockPost.mockReset(); });
++afterEach(() => jest.restoreAllMocks());
++
++it.each([PLAN, TRIAL])('confirmed state %# consent covers a newly overdue payment', async (p) => {
++  mockGet.mockResolvedValue(ok(p));
++  const dialog = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  expect(dialog.mock.calls[0][1]).toMatch(/If a payment is overdue, ending it ends access now instead and cancels the unpaid charge/);
++  expect(dialog.mock.calls[0][1]).not.toMatch(/period you paid for/);
++});
++
++it.each([503, 404])('stale trial after status %s offers a refresh and sends no destructive action', async (status) => {
++  mockGet.mockResolvedValueOnce(ok(TRIAL)).mockRejectedValueOnce(failure(status)).mockResolvedValue(ok(TRIAL));
++  const dialog = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  const r = await render(<YourPlansPanel reloadKey={0} />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await r.rerender(<YourPlansPanel reloadKey={1} />);
++  await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  expect(dialog.mock.calls[0][0]).toBe('Refresh your plans first');
++  expect(dialog.mock.calls[0][2]?.some((b) => b.style === 'destructive')).toBe(false);
++  expect(mockPost).not.toHaveBeenCalled();
++  await act(async () => { dialog.mock.calls[0][2]?.[1]?.onPress?.(); });
++  await waitFor(() => expect(r.queryByTestId('your-plans-stale')).toBeNull());
++});
++
++it('a newer successful read with a different access-end date supersedes a scheduled receipt even if cancellation is still scheduled', async () => {
++  // A later remote Keep + End can leave cancel_at_period_end=true again,
++  // but its canonical access end belongs to the current period, not this receipt.
++  mockGet.mockResolvedValueOnce(ok(PLAN)).mockRejectedValueOnce(failure()).mockResolvedValue(ok(ending(PLAN, NEW_DATE)));
++  mockPost.mockResolvedValue(receipt());
++  confirm();
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++  expect(line(r)).toMatch(/November 2, 2026/);
++  await fireEvent.press(r.getByTestId('your-plans-retry'));
++  await waitFor(() => expect(r.queryByTestId('your-plans-stale')).toBeNull());
++  expect(r.getByTestId(`your-plan-keep-${ID}`)).toBeTruthy();
++  expect(line(r)).toMatch(/December 2, 2026/);
++  expect(line(r)).not.toMatch(/November 2, 2026/);
++});
++
++it('a newer paid-period view must not retain an old free-trial receipt', async () => {
++  mockGet.mockResolvedValueOnce(ok(TRIAL)).mockRejectedValueOnce(failure()).mockResolvedValue(ok(ending(PLAN, NEW_DATE)));
++  mockPost.mockResolvedValue(receipt());
++  confirm();
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  await waitFor(() => expect(r.getByTestId('your-plans-stale')).toBeTruthy());
++  expect(line(r)).toMatch(/Your free trial ends on November 2, 2026, and nothing is charged/);
++  await fireEvent.press(r.getByTestId('your-plans-retry'));
++  await waitFor(() => expect(r.queryByTestId('your-plans-stale')).toBeNull());
++  expect(line(r)).toMatch(/December 2, 2026/);
++  expect(line(r)).not.toMatch(/free trial|nothing is charged/i);
++});
++
++it('control: an agreeing newer view preserves the free-trial receipt', async () => {
++  mockGet.mockResolvedValueOnce(ok(TRIAL)).mockResolvedValue(ok(ending(TRIAL)));
++  mockPost.mockResolvedValue(receipt());
++  confirm();
++  const r = await render(<YourPlansPanel />);
++  await waitFor(() => expect(r.getByTestId(`your-plan-end-${ID}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`your-plan-end-${ID}`));
++  await waitFor(() => expect(r.getByTestId(`your-plan-keep-${ID}`)).toBeTruthy());
++  expect(line(r)).toBe('Your free trial ends on November 2, 2026, and nothing is charged.');
++});
+diff --git a/src/components/__tests__/audSolSh118.openPlanAction.test.tsx b/src/components/__tests__/audSolSh118.openPlanAction.test.tsx
+new file mode 100644
+index 0000000..68af794
+--- /dev/null
++++ b/src/components/__tests__/audSolSh118.openPlanAction.test.tsx
+@@ -0,0 +1,494 @@
++/**
++ * OR-112-22: the Day 1 / package_prompt sheet takes payment for ONE-TIME
++ * plans through POST /v1/checkout/payment-intent and the native PaymentSheet.
++ * Renewing plans: PackageSelectionSheet.subscription.test.tsx (B-RECUR-MOB).
++ *
++ * Failing before: on main the sheet POSTed { package_id, idempotency_key } to
++ * /v1/checkout/sessions (400 under forbidNonWhitelisted; that route never
++ * returns PaymentSheet secrets), passed no customerId, and showed the same
++ * generic "Payment failed. Please try again." for every cause.
++ *
++ * The real sheet is mounted; only the network (api), the Stripe native module,
++ * storage, theme and Sentry are mocked. Copy is asserted as literal strings so
++ * this file does not depend on the new module to load.
++ */
++import React from 'react';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++// Backend contract, growth-project-backend main 9cfd70d6:
++//   src/checkout/checkout.controller.ts
++//     export class CreatePaymentIntentDto {
++//       @IsUUID() package_id!: string;
++//       @IsUUID() idempotency_key!: string;
++//     }
++//     @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
++//     @Post('payment-intent')   (controller prefix 'v1/checkout')
++//   src/checkout/checkout.service.ts createPaymentIntentForClient returns
++//     { client_secret, ephemeral_key, customer_id, publishable_key }
++const BACKEND_DTO_FIELDS = ['idempotency_key', 'package_id'];
++// class-validator IsUUID() (version 'all' via validator.js isUUID).
++const IS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
++
++const PKG_A = '3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f';
++const PKG_B = '7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d';
++const PKG_FREE = '11111111-2222-4333-8444-555555555555';
++const PKG_MONTHLY = '99999999-8888-4777-8666-555555555555';
++
++const SECRETS = {
++  client_secret: 'pi_test_123_secret_abc',
++  ephemeral_key: 'ek_test_456',
++  customer_id: 'cus_test_789',
++  publishable_key: 'pk_test_backend',
++};
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../theme/tokens').default;
++  return {
++    useTheme: () => ({
++      tokens: realTokens,
++      semanticColors: realTokens.lightTokens,
++      colorScheme: 'light',
++    }),
++  };
++});
++jest.mock('../../storage/mmkv', () => ({
++  prefsStorage: {
++    getStringAsync: jest.fn(async () => null),
++    set: jest.fn(async () => undefined),
++  },
++}));
++jest.mock('../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'client-1', role: 'student' }),
++}));
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: {
++    get: (...a: unknown[]) => mockGet(...a),
++    post: (...a: unknown[]) => mockPost(...a),
++  },
++}));
++const mockGetEntitlement = jest.fn();
++jest.mock('../../api/clientPaymentsApi', () => ({
++  clientPaymentsApi: { getEntitlement: () => mockGetEntitlement() },
++}));
++const mockCapture = jest.fn();
++jest.mock('../../services/sentry', () => ({
++  captureError: (...a: unknown[]) => mockCapture(...a),
++}));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++const mockInitStripe = jest.fn();
++const mockInitPaymentSheet = jest.fn();
++const mockPresent = jest.fn();
++// Mutable so one test can remove the native module.
++const mockStripeModule: Record<string, unknown> = {};
++function installStripe() {
++  mockStripeModule.initStripe = (...a: unknown[]) => mockInitStripe(...a);
++  mockStripeModule.initPaymentSheet = (...a: unknown[]) => mockInitPaymentSheet(...a);
++  mockStripeModule.presentPaymentSheet = (...a: unknown[]) => mockPresent(...a);
++  mockStripeModule.useStripe = () => ({
++    initPaymentSheet: (...a: unknown[]) => mockInitPaymentSheet(...a),
++    presentPaymentSheet: (...a: unknown[]) => mockPresent(...a),
++  });
++}
++installStripe();
++jest.mock('@stripe/stripe-react-native', () => mockStripeModule);
++
++// Required (not imported) so the Stripe mock is populated before the sheet
++// module loads: main's sheet read `useStripe` once at module load, and an
++// import would be hoisted above installStripe().
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const PackageSelectionSheet: typeof import('../PackageSelectionSheet').default =
++  require('../PackageSelectionSheet').default;
++
++const PACKAGES = [
++  { id: PKG_A, name: 'Strength 12 weeks', amount_cents: 14900, currency: 'usd', billing_type: 'one_time', interval: null, description: null },
++  { id: PKG_B, name: 'Starter 4 weeks', amount_cents: 4900, currency: 'usd', billing_type: 'one_time', interval: null, description: null },
++  { id: PKG_FREE, name: 'Free taster', amount_cents: 0, currency: 'usd', billing_type: 'one_time', interval: null, description: null },
++  { id: PKG_MONTHLY, name: 'Monthly coaching', amount_cents: 9900, currency: 'usd', billing_type: 'recurring', interval: 'month', description: null },
++];
++
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: {} },
++    config: { headers: { 'X-Request-Id': 'abcdef12-sent-0000-0000-000000000000' } },
++  });
++}
++
++/** Owner copy rules: no generic "try again later", no first person, no exclamation marks. */
++function expectCopyRules(text: string) {
++  expect(text).not.toMatch(/try again later/i);
++  expect(text).not.toMatch(/something went wrong/i);
++  expect(text).not.toMatch(/^please try again\.?$/i);
++  expect(text).not.toMatch(/!/);
++  expect(text).not.toMatch(/\b(we|we're|our|us|I|I'm|me|my)\b/);
++}
++
++async function mountAndSelect(pkgId = PKG_A, props: Partial<React.ComponentProps<typeof PackageSelectionSheet>> = {}) {
++  const onPaymentSuccess = jest.fn();
++  const onDismiss = jest.fn();
++  const r = await render(
++    <PackageSelectionSheet
++      visible
++      onDismiss={onDismiss}
++      onPaymentSuccess={onPaymentSuccess}
++      entitlementPollDelaysMs={[0, 0]}
++      {...props}
++    />,
++  );
++  await waitFor(() => expect(r.getByTestId(`package-card-${pkgId}`)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(`package-card-${pkgId}`));
++  return { ...r, onPaymentSuccess, onDismiss };
++}
++
++async function pressSelect(r: Awaited<ReturnType<typeof mountAndSelect>>) {
++  await fireEvent.press(r.getByTestId('select-plan-btn'));
++}
++
++/** The success moment shows; Continue leaves the sheet the paid way. */
++async function finishSuccess(r: Awaited<ReturnType<typeof mountAndSelect>>) {
++  await waitFor(() => expect(r.getByTestId('payment-success')).toBeTruthy());
++  expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++  await fireEvent.press(r.getByTestId('payment-continue'));
++  expect(r.onPaymentSuccess).toHaveBeenCalledTimes(1);
++}
++
++function paymentIntentCalls() {
++  return mockPost.mock.calls.filter((c) => c[0] === '/v1/checkout/payment-intent');
++}
++
++const savedKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
++afterAll(() => {
++  if (savedKey === undefined) delete process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
++  else process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = savedKey;
++});
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  installStripe();
++  // A build key is present, as in an EAS build (main checked it before the POST).
++  process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_build';
++  mockGet.mockResolvedValue({ data: { packages: PACKAGES } });
++  mockPost.mockImplementation(async (url: string) => {
++    if (url === '/v1/checkout/payment-intent') return { data: { ...SECRETS } };
++    throw httpError(404, { error: 'Not Found', message: `Cannot POST ${url}` });
++  });
++  mockInitStripe.mockResolvedValue(undefined);
++  mockInitPaymentSheet.mockResolvedValue({});
++  mockPresent.mockResolvedValue({});
++  mockGetEntitlement.mockResolvedValue({ ok: true, data: { active: true } });
++});
++
++describe('PackageSelectionSheet pays through POST /v1/checkout/payment-intent', () => {
++  it('sends exactly the backend DTO body and gives PaymentSheet the customer, ephemeral key and client secret', async () => {
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(mockPost).toHaveBeenCalled());
++
++    // The request: route and a body the backend DTO accepts (no extra field).
++    expect(mockPost.mock.calls[0][0]).toBe('/v1/checkout/payment-intent');
++    const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
++    expect(Object.keys(body).sort()).toEqual(BACKEND_DTO_FIELDS);
++    expect(body.package_id).toBe(PKG_A);
++    expect(body.package_id).toMatch(IS_UUID);
++    expect(body.idempotency_key).toMatch(IS_UUID);
++
++    await finishSuccess(r);
++    expect(mockPost.mock.calls.map((c) => c[0])).toEqual(['/v1/checkout/payment-intent']);
++
++    expect(mockInitStripe).toHaveBeenCalledWith(
++      expect.objectContaining({ publishableKey: 'pk_test_backend' }),
++    );
++    expect(mockInitPaymentSheet).toHaveBeenCalledTimes(1);
++    const params = mockInitPaymentSheet.mock.calls[0][0] as Record<string, unknown>;
++    expect(params).toEqual(
++      expect.objectContaining({
++        customerId: 'cus_test_789',
++        customerEphemeralKeySecret: 'ek_test_456',
++        paymentIntentClientSecret: 'pi_test_123_secret_abc',
++        merchantDisplayName: 'The Growth Project',
++        allowsDelayedPaymentMethods: false,
++      }),
++    );
++    // TGP theme (OR-110-2): the sheet follows the app's tokens and colour scheme.
++    expect(params.style).toBe('alwaysLight');
++    expect(params.appearance).toEqual(expect.objectContaining({ colors: expect.any(Object) }));
++    expect(mockPresent).toHaveBeenCalledTimes(1);
++    // Success waits for the webhook-driven entitlement, as the rest of the app reads it.
++    expect(mockGetEntitlement).toHaveBeenCalled();
++    expect(mockCapture).not.toHaveBeenCalled();
++  });
++
++  it('uses the build publishable key when the backend sends none', async () => {
++    mockPost.mockResolvedValueOnce({ data: { ...SECRETS, publishable_key: '' } });
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await finishSuccess(r);
++    expect(mockInitStripe).toHaveBeenCalledWith(expect.objectContaining({ publishableKey: 'pk_test_build' }));
++  });
++
++  it('a 200 without the PaymentSheet secrets is a support case, never a sheet with empty keys', async () => {
++    mockPost.mockResolvedValueOnce({ data: { client_secret: 'pi_test_123_secret_abc', ephemeral_key: '', customer_id: '' } });
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(JSON.stringify(mockCapture.mock.calls)).not.toContain('pi_test_123_secret_abc');
++  });
++
++  it('shows the price from amount_cents (the backend field)', async () => {
++    const r = await mountAndSelect();
++    expect(r.getByText('$149.00 once')).toBeTruthy();
++    expect(r.getByText('$99.00 a month')).toBeTruthy();
++    expect(r.getByText('Free')).toBeTruthy();
++    expect(r.queryByText(/NaN/)).toBeNull();
++  });
++
++  it('cancel shows no error, does not finish, and the retry reuses the same idempotency key', async () => {
++    mockPresent.mockResolvedValueOnce({ error: { code: 'Canceled', message: 'The payment flow has been canceled' } });
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(mockPresent).toHaveBeenCalledTimes(1));
++    await waitFor(() => expect(r.getByTestId('select-plan-btn').props.accessibilityState.disabled).toBe(false));
++    expect(r.queryByTestId('payment-error')).toBeNull();
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++
++    await pressSelect(r);
++    await finishSuccess(r);
++    const keys = paymentIntentCalls().map((c) => (c[1] as { idempotency_key: string }).idempotency_key);
++    expect(keys).toHaveLength(2);
++    expect(keys[0]).toBe(keys[1]);
++  });
++
++  it('a different package gets a new idempotency key', async () => {
++    mockPresent.mockResolvedValueOnce({ error: { code: 'Canceled', message: 'canceled' } });
++    const r = await mountAndSelect(PKG_A);
++    await pressSelect(r);
++    await waitFor(() => expect(mockPresent).toHaveBeenCalledTimes(1));
++    await fireEvent.press(r.getByTestId(`package-card-${PKG_B}`));
++    await pressSelect(r);
++    await finishSuccess(r);
++    const calls = paymentIntentCalls().map((c) => c[1] as { package_id: string; idempotency_key: string });
++    expect(calls.map((c) => c.package_id)).toEqual([PKG_A, PKG_B]);
++    expect(calls[0].idempotency_key).not.toBe(calls[1].idempotency_key);
++  });
++
++  it('when the entitlement has not landed yet, says the payment went through and offers Continue', async () => {
++    mockGetEntitlement.mockResolvedValue({ ok: true, data: { active: false } });
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-confirmed-pending')).toBeTruthy());
++    expect(r.getByText(
++      'Your payment went through. Your plan can take a minute to show in the app. Choose Continue to carry on.',
++    )).toBeTruthy();
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++    await fireEvent.press(r.getByTestId('payment-continue'));
++    expect(r.onPaymentSuccess).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('specific copy per cause', () => {
++  async function failWith(setup: () => void) {
++    setup();
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-error')).toBeTruthy());
++    const text = r.getByTestId('payment-error').props.children as string;
++    expectCopyRules(text);
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++    return { r, text };
++  }
++
++  it('offline (no response): connection copy, nothing charged, no Stripe call', async () => {
++    const { r, text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(Object.assign(new Error('Network Error'), { config: {} })),
++    );
++    expect(text).toBe(
++      'This phone is offline, so the payment did not start and nothing was charged. Check your connection, then start again.',
++    );
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++    expect(r.queryByTestId('payment-support')).toBeNull();
++  });
++
++  it('card declined (Stripe Failed + declineCode)', async () => {
++    const { text } = await failWith(() =>
++      mockPresent.mockResolvedValueOnce({ error: { code: 'Failed', message: 'Your card was declined.', declineCode: 'generic_decline', type: 'card_error' } }),
++    );
++    expect(text).toBe(
++      'Your bank declined this card, so nothing was charged. Start again with a different card, or ask your bank about the decline.',
++    );
++  });
++
++  it('insufficient funds', async () => {
++    const { text } = await failWith(() =>
++      mockPresent.mockResolvedValueOnce({ error: { code: 'Failed', message: 'x', declineCode: 'insufficient_funds', type: 'card_error' } }),
++    );
++    expect(text).toBe('This card does not have enough funds, so nothing was charged. Start again with a different card.');
++  });
++
++  it('bank authentication failed (3DS)', async () => {
++    const { text } = await failWith(() =>
++      mockPresent.mockResolvedValueOnce({ error: { code: 'Failed', message: 'x', stripeErrorCode: 'payment_intent_authentication_failure' } }),
++    );
++    expect(text).toBe(
++      'Your bank could not confirm this payment, so nothing was charged. Start again to confirm with your bank, or use a different card.',
++    );
++  });
++
++  it('package no longer offered (404 PACKAGE_NOT_FOUND)', async () => {
++    const { text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(404, { error: 'PACKAGE_NOT_FOUND', message: 'Package not available' })),
++    );
++    expect(text).toBe('This plan is no longer offered, so nothing was charged. Pull down to see your coach’s current plans, or message your coach.');
++    expect(mockCapture).not.toHaveBeenCalled();
++  });
++
++  it('coach not set up for payments (409 COACH_NOT_PAYOUT_READY)', async () => {
++    const { text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(409, { error: 'COACH_NOT_PAYOUT_READY', message: 'x' })),
++    );
++    expect(text).toBe(
++      'Your coach cannot take card payments right now, so this plan cannot start and nothing was charged. Message your coach, then choose the plan once they are ready.',
++    );
++  });
++
++  it('payment still being set up (503 PAYMENT_IN_PROGRESS) and the retry keeps the key', async () => {
++    const { r, text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(503, { error: 'PAYMENT_IN_PROGRESS', message: 'x' })),
++    );
++    expect(text).toBe(
++      'This payment is still being set up. Wait a few seconds, then start again. You will not be charged twice.',
++    );
++    await pressSelect(r);
++    await finishSuccess(r);
++    const keys = paymentIntentCalls().map((c) => (c[1] as { idempotency_key: string }).idempotency_key);
++    expect(keys[0]).toBe(keys[1]);
++  });
++
++  it('too many attempts (429) names the wait', async () => {
++    const { text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(429, { statusCode: 429, error: 'Too Many Requests', message: 'x', retryAfter: 3600 })),
++    );
++    expect(text).toBe('There have been too many payment attempts, so this one did not start. Wait 60 minutes, then start again.');
++  });
++
++  it('payments not configured (503 CONNECT_NOT_CONFIGURED): support email, reference, Sentry', async () => {
++    const { r, text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(
++        httpError(503, { error: 'CONNECT_NOT_CONFIGURED', message: 'x', request_id: 'req98765-aaaa-bbbb' }),
++      ),
++    );
++    expect(text).toBe('Card payments are not switched on for this app yet, so nothing was charged. Email support and quote reference req98765.');
++    expect(r.getByTestId('payment-error-reference').props.children).toBe('Reference req98765');
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++  });
++
++  it('anything else: support email with the server reference, reported to Sentry without secrets', async () => {
++    const { r, text } = await failWith(() =>
++      mockPost.mockRejectedValueOnce(httpError(500, { error: 'INTERNAL', message: 'boom', request_id: 'f00dbabe-1234' })),
++    );
++    // B-342-1: an unmapped answer proves nothing about money: no no-charge claim.
++    expect(text).toBe(
++      'This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference f00dbabe.',
++    );
++    expect(r.getByTestId('payment-open-plan')).toBeTruthy();
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++    const [err, ctx] = mockCapture.mock.calls[0];
++    expect(err).toBeInstanceOf(Error);
++    expect(ctx).toEqual(expect.objectContaining({ status: 500, code: 'INTERNAL', reference: 'f00dbabe' }));
++  });
++
++  it('an unknown PaymentSheet failure never sends the client secret or ephemeral key to Sentry', async () => {
++    const { r } = await failWith(() =>
++      mockPresent.mockResolvedValueOnce({ error: { code: 'Failed', message: 'pi_test_123_secret_abc is in a bad state' } }),
++    );
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++    const sent = JSON.stringify(mockCapture.mock.calls.map(([e, c]) => [String((e as Error).message), c]));
++    expect(sent).not.toContain('pi_test_123_secret_abc');
++    expect(sent).not.toContain('ek_test_456');
++    expect(sent).not.toContain('secret');
++    // The reference is this attempt's key prefix, which support can find on the purchase row.
++    const key = (paymentIntentCalls()[0][1] as { idempotency_key: string }).idempotency_key;
++    expect(r.getByTestId('payment-error-reference').props.children).toBe(`Reference ${key.slice(0, 8)}`);
++  });
++
++  it('no publishable key anywhere: payments-off copy with support, nothing presented', async () => {
++    const { r, text } = await failWith(() => {
++      delete process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
++      mockPost.mockResolvedValueOnce({ data: { ...SECRETS, publishable_key: '' } });
++    });
++    const key = (paymentIntentCalls()[0][1] as { idempotency_key: string }).idempotency_key;
++    expect(text).toBe(
++      `Card payments are not switched on for this app yet, so nothing was charged. Email support and quote reference ${key.slice(0, 8)}.`,
++    );
++    expect(r.getByTestId('payment-support')).toBeTruthy();
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++    expect(mockCapture).toHaveBeenCalledTimes(1);
++  });
++
++  it('a build without the Stripe native module says to update the app and never mints a PaymentIntent', async () => {
++    const { text } = await failWith(() => {
++      delete mockStripeModule.initStripe;
++      delete mockStripeModule.initPaymentSheet;
++      delete mockStripeModule.presentPaymentSheet;
++      delete mockStripeModule.useStripe;
++    });
++    expect(text).toBe(
++      'Card payments need the latest version of the app. Update the app from your app store, then choose your plan again.',
++    );
++    expect(paymentIntentCalls()).toHaveLength(0);
++  });
++});
++
++describe('plans the payment-intent route must not charge', () => {
++  it('a $0 plan is claimed through /claim-free and never reaches Stripe', async () => {
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === `/v1/packages/${PKG_FREE}/claim-free`) return { data: { active: true, status: 'created' } };
++      throw httpError(404, { error: 'Not Found', message: 'x' });
++    });
++    const r = await mountAndSelect(PKG_FREE);
++    await pressSelect(r);
++    await finishSuccess(r);
++    expect(mockPost.mock.calls.map((c) => c[0])).toEqual([`/v1/packages/${PKG_FREE}/claim-free`]);
++    expect(mockInitPaymentSheet).not.toHaveBeenCalled();
++  });
++
++  it('a renewing plan is never sold as a one-off PaymentIntent (it goes to subscription-intent)', async () => {
++    const r = await mountAndSelect(PKG_MONTHLY);
++    await pressSelect(r);
++    await waitFor(() => expect(mockPost).toHaveBeenCalled());
++    expect(paymentIntentCalls()).toHaveLength(0);
++    expect(mockPost.mock.calls[0][0]).toBe('/v1/checkout/subscription-intent');
++  });
++});
++
++describe('AUD-SOL-SH-118 B-343-3 actual Day 1 callback configuration', () => {
++  it('an uncertain Open your plan action cannot silently use the payment-success/leave-onboarding callback', async () => {
++    // Both actual Day1WinScreen call sites omit onOpenPlan. RootNavigator's
++    // onComplete callback enters the main app or a logger, not Membership.
++    mockPost.mockRejectedValueOnce(httpError(500, { error: 'INTERNAL', request_id: 'f00dbabe-1234' }));
++    const r = await mountAndSelect();
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-open-plan')).toBeTruthy());
++    expect(r.queryByTestId('payment-success')).toBeNull();
++    await fireEvent.press(r.getByTestId('payment-open-plan'));
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++  });
++
++  it('control: an explicit plan-navigation callback receives the unknown plan id without payment success', async () => {
++    const onOpenPlan = jest.fn();
++    mockPost.mockRejectedValueOnce(httpError(500, { error: 'INTERNAL', request_id: 'f00dbabe-1234' }));
++    const r = await mountAndSelect(PKG_A, { onOpenPlan });
++    await pressSelect(r);
++    await waitFor(() => expect(r.getByTestId('payment-open-plan')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('payment-open-plan'));
++    expect(onOpenPlan).toHaveBeenCalledWith(null);
++    expect(r.onPaymentSuccess).not.toHaveBeenCalled();
++  });
++});
+diff --git a/src/hooks/__tests__/audSolP12117.purchaseBoundary.test.tsx b/src/hooks/__tests__/audSolP12117.purchaseBoundary.test.tsx
+new file mode 100644
+index 0000000..7d05512
+--- /dev/null
++++ b/src/hooks/__tests__/audSolP12117.purchaseBoundary.test.tsx
+@@ -0,0 +1,174 @@
++import { act, renderHook, waitFor } from '@testing-library/react-native';
++import { usePackagePurchase } from '../usePackagePurchase';
++import type { PurchasablePackage } from '../../lib/planTerms';
++
++const mockPost = jest.fn();
++const mockGet = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: {
++    post: (...args: unknown[]) => mockPost(...args),
++    get: (...args: unknown[]) => mockGet(...args),
++  },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++const mockPurchases = jest.fn();
++const mockEntitlement = jest.fn();
++jest.mock('../../api/clientPaymentsApi', () => ({
++  clientPaymentsApi: {
++    getPurchases: () => mockPurchases(),
++    getEntitlement: () => mockEntitlement(),
++  },
++}));
++const mockInitStripe = jest.fn();
++const mockInitSheet = jest.fn();
++const mockPresent = jest.fn();
++jest.mock('@stripe/stripe-react-native', () => ({
++  initStripe: (...args: unknown[]) => mockInitStripe(...args),
++  initPaymentSheet: (...args: unknown[]) => mockInitSheet(...args),
++  presentPaymentSheet: (...args: unknown[]) => mockPresent(...args),
++}));
++
++const A: PurchasablePackage = {
++  id: '11111111-2222-4333-8444-555555555555',
++  name: 'Synthetic A', amountCents: 4900, currency: 'usd',
++  renewing: false, interval: null, intervalCount: 1, oneTimeCents: 0, trialDays: 0,
++};
++const B = { ...A, id: '99999999-8888-4777-8666-555555555555', name: 'Synthetic B' };
++const recurring: PurchasablePackage = { ...A, renewing: true, interval: 'month' };
++const secrets = {
++  client_secret: 'pi_synthetic_secret_example',
++  ephemeral_key: 'ek_synthetic', customer_id: 'cus_synthetic',
++  publishable_key: 'pk_test_synthetic',
++};
++const intent = {
++  ...secrets, mode: 'payment', purchase_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
++  plan: {
++    amount_cents: 4900, currency: 'usd', interval: 'month', interval_count: 1,
++    first_charge_cents: 4900, one_time_cents: 0, trial_days: 0,
++  },
++};
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((r) => { resolve = r; });
++  return { promise, resolve };
++}
++
++async function mount() {
++  const onEntitled = jest.fn();
++  const hook = await renderHook(() => usePackagePurchase({
++    surface: 'sheet', appearance: {}, colorScheme: 'light',
++    entitlementPollDelaysMs: [0], planPollDelaysMs: [0], recheckDelaysMs: [0],
++    onEntitled,
++  }));
++  return { ...hook, onEntitled };
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockPost.mockImplementation(async (path: string) => ({
++    data: path.includes('subscription-intent') ? intent : secrets,
++  }));
++  mockGet.mockResolvedValue({ data: null });
++  mockInitStripe.mockResolvedValue(undefined);
++  mockInitSheet.mockResolvedValue({});
++  mockPresent.mockResolvedValue({ error: { code: 'Canceled' } });
++  mockPurchases.mockResolvedValue({ ok: true, data: [] });
++  mockEntitlement.mockResolvedValue({ ok: true, data: { active: false } });
++});
++
++describe('AUD-SOL-P12-117 P2 actual hook / synthetic external boundaries', () => {
++  it('unmount while one-time intent response is held must not open a payable native sheet', async () => {
++    const held = deferred<{ data: typeof secrets }>();
++    mockPost.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(A); });
++    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
++    await h.unmount();
++    await act(async () => { held.resolve({ data: secrets }); await running; });
++    expect(mockInitSheet).not.toHaveBeenCalled();
++    expect(mockPresent).not.toHaveBeenCalled();
++  });
++
++  it('unmount while subscription sheet initialization is held must not present it later', async () => {
++    const held = deferred<Record<string, never>>();
++    mockInitSheet.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(recurring); });
++    await waitFor(() => expect(mockInitSheet).toHaveBeenCalledTimes(1));
++    await h.unmount();
++    await act(async () => { held.resolve({}); await running; });
++    expect(mockPresent).not.toHaveBeenCalled();
++  });
++
++  it('A uncertain -> B canceled -> A must replay A key, not mint a second payable A intent', async () => {
++    mockPresent
++      .mockRejectedValueOnce(new Error('Synthetic lost confirmation response'))
++      .mockResolvedValueOnce({ error: { code: 'Canceled' } })
++      .mockResolvedValueOnce({ error: { code: 'Canceled' } });
++    const h = await mount();
++    await act(async () => { await h.result.current.start(A); });
++    expect(h.result.current.state.notice?.checkAgain).toBe(true);
++    await act(async () => { await h.result.current.start(B); });
++    await act(async () => { await h.result.current.start(A); });
++    const requests = mockPost.mock.calls.map(([, body]) => body);
++    expect(requests.map((body) => body.package_id)).toEqual([A.id, B.id, A.id]);
++    expect(requests[2].idempotency_key).toBe(requests[0].idempotency_key);
++    expect(requests[1].idempotency_key).not.toBe(requests[0].idempotency_key);
++  });
++
++  it('PAYMENT_CHECKOUT_CLOSED must retire the key so the next tap can start again', async () => {
++    mockPost.mockRejectedValue({
++      response: { status: 409, data: { error: 'PAYMENT_CHECKOUT_CLOSED' } },
++    });
++    const h = await mount();
++    await act(async () => { await h.result.current.start(A); });
++    await act(async () => { await h.result.current.start(A); });
++    expect(mockPost.mock.calls[1][1].idempotency_key).not.toBe(mockPost.mock.calls[0][1].idempotency_key);
++    expect(mockPresent).not.toHaveBeenCalled();
++  });
++
++  it('control: same-package unknown retry keeps the original attempt key', async () => {
++    mockPresent.mockRejectedValueOnce(new Error('Synthetic lost confirmation response'));
++    const h = await mount();
++    await act(async () => { await h.result.current.start(A); });
++    await act(async () => { await h.result.current.start(A); });
++    expect(mockPost.mock.calls[1][1].idempotency_key).toBe(mockPost.mock.calls[0][1].idempotency_key);
++  });
++
++  it('control: double start while the intent is held creates one request', async () => {
++    const held = deferred<{ data: typeof secrets }>();
++    mockPost.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => {
++      running = h.result.current.start(A);
++      await h.result.current.start(A);
++    });
++    expect(mockPost).toHaveBeenCalledTimes(1);
++    await act(async () => { held.resolve({ data: secrets }); await running; });
++    expect(mockPresent).toHaveBeenCalledTimes(1);
++  });
++
++  it('C-334-3 closure: unmount during confirming GET never calls entitlement callback', async () => {
++    const held = deferred<{ data: unknown }>();
++    mockPresent.mockResolvedValueOnce({});
++    mockGet.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(recurring); });
++    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
++    await h.unmount();
++    await act(async () => {
++      held.resolve({ data: {
++        purchase_id: intent.purchase_id, state: 'active', entitlement_active: true,
++        package_id: A.id, amount_cents: 4900, currency: 'usd',
++      } });
++      await running;
++    });
++    expect(h.onEntitled).not.toHaveBeenCalled();
++  });
++});
+diff --git a/src/hooks/__tests__/audSolS123119.nativeRejection.test.tsx b/src/hooks/__tests__/audSolS123119.nativeRejection.test.tsx
+new file mode 100644
+index 0000000..76addfd
+--- /dev/null
++++ b/src/hooks/__tests__/audSolS123119.nativeRejection.test.tsx
+@@ -0,0 +1,135 @@
++/**
++ * AUD-SOL-S12-119: fulfilled/rejected native initialization must have the
++ * same account fence, and retries after an unclear payment retain truth.
++ */
++import { act, renderHook, waitFor } from '@testing-library/react-native';
++import { usePackagePurchase } from '../usePackagePurchase';
++import { authEvents } from '../../utils/authEvents';
++import type { PurchasablePackage } from '../../lib/planTerms';
++
++const mockPost = jest.fn();
++const mockGet = jest.fn();
++const mockInitStripe = jest.fn();
++const mockInitSheet = jest.fn();
++const mockPresent = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true, default: { post: (...a: unknown[]) => mockPost(...a), get: (...a: unknown[]) => mockGet(...a) },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('../../api/clientPaymentsApi', () => ({
++  clientPaymentsApi: {
++    getPurchases: async () => ({ ok: true, data: [] }),
++    getEntitlement: async () => ({ ok: true, data: { active: false } }),
++  },
++}));
++jest.mock('@stripe/stripe-react-native', () => ({
++  initStripe: (...a: unknown[]) => mockInitStripe(...a),
++  initPaymentSheet: (...a: unknown[]) => mockInitSheet(...a),
++  presentPaymentSheet: (...a: unknown[]) => mockPresent(...a),
++}));
++
++const oneTime: PurchasablePackage = {
++  id: '11111111-2222-4333-8444-555555555555', name: 'Synthetic plan', amountCents: 4900, currency: 'usd',
++  renewing: false, interval: null, intervalCount: 1, oneTimeCents: 0, trialDays: 0,
++};
++const renewing: PurchasablePackage = { ...oneTime, renewing: true, interval: 'month' };
++const intent = {
++  mode: 'payment', purchase_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
++  client_secret: 'pi_synthetic_secret_example', ephemeral_key: 'ek_synthetic',
++  customer_id: 'cus_synthetic', publishable_key: 'pk_test_synthetic',
++  plan: { amount_cents: 4900, currency: 'usd', interval: 'month', interval_count: 1, first_charge_cents: 4900, one_time_cents: 0, trial_days: 0 },
++};
++function deferred<T>() {
++  let resolve!: (v: T) => void;
++  let reject!: (e: unknown) => void;
++  const promise = new Promise<T>((r, j) => { resolve = r; reject = j; });
++  return { promise, resolve, reject };
++}
++async function mount() {
++  return renderHook(() => usePackagePurchase({
++    surface: 'sheet', appearance: {}, colorScheme: 'light',
++    planPollDelaysMs: [0], entitlementPollDelaysMs: [0], recheckDelaysMs: [0],
++  }));
++}
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockPost.mockResolvedValue({ data: intent });
++  mockGet.mockResolvedValue({ data: null });
++  mockInitStripe.mockResolvedValue(undefined);
++  mockInitSheet.mockResolvedValue({});
++  mockPresent.mockResolvedValue({ error: { code: 'Canceled' } });
++});
++
++it.each([
++  ['one-time logout', oneTime, 'logout'],
++  ['one-time login', oneTime, 'login'],
++  ['renewing logout', renewing, 'logout'],
++  ['renewing login', renewing, 'login'],
++])('%s: rejected sheet initialization cannot publish the old account notice', async (_label, pkg, event) => {
++  const held = deferred<Record<string, never>>();
++  mockInitSheet.mockReturnValueOnce(held.promise);
++  const h = await mount();
++  let running!: Promise<void>;
++  await act(async () => { running = h.result.current.start(pkg as PurchasablePackage); });
++  await waitFor(() => expect(mockInitSheet).toHaveBeenCalledTimes(1));
++  await act(async () => {
++    authEvents.emit(event as string);
++    held.reject(new Error('Synthetic initialization rejected after account change'));
++    await running;
++  });
++  expect(mockPresent).not.toHaveBeenCalled();
++  expect(h.result.current.state).toEqual(expect.objectContaining({ phase: 'idle', packageId: null, notice: null }));
++});
++
++it('control: fulfilled initialization after logout is correctly retired', async () => {
++  const held = deferred<Record<string, never>>();
++  mockInitSheet.mockReturnValueOnce(held.promise);
++  const h = await mount();
++  let running!: Promise<void>;
++  await act(async () => { running = h.result.current.start(oneTime); });
++  await waitFor(() => expect(mockInitSheet).toHaveBeenCalledTimes(1));
++  await act(async () => { authEvents.emit('logout'); held.resolve({}); await running; });
++  expect(mockPresent).not.toHaveBeenCalled();
++  expect(h.result.current.state.notice).toBeNull();
++});
++
++it('control: same-account initialization rejection remains actionable', async () => {
++  mockInitSheet.mockRejectedValueOnce(new Error('Synthetic native failure'));
++  const h = await mount();
++  await act(async () => { await h.result.current.start(oneTime); });
++  expect(h.result.current.state.notice).toEqual(expect.objectContaining({ cause: 'stripe_sheet_init_threw', support: true }));
++});
++
++it.each([
++  ['one-time logout', oneTime, 'logout'],
++  ['one-time login', oneTime, 'login'],
++  ['renewing logout', renewing, 'logout'],
++  ['renewing login', renewing, 'login'],
++])('%s: rejected initStripe is also fenced before publishing', async (_label, pkg, event) => {
++  const held = deferred<void>();
++  mockInitStripe.mockReturnValueOnce(held.promise);
++  const h = await mount();
++  let running!: Promise<void>;
++  await act(async () => { running = h.result.current.start(pkg as PurchasablePackage); });
++  await waitFor(() => expect(mockInitStripe).toHaveBeenCalledTimes(1));
++  await act(async () => {
++    authEvents.emit(event as string);
++    held.reject(new Error('Synthetic Stripe initialization rejected after account change'));
++    await running;
++  });
++  expect(mockInitSheet).not.toHaveBeenCalled();
++  expect(mockPresent).not.toHaveBeenCalled();
++  expect(h.result.current.state).toEqual(expect.objectContaining({ phase: 'idle', packageId: null, notice: null }));
++});
++
++it('archived package on a same-key retry cannot undo an unknown native outcome', async () => {
++  mockPresent.mockRejectedValueOnce(new Error('Synthetic lost confirmation'));
++  const h = await mount();
++  await act(async () => { await h.result.current.start(oneTime); });
++  expect(h.result.current.state.notice?.checkAgain).toBe(true);
++  mockPost.mockRejectedValueOnce({ response: { status: 404, data: { error: 'PACKAGE_NOT_FOUND' } } });
++  await act(async () => { await h.result.current.start(oneTime); });
++  const keys = mockPost.mock.calls.map(([, body]) => (body as { idempotency_key: string }).idempotency_key);
++  expect(keys[1]).toBe(keys[0]);
++  expect(h.result.current.state.notice?.message).not.toMatch(/nothing was charged|not charged|did not go through/i);
++});
+diff --git a/src/hooks/__tests__/audSolSh118.endedIsNotUnpaid.test.tsx b/src/hooks/__tests__/audSolSh118.endedIsNotUnpaid.test.tsx
+new file mode 100644
+index 0000000..43d557c
+--- /dev/null
++++ b/src/hooks/__tests__/audSolSh118.endedIsNotUnpaid.test.tsx
+@@ -0,0 +1,71 @@
++import { act, renderHook } from '@testing-library/react-native';
++import { usePackagePurchase } from '../usePackagePurchase';
++import type { PurchasablePackage } from '../../lib/planTerms';
++
++const mockGet = jest.fn();
++const mockPresent = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: {
++    post: async () => ({ data: {
++      mode: 'payment', purchase_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
++      client_secret: 'pi_synthetic_secret_example', ephemeral_key: 'ek_synthetic',
++      customer_id: 'cus_synthetic', publishable_key: 'pk_test_synthetic',
++      plan: { amount_cents: 4900, currency: 'usd', interval: 'month', interval_count: 1,
++        first_charge_cents: 4900, one_time_cents: 0, trial_days: 0 },
++    } }),
++    get: (...a: unknown[]) => mockGet(...a),
++  },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('@stripe/stripe-react-native', () => ({
++  initStripe: async () => undefined,
++  initPaymentSheet: async () => ({}),
++  presentPaymentSheet: () => mockPresent(),
++}));
++
++const pkg: PurchasablePackage = {
++  id: '11111111-2222-4333-8444-555555555555', name: 'Synthetic plan',
++  amountCents: 4900, currency: 'usd', renewing: true, interval: 'month',
++  intervalCount: 1, oneTimeCents: 0, trialDays: 0,
++};
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockPresent.mockRejectedValue(new Error('Synthetic lost confirmation response'));
++});
++
++describe('AUD-SOL-SH-118 an ended subscription is not proof that no payment ever succeeded', () => {
++  it.each([
++    ['ended', null],
++    ['confirming', 'ended'],
++  ])('canonical state %s / checkout %s never asserts an unpaid result', async (state, checkout) => {
++    // Backend planView maps a canceled row to ended regardless of earlier
++    // payment; readCheckoutState checks canceled before the paid invoice.
++    mockGet.mockResolvedValue({ data: {
++      purchase_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
++      package_id: pkg.id, state, entitlement_active: false, checkout_state: checkout,
++    } });
++    const h = await renderHook(() => usePackagePurchase({
++      surface: 'sheet', appearance: {}, colorScheme: 'light',
++      planPollDelaysMs: [0], recheckDelaysMs: [0],
++    }));
++    await act(async () => { await h.result.current.start(pkg); });
++    expect(h.result.current.state.notice).not.toBeNull();
++    expect(h.result.current.state.notice?.message).not.toMatch(/nothing was charged|not charged|did not go through/i);
++  });
++
++  it('control: an authoritative awaiting-payment read can retain the no-charge disposition', async () => {
++    mockGet.mockResolvedValue({ data: {
++      purchase_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
++      package_id: pkg.id, state: 'confirming', entitlement_active: false,
++      checkout_state: 'awaiting_payment',
++    } });
++    const h = await renderHook(() => usePackagePurchase({
++      surface: 'sheet', appearance: {}, colorScheme: 'light',
++      planPollDelaysMs: [0], recheckDelaysMs: [0],
++    }));
++    await act(async () => { await h.result.current.start(pkg); });
++    expect(h.result.current.state.notice?.message).toContain('Stripe shows no payment');
++  });
++});
+diff --git a/src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx b/src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx
+new file mode 100644
+index 0000000..eb72ed0
+--- /dev/null
++++ b/src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx
+@@ -0,0 +1,276 @@
++/**
++ * B-SHEET-118 (agent 118) round on split S2 (#343), real hook, synthetic
++ * external boundaries:
++ *   B-343-1 (Sol)  no payable native sheet after unmount / sign-out.
++ *   B-343-2        per-package keys: A unknown -> B -> A replays A's key.
++ *   B-343-3        #661 replay answers drive the key and the next action.
++ *   B-343-1 (Opus) an unclear one-time result is read as "checking".
++ *   B-343-4        a pinned trial date is reviewed before any card step.
++ */
++import { act, renderHook, waitFor } from '@testing-library/react-native';
++import { usePackagePurchase } from '../usePackagePurchase';
++import { PACKAGE_PAYMENT_COPY } from '../../lib/packagePayment';
++import type { PurchasablePackage } from '../../lib/planTerms';
++import { authEvents } from '../../utils/authEvents';
++
++const mockPost = jest.fn();
++const mockGet = jest.fn();
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { post: (...a: unknown[]) => mockPost(...a), get: (...a: unknown[]) => mockGet(...a) },
++}));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++const mockPurchases = jest.fn();
++jest.mock('../../api/clientPaymentsApi', () => ({
++  clientPaymentsApi: {
++    getPurchases: () => mockPurchases(),
++    getEntitlement: async () => ({ ok: true, data: { active: false } }),
++  },
++}));
++const mockInitSheet = jest.fn();
++const mockPresent = jest.fn();
++jest.mock('@stripe/stripe-react-native', () => ({
++  initStripe: async () => undefined,
++  initPaymentSheet: (...a: unknown[]) => mockInitSheet(...a),
++  presentPaymentSheet: (...a: unknown[]) => mockPresent(...a),
++}));
++
++const A: PurchasablePackage = {
++  id: '11111111-2222-4333-8444-555555555555', name: 'Synthetic A', amountCents: 4900, currency: 'usd',
++  renewing: false, interval: null, intervalCount: 1, oneTimeCents: 0, trialDays: 0,
++};
++const B = { ...A, id: '99999999-8888-4777-8666-555555555555', name: 'Synthetic B' };
++const recurring: PurchasablePackage = { ...A, renewing: true, interval: 'month' };
++const secrets = {
++  client_secret: 'pi_synthetic_secret_example', ephemeral_key: 'ek_synthetic',
++  customer_id: 'cus_synthetic', publishable_key: 'pk_test_synthetic',
++};
++const plan = {
++  amount_cents: 4900, currency: 'usd', interval: 'month', interval_count: 1,
++  first_charge_cents: 4900, one_time_cents: 0, trial_days: 0,
++};
++const intent = { ...secrets, mode: 'payment', purchase_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', plan };
++const lostAnswer = () => new Error('Synthetic lost confirmation response');
++const reply = (status: number, code: string) => ({ response: { status, data: { error: code, request_id: 'cafe0123-1' } } });
++const keys = () => mockPost.mock.calls.map(([, body]) => (body as { idempotency_key: string }).idempotency_key);
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  let reject!: (reason: unknown) => void;
++  const promise = new Promise<T>((r, j) => { resolve = r; reject = j; });
++  return { promise, resolve, reject };
++}
++
++async function mount(now?: () => Date) {
++  const onEntitled = jest.fn();
++  const hook = await renderHook(() =>
++    usePackagePurchase({
++      surface: 'sheet', appearance: {}, colorScheme: 'light', now,
++      entitlementPollDelaysMs: [0], planPollDelaysMs: [0], recheckDelaysMs: [0], onEntitled,
++    }),
++  );
++  return { ...hook, onEntitled };
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockPost.mockImplementation(async (path: string) => ({ data: path.includes('subscription-intent') ? intent : secrets }));
++  mockGet.mockResolvedValue({ data: null });
++  mockInitSheet.mockResolvedValue({});
++  mockPresent.mockResolvedValue({ error: { code: 'Canceled' } });
++  mockPurchases.mockResolvedValue({ ok: true, data: [] });
++});
++
++describe('B-343-1 (Sol) a flow that outlived its screen or account never opens a sheet', () => {
++  it('unmount while the one-time intent is held', async () => {
++    const held = deferred<{ data: typeof secrets }>();
++    mockPost.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(A); });
++    await h.unmount();
++    await act(async () => { held.resolve({ data: secrets }); await running; });
++    expect(mockInitSheet).not.toHaveBeenCalled();
++    expect(mockPresent).not.toHaveBeenCalled();
++  });
++
++  it('unmount while the subscription sheet initializes', async () => {
++    const held = deferred<Record<string, never>>();
++    mockInitSheet.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(recurring); });
++    await waitFor(() => expect(mockInitSheet).toHaveBeenCalledTimes(1));
++    await h.unmount();
++    await act(async () => { held.resolve({}); await running; });
++    expect(mockPresent).not.toHaveBeenCalled();
++  });
++
++  it.each(['logout', 'login'])('%s while the intent is held: no sheet, state cleared, keys of the old account dropped', async (event) => {
++    const held = deferred<{ data: typeof secrets }>();
++    mockPost.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(A); });
++    await act(async () => { authEvents.emit(event); held.resolve({ data: secrets }); await running; });
++    expect(mockInitSheet).not.toHaveBeenCalled();
++    expect(h.result.current.state.phase).toBe('idle');
++    expect(h.result.current.busy).toBe(false);
++    await act(async () => { await h.result.current.start(A); });
++    expect(keys()[1]).not.toBe(keys()[0]);
++  });
++});
++
++describe('B-343-2 keys are kept per package', () => {
++  it('A unknown -> B canceled -> A replays the A key', async () => {
++    mockPresent.mockRejectedValueOnce(lostAnswer());
++    const h = await mount();
++    await act(async () => { await h.result.current.start(A); });
++    expect(h.result.current.state.notice?.checkAgain).toBe(true);
++    await act(async () => { await h.result.current.start(B); });
++    await act(async () => { await h.result.current.start(A); });
++    expect(keys()[2]).toBe(keys()[0]);
++    expect(keys()[1]).not.toBe(keys()[0]);
++  });
++});
++
++describe('B-343-3 finished replays (backend #661)', () => {
++  it('PAYMENT_CHECKOUT_CLOSED retires the key', async () => {
++    mockPost.mockRejectedValue(reply(409, 'PAYMENT_CHECKOUT_CLOSED'));
++    const h = await mount();
++    await act(async () => { await h.result.current.start(A); });
++    await act(async () => { await h.result.current.start(A); });
++    expect(keys()[1]).not.toBe(keys()[0]);
++    expect(mockPresent).not.toHaveBeenCalled();
++  });
++
++  it('PAYMENT_ALREADY_COMPLETE refreshes the entitlement and offers the plan', async () => {
++    mockPost.mockRejectedValueOnce(reply(409, 'PAYMENT_ALREADY_COMPLETE'));
++    const h = await mount();
++    await act(async () => { await h.result.current.start(A); });
++    expect(h.onEntitled).toHaveBeenCalledTimes(1);
++    expect(h.result.current.state.notice).toEqual(
++      expect.objectContaining({ message: PACKAGE_PAYMENT_COPY.alreadyComplete, openPlan: true }),
++    );
++    expect(mockPresent).not.toHaveBeenCalled();
++  });
++
++  it('PAYMENT_REFUNDED_OR_IN_REVIEW keeps the key and never opens a sheet', async () => {
++    mockPost.mockRejectedValue(reply(409, 'PAYMENT_REFUNDED_OR_IN_REVIEW'));
++    const h = await mount();
++    await act(async () => { await h.result.current.start(A); });
++    await act(async () => { await h.result.current.start(A); });
++    expect(keys()[1]).toBe(keys()[0]);
++    expect(h.result.current.state.notice).toEqual(expect.objectContaining({ support: true, openPlan: true }));
++    expect(mockPresent).not.toHaveBeenCalled();
++  });
++});
++
++describe('B-343-1 (Opus) an unclear one-time result is never "Payment received"', () => {
++  it('reading the purchase after a lost answer is flagged as checking', async () => {
++    const held = deferred<{ ok: boolean; data: unknown[] }>();
++    mockPresent.mockRejectedValueOnce(lostAnswer());
++    mockPurchases.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(A); });
++    await waitFor(() => expect(mockPurchases).toHaveBeenCalledTimes(1));
++    expect(h.result.current.state).toEqual(expect.objectContaining({ phase: 'confirming', checking: true }));
++    await act(async () => { held.resolve({ ok: true, data: [] }); await running; });
++    expect(h.result.current.state.checking).toBe(false);
++  });
++});
++
++describe('B-343-4 a resumed trial keeps its pinned first-charge date', () => {
++  it('a pinned date that differs from the shown date is reviewed before any card step, then the same key replays', async () => {
++    const now = new Date(2026, 9, 4, 1, 0, 0);
++    const pinned = new Date(2026, 9, 10, 13, 0, 0).toISOString();
++    const trial = { ...recurring, trialDays: 7 };
++    const setup = {
++      ...intent, mode: 'setup', client_secret: 'seti_synthetic_secret_example',
++      plan: { ...plan, first_charge_cents: 0, trial_days: 7, trial_ends_at: pinned },
++    };
++    mockPost.mockResolvedValue({ data: setup });
++    const h = await mount(() => now);
++    await act(async () => { await h.result.current.start(trial); });
++    expect(mockInitSheet).not.toHaveBeenCalled();
++    expect(h.result.current.state.phase).toBe('idle');
++    expect(h.result.current.state.priceChange).toEqual(
++      expect.objectContaining({ message: PACKAGE_PAYMENT_COPY.termsReviewTrialDate }),
++    );
++    expect(h.result.current.state.priceChange?.pkg.trialEndsAt).toBe(pinned);
++    await act(async () => { await h.result.current.confirmNewPrice(); });
++    expect(keys()[1]).toBe(keys()[0]);
++    expect(mockInitSheet).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('AUD-SOL-SH-118 residual uncertainty and account fences', () => {
++  it('a one-time unknown result followed by a timeout on the same key never becomes proven unpaid', async () => {
++    mockPresent.mockRejectedValueOnce(lostAnswer());
++    const h = await mount();
++    await act(async () => { await h.result.current.start(A); });
++    expect(h.result.current.state.notice?.checkAgain).toBe(true);
++    mockPost.mockRejectedValueOnce(Object.assign(new Error('Synthetic timeout'), { code: 'ECONNABORTED', request: {} }));
++    await act(async () => { await h.result.current.start(A); });
++    expect(keys()[1]).toBe(keys()[0]);
++    expect(h.result.current.state.notice?.message).not.toMatch(/nothing was charged|not charged|did not go through/i);
++  });
++
++  it.each(['logout', 'login'])('%s during a held plan read that later rejects cannot publish old-account slow progress', async (event) => {
++    const held = deferred<{ data: unknown }>();
++    mockPresent.mockResolvedValueOnce({});
++    mockGet.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(recurring); });
++    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
++    await act(async () => {
++      authEvents.emit(event);
++      held.reject(new Error('Synthetic plan read lost after account change'));
++      await running;
++    });
++    expect(h.onEntitled).not.toHaveBeenCalled();
++    expect(h.result.current.state.phase).toBe('idle');
++    expect(h.result.current.state.packageId).toBeNull();
++  });
++
++  it('account change during the first failed poll cannot issue another old-account plan read', async () => {
++    const held = deferred<{ data: unknown }>();
++    mockPresent.mockResolvedValueOnce({});
++    mockGet.mockReturnValueOnce(held.promise);
++    const h = await renderHook(() => usePackagePurchase({
++      surface: 'sheet', appearance: {}, colorScheme: 'light',
++      planPollDelaysMs: [0, 0], entitlementPollDelaysMs: [0], recheckDelaysMs: [0],
++    }));
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(recurring); });
++    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
++    await act(async () => {
++      authEvents.emit('logout');
++      held.reject(new Error('Synthetic plan read lost after account change'));
++      await running;
++    });
++    expect(mockGet).toHaveBeenCalledTimes(1);
++  });
++
++  it('control: account change during a successful plan read drops the old entitlement', async () => {
++    const held = deferred<{ data: unknown }>();
++    mockPresent.mockResolvedValueOnce({});
++    mockGet.mockReturnValueOnce(held.promise);
++    const h = await mount();
++    let running!: Promise<void>;
++    await act(async () => { running = h.result.current.start(recurring); });
++    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
++    await act(async () => {
++      authEvents.emit('logout');
++      held.resolve({ data: {
++        purchase_id: intent.purchase_id, package_id: recurring.id,
++        state: 'active', entitlement_active: true,
++      } });
++      await running;
++    });
++    expect(h.onEntitled).not.toHaveBeenCalled();
++    expect(h.result.current.state.phase).toBe('idle');
++  });
++});
+diff --git a/src/lib/__tests__/audOpusP12117.probe342.test.ts b/src/lib/__tests__/audOpusP12117.probe342.test.ts
+new file mode 100644
+index 0000000..6ad0c40
+--- /dev/null
++++ b/src/lib/__tests__/audOpusP12117.probe342.test.ts
+@@ -0,0 +1,87 @@
++/**
++ * AUD-OPUS-P12-117 probe (audit only, never merge) — mobile #342 @ 72821495.
++ *
++ * B-342-1: backend #679 @ 0e1cfde0 (B-679-6 / B-679-7) answers PAYMENT_RETRY,
++ * STRIPE_CHECKOUT_ERROR (not proven no-charge) and SUBSCRIPTION_SETUP_UNAVAILABLE
++ * (cancel not confirmed) on subscription-intent when the outcome is NOT
++ * confirmed, including "paid or in flight although the attempt closed"
++ * (PAYMENT_RETRY). The client copy must never claim "nothing was charged" then.
++ *
++ * C-342-1: backend isRecurringPackage() treats a combo whose recurring part is
++ * $0 as a one-time sale; planTerms claims to mirror it exactly.
++ */
++jest.mock('../../services/api', () => ({ __esModule: true, default: { get: jest.fn(), post: jest.fn() } }));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const { describeBackendFailure }: typeof import('../packagePayment') = require('../packagePayment');
++// eslint-disable-next-line @typescript-eslint/no-var-requires
++const { purchasableFromCoachPackage }: typeof import('../planTerms') = require('../planTerms');
++
++function httpError(status: number, data: Record<string, unknown>) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data, headers: {} },
++    config: { headers: {} },
++  });
++}
++
++const CHECK_THEN_SUPPORT =
++  'Open Your plan to check whether it started before you try again. If it keeps happening, contact support at support@example.invalid and include the reference shown with this message.';
++const NO_CHARGE = /nothing was charged/i;
++
++describe('B-342-1 an unconfirmed subscription-intent outcome is never told as no charge', () => {
++  it('PAYMENT_RETRY (backend #679 inProgress(true): result not confirmed, incl. paid after close)', () => {
++    const n = describeBackendFailure(
++      httpError(503, {
++        code: 'PAYMENT_RETRY',
++        error: 'PAYMENT_RETRY',
++        message: `The last attempt to start this plan did not finish, and its result is not confirmed yet. ${CHECK_THEN_SUPPORT}`,
++      }),
++      'subscription_intent',
++      'abcd1234',
++    );
++    expect(n.message).not.toMatch(NO_CHARGE);
++  });
++
++  it('STRIPE_CHECKOUT_ERROR without the proven no-charge answer (stripeFailure(err) noCharge=false)', () => {
++    const n = describeBackendFailure(
++      httpError(502, {
++        code: 'STRIPE_CHECKOUT_ERROR',
++        error: 'STRIPE_CHECKOUT_ERROR',
++        message: `The payment service did not answer as expected, so this step did not finish. ${CHECK_THEN_SUPPORT}`,
++      }),
++      'subscription_intent',
++      'abcd1234',
++    );
++    expect(n.message).not.toMatch(NO_CHARGE);
++  });
++
++  it('SUBSCRIPTION_SETUP_UNAVAILABLE while closing is not confirmed (setupUnavailable(false))', () => {
++    const n = describeBackendFailure(
++      httpError(503, {
++        code: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
++        error: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
++        message: `The card screen could not be prepared for this plan, and closing it is not confirmed yet. ${CHECK_THEN_SUPPORT}`,
++      }),
++      'subscription_intent',
++      'abcd1234',
++    );
++    expect(n.message).not.toMatch(NO_CHARGE);
++  });
++});
++
++describe('C-342-1 sale routing mirrors backend isRecurringPackage()', () => {
++  it('a one-time package whose recurring part is $0 is a one-time sale (payment-intent), not a $0 subscription', () => {
++    const p = purchasableFromCoachPackage({
++      id: '11111111-2222-4333-8444-555555555555',
++      name: 'Kickoff',
++      amount_cents: 20000,
++      currency: 'usd',
++      billing_type: 'one_time',
++      recurring_amount_cents: 0,
++      recurring_interval: 'month',
++    });
++    expect(p?.renewing).toBe(false);
++    expect(p?.amountCents).toBe(20000);
++  });
++});
+diff --git a/src/lib/__tests__/audOpusS123119.probe342.test.ts b/src/lib/__tests__/audOpusS123119.probe342.test.ts
+new file mode 100644
+index 0000000..ed40dc5
+--- /dev/null
++++ b/src/lib/__tests__/audOpusS123119.probe342.test.ts
+@@ -0,0 +1,110 @@
++/**
++ * AUD-OPUS-S12-119 probe (Claude Opus 5.5 lens, agent 119 wave) on #342 @ 0b1985f4.
++ *   R1 controls: Stripe minor units per currency, including the Intl fallback
++ *      path (some Android JSC builds throw on uncommon codes), HUF/TWD
++ *      (two-decimal charges), ISK/UGX (two-decimal amounts, shown whole).
++ *   R2 controls: every PACKAGE_PAYMENT_COPY string obeys the copy rules.
++ *   R3 INFO (C-342-7): a non-transport exception with no HTTP status is told
++ *      as "could not reach the server" (records today's wording only).
++ */
++import { PACKAGE_PAYMENT_COPY, describeBackendFailure } from '../packagePayment';
++import { formatCurrencyCents } from '../../utils/currency';
++
++jest.mock('../../services/api', () => ({ __esModule: true, default: {} }));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++
++const NO_CHARGE = /nothing was charged|not charged|did not go through|did not start/i;
++const num = (t: string) => Number(t.replace(/[^\d.-]/g, ''));
++
++describe('R1 minor units per currency', () => {
++  it.each([
++    ['jpy', 4900, 4900], ['krw', 15000, 15000], ['xpf', 1200, 1200],
++    ['kwd', 4900, 4.9], ['bhd', 12340, 12.34],
++    ['huf', 100050, 1000.5], ['twd', 80045, 800.45],
++    ['isk', 500, 5], ['ugx', 500000, 5000],
++    ['usd', 4900, 49], ['eur', 1999, 19.99], ['gbp', 1, 0.01],
++  ])('%s %d -> %d display units (Intl path)', (cur, minor, major) => {
++    expect(num(formatCurrencyCents(minor, cur))).toBeCloseTo(major, 5);
++  });
++
++  it.each([
++    ['jpy', 4900, 'JPY 4900'], ['kwd', 4900, 'KWD 4.900'], ['isk', 500, 'ISK 5'],
++    ['usd', 4900, 'USD 49.00'], ['ugx', 500000, 'UGX 5000'],
++  ])('%s %d falls back to "%s" when Intl throws', (cur, minor, text) => {
++    const real = Intl.NumberFormat;
++    (Intl as { NumberFormat: unknown }).NumberFormat = function () { throw new RangeError('synthetic JSC'); };
++    try {
++      expect(formatCurrencyCents(minor, cur)).toBe(text);
++    } finally {
++      (Intl as { NumberFormat: unknown }).NumberFormat = real;
++    }
++  });
++
++  it('null and missing values never throw and default to USD', () => {
++    expect(num(formatCurrencyCents(null, null))).toBe(0);
++    expect(num(formatCurrencyCents(undefined))).toBe(0);
++    expect(formatCurrencyCents(4900, undefined)).toMatch(/49\.00/);
++  });
++});
++
++describe('R2 copy rules over every string', () => {
++  const strings: string[] = [];
++  for (const v of Object.values(PACKAGE_PAYMENT_COPY)) {
++    if (typeof v === 'string') strings.push(v);
++    else if (typeof v === 'function') {
++      try { strings.push(String((v as (...a: unknown[]) => unknown)('ref12345', '$49.00', 'June 1'))); } catch { /* shape */ }
++      try { strings.push(String((v as (...a: unknown[]) => unknown)(null, null, null))); } catch { /* shape */ }
++    }
++  }
++  it('collected copy', () => expect(strings.length).toBeGreaterThan(60));
++  it.each(strings.map((s) => [s]))('%s', (s) => {
++    expect(s).not.toMatch(/!/);
++    expect(s).not.toMatch(/\b(we|our|us|we're|we'll|I)\b/);
++    expect(s).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
++  });
++  it('noAnswer keeps the reference, offers the plan and never claims no charge', () => {
++    expect(PACKAGE_PAYMENT_COPY.noAnswer('ab12cd34')).toContain('ab12cd34');
++    expect(PACKAGE_PAYMENT_COPY.noAnswer('ab12cd34')).not.toMatch(NO_CHARGE);
++    expect(PACKAGE_PAYMENT_COPY.noAnswer(null)).not.toMatch(/reference/);
++  });
++});
++
++describe('R3 INFO (C-342-7) no HTTP status', () => {
++  it('a timeout (request sent, answer lost) is told as "could not reach the server"', () => {
++    const timeout = Object.assign(new Error('timeout of 15000ms exceeded'), { code: 'ECONNABORTED', request: {}, config: {} });
++    const n = describeBackendFailure(timeout, 'payment_intent', 'ab12cd34');
++    expect(n.cause).toBe('no_answer');
++    expect(n.message).toMatch(/could not reach the server/);
++    expect(n.message).not.toMatch(NO_CHARGE);
++  });
++  it('a plain TypeError (no request at all) gets the same transport copy', () => {
++    const n = describeBackendFailure(new TypeError('synthetic adapter bug'), 'payment_intent', 'ab12cd34');
++    expect(n.cause).toBe('no_answer');
++  });
++});
++
++// ── AUD-OPUS-S123-119 additions at #342 @ e3226f3b ─────────────────────────
++describe('S4 B-342-1 residual: refusals evaluated before the key lookup (production 3e9a9a75 checkout.service.ts:444-490)', () => {
++  const coded = (status: number, error: string) => ({ response: { status, data: { error } } });
++  it.each([['payment_intent'], ['subscription_intent'], ['claim_free']] as const)(
++    'PACKAGE_NOT_FOUND on %s after an unclear attempt: no no-charge claim, key kept, attempt reference',
++    (step) => {
++      const n = describeBackendFailure(coded(404, 'PACKAGE_NOT_FOUND'), step, 'ab12cd34');
++      expect(n.message).not.toMatch(NO_CHARGE);
++      expect(n.message).toContain('ab12cd34');
++      expect(n.retireKey).toBeUndefined();
++      expect(n.support).toBe(true);
++    },
++  );
++  it('share link wording: no no-charge claim and no reload', () => {
++    const n = describeBackendFailure(coded(404, 'PACKAGE_NOT_FOUND'), 'payment_intent', 'ab12cd34', { surface: 'share_link' });
++    expect(n.message).not.toMatch(NO_CHARGE);
++    expect(n.reload).toBeUndefined();
++  });
++  it('EVIDENCE (C): CLIENT_NOT_FOUND is also checked before the key lookup and still says nothing was charged', () => {
++    const n = describeBackendFailure(coded(404, 'CLIENT_NOT_FOUND'), 'payment_intent', 'ab12cd34');
++    // eslint-disable-next-line no-console
++    console.log(`S4 CLIENT_NOT_FOUND copy: ${n.message}`);
++    expect(n.message).toMatch(/nothing was charged/);
++  });
++});
+diff --git a/src/lib/__tests__/audOpusSh118.probe342.test.ts b/src/lib/__tests__/audOpusSh118.probe342.test.ts
+new file mode 100644
+index 0000000..1c69f75
+--- /dev/null
++++ b/src/lib/__tests__/audOpusSh118.probe342.test.ts
+@@ -0,0 +1,128 @@
++/**
++ * AUD-OPUS-SH-118 probe (Claude Opus 5.5 lens, agent 118 wave) on #342 @ 56f281ad.
++ * Envelopes are built exactly as the backend HttpExceptionFilter emits them
++ * (src/filters/not-found-envelope.ts buildErrorEnvelope): statusCode, optional
++ * code, message, error, timestamp, path, request_id.
++ *   prod 643817b3  no subscription-intent route (unmounted 404, no code)
++ *   #661 f80f0088  replay answers carry the code in `error` only
++ *   recurring 67905b43  subscription-errors.ts carries code + error
++ * All cases are controls (expected to pass at the head) except the ones
++ * marked INFO, which record today's behavior for follow-up Cs.
++ */
++import { PACKAGE_PAYMENT_COPY, describeBackendFailure } from '../packagePayment';
++
++jest.mock('../../services/api', () => ({ __esModule: true, default: {} }));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++
++const env = (status: number, error: string, code?: string, path = '/v1/checkout/subscription-intent') => ({
++  response: {
++    status,
++    data: {
++      statusCode: status,
++      ...(code ? { code } : {}),
++      message: 'synthetic',
++      error,
++      timestamp: '2026-10-04T17:00:00.000Z',
++      path,
++      request_id: 'cafe0123-0000-4000-8000-000000000000',
++    },
++  },
++});
++const NO_CHARGE = /nothing was charged|not charged|did not go through|nothing more was charged/i;
++const PAID = /payment received|payment went through|already went through|is active/i;
++
++describe('production backend 643817b3: unmounted subscription-intent route', () => {
++  it('renewing plan: truthful fallback (route absent, so nothing could be charged)', () => {
++    const n = describeBackendFailure(env(404, 'Not Found'), 'subscription_intent', null);
++    expect(n.message).toBe(PACKAGE_PAYMENT_COPY.renewingUnavailable);
++    expect(n.retireKey).toBeUndefined();
++  });
++  it('the same bare 404 on payment-intent claims nothing about money', () => {
++    const n = describeBackendFailure(env(404, 'Not Found', undefined, '/v1/checkout/payment-intent'), 'payment_intent', null);
++    expect(n.message).not.toMatch(NO_CHARGE);
++    expect(n.message).not.toMatch(PAID);
++  });
++  it('a coded 404 on subscription-intent is not read as a missing route', () => {
++    const n = describeBackendFailure(env(404, 'PACKAGE_NOT_FOUND', 'PACKAGE_NOT_FOUND'), 'subscription_intent', null);
++    expect(n.message).not.toBe(PACKAGE_PAYMENT_COPY.renewingUnavailable);
++  });
++});
++
++describe('#661 replay answers (code in `error` only)', () => {
++  it('409 PAYMENT_ALREADY_COMPLETE: completed, open plan, key retired', () => {
++    const n = describeBackendFailure(env(409, 'PAYMENT_ALREADY_COMPLETE', undefined, '/v1/checkout/payment-intent'), 'payment_intent', null);
++    expect(n).toEqual(expect.objectContaining({ message: PACKAGE_PAYMENT_COPY.alreadyComplete, completed: true, openPlan: true, retireKey: true }));
++  });
++  it('409 PAYMENT_REFUNDED_OR_IN_REVIEW: support and plan, key kept, no paid claim', () => {
++    const n = describeBackendFailure(env(409, 'PAYMENT_REFUNDED_OR_IN_REVIEW', undefined, '/v1/checkout/payment-intent'), 'payment_intent', null);
++    expect(n).toEqual(expect.objectContaining({ support: true, openPlan: true }));
++    expect(n.retireKey).toBeUndefined();
++    expect(n.completed).toBeUndefined();
++  });
++  it('409 PAYMENT_CHECKOUT_CLOSED: key retired, no money claim', () => {
++    const n = describeBackendFailure(env(409, 'PAYMENT_CHECKOUT_CLOSED', undefined, '/v1/checkout/payment-intent'), 'payment_intent', null);
++    expect(n.retireKey).toBe(true);
++    expect(n.message).not.toMatch(PAID);
++  });
++  it('503 PAYMENT_IN_PROGRESS: key kept, wait and start again', () => {
++    const n = describeBackendFailure(env(503, 'PAYMENT_IN_PROGRESS', undefined, '/v1/checkout/payment-intent'), 'payment_intent', null);
++    expect(n.message).toBe(PACKAGE_PAYMENT_COPY.inProgress);
++    expect(n.retireKey).toBeUndefined();
++  });
++  it.each(['PAYMENT_SUCCESS_RETRY', 'PAYMENT_FAILURE_RETRY'])('%s (webhook-only) never claims money either way', (code) => {
++    const n = describeBackendFailure(env(503, code, undefined, '/v1/checkout/payment-intent'), 'payment_intent', null);
++    expect(n.message).not.toMatch(NO_CHARGE);
++    expect(n.message).not.toMatch(PAID);
++  });
++});
++
++describe('recurring top 67905b43 (code + error)', () => {
++  it.each([
++    ['PAYMENT_RETRY', 503],
++    ['SUBSCRIPTION_SETUP_UNAVAILABLE', 503],
++    ['STRIPE_CHECKOUT_ERROR', 502],
++  ])('%s on subscription-intent: not confirmed, never "nothing was charged"', (code, status) => {
++    const n = describeBackendFailure(env(status, code, code), 'subscription_intent', null);
++    expect(n.message).not.toMatch(NO_CHARGE);
++    expect(n.message).not.toMatch(PAID);
++    expect(n.openPlan).toBe(true);
++    expect(n.retireKey).toBeUndefined();
++  });
++  it('PLAN_CHANGE_UNCONFIRMED on a plan action: reload, no money claim', () => {
++    const n = describeBackendFailure(env(503, 'PLAN_CHANGE_UNCONFIRMED', 'PLAN_CHANGE_UNCONFIRMED', '/v1/checkout/subscriptions/x/resume'), 'plan_action', null);
++    expect(n.message).toBe(PACKAGE_PAYMENT_COPY.planChangeUnconfirmed);
++    expect(n.reload).toBe(true);
++    expect(n.message).not.toMatch(NO_CHARGE);
++  });
++  it('INFO trials stack (T3 df76889f) TRIAL_ALREADY_USED / TRIAL_IN_PROGRESS: today neutral, not specific', () => {
++    for (const code of ['TRIAL_ALREADY_USED', 'TRIAL_IN_PROGRESS']) {
++      const n = describeBackendFailure(env(409, code, code), 'subscription_intent', null);
++      expect(n.message).not.toMatch(NO_CHARGE);
++      expect(n.message).not.toMatch(PAID);
++      expect(n.message).toBe(PACKAGE_PAYMENT_COPY.unknown(n.reference));
++    }
++  });
++});
++
++describe('copy rules over every PACKAGE_PAYMENT_COPY string', () => {
++  const strings: string[] = [];
++  for (const v of Object.values(PACKAGE_PAYMENT_COPY) as unknown[]) {
++    if (typeof v === 'string') strings.push(v);
++    else if (typeof v === 'function') {
++      try {
++        const out = (v as (...a: unknown[]) => unknown)('abcd1234', 'Plan', 'June 1, 2027');
++        if (typeof out === 'string') strings.push(out);
++      } catch {
++        // signature differs; covered by the builder suites
++      }
++    }
++  }
++  it('no first person, no exclamation marks, no generic retry copy', () => {
++    expect(strings.length).toBeGreaterThan(40);
++    for (const s of strings) {
++      expect(s).not.toMatch(/\b(we|we're|our|us|I|I'm|me|my)\b/);
++      expect(s).not.toMatch(/!/);
++      expect(s).not.toMatch(/something went wrong|try again later/i);
++    }
++  });
++});
+diff --git a/src/lib/__tests__/audSolP12117.paymentContract.test.ts b/src/lib/__tests__/audSolP12117.paymentContract.test.ts
+new file mode 100644
+index 0000000..596f85e
+--- /dev/null
++++ b/src/lib/__tests__/audSolP12117.paymentContract.test.ts
+@@ -0,0 +1,65 @@
++import {
++  describeBackendFailure,
++} from '../packagePayment';
++import { scrubEvent } from '../../services/sentryPrivacy';
++import { scrubEvent as scrubCredentials } from '../../services/sentryScrub';
++
++jest.mock('../../services/api', () => ({ __esModule: true, default: {} }));
++const mockCapture = jest.fn();
++jest.mock('../../services/sentry', () => ({
++  captureError: (...args: unknown[]) => mockCapture(...args),
++}));
++
++function failed(status: number, code: string) {
++  return { response: { status, data: { code, request_id: 'aabbccdd-1234' } } };
++}
++
++beforeEach(() => jest.clearAllMocks());
++
++describe('AUD-SOL-P12-117 P1 actual mapper / current contract', () => {
++  it.each(['PAYMENT_RETRY', 'STRIPE_CHECKOUT_ERROR', 'SUBSCRIPTION_SETUP_UNAVAILABLE'])(
++    '%s cannot erase backend uncertainty with a categorical no-charge claim',
++    (code) => {
++      // Current backend #679 @ 0e1cfde0 explicitly does NOT guarantee no charge
++      // for these machine codes (subscription-errors.ts B-679-6).
++      const n = describeBackendFailure(failed(503, code), 'subscription_intent', '1234abcd');
++      expect(n.message).not.toMatch(/nothing was charged|not charged|did not go through/i);
++      expect(n.message).toMatch(/check|confirm|Membership|plan/i);
++    },
++  );
++
++  it('an unknown 500 after a retry is not proof that an earlier confirmation did not commit', () => {
++    const n = describeBackendFailure(failed(500, 'INTERNAL'), 'subscription_intent', '1234abcd');
++    expect(n.message).not.toMatch(/nothing was charged|did not go through/i);
++    expect(n.support).toBe(true);
++    expect(n.reference).toBe('aabbccdd');
++  });
++
++  it.each([
++    ['PAYMENT_ALREADY_COMPLETE', /already|complete/i],
++    ['PAYMENT_CHECKOUT_CLOSED', /closed|checkout.*ended/i],
++    ['PAYMENT_REFUNDED_OR_IN_REVIEW', /refunded|review/i],
++  ])('%s has its specific current #661 replay disposition', (code, copy) => {
++    const n = describeBackendFailure(failed(409, code as string), 'payment_intent', '1234abcd');
++    expect(n.message).toMatch(copy as RegExp);
++    expect(n.message).not.toContain('The payment did not go through and nothing was charged');
++  });
++
++  it('optional diagnostic hardening: free-form unknown code cannot enter a scrubbed Sentry event', () => {
++    const marker = 'synthetic-person@example.invalid private coaching note';
++    describeBackendFailure(failed(500, marker), 'subscription_intent', '1234abcd');
++    const [err, extra] = mockCapture.mock.calls[0];
++    const event = scrubCredentials(scrubEvent({
++      exception: { values: [{ value: String(err.message) }] },
++      extra,
++    }));
++    expect(JSON.stringify(event)).not.toContain('synthetic-person');
++    expect(JSON.stringify(event)).not.toContain('private coaching note');
++  });
++
++  it('control: definitive decline-before-create account refusal stays specific', () => {
++    const n = describeBackendFailure(failed(409, 'COACH_NOT_CONNECTED'), 'subscription_intent', null);
++    expect(n.message).toContain('has not set up card payments');
++    expect(n.support).toBe(false);
++  });
++});
+diff --git a/src/lib/__tests__/audSolSh118.minorUnits.test.ts b/src/lib/__tests__/audSolSh118.minorUnits.test.ts
+new file mode 100644
+index 0000000..5b8408b
+--- /dev/null
++++ b/src/lib/__tests__/audSolSh118.minorUnits.test.ts
+@@ -0,0 +1,28 @@
++import { money, planTerms, purchasableFromCoachPackage } from '../planTerms';
++
++function numeric(text: string) {
++  return Number(text.replace(/[^\d.-]/g, ''));
++}
++
++describe('AUD-SOL-SH-118 package terms use Stripe presentment minor units', () => {
++  it('JPY 4900 minor units are 4900 yen, not 49 yen', () => {
++    // Backend accepts a three-letter currency and sends the stored amount
++    // unchanged as Stripe's unit_amount/amount.
++    const p = purchasableFromCoachPackage({
++      id: '11111111-2222-4333-8444-555555555555',
++      name: 'Synthetic yen plan', billing_type: 'recurring',
++      amount_cents: 4900, currency: 'jpy', interval: 'month',
++    });
++    expect(p).not.toBeNull();
++    expect(numeric(money(p!.amountCents, p!.currency))).toBe(4900);
++    expect(planTerms(p!).cta).toContain(money(4900, 'jpy'));
++  });
++
++  it('KWD 4900 minor units are 4.900 dinars, not 49 dinars', () => {
++    expect(numeric(money(4900, 'kwd'))).toBe(4.9);
++  });
++
++  it('control: USD 4900 minor units remain 49 dollars', () => {
++    expect(numeric(money(4900, 'usd'))).toBe(49);
++  });
++});
+diff --git a/src/lib/__tests__/audSolSh118.transportUnknown.test.ts b/src/lib/__tests__/audSolSh118.transportUnknown.test.ts
+new file mode 100644
+index 0000000..1706105
+--- /dev/null
++++ b/src/lib/__tests__/audSolSh118.transportUnknown.test.ts
+@@ -0,0 +1,29 @@
++import { describeBackendFailure } from '../packagePayment';
++
++jest.mock('../../services/api', () => ({ __esModule: true, default: {} }));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++
++describe('AUD-SOL-SH-118 B-342-1 remaining uncoded transport uncertainty', () => {
++  it.each(['payment_intent', 'subscription_intent'] as const)(
++    '%s timeout on a replay cannot prove the prior payment was unpaid',
++    (step) => {
++      const error = Object.assign(new Error('Synthetic request timeout'), {
++        code: 'ECONNABORTED',
++        request: {},
++      });
++      const n = describeBackendFailure(error, step, '1234abcd');
++      expect(n.message).not.toMatch(/nothing was charged|not charged|did not go through/i);
++      expect(n.message).toMatch(/check|confirm|Membership|plan/i);
++    },
++  );
++
++  it('control: the missing production subscription route remains specific', () => {
++    const n = describeBackendFailure({
++      response: {
++        status: 404,
++        data: { error: 'Not Found', message: 'Cannot POST /v1/checkout/subscription-intent' },
++      },
++    }, 'subscription_intent', '1234abcd');
++    expect(n.cause).toBe('renewing_unavailable');
++  });
++});
+-- 
+2.53.0
+

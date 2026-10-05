@@ -1,0 +1,276 @@
+// AUD-OPUS-CI-117 (Claude Opus 5.5 lens) probe for backend #694 @ 61d42f09. Audit branch only, never merged.
+//
+// Runs test/ci/jest-typecheck-gate.spec.ts UNCHANGED in a VM against mutated inputs that the
+// builder's own self-tests and probes do not contain, and records what the guard reports:
+//   FC*  fail-closed checks: the guard must report a violation matching the given pattern.
+//   EQ*  equivalent spellings: the guard must stay green.
+//   GAP* known blind spots: the test asserts the guard stays GREEN (the gap is real when it passes).
+//
+// The fixture directory test/ci/__fixtures__/zz-aud-opus-ci-117 is hidden from directory listings
+// inside the VM so the baseline control stays green here; the unchanged guard run directly by jest
+// in the same CI-lane job sees it on disk and must go red on the excluded spec it contains.
+
+import * as fs from 'fs';
+import { join, resolve } from 'path';
+import * as ts from 'typescript';
+import { runInNewContext } from 'vm';
+
+const ROOT = resolve(__dirname, '..', '..');
+const GUARD = join(ROOT, 'test', 'ci', 'jest-typecheck-gate.spec.ts');
+const WORKFLOW = join(ROOT, '.github', 'workflows', 'ci.yml');
+const TSCONFIG = join(ROOT, 'tsconfig.json');
+const JEST_CONFIG = join(ROOT, 'jest.config.js');
+const JEST_RLS_CONFIG = join(ROOT, 'jest.rls.config.js');
+const HIDDEN_DIR = 'zz-aud-opus-ci-117';
+const FIXTURES = 'test/ci/__fixtures__/zz-aud-opus-ci-117';
+
+type Json = Record<string, unknown>;
+interface Mutation {
+  workflow?: (text: string) => string;
+  tsconfig?: (cfg: Json) => void;
+  jest?: (cfg: Json) => void;
+  jestRls?: (cfg: Json) => void;
+}
+interface GuardRun {
+  executed: string[];
+  failures: string[];
+  /** checkGate(loadInputs()) read straight from the VM global scope (top-level function declarations). */
+  violations: string[];
+}
+
+function edit(text: string, find: string, replace: string): string {
+  if (text.split(find).length !== 2) throw new Error(`probe edit must match exactly once: ${JSON.stringify(find)}`);
+  return text.replace(find, replace);
+}
+
+async function runGuard(m: Mutation): Promise<GuardRun> {
+  const workflowText = m.workflow ? m.workflow(fs.readFileSync(WORKFLOW, 'utf8')) : undefined;
+  let tsconfigText: string | undefined;
+  if (m.tsconfig) {
+    const cfg = JSON.parse(fs.readFileSync(TSCONFIG, 'utf8')) as Json;
+    m.tsconfig(cfg);
+    tsconfigText = JSON.stringify(cfg);
+  }
+  const virtual = (p: unknown): string | undefined => {
+    if (typeof p !== 'string') return undefined;
+    const abs = resolve(p);
+    if (abs === WORKFLOW) return workflowText;
+    if (abs === TSCONFIG) return tsconfigText;
+    return undefined;
+  };
+  const hidden = (name: string) => name === HIDDEN_DIR;
+  const fsView = {
+    ...fs,
+    readFileSync: (p: fs.PathOrFileDescriptor, o?: Parameters<typeof fs.readFileSync>[1]) => {
+      const text = virtual(p);
+      return text !== undefined ? text : fs.readFileSync(p, o);
+    },
+    readdirSync: (p: fs.PathLike, o?: unknown) => {
+      const out = (fs.readdirSync as (a: fs.PathLike, b?: unknown) => Array<string | fs.Dirent>)(p, o);
+      return out.filter((e) => !hidden(typeof e === 'string' ? e : e.name));
+    },
+  };
+  const sysView: ts.System = {
+    ...ts.sys,
+    readDirectory: (path, extensions, exclude, include, depth) =>
+      ts.sys
+        .readDirectory(path, extensions, exclude, include, depth)
+        .filter((f) => !f.split('/').some(hidden)),
+  };
+  const tsView = {
+    ...ts,
+    sys: sysView,
+    getParsedCommandLineOfConfigFile: (
+      path: string,
+      extend: ts.CompilerOptions | undefined,
+      host: ts.ParseConfigFileHost,
+    ) =>
+      ts.getParsedCommandLineOfConfigFile(path, extend, {
+        ...host,
+        readFile: (p: string) => virtual(p) ?? host.readFile(p),
+      }),
+  };
+  const load = (id: string): unknown => {
+    if (id === 'fs') return fsView;
+    if (id === 'typescript') return tsView;
+    const abs = resolve(id);
+    if (abs === JEST_CONFIG || abs === JEST_RLS_CONFIG) {
+      const real: Json = require(abs);
+      const copy = { ...real };
+      if (abs === JEST_CONFIG && m.jest) m.jest(copy);
+      if (abs === JEST_RLS_CONFIG && m.jestRls) m.jestRls(copy);
+      return copy;
+    }
+    return require(id);
+  };
+  const requireView = Object.assign(load, { resolve: require.resolve });
+
+  const tests: Array<{ name: string; body: () => unknown }> = [];
+  const code = ts.transpileModule(fs.readFileSync(GUARD, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
+  }).outputText;
+  const sandbox: Record<string, unknown> = {
+    __dirname: join(ROOT, 'test', 'ci'),
+    __filename: GUARD,
+    exports: {},
+    require: requireView,
+    expect,
+    describe: (_n: string, body: () => void) => body(),
+    it: (name: string, body: () => unknown) => void tests.push({ name, body }),
+  };
+  runInNewContext(code, sandbox);
+  const checkGate = sandbox.checkGate as ((i: unknown) => Promise<string[]>) | undefined;
+  const loadInputs = sandbox.loadInputs as (() => unknown) | undefined;
+  if (typeof checkGate !== 'function' || typeof loadInputs !== 'function')
+    throw new Error('guard no longer exposes checkGate/loadInputs at script scope');
+  const run: GuardRun = { executed: [], failures: [], violations: [...(await checkGate(loadInputs()))] };
+  for (const t of tests) {
+    if (/^(rejects|accepts): /.test(t.name)) continue;
+    run.executed.push(t.name);
+    try {
+      await t.body();
+    } catch (e) {
+      run.failures.push(
+        `${t.name} :: ${e !== null && typeof e === 'object' && 'message' in e ? String(e.message) : String(e)}`,
+      );
+    }
+  }
+  return run;
+}
+
+const record = (x: unknown): Json => (x !== null && typeof x === 'object' ? { ...(x as Json) } : {});
+const opts = (c: Json) => record(c.compilerOptions);
+
+const FC: Array<[string, Mutation, RegExp[]]> = [
+  [
+    'FC1 strictNullChecks:false inherited through extends (root drops its explicit flag)',
+    {
+      tsconfig: (c) => {
+        const o = opts(c);
+        delete o.strictNullChecks;
+        Object.assign(c, { extends: `./${FIXTURES}/weak-strict-null-checks.tsconfig.json`, compilerOptions: o });
+      },
+    },
+    [/tsconfig\.json: effective strictNullChecks is false/],
+  ],
+  [
+    'FC2 noCheck:true inherited through extends',
+    { tsconfig: (c) => void Object.assign(c, { extends: `./${FIXTURES}/no-check.tsconfig.json` }) },
+    [/effective noCheck is on/],
+  ],
+  [
+    'FC3 tsconfig.json files:[src/main.ts] with include:[] (program narrowed to one root file)',
+    { tsconfig: (c) => void Object.assign(c, { files: ['src/main.ts'], include: [] }) },
+    [/of them specs, are outside the Type-check program tsconfig\.json/],
+  ],
+  [
+    'FC4 multi-line run with set +e before tsc',
+    {
+      workflow: (t) =>
+        edit(t, '        run: npx tsc --noEmit\n', '        run: |\n          set +e\n          npx tsc --noEmit\n          true\n'),
+    },
+    [/^Type-check run is .* not exactly /m, /not one plain tsc command/],
+  ],
+  [
+    'FC5 default config compiles .ts with a non-ts-jest transformer (babel-jest)',
+    {
+      jest: (c) =>
+        void (c.transform = { ...record(c.transform), '^.+\\.ts$': require.resolve('babel-jest') }),
+    },
+    [/jest\.config\.js: only 0 spec files reach ts-jest; the coverage walk is vacuous/],
+  ],
+  [
+    'FC6 ts-jest given tsconfig as a file path (type-checking LanguageService)',
+    {
+      jest: (c) =>
+        void (c.transform = { ...record(c.transform), '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }] }),
+    },
+    [/jest\.config\.js: ts-jest type-checks files matched by/],
+  ],
+  [
+    'FC7 jest.rls.config.js puts a type-checking ts-jest transform for specs first',
+    {
+      jestRls: (c) =>
+        void (c.transform = { '^.+\\.spec\\.ts$': ['ts-jest', {}], ...record(c.transform) }),
+    },
+    [/jest\.rls\.config\.js: ts-jest type-checks files matched by/],
+  ],
+];
+
+const EQ: Array<[string, Mutation]> = [
+  [
+    'EQ1 Type-check working-directory ./src/.. (resolves to the root)',
+    { workflow: (t) => edit(t, '      - name: Type-check\n', '      - name: Type-check\n        working-directory: ./src/..\n') },
+  ],
+];
+
+const GAP: Array<[string, Mutation]> = [
+  [
+    'GAP1 (C-694-3) build-and-test gains needs: [rls-floor-guard]; a failed or skipped needed job skips the required job',
+    { workflow: (t) => edit(t, '  build-and-test:\n', '  build-and-test:\n    needs: [rls-floor-guard]\n') },
+  ],
+  [
+    'GAP2 (C-694-4) Type-check env PATH points npx at a repo directory first',
+    {
+      workflow: (t) =>
+        edit(
+          t,
+          '          NODE_OPTIONS: --max-old-space-size=4096\n\n      - name: Build\n',
+          '          NODE_OPTIONS: --max-old-space-size=4096\n          PATH: ./scripts/aud-fake-bin:/usr/bin:/bin\n\n      - name: Build\n',
+        ),
+    },
+  ],
+  [
+    'GAP3 (C-694-4) an earlier step rewrites tsconfig.json to strict:false before Type-check',
+    {
+      workflow: (t) =>
+        edit(
+          t,
+          '      - name: Type-check\n',
+          `      - name: Prepare\n        run: |\n          sed -i 's/"strict": true/"strict": false/' tsconfig.json\n\n      - name: Type-check\n`,
+        ),
+    },
+  ],
+];
+
+describe('AUD-OPUS-CI-117: #694 type-gate guard executed unchanged against lens mutations', () => {
+  const log = (name: string, run: GuardRun) =>
+    console.log(`[AUD-OPUS-CI-117] ${name}\n  guard tests failed: ${run.failures.length}\n  violations:\n${run.violations.map((x) => `    - ${x}`).join('\n') || '    (none)'}`);
+
+  it('control: the guard is green on the real inputs (fixture dir hidden)', async () => {
+    const run = await runGuard({});
+    log('control', run);
+    expect(run.executed.length).toBeGreaterThanOrEqual(3);
+    expect(run.violations).toEqual([]);
+    expect(run.failures).toEqual([]);
+  });
+
+  for (const [name, m, patterns] of FC) {
+    it(`fails closed: ${name}`, async () => {
+      const run = await runGuard(m);
+      log(name, run);
+      expect(run.executed.length).toBeGreaterThanOrEqual(3);
+      expect(run.failures.length).toBeGreaterThan(0);
+      for (const p of patterns) expect(run.violations).toEqual(expect.arrayContaining([expect.stringMatching(p)]));
+    });
+  }
+
+  for (const [name, m] of EQ) {
+    it(`stays green: ${name}`, async () => {
+      const run = await runGuard(m);
+      log(name, run);
+      expect(run.violations).toEqual([]);
+      expect(run.failures).toEqual([]);
+    });
+  }
+
+  for (const [name, m] of GAP) {
+    it(`blind spot (passes = gap proven): ${name}`, async () => {
+      const run = await runGuard(m);
+      log(name, run);
+      expect(run.executed.length).toBeGreaterThanOrEqual(3);
+      expect(run.violations).toEqual([]);
+      expect(run.failures).toEqual([]);
+    });
+  }
+});

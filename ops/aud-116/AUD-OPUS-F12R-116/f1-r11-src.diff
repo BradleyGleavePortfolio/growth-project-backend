@@ -1,0 +1,309 @@
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index d04ace3f..ef118c23 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -3997,7 +3997,10 @@ model SplitLedgerEntry {
+   // reversed back to the platform. Always <= amount_cents.
+   reversed_cents            Int            @default(0)
+   // Idempotency-key we sent to Stripe when posting this slice. Lets the
+-  // worker retry safely. Globally unique.
++  // worker retry safely. Globally unique. S-FEE round 11 (B-681-2): a legacy
++  // per-purchase row carries its durable identity here
++  // (sfee-legacy-ledger:<purchase>:<kind>:<payee account>, ids only), so two
++  // concurrent legacy planners can never create a second row.
+   idempotency_key           String?        @unique
+   last_error                String?
+   posted_at                 DateTime?
+diff --git a/src/connect/fees/charge-lock.ts b/src/connect/fees/charge-lock.ts
+index 49630c53..14e5c565 100644
+--- a/src/connect/fees/charge-lock.ts
++++ b/src/connect/fees/charge-lock.ts
+@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
+ import { hostname } from 'node:os';
+ import { randomUUID } from 'node:crypto';
+ import type { PrismaService } from '../../prisma.service';
++import { dbErrorKind } from './money-diagnostics';
+ 
+ // S-FEE round 3 (B-627-2) — per-charge mutex for every money movement on one
+ // Stripe charge: settlement, refund / dispute adjustments, and the legacy
+@@ -226,9 +227,12 @@ export class ChargeLock {
+     try {
+       await this.db.cronLease.deleteMany({ where: { name, holder } });
+     } catch (err) {
+-      // The lease expires on its own after ttlMs.
++      // The lease expires on its own after ttlMs. B-681-1 (round 11): the
++      // failure is named by its closed DB error kind only, never by the
++      // error's message, name or code.
+       this.logger.warn(
+-        `SFEE_CHARGE_LOCK_RELEASE_FAILED lock=${name}: ${(err as Error).message}; it expires in ${this.ttlMs / 1000} s`,
++        `SFEE_CHARGE_LOCK_RELEASE_FAILED lock=${name} error_kind=${dbErrorKind(err)}: ` +
++          `the lease was not deleted; it expires in ${this.ttlMs / 1000} s and the next holder takes it over`,
+       );
+     }
+   }
+diff --git a/src/connect/fees/money-diagnostics.ts b/src/connect/fees/money-diagnostics.ts
+new file mode 100644
+index 00000000..ee1d2331
+--- /dev/null
++++ b/src/connect/fees/money-diagnostics.ts
+@@ -0,0 +1,86 @@
++import { Prisma } from '@prisma/client';
++import { StripeConnectApiError } from '../stripe-connect-api.service';
++
++// S-FEE round 11 (B-681-1 / B-682-2, agent 116) — money-path diagnostics name
++// a failure only by this closed vocabulary. An error's message, name and code
++// are free text that a database driver, a provider or a caller can fill with
++// anything (request input, a notice body, an email address), so none of them
++// ever reaches a log line, a persisted last_error or a money exception
++// message. Every unknown shape maps to the fixed label `unknown`.
++
++export type DbErrorKind = 'db_request' | 'db_unavailable' | 'db_validation' | 'unknown';
++
++/** The Prisma error class of `err`, or `unknown`. */
++export function dbErrorKind(err: unknown): DbErrorKind {
++  if (
++    err instanceof Prisma.PrismaClientKnownRequestError ||
++    err instanceof Prisma.PrismaClientUnknownRequestError
++  ) {
++    return 'db_request';
++  }
++  if (
++    err instanceof Prisma.PrismaClientInitializationError ||
++    err instanceof Prisma.PrismaClientRustPanicError
++  ) {
++    return 'db_unavailable';
++  }
++  if (err instanceof Prisma.PrismaClientValidationError) return 'db_validation';
++  return 'unknown';
++}
++
++// Stripe error types and codes the money path reports by name. Anything else
++// Stripe (or a proxy in front of it) sends is reported as `other`.
++const STRIPE_TYPES = new Set([
++  'api_error',
++  'api_connection_error',
++  'authentication_error',
++  'card_error',
++  'idempotency_error',
++  'invalid_request_error',
++  'permission_error',
++  'rate_limit_error',
++]);
++const STRIPE_CODES = new Set([
++  'account_closed',
++  'account_country_invalid_address',
++  'account_invalid',
++  'balance_insufficient',
++  'idempotency_key_in_use',
++  'insufficient_capabilities_for_transfer',
++  'insufficient_funds',
++  'lock_timeout',
++  'parameter_invalid_integer',
++  'parameter_missing',
++  'rate_limit',
++  'request_timeout',
++  'resource_missing',
++  'transfers_not_allowed',
++]);
++
++function allowListed(value: string | null | undefined, allowed: Set<string>): string {
++  if (value === null || value === undefined || value === '') return 'none';
++  return allowed.has(value) ? value : 'other';
++}
++
++/**
++ * `kind=<kind>`, plus `http=<status> type=<type> code=<code>` for a Stripe
++ * error, every part from a closed set. Safe for logs and persisted fields.
++ */
++export function moneyErrorDiagnostic(err: unknown): string {
++  if (err instanceof StripeConnectApiError) {
++    const status =
++      Number.isInteger(err.httpStatus) && err.httpStatus >= 100 && err.httpStatus <= 599
++        ? String(err.httpStatus)
++        : 'other';
++    return (
++      `kind=stripe http=${status} type=${allowListed(err.stripeType, STRIPE_TYPES)} ` +
++      `code=${allowListed(err.stripeCode, STRIPE_CODES)}`
++    );
++  }
++  const db = dbErrorKind(err);
++  if (db !== 'unknown') return `kind=${db}`;
++  if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
++    return 'kind=timeout';
++  }
++  return 'kind=unknown';
++}
+diff --git a/src/connect/fees/split-ledger.service.ts b/src/connect/fees/split-ledger.service.ts
+index 4bc1a633..8c75218c 100644
+--- a/src/connect/fees/split-ledger.service.ts
++++ b/src/connect/fees/split-ledger.service.ts
+@@ -29,6 +29,12 @@ import type { SplitPlan } from './fee-policy.service';
+ // Legacy (pre-S-FEE destination charges, ensurePendingEntries): one set of
+ // rows per purchase keyed on (purchase_id, kind, payee_user_id), exactly as
+ // before; renewals of a legacy subscription collapse onto that set.
++// Round 11 (B-681-2): the 4-column unique no longer makes that set
++// exactly-once (stripe_charge_id is null when a legacy row is created, and
++// Postgres treats NULLs as distinct), so every legacy row is created with a
++// durable identity in the unique idempotency_key column
++// (legacyLedgerKey). Two planners that both find no row race on one INSERT;
++// the database lets exactly one win, and the loser adopts the winner's row.
+ 
+ export interface SplitLedgerInputs {
+   purchase: ClientPurchase;
+@@ -38,6 +44,26 @@ export interface SplitLedgerInputs {
+   head_coach_stripe_account_id: string | null;
+ }
+ 
++interface LegacyEntryArgs {
++  purchase_id: string;
++  kind: string;
++  payee_user_id: string | null;
++  payee_stripe_account_id: string | null;
++  amount_cents: number;
++  currency: string;
++}
++
++/**
++ * Round 11 (B-681-2) — the durable identity of one legacy per-purchase ledger
++ * row: purchase, kind and the payee's Stripe account (`platform` for TGP's
++ * own slice). Ids only, no user id: the key lives in a free-text column.
++ */
++export function legacyLedgerKey(
++  args: Pick<LegacyEntryArgs, 'purchase_id' | 'kind' | 'payee_stripe_account_id'>,
++): string {
++  return `sfee-legacy-ledger:${args.purchase_id}:${args.kind}:${args.payee_stripe_account_id ?? 'platform'}`;
++}
++
+ @Injectable()
+ export class SplitLedgerService {
+   private readonly logger = new Logger(SplitLedgerService.name);
+@@ -194,25 +220,6 @@ export class SplitLedgerService {
+     });
+   }
+ 
+-  // S-FEE — undo part of a reversal (a won dispute reinstated the payee).
+-  async undoReversal(args: {
+-    entry_id: string;
+-    reinstated_cents: number;
+-  }): Promise<SplitLedgerEntry> {
+-    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+-      where: { id: args.entry_id },
+-    });
+-    const newReversed = Math.max(0, current.reversed_cents - args.reinstated_cents);
+-    return this.prisma.splitLedgerEntry.update({
+-      where: { id: args.entry_id },
+-      data: {
+-        reversed_cents: newReversed,
+-        status: current.status === 'reversed' ? 'posted' : current.status,
+-        reversed_at: newReversed === 0 ? null : current.reversed_at,
+-      },
+-    });
+-  }
+-
+   // Mark an entry as posted with the Stripe ids that locate it in Stripe's
+   // books. Safe to re-call (idempotent on the ledger row).
+   async markPosted(args: {
+@@ -322,19 +329,10 @@ export class SplitLedgerService {
+     });
+   }
+ 
+-  private async upsertEntry(args: {
+-    purchase_id: string;
+-    kind: string;
+-    payee_user_id: string | null;
+-    payee_stripe_account_id: string | null;
+-    amount_cents: number;
+-    currency: string;
+-  }): Promise<SplitLedgerEntry> {
+-    // Legacy per-purchase rows. S-FEE moved the unique to include
+-    // stripe_charge_id (nullable), so the per-purchase dedupe is explicit:
+-    // findFirst on (purchase_id, kind, payee_user_id), then create or update.
+-    // Postgres NULL != NULL, so this also covers the payee-null
+-    // application_fee row exactly as before.
++  private async upsertEntry(args: LegacyEntryArgs): Promise<SplitLedgerEntry> {
++    // Legacy per-purchase rows. An existing row for (purchase_id, kind,
++    // payee_user_id) is the set every renewal collapses onto; Postgres
++    // NULL != NULL, so this also covers the payee-null application_fee row.
+     const existing = await this.prisma.splitLedgerEntry.findFirst({
+       where: {
+         purchase_id: args.purchase_id,
+@@ -343,25 +341,45 @@ export class SplitLedgerService {
+       },
+       orderBy: { created_at: 'asc' },
+     });
+-    if (existing) {
+-      if (args.payee_user_id === null) return existing;
+-      return this.prisma.splitLedgerEntry.update({
+-        where: { id: existing.id },
++    if (existing) return this.refreshLegacyEntry(existing, args);
++    const key = legacyLedgerKey(args);
++    try {
++      return await this.prisma.splitLedgerEntry.create({
+         data: {
+-          amount_cents: args.amount_cents,
++          purchase_id: args.purchase_id,
++          kind: args.kind,
++          payee_user_id: args.payee_user_id,
+           payee_stripe_account_id: args.payee_stripe_account_id,
++          amount_cents: args.amount_cents,
++          currency: args.currency,
++          status: 'pending',
++          idempotency_key: key,
+         },
+       });
++    } catch (err) {
++      // B-681-2: another planner created this row first (the unique key let
++      // exactly one INSERT win). Adopt its row; never write a second one.
++      if ((err as { code?: unknown } | null)?.code !== 'P2002') throw err;
++      const winner = await this.prisma.splitLedgerEntry.findUnique({
++        where: { idempotency_key: key },
++      });
++      if (!winner) throw err;
++      return this.refreshLegacyEntry(winner, args);
+     }
+-    return this.prisma.splitLedgerEntry.create({
++  }
++
++  // A legacy renewal may carry a new amount or a reconnected payee account;
++  // the platform row (payee null) is never rewritten, exactly as before.
++  private async refreshLegacyEntry(
++    existing: SplitLedgerEntry,
++    args: LegacyEntryArgs,
++  ): Promise<SplitLedgerEntry> {
++    if (args.payee_user_id === null) return existing;
++    return this.prisma.splitLedgerEntry.update({
++      where: { id: existing.id },
+       data: {
+-        purchase_id: args.purchase_id,
+-        kind: args.kind,
+-        payee_user_id: args.payee_user_id,
+-        payee_stripe_account_id: args.payee_stripe_account_id,
+         amount_cents: args.amount_cents,
+-        currency: args.currency,
+-        status: 'pending',
++        payee_stripe_account_id: args.payee_stripe_account_id,
+       },
+     });
+   }
+diff --git a/src/connect/stripe-connect-api.service.ts b/src/connect/stripe-connect-api.service.ts
+index aeb05817..647409ae 100644
+--- a/src/connect/stripe-connect-api.service.ts
++++ b/src/connect/stripe-connect-api.service.ts
+@@ -787,6 +787,9 @@ export class StripeConnectApiService {
+     description?: string;
+     metadata?: Record<string, string>;
+     idempotencyKey: string;
++    // S-FEE round 11 (B-682-1): same contract as createTransfer's beforeSend
++    // (the reversal send-start budget); when it throws, nothing is sent.
++    beforeSend?: () => void;
+   }): Promise<{
+     id: string;
+     transfer: string;
+@@ -805,6 +808,7 @@ export class StripeConnectApiService {
+       `/transfers/${encodeURIComponent(args.transfer_id)}/reversals`,
+       form,
+       args.idempotencyKey,
++      args.beforeSend,
+     );
+   }
+ 

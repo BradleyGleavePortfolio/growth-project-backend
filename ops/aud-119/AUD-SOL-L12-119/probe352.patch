@@ -1,0 +1,212 @@
+diff --git a/src/entitlements/dunning/__tests__/auditSol119Boundaries.test.ts b/src/entitlements/dunning/__tests__/auditSol119Boundaries.test.ts
+new file mode 100644
+index 0000000..16b0ae9
+--- /dev/null
++++ b/src/entitlements/dunning/__tests__/auditSol119Boundaries.test.ts
+@@ -0,0 +1,127 @@
++/** Independent audit-only probes; never merge. */
++import { normalizeCardUpdate } from '../dunningApi';
++import { cardUpdateOutcomeCopy } from '../dunningErrorCopy';
++import { runNativeCardUpdate, type StripeSdk } from '../updateCard';
++
++const mockPost = jest.fn();
++jest.mock('../../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: (...args: unknown[]) => mockPost(...args) },
++}));
++jest.mock('../../../services/sentry', () => ({ captureError: jest.fn() }));
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((done) => { resolve = done; });
++  return { promise, resolve };
++}
++const SETUP = {
++  setup_intent_id: 'seti_A', setup_intent_client_secret: 'seti_A_secret',
++  ephemeral_key: 'ek_A', customer_id: 'cus_A', publishable_key: 'pk_test_backend',
++  merchant_display_name: 'The Growth Project',
++};
++const OPTIONS = {
++  surface: 'audit', colorScheme: 'light' as const,
++  primaryButtonLabel: 'Save card', approved: [], retryDelaysMs: [],
++};
++beforeEach(() => { jest.clearAllMocks(); mockPost.mockReset(); });
++
++it('R-DISPUTE-PAUSE: a mixed paid/disputed result must not promise automatic access restoration', () => {
++  const r = normalizeCardUpdate({
++    outcome: 'paid', amount_paid_cents: 15000, amount_due_cents: 0, currency: 'usd',
++    paid_totals: [{ currency: 'usd', amount_cents: 15000 }], due_totals: [],
++    access_state: 'partial', access_restored: false,
++    plans: [{ purchase_id: 'p_paid', dispute_open: false }, { purchase_id: 'p_disputed', dispute_open: true }],
++  });
++  const body = cardUpdateOutcomeCopy(r).body;
++  expect(body).toContain('$150.00 went through');
++  expect(body).toContain('Saving a card does not settle that');
++  expect(body).not.toMatch(/Your plan updates within a few minutes/);
++});
++it('R-DISPUTE-PAUSE: dispute-only save says billing paused, access ended, coach controls restarting', () => {
++  const r = normalizeCardUpdate({
++    outcome: 'saved', amount_paid_cents: 0, amount_due_cents: 0, currency: 'usd',
++    paid_totals: [], due_totals: [], access_state: 'unchanged', access_restored: false,
++    plans: [{ purchase_id: 'p_disputed', dispute_open: true }],
++  });
++  const body = cardUpdateOutcomeCopy(r).body;
++  expect(body).toMatch(/billing is paused/i);
++  expect(body).toMatch(/access has ended/i);
++  expect(body).toMatch(/coach.*restart/i);
++});
++it('ownership: retirement while initStripe awaits must prevent a fresh native PaymentSheet initialization', async () => {
++  const init = deferred<void>();
++  let current = true;
++  mockPost.mockResolvedValue({ data: SETUP });
++  const sdk = {
++    initStripe: jest.fn(() => init.promise),
++    initPaymentSheet: jest.fn(async () => ({})),
++    presentPaymentSheet: jest.fn(async () => ({})),
++    handleNextAction: jest.fn(async () => ({})),
++    handleURLCallback: jest.fn(async () => true),
++  } as unknown as StripeSdk;
++  const run = runNativeCardUpdate({ ...OPTIONS, sdk, isCurrent: () => current });
++  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
++  expect(sdk.initStripe).toHaveBeenCalledTimes(1);
++  current = false;
++  init.resolve();
++  expect(await run).toEqual({ kind: 'retired' });
++  expect(sdk.initPaymentSheet).not.toHaveBeenCalled();
++  expect(sdk.presentPaymentSheet).not.toHaveBeenCalled();
++});
++it('CONTROL: non-disputed partial payment keeps the existing eventual-access message', () => {
++  const r = normalizeCardUpdate({
++    outcome: 'paid', amount_paid_cents: 15000, amount_due_cents: 0, currency: 'usd',
++    paid_totals: [{ currency: 'usd', amount_cents: 15000 }], due_totals: [],
++    access_state: 'partial', access_restored: false,
++    plans: [{ purchase_id: 'p_paid', dispute_open: false }],
++  });
++  expect(cardUpdateOutcomeCopy(r).body).toContain('Your plan updates within a few minutes');
++});
++it('ownership: retired account A must not replace account B native sheet before B presents it', async () => {
++  const aStripe = deferred<void>();
++  const bSheet = deferred<Record<string, unknown>>();
++  const aStarted = deferred<void>();
++  const bInitialized = deferred<void>();
++  let aCurrent = true;
++  let nativeCustomer: string | undefined;
++  const displayedCustomers: Array<string | undefined> = [];
++  const setupB = { ...SETUP, setup_intent_id: 'seti_B', setup_intent_client_secret: 'seti_B_secret', customer_id: 'cus_B', ephemeral_key: 'ek_B' };
++  mockPost
++    .mockResolvedValueOnce({ data: SETUP })
++    .mockResolvedValueOnce({ data: setupB })
++    .mockResolvedValue({ data: {
++      outcome: 'saved', amount_paid_cents: 0, amount_due_cents: 0,
++      paid_totals: [], due_totals: [], access_state: 'unchanged', access_restored: false,
++    } });
++  // The native SDK has one module-owned PaymentSheet, not one per React screen.
++  const sdk = {
++    initStripe: jest.fn()
++      .mockImplementationOnce(() => { aStarted.resolve(); return aStripe.promise; })
++      .mockResolvedValue(undefined),
++    initPaymentSheet: jest.fn((params: { customerId?: string }) => {
++      nativeCustomer = params.customerId;
++      if (params.customerId === 'cus_B') {
++        bInitialized.resolve();
++        return bSheet.promise;
++      }
++      return Promise.resolve({});
++    }),
++    presentPaymentSheet: jest.fn(async () => {
++      displayedCustomers.push(nativeCustomer);
++      return {};
++    }),
++    handleNextAction: jest.fn(async () => ({})),
++    handleURLCallback: jest.fn(async () => true),
++  } as unknown as StripeSdk;
++  const a = runNativeCardUpdate({ ...OPTIONS, sdk, isCurrent: () => aCurrent });
++  await aStarted.promise;
++  aCurrent = false;
++  const b = runNativeCardUpdate({ ...OPTIONS, sdk, isCurrent: () => true });
++  await bInitialized.promise;
++  aStripe.resolve();
++  expect(await a).toEqual({ kind: 'retired' });
++  bSheet.resolve({});
++  expect((await b).kind).toBe('done');
++  expect(displayedCustomers).toEqual(['cus_B']);
++});
+diff --git a/src/services/__tests__/auditSol117DunningIdentity.test.ts b/src/services/__tests__/auditSol117DunningIdentity.test.ts
+new file mode 100644
+index 0000000..d859970
+--- /dev/null
++++ b/src/services/__tests__/auditSol117DunningIdentity.test.ts
+@@ -0,0 +1,73 @@
++/** Audit-only negative controls against exact L1 head; never merge this file. */
++import { authEvents } from '../../utils/authEvents';
++import { dunningLockoutStore } from '../../entitlements/dunning/dunningLockoutStore';
++
++type ErrorHandler = (error: unknown) => Promise<unknown>;
++jest.mock('axios', () => {
++  const instance = {
++    request: jest.fn(), get: jest.fn(), post: jest.fn(), put: jest.fn(),
++    patch: jest.fn(), delete: jest.fn(),
++    interceptors: {
++      request: { use: jest.fn() },
++      response: { use: jest.fn(), rejected: [] as ErrorHandler[] },
++    },
++    defaults: { headers: { common: {} } },
++  };
++  instance.interceptors.response.use.mockImplementation((_ok, rejected) => {
++    instance.interceptors.response.rejected.push(rejected);
++  });
++  return { __esModule: true, default: { create: jest.fn(() => instance) }, __instance: instance };
++});
++let mockCurrentToken = 'token-A';
++jest.mock('../secureStorage', () => ({
++  secureStorage: {
++    getItem: jest.fn(async () => mockCurrentToken),
++    setItem: jest.fn(), removeItem: jest.fn(),
++  },
++}));
++import '../api';
++const axiosMock = jest.requireMock('axios') as {
++  __instance: { interceptors: { response: { rejected: ErrorHandler[] } } };
++};
++
++function forbidden(token = mockCurrentToken, code = 'LOCKED_DUNNING') {
++  return Object.assign(new Error('HTTP_403'), {
++    config: { url: '/v1/workouts/today', headers: { Authorization: `Bearer ${token}` } },
++    response: { status: 403, data: { code }, headers: { 'x-request-id': 'request-A' } },
++  });
++}
++function reject(err: unknown) {
++  return axiosMock.__instance.interceptors.response.rejected[0](err);
++}
++beforeEach(() => {
++  dunningLockoutStore.__resetForTests();
++  mockCurrentToken = 'token-A';
++});
++
++it('CONTROL: a current-account LOCKED_DUNNING response sets the signal', async () => {
++  const err = forbidden();
++  await expect(reject(err)).rejects.toBe(err);
++  expect(dunningLockoutStore.isLocked()).toBe(true);
++});
++it('CONTROL: an unrelated 403 does not set the signal', async () => {
++  const err = forbidden(mockCurrentToken, 'COACH_ONLY');
++  await expect(reject(err)).rejects.toBe(err);
++  expect(dunningLockoutStore.isLocked()).toBe(false);
++});
++it('B-352-1: logout retires the prior account lockout signal', async () => {
++  const err = forbidden();
++  await expect(reject(err)).rejects.toBe(err);
++  authEvents.emit('logout'); // production signOut's final identity boundary
++  expect(dunningLockoutStore.isLocked()).toBe(false);
++  expect(dunningLockoutStore.lastSignal()).toBeNull();
++});
++it('B-352-1: a delayed account-A 403 cannot lock account B', async () => {
++  const oldResponse = forbidden('token-A');
++  authEvents.emit('logout');
++  mockCurrentToken = 'token-B';
++  authEvents.emit('login');
++  dunningLockoutStore.clear(); // even a reset alone cannot reject the stale response
++  await expect(reject(oldResponse)).rejects.toBe(oldResponse);
++  expect(dunningLockoutStore.isLocked()).toBe(false);
++  expect(dunningLockoutStore.lastSignal()).toBeNull();
++});

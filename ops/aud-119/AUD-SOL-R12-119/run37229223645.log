@@ -1,0 +1,108 @@
+targeted	Targeted jest	﻿2026-10-04T19:41:59.9409977Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:41:59.9410178Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:41:59.9410396Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:41:59.9410669Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:41:59.9410866Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:41:59.9411032Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:41:59.9463958Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:41:59.9464151Z env:
+targeted	Targeted jest	2026-10-04T19:41:59.9464275Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T19:41:59.9464485Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T19:41:59.9464662Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:41:59.9539781Z specs: test/audit-sol-r12-119-trial-authority.spec.ts test/b-recur6a-118-fix-round-6.spec.ts
+targeted	Targeted jest	2026-10-04T19:42:06.4237114Z ^[[31m[Nest] 2774  - ^[[39m10/04/2026, 7:42:06 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.4256254Z ^[[31m[Nest] 2774  - ^[[39m10/04/2026, 7:42:06 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=active end=settled^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.4273328Z ^[[31m[Nest] 2774  - ^[[39m10/04/2026, 7:42:06 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.4380526Z PASS test/b-recur6a-118-fix-round-6.spec.ts (5.85 s, 96 MB heap size)
+targeted	Targeted jest	2026-10-04T19:42:06.4382324Z ^[[33m[Nest] 2774  - ^[[39m10/04/2026, 7:42:06 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.4383884Z ^[[33m[Nest] 2774  - ^[[39m10/04/2026, 7:42:06 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.4385373Z ^[[33m[Nest] 2774  - ^[[39m10/04/2026, 7:42:06 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.4386824Z ^[[33m[Nest] 2774  - ^[[39m10/04/2026, 7:42:06 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.5966598Z FAIL test/audit-sol-r12-119-trial-authority.spec.ts (117 MB heap size)
+targeted	Targeted jest	2026-10-04T19:42:06.6030846Z   ● Console
+targeted	Targeted jest	2026-10-04T19:42:06.6030994Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6031090Z     console.log
+targeted	Targeted jest	2026-10-04T19:42:06.6031339Z       SOL_TRIAL_DEFAULT_AFTER_SETUP_FAILURE {
+targeted	Targeted jest	2026-10-04T19:42:06.6031603Z         change: 'trial removed',
+targeted	Targeted jest	2026-10-04T19:42:06.6031779Z         code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+targeted	Targeted jest	2026-10-04T19:42:06.6032110Z         status: 'trialing',
+targeted	Targeted jest	2026-10-04T19:42:06.6032331Z         safetyEnd: true,
+targeted	Targeted jest	2026-10-04T19:42:06.6032473Z         hasOwnSecret: false,
+targeted	Targeted jest	2026-10-04T19:42:06.6032614Z         entitled: false
+targeted	Targeted jest	2026-10-04T19:42:06.6032745Z       }
+targeted	Targeted jest	2026-10-04T19:42:06.6032806Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6032928Z       at test/audit-sol-r12-119-trial-authority.spec.ts:78:13
+targeted	Targeted jest	2026-10-04T19:42:06.6033072Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6033123Z     console.log
+targeted	Targeted jest	2026-10-04T19:42:06.6033274Z       SOL_TRIAL_DEFAULT_AFTER_SETUP_FAILURE {
+targeted	Targeted jest	2026-10-04T19:42:06.6033462Z         change: 'price changed',
+targeted	Targeted jest	2026-10-04T19:42:06.6033631Z         code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+targeted	Targeted jest	2026-10-04T19:42:06.6033879Z         status: 'trialing',
+targeted	Targeted jest	2026-10-04T19:42:06.6034018Z         safetyEnd: true,
+targeted	Targeted jest	2026-10-04T19:42:06.6034152Z         hasOwnSecret: false,
+targeted	Targeted jest	2026-10-04T19:42:06.6034286Z         entitled: false
+targeted	Targeted jest	2026-10-04T19:42:06.6034815Z       }
+targeted	Targeted jest	2026-10-04T19:42:06.6034875Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6034984Z       at test/audit-sol-r12-119-trial-authority.spec.ts:78:13
+targeted	Targeted jest	2026-10-04T19:42:06.6035120Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6035171Z     console.log
+targeted	Targeted jest	2026-10-04T19:42:06.6035381Z       SOL_LIST_COMPLETENESS { returnedPlans: 0, billablePlan: 'pur_paid_old' }
+targeted	Targeted jest	2026-10-04T19:42:06.6035548Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6035714Z       at Object.<anonymous> (test/audit-sol-r12-119-trial-authority.spec.ts:110:11)
+targeted	Targeted jest	2026-10-04T19:42:06.6035898Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6036208Z   ● B-679-10 retained: trial removed after failed own-setup creation must not call the customer default an active own trial
+targeted	Targeted jest	2026-10-04T19:42:06.6036458Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6036565Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:42:06.6036699Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6036780Z     Expected: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+targeted	Targeted jest	2026-10-04T19:42:06.6036971Z     Received: "SUBSCRIPTION_ALREADY_ACTIVE"
+targeted	Targeted jest	2026-10-04T19:42:06.6037083Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6037368Z     ^[[0m ^[[90m 82 |^[[39m       entitled^[[33m:^[[39m f^[[33m.^[[39mdb^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mentitlement_active^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6037697Z      ^[[90m 83 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6038119Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 84 |^[[39m     expect(out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6038512Z      ^[[90m    |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6038974Z      ^[[90m 85 |^[[39m     expect(f^[[33m.^[[39mstripe^[[33m.^[[39m_subs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_1'^[[39m)^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6039461Z      ^[[90m 86 |^[[39m   }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6039640Z      ^[[90m 87 |^[[39m )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:42:06.6039737Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6039851Z       at test/audit-sol-r12-119-trial-authority.spec.ts:84:28
+targeted	Targeted jest	2026-10-04T19:42:06.6039992Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6040267Z   ● B-679-10 retained: price changed after failed own-setup creation must not call the customer default an active own trial
+targeted	Targeted jest	2026-10-04T19:42:06.6040513Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6040617Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:42:06.6040742Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6040825Z     Expected: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+targeted	Targeted jest	2026-10-04T19:42:06.6041007Z     Received: "SUBSCRIPTION_ALREADY_ACTIVE"
+targeted	Targeted jest	2026-10-04T19:42:06.6041115Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6041384Z     ^[[0m ^[[90m 82 |^[[39m       entitled^[[33m:^[[39m f^[[33m.^[[39mdb^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mentitlement_active^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6041696Z      ^[[90m 83 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6042207Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 84 |^[[39m     expect(out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6042616Z      ^[[90m    |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6043070Z      ^[[90m 85 |^[[39m     expect(f^[[33m.^[[39mstripe^[[33m.^[[39m_subs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_1'^[[39m)^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6043429Z      ^[[90m 86 |^[[39m   }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6043606Z      ^[[90m 87 |^[[39m )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:42:06.6043702Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6043808Z       at test/audit-sol-r12-119-trial-authority.spec.ts:84:28
+targeted	Targeted jest	2026-10-04T19:42:06.6043946Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6044160Z   ● B-679-11: fifty newer abandoned attempts cannot hide an older billable plan from management
+targeted	Targeted jest	2026-10-04T19:42:06.6044357Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6044445Z     expect(received).toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T19:42:06.6044571Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6044646Z     Expected value: "pur_paid_old"
+targeted	Targeted jest	2026-10-04T19:42:06.6044796Z     Received array: []
+targeted	Targeted jest	2026-10-04T19:42:06.6044877Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6045167Z     ^[[0m ^[[90m 109 |^[[39m   ^[[36mconst^[[39m plans ^[[33m=^[[39m ^[[36mawait^[[39m f^[[33m.^[[39mservice^[[33m.^[[39mlistPlans(^[[33mCLIENT^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6045957Z      ^[[90m 110 |^[[39m   console^[[33m.^[[39mlog(^[[32m'SOL_LIST_COMPLETENESS'^[[39m^[[33m,^[[39m { returnedPlans^[[33m:^[[39m plans^[[33m.^[[39mlength^[[33m,^[[39m billablePlan^[[33m:^[[39m ^[[32m'pur_paid_old'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6046630Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 111 |^[[39m   expect(plans^[[33m.^[[39mmap((p) ^[[33m=>^[[39m p^[[33m.^[[39mpurchase_id))^[[33m.^[[39mtoContain(^[[32m'pur_paid_old'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6047040Z      ^[[90m     |^[[39m                                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6047272Z      ^[[90m 112 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:42:06.6047442Z      ^[[90m 113 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:42:06.6047523Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6047673Z       at Object.<anonymous> (test/audit-sol-r12-119-trial-authority.spec.ts:111:43)
+targeted	Targeted jest	2026-10-04T19:42:06.6047848Z 
+targeted	Targeted jest	2026-10-04T19:42:06.6054207Z Test Suites: 1 failed, 1 passed, 2 total
+targeted	Targeted jest	2026-10-04T19:42:06.6054407Z Tests:       3 failed, 12 passed, 15 total
+targeted	Targeted jest	2026-10-04T19:42:06.6054570Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:42:06.6054709Z Time:        6.162 s
+targeted	Targeted jest	2026-10-04T19:42:06.6055046Z Ran all test suites matching test/audit-sol-r12-119-trial-authority.spec.ts|test/b-recur6a-118-fix-round-6.spec.ts.
+targeted	Targeted jest	2026-10-04T19:42:06.7237482Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,704 @@
+﻿2026-10-04T20:11:33.4806424Z Current runner version: '2.337.0'
+2026-10-04T20:11:33.4831692Z ##[group]Runner Image Provisioner
+2026-10-04T20:11:33.4832696Z Hosted Compute Agent
+2026-10-04T20:11:33.4833285Z Version: 20260901.588
+2026-10-04T20:11:33.4834052Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T20:11:33.4834812Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T20:11:33.4835550Z Worker ID: {838e6a10-9879-44ee-9a31-6416a5d30494}
+2026-10-04T20:11:33.4836265Z Azure Region: eastus
+2026-10-04T20:11:33.4836815Z ##[endgroup]
+2026-10-04T20:11:33.4838825Z ##[group]Operating System
+2026-10-04T20:11:33.4839523Z Ubuntu
+2026-10-04T20:11:33.4840480Z 24.04.5
+2026-10-04T20:11:33.4841043Z LTS
+2026-10-04T20:11:33.4841546Z ##[endgroup]
+2026-10-04T20:11:33.4842190Z ##[group]Runner Image
+2026-10-04T20:11:33.4842819Z Image: ubuntu-24.04
+2026-10-04T20:11:33.4843440Z Version: 20260927.320.1
+2026-10-04T20:11:33.4844721Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T20:11:33.4846330Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T20:11:33.4847324Z ##[endgroup]
+2026-10-04T20:11:33.4849334Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T20:11:33.4851589Z Contents: read
+2026-10-04T20:11:33.4852287Z Metadata: read
+2026-10-04T20:11:33.4852897Z Packages: read
+2026-10-04T20:11:33.4853435Z ##[endgroup]
+2026-10-04T20:11:33.4855676Z Secret source: Actions
+2026-10-04T20:11:33.4856649Z Cache mode: write
+2026-10-04T20:11:33.4857936Z Prepare workflow directory
+2026-10-04T20:11:33.5288219Z Prepare all required actions
+2026-10-04T20:11:33.5336105Z Getting action download info
+2026-10-04T20:11:33.7452861Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T20:11:33.8397497Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T20:11:34.0297267Z Complete job name: targeted
+2026-10-04T20:11:34.0917998Z ##[group]Checking docker version
+2026-10-04T20:11:34.0931348Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T20:11:34.1825027Z '1.48'
+2026-10-04T20:11:34.1838490Z Docker daemon API version: '1.48'
+2026-10-04T20:11:34.1839291Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T20:11:34.2023333Z '1.48'
+2026-10-04T20:11:34.2035925Z Docker client API version: '1.48'
+2026-10-04T20:11:34.2041311Z ##[endgroup]
+2026-10-04T20:11:34.2044172Z ##[group]Clean up resources from previous jobs
+2026-10-04T20:11:34.2050529Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=e45cb9"
+2026-10-04T20:11:34.2231279Z ##[command]/usr/bin/docker network prune --force --filter "label=e45cb9"
+2026-10-04T20:11:34.2361849Z ##[endgroup]
+2026-10-04T20:11:34.2362394Z ##[group]Create local container network
+2026-10-04T20:11:34.2372632Z ##[command]/usr/bin/docker network create --label e45cb9 github_network_ea3a738f9cff47bfaf04002f0ebc9ced
+2026-10-04T20:11:34.2869937Z 0b015b824dfbf1ac273fba01f9e51f16977efa903d0337ce3fc8c5fffbf50239
+2026-10-04T20:11:34.2887239Z ##[endgroup]
+2026-10-04T20:11:34.2911856Z ##[group]Starting redis service container
+2026-10-04T20:11:34.2932353Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T20:11:34.5348103Z 7-alpine: Pulling from library/redis
+2026-10-04T20:11:34.6155945Z 16333ee0c00f: Pulling fs layer
+2026-10-04T20:11:34.6157372Z 83234986c742: Pulling fs layer
+2026-10-04T20:11:34.6158839Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T20:11:34.6160712Z 1522f9c6f453: Pulling fs layer
+2026-10-04T20:11:34.6162322Z 9928009b15c8: Pulling fs layer
+2026-10-04T20:11:34.6163061Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T20:11:34.6163666Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T20:11:34.6164223Z 1522f9c6f453: Waiting
+2026-10-04T20:11:34.6164759Z 9928009b15c8: Waiting
+2026-10-04T20:11:34.6165247Z 4f4fb700ef54: Waiting
+2026-10-04T20:11:34.6165762Z 4eb14bae0e1d: Waiting
+2026-10-04T20:11:34.6477456Z 83234986c742: Verifying Checksum
+2026-10-04T20:11:34.6479251Z 83234986c742: Download complete
+2026-10-04T20:11:34.6532690Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T20:11:34.6534433Z 7eb50503c2b0: Download complete
+2026-10-04T20:11:34.6685772Z 16333ee0c00f: Verifying Checksum
+2026-10-04T20:11:34.6686900Z 16333ee0c00f: Download complete
+2026-10-04T20:11:34.6820586Z 9928009b15c8: Verifying Checksum
+2026-10-04T20:11:34.6821665Z 9928009b15c8: Download complete
+2026-10-04T20:11:34.6913076Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T20:11:34.6914161Z 4f4fb700ef54: Download complete
+2026-10-04T20:11:34.7113877Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T20:11:34.7114776Z 4eb14bae0e1d: Download complete
+2026-10-04T20:11:34.7342594Z 1522f9c6f453: Verifying Checksum
+2026-10-04T20:11:34.7343589Z 1522f9c6f453: Download complete
+2026-10-04T20:11:34.8009958Z 16333ee0c00f: Pull complete
+2026-10-04T20:11:36.8390589Z 83234986c742: Pull complete
+2026-10-04T20:11:36.9789320Z 7eb50503c2b0: Pull complete
+2026-10-04T20:11:37.1681616Z 1522f9c6f453: Pull complete
+2026-10-04T20:11:37.1799551Z 9928009b15c8: Pull complete
+2026-10-04T20:11:37.1883405Z 4f4fb700ef54: Pull complete
+2026-10-04T20:11:37.2000821Z 4eb14bae0e1d: Pull complete
+2026-10-04T20:11:37.2044432Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T20:11:37.2059778Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T20:11:37.2080264Z docker.io/library/redis:7-alpine
+2026-10-04T20:11:37.2130373Z ##[command]/usr/bin/docker create --name a0f96473690a4a799cde779f00ce6101_redis7alpine_ed01fe --label e45cb9 --network github_network_ea3a738f9cff47bfaf04002f0ebc9ced --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T20:11:37.2382815Z c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:11:37.2406222Z ##[command]/usr/bin/docker start c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:11:37.4701487Z c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:11:37.4725702Z ##[command]/usr/bin/docker ps --all --filter id=c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T20:11:37.4852693Z c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2 Up Less than a second (health: starting)
+2026-10-04T20:11:37.4872816Z ##[command]/usr/bin/docker port c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:11:37.4989723Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T20:11:37.5000730Z 6379/tcp -> [::]:6379
+2026-10-04T20:11:37.5034330Z ##[endgroup]
+2026-10-04T20:11:37.5043360Z ##[group]Waiting for all services to be ready
+2026-10-04T20:11:37.5056727Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:11:37.5169011Z starting
+2026-10-04T20:11:37.5187427Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T20:11:39.5189156Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:11:39.5308238Z starting
+2026-10-04T20:11:39.5321187Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T20:11:43.8890771Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:11:43.9015613Z healthy
+2026-10-04T20:11:43.9043078Z redis service is healthy.
+2026-10-04T20:11:43.9044027Z ##[endgroup]
+2026-10-04T20:11:43.9336479Z ##[group]Run actions/checkout@v6
+2026-10-04T20:11:43.9337071Z with:
+2026-10-04T20:11:43.9337412Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T20:11:43.9340728Z   token: ***
+2026-10-04T20:11:43.9340950Z   ssh-strict: true
+2026-10-04T20:11:43.9341391Z   ssh-user: git
+2026-10-04T20:11:43.9341609Z   persist-credentials: true
+2026-10-04T20:11:43.9341846Z   clean: true
+2026-10-04T20:11:43.9342055Z   sparse-checkout-cone-mode: true
+2026-10-04T20:11:43.9342319Z   fetch-depth: 1
+2026-10-04T20:11:43.9342515Z   fetch-tags: false
+2026-10-04T20:11:43.9342729Z   show-progress: true
+2026-10-04T20:11:43.9342932Z   lfs: false
+2026-10-04T20:11:43.9343112Z   submodules: false
+2026-10-04T20:11:43.9343315Z   set-safe-directory: true
+2026-10-04T20:11:43.9343560Z   allow-unsafe-pr-checkout: false
+2026-10-04T20:11:43.9344105Z ##[endgroup]
+2026-10-04T20:11:44.0410222Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T20:11:44.0412254Z ##[group]Getting Git version info
+2026-10-04T20:11:44.0413022Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T20:11:44.0414176Z [command]/usr/bin/git version
+2026-10-04T20:11:44.0428549Z git version 2.55.0
+2026-10-04T20:11:44.0443268Z ##[endgroup]
+2026-10-04T20:11:44.0460094Z Temporarily overriding HOME='/home/runner/work/_temp/0e473dfb-2344-416e-84e8-7945d1b1bd59' before making global git config changes
+2026-10-04T20:11:44.0461570Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:11:44.0466532Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T20:11:44.0515341Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T20:11:44.0520226Z ##[group]Determining repository object format
+2026-10-04T20:11:44.0523462Z ##[endgroup]
+2026-10-04T20:11:44.0524149Z ##[group]Initializing the repository
+2026-10-04T20:11:44.0527982Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T20:11:44.0653167Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T20:11:44.0654317Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T20:11:44.0655039Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T20:11:44.0655502Z hint: call:
+2026-10-04T20:11:44.0655740Z hint:
+2026-10-04T20:11:44.0656310Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T20:11:44.0656958Z hint:
+2026-10-04T20:11:44.0657814Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T20:11:44.0659035Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T20:11:44.0659553Z hint:
+2026-10-04T20:11:44.0659809Z hint: 	git branch -m <name>
+2026-10-04T20:11:44.0660095Z hint:
+2026-10-04T20:11:44.0660500Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T20:11:44.0661270Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T20:11:44.0669018Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T20:11:44.0723763Z ##[endgroup]
+2026-10-04T20:11:44.0724186Z ##[group]Disabling automatic garbage collection
+2026-10-04T20:11:44.0727771Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T20:11:44.0756077Z ##[endgroup]
+2026-10-04T20:11:44.0756897Z ##[group]Setting up auth
+2026-10-04T20:11:44.0757806Z Removing SSH command configuration
+2026-10-04T20:11:44.0764648Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:11:44.0795153Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:11:44.1147046Z Removing HTTP extra header
+2026-10-04T20:11:44.1152455Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:11:44.1186672Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:11:44.1404727Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:11:44.1411663Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:11:44.1442174Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:11:44.1663623Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T20:11:44.1699796Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:11:44.1729407Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:11:44.1762315Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:11:44.1793712Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:11:44.1826078Z ##[endgroup]
+2026-10-04T20:11:44.1826493Z ##[group]Fetching the repository
+2026-10-04T20:11:44.1835939Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ccb3827e93f878f1da52d6e925335e41e884063a:refs/remotes/origin/ci/B-FEES18-119-684-before
+2026-10-04T20:11:45.5328995Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T20:11:45.5341926Z  * [new ref]         ccb3827e93f878f1da52d6e925335e41e884063a -> origin/ci/B-FEES18-119-684-before
+2026-10-04T20:11:45.5349320Z [command]/usr/bin/git branch --list --remote origin/ci/B-FEES18-119-684-before
+2026-10-04T20:11:45.5366773Z   origin/ci/B-FEES18-119-684-before
+2026-10-04T20:11:45.5376671Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-FEES18-119-684-before
+2026-10-04T20:11:45.5400157Z ccb3827e93f878f1da52d6e925335e41e884063a
+2026-10-04T20:11:45.5403923Z ##[endgroup]
+2026-10-04T20:11:45.5404558Z ##[group]Determining the checkout info
+2026-10-04T20:11:45.5405609Z ##[endgroup]
+2026-10-04T20:11:45.5412197Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T20:11:45.5465666Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T20:11:45.5493177Z ##[group]Checking out the ref
+2026-10-04T20:11:45.5498126Z [command]/usr/bin/git checkout --progress --force -B ci/B-FEES18-119-684-before refs/remotes/origin/ci/B-FEES18-119-684-before
+2026-10-04T20:11:45.7690836Z Switched to a new branch 'ci/B-FEES18-119-684-before'
+2026-10-04T20:11:45.7695468Z branch 'ci/B-FEES18-119-684-before' set up to track 'origin/ci/B-FEES18-119-684-before'.
+2026-10-04T20:11:45.7705506Z ##[endgroup]
+2026-10-04T20:11:45.7752607Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T20:11:45.7777975Z ccb3827e93f878f1da52d6e925335e41e884063a
+2026-10-04T20:11:45.8026492Z ##[group]Run actions/setup-node@v6
+2026-10-04T20:11:45.8026787Z with:
+2026-10-04T20:11:45.8026983Z   node-version: 20
+2026-10-04T20:11:45.8027185Z   cache: npm
+2026-10-04T20:11:45.8027381Z   check-latest: false
+2026-10-04T20:11:45.8030553Z   token: ***
+2026-10-04T20:11:45.8030780Z   package-manager-cache: true
+2026-10-04T20:11:45.8031034Z ##[endgroup]
+2026-10-04T20:11:45.9418480Z Attempting to download 20...
+2026-10-04T20:11:46.4001231Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T20:11:46.7522313Z Extracting ...
+2026-10-04T20:11:46.7634498Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/234e1afc-bd3c-451f-bb33-0f589467de8e -f /home/runner/work/_temp/7a7c8b10-f187-4dfe-aba1-5bf28ddec84d
+2026-10-04T20:11:47.8173434Z Adding to the cache ...
+2026-10-04T20:11:49.8468326Z ##[group]Environment details
+2026-10-04T20:11:50.0643893Z node: v20.20.2
+2026-10-04T20:11:50.0644322Z npm: 10.8.2
+2026-10-04T20:11:50.0644639Z yarn: 1.22.22
+2026-10-04T20:11:50.0645339Z ##[endgroup]
+2026-10-04T20:11:50.0665136Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T20:11:50.1698765Z /home/runner/.npm
+2026-10-04T20:11:50.2433006Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T20:11:50.7907378Z Received 86828135 of 86828135 (100.0%), 171.1 MBs/sec
+2026-10-04T20:11:50.7909003Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T20:11:50.7943149Z [command]/usr/bin/tar -xf /home/runner/work/_temp/525e1fcd-f265-4e51-af14-75e6516c000b/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T20:11:50.9686607Z Cache restored successfully
+2026-10-04T20:11:50.9732499Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T20:11:50.9916563Z ##[group]Run npm ci
+2026-10-04T20:11:50.9916851Z [36;1mnpm ci[0m
+2026-10-04T20:11:51.0137871Z shell: /usr/bin/bash -e {0}
+2026-10-04T20:11:51.0138191Z ##[endgroup]
+2026-10-04T20:11:56.9052268Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T20:11:57.9017268Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T20:11:58.9923019Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:12:00.2917420Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:12:00.3227747Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:12:00.3540379Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T20:12:13.4844924Z 
+2026-10-04T20:12:13.4847472Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T20:12:13.4848333Z > prisma generate
+2026-10-04T20:12:13.4848569Z 
+2026-10-04T20:12:14.4179240Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T20:12:18.2689777Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T20:12:18.2691093Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T20:12:18.2691548Z 
+2026-10-04T20:12:18.2692266Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.13s
+2026-10-04T20:12:18.2692872Z 
+2026-10-04T20:12:18.2693490Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T20:12:18.2694064Z 
+2026-10-04T20:12:18.2694986Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T20:12:18.2696362Z 
+2026-10-04T20:12:18.2697223Z │                                                         │
+2026-10-04T20:12:18.2698393Z │  This is a major update - please follow the guide at    │
+2026-10-04T20:12:18.2699384Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T20:12:18.2700286Z │                                                         │
+2026-10-04T20:12:18.2701140Z │  Run the following to update                            │
+2026-10-04T20:12:18.2702033Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T20:12:18.2702909Z │    npm i @prisma/client@latest                          │
+2026-10-04T20:12:18.2703820Z └─────────────────────────────────────────────────────────┘
+2026-10-04T20:12:18.3252106Z 
+2026-10-04T20:12:18.3252750Z > growth-project-backend@1.0.0 prepare
+2026-10-04T20:12:18.3253464Z > lefthook install
+2026-10-04T20:12:18.3253745Z 
+2026-10-04T20:12:18.3758141Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T20:12:18.3925341Z 
+2026-10-04T20:12:18.3926142Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-04T20:12:18.3926581Z 
+2026-10-04T20:12:18.3926861Z 202 packages are looking for funding
+2026-10-04T20:12:18.3927377Z   run `npm fund` for details
+2026-10-04T20:12:18.3961186Z 
+2026-10-04T20:12:18.3961720Z 3 high severity vulnerabilities
+2026-10-04T20:12:18.3962422Z 
+2026-10-04T20:12:18.3962753Z To address all issues (including breaking changes), run:
+2026-10-04T20:12:18.3963196Z   npm audit fix --force
+2026-10-04T20:12:18.3963361Z 
+2026-10-04T20:12:18.3963487Z Run `npm audit` for details.
+2026-10-04T20:12:18.4597974Z ##[group]Run npx prisma generate
+2026-10-04T20:12:18.4598334Z [36;1mnpx prisma generate[0m
+2026-10-04T20:12:18.4668639Z shell: /usr/bin/bash -e {0}
+2026-10-04T20:12:18.4669076Z ##[endgroup]
+2026-10-04T20:12:19.6896657Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T20:12:23.5038145Z 
+2026-10-04T20:12:23.5039728Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.10s
+2026-10-04T20:12:23.5040204Z 
+2026-10-04T20:12:23.5040713Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T20:12:23.5041163Z 
+2026-10-04T20:12:23.5041831Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T20:12:23.5042412Z 
+2026-10-04T20:12:23.6259551Z ##[group]Run set -euo pipefail
+2026-10-04T20:12:23.6259889Z [36;1mset -euo pipefail[0m
+2026-10-04T20:12:23.6260350Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T20:12:23.6260912Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T20:12:23.6261293Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T20:12:23.6261602Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T20:12:23.6331897Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T20:12:23.6332341Z env:
+2026-10-04T20:12:23.6332725Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T20:12:23.6333220Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T20:12:23.6333564Z ##[endgroup]
+2026-10-04T20:12:23.6442558Z specs: test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts
+2026-10-04T20:12:27.3139383Z FAIL test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts (185 MB heap size)
+2026-10-04T20:12:27.3199107Z   Sol B-684-4 / Opus B-684-7: refund.updated through the production checkout router
+2026-10-04T20:12:27.3219129Z     ✕ a succeeded refund.updated is claimed, moves the coach 4,630 back once and delivers its notice (16 ms)
+2026-10-04T20:12:27.3228829Z     ✕ inside the webhook transaction the refund.updated charge is handed off for post-commit delivery (5 ms)
+2026-10-04T20:12:27.3248958Z     ✓ both refund events for one transition (Stripe sends both while charge.refund.updated lives) apply once (10 ms)
+2026-10-04T20:12:27.3278694Z     ✕ a failed refund.updated through the router records failed and moves nothing (5 ms)
+2026-10-04T20:12:27.3288273Z   Sol B-684-5: a succeeded async refund converges access with the money
+2026-10-04T20:12:27.3318786Z     ✕ pending full refund, then succeeded: the purchase is refunded, access ends and drops are canceled (7 ms)
+2026-10-04T20:12:27.3338807Z     ✓ pending then failed or canceled: access stays, nothing moves (9 ms)
+2026-10-04T20:12:27.3343660Z     ✕ a partial succeeded refund keeps access with a decision; the partial that completes the charge ends it (4 ms)
+2026-10-04T20:12:27.3345116Z     ✕ a charge is judged on its own amount (a renewal invoice below the plan price) (7 ms)
+2026-10-04T20:12:27.3346694Z     ✕ an unreadable refund list fails the delivery before anything moves (Stripe redelivers) (2 ms)
+2026-10-04T20:12:27.3347939Z   Opus B-684-8: a refund status only moves forward
+2026-10-04T20:12:27.3349676Z     ✕ failed processed, then the older succeeded redelivered: the row stays failed and the coach keeps 4,630 (3 ms)
+2026-10-04T20:12:27.3351633Z     ✕ a late charge.refunded snapshot that still says succeeded never re-applies a failed refund (3 ms)
+2026-10-04T20:12:27.3354383Z     ✕ a stale pending snapshot never moves an applied refund back to pending (3 ms)
+2026-10-04T20:12:27.3355832Z     ✕ a failure written while the apply waits for the lock: the apply re-reads it and moves nothing (4 ms)
+2026-10-04T20:12:27.3357355Z     ✕ applied, then failed: one alert under the lock, the settlement is flagged, nothing re-credited (9 ms)
+2026-10-04T20:12:27.3358799Z   Sol B-684-3: a notice channel starts only with a live claim inside the run deadline
+2026-10-04T20:12:27.3359696Z     ✕ a claim and re-read that use up the budget start no in-app row; the claim is released, the attempt not counted (4 ms)
+2026-10-04T20:12:27.3360573Z     ✕ a slow push gate starts no push after the deadline; the push stays pending for the next run (2 ms)
+2026-10-04T20:12:27.3361217Z     ✕ a slow address read starts no email after the deadline (3 ms)
+2026-10-04T20:12:27.3361887Z     ✕ a push row created just before the claim runs low is kept and reused, the push itself waits (2 ms)
+2026-10-04T20:12:27.3362668Z     ✕ a later batch row is claimed at the time it is taken, so a second worker cannot push it too (4 ms)
+2026-10-04T20:12:27.3363045Z 
+2026-10-04T20:12:27.3364939Z   ● Sol B-684-4 / Opus B-684-7: refund.updated through the production checkout router › a succeeded refund.updated is claimed, moves the coach 4,630 back once and delivers its notice
+2026-10-04T20:12:27.3366155Z 
+2026-10-04T20:12:27.3366442Z     expect(received).toMatchObject(expected)
+2026-10-04T20:12:27.3366822Z 
+2026-10-04T20:12:27.3366995Z     - Expected  - 2
+2026-10-04T20:12:27.3367386Z     + Received  + 1
+2026-10-04T20:12:27.3367810Z 
+2026-10-04T20:12:27.3367971Z       Object {
+2026-10-04T20:12:27.3368342Z     -   "claimed": true,
+2026-10-04T20:12:27.3368815Z     -   "purchase_id": "cp_1",
+2026-10-04T20:12:27.3369260Z     +   "claimed": false,
+2026-10-04T20:12:27.3369651Z       }
+2026-10-04T20:12:27.3369835Z 
+2026-10-04T20:12:27.3370572Z     [0m [90m 157 |[39m     c[33m.[39mlist([usd([32m're_1'[39m[33m,[39m [35m4[39m_900)])[33m;[39m
+2026-10-04T20:12:27.3372527Z      [90m 158 |[39m     [36mconst[39m out [33m=[39m [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'succeeded'[39m))[33m;[39m
+2026-10-04T20:12:27.3374909Z     [31m[1m>[22m[39m[90m 159 |[39m     expect(out)[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m[33m,[39m purchase_id[33m:[39m [32m'cp_1'[39m })[33m;[39m
+2026-10-04T20:12:27.3376308Z      [90m     |[39m                 [31m[1m^[22m[39m
+2026-10-04T20:12:27.3388787Z      [90m 160 |[39m     expect(c[33m.[39mdb[33m.[39mrefunds[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'succeeded'[39m[33m,[39m ledger_reversed[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-04T20:12:27.3391257Z      [90m 161 |[39m     expect(c[33m.[39mdb[33m.[39msettlements[[35m0[39m][33m.[39mrefunded_cents)[33m.[39mtoBe([35m4[39m_900)[33m;[39m
+2026-10-04T20:12:27.3393100Z      [90m 162 |[39m     expect(c[33m.[39mstripe[33m.[39mnetTo([32m'acct_1'[39m))[33m.[39mtoBe([35m0[39m)[33m;[39m[0m
+2026-10-04T20:12:27.3394210Z 
+2026-10-04T20:12:27.3394964Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:159:17)
+2026-10-04T20:12:27.3395741Z 
+2026-10-04T20:12:27.3397354Z   ● Sol B-684-4 / Opus B-684-7: refund.updated through the production checkout router › inside the webhook transaction the refund.updated charge is handed off for post-commit delivery
+2026-10-04T20:12:27.3399041Z 
+2026-10-04T20:12:27.3399364Z     expect(received).toMatchObject(expected)
+2026-10-04T20:12:27.3399766Z 
+2026-10-04T20:12:27.3399961Z     - Expected  - 2
+2026-10-04T20:12:27.3400361Z     + Received  + 1
+2026-10-04T20:12:27.3400604Z 
+2026-10-04T20:12:27.3400761Z       Object {
+2026-10-04T20:12:27.3401157Z     -   "claimed": true,
+2026-10-04T20:12:27.3401740Z     -   "deferredPayoutNoticeChargeId": "ch_1",
+2026-10-04T20:12:27.3402363Z     +   "claimed": false,
+2026-10-04T20:12:27.3402800Z       }
+2026-10-04T20:12:27.3403019Z 
+2026-10-04T20:12:27.3403829Z     [0m [90m 169 |[39m     c[33m.[39mlist([usd([32m're_1'[39m[33m,[39m [35m4[39m_900)])[33m;[39m
+2026-10-04T20:12:27.3406183Z      [90m 170 |[39m     [36mconst[39m out [33m=[39m [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'succeeded'[39m)[33m,[39m asPrisma(c[33m.[39mprisma))[33m;[39m
+2026-10-04T20:12:27.3409319Z     [31m[1m>[22m[39m[90m 171 |[39m     expect(out)[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m[33m,[39m deferredPayoutNoticeChargeId[33m:[39m [32m'ch_1'[39m })[33m;[39m
+2026-10-04T20:12:27.3410942Z      [90m     |[39m                 [31m[1m^[22m[39m
+2026-10-04T20:12:27.3412663Z      [90m 172 |[39m     expect(c[33m.[39mdb[33m.[39mnotices[33m?[39m[33m.[39m[[35m0[39m])[33m.[39mtoMatchObject({ inapp_status[33m:[39m [32m'pending'[39m })[33m;[39m
+2026-10-04T20:12:27.3414651Z      [90m 173 |[39m     [36mawait[39m c[33m.[39mrefunds[33m.[39mdeliverPayoutNotices([32m'ch_1'[39m)[33m;[39m
+2026-10-04T20:12:27.3416765Z      [90m 174 |[39m     expect(c[33m.[39mdb[33m.[39mnotices[33m?[39m[33m.[39m[[35m0[39m])[33m.[39mtoMatchObject({ inapp_status[33m:[39m [32m'sent'[39m })[33m;[39m[0m
+2026-10-04T20:12:27.3419910Z 
+2026-10-04T20:12:27.3421411Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:171:17)
+2026-10-04T20:12:27.3422147Z 
+2026-10-04T20:12:27.3423446Z   ● Sol B-684-4 / Opus B-684-7: refund.updated through the production checkout router › a failed refund.updated through the router records failed and moves nothing
+2026-10-04T20:12:27.3424465Z 
+2026-10-04T20:12:27.3424779Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:12:27.3425185Z 
+2026-10-04T20:12:27.3425342Z     Expected: "failed"
+2026-10-04T20:12:27.3425732Z     Received: "pending"
+2026-10-04T20:12:27.3425969Z 
+2026-10-04T20:12:27.3426812Z     [0m [90m 191 |[39m     c[33m.[39mlist([usd([32m're_1'[39m[33m,[39m [35m4[39m_900[33m,[39m [32m'failed'[39m)])[33m;[39m
+2026-10-04T20:12:27.3428823Z      [90m 192 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'failed'[39m))[33m;[39m
+2026-10-04T20:12:27.3430685Z     [31m[1m>[22m[39m[90m 193 |[39m     expect(c[33m.[39mdb[33m.[39mrefunds[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'failed'[39m)[33m;[39m
+2026-10-04T20:12:27.3431943Z      [90m     |[39m                                    [31m[1m^[22m[39m
+2026-10-04T20:12:27.3433274Z      [90m 194 |[39m     expect(c[33m.[39mstripe[33m.[39mnetTo([32m'acct_1'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T20:12:27.3434253Z      [90m 195 |[39m   })[33m;[39m
+2026-10-04T20:12:27.3434808Z      [90m 196 |[39m })[33m;[39m[0m
+2026-10-04T20:12:27.3435101Z 
+2026-10-04T20:12:27.3435729Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:193:36)
+2026-10-04T20:12:27.3436798Z 
+2026-10-04T20:12:27.3438345Z   ● Sol B-684-5: a succeeded async refund converges access with the money › pending full refund, then succeeded: the purchase is refunded, access ends and drops are canceled
+2026-10-04T20:12:27.3439449Z 
+2026-10-04T20:12:27.3439719Z     expect(received).toMatchObject(expected)
+2026-10-04T20:12:27.3440058Z 
+2026-10-04T20:12:27.3440199Z     - Expected  - 2
+2026-10-04T20:12:27.3440557Z     + Received  + 2
+2026-10-04T20:12:27.3440764Z 
+2026-10-04T20:12:27.3440898Z       Object {
+2026-10-04T20:12:27.3441274Z     -   "entitlement_active": false,
+2026-10-04T20:12:27.3441738Z     -   "status": "refunded",
+2026-10-04T20:12:27.3442215Z     +   "entitlement_active": true,
+2026-10-04T20:12:27.3442655Z     +   "status": "paid",
+2026-10-04T20:12:27.3443034Z       }
+2026-10-04T20:12:27.3443197Z 
+2026-10-04T20:12:27.3443858Z     [0m [90m 203 |[39m     c[33m.[39mlist([usd([32m're_1'[39m[33m,[39m [35m4[39m_900)])[33m;[39m
+2026-10-04T20:12:27.3445529Z      [90m 204 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'charge.refund.updated'[39m[33m,[39m [32m'succeeded'[39m))[33m;[39m
+2026-10-04T20:12:27.3448241Z     [31m[1m>[22m[39m[90m 205 |[39m     expect(c[33m.[39mdb[33m.[39mpurchases[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'refunded'[39m[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:12:27.3449953Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-04T20:12:27.3451246Z      [90m 206 |[39m     expect(c[33m.[39mfanoutFns[33m.[39mcancelPendingForPurchase)[33m.[39mtoHaveBeenCalledWith(
+2026-10-04T20:12:27.3452345Z      [90m 207 |[39m       [32m'cp_1'[39m[33m,[39m
+2026-10-04T20:12:27.3453066Z      [90m 208 |[39m       [32m'refund'[39m[33m,[39m[0m
+2026-10-04T20:12:27.3453448Z 
+2026-10-04T20:12:27.3454098Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:205:31)
+2026-10-04T20:12:27.3454822Z 
+2026-10-04T20:12:27.3456152Z   ● Sol B-684-5: a succeeded async refund converges access with the money › a partial succeeded refund keeps access with a decision; the partial that completes the charge ends it
+2026-10-04T20:12:27.3457293Z 
+2026-10-04T20:12:27.3457986Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-04T20:12:27.3458402Z 
+2026-10-04T20:12:27.3458618Z     Expected number of calls: 1
+2026-10-04T20:12:27.3459103Z     Received number of calls: 0
+2026-10-04T20:12:27.3459370Z 
+2026-10-04T20:12:27.3460851Z     [0m [90m 229 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'succeeded'[39m[33m,[39m [32m're_a'[39m[33m,[39m [35m2[39m_000))[33m;[39m
+2026-10-04T20:12:27.3463495Z      [90m 230 |[39m     expect(c[33m.[39mdb[33m.[39mpurchases[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'paid'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-04T20:12:27.3465732Z     [31m[1m>[22m[39m[90m 231 |[39m     expect(c[33m.[39mdecisionFns[33m.[39monPartialRefund)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-04T20:12:27.3467071Z      [90m     |[39m                                           [31m[1m^[22m[39m
+2026-10-04T20:12:27.3468917Z      [90m 232 |[39m     c[33m.[39mlist([usd([32m're_b'[39m[33m,[39m [35m2[39m_900[33m,[39m [32m'pending'[39m)[33m,[39m usd([32m're_a'[39m[33m,[39m [35m2[39m_000)])[33m;[39m
+2026-10-04T20:12:27.3471269Z      [90m 233 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'pending'[39m[33m,[39m [32m're_b'[39m[33m,[39m [35m2[39m_900))[33m;[39m
+2026-10-04T20:12:27.3473409Z      [90m 234 |[39m     c[33m.[39mlist([usd([32m're_b'[39m[33m,[39m [35m2[39m_900)[33m,[39m usd([32m're_a'[39m[33m,[39m [35m2[39m_000)])[33m;[39m[0m
+2026-10-04T20:12:27.3474241Z 
+2026-10-04T20:12:27.3475105Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:231:43)
+2026-10-04T20:12:27.3475846Z 
+2026-10-04T20:12:27.3477003Z   ● Sol B-684-5: a succeeded async refund converges access with the money › a charge is judged on its own amount (a renewal invoice below the plan price)
+2026-10-04T20:12:27.3478169Z 
+2026-10-04T20:12:27.3478428Z     expect(received).toMatchObject(expected)
+2026-10-04T20:12:27.3478785Z 
+2026-10-04T20:12:27.3478940Z     - Expected  - 2
+2026-10-04T20:12:27.3479298Z     + Received  + 2
+2026-10-04T20:12:27.3479501Z 
+2026-10-04T20:12:27.3479642Z       Object {
+2026-10-04T20:12:27.3480046Z     -   "entitlement_active": false,
+2026-10-04T20:12:27.3480524Z     -   "status": "refunded",
+2026-10-04T20:12:27.3480996Z     +   "entitlement_active": true,
+2026-10-04T20:12:27.3481434Z     +   "status": "paid",
+2026-10-04T20:12:27.3481808Z       }
+2026-10-04T20:12:27.3481993Z 
+2026-10-04T20:12:27.3482676Z     [0m [90m 244 |[39m     c[33m.[39mlist([usd([32m're_1'[39m[33m,[39m [35m4[39m_900)])[33m;[39m
+2026-10-04T20:12:27.3484307Z      [90m 245 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'succeeded'[39m))[33m;[39m
+2026-10-04T20:12:27.3486829Z     [31m[1m>[22m[39m[90m 246 |[39m     expect(c[33m.[39mdb[33m.[39mpurchases[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'refunded'[39m[33m,[39m entitlement_active[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-04T20:12:27.3488746Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-04T20:12:27.3489437Z      [90m 247 |[39m   })[33m;[39m
+2026-10-04T20:12:27.3490031Z      [90m 248 |[39m
+2026-10-04T20:12:27.3491263Z      [90m 249 |[39m   it([32m'an unreadable refund list fails the delivery before anything moves (Stripe redelivers)'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T20:12:27.3491923Z 
+2026-10-04T20:12:27.3492330Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:246:31)
+2026-10-04T20:12:27.3492773Z 
+2026-10-04T20:12:27.3493524Z   ● Sol B-684-5: a succeeded async refund converges access with the money › an unreadable refund list fails the delivery before anything moves (Stripe redelivers)
+2026-10-04T20:12:27.3494343Z 
+2026-10-04T20:12:27.3494513Z     expect(received).rejects.toMatchObject()
+2026-10-04T20:12:27.3494753Z 
+2026-10-04T20:12:27.3494942Z     Received promise resolved instead of rejected
+2026-10-04T20:12:27.3495315Z     Resolved to value: {"claimed": false}
+2026-10-04T20:12:27.3495510Z 
+2026-10-04T20:12:27.3495824Z     [0m [90m 251 |[39m     [36mawait[39m settledWithPending(c)[33m;[39m
+2026-10-04T20:12:27.3496543Z      [90m 252 |[39m     c[33m.[39mstripe[33m.[39mfailListRefunds [33m=[39m [36mtrue[39m[33m;[39m
+2026-10-04T20:12:27.3498114Z     [31m[1m>[22m[39m[90m 253 |[39m     [36mawait[39m expect(c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'succeeded'[39m)))[33m.[39mrejects[33m.[39mtoMatchObject({
+2026-10-04T20:12:27.3499111Z      [90m     |[39m           [31m[1m^[22m[39m
+2026-10-04T20:12:27.3499716Z      [90m 254 |[39m       code[33m:[39m [32m'SFEE_REFUND_STATE_UNAVAILABLE'[39m[33m,[39m
+2026-10-04T20:12:27.3500241Z      [90m 255 |[39m     })[33m;[39m
+2026-10-04T20:12:27.3501005Z      [90m 256 |[39m     expect(c[33m.[39mdb[33m.[39mrefunds[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'pending'[39m)[33m;[39m[0m
+2026-10-04T20:12:27.3501498Z 
+2026-10-04T20:12:27.3501713Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T20:12:27.3502375Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:253:11)
+2026-10-04T20:12:27.3502809Z 
+2026-10-04T20:12:27.3503538Z   ● Opus B-684-8: a refund status only moves forward › failed processed, then the older succeeded redelivered: the row stays failed and the coach keeps 4,630
+2026-10-04T20:12:27.3504353Z 
+2026-10-04T20:12:27.3504568Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:12:27.3504811Z 
+2026-10-04T20:12:27.3504911Z     Expected: "failed"
+2026-10-04T20:12:27.3505165Z     Received: "succeeded"
+2026-10-04T20:12:27.3505334Z 
+2026-10-04T20:12:27.3506040Z     [0m [90m 269 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'charge.refund.updated'[39m[33m,[39m [32m'succeeded'[39m))[33m;[39m
+2026-10-04T20:12:27.3507225Z      [90m 270 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'succeeded'[39m))[33m;[39m
+2026-10-04T20:12:27.3508546Z     [31m[1m>[22m[39m[90m 271 |[39m     expect(c[33m.[39mdb[33m.[39mrefunds[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'failed'[39m)[33m;[39m
+2026-10-04T20:12:27.3509327Z      [90m     |[39m                                    [31m[1m^[22m[39m
+2026-10-04T20:12:27.3510053Z      [90m 272 |[39m     expect(c[33m.[39mstripe[33m.[39mreversals)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+2026-10-04T20:12:27.3510991Z      [90m 273 |[39m     expect(c[33m.[39mstripe[33m.[39mnetTo([32m'acct_1'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T20:12:27.3512306Z      [90m 274 |[39m     expect(c[33m.[39mdb[33m.[39mpurchases[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'paid'[39m[33m,[39m entitlement_active[33m:[39m [36mtrue[39m })[33m;[39m[0m
+2026-10-04T20:12:27.3513016Z 
+2026-10-04T20:12:27.3513408Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:271:36)
+2026-10-04T20:12:27.3513835Z 
+2026-10-04T20:12:27.3514492Z   ● Opus B-684-8: a refund status only moves forward › a late charge.refunded snapshot that still says succeeded never re-applies a failed refund
+2026-10-04T20:12:27.3515063Z 
+2026-10-04T20:12:27.3515270Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:12:27.3515527Z 
+2026-10-04T20:12:27.3515628Z     Expected: "failed"
+2026-10-04T20:12:27.3515874Z     Received: "succeeded"
+2026-10-04T20:12:27.3516054Z 
+2026-10-04T20:12:27.3516707Z     [0m [90m 281 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'failed'[39m))[33m;[39m
+2026-10-04T20:12:27.3518129Z      [90m 282 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(refunded([usd([32m're_1'[39m[33m,[39m [35m4[39m_900)]))[33m;[39m
+2026-10-04T20:12:27.3519308Z     [31m[1m>[22m[39m[90m 283 |[39m     expect(c[33m.[39mdb[33m.[39mrefunds[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'failed'[39m)[33m;[39m
+2026-10-04T20:12:27.3520077Z      [90m     |[39m                                    [31m[1m^[22m[39m
+2026-10-04T20:12:27.3520892Z      [90m 284 |[39m     expect(c[33m.[39mdb[33m.[39msettlements[[35m0[39m][33m.[39mrefunded_cents)[33m.[39mtoBe([35m0[39m)[33m;[39m
+2026-10-04T20:12:27.3521938Z      [90m 285 |[39m     expect(c[33m.[39mstripe[33m.[39mnetTo([32m'acct_1'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T20:12:27.3523017Z      [90m 286 |[39m   })[33m;[39m[0m
+2026-10-04T20:12:27.3523256Z 
+2026-10-04T20:12:27.3523639Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:283:36)
+2026-10-04T20:12:27.3524070Z 
+2026-10-04T20:12:27.3524609Z   ● Opus B-684-8: a refund status only moves forward › a stale pending snapshot never moves an applied refund back to pending
+2026-10-04T20:12:27.3525084Z 
+2026-10-04T20:12:27.3525236Z     expect(received).toMatchObject(expected)
+2026-10-04T20:12:27.3525450Z 
+2026-10-04T20:12:27.3525550Z     - Expected  - 2
+2026-10-04T20:12:27.3525774Z     + Received  + 1
+2026-10-04T20:12:27.3525901Z 
+2026-10-04T20:12:27.3525989Z       Object {
+2026-10-04T20:12:27.3526236Z     -   "ledger_reversed": true,
+2026-10-04T20:12:27.3526524Z     -   "status": "succeeded",
+2026-10-04T20:12:27.3526781Z     +   "status": "pending",
+2026-10-04T20:12:27.3527130Z       }
+2026-10-04T20:12:27.3527737Z 
+2026-10-04T20:12:27.3528546Z     [0m [90m 292 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'succeeded'[39m))[33m;[39m
+2026-10-04T20:12:27.3529911Z      [90m 293 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(refunded([usd([32m're_1'[39m[33m,[39m [35m4[39m_900[33m,[39m [32m'pending'[39m)]))[33m;[39m
+2026-10-04T20:12:27.3531337Z     [31m[1m>[22m[39m[90m 294 |[39m     expect(c[33m.[39mdb[33m.[39mrefunds[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'succeeded'[39m[33m,[39m ledger_reversed[33m:[39m [36mtrue[39m })[33m;[39m
+2026-10-04T20:12:27.3532273Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T20:12:27.3532954Z      [90m 295 |[39m     expect(c[33m.[39mstripe[33m.[39mreversals)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T20:12:27.3533512Z      [90m 296 |[39m   })[33m;[39m
+2026-10-04T20:12:27.3533810Z      [90m 297 |[39m[0m
+2026-10-04T20:12:27.3533956Z 
+2026-10-04T20:12:27.3534331Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:294:29)
+2026-10-04T20:12:27.3534740Z 
+2026-10-04T20:12:27.3535369Z   ● Opus B-684-8: a refund status only moves forward › a failure written while the apply waits for the lock: the apply re-reads it and moves nothing
+2026-10-04T20:12:27.3535908Z 
+2026-10-04T20:12:27.3536102Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T20:12:27.3536342Z 
+2026-10-04T20:12:27.3536439Z     Expected: "failed"
+2026-10-04T20:12:27.3536672Z     Received: "pending"
+2026-10-04T20:12:27.3536820Z 
+2026-10-04T20:12:27.3536988Z     [0m [90m 307 |[39m     })[33m;[39m
+2026-10-04T20:12:27.3538150Z      [90m 308 |[39m     [36mawait[39m c[33m.[39mrouter[33m.[39mhandle(update([32m'refund.updated'[39m[33m,[39m [32m'succeeded'[39m))[33m;[39m
+2026-10-04T20:12:27.3539270Z     [31m[1m>[22m[39m[90m 309 |[39m     expect(c[33m.[39mdb[33m.[39mrefunds[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'failed'[39m)[33m;[39m
+2026-10-04T20:12:27.3540061Z      [90m     |[39m                                    [31m[1m^[22m[39m
+2026-10-04T20:12:27.3541294Z      [90m 310 |[39m     expect(c[33m.[39mdb[33m.[39mrefunds[[35m0[39m][33m.[39mledger_reversed)[33m.[39mnot[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T20:12:27.3543274Z      [90m 311 |[39m     expect(c[33m.[39mstripe[33m.[39mnetTo([32m'acct_1'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T20:12:27.3544323Z      [90m 312 |[39m   })[33m;[39m[0m
+2026-10-04T20:12:27.3544644Z 
+2026-10-04T20:12:27.3545072Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:309:36)
+2026-10-04T20:12:27.3545518Z 
+2026-10-04T20:12:27.3546235Z   ● Opus B-684-8: a refund status only moves forward › applied, then failed: one alert under the lock, the settlement is flagged, nothing re-credited
+2026-10-04T20:12:27.3546847Z 
+2026-10-04T20:12:27.3547012Z     expect(received).toHaveLength(expected)
+2026-10-04T20:12:27.3547227Z 
+2026-10-04T20:12:27.3547345Z     Expected length: 1
+2026-10-04T20:12:27.3547871Z     Received length: 0
+2026-10-04T20:12:27.3548137Z     Received array:  []
+2026-10-04T20:12:27.3548293Z 
+2026-10-04T20:12:27.3548897Z     [0m [90m 323 |[39m       [33mString[39m(a[[35m0[39m])[33m.[39mstartsWith([32m'SFEE_REFUND_FAILED_AFTER_APPLY'[39m)[33m,[39m
+2026-10-04T20:12:27.3549568Z      [90m 324 |[39m     )[33m;[39m
+2026-10-04T20:12:27.3550171Z     [31m[1m>[22m[39m[90m 325 |[39m     expect(alerts)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T20:12:27.3550776Z      [90m     |[39m                    [31m[1m^[22m[39m
+2026-10-04T20:12:27.3551771Z      [90m 326 |[39m     expect(c[33m.[39mdb[33m.[39msettlements[[35m0[39m][33m.[39mreconcile_reason)[33m.[39mtoBe([32m'SFEE_REFUND_FAILED_AFTER_APPLY'[39m)[33m;[39m
+2026-10-04T20:12:27.3552934Z      [90m 327 |[39m     expect(c[33m.[39mstripe[33m.[39mnetTo([32m'acct_1'[39m))[33m.[39mtoBe([35m0[39m)[33m;[39m
+2026-10-04T20:12:27.3554280Z      [90m 328 |[39m   })[33m;[39m[0m
+2026-10-04T20:12:27.3554508Z 
+2026-10-04T20:12:27.3554923Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:325:20)
+2026-10-04T20:12:27.3555388Z 
+2026-10-04T20:12:27.3556296Z   ● Sol B-684-3: a notice channel starts only with a live claim inside the run deadline › a claim and re-read that use up the budget start no in-app row; the claim is released, the attempt not counted
+2026-10-04T20:12:27.3557067Z 
+2026-10-04T20:12:27.3557316Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-04T20:12:27.3557763Z 
+2026-10-04T20:12:27.3557953Z     Expected number of calls: 0
+2026-10-04T20:12:27.3558333Z     Received number of calls: 1
+2026-10-04T20:12:27.3558522Z 
+2026-10-04T20:12:27.3601725Z     1: {"body": "A client got $1.00 back.", "channel": "inapp", "deep_link": "tgp://coach/money", "kind": "coach_alert", "payload": {"currency": "usd", "customer_refunded_cents": undefined, "event": "payout_adjustment", "held_cents": undefined, "held_dispute_fee_cents": undefined, "held_not_reversed_cents": undefined, "held_open_cents": undefined, "held_stripe_fee_cents": undefined, "held_tgp_fee_cents": undefined, "notice_event": "refund", "notice_id": "pan_1", "purchase_id": "cp_1", "reversed_cents": undefined, "stripe_charge_id": "ch_1"}, "user_id": "coach_1"}, {"$transaction": [Function mockConstructor], "chargeDispute": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"defaults": [Function defaults], "prefix": "cd", "unique": ["stripe_dispute_id"]}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "chargeRefund": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"prefix": "rf", "unique": ["stripe_refund_id"]}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "chargeSettlement": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"defaults": [Function defaults], "prefix": "cs", "unique": ["stripe_charge_id"]}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "clientPurchase": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"prefix": "cp", "rel": [Function rel]}, "rows": [{"amount_cents": 4900, "billing_type": "one_time", "client_user_id": "client_1", "coach_user_id": "coach_1", "created_at": 2026-10-04T20:12:27.203Z, "currency": "usd", "entitlement_active": true, "id": "cp_1", "package_id": "pkg_1", "source": null, "status": "paid", "stripe_payment_intent_id": null, "stripe_subscription_id": null}], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "connectAccount": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"prefix": "ca", "unique": ["coach_user_id"]}, "rows": [{"coach_user_id": "coach_1", "stripe_account_id": "acct_1"}], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "connectTransfer": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"defaults": [Function defaults], "prefix": "tr", "unique": ["idempotency_key", "ledger_entry_id"]}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "cronLease": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"defaults": [Function defaults], "prefix": "lease", "unique": ["name"]}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "emailSendLog": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"prefix": "em"}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "feePolicy": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"prefix": "fp", "unique": ["coach_id"]}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "payeeRecovery": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"defaults": [Function defaults], "prefix": "pr", "unique": ["idempotency_key"]}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "payoutAdjustmentNotice": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"defaults": [Function defaults], "prefix": "pan", "unique": ["idempotency_key"]}, "rows": [{"acknowledged_at": null, "body": "A client got $1.00 back.", "created_at": 2026-10-04T20:10:27.203Z, "currency": "usd", "dispatch_attempts": 1, "dispatch_claimed_at": 2026-10-04T20:12:27.203Z, "dispatched_at": 2026-10-04T20:12:27.204Z, "email_attempts": 0, "email_status": "disabled", "event": "refund", "id": "pan_1", "idempotency_key": "pan_key_1", "inapp_notification_id": "n_1", "inapp_status": "sent", "payee_user_id": "coach_1", "purchase_id": "cp_1", "push_notification_id": null, "push_status": "off", "reinstated_cents": 0, "settlement_id": "cs_1", "stripe_charge_id": "ch_1", "title": "A client was refunded", "updated_at": 2026-10-04T20:12:27.204Z}], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "splitLedgerEntry": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"defaults": [Function defaults], "prefix": "le"}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "teamSubCoachAssignment": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"prefix": "tsa"}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "transferReversalOp": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"defaults": [Function defaults], "prefix": "rop", "unique": ["idempotency_key", "stripe_reversal_id"]}, "rows": [], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}, "user": {"aggregate": [Function mockConstructor], "count": [Function mockConstructor], "create": [Function mockConstructor], "deleteMany": [Function mockConstructor], "findFirst": [Function mockConstructor], "findMany": [Function mockConstructor], "findUnique": [Function mockConstructor], "findUniqueOrThrow": [Function mockConstructor], "groupBy": [Function mockConstructor], "opts": {"prefix": "u"}, "rows": [{"email": "payee@example.invalid", "id": "coach_1", "name": null}], "update": [Function mockConstructor], "updateMany": [Function mockConstructor], "upsert": [Function mockConstructor]}}
+2026-10-04T20:12:27.3638804Z 
+2026-10-04T20:12:27.3639065Z     [0m [90m 360 |[39m     })[33m;[39m
+2026-10-04T20:12:27.3640165Z      [90m 361 |[39m     [36mawait[39m c[33m.[39mnotices[33m.[39mdispatchPending([36mnew[39m [33mDate[39m(started)[33m,[39m [35m25[39m[33m,[39m started [33m+[39m [35m480[39m_000)[33m;[39m
+2026-10-04T20:12:27.3641463Z     [31m[1m>[22m[39m[90m 362 |[39m     expect(c[33m.[39mfns[33m.[39mcreateNotification)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:12:27.3642269Z      [90m     |[39m                                          [31m[1m^[22m[39m
+2026-10-04T20:12:27.3643052Z      [90m 363 |[39m     expect(c[33m.[39mdb[33m.[39mnotices[33m?[39m[33m.[39m[[35m0[39m])[33m.[39mtoMatchObject({
+2026-10-04T20:12:27.3643779Z      [90m 364 |[39m       dispatched_at[33m:[39m [36mnull[39m[33m,[39m
+2026-10-04T20:12:27.3644617Z      [90m 365 |[39m       dispatch_claimed_at[33m:[39m [36mnull[39m[33m,[39m[0m
+2026-10-04T20:12:27.3644950Z 
+2026-10-04T20:12:27.3645354Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:362:42)
+2026-10-04T20:12:27.3645808Z 
+2026-10-04T20:12:27.3646645Z   ● Sol B-684-3: a notice channel starts only with a live claim inside the run deadline › a slow push gate starts no push after the deadline; the push stays pending for the next run
+2026-10-04T20:12:27.3647337Z 
+2026-10-04T20:12:27.3647495Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-04T20:12:27.3648115Z 
+2026-10-04T20:12:27.3648262Z     Expected number of calls: 0
+2026-10-04T20:12:27.3648580Z     Received number of calls: 1
+2026-10-04T20:12:27.3648771Z 
+2026-10-04T20:12:27.3649335Z     1: "coach_1", "A client was refunded", "A client got $1.00 back.", {"deep_link": "tgp://coach/money", "notice_id": "pan_1", "type": "payout_adjustment"}
+2026-10-04T20:12:27.3649905Z 
+2026-10-04T20:12:27.3650098Z     [0m [90m 380 |[39m     })[33m;[39m
+2026-10-04T20:12:27.3651177Z      [90m 381 |[39m     [36mawait[39m c[33m.[39mnotices[33m.[39mdispatchPending([36mnew[39m [33mDate[39m(started)[33m,[39m [35m25[39m[33m,[39m started [33m+[39m [35m480[39m_000)[33m;[39m
+2026-10-04T20:12:27.3652448Z     [31m[1m>[22m[39m[90m 382 |[39m     expect(c[33m.[39mfns[33m.[39mpushToUser)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:12:27.3653205Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:12:27.3654425Z      [90m 383 |[39m     expect(c[33m.[39mdb[33m.[39mnotices[33m?[39m[33m.[39m[[35m0[39m])[33m.[39mtoMatchObject({ push_status[33m:[39m [32m'pending'[39m[33m,[39m dispatched_at[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-04T20:12:27.3655837Z      [90m 384 |[39m     c[33m.[39mfns[33m.[39mchannelGate[33m.[39mmockImplementation([36masync[39m () [33m=>[39m [32m'enabled'[39m)[33m;[39m
+2026-10-04T20:12:27.3657419Z      [90m 385 |[39m     [36mawait[39m c[33m.[39mnotices[33m.[39mdispatchPending([36mnew[39m [33mDate[39m(clock)[33m,[39m [35m25[39m[33m,[39m clock [33m+[39m [35m480[39m_000)[33m;[39m[0m
+2026-10-04T20:12:27.3658287Z 
+2026-10-04T20:12:27.3658695Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:382:34)
+2026-10-04T20:12:27.3659160Z 
+2026-10-04T20:12:27.3659821Z   ● Sol B-684-3: a notice channel starts only with a live claim inside the run deadline › a slow address read starts no email after the deadline
+2026-10-04T20:12:27.3660390Z 
+2026-10-04T20:12:27.3660564Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-04T20:12:27.3660784Z 
+2026-10-04T20:12:27.3660926Z     Expected number of calls: 0
+2026-10-04T20:12:27.3661241Z     Received number of calls: 1
+2026-10-04T20:12:27.3661422Z 
+2026-10-04T20:12:27.3663387Z     1: {"data": {"charge_display": "$NaN.NaN", "customer_refunded_display": "$NaN.NaN", "has_hold": false, "held_collected_display": null, "held_display": "$NaN.NaN", "held_lines": [], "held_open_display": "$NaN.NaN", "recipient_name": null, "reinstated_display": null, "reversed_display": "$NaN.NaN", "subject": "A client was refunded", "summary": "A client got $1.00 back.", "title": "A client was refunded"}, "idempotencyKey": "pan_key_1", "template": "coach-payout-adjustment", "to": "payee@example.invalid"}
+2026-10-04T20:12:27.3665153Z 
+2026-10-04T20:12:27.3665344Z     [0m [90m 399 |[39m     })[33m;[39m
+2026-10-04T20:12:27.3666394Z      [90m 400 |[39m     [36mawait[39m c[33m.[39mnotices[33m.[39mdispatchPending([36mnew[39m [33mDate[39m(started)[33m,[39m [35m25[39m[33m,[39m started [33m+[39m [35m480[39m_000)[33m;[39m
+2026-10-04T20:12:27.3667766Z     [31m[1m>[22m[39m[90m 401 |[39m     expect(c[33m.[39mfns[33m.[39msend)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:12:27.3668794Z      [90m     |[39m                            [31m[1m^[22m[39m
+2026-10-04T20:12:27.3670005Z      [90m 402 |[39m     expect(c[33m.[39mdb[33m.[39mnotices[33m?[39m[33m.[39m[[35m0[39m])[33m.[39mtoMatchObject({ email_status[33m:[39m [32m'pending'[39m[33m,[39m email_attempts[33m:[39m [35m0[39m })[33m;[39m
+2026-10-04T20:12:27.3670968Z      [90m 403 |[39m   })[33m;[39m
+2026-10-04T20:12:27.3671293Z      [90m 404 |[39m[0m
+2026-10-04T20:12:27.3671438Z 
+2026-10-04T20:12:27.3671855Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:401:28)
+2026-10-04T20:12:27.3672296Z 
+2026-10-04T20:12:27.3673119Z   ● Sol B-684-3: a notice channel starts only with a live claim inside the run deadline › a push row created just before the claim runs low is kept and reused, the push itself waits
+2026-10-04T20:12:27.3673817Z 
+2026-10-04T20:12:27.3673972Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-04T20:12:27.3674204Z 
+2026-10-04T20:12:27.3674323Z     Expected number of calls: 0
+2026-10-04T20:12:27.3674634Z     Received number of calls: 1
+2026-10-04T20:12:27.3674818Z 
+2026-10-04T20:12:27.3675384Z     1: "coach_1", "A client was refunded", "A client got $1.00 back.", {"deep_link": "tgp://coach/money", "notice_id": "pan_1", "type": "payout_adjustment"}
+2026-10-04T20:12:27.3675964Z 
+2026-10-04T20:12:27.3676148Z     [0m [90m 414 |[39m     })[33m;[39m
+2026-10-04T20:12:27.3677196Z      [90m 415 |[39m     [36mawait[39m c[33m.[39mnotices[33m.[39mdispatchPending([36mnew[39m [33mDate[39m(started)[33m,[39m [35m25[39m[33m,[39m started [33m+[39m [35m3[39m_600_000)[33m;[39m
+2026-10-04T20:12:27.3678611Z     [31m[1m>[22m[39m[90m 416 |[39m     expect(c[33m.[39mfns[33m.[39mpushToUser)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T20:12:27.3679375Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-04T20:12:27.3680127Z      [90m 417 |[39m     expect(c[33m.[39mdb[33m.[39mnotices[33m?[39m[33m.[39m[[35m0[39m])[33m.[39mtoMatchObject({
+2026-10-04T20:12:27.3680890Z      [90m 418 |[39m       push_status[33m:[39m [32m'pending'[39m[33m,[39m
+2026-10-04T20:12:27.3681549Z      [90m 419 |[39m       push_notification_id[33m:[39m [32m'n_push'[39m[33m,[39m[0m
+2026-10-04T20:12:27.3682040Z 
+2026-10-04T20:12:27.3682442Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:416:34)
+2026-10-04T20:12:27.3682902Z 
+2026-10-04T20:12:27.3683723Z   ● Sol B-684-3: a notice channel starts only with a live claim inside the run deadline › a later batch row is claimed at the time it is taken, so a second worker cannot push it too
+2026-10-04T20:12:27.3684396Z 
+2026-10-04T20:12:27.3684603Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-04T20:12:27.3684867Z 
+2026-10-04T20:12:27.3685010Z     Expected number of calls: 1
+2026-10-04T20:12:27.3685312Z     Received number of calls: 2
+2026-10-04T20:12:27.3685479Z 
+2026-10-04T20:12:27.3685677Z     [0m [90m 437 |[39m       })[33m;[39m
+2026-10-04T20:12:27.3686752Z      [90m 438 |[39m       [36mawait[39m c[33m.[39mnotices[33m.[39mdispatchPending([36mnew[39m [33mDate[39m(started)[33m,[39m [35m25[39m[33m,[39m started [33m+[39m [35m480[39m_000)[33m;[39m
+2026-10-04T20:12:27.3688448Z     [31m[1m>[22m[39m[90m 439 |[39m       expect(c[33m.[39mfns[33m.[39mpushToUser)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-04T20:12:27.3689260Z      [90m     |[39m                                [31m[1m^[22m[39m
+2026-10-04T20:12:27.3690455Z      [90m 440 |[39m       expect(c[33m.[39mdb[33m.[39mnotices[33m?[39m[33m.[39m[[35m0[39m][33m.[39mdispatch_claimed_at)[33m.[39mtoEqual([36mnew[39m [33mDate[39m(started [33m+[39m [35m360[39m_000))[33m;[39m
+2026-10-04T20:12:27.3691521Z      [90m 441 |[39m     } [36mfinally[39m {
+2026-10-04T20:12:27.3692039Z      [90m 442 |[39m       jest[33m.[39museRealTimers()[33m;[39m[0m
+2026-10-04T20:12:27.3692532Z 
+2026-10-04T20:12:27.3692938Z       at Object.<anonymous> (test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts:439:32)
+2026-10-04T20:12:27.3693404Z 
+2026-10-04T20:12:27.3693555Z Test Suites: 1 failed, 1 total
+2026-10-04T20:12:27.3693914Z Tests:       17 failed, 2 passed, 19 total
+2026-10-04T20:12:27.3694261Z Snapshots:   0 total
+2026-10-04T20:12:27.3694535Z Time:        2.839 s
+2026-10-04T20:12:27.3695120Z Ran all test suites matching test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts.
+2026-10-04T20:12:27.3919856Z ##[error]Process completed with exit code 1.
+2026-10-04T20:12:27.4038143Z Post job cleanup.
+2026-10-04T20:12:27.4924342Z [command]/usr/bin/git version
+2026-10-04T20:12:27.4961367Z git version 2.55.0
+2026-10-04T20:12:27.5002885Z Temporarily overriding HOME='/home/runner/work/_temp/59846e9b-ccbb-40f3-b37b-86ad2bed36cd' before making global git config changes
+2026-10-04T20:12:27.5004575Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:12:27.5010297Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T20:12:27.5041544Z Removing SSH command configuration
+2026-10-04T20:12:27.5048402Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:12:27.5083399Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:12:27.5336759Z Removing HTTP extra header
+2026-10-04T20:12:27.5342017Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:12:27.5373170Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:12:27.5593609Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:12:27.5603430Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:12:27.5632707Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T20:12:27.5634584Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T20:12:27.5636229Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:12:27.5637350Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:12:27.5644614Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T20:12:27.5666147Z /home/runner/work/_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:12:27.5677877Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:12:27.5718787Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T20:12:27.5742577Z /home/runner/work/_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:12:27.5753440Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:12:27.5787377Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:12:27.5808847Z /github/runner_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:12:27.5816767Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:12:27.5849669Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:12:27.5871187Z /github/runner_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:12:27.5880048Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config
+2026-10-04T20:12:27.5915312Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:12:27.6155454Z Removing credentials config '/home/runner/work/_temp/git-credentials-d93d866a-1241-4fff-9229-1776c1c68587.config'
+2026-10-04T20:12:27.6275581Z Print service container logs: a0f96473690a4a799cde779f00ce6101_redis7alpine_ed01fe
+2026-10-04T20:12:27.6280947Z ##[command]/usr/bin/docker logs --details c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:12:27.6404956Z  1:C 04 Oct 2026 20:11:37.476 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T20:12:27.6406722Z  1:C 04 Oct 2026 20:11:37.476 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T20:12:27.6407312Z  1:C 04 Oct 2026 20:11:37.476 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T20:12:27.6408737Z  1:C 04 Oct 2026 20:11:37.476 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T20:12:27.6409690Z  1:M 04 Oct 2026 20:11:37.476 * monotonic clock: POSIX clock_gettime
+2026-10-04T20:12:27.6410267Z  1:M 04 Oct 2026 20:11:37.477 * Running mode=standalone, port=6379.
+2026-10-04T20:12:27.6410728Z  1:M 04 Oct 2026 20:11:37.477 * Server initialized
+2026-10-04T20:12:27.6411262Z  1:M 04 Oct 2026 20:11:37.477 * Ready to accept connections tcp
+2026-10-04T20:12:27.6429610Z Stop and remove container: a0f96473690a4a799cde779f00ce6101_redis7alpine_ed01fe
+2026-10-04T20:12:27.6434908Z ##[command]/usr/bin/docker rm --force c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:12:29.3329937Z c2c813baa7518d16e9cafbebac67ba0df1cc65cf186aea1dde05a7f9a04c28d2
+2026-10-04T20:12:29.3358024Z Remove container network: github_network_ea3a738f9cff47bfaf04002f0ebc9ced
+2026-10-04T20:12:29.3362584Z ##[command]/usr/bin/docker network rm github_network_ea3a738f9cff47bfaf04002f0ebc9ced
+2026-10-04T20:12:29.4191113Z github_network_ea3a738f9cff47bfaf04002f0ebc9ced
+2026-10-04T20:12:29.4263037Z Cleaning up orphan processes

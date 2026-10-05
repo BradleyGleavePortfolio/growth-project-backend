@@ -1,0 +1,1463 @@
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index 592ba9ece..a0a6ca0f2 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -8,6 +8,9 @@ import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
+ import { PrismaService } from '../prisma.service';
+ import { DunningService } from './dunning.service';
+ import { DunningV2Service } from './dunning-v2/dunning-v2.service';
++import { DUNNING_V2_GRACE_STATUSES, DunningWebhookRetryError } from './dunning-v2/dunning-grace';
++import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
++import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
+ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+ import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
+@@ -128,6 +131,9 @@ export interface CheckoutWebhookPrefetch {
+   // (rare settling race); the split handler no-ops the transfer and the
+   // sweeper picks it up. undefined entry = no pre-resolution attempted.
+   chargeIdByPurchaseId?: Record<string, string | null>;
++  // B-690-3: the v2 dispute effect of a charge.dispute.created / .closed
++  // event already ran (awaited) before the outer tx opened.
++  disputeEffectDone?: boolean;
+ }
+ 
+ @Injectable()
+@@ -260,14 +266,14 @@ export class CheckoutWebhookHandlerService {
+         // the one-active-cycle-per-state guard (§6.4) so a dispute→refund
+         // pair never double-opens.
+         // S-DUNNING F11: disputes only; a refund is never non-payment.
+-        if (this.dunningV2 && event.type === 'charge.dispute.created') {
+-          this.fireLateReversalProbe(event);
+-        }
+         // S-DUNNING-R3 (B-628-8): a dispute closed in the client's favour
+         // resolves its compressed cycle (unlock + restore access).
+-        if (this.dunningV2 && event.type === 'charge.dispute.closed') {
+-          this.fireDisputeClosed(event);
+-        }
++        // B-690-3 (Sol) / C-690-2 (Opus): the dispute effect is awaited, and
++        // a failure fails the delivery so Stripe redelivers it (never
++        // acknowledged and deduplicated). BillingService runs it before the
++        // outer tx opens (prefetchForOuterTx); this covers the no-prefetch
++        // wiring.
++        if (!prefetched?.disputeEffectDone) await this.runDisputeEffect(event);
+         // Bank-Account Payouts v2 (spec §2.5) — additive routing branch on the
+         // payout.* events. Fire-and-forget bookkeeping classification only;
+         // no-op while FEATURE_BANK_PAYOUTS_V2 is off. Never alters the v1
+@@ -288,57 +294,47 @@ export class CheckoutWebhookHandlerService {
+   }
+ 
+   /**
+-   * B3 v2 (§6) — fire-and-forget late-reversal probe. Extracts the charge /
+-   * PI id + reversal timestamp from the Stripe event and hands them to the v2
+-   * service, which applies the "previously cleared" + one-active-cycle guards.
+-   * Never throws into the webhook path; no-op while FEATURE_DUNNING_V2 is off.
++   * B3 v2 (§6) / S-DUNNING-R3 (B-628-8): the dunning v2 effect of a dispute
++   * event. `charge.dispute.created` probes whether it reverses a previously
++   * cleared payment (the v2 service applies the cleared + one-active-cycle
++   * guards and records the obligation); `charge.dispute.closed` settles it.
++   * S-DUNNING F11: a refund is never non-payment, so only disputes reach
++   * this. No-op while FEATURE_DUNNING_V2 is off. B-690-3: awaited; a failure
++   * throws a closed code so the event is redelivered.
+    */
+-  private fireLateReversalProbe(event: StripeEvent): void {
+-    if (!this.dunningV2) return;
+-    const obj = event.data.object as {
+-      id?: string;
+-      charge?: string | null;
+-      payment_intent?: string | null;
+-      created?: number | null;
+-    };
+-    // S-DUNNING F11: only a DISPUTE reverses a cleared payment against the
+-    // client's will. A refund (charge.refunded) is issued by the coach or the
+-    // platform; treating it as non-payment would dun and lock a client who
+-    // was refunded on purpose.
+-    if (event.type !== 'charge.dispute.created') return;
+-    // For dispute.created the object is the dispute carrying a `charge` ref.
+-    const chargeId = obj.charge ?? null;
+-    const reversedAt = typeof obj.created === 'number' ? new Date(obj.created * 1000) : new Date();
+-    void this.dunningV2
+-      .detectAndHandleLateReversal({
+-        chargeId,
+-        disputeId: obj.id ?? null,
+-        paymentIntentId: obj.payment_intent ?? null,
+-        reversedChargeAt: reversedAt,
+-      })
+-      .catch((err) =>
+-        this.logger.warn(`dunningV2.detectAndHandleLateReversal failed: ${(err as Error).message}`),
+-      );
+-  }
+-
+-  private fireDisputeClosed(event: StripeEvent): void {
++  private async runDisputeEffect(event: StripeEvent): Promise<void> {
+     if (!this.dunningV2) return;
++    if (event.type !== 'charge.dispute.created' && event.type !== 'charge.dispute.closed') return;
+     const obj = event.data.object as {
+       id?: string | null;
+       charge?: string | null;
+       payment_intent?: string | null;
++      created?: number | null;
+       status?: string | null;
+     };
+-    void this.dunningV2
+-      .onDisputeClosed({
+-        disputeId: obj.id ?? null,
+-        chargeId: obj.charge ?? null,
+-        paymentIntentId: obj.payment_intent ?? null,
+-        status: obj.status ?? null,
+-      })
+-      .catch((err) =>
+-        this.logger.warn(`dunningV2.onDisputeClosed failed: ${(err as Error).message}`),
++    try {
++      if (event.type === 'charge.dispute.created') {
++        await this.dunningV2.detectAndHandleLateReversal({
++          chargeId: obj.charge ?? null,
++          disputeId: obj.id ?? null,
++          paymentIntentId: obj.payment_intent ?? null,
++          reversedChargeAt:
++            typeof obj.created === 'number' ? new Date(obj.created * 1000) : new Date(),
++        });
++      } else {
++        await this.dunningV2.onDisputeClosed({
++          disputeId: obj.id ?? null,
++          chargeId: obj.charge ?? null,
++          paymentIntentId: obj.payment_intent ?? null,
++          status: obj.status ?? null,
++        });
++      }
++    } catch (err) {
++      this.logger.warn(
++        `dunningV2 dispute effect failed event=${event.id} type=${event.type}: ${dunningErrorCode(err)}`,
+       );
++      throw new DunningWebhookRetryError('DUNNING_DISPUTE_EFFECT_FAILED');
++    }
+   }
+ 
+   /**
+@@ -362,7 +358,7 @@ export class CheckoutWebhookHandlerService {
+         eventType: event.type,
+       })
+       .catch((err) =>
+-        this.logger.warn(`payoutRouting.routePayoutWebhook failed: ${(err as Error).message}`),
++        this.logger.warn(`payoutRouting.routePayoutWebhook failed: ${dunningErrorCode(err)}`),
+       );
+   }
+ 
+@@ -415,6 +411,13 @@ export class CheckoutWebhookHandlerService {
+     if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
+       return this.prefetchChargeIdForActivation(event);
+     }
++    // B-690-3: dispute effects run here, before the outer tx (their own
++    // short transactions and notice delivery never wait on its locks); a
++    // failure rejects the delivery before the processed-event row exists.
++    if (event.type === 'charge.dispute.created' || event.type === 'charge.dispute.closed') {
++      await this.runDisputeEffect(event);
++      return { disputeEffectDone: true };
++    }
+     if (event.type !== 'invoice.paid' && event.type !== 'invoice.payment_succeeded') {
+       return {};
+     }
+@@ -851,7 +854,9 @@ export class CheckoutWebhookHandlerService {
+       where: { id: purchase.package_id },
+     });
+ 
+-    const entitlementActive = ['active', 'trialing', 'past_due'].includes(status);
++    const entitlementActive =
++      ['active', 'trialing', 'past_due'].includes(status) ||
++      (await this.inUnpaidGrace(db, purchase, status));
+     const currentPeriodEnd = this.toDate(sub.current_period_end);
+     const canceledAt = this.toDate(sub.canceled_at);
+ 
+@@ -865,19 +870,50 @@ export class CheckoutWebhookHandlerService {
+     // When BillingService threads its outer tx through handle(event, tx) the
+     // lock + activation run on that tx (no nested $transaction); otherwise
+     // the helper opens its own short $transaction.
+-    await this.activateUnderPackageLock(tx, purchase.package_id, (client) =>
+-      client.clientPurchase.update({
+-        where: { id: purchase.id },
+-        data: {
+-          status,
+-          entitlement_active: entitlementActive,
+-          cancel_at_period_end: !!sub.cancel_at_period_end,
+-          current_period_end: currentPeriodEnd,
+-          canceled_at: canceledAt,
+-          access_expires_at: accessExpiresAt,
+-        },
+-      }),
+-    );
++    const data = {
++      status,
++      entitlement_active: entitlementActive,
++      cancel_at_period_end: !!sub.cancel_at_period_end,
++      current_period_end: currentPeriodEnd,
++      canceled_at: canceledAt,
++      access_expires_at: accessExpiresAt,
++    };
++    // B-690-1 (Sol): the cancel checks above ran before awaits, so a 2A
++    // cancel may have recorded its intent or ended the plan meanwhile. A
++    // live status is written only if the plan is still not canceled and no
++    // client cancel is pending, decided under the cycle's row lock (the 2A
++    // intent writes that row) and as a predicate of the write itself.
++    const applied = await this.activateUnderPackageLock(tx, purchase.package_id, async (client) => {
++      if (status === 'canceled') {
++        await client.clientPurchase.update({ where: { id: purchase.id }, data });
++        return true;
++      }
++      if (typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function') {
++        await client.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchase.id} FOR UPDATE`;
++      }
++      if (await this.clientCancelPending(client, purchase.id)) return false;
++      if (typeof client.clientPurchase.updateMany !== 'function') {
++        // Legacy minimal test stubs only; production Prisma always has it.
++        await client.clientPurchase.update({ where: { id: purchase.id }, data });
++        return true;
++      }
++      const res = await client.clientPurchase.updateMany({
++        where: { id: purchase.id, status: { not: 'canceled' } },
++        data,
++      });
++      return res.count > 0;
++    });
++    if (!applied) {
++      this.logger.log(
++        JSON.stringify({
++          event: 'checkout_webhook.stale_subscription_update_ignored',
++          purchase_id: purchase.id,
++          stripe_event_id: event.id,
++          incoming_status: status,
++        }),
++      );
++      return { claimed: true, purchase_id: purchase.id, reason: 'stale_after_cancel' };
++    }
+     return { claimed: true, purchase_id: purchase.id };
+   }
+ 
+@@ -1202,30 +1238,35 @@ export class CheckoutWebhookHandlerService {
+     // S-DUNNING-R3 (B-628-8): a renewal payment does not settle a disputed
+     // payment; the dispute cycle stays open until the dispute closes.
+     if (this.dunningV2) {
++      let disputed: boolean;
+       try {
+-        if (await this.dunningV2.isDisputeCycleOpen(purchaseId, tx)) {
+-          // B-628-13: the payment part is settled; the cycle stays (or
+-          // becomes) the dispute cycle until the dispute closes. A failed
+-          // marker write still keeps the cycle (never resolves it here).
+-          try {
+-            await this.dunningV2.keepAsDisputeCycle(purchaseId, tx);
+-          } catch (err) {
+-            this.logger.warn(
+-              `dunningV2.keepAsDisputeCycle failed purchase=${purchaseId}: ${(err as Error).name}`,
+-            );
+-          }
+-          this.logger.log(
+-            JSON.stringify({
+-              event: 'checkout_webhook.dispute_cycle_kept_on_paid',
+-              purchase_id: purchaseId,
+-            }),
+-          );
+-          return;
+-        }
++        disputed = await this.dunningV2.isDisputeCycleOpen(purchaseId, tx);
+       } catch (err) {
++        // B-690-2 (Sol) / B-690-1 (Opus): an unknown answer never resolves
++        // the cycle; the delivery fails and Stripe redelivers it.
+         this.logger.warn(
+-          `dunningV2.isDisputeCycleOpen failed purchase=${purchaseId}: ${(err as Error).message}`,
++          `dunningV2.isDisputeCycleOpen failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+         );
++        throw new DunningWebhookRetryError('DUNNING_DISPUTE_CHECK_FAILED');
++      }
++      if (disputed) {
++        // B-628-13: the payment part is settled; the cycle stays (or
++        // becomes) the dispute cycle until the dispute closes. A failed
++        // marker write still keeps the cycle (never resolves it here).
++        try {
++          await this.dunningV2.keepAsDisputeCycle(purchaseId, tx);
++        } catch (err) {
++          this.logger.warn(
++            `dunningV2.keepAsDisputeCycle failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
++          );
++        }
++        this.logger.log(
++          JSON.stringify({
++            event: 'checkout_webhook.dispute_cycle_kept_on_paid',
++            purchase_id: purchaseId,
++          }),
++        );
++        return;
+       }
+     }
+     if (this.dunning) {
+@@ -1233,7 +1274,7 @@ export class CheckoutWebhookHandlerService {
+         await this.dunning.recordResolution(purchaseId);
+       } catch (err) {
+         this.logger.warn(
+-          `dunning.recordResolution failed purchase=${purchaseId}: ${(err as Error).message}`,
++          `dunning.recordResolution failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+         );
+       }
+     }
+@@ -1242,12 +1283,32 @@ export class CheckoutWebhookHandlerService {
+         await this.dunningV2.applyImmediateClear(purchaseId, 'retry', tx);
+       } catch (err) {
+         this.logger.warn(
+-          `dunningV2.applyImmediateClear failed purchase=${purchaseId}: ${(err as Error).message}`,
++          `dunningV2.applyImmediateClear failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+         );
+       }
+     }
+   }
+ 
++  /**
++   * B-690-5 (Sol): an `unpaid` subscription (the account marks it unpaid
++   * instead of past_due) keeps the Days 0-9 grace of an active, unlocked v2
++   * cycle on a plan that was entitled. Never-entitled, canceled and locked
++   * plans are excluded; flag off: unchanged (unpaid ends access).
++   */
++  private async inUnpaidGrace(
++    db: WebhookTx | PrismaService,
++    purchase: ClientPurchase,
++    status: string,
++  ): Promise<boolean> {
++    if (status !== 'unpaid' || !DUNNING_V2_GRACE_STATUSES.includes(status)) return false;
++    if (!isDunningV2Enabled() || !purchase.entitlement_active) return false;
++    const state = await db.dunningState?.findUnique?.({
++      where: { purchase_id: purchase.id },
++      select: { status: true, locked_out_at: true },
++    });
++    return state?.status === 'active' && state.locked_out_at == null;
++  }
++
+   private async applyInvoicePaymentFailed(event: StripeEvent): Promise<CheckoutWebhookResult> {
+     const inv = event.data.object as {
+       id?: string;
+@@ -1255,13 +1316,22 @@ export class CheckoutWebhookHandlerService {
+       amount_due?: number | null;
+       attempt_count?: number | null;
+       billing_reason?: string | null;
+-      last_payment_error?: { message?: string };
++      last_payment_error?: { message?: string; code?: string | null };
+     };
+     if (!inv?.subscription) return { claimed: false };
+     const purchase = await this.prisma.clientPurchase.findUnique({
+       where: { stripe_subscription_id: inv.subscription },
+     });
+     if (!purchase) return { claimed: false };
++    // C-690-1 (Opus): a late failure (e.g. the Day-3 retry) for a plan the
++    // client already ended, or is ending, changes nothing on the plan.
++    if (
++      purchase.status === 'canceled' ||
++      (await this.clientCancelPending(this.prisma, purchase.id))
++    ) {
++      return { claimed: true, purchase_id: purchase.id, reason: 'stale_after_cancel' };
++    }
++    const lastError = safeDeclineCode(inv.last_payment_error?.code);
+     // S-DUNNING-R5/R6 (B-RECUR seam, #654): a payment that fails before the
+     // plan ever granted access is a checkout failure the PaymentSheet
+     // explains on the spot, not a missed renewal: no past_due flip, no
+@@ -1271,7 +1341,7 @@ export class CheckoutWebhookHandlerService {
+     if (isNeverEntitledPaymentAttempt(purchase, inv.billing_reason ?? null)) {
+       await this.prisma.clientPurchase.update({
+         where: { id: purchase.id },
+-        data: { last_error: inv.last_payment_error?.message ?? 'invoice_payment_failed' },
++        data: { last_error: lastError },
+       });
+       this.logger.log(
+         JSON.stringify({
+@@ -1289,7 +1359,7 @@ export class CheckoutWebhookHandlerService {
+         // Entitlement is retained during past_due — same as SaaS billing —
+         // until Stripe ultimately cancels the subscription, which fires
+         // customer.subscription.deleted.
+-        last_error: inv.last_payment_error?.message ?? 'invoice_payment_failed',
++        last_error: lastError,
+       },
+     });
+     // Phase 5 — open or extend the dunning window and queue a reminder.
+@@ -1304,7 +1374,7 @@ export class CheckoutWebhookHandlerService {
+         });
+       } catch (err) {
+         this.logger.warn(
+-          `dunning.recordFailure failed purchase=${updated.id}: ${(err as Error).message}`,
++          `dunning.recordFailure failed purchase=${updated.id}: ${dunningErrorCode(err)}`,
+         );
+       }
+     }
+@@ -1319,7 +1389,7 @@ export class CheckoutWebhookHandlerService {
+         if (claim) void v2.dispatchClaim(claim);
+       } catch (err) {
+         this.logger.warn(
+-          `dunningV2.recordPaymentFailed failed purchase=${updated.id}: ${(err as Error).message}`,
++          `dunningV2.recordPaymentFailed failed purchase=${updated.id}: ${dunningErrorCode(err)}`,
+         );
+       }
+     }
+@@ -1496,3 +1566,10 @@ export class CheckoutWebhookHandlerService {
+     return new Date(seconds * 1000);
+   }
+ }
++
++/** C-690-1: `last_error` stores a Stripe decline code, never its free-form message. */
++function safeDeclineCode(code: string | null | undefined): string {
++  return typeof code === 'string' && /^[a-z][a-z_]{0,63}$/.test(code)
++    ? code
++    : 'invoice_payment_failed';
++}
+diff --git a/src/checkout/dunning-v2/dunning-effective-access.ts b/src/checkout/dunning-v2/dunning-effective-access.ts
+index 6ad292589..1f6c83459 100644
+--- a/src/checkout/dunning-v2/dunning-effective-access.ts
++++ b/src/checkout/dunning-v2/dunning-effective-access.ts
+@@ -31,19 +31,31 @@ export async function hasOtherLiveAccess(
+   excludePurchaseId: string,
+   now: Date = new Date(),
+ ): Promise<boolean> {
++  // B-687-1 (Sol): "not itself locked" is part of the query, so the one row
++  // fetched is a live grant however many locked alternatives the client
++  // holds (a page of the first N rows could be all locked and hide it). The
++  // same test on the row keeps the answer right for any caller-supplied db.
+   const others = await db.clientPurchase.findMany({
+     where: {
+       client_user_id: clientUserId,
+       id: { not: excludePurchaseId },
+       entitlement_active: true,
+       status: { in: ['paid', 'active', 'trialing'] },
+-      OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }],
++      AND: [
++        { OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }] },
++        {
++          OR: [
++            { dunning: { is: null } },
++            { dunning: { isNot: { status: 'active', locked_out_at: { not: null } } } },
++          ],
++        },
++      ],
+     },
+     select: {
+       id: true,
+       dunning: { select: { status: true, locked_out_at: true } },
+     },
+-    take: 20,
++    take: 1,
+   });
+   return others.some((p) => !(p.dunning?.status === 'active' && p.dunning.locked_out_at != null));
+ }
+diff --git a/src/checkout/dunning-v2/dunning-grace.ts b/src/checkout/dunning-v2/dunning-grace.ts
+new file mode 100644
+index 000000000..d491db944
+--- /dev/null
++++ b/src/checkout/dunning-v2/dunning-grace.ts
+@@ -0,0 +1,16 @@
++/**
++ * B-690-5 (Sol): the Stripe subscription statuses of a failed renewal that
++ * Smart Dunning v2 keeps entitled on Days 0-9 while the cycle is active and
++ * unlocked. Stripe reports `unpaid` instead of `past_due` when the account's
++ * "if all retries fail" setting marks the subscription unpaid; both are the
++ * same delinquent period, and Day 10 still locks through DunningLockoutGuard.
++ */
++export const DUNNING_V2_GRACE_STATUSES: readonly string[] = ['past_due', 'unpaid'];
++
++/** Thrown to fail a webhook delivery so Stripe redelivers it (a closed code, never provider text). */
++export class DunningWebhookRetryError extends Error {
++  constructor(readonly code: string) {
++    super(code);
++    this.name = 'DunningWebhookRetryError';
++  }
++}
+diff --git a/src/checkout/dunning-v2/dunning-lockout.scheduler.ts b/src/checkout/dunning-v2/dunning-lockout.scheduler.ts
+index 3a0280648..7504044b6 100644
+--- a/src/checkout/dunning-v2/dunning-lockout.scheduler.ts
++++ b/src/checkout/dunning-v2/dunning-lockout.scheduler.ts
+@@ -1,6 +1,7 @@
+ import { Injectable, Logger } from '@nestjs/common';
+ import { Cron } from '@nestjs/schedule';
+ import { DunningV2Service } from './dunning-v2.service';
++import { dunningErrorCode } from './dunning-v2.safe-error';
+ import { isDunningV2Enabled } from './dunning-v2.feature';
+ import { DUNNING_V2_SWEEP_CRON_EXPRESSION } from './dunning-v2.cadence';
+ 
+@@ -42,8 +43,7 @@ export class DunningLockoutScheduler {
+       const out = await this.dunningV2.runSweep();
+       this.logger.log(JSON.stringify({ event: 'dunning_v2.sweep_completed', ...out }));
+     } catch (err: unknown) {
+-      const message = err instanceof Error ? err.message : String(err);
+-      this.logger.error(`dunning v2 sweep: fatal error: ${message}`);
++      this.logger.error(`dunning v2 sweep: fatal error: ${dunningErrorCode(err)}`);
+     } finally {
+       this.running = false;
+     }
+diff --git a/src/checkout/dunning-v2/dunning-v2.dispatcher.ts b/src/checkout/dunning-v2/dunning-v2.dispatcher.ts
+index 2b30118d6..e3f8273ac 100644
+--- a/src/checkout/dunning-v2/dunning-v2.dispatcher.ts
++++ b/src/checkout/dunning-v2/dunning-v2.dispatcher.ts
+@@ -11,6 +11,7 @@ import { DUNNING_UPDATE_CARD_URL, DUNNING_V2_CADENCE_DAYS } from './dunning-v2.c
+ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+ import { SurfaceKey, RomanCopyPayload } from '../../roman/voice/voice-policy.constants';
+ import { applyTokens } from './dunning-v2.renderer';
++import { dunningErrorCode } from './dunning-v2.safe-error';
+ 
+ /**
+  * Phase 2 — map a dunning classifier `copyKey` to the Roman Phase 2 in-app
+@@ -46,7 +47,8 @@ function phase2SurfaceForCopyKey(copyKey: string): SurfaceKey | undefined {
+  *     idempotency key, so at-least-once after an expired claim, C-628-12).
+  *   - email → EmailService.send (Resend pipeline; idempotency-keyed).
+  *   - inapp → NotificationsService.createNotification (the durable feed row).
+- *   - coach → CoachNotifierService fans out in-app + push + email at Step 3.
++ *   - coach → CoachAlertEmitter (in-app feed row, then push) and the coach
++ *     email at Step 3, each its own outbox channel (B-688-3).
+  *
+  * Coach-notify idempotency (spec §9.3): per-transport keys
+  * `coach_notify:{dunning_state_id}:{inapp|push|email}` are threaded into the
+@@ -59,12 +61,17 @@ function phase2SurfaceForCopyKey(copyKey: string): SurfaceKey | undefined {
+ 
+ /** One transport of a step's notice (S-DUNNING-R3 outbox channel). */
+ export type DunningChannel =
+-  'client_push' | 'client_email' | 'client_blocker' | 'coach_alert' | 'coach_email';
++  'client_push' | 'client_email' | 'client_blocker' | 'coach_alert' | 'coach_push' | 'coach_email';
+ 
+ export type ChannelStatus = 'sent' | 'skipped' | 'failed';
+ 
+ export interface ChannelResult {
+   status: ChannelStatus;
++  /**
++   * A closed code ("push_ticket-error", "email_failed", "error_unknown"),
++   * never provider or exception text (B-688-4): it is logged and stored in
++   * DunningNoticeDelivery.last_error.
++   */
+   error?: string;
+ }
+ 
+@@ -79,7 +86,7 @@ export function dunningChannelsFor(decision: ChannelDecision): DunningChannel[]
+   if (decision.push) out.push('client_push');
+   if (decision.email) out.push('client_email');
+   if (decision.inAppBlocker) out.push('client_blocker');
+-  if (decision.coachAllChannels) out.push('coach_alert', 'coach_email');
++  if (decision.coachAllChannels) out.push('coach_alert', 'coach_push', 'coach_email');
+   return out;
+ }
+ 
+@@ -175,9 +182,13 @@ export class DunningV2Dispatcher {
+         this.sendBlocker(ctx, decision, rotation, day),
+       );
+     }
+-    if (decision.coachAllChannels && (wanted.has('coach_alert') || wanted.has('coach_email'))) {
++    const coachWanted = ['coach_alert', 'coach_push', 'coach_email'].some((c) =>
++      wanted.has(c as DunningChannel),
++    );
++    if (decision.coachAllChannels && coachWanted) {
+       const coach = await this.notifyCoachAllChannels(ctx, {
+         alert: wanted.has('coach_alert'),
++        push: wanted.has('coach_push'),
+         email: wanted.has('coach_email'),
+         attempt,
+       });
+@@ -216,12 +227,12 @@ export class DunningV2Dispatcher {
+       const quip = rotation.shouldQuip('client');
+       body = this.renderer.clientPush(decision.copyKey, ctx.tokens, quip);
+     }
+-    if (!this.notifications) return { status: 'skipped', error: 'push transport not wired' };
++    if (!this.notifications) return { status: 'skipped', error: 'push_not_wired' };
+     const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body);
+     // A transport that returns no verdict (legacy stubs) counts as sent.
+     if (typeof res === 'object' && res !== null && res.delivered === false) {
+-      if (res.code === 'no-token') return { status: 'skipped', error: 'no push token' };
+-      return { status: 'failed', error: `push ${res.code}` };
++      if (res.code === 'no-token') return { status: 'skipped', error: 'push_no_token' };
++      return { status: 'failed', error: `push_${res.code}` };
+     }
+     const day = DUNNING_V2_CADENCE_DAYS[ctx.stepIndex] ?? ctx.stepIndex;
+     this.telemetry.notifySent(ctx.clientUserId, day, 'push', 'client');
+@@ -254,8 +265,8 @@ export class DunningV2Dispatcher {
+     const quip = rotation.shouldQuip('client');
+     const body = this.renderer.clientEmail(decision.copyKey, ctx.tokens, quip);
+     const day = DUNNING_V2_CADENCE_DAYS[ctx.stepIndex] ?? ctx.stepIndex;
+-    if (!this.email) return { status: 'skipped', error: 'email transport not wired' };
+-    if (!ctx.clientEmail) return { status: 'skipped', error: 'client has no email' };
++    if (!this.email) return { status: 'skipped', error: 'email_not_wired' };
++    if (!ctx.clientEmail) return { status: 'skipped', error: 'email_no_address' };
+     {
+       const res = await this.email.send({
+         to: ctx.clientEmail,
+@@ -268,10 +279,9 @@ export class DunningV2Dispatcher {
+         },
+         idempotencyKey: `dunning_v2:${ctx.dunningStateId}${this.cyclePart(ctx)}:email:${ctx.stepIndex}${attempt > 0 ? `:r${attempt}` : ''}`,
+       });
+-      if (res?.status === 'failed') {
+-        return { status: 'failed', error: res.error ?? 'email send failed' };
+-      }
+-      if (res?.status === 'skipped') return { status: 'skipped', error: 'email skipped' };
++      // The provider's error text stays out of the outbox (B-688-4).
++      if (res?.status === 'failed') return { status: 'failed', error: 'email_failed' };
++      if (res?.status === 'skipped') return { status: 'skipped', error: 'email_skipped' };
+     }
+     this.telemetry.notifySent(ctx.clientUserId, day, 'email', 'client');
+     return { status: 'sent' };
+@@ -291,7 +301,7 @@ export class DunningV2Dispatcher {
+           : decision.blockerVariant;
+     const quip = rotation.shouldQuip('client');
+     const blocker = this.renderer.blocker(variant as 'day3' | 'day7' | 'lr_day3', ctx.tokens, quip);
+-    if (!this.notifications) return { status: 'skipped', error: 'in-app transport not wired' };
++    if (!this.notifications) return { status: 'skipped', error: 'inapp_not_wired' };
+     {
+       // The blocker flag is a durable in-app notification the client reads on
+       // session start; the mobile client renders the modal from it (§8.2).
+@@ -318,16 +328,16 @@ export class DunningV2Dispatcher {
+ 
+   private async notifyCoachAllChannels(
+     ctx: DispatchContext,
+-    want: { alert: boolean; email: boolean; attempt: number },
++    want: { alert: boolean; push: boolean; email: boolean; attempt: number },
+   ): Promise<Partial<Record<DunningChannel, ChannelResult>>> {
+     const rotation = new QuipRotation();
+     // Coach quip rate 0.083; never two in a row across the 3 transports.
+     const inappQuip = rotation.shouldQuip('coach');
+-    const pushQuip = rotation.shouldQuip('coach');
++    // The push slot of the rotation: the emitter pushes the in-app body.
++    rotation.shouldQuip('coach');
+     const emailQuip = rotation.shouldQuip('coach');
+ 
+     const inappBody = this.renderer.coachInApp(ctx.tokens, inappQuip);
+-    const pushBody = this.renderer.coachPush(ctx.tokens, pushQuip);
+     const emailBody = this.renderer.coachEmail(
+       { ...ctx.tokens, dunningDetailDeeplink: ctx.dunningDetailDeeplink },
+       emailQuip,
+@@ -336,51 +346,57 @@ export class DunningV2Dispatcher {
+     // Cycle-scoped (B-628-6): a second cycle on the same row alerts again.
+     const alertId = `coach_notify:${ctx.dunningStateId}${this.cyclePart(ctx)}`;
+ 
+-    // In-app + push via the existing CoachAlertEmitter (writes the durable
+-    // feed row AND pushes). Idempotency is keyed on the cycle so a retried
+-    // trigger does not duplicate (§9.3).
+-    if (want.alert) {
+-      out.coach_alert = await this.run('coach alert', async () => {
+-        if (this.coachAlert) {
+-          await this.coachAlert.emit({
++    // In-app feed row and push via the existing CoachAlertEmitter, ONE call
++    // for whichever of the two this attempt still owes. B-688-3 (Sol): each
++    // is its own outbox channel with the emitter's real per-transport result,
++    // so a failed write or push is retried, and a retry of the push alone
++    // never writes a second feed row. Idempotency is keyed on the cycle (§9.3).
++    if (want.alert || want.push) {
++      const coach = await this.run('coach alert', async () => {
++        if (!this.coachAlert) return { status: 'skipped', error: 'coach_not_wired' };
++        const delivery = await this.coachAlert.emit(
++          {
+             coachId: ctx.coachUserId,
+             alertId,
+             alertType: 'dunning_step7',
+             message: inappBody,
+             severity: 'warning',
+             clientUserId: ctx.clientUserId,
+-          });
+-        } else if (this.notifications) {
+-          await this.notifications.pushToCoach(ctx.coachUserId, {
+-            alertId,
+-            alertType: 'dunning_step7',
+-            severity: 'warning',
+-            message: pushBody.slice(0, 160),
+-          });
+-        } else {
+-          return { status: 'skipped', error: 'coach transport not wired' };
++          },
++          { inapp: want.alert, push: want.push },
++        );
++        // An emitter that returns no verdict (legacy stubs) counts as sent.
++        const inapp = delivery?.inapp ?? 'sent';
++        const push = delivery?.push ?? 'sent';
++        if (want.alert) out.coach_alert = coachResult(inapp, 'inapp');
++        if (want.push) out.coach_push = coachResult(push, 'push');
++        if (want.alert && inapp === 'sent') {
++          this.telemetry.coachNotified(ctx.coachUserId, { dunning_state_id: ctx.dunningStateId });
++          this.telemetry.notifySent(ctx.coachUserId, 7, 'inapp', 'coach');
+         }
+-        this.telemetry.coachNotified(ctx.coachUserId, { dunning_state_id: ctx.dunningStateId });
+-        this.telemetry.notifySent(ctx.coachUserId, 7, 'inapp', 'coach');
+-        this.telemetry.notifySent(ctx.coachUserId, 7, 'push', 'coach');
++        if (want.push && push === 'sent')
++          this.telemetry.notifySent(ctx.coachUserId, 7, 'push', 'coach');
+         return { status: 'sent' };
+       });
++      // A throw (or no emitter) fails or skips every coach channel asked for.
++      if (coach.status !== 'sent') {
++        if (want.alert) out.coach_alert = coach;
++        if (want.push) out.coach_push = coach;
++      }
+     }
+ 
+     if (want.email) {
+       out.coach_email = await this.run('coach email', async () => {
+-        if (!this.email) return { status: 'skipped', error: 'email transport not wired' };
+-        if (!ctx.coachEmail) return { status: 'skipped', error: 'coach has no email' };
++        if (!this.email) return { status: 'skipped', error: 'email_not_wired' };
++        if (!ctx.coachEmail) return { status: 'skipped', error: 'email_no_address' };
+         const res = await this.email.send({
+           to: ctx.coachEmail,
+           template: EmailTemplateKey.DUNNING_V2_COACH,
+           data: { roman_body: emailBody, ...ctx.tokens },
+           idempotencyKey: `${alertId}:email${want.attempt > 0 ? `:r${want.attempt}` : ''}`,
+         });
+-        if (res?.status === 'failed') {
+-          return { status: 'failed', error: res.error ?? 'email send failed' };
+-        }
+-        if (res?.status === 'skipped') return { status: 'skipped', error: 'email skipped' };
++        if (res?.status === 'failed') return { status: 'failed', error: 'email_failed' };
++        if (res?.status === 'skipped') return { status: 'skipped', error: 'email_skipped' };
+         this.telemetry.notifySent(ctx.coachUserId, 7, 'email', 'coach');
+         return { status: 'sent' };
+       });
+@@ -422,9 +438,15 @@ export class DunningV2Dispatcher {
+     try {
+       return await fn();
+     } catch (err) {
+-      const message = (err as Error)?.message ?? String(err);
+-      this.logger.warn(`dunning v2 ${label} transport failed: ${message}`);
+-      return { status: 'failed', error: message.slice(0, 500) };
++      // B-688-4 (Sol): a code, never the exception text.
++      const code = dunningErrorCode(err);
++      this.logger.warn(`dunning v2 ${label} transport failed: ${code}`);
++      return { status: 'failed', error: code };
+     }
+   }
+ }
++
++function coachResult(status: ChannelStatus, transport: 'inapp' | 'push'): ChannelResult {
++  if (status === 'sent') return { status };
++  return { status, error: `coach_${transport}_${status === 'failed' ? 'failed' : 'muted'}` };
++}
+diff --git a/src/checkout/dunning-v2/dunning-v2.safe-error.ts b/src/checkout/dunning-v2/dunning-v2.safe-error.ts
+new file mode 100644
+index 000000000..f39608a8d
+--- /dev/null
++++ b/src/checkout/dunning-v2/dunning-v2.safe-error.ts
+@@ -0,0 +1,43 @@
++import { StripeConnectApiError } from '../../connect/stripe-connect-api.service';
++
++/**
++ * B-688-4 (Sol): the only error detail dunning v2 writes to logs, Sentry or
++ * the notice outbox (`DunningNoticeDelivery.last_error`). Provider, transport
++ * and database messages can carry an email address, a token or a message
++ * body, so the message never leaves the catch: only a code from a closed
++ * vocabulary does.
++ *
++ *   stripe_<http status>[_<stripe code>]   a Stripe API answer
++ *   db_<P code>                            a Prisma known request error
++ *   error | error_<name>                   an allow-listed error class
++ *   error_unknown                          anything else
++ */
++const SAFE_NAMES = new Set([
++  'Error',
++  'TypeError',
++  'RangeError',
++  'SyntaxError',
++  'AbortError',
++  'TimeoutError',
++  'PrismaClientKnownRequestError',
++  'PrismaClientUnknownRequestError',
++  'PrismaClientValidationError',
++  'PrismaClientInitializationError',
++  'PrismaClientRustPanicError',
++]);
++
++/** Stripe error codes are lowercase snake case ("card_declined"). */
++const STRIPE_CODE = /^[a-z][a-z_]{0,63}$/;
++
++export function dunningErrorCode(err: unknown): string {
++  if (err instanceof StripeConnectApiError) {
++    const status = Number.isInteger(err.httpStatus) ? err.httpStatus : 0;
++    const code = err.stripeCode && STRIPE_CODE.test(err.stripeCode) ? `_${err.stripeCode}` : '';
++    return `stripe_${status}${code}`;
++  }
++  const prismaCode = (err as { code?: unknown } | null)?.code;
++  if (typeof prismaCode === 'string' && /^P\d{4}$/.test(prismaCode)) return `db_${prismaCode}`;
++  const name = err instanceof Error ? err.name : '';
++  if (name === 'Error') return 'error';
++  return SAFE_NAMES.has(name) ? `error_${name.toLowerCase()}` : 'error_unknown';
++}
+diff --git a/src/checkout/dunning-v2/dunning-v2.service.ts b/src/checkout/dunning-v2/dunning-v2.service.ts
+index f6f237745..ddb817c54 100644
+--- a/src/checkout/dunning-v2/dunning-v2.service.ts
++++ b/src/checkout/dunning-v2/dunning-v2.service.ts
+@@ -15,7 +15,10 @@ import {
+ } from './dunning-v2.dispatcher';
+ import { DunningEscalationClassifier } from './dunning-escalation.classifier';
+ import { effectiveLock } from './dunning-effective-access';
++import { dunningErrorCode } from './dunning-v2.safe-error';
++import { formatMinor } from '../client-billing.money';
+ import {
++  DUNNING_V2_CADENCE_DAYS,
+   DUNNING_V2_DAY_MS,
+   DUNNING_V2_LOCKOUT_DAY,
+   DUNNING_V2_REVERSAL_COACH_GAP_DAYS,
+@@ -528,14 +531,14 @@ export class DunningV2Service {
+         for (const c of group) {
+           const result: ChannelResult = results[c.channel] ?? {
+             status: 'skipped',
+-            error: 'not part of this step',
++            error: 'not_in_step',
+           };
+           await this.recordDelivery(c, result, now);
+         }
+       }
+     } catch (err) {
+       this.logger.warn(
+-        `dunning v2 dispatch failed state=${claim.dunningStateId} step=${claim.stepIndex}: ${(err as Error).message}`,
++        `dunning v2 dispatch failed state=${claim.dunningStateId} step=${claim.stepIndex}: ${dunningErrorCode(err)}`,
+       );
+     }
+   }
+@@ -659,7 +662,7 @@ export class DunningV2Service {
+         data: {
+           status: dead ? 'dead' : 'failed',
+           claim_token: null,
+-          last_error: (result.error ?? 'delivery failed').slice(0, 500),
++          last_error: result.error ?? 'delivery_failed',
+           next_attempt_at: dead ? null : new Date(now.getTime() + backoff),
+         },
+       });
+@@ -755,7 +758,8 @@ export class DunningV2Service {
+    * One sweep tick. For every active, unlocked, claimed cycle: lock it if it
+    * reached Day 10 (with positive evidence it is still unpaid), otherwise
+    * advance it to its due step and send that step's notices. Bounded to
+-   * `limit` rows per tick (oldest first); idempotent and overlap-safe.
++   * `limit` DUE rows per tick, least recently skipped first (B-688-2);
++   * idempotent and overlap-safe.
+    */
+   async runSweep(
+     now: Date = new Date(),
+@@ -775,40 +779,65 @@ export class DunningV2Service {
+         client_canceled_at: null,
+         step_index: { gte: 0 },
+         entered_at: { not: null },
++        // B-688-2 (Sol): only cycles due for the lock or for a step they
++        // have not claimed, so rows with nothing to do never fill the page.
++        OR: [
++          { entered_at: { lte: daysBefore(now, DUNNING_V2_LOCKOUT_DAY) } },
++          ...DUNNING_V2_CADENCE_DAYS.slice(1).map((day, i) => ({
++            step_index: { lt: i + 1 },
++            entered_at: { lte: daysBefore(now, day) },
++          })),
++        ],
+       },
+-      orderBy: { entered_at: 'asc' },
++      // A row the sweep looked at and could not act on goes behind the rest.
++      orderBy: [{ sweep_checked_at: { sort: 'asc', nulls: 'first' } }, { entered_at: 'asc' }],
+       take: limit,
+     });
+     let locked = 0;
+     let advanced = 0;
+     let skipped = 0;
+     for (const row of rows) {
++      let acted = false;
+       try {
+         const lockAt = dunningV2LockoutAt(row.entered_at as Date);
+         if (now.getTime() >= lockAt.getTime()) {
+-          const outcome = await this.tryLock(row, now);
+-          if (outcome === 'locked') locked += 1;
++          acted = (await this.tryLock(row, now)) === 'locked';
++          if (acted) locked += 1;
+           else skipped += 1;
+-          continue;
+-        }
+-        const claim = await this.advance(row, now);
+-        if (claim) {
+-          advanced += 1;
+-          await this.dispatchClaim(claim);
++        } else {
++          const claim = await this.advance(row, now);
++          if (claim) {
++            acted = true;
++            advanced += 1;
++            await this.dispatchClaim(claim);
++          }
+         }
+       } catch (err) {
+         skipped += 1;
+-        this.logger.warn(`dunning v2 sweep row failed state=${row.id}: ${(err as Error).message}`);
++        this.logger.warn(`dunning v2 sweep row failed state=${row.id}: ${dunningErrorCode(err)}`);
+       }
++      if (!acted) await this.markSweepChecked(row, now);
+     }
+     try {
+       await this.retryDueNotices(now);
+     } catch (err) {
+-      this.logger.warn(`dunning v2 notice retry failed: ${(err as Error).message}`);
++      this.logger.warn(`dunning v2 notice retry failed: ${dunningErrorCode(err)}`);
+     }
+     return { locked, advanced, skipped };
+   }
+ 
++  /** B-688-2: stamp a due row the sweep could not act on (same cycle only). */
++  private async markSweepChecked(row: DunningState, now: Date): Promise<void> {
++    try {
++      await this.prisma.dunningState.updateMany({
++        where: { id: row.id, entered_at: row.entered_at },
++        data: { sweep_checked_at: now },
++      });
++    } catch (err) {
++      this.logger.warn(`dunning v2 sweep stamp failed state=${row.id}: ${dunningErrorCode(err)}`);
++    }
++  }
++
+   /** @deprecated name kept for callers/tests: the sweep (lock + advance). */
+   async runLockoutSweep(now: Date = new Date()): Promise<{ locked: number }> {
+     const { locked } = await this.runSweep(now);
+@@ -861,15 +890,30 @@ export class DunningV2Service {
+         if (String(sub.status) === 'canceled') return 'skipped';
+       } catch (err) {
+         this.logger.warn(
+-          `dunning v2 lock deferred state=${row.id}: Stripe check failed: ${(err as Error).message}`,
++          `dunning v2 lock deferred state=${row.id}: Stripe check failed: ${dunningErrorCode(err)}`,
+         );
+         return 'skipped';
+       }
+     }
+     let won = false;
+     await this.prisma.$transaction(async (tx) => {
++      // B-688-1 (Sol): under the row lock, lock only the cycle whose Day 10
++      // was read (same entered_at: a cycle reopened during the Stripe await
++      // has its own window) and only while the purchase still shows it.
++      await this.lockDunningState(tx, row.purchase_id);
++      const fresh = await tx.clientPurchase.findUnique({ where: { id: row.purchase_id } });
++      if (!fresh || !DunningV2Service.isEligiblePurchase(fresh)) return;
++      if (dispute ? fresh.status === 'canceled' : !['past_due', 'unpaid'].includes(fresh.status)) {
++        return;
++      }
+       const res = await tx.dunningState.updateMany({
+-        where: { id: row.id, status: 'active', locked_out_at: null, client_canceled_at: null },
++        where: {
++          id: row.id,
++          status: 'active',
++          locked_out_at: null,
++          client_canceled_at: null,
++          entered_at: row.entered_at,
++        },
+         data: { locked_out_at: now, step_index: Math.max(row.step_index, 3) },
+       });
+       if (res.count !== 1) return;
+@@ -921,6 +965,7 @@ export class DunningV2Service {
+         status: true,
+         locked_out_at: true,
+         last_failure_reason: true,
++        entered_at: true,
+         purchase_id: true,
+         purchase: { select: { client_user_id: true } },
+       },
+@@ -933,7 +978,7 @@ export class DunningV2Service {
+       via !== 'manual' &&
+       state.status === 'active' &&
+       (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON ||
+-        (await this.hasOpenDisputeObligation(client, purchaseId)))
++        (await this.hasOpenDisputeObligation(client, purchaseId, state.entered_at)))
+     ) {
+       return { liftedLockout: false };
+     }
+@@ -1149,11 +1194,11 @@ export class DunningV2Service {
+     const client: DunningV2Db = db ?? this.prisma;
+     const state = await client.dunningState.findUnique({
+       where: { purchase_id: purchaseId },
+-      select: { status: true, last_failure_reason: true },
++      select: { status: true, last_failure_reason: true, entered_at: true },
+     });
+     if (state?.status !== 'active') return false;
+     if (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) return true;
+-    return this.hasOpenDisputeObligation(client, purchaseId);
++    return this.hasOpenDisputeObligation(client, purchaseId, state.entered_at);
+   }
+ 
+   /**
+@@ -1180,31 +1225,41 @@ export class DunningV2Service {
+ 
+   /**
+    * B-628-13: an obligation recorded by the dunning dispute path whose
+-   * merged status (ledger + record; a final status wins) is not final.
+-   * Ledger-only disputes do not count, so a stale ledger row never blocks
+-   * an unrelated payment cycle.
++   * merged status (ledger + record; a final status wins) is not settled in
++   * the client's favour. Ledger-only disputes do not count, so a stale
++   * ledger row never blocks an unrelated payment cycle. B-688-5 (Sol, Opus
++   * B-688-1): a dispute closed lost or refunded is outstanding too; one that
++   * closed before this cycle began belongs to an earlier cycle.
+    */
+-  private async hasOpenDisputeObligation(db: DunningV2Db, purchaseId: string): Promise<boolean> {
++  private async hasOpenDisputeObligation(
++    db: DunningV2Db,
++    purchaseId: string,
++    cycleStart: Date | null,
++  ): Promise<boolean> {
+     const recorded = await db.dunningDisputeObligation.findMany({
+       where: { purchase_id: purchaseId },
+-      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
++      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true, closed_at: true },
+     });
+     if (recorded.length === 0) return false;
+     const ledger = await db.chargeDispute.findMany({
+       where: { purchase_id: purchaseId },
+       select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
+     });
+-    const ids = new Set(recorded.map((r) => r.stripe_dispute_id));
+-    return mergeDisputeObligations(ledger, recorded).some(
+-      (d) => ids.has(d.stripe_dispute_id) && !DISPUTE_TERMINAL_STATUSES.has(d.status),
+-    );
++    const byId = new Map(recorded.map((r) => [r.stripe_dispute_id, r]));
++    return mergeDisputeObligations(ledger, recorded).some((d) => {
++      const r = byId.get(d.stripe_dispute_id);
++      if (!r || DISPUTE_WON_STATUSES.has(d.status)) return false;
++      if (!DISPUTE_TERMINAL_STATUSES.has(d.status)) return true;
++      return !r.closed_at || !cycleStart || r.closed_at >= cycleStart;
++    });
+   }
+ 
+   /**
+    * `charge.dispute.closed`: a dispute closed in the client's favour (won /
+    * warning_closed) resolves its cycle, lifts a lock, restores access and
+-   * dismisses the blockers. A lost dispute leaves the cycle as it is (the
+-   * money stays reversed; support settles it in v1.0).
++   * dismisses the blockers. A lost dispute keeps the cycle open (the money
++   * stays reversed; support settles it in v1.0); during a payment cycle it
++   * makes that cycle the dispute cycle (B-688-5), so no payment settles it.
+    */
+   async onDisputeClosed(input: {
+     chargeId: string | null;
+@@ -1229,6 +1284,7 @@ export class DunningV2Service {
+           chargeId: input.chargeId ?? null,
+           status: input.status,
+           now: input.now ?? new Date(),
++          keepAsDispute: DISPUTE_TERMINAL_STATUSES.has(input.status),
+         });
+       }
+       return { resolved: false, reason: 'not_won' };
+@@ -1280,10 +1336,13 @@ export class DunningV2Service {
+     chargeId: string | null;
+     status: string;
+     now: Date;
++    keepAsDispute?: boolean;
+   }): Promise<{ priorStatus: string | null }> {
+     return this.prisma.$transaction(async (tx) => {
+       await this.lockDunningState(tx, input.purchaseId);
+-      return this.upsertDisputeObligation(tx, input);
++      const out = await this.upsertDisputeObligation(tx, input);
++      if (input.keepAsDispute) await this.keepAsDisputeCycle(input.purchaseId, tx);
++      return out;
+     });
+   }
+ 
+@@ -1626,12 +1685,16 @@ export class DunningV2Service {
+         }
+       }
+     } catch (err) {
+-      this.logger.warn(`dunning v2 dispute purchase resolution failed: ${(err as Error).message}`);
++      this.logger.warn(`dunning v2 dispute purchase resolution failed: ${dunningErrorCode(err)}`);
+     }
+     return null;
+   }
+ }
+ 
++function daysBefore(now: Date, days: number): Date {
++  return new Date(now.getTime() - days * DUNNING_V2_DAY_MS);
++}
++
+ /** Add (or subtract, with a negative n) whole days to a Date. */
+ export function addDays(d: Date, n: number): Date {
+   const out = new Date(d.getTime());
+@@ -1639,11 +1702,9 @@ export function addDays(d: Date, n: number): Date {
+   return out;
+ }
+ 
+-/** Integer cents -> display string. USD gets a $ prefix. */
++/** Integer minor units -> display string ("$150.00", "1,200 JPY"; C-688-5). */
+ export function formatMoney(cents: number, currency: string | null): string {
+-  const cur = (currency ?? 'usd').toUpperCase();
+-  const amount = (cents / 100).toFixed(2);
+-  return cur === 'USD' ? `$${amount}` : `${amount} ${cur}`;
++  return formatMinor(cents, currency);
+ }
+ 
+ /**
+diff --git a/src/common/guards/client-entitlement.guard.ts b/src/common/guards/client-entitlement.guard.ts
+index 34a595f9e..46fdbcb91 100644
+--- a/src/common/guards/client-entitlement.guard.ts
++++ b/src/common/guards/client-entitlement.guard.ts
+@@ -12,6 +12,7 @@ import { PrismaService } from '../../prisma.service';
+ import { SKIP_CLIENT_ENTITLEMENT_KEY } from '../decorators/skip-client-entitlement.decorator';
+ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+ import { isDunningV2Enabled } from '../../checkout/dunning-v2/dunning-v2.feature';
++import { DUNNING_V2_GRACE_STATUSES } from '../../checkout/dunning-v2/dunning-grace';
+ 
+ @Injectable()
+ export class ClientEntitlementGuard implements CanActivate {
+@@ -58,7 +59,8 @@ export class ClientEntitlementGuard implements CanActivate {
+           OR: [
+             paidWindow,
+             {
+-              status: 'past_due',
++              // B-690-5: past_due or unpaid (DUNNING_V2_GRACE_STATUSES).
++              status: { in: [...DUNNING_V2_GRACE_STATUSES] },
+               dunning: { is: { status: 'active', locked_out_at: null } },
+             },
+           ],
+diff --git a/src/public-pages/public-pages.html.ts b/src/public-pages/public-pages.html.ts
+index 8fa62082a..dd2169c8c 100644
+--- a/src/public-pages/public-pages.html.ts
++++ b/src/public-pages/public-pages.html.ts
+@@ -86,11 +86,12 @@ export function renderBillingUpdateCardPage(): string {
+     title: 'The Growth Project — Update your card',
+     headline: 'Update your card in the app',
+     body:
+-      'Card updates happen inside The Growth Project app, so your card ' +
+-      'details stay with our payment provider and never pass through a web ' +
+-      'page. Open the app on your phone and it takes you straight to the ' +
+-      'card screen. Once the new card is saved, the amount owed is paid with ' +
+-      'it and your access stays on.',
++      'Card updates happen inside The Growth Project app, so card details ' +
++      'stay with the payment provider and never pass through a web page. ' +
++      'Open the app on your phone and it takes you straight to the card ' +
++      'screen. After the new card is saved, the app tries the amount owed ' +
++      'on it; once that payment goes through, access continues, or comes ' +
++      'back if it was paused.',
+     cta_label: 'Open the app',
+     cta_href: 'tgp://billing/update-card',
+     links: [
+@@ -123,9 +124,7 @@ export function renderSignupPage(inviteCode?: string | null): string {
+         'If you run into trouble, email us with the code below and we will ' +
+         'help you finish setup.',
+       cta_label: 'Email us',
+-      cta_href:
+-        `mailto:${SUPPORT_EMAIL}` +
+-        `?subject=${encodeURIComponent('Invite ' + code)}`,
++      cta_href: `mailto:${SUPPORT_EMAIL}` + `?subject=${encodeURIComponent('Invite ' + code)}`,
+       invite_code: code,
+     });
+   }
+diff --git a/test/dunning-d4-fix-round.spec.ts b/test/dunning-d4-fix-round.spec.ts
+new file mode 100644
+index 000000000..56f9e8a64
+--- /dev/null
++++ b/test/dunning-d4-fix-round.spec.ts
+@@ -0,0 +1,330 @@
++import { Logger } from '@nestjs/common';
++import { Reflector } from '@nestjs/core';
++import { BillingService } from '../src/billing/billing.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { ClientBillingService } from '../src/checkout/client-billing.service';
++import { DunningService } from '../src/checkout/dunning.service';
++import { DunningLockoutScheduler } from '../src/checkout/dunning-v2/dunning-lockout.scheduler';
++import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
++import { DunningV2Telemetry } from '../src/checkout/dunning-v2/dunning-v2.telemetry';
++import { ClientEntitlementGuard } from '../src/common/guards/client-entitlement.guard';
++import { renderBillingUpdateCardPage } from '../src/public-pages/public-pages.html';
++import { FakePrisma } from './support/dunning-v2-fake-prisma';
++import { FakeStripeBilling } from './support/fake-stripe-billing';
++
++/**
++ * B-D34-116 fix round on dunning D4 (#690): B-690-1 (a live subscription
++ * update never resurrects a 2A cancel), B-690-2 (a failed dispute check
++ * fails the delivery, never resolves), B-690-3 (dispute effects are awaited
++ * and a failure is redelivered, not deduplicated), B-690-4 (closed codes in
++ * logs), B-690-5 (unpaid keeps the Days 0-9 grace), Opus C-690-1 (a late
++ * payment_failed never reopens an ended plan) and the card page copy. Each
++ * case failed on f72668c2.
++ */
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++const stub = (value: unknown): any => value;
++const NOW = new Date('2026-10-16T16:00:00.000Z');
++const OLD = new Date(NOW.getTime() - 11 * 86400000);
++const SENTINEL = 'SYNTHETIC-person@tgp.invalid Bearer SYNTHETIC_TOKEN body=SYNTHETIC_MESSAGE';
++
++function world(reason = 'declined') {
++  const fake = new FakePrisma();
++  const prisma = fake.client();
++  const stripe = new FakeStripeBilling();
++  stripe.customers.set('cus_client', { id: 'cus_client', default_payment_method: 'pm_old' });
++  stripe.subs.set('sub_client', {
++    id: 'sub_client',
++    status: 'past_due',
++    customer: 'cus_client',
++    current_period_end: Math.floor(NOW.getTime() / 1000) + 20 * 86400,
++    default_payment_method: 'pm_old',
++    cancel_at_period_end: false,
++    latest_invoice: null,
++  });
++  stripe.addCard('pm_old', 'decline', '0002');
++  stripe.addInvoice({ id: 'in_renewal', subscription: 'sub_client', amount_due: 15000 });
++  fake.seed('coachPackage', { id: 'package', billing_type: 'recurring', price_cents: 15000 });
++  fake.seed('user', { id: 'client', name: 'Synthetic Client', role: 'student' });
++  fake.seed('user', { id: 'coach', name: 'Synthetic Coach', role: 'coach' });
++  fake.seed('connectCustomer', {
++    id: 'customer',
++    client_user_id: 'client',
++    stripe_customer_id: 'cus_client',
++  });
++  fake.seed('clientPurchase', {
++    id: 'purchase',
++    client_user_id: 'client',
++    coach_user_id: 'coach',
++    package_id: 'package',
++    billing_type: 'recurring',
++    status: 'past_due',
++    entitlement_active: false,
++    stripe_subscription_id: 'sub_client',
++    amount_cents: 15000,
++    currency: 'usd',
++    created_at: OLD,
++    current_period_end: OLD,
++    access_expires_at: OLD,
++  });
++  fake.seed('dunningState', {
++    id: 'state',
++    purchase_id: 'purchase',
++    status: 'active',
++    last_failure_reason: reason,
++    locked_out_at: OLD,
++    entered_at: OLD,
++    client_canceled_at: null,
++    step_index: 3,
++    last_failed_amount_cents: 15000,
++  });
++  const v1 = new DunningService(prisma, stub(stripe));
++  const v2 = new DunningV2Service(prisma, new DunningV2Telemetry(), undefined, stub(stripe));
++  const refundDispute = stub({
++    handle: jest.fn(async () => ({ claimed: true, purchase_id: 'purchase' })),
++  });
++  const handler = new CheckoutWebhookHandlerService(
++    prisma,
++    stub(stripe),
++    undefined,
++    v1,
++    refundDispute,
++    undefined,
++    undefined,
++    v2,
++  );
++  const billing = new ClientBillingService(prisma, stub(stripe), v1, v2);
++  const outer = new BillingService(
++    prisma,
++    stub({ capture: jest.fn() }),
++    stub({ log: jest.fn() }),
++    undefined,
++    handler,
++  );
++  const purchase = () => fake.find('clientPurchase', { id: 'purchase' });
++  const state = () => fake.find('dunningState', { id: 'state' });
++  return { fake, prisma, stripe, v1, v2, handler, billing, outer, purchase, state };
++}
++type World = ReturnType<typeof world>;
++
++const event = (id: string, type: string, object: Record<string, unknown>) => ({
++  id,
++  type,
++  created: Math.floor(NOW.getTime() / 1000),
++  data: { object },
++});
++const paid = (id: string) =>
++  event(id, 'invoice.paid', { id: 'in_paid', subscription: 'sub_client', amount_paid: 15000 });
++const updated = (id: string, status: string) =>
++  event(id, 'customer.subscription.updated', {
++    id: 'sub_client',
++    status,
++    current_period_end: Math.floor(NOW.getTime() / 1000) + 20 * 86400,
++  });
++const context = () =>
++  stub({
++    switchToHttp: () => ({ getRequest: () => ({ user: { id: 'client', role: 'student' } }) }),
++    getHandler: () => context,
++    getClass: () => ClientEntitlementGuard,
++  });
++const guard = (w: World) =>
++  new ClientEntitlementGuard(w.prisma, new Reflector()).canActivate(context());
++const logged = () =>
++  JSON.stringify([
++    stub(Logger.prototype.warn).mock.calls,
++    stub(Logger.prototype.error).mock.calls,
++    stub(Logger.prototype.log).mock.calls,
++  ]);
++
++/** Pauses the webhook at its package read (after the cancel checks ran). */
++function barrier(w: World) {
++  let release: () => void = () => undefined;
++  let entered: () => void = () => undefined;
++  const gate = new Promise<void>((r) => (release = r));
++  const reached = new Promise<void>((r) => (entered = r));
++  const lookup = w.prisma.coachPackage.findUnique;
++  w.prisma.coachPackage.findUnique = async (args: unknown) => {
++    entered();
++    await gate;
++    return lookup(args);
++  };
++  return { reached, release: () => release() };
++}
++
++function graceDay7(w: World, status: string) {
++  Object.assign(w.purchase()!, { status, entitlement_active: true });
++  Object.assign(w.state()!, {
++    locked_out_at: null,
++    entered_at: new Date(NOW.getTime() - 7 * 86400000),
++  });
++}
++
++describe('B-D34-116 dunning D4 fix round (#690)', () => {
++  const priorEnv = { ...process.env };
++  beforeEach(() => {
++    process.env.FEATURE_DUNNING_V2 = 'true';
++    process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_synthetic';
++    process.env.STRIPE_SECRET_KEY = 'sk_test_synthetic';
++    jest.useFakeTimers({ now: NOW, doNotFake: ['setImmediate', 'nextTick'] });
++    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
++  });
++  afterEach(() => {
++    jest.restoreAllMocks();
++    jest.useRealTimers();
++    process.env = { ...priorEnv };
++  });
++
++  it('B-690-1: a subscription update in flight cannot resurrect a 2A cancel that completed meanwhile', async () => {
++    const w = world();
++    const b = barrier(w);
++    const pending = w.handler.handle(updated('evt_inflight', 'active'));
++    await b.reached;
++    expect((await w.billing.cancelPlan('client', 'purchase')).outcome).toBe('ended');
++    b.release();
++    await expect(pending).resolves.toMatchObject({ reason: 'stale_after_cancel' });
++    expect(w.purchase()).toMatchObject({ status: 'canceled', entitlement_active: false });
++  });
++
++  it('B-690-1: a 2A intent recorded while the update is in flight blocks the live write', async () => {
++    const w = world();
++    const b = barrier(w);
++    const pending = w.handler.handle(updated('evt_pending', 'active'));
++    await b.reached;
++    w.fake.seed('clientBillingOperation', {
++      id: 'op_cancel',
++      purchase_id: 'purchase',
++      kind: 'cancel',
++      completed_at: null,
++    });
++    b.release();
++    await expect(pending).resolves.toMatchObject({ reason: 'stale_after_cancel' });
++    expect(w.purchase()).toMatchObject({ status: 'past_due', entitlement_active: false });
++  });
++
++  it('B-690-1 control: a live update with no cancel applies (paid meanwhile)', async () => {
++    const w = world();
++    await w.handler.handle(updated('evt_live', 'active'));
++    expect(w.purchase()).toMatchObject({ status: 'active', entitlement_active: true });
++  });
++
++  it('B-690-2: a failed dispute check fails the delivery; the redelivery keeps the dispute cycle', async () => {
++    const w = world('charge_disputed');
++    w.stripe.subs.get('sub_client')!.status = 'active';
++    const err = Object.assign(new Error(SENTINEL), { code: 'P2024' });
++    jest.spyOn(w.v2, 'isDisputeCycleOpen').mockRejectedValueOnce(err);
++    await expect(w.handler.handle(paid('evt_paid'))).rejects.toThrow(
++      'DUNNING_DISPUTE_CHECK_FAILED',
++    );
++    expect(w.state()).toMatchObject({ status: 'active', locked_out_at: OLD });
++    await w.handler.handle(paid('evt_paid'));
++    expect(w.state()).toMatchObject({
++      status: 'active',
++      locked_out_at: OLD,
++      last_failure_reason: 'charge_disputed',
++    });
++    expect(logged()).not.toContain('SYNTHETIC');
++  });
++
++  it('B-690-3: a failed dispute closure is redelivered (no processed row) and the retry unlocks', async () => {
++    const w = world('charge_disputed');
++    Object.assign(w.purchase()!, { status: 'active' });
++    w.fake.seed('connectTransfer', {
++      id: 'tr_old',
++      source_stripe_charge_id: 'ch_old',
++      purchase_id: 'purchase',
++    });
++    w.fake.seed('dunningDisputeObligation', {
++      id: 'obligation',
++      purchase_id: 'purchase',
++      stripe_dispute_id: 'dp_old',
++      stripe_charge_id: 'ch_old',
++      status: 'needs_response',
++      closed_at: null,
++    });
++    const closure = jest.spyOn(w.v2, 'onDisputeClosed').mockRejectedValueOnce(new Error(SENTINEL));
++    const won = event('evt_won', 'charge.dispute.closed', {
++      id: 'dp_old',
++      charge: 'ch_old',
++      status: 'won',
++    });
++    await expect(w.outer.handleEvent(stub(won))).rejects.toThrow('DUNNING_DISPUTE_EFFECT_FAILED');
++    expect(w.fake.rows('stripeProcessedEvent')).toHaveLength(0);
++    await expect(w.outer.handleEvent(stub(won))).resolves.toMatchObject({ processed: true });
++    expect(closure).toHaveBeenCalledTimes(2);
++    expect(w.state()).toMatchObject({ status: 'resolved', locked_out_at: null });
++    expect(logged()).not.toContain('SYNTHETIC');
++  });
++
++  it('B-690-4: sweep, dispute-effect and resolution failures log closed codes only', async () => {
++    const w = world();
++    jest.spyOn(w.v2, 'runSweep').mockRejectedValueOnce(new Error(SENTINEL));
++    await new DunningLockoutScheduler(w.v2).handleCron();
++    jest.spyOn(w.v2, 'detectAndHandleLateReversal').mockRejectedValueOnce(new TypeError(SENTINEL));
++    await expect(
++      w.handler.handle(
++        stub(event('evt_dp', 'charge.dispute.created', { id: 'dp_new', charge: 'ch_new' })),
++      ),
++    ).rejects.toThrow('DUNNING_DISPUTE_EFFECT_FAILED');
++    jest.spyOn(w.v2, 'applyImmediateClear').mockRejectedValueOnce(new Error(SENTINEL));
++    await w.handler.handle(paid('evt_paid_clear'));
++    expect(
++      stub(Logger.prototype.error).mock.calls.length +
++        stub(Logger.prototype.warn).mock.calls.length,
++    ).toBeGreaterThan(2);
++    expect(logged()).not.toContain('SYNTHETIC');
++  });
++
++  it('B-690-5: an unpaid plan in an active unlocked cycle keeps Days 0-9 access; Day 10 locks', async () => {
++    const w = world();
++    graceDay7(w, 'unpaid');
++    await expect(guard(w)).resolves.toBe(true);
++    w.state()!.locked_out_at = NOW;
++    await expect(guard(w)).rejects.toMatchObject({ status: 402 });
++  });
++
++  it('B-690-5: subscription.updated to unpaid keeps the grace entitlement; a locked cycle does not', async () => {
++    const w = world();
++    graceDay7(w, 'past_due');
++    await w.handler.handle(updated('evt_unpaid', 'unpaid'));
++    expect(w.purchase()).toMatchObject({ status: 'unpaid', entitlement_active: true });
++    await expect(guard(w)).resolves.toBe(true);
++    const locked = world();
++    graceDay7(locked, 'past_due');
++    locked.state()!.locked_out_at = NOW;
++    await locked.handler.handle(updated('evt_unpaid_locked', 'unpaid'));
++    expect(locked.purchase()).toMatchObject({ status: 'unpaid', entitlement_active: false });
++  });
++
++  it('B-690-5 control: past_due keeps Day-7 access', async () => {
++    const w = world();
++    graceDay7(w, 'past_due');
++    await expect(guard(w)).resolves.toBe(true);
++  });
++
++  it('C-690-1 (Opus): a late payment_failed after a 2A cancel leaves the ended plan as is; last_error is a code', async () => {
++    const w = world();
++    expect((await w.billing.cancelPlan('client', 'purchase')).outcome).toBe('ended');
++    const failed = (id: string) =>
++      event(id, 'invoice.payment_failed', {
++        id: 'in_retry',
++        subscription: 'sub_client',
++        amount_due: 15000,
++        billing_reason: 'subscription_cycle',
++        last_payment_error: { code: 'card_declined', message: SENTINEL },
++      });
++    await w.handler.handle(failed('evt_late'));
++    expect(w.purchase()).toMatchObject({ status: 'canceled', entitlement_active: false });
++    const live = world();
++    Object.assign(live.purchase()!, { status: 'active', entitlement_active: true });
++    await live.handler.handle(failed('evt_live_fail'));
++    expect(live.purchase()).toMatchObject({ status: 'past_due', last_error: 'card_declined' });
++  });
++
++  it('C-690-3: the card page copy has no first person and promises access only after payment', () => {
++    const html = renderBillingUpdateCardPage();
++    expect(html).not.toMatch(/\b(our|we|us)\b/i);
++    expect(html).not.toContain('access stays on');
++    expect(html).toContain('once that payment goes through');
++  });
++});

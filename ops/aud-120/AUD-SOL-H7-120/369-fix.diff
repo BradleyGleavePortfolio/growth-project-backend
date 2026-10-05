@@ -1,0 +1,479 @@
+diff --git a/src/services/__tests__/authActions.restartGrant.sol119f.test.ts b/src/services/__tests__/authActions.storageOutage.sol119g.test.ts
+similarity index 84%
+rename from src/services/__tests__/authActions.restartGrant.sol119f.test.ts
+rename to src/services/__tests__/authActions.storageOutage.sol119g.test.ts
+index da6a98a9..f2ac40e3 100644
+--- a/src/services/__tests__/authActions.restartGrant.sol119f.test.ts
++++ b/src/services/__tests__/authActions.storageOutage.sol119g.test.ts
+@@ -109,6 +109,47 @@ beforeEach(async () => {
+ });
+ afterEach(() => jest.restoreAllMocks());
+ 
++it('one AsyncStorage mutation outage: completed actual signOut must not revive old consent after recovered storage and restart', async () => {
++  await recordLocalAuthorization(scope);
++  const grantKey = `${ON_DEVICE_STATE_PREFIX}auth:${scope.source}:${scope.userId}`;
++  const sessionKey = 'wearables_on_device_session';
++  const oldGrant = await AsyncStorage.getItem(grantKey);
++  const oldSession = await AsyncStorage.getItem(sessionKey);
++  expect(oldGrant).not.toBeNull();
++  expect(oldSession).not.toBeNull();
++  // One backing-store write outage, not three unrelated chance failures.
++  // Reads remain possible; the outage is gone before the next app lifetime.
++  const failure = new Error('synthetic backing-store mutation outage');
++  const set = jest.spyOn(AsyncStorage, 'setItem').mockRejectedValue(failure);
++  const remove = jest.spyOn(AsyncStorage, 'removeItem').mockRejectedValue(failure);
++  const removeMany = jest.spyOn(AsyncStorage, 'removeMany').mockRejectedValue(failure);
++  const logout = jest.fn();
++  authEvents.on('logout', logout);
++  try {
++    await expect(signOut(scope.userId)).resolves.toBeUndefined();
++    expect(logout).toHaveBeenCalledTimes(1);
++    expect(set).toHaveBeenCalledWith(sessionKey, expect.any(String));
++    expect(remove).toHaveBeenCalledWith(sessionKey);
++    expect(removeMany).toHaveBeenCalledWith(expect.arrayContaining([grantKey]));
++    expect(await getLocalAuthorization(scope.userId, scope.source)).toBeNull();
++  } finally {
++    authEvents.off('logout', logout);
++    jest.restoreAllMocks();
++  }
++  expect(await AsyncStorage.getItem(grantKey)).toBe(oldGrant);
++  expect(await AsyncStorage.getItem(sessionKey)).toBe(oldSession);
++  const cold = coldModules();
++  // This is not a cross-account claim.
++  expect(await cold.state.getLocalAuthorization('another-user', scope.source)).toBeNull();
++  const syncHealthConnect = jest.fn(async () => ({ normalizedCount: 0, complete: true }));
++  const result = await cold.sync.refreshOnDevice(scope.source, [row], {
++    readUserId,
++    syncHealthConnect,
++  });
++  expect({ kind: result.kind, syncCalls: syncHealthConnect.mock.calls.length })
++    .toEqual({ kind: 'not_authorized', syncCalls: 0 });
++});
++
+ /**
+  * Fresh JS module lifetime with the SAME disk service. This deliberately
+  * resets signOutEpoch/authWrittenAt, not the stored keys. A positive control
+diff --git a/src/services/health/__tests__/onDeviceState.authorityStore.test.ts b/src/services/health/__tests__/onDeviceState.authorityStore.test.ts
+new file mode 100644
+index 00000000..94a30e16
+--- /dev/null
++++ b/src/services/health/__tests__/onDeviceState.authorityStore.test.ts
+@@ -0,0 +1,264 @@
++/**
++ * Sol B-369-1 (the B-362-8 remainder): the session replacement, its fallback
++ * removal and the prefix removal all go to one AsyncStorage backing store, so
++ * one outage can fail all three. Every grant is also bound to the consent
++ * authority in SecureStore, which sign-out revokes first; an absent or
++ * unreadable authority authorizes nothing. A restart is a fresh module
++ * lifetime over the SAME disk. Synthetic storage only; no native build,
++ * network or health data.
++ */
++import AsyncStorage from "@react-native-async-storage/async-storage";
++import * as SecureStore from "expo-secure-store";
++import {
++  ON_DEVICE_CONSENT_AUTHORITY_KEY,
++  ON_DEVICE_CONSENT_SESSION_KEY,
++  ON_DEVICE_STATE_PREFIX,
++  getLocalAuthorization,
++  recordLocalAuthorization,
++  retireOnDeviceState,
++  retireOnDeviceStateAtSignOut,
++} from "../onDeviceState";
++
++const old = {
++  userId: "authority-user",
++  source: "HEALTH_CONNECT" as const,
++  connectionId: "old-connection",
++};
++const fresh = { ...old, connectionId: "fresh-connection" };
++const grantKey = `${ON_DEVICE_STATE_PREFIX}auth:${old.source}:${old.userId}`;
++const D1 = new Date("2026-10-01T00:00:00.000Z");
++const D2 = new Date("2026-10-02T00:00:00.000Z");
++const secure = jest.mocked(SecureStore);
++const secureMap = (SecureStore as unknown as { __store: Map<string, string> })
++  .__store;
++
++/** Drop queued one-off results (a pre-fix run never consumes them) and restore the setup mock. */
++function resetSecureStoreMock() {
++  secure.getItemAsync
++    .mockReset()
++    .mockImplementation(async (k) => secureMap.get(k) ?? null);
++  secure.setItemAsync.mockReset().mockImplementation(async (k, v) => {
++    secureMap.set(k, v);
++  });
++  secure.deleteItemAsync.mockReset().mockImplementation(async (k) => {
++    secureMap.delete(k);
++  });
++}
++
++function deferred() {
++  let resolve: () => void = () => undefined;
++  const promise = new Promise<void>((yes) => (resolve = yes));
++  return { resolve, promise };
++}
++
++/** App restart: fresh module state, same AsyncStorage and SecureStore. */
++function restart(): typeof import("../onDeviceState") {
++  let state: typeof import("../onDeviceState") | undefined;
++  jest.isolateModules(() => {
++    jest.doMock("@react-native-async-storage/async-storage", () => ({
++      __esModule: true,
++      default: AsyncStorage,
++    }));
++    jest.doMock("expo-secure-store", () => SecureStore);
++    state = require("../onDeviceState");
++  });
++  if (!state) throw new Error("restart setup failed");
++  return state;
++}
++
++/** Every AsyncStorage mutation rejects (one backing-store outage); reads still work. */
++function asyncStorageMutationOutage(
++  except: (key: string) => boolean = () => false,
++) {
++  const failure = new Error("synthetic backing-store mutation outage");
++  const set = AsyncStorage.setItem.bind(AsyncStorage);
++  jest.spyOn(AsyncStorage, "setItem").mockImplementation(async (k, v) => {
++    if (!except(k)) throw failure;
++    await set(k, v);
++  });
++  jest.spyOn(AsyncStorage, "removeItem").mockRejectedValue(failure);
++  jest.spyOn(AsyncStorage, "removeMany").mockRejectedValue(failure);
++}
++
++beforeEach(async () => {
++  jest.restoreAllMocks();
++  resetSecureStoreMock();
++  await AsyncStorage.clear();
++  secureMap.clear();
++});
++afterEach(() => jest.restoreAllMocks());
++
++it("an outage of every AsyncStorage mutation at sign-out leaves the old grant void after a restart", async () => {
++  await recordLocalAuthorization(old, D1);
++  const oldGrant = await AsyncStorage.getItem(grantKey);
++  const oldSession = await AsyncStorage.getItem(ON_DEVICE_CONSENT_SESSION_KEY);
++  asyncStorageMutationOutage();
++  await expect(retireOnDeviceStateAtSignOut()).resolves.toBeUndefined();
++  expect(await getLocalAuthorization(old.userId, old.source)).toBeNull();
++  jest.restoreAllMocks(); // storage recovered before the next app run
++  expect(await AsyncStorage.getItem(grantKey)).toBe(oldGrant);
++  expect(await AsyncStorage.getItem(ON_DEVICE_CONSENT_SESSION_KEY)).toBe(
++    oldSession,
++  );
++  expect(
++    await SecureStore.getItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY),
++  ).toBeNull();
++  expect(
++    await restart().getLocalAuthorization(old.userId, old.source),
++  ).toBeNull();
++});
++
++it("the authority is revoked at once: an app exit while sign-out waits behind a held native write leaves the grant void", async () => {
++  await recordLocalAuthorization(old, D1); // the session exists, so the next setItem is the grant
++  const invoked = deferred();
++  const commit = deferred();
++  const set = AsyncStorage.setItem.bind(AsyncStorage);
++  jest.spyOn(AsyncStorage, "setItem").mockImplementationOnce(async (k, v) => {
++    invoked.resolve();
++    await commit.promise; // not committed before the exit
++    await set(k, v);
++  });
++  const writing = recordLocalAuthorization(fresh, D2);
++  await invoked.promise;
++  const signingOut = retireOnDeviceStateAtSignOut();
++  await new Promise<void>((r) => setTimeout(r, 0));
++  // The app exits here: the chain never reached the AsyncStorage writes.
++  const sessionAtExit = await AsyncStorage.getItem(
++    ON_DEVICE_CONSENT_SESSION_KEY,
++  );
++  const afterExit = await restart().getLocalAuthorization(
++    old.userId,
++    old.source,
++  );
++  commit.resolve(); // always release, even when the invariant fails
++  await Promise.all([writing, signingOut]);
++  expect(sessionAtExit).not.toBeNull();
++  expect(afterExit).toBeNull();
++});
++
++it("a grant write in flight that starts a new authority after the first revocation is revoked again in the chain", async () => {
++  await recordLocalAuthorization(old, D1); // the session exists
++  const reading = deferred();
++  const release = deferred();
++  const get = AsyncStorage.getItem.bind(AsyncStorage);
++  jest.spyOn(AsyncStorage, "getItem").mockImplementationOnce(async (k) => {
++    reading.resolve();
++    await release.promise; // the session read of the next grant write is held
++    return get(k);
++  });
++  const writing = recordLocalAuthorization(fresh, D2);
++  await reading.promise;
++  // Only the grant write itself reaches disk; every sign-out mutation fails.
++  asyncStorageMutationOutage((k) => k === grantKey);
++  const signingOut = retireOnDeviceStateAtSignOut();
++  await new Promise<void>((r) => setTimeout(r, 0));
++  release.resolve();
++  await Promise.all([writing, signingOut]);
++  jest.restoreAllMocks();
++  expect(
++    JSON.parse((await AsyncStorage.getItem(grantKey)) ?? "null")?.connectionId,
++  ).toBe(fresh.connectionId);
++  expect(
++    await SecureStore.getItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY),
++  ).toBeNull();
++  expect(
++    await restart().getLocalAuthorization(fresh.userId, fresh.source),
++  ).toBeNull();
++});
++
++it("a failed SecureStore delete at sign-out writes a new authority, so the grant stays void after a restart", async () => {
++  await recordLocalAuthorization(old, D1);
++  const before = await SecureStore.getItemAsync(
++    ON_DEVICE_CONSENT_AUTHORITY_KEY,
++  );
++  secure.deleteItemAsync
++    .mockRejectedValueOnce(new Error("synthetic keychain delete failure"))
++    .mockRejectedValueOnce(new Error("synthetic keychain delete failure"));
++  asyncStorageMutationOutage();
++  await retireOnDeviceStateAtSignOut();
++  jest.restoreAllMocks();
++  const after = await SecureStore.getItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY);
++  expect(after).toEqual(expect.any(String));
++  expect(after).not.toBe(before);
++  expect(
++    await restart().getLocalAuthorization(old.userId, old.source),
++  ).toBeNull();
++});
++
++it("fails closed: an unreadable authority authorizes nothing, and a readable one again authorizes the grant", async () => {
++  await recordLocalAuthorization(old, D1);
++  secure.getItemAsync.mockRejectedValueOnce(
++    new Error("synthetic keychain read failure"),
++  );
++  expect(await getLocalAuthorization(old.userId, old.source)).toBeNull();
++  expect(
++    (await getLocalAuthorization(old.userId, old.source))?.connectionId,
++  ).toBe(old.connectionId);
++});
++
++it("fails closed: a missing authority, or a grant with no authority, authorizes nothing; the next Connect starts one", async () => {
++  await recordLocalAuthorization(old, D1);
++  const stored = JSON.parse((await AsyncStorage.getItem(grantKey)) ?? "{}");
++  await SecureStore.deleteItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY);
++  expect(await getLocalAuthorization(old.userId, old.source)).toBeNull();
++  await recordLocalAuthorization(old, D1);
++  const { authority: _dropped, ...unbound } = JSON.parse(
++    (await AsyncStorage.getItem(grantKey)) ?? "{}",
++  );
++  expect(_dropped).not.toBe(stored.authority);
++  await AsyncStorage.setItem(grantKey, JSON.stringify(unbound));
++  expect(await getLocalAuthorization(old.userId, old.source)).toBeNull();
++  await recordLocalAuthorization(fresh, D2);
++  expect(
++    (await restart().getLocalAuthorization(fresh.userId, fresh.source))
++      ?.connectionId,
++  ).toBe(fresh.connectionId);
++});
++
++it("an authority write failure on Connect rejects the grant write rather than writing an unbound grant", async () => {
++  const failure = new Error("synthetic keychain write failure");
++  secure.setItemAsync.mockRejectedValueOnce(failure);
++  await expect(recordLocalAuthorization(old, D1)).rejects.toBe(failure);
++  expect(await AsyncStorage.getItem(grantKey)).toBeNull();
++  await recordLocalAuthorization(old, D1);
++  expect(
++    (await getLocalAuthorization(old.userId, old.source))?.connectionId,
++  ).toBe(old.connectionId);
++});
++
++it("a sign-out that starts while a grant is being read returns no grant", async () => {
++  await recordLocalAuthorization(old, D1);
++  const reading = deferred();
++  const release = deferred();
++  const get = AsyncStorage.getItem.bind(AsyncStorage);
++  let held = false;
++  jest.spyOn(AsyncStorage, "getItem").mockImplementation(async (k) => {
++    if (k !== ON_DEVICE_CONSENT_SESSION_KEY || held) return get(k);
++    held = true;
++    const value = await get(k); // read before the sign-out, delivered after it
++    reading.resolve();
++    await release.promise;
++    return value;
++  });
++  const read = getLocalAuthorization(old.userId, old.source);
++  await reading.promise;
++  const signingOut = retireOnDeviceStateAtSignOut();
++  release.resolve();
++  expect(await read).toBeNull();
++  await signingOut;
++});
++
++it("control: the same consent survives a restart, and full retirement revokes the authority too", async () => {
++  await recordLocalAuthorization(old, D1);
++  expect(
++    (await restart().getLocalAuthorization(old.userId, old.source))
++      ?.connectionId,
++  ).toBe(old.connectionId);
++  await retireOnDeviceState();
++  expect(
++    await SecureStore.getItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY),
++  ).toBeNull();
++  expect(
++    await restart().getLocalAuthorization(old.userId, old.source),
++  ).toBeNull();
++});
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index f8548529..1e54217e 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -23,11 +23,16 @@
+  * ({@link ON_DEVICE_CONSENT_SESSION_KEY}); sign-out replaces that session
+  * before it removes anything, so a grant left on disk by a failed removal
+  * never authorizes again, in the same run or after a restart (Sol B-362-8).
++ * It is bound as well to the consent authority in SecureStore
++ * ({@link ON_DEVICE_CONSENT_AUTHORITY_KEY}), a different store that sign-out
++ * revokes first, so even an outage of every AsyncStorage write at sign-out
++ * leaves the old grant void after a restart (Sol B-369-1).
+  *
+- * This module has no native imports, so it is safe to load from auth code.
++ * Its only native import is expo-secure-store, which auth code already loads.
+  */
+ 
+ import AsyncStorage from '@react-native-async-storage/async-storage';
++import * as SecureStore from 'expo-secure-store';
+ import { OnDeviceSessionChangedError } from './sessionFence';
+ 
+ /** Every key this module writes starts with this prefix. */
+@@ -42,6 +47,17 @@ export const ON_DEVICE_STATE_PREFIX = 'wearables_on_device:';
+  */
+ export const ON_DEVICE_CONSENT_SESSION_KEY = 'wearables_on_device_session';
+ 
++/**
++ * Sol B-369-1: the consent authority every stored grant is also bound to. It
++ * lives in SecureStore (Keychain / Keystore), not in the AsyncStorage backing
++ * store, so revoking it does not share a failure with the removals that
++ * follow. Sign-out deletes it before any AsyncStorage write (a fresh random
++ * value replaces it when the delete fails); an absent or unreadable value
++ * authorizes nothing, and the next Connect starts a new one. Holds a random
++ * nonce, nothing personal.
++ */
++export const ON_DEVICE_CONSENT_AUTHORITY_KEY = 'wearables_on_device_authority';
++
+ /** The on-device sources this lane supports. */
+ export type OnDeviceSource = 'APPLE_HEALTHKIT' | 'HEALTH_CONNECT';
+ 
+@@ -104,6 +120,24 @@ async function readConsentSession(): Promise<string | null> {
+   return typeof raw === 'string' && raw.length > 0 ? raw : null;
+ }
+ 
++/** The consent authority in SecureStore, or null when absent (a rejection propagates). */
++async function readConsentAuthority(): Promise<string | null> {
++  const raw = await SecureStore.getItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY);
++  return typeof raw === 'string' && raw.length > 0 ? raw : null;
++}
++
++/** Void every grant through the SecureStore authority. Never rejects. */
++async function revokeConsentAuthority(): Promise<void> {
++  try {
++    await SecureStore.deleteItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY);
++  } catch {
++    // A new value voids every grant as well.
++    await SecureStore.setItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY, newConsentSession()).catch(
++      () => undefined,
++    );
++  }
++}
++
+ async function readJson(key: string): Promise<unknown> {
+   try {
+     const raw = await AsyncStorage.getItem(key);
+@@ -186,7 +220,13 @@ export async function recordLocalAuthorization(
+         session = newConsentSession();
+         await AsyncStorage.setItem(ON_DEVICE_CONSENT_SESSION_KEY, session);
+       }
+-      await AsyncStorage.setItem(key, JSON.stringify({ ...record, session }));
++      // Sol B-369-1: and to the SecureStore authority (same rule).
++      let authority = await readConsentAuthority();
++      if (authority == null) {
++        authority = newConsentSession();
++        await SecureStore.setItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY, authority);
++      }
++      await AsyncStorage.setItem(key, JSON.stringify({ ...record, session, authority }));
+       authCommittedAt.set(key, seq);
+     });
+   } catch (err) {
+@@ -208,6 +248,7 @@ export async function getLocalAuthorization(
+   source: OnDeviceSource,
+ ): Promise<LocalAuthorization | null> {
+   await storageTail; // every write already queued has settled
++  const epoch = signOutEpoch;
+   const key = authKey(userId, source);
+   if (signOutEpoch > 0 && (authWrittenAt.get(key) ?? 0) <= signedOutThroughSeq) return null;
+   const parsed = await readJson(key);
+@@ -220,19 +261,25 @@ export async function getLocalAuthorization(
+     parsed.connectionId.length === 0 ||
+     typeof parsed.grantedAt !== 'string' ||
+     typeof parsed.session !== 'string' ||
+-    parsed.session.length === 0
++    parsed.session.length === 0 ||
++    typeof parsed.authority !== 'string' ||
++    parsed.authority.length === 0
+   ) {
+     return null;
+   }
+   // Sol B-362-8: a grant from an earlier consent session (a sign-out happened
+   // since, even in an earlier app run) or an unreadable session is no grant.
++  // Sol B-369-1: the same for the SecureStore authority.
+   let session: string | null;
++  let authority: string | null;
+   try {
+     session = await readConsentSession();
++    authority = await readConsentAuthority();
+   } catch {
+     return null;
+   }
+-  if (session !== parsed.session) return null;
++  if (session !== parsed.session || authority !== parsed.authority) return null;
++  if (epoch !== signOutEpoch) return null; // a sign-out started during the reads
+   return {
+     v: 1,
+     userId,
+@@ -249,6 +296,7 @@ export async function getLocalAuthorization(
+  */
+ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void> {
+   await storageTail;
++  if (!source) await serialStorage(revokeConsentAuthority);
+   const keys = await AsyncStorage.getAllKeys();
+   const doomed = keys.filter((k) => {
+     if (!source && k === ON_DEVICE_CONSENT_SESSION_KEY) return true; // voids every grant too
+@@ -264,18 +312,23 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+ 
+ /**
+  * Sign-out (Sol B-362-7). Synchronously drops every queued write and voids
+- * every grant written so far in this run, then, in the same chain, waits for
+- * the native operation in flight, replaces the consent session before any
+- * removal (Sol B-362-8: durable, so a grant the removal fails to delete stays
+- * void after a restart; when the new value cannot be written the stored one
+- * is removed, which also voids every grant) and removes every key under the
+- * prefix.
++ * every grant written so far in this run, and at once revokes the SecureStore
++ * authority (Sol B-369-1: a different store, so an AsyncStorage outage, or an
++ * app exit before the chain below runs, cannot keep a grant valid). Then, in
++ * the same chain, it waits for the native operation in flight, revokes the
++ * authority again (a grant write in flight may have started a new one),
++ * replaces the consent session before any removal (Sol B-362-8: when the new
++ * value cannot be written the stored one is removed, which also voids every
++ * grant) and removes every key under the prefix.
+  * Never rejects: sign-out always completes.
+  */
+ export function retireOnDeviceStateAtSignOut(): Promise<void> {
+   signOutEpoch += 1;
+   signedOutThroughSeq = authWriteSeq;
++  const revoked = revokeConsentAuthority();
+   return serialStorage(async () => {
++    await revoked;
++    await revokeConsentAuthority();
+     const keys = await AsyncStorage.getAllKeys().catch(() => null);
+     // Before any removal and whether or not enumeration worked.
+     try {

@@ -1,0 +1,28 @@
+AUDIT GPT-6.1 Sol — growth-project-mobile#368 @ fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45 — VERDICT: APPROVE
+A/B/C = 0/0/0
+
+Independent T4 follow-up: AUD-SOL-PV3-118, agent 118; all seven changed files and relevant deletion/re-auth/provider call paths reviewed, 394 changed lines, with no candidate implementation edit. [Reviewed comparison](https://github.com/BradleyGleavePortfolio/growth-project-mobile/compare/7fdb629a798d44e76475dbece1b14e68f360ab91...fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45)
+
+## Prior finding closure
+
+**B-368-1 (both lenses): CLOSED.** `DeleteAccountScreen.tsx:124-139,184-192,237-249,297-300,489-494` now combines explicit server revocation, the confirmation method, known Apple membership and unknown-provider discovery; nullable authorization codes and missing outcomes no longer suppress the promised guidance. A known non-Apple account still gets no Apple card, and only explicit `revoked` displays a success claim. [Updated screen](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45/src/screens/settings/DeleteAccountScreen.tsx#L124-L139), [regression cases and controls](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx#L721-L831)
+
+The builder's test-only predecessor and failing-before lane were checked, and both original lenses' probes were independently replayed over this exact candidate: **3 suites / 68 tests pass**, including unknown-provider Apple confirmation with `not_requested`, missing outcome and the configured-attempt control. [Builder before-run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37222630053), [independent exact-candidate replay 37223731636](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37223731636)
+
+**Opus C-368-1/2/3: CLOSED on the named surfaces.** Immediate fallback reports only the lack of confirmation, later visits use conditional language because the status API carries no revocation outcome, Keep my account clears the local confirmation context, the provider lookup's rejection path honors unmount, and the named screen/sign-in strings use Apple Account without first person. [Screen changes](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45), [copy regression tests](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45/src/lib/__tests__/appleAccountCopy.test.ts)
+
+## Apple and backend consistency
+
+All four fallbacks share the same iOS 18+ Settings instructions and earlier-iOS/other-device web instructions as backend #700's shared policy/help constant; the iPhone instructions were checked against Apple's current support article and versioned iOS 18 guide. [Mobile steps](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45/src/screens/settings/DeleteAccountScreen.tsx#L95-L115), [backend candidate copy](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5e3dabb0d0b9adc3ecf53c06f7bccf11852745fb/src/public-pages/trust-pages.html.ts#L95-L98), [Apple Support 102571](https://support.apple.com/en-us/102571), [iOS 18 guide](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/18.0/ios/18.0)
+
+The live `/privacy` and `/help/delete-account` still have the previous unqualified iPhone sentence; this is not claimed as already deployed parity, and #700 deployment plus a public-page reread is the recommended operator default before releasing this mobile copy. [Live Privacy Policy](https://app.trygrowthproject.com/privacy), [live deletion help](https://app.trygrowthproject.com/help/delete-account)
+
+Neither candidate changes the deletion API contract. [Paired candidate backend diff](https://github.com/BradleyGleavePortfolio/growth-project-backend/compare/2af682ca968f11210971abdec8f9d9060cac609f...5e3dabb0d0b9adc3ecf53c06f7bccf11852745fb), [candidate mobile diff](https://github.com/BradleyGleavePortfolio/growth-project-mobile/compare/7fdb629a798d44e76475dbece1b14e68f360ab91...fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45)
+
+## CI and evidence limits
+
+All **3/3 required contexts are green** at this exact head: Typecheck/lint/test and both required analyses; full CI executed **453 suites / 6,335 tests**, all passing. [Exact-head full build](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37222822046/job/111496417803), [JavaScript analysis](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37222822058/job/111496417194), [Actions analysis](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37222822058/job/111496417378)
+
+No earlier #368 approval is reused; current implementation and rendered controls were audited directly, and the original probe assertions were preserved (the old Opus patch's append position required mechanical relocation). The preliminary Sol-only replay is not the dual-probe evidence. [Complete independent replay](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37223731636)
+
+This is source/UI-test approval, not an installed-device or production Apple-revocation attestation; broader untouched first-person copy remains the builder-disclosed operator follow-up, not a new blocker in this frozen round. [Builder disclosure](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/368#issuecomment-5982922216)

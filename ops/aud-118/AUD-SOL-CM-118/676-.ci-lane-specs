@@ -1,0 +1,12 @@
+test/audit-sol-cm-118-occurrence-boundaries.spec.ts
+test/audit-sol-cm1r2-117-boundaries.spec.ts
+test/audit-sol-cm1-117-money-boundaries.spec.ts
+test/audit-sol-cm1-116-boundaries.spec.ts
+test/coach-money-occurrence-rows.spec.ts
+test/coach-money-event-rows.spec.ts
+test/coach-money-production-writes.spec.ts
+test/coach-money-reversal-postings.spec.ts
+test/coach-money.service.spec.ts
+test/coach-connect-refresh-closed-codes.spec.ts
+test/coach-connect-payout-reason.spec.ts
+test/coach-connect.service.spec.ts

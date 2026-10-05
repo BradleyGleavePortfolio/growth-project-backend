@@ -1,0 +1,703 @@
+diff --git a/src/billing/billing.service.ts b/src/billing/billing.service.ts
+index d50d3519..1a457eee 100644
+--- a/src/billing/billing.service.ts
++++ b/src/billing/billing.service.ts
+@@ -233,6 +233,9 @@ export class BillingService {
+     // sweeper-backed, so a rolled-back tx simply skips this (the descriptor
+     // is captured but never executed) and Stripe's redelivery reconciles.
+     let deferredSplit: DeferredSplitTask | null = null;
++    // S-FEE round 6 (#627 C-627-7) — payout notices recorded inside the tx
++    // are delivered after it commits (no push / email HTTP inside the tx).
++    let deferredPayoutNoticeChargeId: string | null = null;
+ 
+     // PR-14 R2 P0-1 — recurring/combo guest subscription backstop. The
+     // PI-succeeded route is the primary trigger for converting a guest
+@@ -243,6 +246,10 @@ export class BillingService {
+     const guestSubFallbackRef: { value: { guest_checkout_id: string; payment_intent_id: string } | null } = {
+       value: null,
+     };
++    // S-FEE — guest PaymentIntent whose conversion this delivery drove. The
++    // coach payout for it is settled post-commit (Stripe HTTP never runs
++    // inside the tx); the settlement sweeper is the backstop.
++    const guestSettlementPiRef: { value: string | null } = { value: null };
+ 
+     try {
+       await this.prisma.$transaction(async (tx) => {
+@@ -287,6 +294,9 @@ export class BillingService {
+           if (result.deferredSplit) {
+             deferredSplit = result.deferredSplit;
+           }
++          if (result.deferredPayoutNoticeChargeId) {
++            deferredPayoutNoticeChargeId = result.deferredPayoutNoticeChargeId;
++          }
+         }
+ 
+         // Stream 1 — give the AI credit-pack handler first refusal on
+@@ -425,10 +435,12 @@ export class BillingService {
+                 chargeId = chargeId ?? preResolved.chargeId;
+                 preResolveAttempted = true;
+               }
+-              await this.guestCheckout.handlePaymentSucceeded(
+-                pi.id,
+-                { chargeId, receiptUrl, preResolveAttempted },
+-              );
++              await this.guestCheckout.handlePaymentSucceeded(pi.id, {
++                chargeId,
++                receiptUrl,
++                preResolveAttempted,
++              });
++              guestSettlementPiRef.value = pi.id;
+             }
+             break;
+           }
+@@ -666,6 +678,7 @@ export class BillingService {
+       if (piId) {
+         try {
+           await this.guestCheckout.handlePaymentSucceeded(piId);
++          guestSettlementPiRef.value = guestSettlementPiRef.value ?? piId;
+         } catch (err) {
+           this.logger.warn(
+             `guest subscription fallback handlePaymentSucceeded failed pi=${piId}: ${(err as Error).message}`,
+@@ -673,6 +686,27 @@ export class BillingService {
+         }
+       }
+     }
++
++    // S-FEE round 6 (C-627-7) — deliver the refund / chargeback payout
++    // notices now that the webhook tx committed. Never throws; the notice
++    // sweeper re-delivers anything undelivered.
++    if (
++      deferredPayoutNoticeChargeId &&
++      this.checkoutWebhooks &&
++      typeof this.checkoutWebhooks.deliverPayoutNotices === 'function'
++    ) {
++      await this.checkoutWebhooks.deliverPayoutNotices(deferredPayoutNoticeChargeId);
++    }
++
++    // S-FEE — settle the guest purchase's charge(s) now that the conversion
++    // committed. Failure-isolated (never throws); the sweeper retries.
++    if (
++      guestSettlementPiRef.value &&
++      this.checkoutWebhooks &&
++      typeof this.checkoutWebhooks.settleGuestPurchase === 'function'
++    ) {
++      await this.checkoutWebhooks.settleGuestPurchase(guestSettlementPiRef.value);
++    }
+     return { processed: true };
+   }
+ 
+diff --git a/src/checkout/admin-analytics.service.ts b/src/checkout/admin-analytics.service.ts
+index 6292eb84..ecafcddb 100644
+--- a/src/checkout/admin-analytics.service.ts
++++ b/src/checkout/admin-analytics.service.ts
+@@ -1,4 +1,5 @@
+ import { Injectable } from '@nestjs/common';
++import { COUNTED_RECOVERY_STATUSES, coachNetCents } from '../connect/fees/coach-net';
+ import { PrismaService } from '../prisma.service';
+ 
+ // AdminAnalyticsService — Phase 7 enterprise rollups.
+@@ -69,6 +70,12 @@ export interface CoachEarningsSummary {
+     pending_cents: number;
+     reversed_cents: number;
+     refunds_cents: number;
++    // S-FEE: owed back on refunded / disputed charges beyond what a transfer
++    // reversal recovered (netted from future payouts).
++    recoveries_cents: number;
++    // S-FEE: coachNetCents(posted, recoveries) — same figure as
++    // /coach/connect/metrics net_30d and the earnings summary.
++    net_cents: number;
+     purchases_count: number;
+   };
+   // Earnings this coach received as a HEAD COACH (head_coach_split kind).
+@@ -77,6 +84,8 @@ export interface CoachEarningsSummary {
+     posted_cents: number;
+     pending_cents: number;
+     reversed_cents: number;
++    recoveries_cents: number;
++    net_cents: number;
+     sub_coaches_count: number; // # of distinct selling sub-coaches contributing
+   };
+   // Most-recent payout from PayoutSnapshot (last_payout_*).
+@@ -325,6 +334,36 @@ export class AdminAnalyticsService {
+     const sellerSums = bucketByStatus(asSellerLedger);
+     const headCoachSums = bucketByStatus(asHeadCoachLedger);
+ 
++    // S-FEE — recoveries owed by this payee in the window, split by the leg
++    // they came from (seller vs head coach) through their settlement.
++    const recoveryRows = await this.prisma.payeeRecovery.findMany({
++      where: {
++        payee_user_id: coachUserId,
++        status: { in: [...COUNTED_RECOVERY_STATUSES] },
++        created_at: { gte: from, lte: to },
++      },
++      select: { amount_cents: true, settlement_id: true },
++    });
++    const sellerSettlementIds = new Set(
++      recoveryRows.length === 0
++        ? []
++        : (
++            await this.prisma.chargeSettlement.findMany({
++              where: {
++                id: { in: [...new Set(recoveryRows.map((r) => r.settlement_id))] },
++                coach_user_id: coachUserId,
++              },
++              select: { id: true },
++            })
++          ).map((x) => x.id),
++    );
++    let sellerRecoveries = 0;
++    let headCoachRecoveries = 0;
++    for (const r of recoveryRows) {
++      if (sellerSettlementIds.has(r.settlement_id)) sellerRecoveries += r.amount_cents;
++      else headCoachRecoveries += r.amount_cents;
++    }
++
+     const subCoaches = new Set<string>();
+     if (asHeadCoachLedger.length) {
+       const purchaseIdsHC = asHeadCoachLedger.map((l) => l.purchase_id);
+@@ -348,6 +387,8 @@ export class AdminAnalyticsService {
+         pending_cents: sellerSums.pending_cents,
+         reversed_cents: sellerSums.reversed_cents,
+         refunds_cents: sumBy(refundRows, (r) => r.amount_cents),
++        recoveries_cents: sellerRecoveries,
++        net_cents: coachNetCents(sellerSums.posted_cents, sellerRecoveries),
+         purchases_count: sellerPurchases.length,
+       },
+       as_head_coach: {
+@@ -356,6 +397,8 @@ export class AdminAnalyticsService {
+         posted_cents: headCoachSums.posted_cents,
+         pending_cents: headCoachSums.pending_cents,
+         reversed_cents: headCoachSums.reversed_cents,
++        recoveries_cents: headCoachRecoveries,
++        net_cents: coachNetCents(headCoachSums.posted_cents, headCoachRecoveries),
+         sub_coaches_count: subCoaches.size,
+       },
+       last_payout: {
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index c0374678..81b63279 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -79,6 +79,10 @@ export interface CheckoutWebhookResult {
+   // because the caller held an outer $transaction. BillingService runs these
+   // after the outer tx commits (see runDeferredSplit below).
+   deferredSplit?: DeferredSplitTask;
++  // S-FEE round 6 (#627 C-627-7) — present when a refund / dispute recorded
++  // payout notices for this charge inside the caller's $transaction.
++  // BillingService delivers them after the tx commits (deliverPayoutNotices).
++  deferredPayoutNoticeChargeId?: string;
+ }
+ 
+ // PR-18 B1 — state that the checkout handler needs from Stripe HTTP but that
+@@ -686,9 +690,26 @@ export class CheckoutWebhookHandlerService {
+     }
+   }
+ 
+-  private async applyCheckoutExpired(
+-    event: StripeEvent,
+-  ): Promise<CheckoutWebhookResult> {
++  /**
++   * S-FEE round 6 (C-627-7) — deliver a charge's payout notices after
++   * BillingService committed its webhook transaction. Never throws; the
++   * notice sweeper is the backstop.
++   */
++  async deliverPayoutNotices(chargeId: string): Promise<void> {
++    if (!this.refundDispute) return;
++    await this.refundDispute.deliverPayoutNotices(chargeId);
++  }
++
++  /**
++   * S-FEE — settle a guest-storefront purchase after BillingService committed
++   * its conversion. Never throws; the settlement sweeper is the backstop.
++   */
++  async settleGuestPurchase(paymentIntentId: string): Promise<void> {
++    if (!this.splits) return;
++    await this.splits.settleGuestPurchaseByPaymentIntent(paymentIntentId);
++  }
++
++  private async applyCheckoutExpired(event: StripeEvent): Promise<CheckoutWebhookResult> {
+     const session = event.data.object as { id?: string };
+     if (!session?.id) return { claimed: false, reason: 'no_session_id' };
+     const purchase = await this.prisma.clientPurchase.findUnique({
+diff --git a/src/checkout/checkout.module.ts b/src/checkout/checkout.module.ts
+index cba6bd07..1e37c1f7 100644
+--- a/src/checkout/checkout.module.ts
++++ b/src/checkout/checkout.module.ts
+@@ -18,7 +18,10 @@ import {
+   CoachPaymentOpsController,
+ } from './payment-ops.controller';
+ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
++import { CronLeaseService } from './cron-lease.service';
++import { SettlementSweepCron } from './settlement-sweep.cron';
+ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
++import { PayoutNoticeService } from './payout-notice.service';
+ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+ 
+ // CheckoutModule — Stripe Checkout session minting and ClientPurchase
+@@ -83,6 +86,11 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+     DunningService,
+     RefundDisputeHandlerService,
+     AdminAnalyticsService,
++    // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
++    CronLeaseService,
++    SettlementSweepCron,
++    // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
++    PayoutNoticeService,
+   ],
+   exports: [
+     CheckoutService,
+diff --git a/src/checkout/payment-ops.controller.ts b/src/checkout/payment-ops.controller.ts
+index 6ae95c0e..60aec20b 100644
+--- a/src/checkout/payment-ops.controller.ts
++++ b/src/checkout/payment-ops.controller.ts
+@@ -21,6 +21,7 @@ import { ServiceTokenGuard } from '../auth/service-token.guard';
+ import { RolesGuard } from '../auth/roles.guard';
+ import { Roles } from '../common/decorators/roles.decorator';
+ import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
++import { COUNTED_RECOVERY_STATUSES, coachNetCents } from '../connect/fees/coach-net';
+ import { FeePolicyService } from '../connect/fees/fee-policy.service';
+ import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
+ import { ReconciliationService } from '../connect/fees/reconciliation.service';
+@@ -29,6 +30,7 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+ import { PrismaService } from '../prisma.service';
+ import { AdminAnalyticsService, type RollupGroupBy } from './admin-analytics.service';
+ import { DunningService } from './dunning.service';
++import { PAYOUT_NOTICE_PAGE_MAX, PayoutNoticeService } from './payout-notice.service';
+ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+ import {
+@@ -625,8 +627,38 @@ export class CoachPaymentOpsController {
+     private ledger: SplitLedgerService,
+     private payoutReadiness: PayoutReadinessService,
+     private analytics: AdminAnalyticsService,
++    private payoutNotices: PayoutNoticeService,
+   ) {}
+ 
++  // S-FEE round 5 (owner decision OR-111-1) — the Money page's "needs
++  // attention" read: the caller's open held balance per currency (what will
++  // be taken from their next sale(s)) and their refund / chargeback notices
++  // with the exact breakdown (what the client got back, what came back from
++  // that sale's payout, and the held amount split into TGP's 2%, Stripe's
++  // processing fee, the dispute fee and any share Stripe could not reverse).
++  // Always scoped to req.user.id (never a coach_id argument).
++  @Roles('coach', 'owner')
++  @Get('adjustments')
++  @ApiOperation({
++    summary: "The calling coach's held balance and refund / chargeback payout notices",
++  })
++  async listAdjustments(@Request() req: AuthedRequest, @Query() query: CursorPageQueryDto) {
++    return this.payoutNotices.listForPayee(req.user.id, {
++      cursor: query.cursor ?? null,
++      limit: Math.min(query.limit ?? 20, PAYOUT_NOTICE_PAGE_MAX),
++    });
++  }
++
++  // The coach has read a payout notice. Scoped to the caller: another
++  // coach's notice id is indistinguishable from a missing one (404).
++  @Roles('coach', 'owner')
++  @Post('adjustments/:id/acknowledge')
++  @ApiOperation({ summary: "Mark one of the calling coach's payout notices as read" })
++  @ApiResponse({ status: 404, description: 'PAYOUT_NOTICE_NOT_FOUND' })
++  async acknowledgeAdjustment(@Request() req: AuthedRequest, @Param('id') noticeId: string) {
++    return this.payoutNotices.acknowledge(req.user.id, noticeId);
++  }
++
+   // Coach's own purchases — same data the OWNER drill-down view exposes,
+   // but scoped to this coach.
+   //
+@@ -849,17 +881,39 @@ export class CoachPaymentOpsController {
+   //   posted   = sum(amount) - sum(reversed)  on posted rows
+   //   pending  = sum(amount)                  on pending rows
+   //   reversed = sum(amount)                  on reversed rows
++  //
++  // S-FEE: `recoveries_cents` is what this payee owes back on refunded /
++  // disputed charges beyond what a transfer reversal recovered, and
++  // `net_cents` is the shared coach-net definition (coachNetCents), the same
++  // figure /coach/connect/metrics reports.
+   private async computeEarningsSummary(payeeUserId: string): Promise<{
+     posted_cents: number;
+     pending_cents: number;
+     reversed_cents: number;
++    recoveries_cents: number;
++    net_cents: number;
+   }> {
+-    const grouped = await this.prisma.splitLedgerEntry.groupBy({
+-      by: ['status'],
+-      where: { payee_user_id: payeeUserId },
+-      _sum: { amount_cents: true, reversed_cents: true },
+-    });
+-    const summary = { posted_cents: 0, pending_cents: 0, reversed_cents: 0 };
++    const [grouped, recoveries] = await Promise.all([
++      this.prisma.splitLedgerEntry.groupBy({
++        by: ['status'],
++        where: { payee_user_id: payeeUserId },
++        _sum: { amount_cents: true, reversed_cents: true },
++      }),
++      this.prisma.payeeRecovery.aggregate({
++        where: {
++          payee_user_id: payeeUserId,
++          status: { in: [...COUNTED_RECOVERY_STATUSES] },
++        },
++        _sum: { amount_cents: true },
++      }),
++    ]);
++    const summary = {
++      posted_cents: 0,
++      pending_cents: 0,
++      reversed_cents: 0,
++      recoveries_cents: recoveries._sum.amount_cents ?? 0,
++      net_cents: 0,
++    };
+     for (const g of grouped) {
+       const amount = g._sum.amount_cents ?? 0;
+       const reversed = g._sum.reversed_cents ?? 0;
+@@ -867,6 +921,7 @@ export class CoachPaymentOpsController {
+       else if (g.status === 'pending') summary.pending_cents += amount;
+       else if (g.status === 'reversed') summary.reversed_cents += amount;
+     }
++    summary.net_cents = coachNetCents(summary.posted_cents, summary.recoveries_cents);
+     return summary;
+   }
+ 
+diff --git a/src/checkout/purchase-split-handler.service.ts b/src/checkout/purchase-split-handler.service.ts
+index 969226b8..e5ec1346 100644
+--- a/src/checkout/purchase-split-handler.service.ts
++++ b/src/checkout/purchase-split-handler.service.ts
+@@ -1,10 +1,16 @@
+-import { Injectable, Logger } from '@nestjs/common';
++import { Injectable, Logger, Optional } from '@nestjs/common';
+ import type { ClientPurchase } from '@prisma/client';
++import {
++  ChargeSettlementService,
++  settlementFailureCode,
++  type SweepSummary,
++} from '../connect/fees/charge-settlement.service';
+ import { FeePolicyService } from '../connect/fees/fee-policy.service';
+ import { SplitLedgerService } from '../connect/fees/split-ledger.service';
+ import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
+ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+ import { PrismaService } from '../prisma.service';
++import { PayoutNoticeService } from './payout-notice.service';
+ 
+ // PurchaseSplitHandlerService — bridges the lifecycle webhook handler
+ // and the Phase 4 split machinery. Responsibilities:
+@@ -20,6 +26,12 @@ import { PrismaService } from '../prisma.service';
+ //
+ // The handler is idempotent — every step uses composite-unique upserts
+ // or stable Stripe idempotency keys.
++//
++// S-FEE: every successful coach-package charge is handed to
++// ChargeSettlementService, which pays the coach price - actual Stripe fee -
++// TGP 2% (- head-coach split) by Transfer. Only a legacy destination charge
++// (minted before S-FEE, Stripe already moved the coach's share) still runs
++// the original head-coach-only flow below (legacyOnChargeSucceeded).
+ 
+ @Injectable()
+ export class PurchaseSplitHandlerService {
+@@ -31,19 +43,19 @@ export class PurchaseSplitHandlerService {
+     private feePolicy: FeePolicyService,
+     private ledger: SplitLedgerService,
+     private transfers: TransferOrchestratorService,
++    private settlements: ChargeSettlementService,
++    // S-FEE round 5 (OR-111-1): re-delivers payout notices a webhook could
++    // not deliver. @Optional() for legacy hand-built wiring.
++    @Optional() private payoutNotices?: PayoutNoticeService,
+   ) {}
+ 
+   // Resolve the charge id from a PaymentIntent (one-time) or Invoice
+   // (recurring). Returns null when not yet known (rare race; the webhook
+   // pipeline will re-invoke us on the next event).
+-  async resolveChargeIdForPurchase(
+-    purchase: ClientPurchase,
+-  ): Promise<string | null> {
++  async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
+     if (!purchase.stripe_payment_intent_id) return null;
+     try {
+-      const pi = await this.stripe.retrievePaymentIntent(
+-        purchase.stripe_payment_intent_id,
+-      );
++      const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
+       const charge =
+         (typeof pi.latest_charge === 'string' ? pi.latest_charge : null) ??
+         pi.charges?.data?.[0]?.id ??
+@@ -57,13 +69,51 @@ export class PurchaseSplitHandlerService {
+     }
+   }
+ 
+-  // Called from the webhook handler after a successful payment. Builds
+-  // the ledger and queues the head-coach transfer (if applicable).
+-  // Returns the resolved Stripe charge id for telemetry.
++  // Called from the webhook handler after a successful payment. Settles the
++  // charge (S-FEE) or, for a legacy destination charge, builds the legacy
++  // ledger and queues the head-coach transfer. Returns the resolved Stripe
++  // charge id for telemetry.
+   async onChargeSucceeded(args: {
+     purchase: ClientPurchase;
+     invoice_amount_cents?: number; // for recurring renewals, may differ from snapshot
+     invoice_charge_id?: string | null; // for recurring renewals, when known
++  }): Promise<{ charge_id: string | null; ledger_entries: number; transfer_enqueued: boolean }> {
++    const purchase = args.purchase;
++    // Free packages and $0 grants never settle, transfer or post revenue.
++    if (!(purchase.amount_cents > 0) || args.invoice_amount_cents === 0) {
++      return { charge_id: null, ledger_entries: 0, transfer_enqueued: false };
++    }
++    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
++    if (!chargeId) {
++      // Subscription-mode Checkout completion carries no PaymentIntent: settle
++      // every paid invoice of the subscription instead (idempotent per charge).
++      const outcomes = await this.settlements.settlePurchase(purchase);
++      return {
++        charge_id: outcomes.find((o) => o.charge_id)?.charge_id ?? null,
++        ledger_entries: outcomes.reduce((n, o) => n + o.ledger_entries, 0),
++        transfer_enqueued: outcomes.some((o) => o.transfers_enqueued > 0),
++      };
++    }
++    const outcome = await this.settlements.settleCharge({
++      purchase,
++      charge_id: chargeId,
++    });
++    if (outcome.status !== 'legacy_destination') {
++      return {
++        charge_id: chargeId,
++        ledger_entries: outcome.ledger_entries,
++        transfer_enqueued: outcome.transfers_enqueued > 0,
++      };
++    }
++    return this.legacyOnChargeSucceeded({ ...args, invoice_charge_id: chargeId });
++  }
++
++  // Pre-S-FEE flow, unchanged, for destination charges minted before S-FEE
++  // (Stripe already routed `amount - application_fee` to the seller).
++  private async legacyOnChargeSucceeded(args: {
++    purchase: ClientPurchase;
++    invoice_amount_cents?: number;
++    invoice_charge_id?: string | null;
+   }): Promise<{ charge_id: string | null; ledger_entries: number; transfer_enqueued: boolean }> {
+     const purchase = args.purchase;
+     const seller = await this.prisma.connectAccount.findUnique({
+@@ -98,15 +148,13 @@ export class PurchaseSplitHandlerService {
+       plan,
+       platform_account_id: null,
+       seller_stripe_account_id: seller.stripe_account_id,
+-      head_coach_stripe_account_id:
+-        headCoachAccount?.stripe_account_id ?? null,
++      head_coach_stripe_account_id: headCoachAccount?.stripe_account_id ?? null,
+     });
+ 
+     // Resolve the parent charge id so we can mark the application_fee +
+     // destination slices as posted and (for sub-coach) enqueue a transfer
+     // with source_transaction set.
+-    const chargeId =
+-      args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
++    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
+ 
+     // Mark application_fee + destination as posted now that we know the
+     // charge id. These slices moved synchronously at Stripe-charge time
+@@ -124,11 +172,7 @@ export class PurchaseSplitHandlerService {
+     }
+ 
+     let transferEnqueued = false;
+-    if (
+-      plan.head_coach_id &&
+-      plan.head_coach_split_cents > 0 &&
+-      headCoachAccount
+-    ) {
++    if (plan.head_coach_id && plan.head_coach_split_cents > 0 && headCoachAccount) {
+       const headCoachEntry = entries.find((e) => e.kind === 'head_coach_split');
+       if (headCoachEntry) {
+         const transfer = await this.transfers.enqueueHeadCoachTransfer({
+@@ -146,7 +190,8 @@ export class PurchaseSplitHandlerService {
+         // and the sweeper picks it up.
+         if (transfer.source_stripe_charge_id) {
+           try {
+-            await this.transfers.attempt(transfer.id);
++            // B-627-9 (c): under the charge's money lock, like the sweeper.
++            await this.settlements.attemptTransferUnderLock(transfer);
+           } catch (err) {
+             this.logger.warn(
+               `transfer.attempt failed inline purchase=${purchase.id}: ${(err as Error).message}`,
+@@ -163,20 +208,77 @@ export class PurchaseSplitHandlerService {
+     };
+   }
+ 
+-  // Run all due-but-pending transfers (sweeper entry point).
+-  async runTransferSweeper(now: Date = new Date()): Promise<{
++  // Run all due-but-pending transfers (sweeper entry point). S-FEE: first
++  // retry settlements waiting on Stripe's fee and settle any recent paid
++  // purchase no webhook settled, then post due transfers.
++  //
++  // Bounded: at most `batch` transfers per run (settlements use their own
++  // limit), and it stops starting new work once `deadlineAt` passes so a run
++  // always ends inside its single-runner lease. Whatever is left is due on
++  // the next run. Each transfer row is retried with its own backoff
++  // (TransferOrchestratorService.BACKOFF_MINUTES) under its Stripe
++  // idempotency key, so a repeated or overlapping run cannot pay twice.
++  async runTransferSweeper(
++    now: Date = new Date(),
++    opts: { batch?: number; deadlineAt?: number } = {},
++  ): Promise<{
+     attempted: number;
+     succeeded: number;
+     failed: number;
++    deadline_reached?: boolean;
++    settlements?: SweepSummary;
++    notices_delivered?: number;
+   }> {
+-    const due = await this.transfers.findDueTransfers(now);
++    const settlements = await this.settlements.runSettlementSweep(now, 25, opts.deadlineAt);
++    let noticesDelivered = 0;
++    if (this.payoutNotices && !(opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt)) {
++      try {
++        noticesDelivered = await this.payoutNotices.dispatchPending(now);
++      } catch (err) {
++        this.logger.warn(
++          `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${settlementFailureCode(err)}; the next run retries`,
++        );
++      }
++    }
++    const due = await this.transfers.findDueTransfers(now, opts.batch ?? 50);
++    let attempted = 0;
+     let succeeded = 0;
+     let failed = 0;
++    let deadlineReached = false;
+     for (const row of due) {
+-      const updated = await this.transfers.attempt(row.id);
++      if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
++        deadlineReached = true;
++        break;
++      }
++      attempted += 1;
++      // B-627-9 (c): the sweeper takes the same per-charge money lock and
++      // fence as the inline settlement path (busy -> left for the next run).
++      const updated = await this.settlements.attemptTransferUnderLock(row);
+       if (updated.status === 'succeeded') succeeded += 1;
+       else if (updated.status === 'failed') failed += 1;
+     }
+-    return { attempted: due.length, succeeded, failed };
++    return {
++      attempted,
++      succeeded,
++      failed,
++      ...(deadlineReached ? { deadline_reached: true } : {}),
++      settlements,
++      ...(noticesDelivered > 0 ? { notices_delivered: noticesDelivered } : {}),
++    };
++  }
++
++  // S-FEE — settle a guest-storefront purchase after its conversion commits
++  // (the guest PaymentIntent / first invoice has no checkout-session hook).
++  // Never throws; the settlement sweeper is the backstop.
++  async settleGuestPurchaseByPaymentIntent(paymentIntentId: string): Promise<void> {
++    try {
++      const purchase = await this.prisma.clientPurchase.findFirst({
++        where: { stripe_payment_intent_id: paymentIntentId },
++      });
++      if (!purchase || !(purchase.amount_cents > 0)) return;
++      await this.settlements.settlePurchase(purchase);
++    } catch (err) {
++      this.logger.warn(`guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`);
++    }
+   }
+ }
+diff --git a/src/coach-connect/coach-connect.service.ts b/src/coach-connect/coach-connect.service.ts
+index 811809fd..9fad7076 100644
+--- a/src/coach-connect/coach-connect.service.ts
++++ b/src/coach-connect/coach-connect.service.ts
+@@ -348,7 +348,10 @@ export class CoachConnectService {
+ 
+     return {
+       revenue_30d: earnings.as_seller.posted_cents / 100,
+-      net_30d: (earnings.as_seller.posted_cents - earnings.as_seller.refunds_cents) / 100,
++      // S-FEE: the shared coach-net figure (posted net of reversals minus
++      // recoveries), identical to the earnings summary. Subtracting refunds
++      // again double-counted what reversals already removed.
++      net_30d: earnings.as_seller.net_cents / 100,
+       currency: 'usd',
+       active_clients: activeClients,
+       clients_added_30d: clientsAdded30d,
+diff --git a/src/connect/connect.module.ts b/src/connect/connect.module.ts
+index 8737a842..ef5cf76b 100644
+--- a/src/connect/connect.module.ts
++++ b/src/connect/connect.module.ts
+@@ -3,6 +3,7 @@ import { JwksVerifierService } from '../auth/jwks.service';
+ import { ConnectController } from './connect.controller';
+ import { ConnectModuleState } from './connect.module-state';
+ import { ConnectService } from './connect.service';
++import { ChargeSettlementService } from './fees/charge-settlement.service';
+ import { FeePolicyService } from './fees/fee-policy.service';
+ import { PayoutReadinessService } from './fees/payout-readiness.service';
+ import { ReconciliationService } from './fees/reconciliation.service';
+@@ -34,6 +35,7 @@ import {
+     FeePolicyService,
+     SplitLedgerService,
+     TransferOrchestratorService,
++    ChargeSettlementService,
+     // Phase 6 — payout readiness cache + Stripe-vs-ledger reconciliation.
+     PayoutReadinessService,
+     ReconciliationService,
+@@ -49,6 +51,7 @@ import {
+     FeePolicyService,
+     SplitLedgerService,
+     TransferOrchestratorService,
++    ChargeSettlementService,
+     PayoutReadinessService,
+     ReconciliationService,
+   ],
+diff --git a/src/email/email.service.ts b/src/email/email.service.ts
+index 228bb313..19bb9691 100644
+--- a/src/email/email.service.ts
++++ b/src/email/email.service.ts
+@@ -62,6 +62,8 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
+   'payment-final-notice':
+     "A second heads-up — subscription ends {{cancellation_date}} if payment doesn't go through",
+   'payment-recovered': "You're all set — payment received",
++  // S-FEE round 5 (OR-111-1) — the notice's own title (plain, no exclamation).
++  'coach-payout-adjustment': '{{#if subject}}{{subject}}{{else}}A change to your payouts{{/if}}',
+ };
+ 
+ // EmailService is the single entry point for sending transactional email.
+diff --git a/src/email/email.types.ts b/src/email/email.types.ts
+index f203c1f6..50fba2b7 100644
+--- a/src/email/email.types.ts
++++ b/src/email/email.types.ts
+@@ -26,6 +26,8 @@ export const EmailTemplateKey = {
+   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
+   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
+   PAYMENT_RECOVERED: 'payment-recovered',
++  // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
++  COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
+ } as const;
+ export type EmailTemplateKey =
+   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
+diff --git a/src/email/templates/coach-payout-adjustment.hbs b/src/email/templates/coach-payout-adjustment.hbs
+new file mode 100644
+index 00000000..b13877b0
+--- /dev/null
++++ b/src/email/templates/coach-payout-adjustment.hbs
+@@ -0,0 +1,27 @@
++<!doctype html>
++<html lang="en">
++  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
++    <h1 style="font-size: 22px; margin: 0 0 16px;">{{title}}</h1>
++    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}},</p>
++    <p>{{summary}}</p>
++    <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 15px;">
++      <tr><td style="padding: 6px 0;">The sale</td><td style="padding: 6px 0; text-align: right;">{{charge_display}}</td></tr>
++      <tr><td style="padding: 6px 0;">What the client got back</td><td style="padding: 6px 0; text-align: right;">{{customer_refunded_display}}</td></tr>
++      <tr><td style="padding: 6px 0;">Taken back from that sale's payout</td><td style="padding: 6px 0; text-align: right;">{{reversed_display}}</td></tr>
++      {{#if reinstated_display}}<tr><td style="padding: 6px 0;">Paid back to you after the dispute</td><td style="padding: 6px 0; text-align: right;">{{reinstated_display}}</td></tr>{{/if}}
++    </table>
++    {{#if has_hold}}
++    <p>Held for this sale in total: {{held_display}}. It is made up of:</p>
++    <table style="width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 15px;">
++      {{#each held_lines}}<tr><td style="padding: 4px 0;">{{label}}</td><td style="padding: 4px 0; text-align: right;">{{display}}</td></tr>{{/each}}
++    </table>
++    {{#if held_collected_display}}<p style="font-size: 14px; color: #555;">Already taken from a later sale: {{held_collected_display}}.</p>{{/if}}
++    <p><strong>Still to be held from your next sale: {{held_open_display}}</strong>, on top of that sale's usual fees.</p>
++    <p style="font-size: 14px; color: #555;">It comes out of your next payout, and out of the ones after it if one sale is not enough. Nothing is taken from sales already paid out.</p>
++    {{else}}
++    <p style="font-size: 14px; color: #555;">Nothing is held from your next sale.</p>
++    {{/if}}
++    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
++    <p style="font-size: 12px; color: #888;">You can see every payout change and what is still held in the app under Money.</p>
++  </body>
++</html>

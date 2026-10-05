@@ -1,0 +1,247 @@
+diff --git a/src/services/health/__tests__/onDeviceConnect.test.ts b/src/services/health/__tests__/onDeviceConnect.test.ts
+index dbce79c7..5fb7f187 100644
+--- a/src/services/health/__tests__/onDeviceConnect.test.ts
++++ b/src/services/health/__tests__/onDeviceConnect.test.ts
+@@ -247,6 +247,16 @@ describe('Sol B-317-9: the attempt check stops setup before any permission scree
+     await expect(connectOnDeviceProvider('HEALTH_CONNECT', () => live)).resolves.toBe('stopped');
+   });
+ 
++  it('B-360-1: Apple Health: a permission-screen failure after the attempt ended is a stop, not an error', async () => {
++    setPlatform('ios');
++    let live = true;
++    (mockedHK.initHealthKit as jest.Mock).mockImplementationOnce((_perms, cb: (e: string) => void) => {
++      live = false;
++      cb('permission error');
++    });
++    await expect(connectOnDeviceProvider('APPLE_HEALTHKIT', () => live)).resolves.toBe('stopped');
++  });
++
+   it('Apple Health: an attempt that already ended opens no HealthKit sheet', async () => {
+     setPlatform('ios');
+     await expect(connectOnDeviceProvider('APPLE_HEALTHKIT', () => false)).resolves.toBe('stopped');
+diff --git a/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts b/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
+index c7a5fb2a..a007f16e 100644
+--- a/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
++++ b/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
+@@ -31,6 +31,7 @@ jest.mock('../../../../lib/userCache', () => ({
+ import { HealthConnectPermissionDeniedError, HealthConnectUnsupportedError } from '../errors';
+ import {
+   DEFAULT_BACKFILL_DAYS,
++  healthConnectReadErrorClass,
+   SYNC_OVERLAP_MINUTES,
+   syncHealthConnect,
+   type HealthConnectSyncDeps,
+@@ -46,6 +47,7 @@ import {
+   type SessionFence,
+ } from '../../sessionFence';
+ import { authEvents } from '../../../../utils/authEvents';
++import { logger } from '../../../../utils/logger';
+ 
+ function setPlatform(os: string): void {
+   Object.defineProperty(Platform, 'OS', { get: () => os, configurable: true });
+@@ -433,3 +435,111 @@ describe('B-317-7: no native read starts after sign-out', () => {
+     expect(res.complete).toBe(true);
+   });
+ });
++
++/**
++ * B-360-1 (Sol probe AUD-SOL-W12-116, CI run 37175348201, reused): the REAL
++ * paged client and the REAL fence. A rejected native page logs only a closed
++ * class, never native text; a page that rejects after the fence retired
++ * (sign-out, account switch, cancelled Connect) logs and saves nothing.
++ */
++describe('B-360-1: a rejected native page never logs native text, nor anything after the fence retires', () => {
++  const CANARY = 'AUDIT_360_PRIVATE_WEIGHT_81_6_KG';
++  const mockNativeRead = hcNative.readRecords as jest.Mock;
++  const client = {
++    ...makeClient({ getGrantedPermissions: grantOnly('Steps', 'Weight') }),
++    readRecordsPaged: realClient.readRecordsPaged,
++  };
++  const logged = (): string =>
++    JSON.stringify([logger.log, logger.warn, logger.error].map((fn) => (fn as jest.Mock).mock.calls));
++  const nativeError = (code?: unknown): Error =>
++    Object.assign(new Error(CANARY), code === undefined ? {} : { code });
++  const sync = (
++    fence: SessionFence,
++    ingest: jest.Mock = jest.fn().mockResolvedValue({ inserted: 0, skipped: 0 }),
++    c: unknown = client,
++  ) => syncHealthConnect(SCOPE, { client: c as never, ingestApi: { ingest }, now: () => NOW, fence });
++
++  beforeEach(() => {
++    mockSignedIn = 'user-a';
++    mockNativeRead.mockReset();
++  });
++
++  it.each([
++    ['an Error carrying native text', () => nativeError(), 'unknown'],
++    ['a library PERMISSION_ERROR', () => nativeError('PERMISSION_ERROR'), 'permission'],
++    ['a library IO_EXCEPTION', () => nativeError('IO_EXCEPTION'), 'io'],
++    ['a code outside the allow-list', () => nativeError(CANARY), 'unknown'],
++    ['a non-Error rejection', () => CANARY, 'unknown'],
++    ['a rejection whose code getter throws', () => Object.defineProperty(new Error(CANARY), 'code', {
++      get: () => { throw new Error(CANARY); },
++    }), 'unknown'],
++  ])('%s: that type fails, the next is read, only the class is logged', async (_label, rejection, cls) => {
++    mockNativeRead.mockImplementationOnce(async () => { throw rejection(); });
++    const res = await sync((await beginSessionFence()) as SessionFence);
++    expect(mockNativeRead).toHaveBeenCalledTimes(2);
++    expect(res.complete).toBe(false);
++    expect(res.failedRecordTypes).toEqual(['Steps']);
++    expect(logger.error).toHaveBeenCalledWith('healthConnectSync', 'readRecords failed', {
++      recordType: 'Steps',
++      resumed: false,
++      error: cls,
++    });
++    expect(logged()).not.toContain(CANARY);
++  });
++
++  it.each([
++    ['the start of sign-out', () => stopOnDeviceHealthWork(), 'session_changed'],
++    ['an account switch', () => {
++      mockSignedIn = 'user-b';
++      authEvents.emit('login');
++    }, 'session_changed'],
++    ['a cancelled Connect', (fence: SessionFence) => fence.cancel(), 'cancelled'],
++  ])('%s while a page is in flight, then it rejects: silent, nothing sent or saved', async (_label, stop, reason) => {
++    const fence = (await beginSessionFence()) as SessionFence;
++    mockNativeRead.mockImplementationOnce(async () => {
++      stop(fence);
++      throw nativeError('PERMISSION_ERROR');
++    });
++    const ingest = jest.fn();
++    const err = await sync(fence, ingest).catch((e: unknown) => e);
++    expect(err).toBeInstanceOf(OnDeviceSessionChangedError);
++    expect((err as OnDeviceSessionChangedError).reason).toBe(reason);
++    expect(mockNativeRead).toHaveBeenCalledTimes(1);
++    expect(ingest).not.toHaveBeenCalled();
++    expect(await getSyncProgress(SCOPE)).toEqual({ v: 1, completedThrough: {}, resume: {} });
++    expect(logger.error).not.toHaveBeenCalled();
++    expect(logged()).not.toContain(CANARY);
++  });
++
++  it('a grant read that resolves after sign-out started reports and logs nothing', async () => {
++    const fence = (await beginSessionFence()) as SessionFence;
++    const revoked = {
++      ...client,
++      getGrantedPermissions: jest.fn(async () => {
++        stopOnDeviceHealthWork();
++        return [];
++      }),
++    };
++    await expect(sync(fence, jest.fn(), revoked)).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++    expect(logger.warn).not.toHaveBeenCalled();
++    expect(mockNativeRead).not.toHaveBeenCalled();
++  });
++
++  it('control: an unchanged session with empty reads completes and logs no failure', async () => {
++    mockNativeRead.mockResolvedValue({ records: [] });
++    const res = await sync((await beginSessionFence()) as SessionFence);
++    expect(res.complete).toBe(true);
++    expect(logger.error).not.toHaveBeenCalled();
++  });
++
++  it('classifies only the library codes; everything else is unknown', () => {
++    const codes = ['PERMISSION_ERROR', 'SERVICE_UNAVAILABLE', 'CLIENT_NOT_INITIALIZED', 'UNDERLYING_ERROR',
++      'IO_EXCEPTION', 'SDK_VERSION_ERROR', 'ARGUMENT_VALIDATION_ERROR', 'INVALID_RECORD_TYPE', 'UNKNOWN_ERROR',
++      '__proto__', 'constructor'];
++    expect(codes.map((code) => healthConnectReadErrorClass({ code }))).toEqual(['permission',
++      'service_unavailable', 'service_unavailable', 'service_unavailable', 'io', 'sdk_version',
++      'invalid_request', 'invalid_request', 'unknown', 'unknown', 'unknown']);
++    expect([null, undefined, 42, CANARY, { code: 7 }].map(healthConnectReadErrorClass)).toEqual(
++      ['unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
++  });
++});
+diff --git a/src/services/health/healthConnect/healthConnectSyncService.ts b/src/services/health/healthConnect/healthConnectSyncService.ts
+index 727c1c75..1ffb1cb9 100644
+--- a/src/services/health/healthConnect/healthConnectSyncService.ts
++++ b/src/services/health/healthConnect/healthConnectSyncService.ts
+@@ -64,6 +64,44 @@ export const DEFAULT_BACKFILL_DAYS = 30;
+  */
+ export const SYNC_OVERLAP_MINUTES = 5;
+ 
++/**
++ * B-360-1: the closed set logged for a failed Health Connect read. A native
++ * rejection's message is free-form text (it can echo record content), so it
++ * is never logged; only this class, the record type and the resumed bit are.
++ */
++export type HealthConnectReadErrorClass =
++  | 'permission'
++  | 'service_unavailable'
++  | 'io'
++  | 'sdk_version'
++  | 'invalid_request'
++  | 'unknown';
++
++/** The library's rejection codes (`ExceptionsUtils.kt`), compared, never copied. */
++const READ_ERROR_CLASS_BY_CODE: ReadonlyMap<string, HealthConnectReadErrorClass> = new Map<
++  string,
++  HealthConnectReadErrorClass
++>([
++  ['PERMISSION_ERROR', 'permission'],
++  ['SERVICE_UNAVAILABLE', 'service_unavailable'],
++  ['CLIENT_NOT_INITIALIZED', 'service_unavailable'],
++  ['UNDERLYING_ERROR', 'service_unavailable'],
++  ['IO_EXCEPTION', 'io'],
++  ['SDK_VERSION_ERROR', 'sdk_version'],
++  ['ARGUMENT_VALIDATION_ERROR', 'invalid_request'],
++  ['INVALID_RECORD_TYPE', 'invalid_request'],
++]);
++
++/** Classify a read rejection without copying anything it carries. Never throws. */
++export function healthConnectReadErrorClass(err: unknown): HealthConnectReadErrorClass {
++  try {
++    const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
++    return (typeof code === 'string' && READ_ERROR_CLASS_BY_CODE.get(code)) || 'unknown';
++  } catch {
++    return 'unknown';
++  }
++}
++
+ /** Injectable dependencies — defaults wire the real client/api; tests inject mocks. */
+ export interface HealthConnectSyncDeps {
+   client?: HealthConnectClient;
+@@ -172,7 +210,10 @@ export async function syncHealthConnect(
+   // on the person's tap; a refresh that finds every type revoked reports it
+   // (the Health screen offers Open Health Connect) instead of prompting
+   // unasked when Health opens.
+-  const grantedRecordTypes = grantedReadRecordTypes(await client.getGrantedPermissions());
++  const granted = await client.getGrantedPermissions();
++  // B-360-1: nothing is reported or logged for a run that stopped meanwhile.
++  fence.throwIfStopped();
++  const grantedRecordTypes = grantedReadRecordTypes(granted);
+   if (grantedRecordTypes.length === 0) {
+     logger.warn('healthConnectSync', 'all read permissions denied', {
+       requested: HEALTH_CONNECT_RECORD_TYPES.length,
+@@ -216,6 +257,10 @@ export async function syncHealthConnect(
+         next.completedThrough[recordType] = range.endTime;
+       }
+     } catch (err) {
++      // B-360-1: the fence first, synchronously. A page that rejects after
++      // sign-out, an account switch or a cancelled Connect ends the run here:
++      // nothing is classified, recorded or logged for it.
++      fence.throwIfStopped();
+       // A stop (sign-out, account switch, cancelled Connect) ends the whole
+       // run; it is never an ordinary per-type read failure (Sol B-317-7).
+       if (isOnDeviceStop(err)) throw err;
+@@ -228,7 +273,7 @@ export async function syncHealthConnect(
+       logger.error('healthConnectSync', 'readRecords failed', {
+         recordType,
+         resumed: Boolean(resume),
+-        error: err instanceof Error ? err.message : String(err),
++        error: healthConnectReadErrorClass(err),
+       });
+     }
+   }
+diff --git a/src/services/health/onDeviceConnect.ts b/src/services/health/onDeviceConnect.ts
+index 074e2787..d68f8f49 100644
+--- a/src/services/health/onDeviceConnect.ts
++++ b/src/services/health/onDeviceConnect.ts
+@@ -114,6 +114,8 @@ async function connectHealthKit(isCurrent: OnDeviceAttemptCheck): Promise<OnDevi
+     await healthKitClient.requestAuth(HEALTHKIT_READ_PERMISSIONS);
+     return 'granted';
+   } catch (err) {
++    // B-360-1: an attempt that ended while the sheet was up reports nothing.
++    if (!isCurrent()) return 'stopped';
+     // HealthKit never tells an app what was declined, so a failure here is
+     // not a refusal. `react-native-health` rejects with "HealthKit data is
+     // not available" on devices without Health (some iPads); anything else

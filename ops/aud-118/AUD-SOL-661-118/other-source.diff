@@ -1,0 +1,441 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 2881aab45..572e41a6f 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -546,6 +546,8 @@ jobs:
+         # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
+         # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
+         # transfer on real Postgres; same gate and bootstrap.
++        # And test/checkout-settlement.live.spec.ts (#661 C-661-12): payment
++        # settlement row versions, row locks and recovery on real Postgres.
+         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
+         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
+         # set they execute their live blocks instead of skipping. --runInBand so
+@@ -561,6 +563,7 @@ jobs:
+             test/mwb-3-revision-prune.cron.spec.ts \
+             test/profile-put-concurrency.live.spec.ts \
+             test/onboarding-tenancy-fence.live.spec.ts \
++            test/checkout-settlement.live.spec.ts \
+             --runInBand --testTimeout=120000
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+diff --git a/src/checkout/admin-purchase.select.ts b/src/checkout/admin-purchase.select.ts
+new file mode 100644
+index 000000000..e51ddfa26
+--- /dev/null
++++ b/src/checkout/admin-purchase.select.ts
+@@ -0,0 +1,40 @@
++import type { Prisma } from '@prisma/client';
++
++// B-SECRETS-3 (#646 C-646-1, both lenses) — owner / admin reads of
++// ClientPurchase.
++//
++// A ClientPurchase row caches the client's Stripe PaymentIntent
++// `stripe_client_secret` and customer `stripe_ephemeral_key` so the client's
++// own PaymentSheet can resume a pending payment. They are the client's
++// payment credentials: no owner or admin route needs them (support works
++// from the Stripe ids, which stay visible), so every admin read omits them.
++// Coach routes use the stricter allow-lists in coach-payments.select.ts.
++
++/** The cached PaymentSheet credentials on a ClientPurchase row. */
++export const PURCHASE_PAYMENT_SECRET_FIELDS = [
++  'stripe_client_secret',
++  'stripe_ephemeral_key',
++] as const;
++
++/** Every ClientPurchase column except the client's payment credentials. */
++export const ADMIN_PURCHASE_OMIT = {
++  stripe_client_secret: true,
++  stripe_ephemeral_key: true,
++} as const satisfies Prisma.ClientPurchaseOmit;
++
++/** Shape of a purchase row on an owner / admin route. */
++export type AdminPurchaseView = Prisma.ClientPurchaseGetPayload<{
++  omit: typeof ADMIN_PURCHASE_OMIT;
++}>;
++
++/**
++ * B-SECRETS-3 (#646 C-646-2 Opus) — written with every transition that ends
++ * a PaymentSheet payment (succeeded, checkout expired, subscription ended):
++ * once the PaymentIntent can no longer be paid, nothing may resume it, so
++ * the cached credentials are erased at rest. A failed payment keeps them
++ * (the client retries the same PaymentIntent).
++ */
++export const CLEARED_PAYMENT_SECRETS = {
++  stripe_client_secret: null,
++  stripe_ephemeral_key: null,
++} as const satisfies Prisma.ClientPurchaseUpdateInput;
+diff --git a/src/checkout/checkout.service.ts b/src/checkout/checkout.service.ts
+index ed99b2f03..6cf2553d0 100644
+--- a/src/checkout/checkout.service.ts
++++ b/src/checkout/checkout.service.ts
+@@ -84,6 +84,70 @@ export interface BuyerDropView {
+ // <50 in practice. 500 is well above any realistic package.
+ const DROP_LIST_HARD_CAP = 500;
+ 
++// B-SECRETS-3 — the answer to a payment-intent request whose idempotency key
++// belongs to a payment that already finished.
++const PAID_STATUSES = new Set(['paid', 'active', 'past_due', 'trialing']);
++// B-661 round 2 (C-661-4): a refunded or disputed payment is not "closed"; it
++// may still be entitled while the dispute is open.
++const REFUNDED_OR_REVIEW_STATUSES = new Set(['refunded', 'disputed', 'chargeback_lost']);
++export function finishedPaymentReplay(status: string): ConflictException {
++  if (PAID_STATUSES.has(status)) {
++    return new ConflictException({
++      error: 'PAYMENT_ALREADY_COMPLETE',
++      message: 'This payment is already complete. Your package is ready in your account.',
++    });
++  }
++  if (REFUNDED_OR_REVIEW_STATUSES.has(status)) {
++    return new ConflictException({
++      error: 'PAYMENT_REFUNDED_OR_IN_REVIEW',
++      message:
++        'This payment was refunded or is under review, so it cannot be paid again here. ' +
++        'Its status is on the purchase in your account.',
++    });
++  }
++  return new ConflictException({
++    error: 'PAYMENT_CHECKOUT_CLOSED',
++    message: 'This checkout has closed. Start again from the package page to buy it.',
++  });
++}
++
++// B-661-1 / B-661-2 (Sol, round 2) — one classifier for every read of a
++// payment-intent reservation row (the pre-read, each poll answer, and the
++// race-loser branch), always applied BEFORE any cached credential is
++// returned:
++//   - a status other than `pending` or `payment_failed` is finished: the
++//     specific 409 answer, whatever credentials the row still holds (historic
++//     rows keep them until the operator backfill, C-661-2);
++//   - `pending` / `payment_failed` with published credentials: resume (the
++//     client retries the same PaymentIntent);
++//   - `pending` without credentials: the winner is still publishing (wait);
++//   - `payment_failed` without credentials: nothing can resume it (closed).
++const RESUMABLE_STATUSES = new Set(['pending', 'payment_failed']);
++export type PaymentReplayAnswer =
++  | { kind: 'resume'; client_secret: string; ephemeral_key: string; customer_id: string }
++  | { kind: 'wait' }
++  | { kind: 'finished'; error: ConflictException };
++export function classifyPaymentReplay(
++  row: Pick<
++    ClientPurchase,
++    'status' | 'stripe_client_secret' | 'stripe_ephemeral_key' | 'stripe_customer_id'
++  >,
++): PaymentReplayAnswer {
++  if (!RESUMABLE_STATUSES.has(row.status)) {
++    return { kind: 'finished', error: finishedPaymentReplay(row.status) };
++  }
++  if (row.stripe_client_secret) {
++    return {
++      kind: 'resume',
++      client_secret: row.stripe_client_secret,
++      ephemeral_key: row.stripe_ephemeral_key ?? '',
++      customer_id: row.stripe_customer_id ?? '',
++    };
++  }
++  if (row.status === 'pending') return { kind: 'wait' };
++  return { kind: 'finished', error: finishedPaymentReplay(row.status) };
++}
++
+ @Injectable()
+ export class CheckoutService {
+   private readonly logger = new Logger(CheckoutService.name);
+@@ -507,17 +571,15 @@ export class CheckoutService {
+     const existing = await this.prisma.clientPurchase.findUnique({
+       where: { idempotency_key: purchaseIdempotencyKey },
+     });
+-    if (
+-      existing &&
+-      existing.client_user_id === client.id &&
+-      existing.stripe_client_secret
+-    ) {
+-      return {
+-        client_secret: existing.stripe_client_secret,
+-        ephemeral_key: existing.stripe_ephemeral_key ?? '',
+-        customer_id: existing.stripe_customer_id ?? '',
+-        publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+-      };
++    // B-SECRETS-3 / B-661-1: the status is classified before any cached
++    // credential is returned. A finished payment (paid, expired, ended,
++    // refunded, disputed) gets its specific answer even when its row still
++    // holds credentials; only a pending or failed-and-retryable payment
++    // resumes.
++    if (existing && existing.client_user_id === client.id) {
++      const replay = classifyPaymentReplay(existing);
++      if (replay.kind === 'finished') throw replay.error;
++      if (replay.kind === 'resume') return this.resumedPayment(replay);
+     }
+ 
+     const coach = await this.prisma.user.findUnique({
+@@ -594,14 +656,6 @@ export class CheckoutService {
+       // Lost the race. Another concurrent request is creating the Stripe
+       // resources right now; poll briefly for it to publish its secret.
+       const winner = await this.waitForReservedSecret(purchaseIdempotencyKey);
+-      if (winner && winner.stripe_client_secret) {
+-        return {
+-          client_secret: winner.stripe_client_secret,
+-          ephemeral_key: winner.stripe_ephemeral_key ?? '',
+-          customer_id: winner.stripe_customer_id ?? '',
+-          publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+-        };
+-      }
+       // P1-A: `null` means the winner failed and cleaned up its
+       // reservation, so the idempotency key is now free again. Surface
+       // a retryable error (not the generic "in progress") so the mobile
+@@ -613,6 +667,12 @@ export class CheckoutService {
+             'The previous attempt for this payment failed. Please try again.',
+         });
+       }
++      // B-661-2: the winner's payment may have finished (and its credentials
++      // been erased) while this request waited: answer that, never "in
++      // progress", and never return credentials of a finished payment.
++      const replay = classifyPaymentReplay(winner);
++      if (replay.kind === 'finished') throw replay.error;
++      if (replay.kind === 'resume') return this.resumedPayment(replay);
+       throw new ServiceUnavailableException({
+         error: 'PAYMENT_IN_PROGRESS',
+         message:
+@@ -706,15 +766,31 @@ export class CheckoutService {
+     }
+   }
+ 
++  private resumedPayment(replay: Extract<PaymentReplayAnswer, { kind: 'resume' }>): {
++    client_secret: string;
++    ephemeral_key: string;
++    customer_id: string;
++    publishable_key: string;
++  } {
++    return {
++      client_secret: replay.client_secret,
++      ephemeral_key: replay.ephemeral_key,
++      customer_id: replay.customer_id,
++      publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
++    };
++  }
++
+   // Poll for a concurrent winner's PaymentIntent client_secret to be
+   // published on the reservation row. Used by losers of the
+   // idempotency-key race to return the same client_secret without
+   // making their own Stripe calls.
+   //
+-  // Returns the winner row when `stripe_client_secret` is published.
+-  // Returns `null` if the reservation disappears (winner failed and
+-  // cleaned up — P1-A) so the caller can surface a retryable error
+-  // instead of waiting the full timeout.
++  // Returns the winner row as soon as it is settled for a replay: its
++  // credentials are published, or (B-661-2) its status is no longer one a
++  // PaymentSheet can resume (paid, expired, ended, refunded, disputed;
++  // classifyPaymentReplay). Returns `null` if the reservation disappears
++  // (winner failed and cleaned up — P1-A) so the caller can surface a
++  // retryable error instead of waiting the full timeout.
+   private async waitForReservedSecret(
+     idempotencyKey: string,
+     timeoutMs = 5_000,
+@@ -725,9 +801,9 @@ export class CheckoutService {
+       const row = await this.prisma.clientPurchase.findUnique({
+         where: { idempotency_key: idempotencyKey },
+       });
+-      if (row?.stripe_client_secret) return row;
+       // Winner cleaned up after a failure — bail out early.
+       if (!row) return null;
++      if (classifyPaymentReplay(row).kind !== 'wait') return row;
+       await new Promise((r) => setTimeout(r, intervalMs));
+     }
+     return await this.prisma.clientPurchase.findUnique({
+diff --git a/src/checkout/dunning.service.ts b/src/checkout/dunning.service.ts
+index 737db0790..b5f9884f0 100644
+--- a/src/checkout/dunning.service.ts
++++ b/src/checkout/dunning.service.ts
+@@ -9,6 +9,7 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+ import { EmailService } from '../email/email.service';
+ import { EmailTemplateKey } from '../email/email.types';
+ import { PrismaService } from '../prisma.service';
++import { ADMIN_PURCHASE_OMIT, type AdminPurchaseView } from './admin-purchase.select';
+ 
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Dunning v1 — webhook-driven failed-payment recovery.
+@@ -178,7 +179,8 @@ export interface RecordFailureInput {
+ export interface DunningAdminView {
+   state: DunningState | null;
+   attempts: DunningAttempt[];
+-  purchase: ClientPurchase | null;
++  // B-SECRETS-3: the client's cached payment credentials are omitted.
++  purchase: AdminPurchaseView | null;
+ }
+ 
+ @Injectable()
+@@ -688,6 +690,7 @@ export class DunningService {
+     });
+     const purchase = await this.prisma.clientPurchase.findUnique({
+       where: { id: purchaseId },
++      omit: ADMIN_PURCHASE_OMIT,
+     });
+     const attempts = state
+       ? await this.prisma.dunningAttempt.findMany({
+diff --git a/src/checkout/payment-ops.controller.ts b/src/checkout/payment-ops.controller.ts
+index 6ae95c0e1..aaf93e057 100644
+--- a/src/checkout/payment-ops.controller.ts
++++ b/src/checkout/payment-ops.controller.ts
+@@ -37,6 +37,7 @@ import {
+   COACH_PURCHASE_SELECT,
+   COACH_TRANSFER_SELECT,
+ } from './coach-payments.select';
++import { ADMIN_PURCHASE_OMIT } from './admin-purchase.select';
+ import {
+   CursorPageQueryDto,
+   PAYMENT_OPS_DEFAULT_LIMIT,
+@@ -150,6 +151,8 @@ export class AdminPaymentOpsController {
+       },
+       orderBy: { created_at: 'desc' },
+       take: limit,
++      // B-SECRETS-3: never the client's cached payment credentials.
++      omit: ADMIN_PURCHASE_OMIT,
+     });
+     return { purchases: rows };
+   }
+@@ -165,6 +168,7 @@ export class AdminPaymentOpsController {
+     const purchase = await this.prisma.clientPurchase.findUnique({
+       where: { id: purchaseId },
+       include: { package: true },
++      omit: ADMIN_PURCHASE_OMIT,
+     });
+     if (!purchase) {
+       throw new NotFoundException({
+diff --git a/src/observability/log-redaction.ts b/src/observability/log-redaction.ts
+index 498989676..c0ca50b0c 100644
+--- a/src/observability/log-redaction.ts
++++ b/src/observability/log-redaction.ts
+@@ -58,6 +58,10 @@ export const REDACT_KEYS: ReadonlySet<string> = new Set([
+   // Stripe / billing
+   'stripe_secret_key',
+   'stripe_webhook_secret',
++  // B-SECRETS-3 (#646 C-646-2): the client's cached PaymentSheet credentials.
++  'stripe_client_secret',
++  'stripe_ephemeral_key',
++  'ephemeral_key',
+   'card_number',
+   'cvv',
+   'cvc',
+@@ -79,6 +83,22 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set([
+   'msg',
+ ]);
+ 
++/** B-SECRETS-3: any `*_secret` / `*_ephemeral_key` key (e.g. `webhook_secret`). */
++function isSecretSuffixKey(keyLower: string): boolean {
++  return keyLower.endsWith('_secret') || keyLower.endsWith('ephemeral_key');
++}
++
++// B-SECRETS-3: Stripe credential VALUES, wherever they appear in a string
++// (PaymentIntent / SetupIntent client secrets, ephemeral keys, secret and
++// restricted API keys, webhook signing secrets).
++const STRIPE_SECRET_VALUE =
++  /\b(?:(?:pi|seti)_[A-Za-z0-9]+_secret_[A-Za-z0-9]+|ek_(?:live|test)_[A-Za-z0-9]+|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+)/g;
++
++/** Replace every Stripe credential value in a string with [REDACTED]. */
++export function redactStripeSecretValues(text: string): string {
++  return text.replace(STRIPE_SECRET_VALUE, '[REDACTED]');
++}
++
+ /**
+  * Recursively redact sensitive keys from a plain-object tree.
+  *
+@@ -88,6 +108,7 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set([
+  * @param seen   WeakSet used to detect circular references.
+  */
+ export function redactObject(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
++  if (typeof value === 'string') return redactStripeSecretValues(value);
+   if (value === null || typeof value !== 'object') return value;
+   if (seen.has(value as object)) return '[Circular]';
+   seen.add(value as object);
+@@ -99,7 +120,8 @@ export function redactObject(value: unknown, seen: WeakSet<object> = new WeakSet
+   const result: Record<string, unknown> = {};
+   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+     const keyLower = k.toLowerCase();
+-    if (!ALLOWED_KEYS.has(keyLower) && REDACT_KEYS.has(keyLower)) {
++    const sensitive = REDACT_KEYS.has(keyLower) || isSecretSuffixKey(keyLower);
++    if (!ALLOWED_KEYS.has(keyLower) && sensitive) {
+       result[k] = '[REDACTED]';
+     } else {
+       result[k] = redactObject(v, seen);
+@@ -117,10 +139,10 @@ export function redactLogLine(line: string): string {
+   // Replace `"password":"<anything>"` (and similar) in serialised JSON.
+   // The replace is best-effort; the primary guard is `redactObject`.
+   return line.replace(
+-    /"(?:password|passwd|token|authorization|secret|api_key|access_token|refresh_token|id_token|client_secret|private_key|blood[^"]*|body_fat[^"]*|fat_percentage[^"]*|card_number|cvv|cvc)"\s*:\s*"[^"]*"/gi,
++    /"(?:password|passwd|token|authorization|secret|api_key|access_token|refresh_token|id_token|client_secret|[a-z0-9_]*_secret|[a-z0-9_]*ephemeral_key|private_key|blood[^"]*|body_fat[^"]*|fat_percentage[^"]*|card_number|cvv|cvc)"\s*:\s*"[^"]*"/gi,
+     (match) => {
+       const colonIdx = match.indexOf(':');
+       return match.slice(0, colonIdx + 1) + '"[REDACTED]"';
+     },
+-  );
++  ).replace(STRIPE_SECRET_VALUE, '[REDACTED]');
+ }
+diff --git a/src/packages/purchase-fanout.service.ts b/src/packages/purchase-fanout.service.ts
+index 34a044789..7ee3dfbc6 100644
+--- a/src/packages/purchase-fanout.service.ts
++++ b/src/packages/purchase-fanout.service.ts
+@@ -588,11 +588,18 @@ export class PurchaseFanoutService {
+       );
+       return 0;
+     }
++    // B-661-9 (Sol, round 6): any other cancel (refund, dispute, cancel,
++    // coach decision, grant revoke) also takes over the drops a payment
++    // failure canceled, so recovering that payment never brings them back
++    // (restoreAfterPaymentRecovered). One statement: a restore that commits
++    // first left them pending (matched here); one that waits on these rows
++    // no longer matches them.
++    const cancelable: Prisma.ScheduledDropWhereInput[] = [{ status: { in: ['pending', 'due'] } }];
++    if (reason !== 'payment_failed') {
++      cancelable.push({ status: 'canceled', failure_reason: 'canceled:payment_failed' });
++    }
+     const result = await db.scheduledDrop.updateMany({
+-      where: {
+-        client_purchase_id: clientPurchaseId,
+-        status: { in: ['pending', 'due'] },
+-      },
++      where: { client_purchase_id: clientPurchaseId, OR: cancelable },
+       data: {
+         status: 'canceled',
+         failure_reason: `canceled:${reason}`,
+@@ -612,6 +619,41 @@ export class PurchaseFanoutService {
+     return result.count;
+   }
+ 
++  // B-661-3 (round 5) — a payment that failed after its purchase was
++  // activated, then succeeded (the same PaymentIntent). The drops that
++  // failure canceled (`canceled:payment_failed`) are pending again; the drip
++  // dispatcher delivers the ones already due on its next tick. Drops
++  // canceled for any other reason (refund, dispute, cancel, coach decision,
++  // grant revoke), also after the failure (B-661-9), stay canceled.
++  // Idempotent: a replay finds none.
++  async restoreAfterPaymentRecovered(
++    clientPurchaseId: string,
++    tx?: TxOrPrisma | Prisma.TransactionClient,
++  ): Promise<number> {
++    const db: { scheduledDrop: Prisma.TransactionClient['scheduledDrop'] } | undefined =
++      (tx as TxOrPrisma | undefined)?.scheduledDrop
++        ? (tx as TxOrPrisma)
++        : this.prisma;
++    if (!db || !db.scheduledDrop) {
++      this.logger.warn(
++        `restoreAfterPaymentRecovered: no scheduledDrop client available (purchase=${clientPurchaseId}) — skipping`,
++      );
++      return 0;
++    }
++    const result = await db.scheduledDrop.updateMany({
++      where: {
++        client_purchase_id: clientPurchaseId,
++        status: 'canceled',
++        failure_reason: 'canceled:payment_failed',
++      },
++      data: { status: 'pending', failure_reason: null, next_retry_at: null, locked_at: null },
++    });
++    this.logger.log(
++      `restoreAfterPaymentRecovered: ${result.count} drop(s) pending again for purchase=${clientPurchaseId}`,
++    );
++    return result.count;
++  }
++
+   /**
+    * Discard alerts staged inside a rolled-back tx so a successful
+    * retry doesn't double-alert. Callers invoke from their tx catch
