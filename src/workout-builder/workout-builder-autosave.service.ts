@@ -54,8 +54,10 @@ import {
   AutosaveBatchInput,
   AutosaveBatchSchema,
   AutosaveCause,
+  AutosaveConflictDto,
   AutosaveOpInput,
   AutosaveResponseDto,
+  UndoHeadMovedDto,
   UndoRequestInput,
   UndoRequestSchema,
   UndoResponseDto,
@@ -205,22 +207,28 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
             locked.version,
             locked.headRevisionId,
           );
+          // B-MWB409: `code` keys the filter's allowlist, so the head index and
+          // token reach the HTTP body (src/filters/error-details.ts).
           if (body.lock_token !== expectedToken) {
-            throw new ConflictException({
+            const conflict: AutosaveConflictDto = {
+              code: 'autosave_lock_stale',
               error: 'autosave_lock_stale',
               head_revision_index: locked.headIndex,
               lock_token: expectedToken,
-            });
+            };
+            throw new ConflictException(conflict);
           }
 
           // (c.2) Base-index assert (kept). A stale base index => 409 with the
           // current head index + a fresh lock_token so the client rebases.
           if (body.base_revision_index !== locked.headIndex) {
-            throw new ConflictException({
+            const conflict: AutosaveConflictDto = {
+              code: 'autosave_conflict_retry',
               error: 'autosave_conflict_retry',
               head_revision_index: locked.headIndex,
               lock_token: expectedToken,
-            });
+            };
+            throw new ConflictException(conflict);
           }
 
           // (d) Apply ops to the in-memory snapshot, then persist row mutations
@@ -313,7 +321,7 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
             body.expected_head_index !== undefined &&
             body.expected_head_index !== locked.headIndex
           ) {
-            throw new ConflictException({
+            const conflict: UndoHeadMovedDto = {
               error: 'undo_head_moved',
               code: 'undo_head_moved',
               message:
@@ -324,7 +332,8 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
                 locked.version,
                 locked.headRevisionId,
               ),
-            });
+            };
+            throw new ConflictException(conflict);
           }
 
           // (a) The target must be strictly earlier than the current head — you
