@@ -37,7 +37,8 @@
     "FEATURE_MWB_TEMPLATES": "unset",
     "FEATURE_MWB_AUTOSAVE_UNDO": "unset",
     "FEATURE_NAMED_REGIMES": "unset",
-    "FEATURE_DUNNING_V2": "unset"
+    "FEATURE_DUNNING_V2": "unset",
+    "FEATURE_COACH_CODE_TOOLS": "unset"
   },
   "secrets": {
     "GOOGLE_CLIENT_IDS": "github-secret",
@@ -98,6 +99,7 @@
     "FEATURE_MWB_AUTOSAVE_UNDO": "Wave B (owner day-1 list): same gate as FEATURE_MWB_TEMPLATES. Precondition: MWB_AUTOSAVE_LOCK_TOKEN_SECRET must be github-secret (64+ hex characters) or present, because the autosave service throws without it. Mobile EXPO_PUBLIC_FF_MWB_AUTOSAVE flips with it.",
     "FEATURE_NAMED_REGIMES": "Wave B (owner day-1 list): same gate as FEATURE_MWB_TEMPLATES. Unset = off (only 'true').",
     "FEATURE_DUNNING_V2": "Wave B (owner day-1 list; folded in from #633): after backend #628 and mobile #322 are approved and the owner enables the Stripe customer portal in live mode. Roll back with 'unset'.",
+    "FEATURE_COACH_CODE_TOOLS": "Annex lane A2 (coach code tools): after the backend PR and the mobile Codes screen pass both audit lenses and a device pass. Roll back with 'unset'.",
     "GOOGLE_CLIENT_IDS": "Wave B: launch-required Google sign-in audiences. The GitHub secret GOOGLE_CLIENT_IDS exists; flip to github-secret to copy it to Fly. Must be a comma list of non-empty client ids.",
     "MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "Precondition of FEATURE_MWB_AUTOSAVE_UNDO=true. Create the GitHub secret with 'openssl rand -hex 32 | gh secret set MWB_AUTOSAVE_LOCK_TOKEN_SECRET', then flip to github-secret in the same PR as (or before) the autosave flag.",
     "GOOGLE_OAUTH_CLIENT_ID": "Present on Fly (set outside this manifest); asserted present, never written here.",

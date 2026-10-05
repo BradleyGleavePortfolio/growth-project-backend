@@ -305,6 +305,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CoachAIBudget', field: 'coach_user_id', action: retain(FINANCE) },
   { model: 'CoachLtvPeak', field: 'coach_id', action: del },
   { model: 'ExtensionPairCode', field: 'coach_id', action: del },
+  // A2 signup ledger (#658 C-658-2): both sides are deleted with the person.
+  { model: 'InviteRedemption', field: 'coach_id', action: del },
+  { model: 'InviteRedemption', field: 'client_user_id', action: del },
   { model: 'InviteCode', field: 'coach_id', action: del },
   { model: 'InviteCode', field: 'invited_by_user_id', action: detach('invited_by_user_id') },
   { model: 'InviteCode', field: 'accepted_by_user_id', action: detach('accepted_by_user_id') },

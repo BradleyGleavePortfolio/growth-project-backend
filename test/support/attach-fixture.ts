@@ -37,6 +37,8 @@ export function buildAttachDb(): StatefulPrisma {
     accepted_at: null,
     invited_by_user_id: null,
   }));
+  // A2 — signup ledger written inside the attach transaction (rolled back with it).
+  db.model('inviteRedemption', [['id']], () => ({ redeemed_at: new Date() }));
   db.relations.user = (row) => db.state.user.find((u) => u.id === row.user_id) ?? null;
   db.relations.coach = (row) => db.state.user.find((u) => u.id === row.coach_id) ?? null;
 
