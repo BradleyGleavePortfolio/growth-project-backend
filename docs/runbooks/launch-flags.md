@@ -117,6 +117,7 @@ FEATURE_COMMUNITY_AI_TRIAGE | off | fly secrets unset -a backend-spring-lake-389
 FEATURE_COMMUNITY_CHALLENGES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_CHALLENGES | "FEATURE_COMMUNITY_CHALLENGES": "unset"
 FEATURE_COMMUNITY_EVENTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_EVENTS | "FEATURE_COMMUNITY_EVENTS": "unset"
 FEATURE_COMMUNITY_CLASSROOM_POSTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_CLASSROOM_POSTS | "FEATURE_COMMUNITY_CLASSROOM_POSTS": "unset"
+FEATURE_MESSAGING_CORE_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MESSAGING_CORE_V2 | "FEATURE_MESSAGING_CORE_V2": "unset"
 BOOKING_REMINDERS_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 BOOKING_REMINDERS_ENABLED | "BOOKING_REMINDERS_ENABLED": "unset"
 SIGNUP_ROLE_CHOICE_ENABLED | on | fly secrets set -a backend-spring-lake-3890 SIGNUP_ROLE_CHOICE_ENABLED=false (never unset: that turns it on) | "SIGNUP_ROLE_CHOICE_ENABLED": "false"
 COACH_WELCOME_SCHEDULER_ENABLED | on | fly secrets set -a backend-spring-lake-3890 COACH_WELCOME_SCHEDULER_ENABLED=false (never unset: that turns it on) | "COACH_WELCOME_SCHEDULER_ENABLED": "false"
