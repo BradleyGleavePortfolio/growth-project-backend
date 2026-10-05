@@ -546,6 +546,8 @@ jobs:
         # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
         # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
         # transfer on real Postgres; same gate and bootstrap.
+        # And test/checkout-settlement.live.spec.ts (#661 C-661-12): payment
+        # settlement row versions, row locks and recovery on real Postgres.
         # And test/b-trials-usage-concurrency.live.spec.ts (#671 B-671-1,
         # C-671-2): the one-trial ledger's start/reserve races, each caller in
         # its own transaction; same gate and bootstrap.
@@ -564,6 +566,7 @@ jobs:
             test/mwb-3-revision-prune.cron.spec.ts \
             test/profile-put-concurrency.live.spec.ts \
             test/onboarding-tenancy-fence.live.spec.ts \
+            test/checkout-settlement.live.spec.ts \
             test/b-trials-usage-concurrency.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
