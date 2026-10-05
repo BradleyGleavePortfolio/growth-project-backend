@@ -375,7 +375,18 @@ describeLive('A1-COACHLESS tables RLS (live Postgres)', () => {
       for (const t of TABLES)
         await prisma.$executeRawUnsafe(`GRANT SELECT ON public."${t}" TO anon`);
       try {
-        for (const t of TABLES) expect(await count(ANON, CLIENT_A, t)).toBe(0);
+        // Denied means zero visible rows OR 42501: anon cannot EXECUTE the
+        // app.* helpers the permissive policies call (the same rule as
+        // clinic-engagement-rls.spec.ts). Either way nothing is readable.
+        for (const t of TABLES) {
+          let seen: number | string;
+          try {
+            seen = await count(ANON, CLIENT_A, t);
+          } catch (err) {
+            seen = sqlState(err);
+          }
+          expect([t, seen === 0 || seen === '42501' ? 'denied' : seen]).toEqual([t, 'denied']);
+        }
       } finally {
         for (const t of TABLES)
           await prisma.$executeRawUnsafe(`REVOKE ALL ON public."${t}" FROM anon`);
