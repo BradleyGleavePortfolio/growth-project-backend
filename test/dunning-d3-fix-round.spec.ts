@@ -2,7 +2,10 @@ import { Logger } from '@nestjs/common';
 import { ClientBillingReconciler } from '../src/checkout/client-billing.reconciler';
 import { ClientBillingService } from '../src/checkout/client-billing.service';
 import { DunningService } from '../src/checkout/dunning.service';
-import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
+import {
+  DUNNING_V2_REVERSAL_REASON,
+  DunningV2Service,
+} from '../src/checkout/dunning-v2/dunning-v2.service';
 import { DunningV2Telemetry } from '../src/checkout/dunning-v2/dunning-v2.telemetry';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { FakePrisma } from './support/dunning-v2-fake-prisma';
@@ -103,6 +106,8 @@ function dispute(w: World) {
     status: 'needs_response',
     closed_at: null,
   });
+  // D2c (R-DISPUTE-PAUSE): recording a dispute marks the active cycle.
+  Object.assign(w.state() ?? {}, { last_failure_reason: DUNNING_V2_REVERSAL_REASON });
 }
 
 const unavailable = () => new StripeConnectApiError(SENTINEL, 503, 'request_timeout', 'api_error');
@@ -213,6 +218,8 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
       status: 'lost',
       closed_at: new Date(OLD.getTime() + 5 * 86400000),
     });
+    // D2c (R-DISPUTE-PAUSE): the dispute marked the cycle; a loss keeps it.
+    Object.assign(w.state() ?? {}, { last_failure_reason: DUNNING_V2_REVERSAL_REASON });
     const si = await approve(w);
     const res = await w.billing.confirmCardUpdate('client', si.id, si.approved);
     expect(res.plans[0]).toMatchObject({ outcome: 'paid', dispute_open: true });

@@ -285,12 +285,16 @@ describe('AdminApplicationsService.reviewApplication — decision + idempotency'
         owner_id: 'owner-1',
         application_id: 'app-1',
         decision: 'approved',
-        note: 'looks good',
+        // C-611-17: the note's length only, never its text.
+        note_length: 'looks good'.length,
         replayed: false,
         result_status: 'shortlisted',
       }),
       expect.any(String),
     );
+    expect(JSON.stringify(logSpy.mock.calls)).not.toContain('looks good');
+    const event = logSpy.mock.calls.map((c) => c[0]).find((arg) => typeof arg === 'object' && arg !== null && 'event' in arg);
+    expect(event).not.toHaveProperty('note');
   });
 
   it('includes request_id on the first-decision audit event when supplied (B-P2-7)', async () => {
@@ -416,12 +420,16 @@ describe('AdminApplicationsService.reviewApplication — decision + idempotency'
         owner_id: 'owner-1',
         application_id: 'app-1',
         decision: 'approved',
-        note: 'approved with a note',
+        // C-611-17: the note's length only, never its text.
+        note_length: 'approved with a note'.length,
         replayed: true,
         result_status: 'shortlisted',
       }),
       expect.any(String),
     );
+    expect(JSON.stringify(logSpy.mock.calls)).not.toContain('approved with a note');
+    const event = logSpy.mock.calls.map((c) => c[0]).find((arg) => typeof arg === 'object' && arg !== null && 'event' in arg);
+    expect(event).not.toHaveProperty('note');
   });
 
   it('a second decision on an already-decided row conflicts (status guard catches it)', async () => {

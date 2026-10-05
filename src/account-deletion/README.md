@@ -30,7 +30,7 @@ period, and a nightly finalization that erases the person's data.
    still completes; the outcome `not_configured` is logged, written to
    `deletion_audit` and returned as `apple_revocation`. The app only says
    Apple access was revoked when the server reports `revoked`; otherwise it
-   tells the person they can also remove the app from their Apple ID
+   tells the person they can also remove the app from their Apple Account
    settings. Set the key with the operator workflow
    `.github/workflows/fly-apple-signin-set.yml` (docs/deploy-runbook.md §7b.1).
 5. **Google re-auth** works for Google accounts even though Google sign-in is

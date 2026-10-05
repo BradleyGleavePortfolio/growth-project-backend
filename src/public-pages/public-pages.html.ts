@@ -1,3 +1,5 @@
+import { policyFooterLinks } from './trust-pages.html';
+
 export type DownloadPlatform = 'ios' | 'android';
 
 // Quiet-luxury, mobile-first HTML. Mirrors the aesthetic of the invite
@@ -181,6 +183,7 @@ function baseDocument(p: PageContent): string {
   ul.links li { margin: 0 0 10px 0; font-size: 15px; }
   ul.links a { color: #3A332B; }
   footer { margin-top: 40px; font-size: 13px; color: #8A7F6E; }
+  footer a { color: #8A7F6E; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -188,7 +191,7 @@ function baseDocument(p: PageContent): string {
   <h1>${headline}</h1>
   <p>${body}</p>${codeBlock}
   <a class="cta" href="${ctaHref}">${ctaLabel}</a>${linksBlock}
-  <footer>The Growth Project</footer>
+  <footer>The Growth Project · ${policyFooterLinks()}</footer>
 </main>
 </body>
 </html>`;
