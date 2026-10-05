@@ -5,6 +5,7 @@ import {
   FEATURE_FLAG_KEYS,
   type FeatureFlagKey,
 } from './feature-flags.dto';
+import { isMessagingCoreV2Enabled } from '../messaging/messaging-core.feature';
 
 /**
  * D5 = B+γ — server-side feature-flag evaluation.
@@ -66,6 +67,10 @@ export class FeatureFlagsService {
         communityReachable && envOn('FEATURE_COMMUNITY_CLASSROOM_POSTS'),
       community_events:
         communityReachable && envOn('FEATURE_COMMUNITY_EVENTS'),
+      // A3-MSG-CORE: the canonical 1:1 thread (CoachMessage) is reachable by
+      // every coach and coached client, so only its own kill switch applies.
+      // Same literal-'true' rule as isMessagingCoreV2Enabled (case-insensitive).
+      messaging_core_v2: isMessagingCoreV2Enabled(),
     };
   }
 
