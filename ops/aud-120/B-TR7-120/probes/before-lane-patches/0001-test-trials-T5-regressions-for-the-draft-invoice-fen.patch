@@ -1,0 +1,569 @@
+From 5394908add388dc924e390c0475e19375fe418bb Mon Sep 17 00:00:00 2001
+From: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date: Mon, 5 Oct 2026 16:41:11 +0000
+Subject: [PATCH 1/2] test(trials): T5 regressions for the draft invoice fence
+ (B-707-1)
+
+The lenses' draft race (a renewal draft finalized and paid inside the
+window, absent from or present on the first draft page), an unknown or
+incomplete draft page, an unconfirmed finalize, a payment winning the
+finalized draft, drafts counting toward TRIAL_CONFLICT_MAX_VOIDS, the
+recheck of every list before the DELETE, and ownership loss across each
+added await. Existing T5 fixtures answer the draft list with a complete
+empty page and expect the recheck in their call order.
+---
+ test/b-trials-3-fix-round.spec.ts      |   1 +
+ test/b-trials-4-fix-round.spec.ts      |   1 +
+ test/b-trials-5-fix-round.spec.ts      |  18 +-
+ test/b-trials-6-payable-domain.spec.ts |  15 +-
+ test/b-trials-7-draft-fence.spec.ts    | 399 +++++++++++++++++++++++++
+ 5 files changed, 430 insertions(+), 4 deletions(-)
+ create mode 100644 test/b-trials-7-draft-fence.spec.ts
+
+diff --git a/test/b-trials-3-fix-round.spec.ts b/test/b-trials-3-fix-round.spec.ts
+index bea1c4b4..d5aa0c7c 100644
+--- a/test/b-trials-3-fix-round.spec.ts
++++ b/test/b-trials-3-fix-round.spec.ts
+@@ -220,6 +220,7 @@ function world(
+     })),
+     listOpenInvoices: jest.fn(async () => ({ data: [{ id: 'in_open' }], has_more: false })),
+     listUncollectibleInvoices: jest.fn(async () => ({ data: [], has_more: false })),
++    listDraftInvoices: jest.fn(async () => ({ data: [], has_more: false })),
+     voidInvoice: jest.fn(async (id: string) => ({ id, status: 'void' })),
+   });
+   const conflictSvc = new TrialConflictService(
+diff --git a/test/b-trials-4-fix-round.spec.ts b/test/b-trials-4-fix-round.spec.ts
+index 56fcb953..898608cc 100644
+--- a/test/b-trials-4-fix-round.spec.ts
++++ b/test/b-trials-4-fix-round.spec.ts
+@@ -82,6 +82,7 @@ async function conflictWorld(replies: { sub: Reply; invoices?: Reply }) {
+     if (path.includes('status=open')) return reply(page([{ id: 'in_renewal' }]));
+     // B-TR6-119 — the uncollectible list (Sol B-673-1): none here.
+     if (path.includes('status=uncollectible')) return reply(page([]));
++    if (path.includes('status=draft')) return reply(page([])); // B-TR7-120 (B-707-1): none
+     if (path.startsWith('/invoices')) {
+       return reply(replies.invoices ?? { status: 500, body: { error: { type: 'api_error' } } });
+     }
+diff --git a/test/b-trials-5-fix-round.spec.ts b/test/b-trials-5-fix-round.spec.ts
+index cfb2a669..f0e22e76 100644
+--- a/test/b-trials-5-fix-round.spec.ts
++++ b/test/b-trials-5-fix-round.spec.ts
+@@ -40,6 +40,8 @@ const OPEN_LIST = 'GET /invoices?subscription=sub_1&status=open&limit=100';
+ const PAID_LIST = 'GET /invoices?subscription=sub_1&status=paid&limit=100';
+ // B-TR6-119 — the uncollectible list (Sol B-673-1); routed to a complete empty page by default.
+ const UNC_LIST = 'GET /invoices?subscription=sub_1&status=uncollectible&limit=100';
++// B-TR7-120 — the draft list (B-707-1); routed to a complete empty page.
++const DRAFT_LIST = 'GET /invoices?subscription=sub_1&status=draft&limit=100';
+ 
+ type C = ConstructorParameters<typeof TrialConflictService>;
+ type Res = { status?: number; body: unknown };
+@@ -109,7 +111,9 @@ async function world(r: {
+             ? r.paid
+             : status === 'uncollectible'
+               ? (r.uncollectible ?? page([]))
+-              : undefined;
++              : status === 'draft'
++                ? page([])
++                : undefined;
+       return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
+     }
+     return reply(r.sub);
+@@ -298,10 +302,16 @@ describe('B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids eve
+       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+       expect(w.calls).toEqual([
+         'GET /subscriptions/sub_1',
++        DRAFT_LIST,
+         OPEN_LIST,
+         UNC_LIST,
+         PAID_LIST,
+         'POST /invoices/in_renewal/void',
++        // B-TR7-120 — the recheck before the DELETE (in_renewal is void: not new).
++        DRAFT_LIST,
++        OPEN_LIST,
++        UNC_LIST,
++        PAID_LIST,
+         'DELETE /subscriptions/sub_1',
+       ]);
+       expect(w.row()).toMatchObject({ status: 'cancelled', last_error: null, lease_token: null });
+@@ -406,9 +416,13 @@ describe('B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids eve
+       paid: page([TRIAL_INVOICE]),
+     });
+     expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+-    expect(w.calls.slice(-3)).toEqual([
++    expect(w.calls.slice(-7)).toEqual([
+       'POST /invoices/in_a/void',
+       'POST /invoices/in_b/void',
++      DRAFT_LIST,
++      OPEN_LIST,
++      UNC_LIST,
++      PAID_LIST,
+       'DELETE /subscriptions/sub_1',
+     ]);
+   });
+diff --git a/test/b-trials-6-payable-domain.spec.ts b/test/b-trials-6-payable-domain.spec.ts
+index e624a69a..e4b995c4 100644
+--- a/test/b-trials-6-payable-domain.spec.ts
++++ b/test/b-trials-6-payable-domain.spec.ts
+@@ -33,6 +33,8 @@ const OLD_PAID = { id: 'in_old', amount_paid: 4900, total: 4900 };
+ const OPEN_LIST = 'GET /invoices?subscription=sub_1&status=open&limit=100';
+ const UNC_LIST = 'GET /invoices?subscription=sub_1&status=uncollectible&limit=100';
+ const PAID_LIST = 'GET /invoices?subscription=sub_1&status=paid&limit=100';
++// B-TR7-120 — the draft list (B-707-1); a complete empty page here.
++const DRAFT_LIST = 'GET /invoices?subscription=sub_1&status=draft&limit=100';
+ 
+ type C = ConstructorParameters<typeof TrialConflictService>;
+ type Res = { status?: number; body: unknown };
+@@ -107,7 +109,9 @@ async function world(r: {
+             ? r.uncollectible
+             : status === 'paid'
+               ? r.paid
+-              : undefined;
++              : status === 'draft'
++                ? page([])
++                : undefined;
+       return reply(x ?? apiError);
+     }
+     return reply(r.sub);
+@@ -234,6 +238,8 @@ describe('Sol AUD-SOL-T3E-119 probe (exact inputs) — a different payable invoi
+                   : [],
+               has_more: false,
+             };
++          } else if (queryStatus === 'draft') {
++            body = { data: [], has_more: false }; // B-TR7-120: no draft here
+           } else if (queryStatus === 'paid') {
+             // Prepared before the first positive payment, which succeeds on
+             // the still-payable invoice before delivery.
+@@ -303,7 +309,7 @@ describe('Sol AUD-SOL-T3E-119 probe (exact inputs) — a different payable invoi
+ 
+ describe('B-673-1 (T5) — the payable domain is open AND uncollectible, read before the paid list', () => {
+   it.each(['past_due', 'unpaid'])(
+-    '%s never billed: open, uncollectible, paid lists, both invoices confirmed void, one DELETE, in that order',
++    '%s never billed: draft, open, uncollectible, paid lists, both confirmed void, recheck, one DELETE',
+     async (status) => {
+       const w = await world({
+         sub: sub(status),
+@@ -314,11 +320,16 @@ describe('B-673-1 (T5) — the payable domain is open AND uncollectible, read be
+       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
+       expect(w.calls).toEqual([
+         'GET /subscriptions/sub_1',
++        DRAFT_LIST,
+         OPEN_LIST,
+         UNC_LIST,
+         PAID_LIST,
+         'POST /invoices/in_open/void',
+         'POST /invoices/in_unc/void',
++        DRAFT_LIST,
++        OPEN_LIST,
++        UNC_LIST,
++        PAID_LIST,
+         'DELETE /subscriptions/sub_1',
+       ]);
+       expect(w.row()).toMatchObject({ status: 'cancelled', last_error: null, lease_token: null });
+diff --git a/test/b-trials-7-draft-fence.spec.ts b/test/b-trials-7-draft-fence.spec.ts
+new file mode 100644
+index 00000000..3e55773d
+--- /dev/null
++++ b/test/b-trials-7-draft-fence.spec.ts
+@@ -0,0 +1,399 @@
++// B-TR7-120 (agent 120) — trials T5 fix round 2: B-707-1, a renewal draft is
++// outside the never-billed cancel's fence (both lenses at #707 ffed434e: Sol
++// 5985426719, Opus 5985519108).
++//
++// Before: only open and uncollectible invoices were read and voided. A renewal
++// draft finalized and paid 4,900 after the reads, the captured open invoice was
++// voided, the DELETE went out, the row recorded cancelled with no alert, and
++// the client had paid with no plan.
++// Now: a complete draft page is read first. Stripe never deletes a
++// subscription's draft, so each draft is finalized with auto_advance=false
++// (confirmed open, no payment attempt) and voided (confirmed void) before the
++// other voids, each call on a renewed lease. Before the DELETE the draft, open,
++// uncollectible and paid pages are read again: a payment supersedes (paid plan
++// kept, billed alert); a new invoice or an unknown page retries; no DELETE.
++//
++// Every test below except the controls fails on #707 ffed434e and passes after.
++// Real TrialConflictService + real StripeConnectApiService over an intercepted
++// fetch; in-memory compare-and-set table.
++import * as Sentry from '@sentry/node';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { TrialConflictService } from '../src/packages/trials/trial-conflict.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0 };
++const DRAFT_PAID = { id: 'in_draft', amount_paid: 4900, total: 4900 };
++const LIST = (status: string) => `GET /invoices?subscription=sub_1&status=${status}&limit=100`;
++const RECHECK = [LIST('draft'), LIST('open'), LIST('uncollectible'), LIST('paid')];
++
++type C = ConstructorParameters<typeof TrialConflictService>;
++type Res = { status?: number; body: unknown };
++type Reply = Res | (() => Promise<Res>);
++
++let secret: string | undefined;
++beforeEach(() => {
++  secret = process.env.STRIPE_SECRET_KEY;
++  process.env.STRIPE_SECRET_KEY = 'sk_test_BTR7SYNTHETIC';
++  jest.mocked(Sentry.captureMessage).mockClear();
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  if (secret === undefined) delete process.env.STRIPE_SECRET_KEY;
++  else process.env.STRIPE_SECRET_KEY = secret;
++});
++
++const sub = (status: string): Res => ({
++  body: { id: 'sub_1', status, latest_invoice: 'in_draft', trial_end: epoch(NOW) - 86400 },
++});
++const page = (data: unknown[], hasMore = false): Res => ({ body: { data, has_more: hasMore } });
++const voided = (id: string): Res => ({ body: { id, object: 'invoice', status: 'void' } });
++const opened = (id: string): Res => ({ body: { id, object: 'invoice', status: 'open' } });
++const apiError: Res = { status: 500, body: { error: { type: 'api_error' } } };
++const notDraft: Res = {
++  status: 400,
++  body: { error: { type: 'invalid_request_error', code: 'invoice_unexpected_state' } },
++};
++
++type Lists = { draft?: Reply; open?: Reply; uncollectible?: Reply; paid?: Reply };
++
++/** First reads answer `r`; reads after the first void answer `r.recheck` (default: the same). */
++async function world(
++  r: Lists & {
++    sub: Reply;
++    recheck?: Lists;
++    finalize?: (id: string) => Reply;
++    void?: (id: string) => Reply;
++  },
++) {
++  const table = makeTrialConflictTable();
++  await table.createMany({
++    data: [
++      {
++        id: 'conflict-1',
++        purchase_id: 'pur-1',
++        stripe_subscription_id: 'sub_1',
++        next_attempt_at: NOW,
++      },
++    ],
++  });
++  const calls: string[] = [];
++  const bodies: string[] = [];
++  let fenced = false;
++  const reply = async (x: Reply) => {
++    const { status = 200, body } = typeof x === 'function' ? await x() : x;
++    return new Response(JSON.stringify(body), {
++      status,
++      headers: { 'Content-Type': 'application/json' },
++    });
++  };
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++    const method = init?.method ?? 'GET';
++    const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++    calls.push(`${method} ${path}`);
++    if (method === 'DELETE') return reply({ body: { id: 'sub_1', status: 'canceled' } });
++    const act = /^\/invoices\/([^/?]+)\/(void|finalize)$/.exec(path);
++    if (method === 'POST' && act) {
++      bodies.push(`${act[2]} ${String(init?.body ?? '')}`);
++      const id = decodeURIComponent(act[1]);
++      if (act[2] === 'finalize') return reply((r.finalize ?? opened)(id));
++      fenced = true;
++      return reply((r.void ?? voided)(id));
++    }
++    if (path.startsWith('/invoices?')) {
++      const status = new URLSearchParams(path.split('?')[1]).get('status') as keyof Lists;
++      const lists: Lists = fenced ? { ...r, ...r.recheck } : r;
++      return reply(lists[status] ?? apiError);
++    }
++    return reply(r.sub);
++  });
++  const db = stub<C[0]>({ packageTrialConflict: table });
++  const service = new TrialConflictService(db, new StripeConnectApiService());
++  return {
++    table,
++    calls,
++    bodies,
++    db,
++    service,
++    deletes: () => calls.filter((c) => c.startsWith('DELETE')).length,
++    posts: () => calls.filter((c) => c.startsWith('POST /invoices/')),
++    row: () => table.rows[0],
++  };
++}
++type World = Awaited<ReturnType<typeof world>>;
++
++type Spec = Parameters<typeof world>[0];
++const base = (status = 'past_due'): Spec & { recheck: Lists } => ({
++  sub: sub(status),
++  draft: page([{ id: 'in_draft' }]),
++  open: page([{ id: 'in_open' }]),
++  uncollectible: page([]),
++  paid: page([TRIAL_INVOICE]),
++  recheck: { draft: page([]), open: page([]) },
++});
++
++describe("B-707-1 — the lenses' race: a renewal draft finalizes and pays inside the window", () => {
++  it.each(['past_due', 'unpaid'])(
++    '%s, draft absent from the first draft page, paid during the open void (Opus D1): the paid recheck supersedes, billed alert, no DELETE',
++    async (status) => {
++      let paidCents = 0;
++      const w = await world({
++        ...base(status),
++        draft: page([]),
++        recheck: { draft: page([]), open: page([]), paid: page([TRIAL_INVOICE, DRAFT_PAID]) },
++        void: (id) => async () => {
++          paidCents += 4900;
++          return voided(id);
++        },
++      });
++      expect(await w.service.settle('pur-1', NOW)).toBe('superseded');
++      expect(paidCents).toBe(4900);
++      expect(w.deletes()).toBe(0);
++      expect(w.row()).toMatchObject({ status: 'superseded', last_error: 'billing_started' });
++      expect(await w.service.alertSuperseded()).toBe(1);
++      expect(jest.mocked(Sentry.captureMessage)).toHaveBeenCalledWith(
++        'trial conflict billed before cancel',
++        expect.objectContaining({
++          tags: { code: 'TRIAL_CONFLICT_SUPERSEDED', purchase_id: 'pur-1' },
++        }),
++      );
++    },
++  );
++
++  it.each(['past_due', 'unpaid'])(
++    '%s, listed draft finalized and paid after the paid read (Sol): its finalize is refused, no void, no DELETE; the next read supersedes',
++    async (status) => {
++      let paid = false;
++      const w = await world({
++        ...base(status),
++        paid: async () => {
++          const res = page(paid ? [TRIAL_INVOICE, DRAFT_PAID] : [TRIAL_INVOICE]);
++          paid = true;
++          return res;
++        },
++        finalize: () => notDraft,
++      });
++      expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++      expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
++      expect(w.deletes()).toBe(0);
++      expect(w.row()).toMatchObject({
++        status: 'owed',
++        last_error: 'draft_not_fenced',
++        lease_token: null,
++      });
++      w.row().next_attempt_at = NOW;
++      expect(await w.service.settle('pur-1', new Date(NOW.getTime() + 600_000))).toBe('superseded');
++      expect(w.deletes()).toBe(0);
++    },
++  );
++});
++
++describe('B-707-1 — the draft fence', () => {
++  it.each(['past_due', 'unpaid'])(
++    '%s never billed: draft read first, finalized without collection and voided before the open void, full recheck, one DELETE',
++    async (status) => {
++      const w = await world(base(status));
++      expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++      expect(w.calls).toEqual([
++        'GET /subscriptions/sub_1',
++        LIST('draft'),
++        LIST('open'),
++        LIST('uncollectible'),
++        LIST('paid'),
++        'POST /invoices/in_draft/finalize',
++        'POST /invoices/in_draft/void',
++        'POST /invoices/in_open/void',
++        ...RECHECK,
++        'DELETE /subscriptions/sub_1',
++      ]);
++      expect(w.bodies[0]).toBe('finalize auto_advance=false');
++      expect(w.row()).toMatchObject({ status: 'cancelled', last_error: null, lease_token: null });
++    },
++  );
++
++  it.each<[string, Reply]>([
++    ['500', apiError],
++    ['404', { status: 404, body: { error: { type: 'invalid_request_error' } } }],
++    ['has_more', page([{ id: 'in_draft' }], true)],
++    ['has_more missing', { body: { data: [{ id: 'in_draft' }] } }],
++    ['data not a list', { body: { data: null, has_more: false } }],
++    ['null entry', page([null])],
++    ['numeric id', page([{ id: 7 }])],
++    ['empty id', page([{ id: '' }])],
++  ])('draft page unknown (%s): no finalize, no void, no DELETE, stays owed', async (_n, draft) => {
++    const w = await world({ ...base(), draft });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.posts()).toEqual([]);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({
++      status: 'owed',
++      last_error: 'invoices_unknown',
++      lease_token: null,
++    });
++  });
++
++  it.each<[string, Res]>([
++    ['already finalized (400)', notDraft],
++    ['500', apiError],
++    ['200 but paid ($0 or credit-funded)', { body: { id: 'in_draft', status: 'paid' } }],
++    ['200 but still draft', { body: { id: 'in_draft', status: 'draft' } }],
++    ['200 for another invoice', { body: { id: 'in_other', status: 'open' } }],
++  ])('finalize not confirmed (%s): no void of it, no DELETE, retried', async (_n, res) => {
++    const w = await world({ ...base(), finalize: () => res });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({
++      status: 'owed',
++      last_error: 'draft_not_fenced',
++      lease_token: null,
++    });
++  });
++
++  it('a payment wins the finalized draft before its void: no DELETE; the next read supersedes', async () => {
++    let paid = false;
++    const w = await world({
++      ...base(),
++      paid: async () => page(paid ? [TRIAL_INVOICE, DRAFT_PAID] : [TRIAL_INVOICE]),
++      void: (id) => async () => {
++        paid = true;
++        return {
++          status: 400,
++          body: { error: { type: 'invalid_request_error', code: 'invoice_not_open' } },
++        };
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize', 'POST /invoices/in_draft/void']);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', last_error: 'invoice_not_voided' });
++    w.row().next_attempt_at = NOW;
++    expect(await w.service.settle('pur-1', new Date(NOW.getTime() + 600_000))).toBe('superseded');
++    expect(w.deletes()).toBe(0);
++  });
++
++  it('drafts count toward TRIAL_CONFLICT_MAX_VOIDS: 1 open + 10 drafts is retried untouched', async () => {
++    const drafts = Array.from({ length: 10 }, (_, i) => ({ id: `in_d${i}` }));
++    const w = await world({ ...base(), draft: page(drafts) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.posts()).toEqual([]);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', last_error: 'invoices_too_many' });
++  });
++});
++
++describe('B-707-1 — the recheck before the DELETE', () => {
++  it.each<[string, Lists, string]>([
++    ['a new draft', { draft: page([{ id: 'in_new' }]) }, 'invoices_changed'],
++    ['a new open invoice', { open: page([{ id: 'in_new' }]) }, 'invoices_changed'],
++    [
++      'a new uncollectible invoice',
++      { uncollectible: page([{ id: 'in_new' }]) },
++      'invoices_changed',
++    ],
++    ['the draft page unknown', { draft: apiError }, 'invoices_unknown'],
++    ['the open page incomplete', { open: page([], true) }, 'invoices_unknown'],
++    ['the uncollectible page unknown', { uncollectible: apiError }, 'invoices_unknown'],
++    ['the paid page unknown', { paid: page([TRIAL_INVOICE], true) }, 'history_unknown'],
++  ])('%s: no DELETE, retried', async (_n, recheck, code) => {
++    const w = await world({ ...base(), recheck: { draft: page([]), open: page([]), ...recheck } });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.posts()).toHaveLength(3);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', last_error: code, lease_token: null });
++  });
++
++  it('control: an id fenced here still listed (void is final) is not new: cancelled', async () => {
++    const w = await world({ ...base(), recheck: {} });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.deletes()).toBe(1);
++  });
++});
++
++describe('B-707-1 — ownership across every added await', () => {
++  const cases: Array<[string, (w: World) => Promise<void> | void, string]> = [
++    [
++      'a supersession',
++      (w) => w.service.supersede(w.db, 'pur-1', NOW).then(() => undefined),
++      'superseded',
++    ],
++    [
++      'a subscription-deleted webhook',
++      (w) => w.service.markCancelled(w.db, 'pur-1', NOW),
++      'cancelled',
++    ],
++    [
++      'another worker taking the lease',
++      (w) => {
++        w.row().lease_token = 'other-worker';
++        w.row().lease_until = new Date(NOW.getTime() + 120_000);
++      },
++      'owed',
++    ],
++  ];
++  const at = (when: string, change: (w: World) => Promise<void> | void) => {
++    let w!: World;
++    const hit =
++      <T>(x: T) =>
++      async () => {
++        await change(w);
++        return x;
++      };
++    const r = base();
++    if (when === 'draft read') r.draft = hit(page([{ id: 'in_draft' }]));
++    const make = world({
++      ...r,
++      finalize: when === 'finalize' ? (id) => hit(opened(id)) : undefined,
++      void:
++        when === 'draft void'
++          ? (id) => (id === 'in_draft' ? hit(voided(id)) : voided(id))
++          : undefined,
++      recheck: { ...r.recheck, ...(when === 'recheck' ? { uncollectible: hit(page([])) } : {}) },
++    });
++    return make.then((x) => (w = x));
++  };
++
++  for (const when of ['draft read', 'finalize', 'draft void', 'recheck']) {
++    it.each(cases)(`%s during the ${when}: stale, no DELETE`, async (_n, change, after) => {
++      const w = await at(when, change);
++      expect(await w.service.settle('pur-1', NOW)).toBe('stale');
++      expect(w.deletes()).toBe(0);
++      if (when === 'draft read') expect(w.posts()).toEqual([]);
++      if (when === 'finalize') expect(w.posts()).toEqual(['POST /invoices/in_draft/finalize']);
++      expect(w.row().status).toBe(after);
++      if (after === 'owed') expect(w.row().lease_token).toBe('other-worker');
++    });
++  }
++});
++
++describe('controls (green before and after)', () => {
++  it('a draft that finalized between the draft and open reads is voided once, never finalized', async () => {
++    const w = await world({
++      ...base('unpaid'),
++      open: page([{ id: 'in_draft' }, { id: 'in_open' }]),
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.posts()).toEqual(['POST /invoices/in_draft/void', 'POST /invoices/in_open/void']);
++  });
++
++  it('no draft: the open invoice is voided and the plan cancelled once', async () => {
++    const w = await world({ ...base(), draft: page([]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.posts()).toEqual(['POST /invoices/in_open/void']);
++    expect(w.deletes()).toBe(1);
++  });
++
++  it('a trialing plan far from its end reads no invoices and cancels once', async () => {
++    const w = await world({
++      sub: { body: { id: 'sub_1', status: 'trialing', trial_end: epoch(NOW) + 86400 } },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.calls).toEqual(['GET /subscriptions/sub_1', 'DELETE /subscriptions/sub_1']);
++  });
++});
+-- 
+2.53.0
+

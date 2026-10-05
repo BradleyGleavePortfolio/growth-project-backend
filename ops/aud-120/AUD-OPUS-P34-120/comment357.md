@@ -1,0 +1,49 @@
+AUDIT Claude Opus 5.5 — growth-project-mobile#357 @ b364b9eaaedfb6d297f55a40e4b6a15ac4d2a381 — VERDICT: REQUEST CHANGES
+Lens AUD-OPUS-P34-120, agent 120. First full review of split G3 of #328 (base agent115/programs-split-2-builder-undo @ 40ee678a).
+
+A/B/C = 0/1/7
+
+**Scope and evidence reuse (G09).** Every line of the 7-file diff was read at this head, with the backend contract read at growth-project-backend main ee55f814. Split fidelity was checked: every G3 file is byte-identical to #328 @ fb76721f, and the stack tree at #358 equals `merge-tree fb76721f 367e6c48`. No verdict evidence is reused from the #328 rounds. Those rounds (including this lens's APPROVE at dd347633 and fb76721f) covered the same bytes and missed B-357-1. It is raised here for the first time.
+
+**Probe (CI lane, no local runs):** branch `audit/AUD-OPUS-P34-120/357-probes-1`, probe commit 611d3547 on this exact head, run https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37343560356. Results: 4 red as predicted, and existing `programsScreens.test.tsx` green (7 passed / 4 failed). A copy of the spec is in the ops workspace at `ops/aud-120/AUD-OPUS-P34-120/probes/opusP34G3.probe.test.tsx`.
+
+### B-357-1 — Day picker sends one request key with two different bodies
+- **Where:** `src/screens/coach/programs/ProgramDayPickerScreen.tsx:79-110`.
+  - `fill()` takes `keyRef.current ?? generateIdempotencyKey()` (:86) and keeps the key whenever the failure has a reference (:101).
+  - The other rows are disabled only while a request is in flight (:159, :199).
+  - So after an unknown outcome on workout A, tapping workout B sends B's body with A's key.
+- **Backend:** `program-library.service.ts:680` keys the route as `programs:setDay:<program>:<week>:<day>`, which does not include the body. When that key has already completed, `withIdempotency` returns the stored `response_json` (`workout-builder.service.ts:233-235`).
+- **What goes wrong:** the coach picks A, the response is lost after commit, and the coach then picks B. The server replays A's detail, the screen calls `goBack()` as if B were saved, and the day holds A. That day is then copied to every client the program is assigned to. This breaks the stack's own rule that a key belongs to one exact body (see the ProgramFormScreen header and B-328-1).
+- **Probe:** "a different saved workout after an unknown outcome is sent with a NEW key". It is red: `calls[1][4]` equals `calls[0][4]`, and the call-2 body is `{source:"saved_workout",plan_id:"plan-b"}`. Control "Retry of the same pick reuses the key" is green.
+- **Fix rule:** bind the key to the exact body (row id plus source).
+  - Same row: Retry and re-taps reuse the key.
+  - Different row: rotate the key and let the server answer truthfully (it returns `program_day_filled` if A landed).
+  - Or keep the other rows locked behind a "Check again" for the pending pick until the outcome is known.
+  - Add a test for both paths.
+
+### Follow-ups (C)
+- **C-357-1:** `ProgramFormScreen.tsx:234-241` with `utils/programErrors.ts:37-43` (G1 code).
+  - **Problem:** a retry that reaches the in-flight request gets `ConflictException('Request in progress — retry in a moment')` (`workout-builder.service.ts:232/239`). The envelope is `{statusCode:409,error:"Conflict"}` with no code. `isOutcomeUnknown` treats that as definite, so the key rotates and the fields unlock. The next press can create a second program, even though :405-406 tells the coach "it cannot make a second copy".
+  - **Probe:** "unknown -> 409 'Request in progress' -> next press still sends the first key" is red.
+  - **Fix rule:** treat a 409 with no known business code as outcome-unknown (keep the key and the body). The fix belongs in `isOutcomeUnknown` (#355). The window is narrow, so this is graded C.
+- **C-357-2:** `ProgramsLibraryScreen.tsx:60-65`, and the same pattern at `ProgramFormScreen.tsx:78`, `ProgramEditorScreen.tsx:125`, `ProgramDayPickerScreen.tsx` load failures, and `ProgramAssetPicker.tsx:50`.
+  - **Problem:** `describeProgramFailure` runs during render. Every re-render with the same error sends a new Sentry event and shows a new reference.
+  - **Probe:** red, 3 `captureError` calls for 3 renders of one error.
+  - **Fix rule:** memoize the failure per error object (`useMemo` on `query.error`), so there is one event and one stable reference per failure.
+- **C-357-3:** `ProgramFormScreen.tsx:74` (EditLoader) and `ProgramEditorScreen.tsx:116`.
+  - **Problem:** `if (program.error || !data)` replaces the screen when a background refetch fails even though cached data exists. Unsaved form edits are lost.
+  - **Fix rule:** show the full-screen failure only when `!data`, and show an inline FailureBox when data exists.
+- **C-357-4:** `ProgramAssetPicker.tsx:24-43`.
+  - **Problem:** only the first page of programs and saved workouts is used, with a client-side `filled_days` filter and no search or "load more". Older programs are missing from the picker (the paste fallback still works).
+  - **Fix rule:** page until done, or add search plus load more.
+- **C-357-5:** `ProgramEditorScreen.tsx:210-240`.
+  - **Problem:** the promote dialog says "The program itself does not change" but does not say that promotion cannot be undone (the backend regimes controller calls it irreversible). Also, every 404 maps to "Named regimes are not switched on", but a sub-coach can get 404 "Program not found" from `promoteFromProgram` (coach_id scope).
+  - **Fix rule:** state that promotion is permanent, and map only a 404 with the unavailable code to the unavailable copy.
+- **C-357-6:** `ProgramEditorScreen.tsx:141-158` with the retry closure at :104.
+  - **Problem:** Retry after an unknown "New workout" failure fills the day but does not open the builder, unlike the first press.
+  - **Fix rule:** run the post-success step from the retry path too.
+- **C-357-7:** `__tests__/programsScreens.test.tsx`.
+  - **Problem:** this PR ships ProgramFormScreen, ProgramDayPickerScreen and ProgramAssetPicker without tests of their own. The Form tests arrive in #358, and DayPicker and AssetPicker have none anywhere in the stack.
+  - **Fix rule:** add DayPicker key tests with the B fix.
+
+APPROVE needs B-357-1 fixed with a test at a new head. The C items can follow.

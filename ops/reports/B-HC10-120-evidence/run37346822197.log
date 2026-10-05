@@ -1,0 +1,229 @@
+targeted	Set up job	﻿2026-10-05T17:13:38.9879845Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-05T17:13:38.9916670Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-05T17:13:38.9918387Z Hosted Compute Agent
+targeted	Set up job	2026-10-05T17:13:38.9919295Z Version: 20260901.588
+targeted	Set up job	2026-10-05T17:13:38.9920329Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-05T17:13:38.9921452Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-05T17:13:38.9922628Z Worker ID: {3d771f22-b5c5-4f18-99a5-96761b174f61}
+targeted	Set up job	2026-10-05T17:13:38.9923772Z Azure Region: eastus2
+targeted	Set up job	2026-10-05T17:13:38.9924683Z ##[endgroup]
+targeted	Set up job	2026-10-05T17:13:38.9927113Z ##[group]Operating System
+targeted	Set up job	2026-10-05T17:13:38.9928235Z Ubuntu
+targeted	Set up job	2026-10-05T17:13:38.9929126Z 24.04.5
+targeted	Set up job	2026-10-05T17:13:38.9929907Z LTS
+targeted	Set up job	2026-10-05T17:13:38.9930672Z ##[endgroup]
+targeted	Set up job	2026-10-05T17:13:38.9931634Z ##[group]Runner Image
+targeted	Set up job	2026-10-05T17:13:38.9932540Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-05T17:13:38.9933485Z Version: 20260927.320.1
+targeted	Set up job	2026-10-05T17:13:38.9935235Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-05T17:13:38.9938414Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-05T17:13:38.9939987Z ##[endgroup]
+targeted	Set up job	2026-10-05T17:13:38.9942506Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-05T17:13:38.9945536Z Contents: read
+targeted	Set up job	2026-10-05T17:13:38.9946485Z Metadata: read
+targeted	Set up job	2026-10-05T17:13:38.9947545Z Packages: read
+targeted	Set up job	2026-10-05T17:13:38.9948526Z ##[endgroup]
+targeted	Set up job	2026-10-05T17:13:38.9951420Z Secret source: Actions
+targeted	Set up job	2026-10-05T17:13:38.9952999Z Cache mode: write
+targeted	Set up job	2026-10-05T17:13:38.9954422Z Prepare workflow directory
+targeted	Set up job	2026-10-05T17:13:39.0411758Z Prepare all required actions
+targeted	Set up job	2026-10-05T17:13:39.0479678Z Getting action download info
+targeted	Set up job	2026-10-05T17:13:39.2665732Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-05T17:13:39.3537331Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-05T17:13:39.5459173Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-05T17:13:39.6207379Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6208343Z with:
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6208915Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6213266Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6213715Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6214165Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6214611Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6215099Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6215544Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6216070Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6216508Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6217108Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6217563Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6217986Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6218440Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6218948Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.6219663Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7240452Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7242571Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7243526Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7244858Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7298514Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7320748Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7335044Z Temporarily overriding HOME='/home/runner/work/_temp/303419d1-b30e-4d34-98cb-47ef140466be' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7340498Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7342287Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7391824Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7396094Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7398736Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7399516Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7403042Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7490732Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7492314Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7493757Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7494925Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7495537Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7496140Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7496770Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7497875Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7498807Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7499564Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7500040Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7500754Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7501546Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7502783Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7505643Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7553527Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7558127Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7558835Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7588695Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7590139Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7590749Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7596242Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7628378Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7971930Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.7978711Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8012265Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8240482Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8246640Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8279997Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8517999Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8555535Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8587844Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8620657Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8651157Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8682025Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8682808Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-05T17:13:39.8690073Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +9ddcfd157e056fdfade05690f3e91b1b536285fe:refs/remotes/origin/ci/B-HC10-120-2
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8803863Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8806110Z  * [new ref]         9ddcfd157e056fdfade05690f3e91b1b536285fe -> origin/ci/B-HC10-120-2
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8816708Z [command]/usr/bin/git branch --list --remote origin/ci/B-HC10-120-2
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8847679Z   origin/ci/B-HC10-120-2
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8857174Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-HC10-120-2
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8881254Z 9ddcfd157e056fdfade05690f3e91b1b536285fe
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8889619Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8890916Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8892371Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8893222Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8947047Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8979518Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-05T17:13:40.8984399Z [command]/usr/bin/git checkout --progress --force -B ci/B-HC10-120-2 refs/remotes/origin/ci/B-HC10-120-2
+targeted	Run actions/checkout@v6	2026-10-05T17:13:41.0094918Z Switched to a new branch 'ci/B-HC10-120-2'
+targeted	Run actions/checkout@v6	2026-10-05T17:13:41.0100217Z branch 'ci/B-HC10-120-2' set up to track 'origin/ci/B-HC10-120-2'.
+targeted	Run actions/checkout@v6	2026-10-05T17:13:41.0111263Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:13:41.0157710Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-05T17:13:41.0185582Z 9ddcfd157e056fdfade05690f3e91b1b536285fe
+targeted	Run actions/setup-node@v6	﻿2026-10-05T17:13:41.0556769Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:41.0558254Z with:
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:41.0559217Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:41.0560258Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:41.0561250Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:41.0570512Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:41.0571555Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:41.0572713Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:41.2044263Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:42.0102317Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:42.4928287Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:42.5057801Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/6009d617-93de-406b-b394-51d1a789c076 -f /home/runner/work/_temp/27356c6c-d338-489b-b952-a50b78b7ae8a
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:43.8624780Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:45.7746693Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:45.9867477Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:45.9868069Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:45.9870247Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:45.9871196Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:45.9889586Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:46.0835218Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:46.1630915Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:47.1996515Z Received 236832855 of 241027159 (98.3%), 225.9 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:47.2276319Z Received 241027159 of 241027159 (100.0%), 223.6 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:47.2277931Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:47.2371785Z [command]/usr/bin/tar -xf /home/runner/work/_temp/2231934a-7c89-4384-a02c-b03356f050fc/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:47.9243537Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-05T17:13:47.9367155Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-05T17:13:47.9615689Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-05T17:13:47.9616075Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-05T17:13:47.9865270Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-05T17:13:47.9865622Z ##[endgroup]
+targeted	Run npm ci	2026-10-05T17:13:52.9637972Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-05T17:13:53.1947152Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-05T17:13:53.2149260Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-05T17:13:53.2193231Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-05T17:13:53.2424846Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-05T17:13:53.3726419Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-05T17:13:53.3767506Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:13:53.3774680Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:13:53.3792510Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:13:53.3797161Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:13:53.3814883Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:13:53.4154828Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:13:53.4617332Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-05T17:13:53.8917852Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-05T17:13:54.3831398Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-05T17:13:57.6521283Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-05T17:14:51.5395007Z 
+targeted	Run npm ci	2026-10-05T17:14:51.5399541Z added 1108 packages, and audited 1109 packages in 1m
+targeted	Run npm ci	2026-10-05T17:14:51.5400009Z 
+targeted	Run npm ci	2026-10-05T17:14:51.5400285Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-05T17:14:51.5400661Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-05T17:14:51.9494804Z 
+targeted	Run npm ci	2026-10-05T17:14:51.9496178Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-05T17:14:51.9496616Z 
+targeted	Run npm ci	2026-10-05T17:14:51.9497168Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-05T17:14:51.9497681Z   npm audit fix
+targeted	Run npm ci	2026-10-05T17:14:51.9498525Z 
+targeted	Run npm ci	2026-10-05T17:14:51.9498996Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-05T17:14:51.9499549Z   npm audit fix --force
+targeted	Run npm ci	2026-10-05T17:14:51.9499713Z 
+targeted	Run npm ci	2026-10-05T17:14:51.9499838Z Run `npm audit` for details.
+targeted	Type-check (only when .ci-lane-tsc exists)	﻿2026-10-05T17:14:52.1621117Z ##[group]Run npx tsc --noEmit
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:14:52.1621462Z ^[[36;1mnpx tsc --noEmit^[[0m
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:14:52.1692159Z shell: /usr/bin/bash -e {0}
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:14:52.1692454Z ##[endgroup]
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9754608Z ##[error]src/hooks/useWearableConnections.sol119.test.tsx(101,63): error TS2322: Type 'Promise<{ id: string; }>' is not assignable to type 'Promise<CurrentUser | null>'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9764251Z   Property 'email' is missing in type '{ id: string; }' but required in type 'CurrentUser'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9766327Z ##[error]src/hooks/useWearableConnections.sol119.test.tsx(158,87): error TS2322: Type 'Promise<readonly string[]>' is not assignable to type 'Promise<string[]>'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9768396Z   The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9770168Z ##[error]src/hooks/useWearableConnections.sol119.test.tsx(182,87): error TS2322: Type 'Promise<readonly string[]>' is not assignable to type 'Promise<string[]>'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9771971Z   The type 'readonly string[]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9774724Z ##[error]src/hooks/useWearableConnections.transportSol119.test.tsx(58,40): error TS2322: Type '(value: CurrentUser | PromiseLike<CurrentUser | null> | null) => void' is not assignable to type '(value: { id: string; }) => void'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9777007Z   Types of parameters 'value' and 'value' are incompatible.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9777929Z     Type '{ id: string; }' is not assignable to type 'CurrentUser | PromiseLike<CurrentUser | null> | null'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:19.9778979Z       Property 'email' is missing in type '{ id: string; }' but required in type 'CurrentUser'.
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:15:20.1211475Z ##[error]Process completed with exit code 2.
+targeted	Post Run actions/checkout@v6	﻿2026-10-05T17:15:20.1359349Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2220841Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2258554Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2297030Z Temporarily overriding HOME='/home/runner/work/_temp/ea545382-804c-4db9-8597-272e754e9962' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2298502Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2303153Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2335734Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2342519Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2380470Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2621221Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2627276Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2664118Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2901610Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2908789Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2937920Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2939438Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2940717Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2941671Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2948537Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2971764Z /home/runner/work/_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.2983520Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3019831Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3043358Z /home/runner/work/_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3053455Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3086659Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3109040Z /github/runner_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3117312Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3149746Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3170492Z /github/runner_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3180460Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3214919Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-05T17:15:20.3450161Z Removing credentials config '/home/runner/work/_temp/git-credentials-ef267d42-2177-43e5-b701-d6672c4ae1e4.config'
+targeted	Complete job	﻿2026-10-05T17:15:20.3605606Z Cleaning up orphan processes

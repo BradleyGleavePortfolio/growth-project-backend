@@ -56,3 +56,34 @@ Queue (next when slots free / gates open)
 - Sheet m#342-#344: dual APPROVE; HOLD per both lenses' landing rule: lands as one with the recurring deploy, D4 #690, the native
   card-update composition, final-main Analyze, and C-344-12 as the D2c gate.
 - Rule 12 candidates (operator): m#312 (approved f8375ca6; head 8016a79e main merge), m#335 641fe891, b#642 4fee3c02.
+
+## 09:47 DRAIN to 7 (owner 09:47): no launches until active <= 7; then cap 7.
+- AUD-OPUS-H7-120 DONE 09:52: #369 APPROVE 0/0/2 (5999043389; C-369-4/5). Split with Sol RC -> B-369-2 fix routed 09:53 to the running
+  HC builder B-HC10-120 (drain: no new agent), then H8 continues on top.
+- AUD-OPUS-W12D-120 DONE 09:5x: #345 APPROVE 0/0/1, #346 APPROVE 0/0/1 (C-346-7 = same lines as Sol B-346-3), #347 restack APPROVE.
+  #345 dual APPROVE at ed29833c; #346 split (Sol RC) -> B-WIZ3-120 queued (also W3 #347 known items). Wizard lands with #348-#351 after coach deploy.
+- AUD-OPUS-P34-120 DONE: #357 RC 0/1/7 (5999063942), #358 RC 0/2/4 (5999064225). B-358-1 root cause in #355 (B-PROG2). Backend
+  FEATURE_MWB_TEMPLATES/AUTOSAVE_UNDO/NAMED_REGIMES are unset in fly-env-desired-state.json: flip PR when programs land (queue).
+- AUD-OPUS-P12-120 DONE: #355 RC 0/3/1 (5999100428), #356 RC 0/2/3 (5999100681). Operator accepted defaults: backend 409 fix PR
+  (B-MWB409-120 queued), clinic flag flips removed from #355, shared helpers fixed in #355.
+- AUD-SOL-PUSH-120 DONE: #692 RC 0/1/0 (5999124539), #693 RC 0/4/2 (5999124426) -> B-PUSH2-120 queued (after Opus push).
+- AUD-OPUS-661D-120 DONE: #661 RC 0/1/7 B-661-15 (5999168270, same defect as Sol B-661-14), #702 APPROVE 0/0/1 (5999168870). B-661R2-120 queued first.
+- B-CM7-120 DONE 10:0x: #674 e35c37a1, #676 0ee4933d, #677 b17888ab, #703 88940c3f READY (B-CM7-1 fixed). CM8 lens pair queued (one pair, all four).
+- B-LOCK2-120 DONE 10:0x: m#352 c89f719c, #353 9d47045b, #354 68c7f080 READY. L3 lens pair queued.
+- 10:03 DRAIN REACHED 7 active. Cap 7 from now.
+- B-TR7-120 DONE: #707 8fc2660b FR2 READY, #671 ea7a9740 refresh READY, #672 b0654c80 restack READY; #673 restack stopped (recurring conflict) -> B-TR8-120 queued (one shared trial rule, owner asked).
+- 10:10 launched B-661R2-120 (fix_661_card_secrets_muvi9io1, claude_opus_5_5). Active 7.
+- B-DUNMR-120 DONE: #687 f3c7fd37, #688 21714f7b, #704 49d0b66e, #705 5138947c READY (A C-680-18 fixed). D6 lens pair queued; operator accepted B-DUNMR decisions 1-4.
+- 10:13 launched AUD-SOL-CM8-120 (lens_sol_coach_stack_cm8_muvidaez, gpt_6_1_sol). Active 7: Opus push, B-HC10, B-SPLIT-SCHED, B-SPLIT-MSG, B-INV2, B-661R2, Sol CM8. Next slots: Opus CM8, Sol D6, Opus D6, B-PUSH2, L3 pair, B-TR8, B-MWB409, B-PROG2, B-PROG4, B-WIZ3, Roman, annex splits.
+- AUD-OPUS-PUSH-120 DONE: #692 APPROVE 0/0/2, #693 RC 0/1/9 (B-693-1 Android channel). 
+- 10:14 launched B-PUSH2-120 (fix_push_prs_692_693_muvieja1). Active 7. m#341 (device time zone for quiet hours) noted for day 1 with push (Opus decision 3).
+- B-INV2-120 DONE: #658 4de7a6dc FR1 READY (B-658-1/6/7 fixed). INV3 lens pair + M-INV-120 mobile queued; decisions 1-4 accepted.
+- 10:28 launched AUD-OPUS-CM8-120 (lens_opus_coach_stack_cm8_muvixfvm). Active 7: B-HC10, B-SPLIT-SCHED, B-SPLIT-MSG, B-661R2, Sol CM8, B-PUSH2, Opus CM8.
+- 10:31 owner: scheduling day 1 + S-AVAIL (coach calendar required); shared trial rule; CAP 7 for agent 120.
+  Launch queue at cap 7 (next free slot takes the top): Opus D6 -> B-TR8 -> L3 pair -> B-MWB409 -> B-PROG2 -> B-ROMAN-C2 ->
+  B-SPLIT-COACHLESS -> B-SPLIT-ROMANCHATS -> B-SCHED-FIX -> Roman RA/RB pairs -> INV3 pair -> B-WIZ3 -> B-PROG4 -> B-SPLIT-BCAST ->
+  scheduling lens pairs -> S-AVAIL -> M-INV -> RADJ pair. Builders for stacks that come back RC jump the queue (in-flight before new).
+- B-SPLIT-MSG-120 DONE: #708 5c9c6a0e, #709 87f0bfff, #710 47b528ce, #711 5a7c41e8 (tree == #660+main). Prod CoachMessage RLS ON+FORCED (checked 10:38). B-MSG2-120 + M-MSG-120 queued.
+- 10:34 launched AUD-OPUS-D6-120. Active 7.
+- B-HC10-120 DONE: #369 a2bfe2fa FR2 READY (B-369-2 fixed), #370 c7014623 H8 OPENING READY. H9 lens pair queued (jumps queue: H1-H7 lands on #369 dual approve).
+- 10:40 launched AUD-SOL-H9-120 (lens_sol_health_connect_h9_muvjd06r). Active 7: B-SPLIT-SCHED, B-661R2, B-PUSH2, Opus CM8, Sol D6, Opus D6, Sol H9. Next: Opus H9, B-TR8, L3 pair, B-MSG2, B-MWB409, B-PROG2, ...

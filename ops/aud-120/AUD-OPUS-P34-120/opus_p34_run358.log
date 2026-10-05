@@ -1,0 +1,116 @@
+targeted	Targeted jest	﻿2026-10-05T16:48:36.1293992Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T16:48:36.1294352Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T16:48:36.1294762Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T16:48:36.1295269Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T16:48:36.1295654Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T16:48:36.1295940Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T16:48:36.1362853Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T16:48:36.1363270Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T16:48:36.1475030Z specs: src/api/__tests__/opusP34Roster.probe.test.ts src/screens/coach/programs/__tests__/opusP34G3.probe.test.tsx src/screens/coach/programs/__tests__/opusP34G4.probe.test.tsx src/screens/coach/programs/__tests__/programsFixRound.test.tsx src/screens/coach/programs/__tests__/programsScreens.test.tsx src/api/__tests__/programsApi.test.ts
+targeted	Targeted jest	2026-10-05T16:48:46.1665271Z PASS src/screens/coach/programs/__tests__/programsScreens.test.tsx (7.656 s)
+targeted	Targeted jest	2026-10-05T16:48:46.1770293Z PASS src/screens/coach/programs/__tests__/programsFixRound.test.tsx (7.909 s)
+targeted	Targeted jest	2026-10-05T16:48:46.1819199Z FAIL src/screens/coach/programs/__tests__/opusP34G3.probe.test.tsx (7.694 s)
+targeted	Targeted jest	2026-10-05T16:48:46.1822329Z   ● B-357-1 probe: DayPicker binds a request key to one request body › a different saved workout after an unknown outcome is sent with a NEW key
+targeted	Targeted jest	2026-10-05T16:48:46.1828168Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1828985Z     expect(received).not.toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-05T16:48:46.1829804Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1830409Z     Expected: not "684c0596-cc70-4b70-915b-573536aef3bb"
+targeted	Targeted jest	2026-10-05T16:48:46.1831161Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1832631Z     ^[[0m ^[[90m 142 |^[[39m     ^[[90m// `programs:setDay:<program>:<week>:<day>` only, so the same key replays^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1834461Z      ^[[90m 143 |^[[39m     ^[[90m// Upper A's committed result and reports Lower B as done.^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1837364Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 144 |^[[39m     expect(mockSetDay^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m1^[[39m][^[[35m4^[[39m])^[[33m.^[[39mnot^[[33m.^[[39mtoBe(mockSetDay^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m0^[[39m][^[[35m4^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1841029Z      ^[[90m     |^[[39m                                             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1842512Z      ^[[90m 145 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1843496Z      ^[[90m 146 |^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1845114Z      ^[[90m 147 |^[[39m   it(^[[32m"control: Retry of the same pick reuses the key"^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-05T16:48:46.1846253Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1847133Z       at Object.toBe (src/screens/coach/programs/__tests__/opusP34G3.probe.test.tsx:144:45)
+targeted	Targeted jest	2026-10-05T16:48:46.1848774Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T16:48:46.1850277Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T16:48:46.1851177Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1852953Z   ● C-357-1 probe: the backend in-progress 409 keeps the create key › unknown -> 409 'Request in progress' -> next press still sends the first key
+targeted	Targeted jest	2026-10-05T16:48:46.1854273Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1854897Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-05T16:48:46.1855598Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1856143Z     Expected: "a4d8bb2e-e2c6-43fd-a1dc-0f70f9d06875"
+targeted	Targeted jest	2026-10-05T16:48:46.1857139Z     Received: "559f70c7-b54e-496e-a500-498122d24962"
+targeted	Targeted jest	2026-10-05T16:48:46.1857779Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1859105Z     ^[[0m ^[[90m 184 |^[[39m     ^[[36mawait^[[39m fireEvent^[[33m.^[[39mpress(screen^[[33m.^[[39mgetByLabelText(^[[32m"Create program"^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1861011Z      ^[[90m 185 |^[[39m     expect(mockCreate)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m3^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1863772Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 186 |^[[39m     expect(mockCreate^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m2^[[39m][^[[35m1^[[39m])^[[33m.^[[39mtoBe(mockCreate^[[33m.^[[39mmock^[[33m.^[[39mcalls[^[[35m0^[[39m][^[[35m1^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1866775Z      ^[[90m     |^[[39m                                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1867939Z      ^[[90m 187 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1868863Z      ^[[90m 188 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1869721Z      ^[[90m 189 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T16:48:46.1870273Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1871145Z       at Object.toBe (src/screens/coach/programs/__tests__/opusP34G3.probe.test.tsx:186:41)
+targeted	Targeted jest	2026-10-05T16:48:46.1873028Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T16:48:46.1874518Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T16:48:46.1875382Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1876754Z   ● C-357-2 probe: one failure, one Sentry event › re-rendering the library with the same load error does not send new events
+targeted	Targeted jest	2026-10-05T16:48:46.1877957Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1878581Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+targeted	Targeted jest	2026-10-05T16:48:46.1879321Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1879846Z     Expected number of calls: 1
+targeted	Targeted jest	2026-10-05T16:48:46.1880738Z     Received number of calls: 3
+targeted	Targeted jest	2026-10-05T16:48:46.1881328Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1882993Z     ^[[0m ^[[90m 201 |^[[39m     ^[[36mawait^[[39m screen^[[33m.^[[39mrerender(^[[33m<^[[39m^[[33mProgramsLibraryScreen^[[39m ^[[33m/^[[39m^[[33m>^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1885519Z      ^[[90m 202 |^[[39m     ^[[36mconst^[[39m later ^[[33m=^[[39m screen^[[33m.^[[39mgetByText(^[[35m/Reference [A-Z0-9]+/^[[39m)^[[33m.^[[39mprops^[[33m.^[[39mchildren^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1887607Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 203 |^[[39m     expect(mockCaptureError)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1889044Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1890421Z      ^[[90m 204 |^[[39m     ^[[90m// The reference the coach is told to quote must not change under them.^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1891786Z      ^[[90m 205 |^[[39m     expect(later)^[[33m.^[[39mtoEqual(first)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.1893057Z      ^[[90m 206 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T16:48:46.1893605Z 
+targeted	Targeted jest	2026-10-05T16:48:46.1894500Z       at Object.toHaveBeenCalledTimes (src/screens/coach/programs/__tests__/opusP34G3.probe.test.tsx:203:30)
+targeted	Targeted jest	2026-10-05T16:48:46.1896312Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T16:48:46.1897805Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T16:48:46.1898610Z 
+targeted	Targeted jest	2026-10-05T16:48:46.3605670Z PASS src/api/__tests__/programsApi.test.ts
+targeted	Targeted jest	2026-10-05T16:48:46.3967779Z FAIL src/api/__tests__/opusP34Roster.probe.test.ts
+targeted	Targeted jest	2026-10-05T16:48:46.3970158Z   ● AUD-OPUS-P34-120 B-358-1 probe: assignable clients are complete › returns all 25 active clients when the roster route pages at 20
+targeted	Targeted jest	2026-10-05T16:48:46.3971036Z 
+targeted	Targeted jest	2026-10-05T16:48:46.3971339Z     expect(received).toHaveLength(expected)
+targeted	Targeted jest	2026-10-05T16:48:46.3971734Z 
+targeted	Targeted jest	2026-10-05T16:48:46.3972149Z     Expected length: 25
+targeted	Targeted jest	2026-10-05T16:48:46.3972611Z     Received length: 20
+targeted	Targeted jest	2026-10-05T16:48:46.3975584Z     Received array:  [{"email": "c0@example.test", "id": "c00", "name": "Client 00"}, {"email": "c1@example.test", "id": "c01", "name": "Client 01"}, {"email": "c2@example.test", "id": "c02", "name": "Client 02"}, {"email": "c3@example.test", "id": "c03", "name": "Client 03"}, {"email": "c4@example.test", "id": "c04", "name": "Client 04"}, {"email": "c5@example.test", "id": "c05", "name": "Client 05"}, {"email": "c6@example.test", "id": "c06", "name": "Client 06"}, {"email": "c7@example.test", "id": "c07", "name": "Client 07"}, {"email": "c8@example.test", "id": "c08", "name": "Client 08"}, {"email": "c9@example.test", "id": "c09", "name": "Client 09"}, …]
+targeted	Targeted jest	2026-10-05T16:48:46.3977365Z 
+targeted	Targeted jest	2026-10-05T16:48:46.3977969Z     ^[[0m ^[[90m 58 |^[[39m   it(^[[32m"returns all 25 active clients when the roster route pages at 20"^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-05T16:48:46.3978935Z      ^[[90m 59 |^[[39m     ^[[36mconst^[[39m rows ^[[33m=^[[39m ^[[36mawait^[[39m programsApi^[[33m.^[[39massignableClients()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.3980309Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 60 |^[[39m     expect(rows)^[[33m.^[[39mtoHaveLength(^[[35m25^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.3980877Z      ^[[90m    |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.3981572Z      ^[[90m 61 |^[[39m     expect(rows^[[33m.^[[39mmap((r) ^[[33m=>^[[39m r^[[33m.^[[39mid))^[[33m.^[[39mtoContain(^[[32m"c24"^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.3982466Z      ^[[90m 62 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.3982819Z      ^[[90m 63 |^[[39m })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T16:48:46.3983010Z 
+targeted	Targeted jest	2026-10-05T16:48:46.3983311Z       at Object.toHaveLength (src/api/__tests__/opusP34Roster.probe.test.ts:60:18)
+targeted	Targeted jest	2026-10-05T16:48:46.3983959Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T16:48:46.3984558Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T16:48:46.3984864Z 
+targeted	Targeted jest	2026-10-05T16:48:46.5526523Z FAIL src/screens/coach/programs/__tests__/opusP34G4.probe.test.tsx
+targeted	Targeted jest	2026-10-05T16:48:46.5528776Z   ● B-358-2 probe: Remove states the scope the server applies › a client on two runs: the confirmation covers every run the server removes
+targeted	Targeted jest	2026-10-05T16:48:46.5529760Z 
+targeted	Targeted jest	2026-10-05T16:48:46.5562770Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-05T16:48:46.5582480Z 
+targeted	Targeted jest	2026-10-05T16:48:46.5587338Z     Expected pattern: /\b13 upcoming/
+targeted	Targeted jest	2026-10-05T16:48:46.5588778Z     Received string:  "1 upcoming workout is removed from their plan. 11 finished workouts stay in their history."
+targeted	Targeted jest	2026-10-05T16:48:46.5589863Z 
+targeted	Targeted jest	2026-10-05T16:48:46.5591231Z     ^[[0m ^[[90m 112 |^[[39m     ^[[90m// workout of EVERY copy of this program for c1 (1 + 12 = 13) and archives both.^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.5593370Z      ^[[90m 113 |^[[39m     ^[[90m// Either one Remove per client, or the dialog states the full scope.^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.5595860Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 114 |^[[39m     ^[[36mif^[[39m (removes^[[33m.^[[39mlength ^[[33m!==^[[39m ^[[35m1^[[39m) expect(message)^[[33m.^[[39mtoMatch(^[[35m/\b13 upcoming/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.5597882Z      ^[[90m     |^[[39m                                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.5599191Z      ^[[90m 115 |^[[39m     alert^[[33m.^[[39mmockRestore()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.5600233Z      ^[[90m 116 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T16:48:46.5601174Z      ^[[90m 117 |^[[39m })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T16:48:46.5601812Z 
+targeted	Targeted jest	2026-10-05T16:48:46.5602957Z       at Object.toMatch (src/screens/coach/programs/__tests__/opusP34G4.probe.test.tsx:114:47)
+targeted	Targeted jest	2026-10-05T16:48:46.5604760Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T16:48:46.5606461Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T16:48:46.5632368Z 
+targeted	Targeted jest	2026-10-05T16:48:46.6167265Z Test Suites: 3 failed, 3 passed, 6 total
+targeted	Targeted jest	2026-10-05T16:48:46.6167990Z Tests:       5 failed, 23 passed, 28 total
+targeted	Targeted jest	2026-10-05T16:48:46.6168334Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T16:48:46.6168630Z Time:        9.24 s
+targeted	Targeted jest	2026-10-05T16:48:46.6170581Z Ran all test suites matching /src\/api\/__tests__\/opusP34Roster.probe.test.ts|src\/screens\/coach\/programs\/__tests__\/opusP34G3.probe.test.tsx|src\/screens\/coach\/programs\/__tests__\/opusP34G4.probe.test.tsx|src\/screens\/coach\/programs\/__tests__\/programsFixRound.test.tsx|src\/screens\/coach\/programs\/__tests__\/programsScreens.test.tsx|src\/api\/__tests__\/programsApi.test.ts/i.
+targeted	Targeted jest	2026-10-05T16:48:46.6348234Z ##[error]Process completed with exit code 1.

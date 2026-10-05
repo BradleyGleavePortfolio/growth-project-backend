@@ -1,0 +1,328 @@
+From ff1310abecba97b3ca2714b1e69695e6780ce782 Mon Sep 17 00:00:00 2001
+From: TGP Agent 116 <agent@tgp.invalid>
+Date: Mon, 5 Oct 2026 16:42:00 +0000
+Subject: [PATCH 2/2] probes: lens T5 draft probes verbatim (never merge)
+
+---
+ test/audit-opus-t5-119-707-draft.spec.ts | 127 +++++++++++++++++
+ test/audit-sol-t5-draft-race.spec.ts     | 174 +++++++++++++++++++++++
+ 2 files changed, 301 insertions(+)
+ create mode 100644 test/audit-opus-t5-119-707-draft.spec.ts
+ create mode 100644 test/audit-sol-t5-draft-race.spec.ts
+
+diff --git a/test/audit-opus-t5-119-707-draft.spec.ts b/test/audit-opus-t5-119-707-draft.spec.ts
+new file mode 100644
+index 00000000..234a7395
+--- /dev/null
++++ b/test/audit-opus-t5-119-707-draft.spec.ts
+@@ -0,0 +1,127 @@
++// AUD-OPUS-T5-119 (Claude Opus 5.5 lens) — probes for #707 (T5 payable invoice domain) at ffed434e.
++// Real TrialConflictService + real StripeConnectApiService over an intercepted fetch; in-memory CAS table.
++// DRAFT RACE (B-707-1, this lens's own proof): D1 is EXPECTED RED at ffed434e (a DELETE goes out after a payment);
++// D2 is GREEN and records the consequence in the most likely webhook ordering (cancelled, zero alerts).
++import * as Sentry from '@sentry/node';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { TrialConflictService } from '../src/packages/trials/trial-conflict.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0 };
++
++type C = ConstructorParameters<typeof TrialConflictService>;
++type Res = { status?: number; body: unknown };
++type Reply = Res | (() => Promise<Res>);
++
++let secret: string | undefined;
++let skewMs = 0;
++beforeEach(() => {
++  secret = process.env.STRIPE_SECRET_KEY;
++  process.env.STRIPE_SECRET_KEY = 'sk_test_OPUST5SYNTHETIC';
++  jest.mocked(Sentry.captureMessage).mockClear();
++  skewMs = 0;
++  const realNow = Date.now.bind(Date);
++  jest.spyOn(Date, 'now').mockImplementation(() => realNow() + skewMs);
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  if (secret === undefined) delete process.env.STRIPE_SECRET_KEY;
++  else process.env.STRIPE_SECRET_KEY = secret;
++});
++
++const sub = (status: string): Res => ({
++  body: { id: 'sub_1', status, latest_invoice: 'in_open', trial_end: epoch(NOW) - 86400 },
++});
++const page = (data: unknown[], hasMore = false): Res => ({ body: { data, has_more: hasMore } });
++const voided = (id: string): Res => ({ body: { id, object: 'invoice', status: 'void' } });
++
++async function world(r: {
++  sub: Reply;
++  open?: Reply;
++  uncollectible?: Reply;
++  paid?: Reply;
++  void?: (id: string) => Reply;
++}) {
++  const table = makeTrialConflictTable();
++  await table.createMany({
++    data: [{ id: 'conflict-1', purchase_id: 'pur-1', stripe_subscription_id: 'sub_1', next_attempt_at: NOW }],
++  });
++  const calls: string[] = [];
++  const reply = async (x: Reply) => {
++    const { status = 200, body } = typeof x === 'function' ? await x() : x;
++    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
++  };
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++    const method = init?.method ?? 'GET';
++    const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++    calls.push(`${method} ${path}`);
++    if (method === 'DELETE') return reply({ body: { id: 'sub_1', status: 'canceled' } });
++    const voidId = /^\/invoices\/([^/?]+)\/void$/.exec(path)?.[1];
++    if (method === 'POST' && voidId) return reply((r.void ?? voided)(decodeURIComponent(voidId)));
++    if (path.startsWith('/invoices?')) {
++      const status = new URLSearchParams(path.split('?')[1]).get('status');
++      const x =
++        status === 'open' ? r.open : status === 'uncollectible' ? r.uncollectible : status === 'paid' ? r.paid : undefined;
++      return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
++    }
++    return reply(r.sub);
++  });
++  const db = stub<C[0]>({ packageTrialConflict: table });
++  const service = new TrialConflictService(db, new StripeConnectApiService());
++  return {
++    table,
++    calls,
++    db,
++    service,
++    deletes: () => calls.filter((c) => c.startsWith('DELETE')).length,
++    voids: () => calls.filter((c) => c.startsWith('POST /invoices/')),
++    row: () => table.rows[0],
++  };
++}
++
++
++describe('AUD-OPUS-T5-119 #707 draft race (B-707-1)', () => {
++  const draftWorld = async (state: { paidCents: number }) => {
++    let remotePaid = false;
++    return world({
++      sub: async () => sub('past_due'),
++      open: page([{ id: 'in_open' }]),
++      uncollectible: page([]),
++      // The draft renewal in_draft is in neither payable page, and not paid when the paid list is read.
++      paid: async () => page(remotePaid ? [TRIAL_INVOICE, { id: 'in_draft', amount_paid: 4900, total: 4900 }] : [TRIAL_INVOICE]),
++      void: (id) => async () => {
++        // Stripe auto-finalizes the renewal draft and charges it while the worker voids in_open.
++        remotePaid = true;
++        state.paidCents += 4900;
++        return voided(id);
++      },
++    });
++  };
++
++  it('D1 (expected red): a renewal draft finalized and paid after the reads must not be followed by a DELETE', async () => {
++    const state = { paidCents: 0 };
++    const w = await draftWorld(state);
++    await w.service.settle('pur-1', NOW);
++    expect(state.paidCents).toBe(4900);
++    expect(w.deletes()).toBe(0);
++  });
++
++  it('D2 (green, consequence): the worker records cancelled and no billed or failing alert exists', async () => {
++    const state = { paidCents: 0 };
++    const w = await draftWorld(state);
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(state.paidCents).toBe(4900);
++    expect(w.deletes()).toBe(1);
++    expect(w.calls.filter((c) => c.includes('status=draft'))).toEqual([]);
++    expect(w.row()).toMatchObject({ status: 'cancelled', last_error: null });
++    expect(await w.service.alertSuperseded()).toBe(0);
++    expect(jest.mocked(Sentry.captureMessage)).not.toHaveBeenCalled();
++  });
++});
+diff --git a/test/audit-sol-t5-draft-race.spec.ts b/test/audit-sol-t5-draft-race.spec.ts
+new file mode 100644
+index 00000000..0c0b8ace
+--- /dev/null
++++ b/test/audit-sol-t5-draft-race.spec.ts
+@@ -0,0 +1,174 @@
++import { TrialConflictService, trialPaidHistory } from '../src/packages/trials/trial-conflict.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { makeTrialConflictTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++type C = ConstructorParameters<typeof TrialConflictService>;
++
++afterEach(() => { jest.restoreAllMocks(); });
++
++describe('AUD-SOL-T5-119 — a draft finalizes and pays outside the void domain', () => {
++  it.each([
++    ['past_due', 'draft'],
++    ['unpaid', 'draft'],
++  ])(
++    '%s / %s: preserve a paid plan while the active webhook is delayed',
++    async (status, payingStatus) => {
++      const table = makeTrialConflictTable();
++      await table.createMany({ data: [{
++        id: 'conflict-payment', purchase_id: 'purchase-payment',
++        stripe_subscription_id: 'sub-payment', next_attempt_at: NOW,
++      }] });
++      const purchase: Record<string, unknown> = {
++        id: 'purchase-payment', client_user_id: 'client-payment',
++        coach_user_id: 'coach-payment', package_id: 'package-payment',
++        stripe_subscription_id: 'sub-payment', billing_type: 'recurring',
++        status: 'trialing', entitlement_active: false, trial_days: 7,
++        trial_ends_at: new Date(NOW.getTime() - 86400000),
++        amount_cents: 4900, currency: 'usd', created_at: NOW,
++      };
++      const rawDb = {
++        packageTrialConflict: table,
++        packageTrialUsage: makeTrialUsageTable(),
++        clientPurchase: {
++          findUnique: jest.fn(async () => ({ ...purchase })),
++          update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++            Object.assign(purchase, data);
++            return { ...purchase };
++          }),
++        },
++        coachPackage: { findUnique: jest.fn(async () => ({
++          id: 'package-payment', duration_periods: null,
++        })) },
++        $queryRaw: jest.fn(async () => []),
++      };
++      const db = stub<C[0]>(rawDb);
++      const previousSecret = process.env.STRIPE_SECRET_KEY;
++      process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++      const stripe = new StripeConnectApiService();
++      const service = new TrialConflictService(db, stripe);
++      const usage = new TrialUsageService(db);
++      const handler = new CheckoutWebhookHandlerService(
++        db, stripe, undefined, undefined, undefined, undefined, undefined,
++        undefined, undefined, usage, undefined, service,
++      );
++      const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(rawDb);
++      const calls: string[] = [];
++      let paidCents = 0;
++      let accessBeforeDeleted: unknown;
++      let paidRemote = false;
++      const voidedIds: string[] = [];
++      let draftState = 'draft';
++      const activeEvent = async () => handler.handle({
++        id: 'evt-payment-active', type: 'customer.subscription.updated',
++        data: { object: {
++          id: 'sub-payment', status: 'active',
++          trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          current_period_end: Math.floor(NOW.getTime() / 1000) + 30 * 86400,
++        } },
++      }, tx);
++      jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++        const method = init?.method ?? 'GET';
++        const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++        calls.push(`${method} ${path}`);
++        let body: unknown;
++        if (path.startsWith('/invoices?')) {
++          const queryStatus = new URLSearchParams(path.split('?')[1]).get('status');
++          if (queryStatus === 'open') {
++            // The newest unpaid invoice is open. An older uncollectible
++            // invoice is not part of this complete status-filtered page.
++            body = { data: [{ id: 'in-new-open', status: 'open' }], has_more: false };
++          } else if (queryStatus === 'uncollectible') {
++            body = { data: [], has_more: false };
++          } else if (queryStatus === 'draft') {
++            body = {
++              data: draftState === 'draft' ? [{ id: 'in-draft-renewal', status: 'draft' }] : [],
++              has_more: false,
++            };
++          } else if (queryStatus === 'paid') {
++            // The response is prepared before the first positive payment,
++            // then Stripe/another authorized actor finalizes the distinct
++            // renewal draft and pays it before the prepared response arrives.
++            body = { data: [{ id: 'in-trial', amount_paid: 0, total: 0 }], has_more: false };
++            draftState = 'open';
++            draftState = 'paid';
++            paidCents = 4900;
++            paidRemote = true;
++          } else {
++            throw new Error(`unexpected invoice status filter ${queryStatus}`);
++          }
++        } else if (method === 'POST' && path.endsWith('/void')) {
++          const invoiceId = path.split('/')[2];
++          const paymentWonThisInvoice = invoiceId === 'in-draft-renewal' && draftState === 'paid';
++          if (paymentWonThisInvoice) {
++            return new Response(JSON.stringify({
++              error: { type: 'invalid_request_error', code: 'invoice_not_open' },
++            }), { status: 400 });
++          }
++          // Voiding the captured open invoice does not invalidate a separate
++          // payment on a draft that was absent from both captured pages.
++          voidedIds.push(invoiceId);
++          body = { id: invoiceId, status: 'void' };
++        } else if (method === 'DELETE') {
++          // This is already destructive dispatch. Delayed active delivery
++          // grants paid access; the cancellation's real handler then removes it.
++          await activeEvent();
++          accessBeforeDeleted = purchase.entitlement_active;
++          await handler.handle({
++            id: 'evt-payment-deleted', type: 'customer.subscription.deleted',
++            data: { object: { id: 'sub-payment' } },
++          }, tx);
++          body = { id: 'sub-payment', status: 'canceled' };
++        } else {
++          body = {
++            id: 'sub-payment', status: paidRemote ? 'active' : status,
++            latest_invoice: 'in-new-open',
++            trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          };
++        }
++        return new Response(JSON.stringify(body), { status: 200 });
++      });
++      try {
++        const outcome = await service.settle('purchase-payment', NOW);
++        if (draftState === 'paid') expect(paidCents).toBe(4900);
++        const deleted = calls.filter((c) => c.startsWith('DELETE'));
++        if (deleted.length) {
++          expect(accessBeforeDeleted).toBe(true);
++          expect(purchase.entitlement_active).toBe(false);
++          expect(voidedIds).toEqual(['in-new-open']);
++        }
++        console.info('AUD-SOL-T5-119 DRAFT_FINALIZATION_RACE', {
++          status, payingStatus, draftState, voidedIds, calls,
++          paidCents, accessBeforeDeleted, accessAfterDeleted: purchase.entitlement_active,
++          outcome, conflict: table.rows[0].status, deletes: deleted.length,
++        });
++        expect({
++          deleted, outcome, conflict: table.rows[0].status,
++          entitlement: purchase.entitlement_active,
++        }).toMatchObject({ deleted: [] });
++        await activeEvent();
++        expect(purchase.entitlement_active).toBe(true);
++      } finally {
++        if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++        else process.env.STRIPE_SECRET_KEY = previousSecret;
++      }
++    },
++  );
++});
++
++describe('AUD-SOL-T3E-119 — retained malformed-money controls', () => {
++  it.each([
++    { amount_paid: -1, total: 0 },
++    { amount_paid: 0 }, // missing total cannot distinguish a credit-funded paid invoice
++    { amount_paid: Number.NaN, total: 0 },
++  ])('does not prove none from malformed monetary evidence %p', (invoice) => {
++    expect(trialPaidHistory({ data: [invoice], has_more: false })).toBe('unknown');
++  });
++  it('controls: valid no-charge history, partial no-charge history, and positive paid evidence', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: false })).toBe('none');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: true })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: 4900, total: 4900 }], has_more: true })).toBe('charged');
++  });
++});
+-- 
+2.53.0
+

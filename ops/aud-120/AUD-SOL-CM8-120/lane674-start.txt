@@ -1,0 +1,2 @@
+run null null null
+watch: gh run watch <id> -R BradleyGleavePortfolio/growth-project-backend --exit-status ; logs: gh run view <id> --log-failed

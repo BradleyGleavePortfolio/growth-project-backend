@@ -1,0 +1,705 @@
+﻿2026-10-05T16:44:44.0467910Z Current runner version: '2.337.0'
+2026-10-05T16:44:44.0492772Z ##[group]Runner Image Provisioner
+2026-10-05T16:44:44.0493659Z Hosted Compute Agent
+2026-10-05T16:44:44.0494399Z Version: 20260901.588
+2026-10-05T16:44:44.0495262Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:44:44.0496079Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:44:44.0496868Z Worker ID: {3e308831-b035-4971-a8eb-dc52d22f2664}
+2026-10-05T16:44:44.0497618Z Azure Region: westus
+2026-10-05T16:44:44.0498283Z ##[endgroup]
+2026-10-05T16:44:44.0500212Z ##[group]Operating System
+2026-10-05T16:44:44.0500864Z Ubuntu
+2026-10-05T16:44:44.0501545Z 24.04.5
+2026-10-05T16:44:44.0502089Z LTS
+2026-10-05T16:44:44.0502718Z ##[endgroup]
+2026-10-05T16:44:44.0503295Z ##[group]Runner Image
+2026-10-05T16:44:44.0503901Z Image: ubuntu-24.04
+2026-10-05T16:44:44.0504686Z Version: 20260927.320.1
+2026-10-05T16:44:44.0506315Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:44:44.0508078Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:44:44.0509101Z ##[endgroup]
+2026-10-05T16:44:44.0510456Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:44:44.0512597Z Contents: read
+2026-10-05T16:44:44.0513357Z Metadata: read
+2026-10-05T16:44:44.0513968Z Packages: read
+2026-10-05T16:44:44.0514651Z ##[endgroup]
+2026-10-05T16:44:44.0517059Z Secret source: Actions
+2026-10-05T16:44:44.0518140Z Cache mode: write
+2026-10-05T16:44:44.0518876Z Prepare workflow directory
+2026-10-05T16:44:44.0974424Z Prepare all required actions
+2026-10-05T16:44:44.1022568Z Getting action download info
+2026-10-05T16:44:44.4871351Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:44:44.5941510Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:44:44.7799175Z Complete job name: mwb-3-live-tests
+2026-10-05T16:44:44.8359914Z ##[group]Checking docker version
+2026-10-05T16:44:44.8373923Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-05T16:44:44.9674604Z '1.48'
+2026-10-05T16:44:44.9686624Z Docker daemon API version: '1.48'
+2026-10-05T16:44:44.9687448Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-05T16:44:44.9856193Z '1.48'
+2026-10-05T16:44:44.9870035Z Docker client API version: '1.48'
+2026-10-05T16:44:44.9875981Z ##[endgroup]
+2026-10-05T16:44:44.9878916Z ##[group]Clean up resources from previous jobs
+2026-10-05T16:44:44.9884530Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=04385c"
+2026-10-05T16:44:45.0030267Z ##[command]/usr/bin/docker network prune --force --filter "label=04385c"
+2026-10-05T16:44:45.0162513Z ##[endgroup]
+2026-10-05T16:44:45.0163062Z ##[group]Create local container network
+2026-10-05T16:44:45.0173576Z ##[command]/usr/bin/docker network create --label 04385c github_network_f607c8d59cb64819ae008f7970a4256d
+2026-10-05T16:44:45.0717304Z 327c5c95ddcd380e9a53aa9cc5d01acada185f7502bc413203580b01a69edc86
+2026-10-05T16:44:45.0733318Z ##[endgroup]
+2026-10-05T16:44:45.0758618Z ##[group]Starting postgres service container
+2026-10-05T16:44:45.0780177Z ##[command]/usr/bin/docker pull postgres:15
+2026-10-05T16:44:45.9349908Z 15: Pulling from library/postgres
+2026-10-05T16:44:46.2195604Z 6b37362b3da7: Pulling fs layer
+2026-10-05T16:44:46.2196882Z 0d791b2b75ae: Pulling fs layer
+2026-10-05T16:44:46.2197802Z 0d39881c83f7: Pulling fs layer
+2026-10-05T16:44:46.2198507Z c95afe7c234f: Pulling fs layer
+2026-10-05T16:44:46.2199271Z bc176b99a33a: Pulling fs layer
+2026-10-05T16:44:46.2199849Z 08a5cd487deb: Pulling fs layer
+2026-10-05T16:44:46.2200433Z eb4d92aaee0a: Pulling fs layer
+2026-10-05T16:44:46.2200990Z 75a4dff090e8: Pulling fs layer
+2026-10-05T16:44:46.2201521Z afe9a40fb214: Pulling fs layer
+2026-10-05T16:44:46.2202070Z ca5e97c0cd7d: Pulling fs layer
+2026-10-05T16:44:46.2202621Z 53fa82bdba52: Pulling fs layer
+2026-10-05T16:44:46.2203131Z 7b9c6b8e5e6e: Pulling fs layer
+2026-10-05T16:44:46.2204024Z b65147f15943: Pulling fs layer
+2026-10-05T16:44:46.2204384Z 170d9ea1cd85: Pulling fs layer
+2026-10-05T16:44:46.2204803Z c95afe7c234f: Waiting
+2026-10-05T16:44:46.2205364Z bc176b99a33a: Waiting
+2026-10-05T16:44:46.2205658Z 08a5cd487deb: Waiting
+2026-10-05T16:44:46.2205941Z eb4d92aaee0a: Waiting
+2026-10-05T16:44:46.2206407Z 75a4dff090e8: Waiting
+2026-10-05T16:44:46.2206711Z afe9a40fb214: Waiting
+2026-10-05T16:44:46.2206991Z ca5e97c0cd7d: Waiting
+2026-10-05T16:44:46.2207317Z 53fa82bdba52: Waiting
+2026-10-05T16:44:46.2207700Z 7b9c6b8e5e6e: Waiting
+2026-10-05T16:44:46.2207986Z b65147f15943: Waiting
+2026-10-05T16:44:46.4413069Z 0d791b2b75ae: Download complete
+2026-10-05T16:44:46.4620616Z 0d39881c83f7: Verifying Checksum
+2026-10-05T16:44:46.4621909Z 0d39881c83f7: Download complete
+2026-10-05T16:44:46.5279021Z 6b37362b3da7: Verifying Checksum
+2026-10-05T16:44:46.5280042Z 6b37362b3da7: Download complete
+2026-10-05T16:44:46.6725151Z c95afe7c234f: Verifying Checksum
+2026-10-05T16:44:46.6726345Z c95afe7c234f: Download complete
+2026-10-05T16:44:46.7101909Z bc176b99a33a: Download complete
+2026-10-05T16:44:46.7579312Z 08a5cd487deb: Verifying Checksum
+2026-10-05T16:44:46.7580105Z 08a5cd487deb: Download complete
+2026-10-05T16:44:46.8775394Z eb4d92aaee0a: Verifying Checksum
+2026-10-05T16:44:46.8776374Z eb4d92aaee0a: Download complete
+2026-10-05T16:44:46.9321713Z 75a4dff090e8: Verifying Checksum
+2026-10-05T16:44:46.9322673Z 75a4dff090e8: Download complete
+2026-10-05T16:44:47.0983008Z ca5e97c0cd7d: Verifying Checksum
+2026-10-05T16:44:47.0983996Z ca5e97c0cd7d: Download complete
+2026-10-05T16:44:47.1369808Z 53fa82bdba52: Verifying Checksum
+2026-10-05T16:44:47.1371751Z 53fa82bdba52: Download complete
+2026-10-05T16:44:47.3191927Z 7b9c6b8e5e6e: Download complete
+2026-10-05T16:44:47.3410369Z afe9a40fb214: Verifying Checksum
+2026-10-05T16:44:47.3410978Z afe9a40fb214: Download complete
+2026-10-05T16:44:47.3594357Z b65147f15943: Verifying Checksum
+2026-10-05T16:44:47.3596259Z b65147f15943: Download complete
+2026-10-05T16:44:47.5454047Z 170d9ea1cd85: Verifying Checksum
+2026-10-05T16:44:47.5454680Z 170d9ea1cd85: Download complete
+2026-10-05T16:44:47.6214553Z 6b37362b3da7: Pull complete
+2026-10-05T16:44:47.8961721Z 0d791b2b75ae: Pull complete
+2026-10-05T16:44:48.1175725Z 0d39881c83f7: Pull complete
+2026-10-05T16:44:48.1577788Z c95afe7c234f: Pull complete
+2026-10-05T16:44:48.4576292Z bc176b99a33a: Pull complete
+2026-10-05T16:44:48.5404153Z 08a5cd487deb: Pull complete
+2026-10-05T16:44:48.5500828Z eb4d92aaee0a: Pull complete
+2026-10-05T16:44:48.5730777Z 75a4dff090e8: Pull complete
+2026-10-05T16:44:51.5531263Z afe9a40fb214: Pull complete
+2026-10-05T16:44:51.5668322Z ca5e97c0cd7d: Pull complete
+2026-10-05T16:44:51.5825602Z 53fa82bdba52: Pull complete
+2026-10-05T16:44:51.5911514Z 7b9c6b8e5e6e: Pull complete
+2026-10-05T16:44:51.5994154Z b65147f15943: Pull complete
+2026-10-05T16:44:51.6067708Z 170d9ea1cd85: Pull complete
+2026-10-05T16:44:51.6101601Z Digest: sha256:724292da1f2e50bdccfc3302ce75bbba7f4a6076701b588cc795fcac65683550
+2026-10-05T16:44:51.6111078Z Status: Downloaded newer image for postgres:15
+2026-10-05T16:44:51.6119371Z docker.io/library/postgres:15
+2026-10-05T16:44:51.6180649Z ##[command]/usr/bin/docker create --name c5ca2d576906435ca235960726544a67_postgres15_5f4937 --label 04385c --network github_network_f607c8d59cb64819ae008f7970a4256d --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=postgres" -e GITHUB_ACTIONS=true -e CI=true postgres:15
+2026-10-05T16:44:51.6427429Z 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:44:51.6449856Z ##[command]/usr/bin/docker start 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:44:51.8591252Z 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:44:51.8621312Z ##[command]/usr/bin/docker ps --all --filter id=5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T16:44:51.8775695Z 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e Up Less than a second (health: starting)
+2026-10-05T16:44:51.8797789Z ##[command]/usr/bin/docker port 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:44:51.8932436Z 5432/tcp -> 0.0.0.0:5432
+2026-10-05T16:44:51.8935547Z 5432/tcp -> [::]:5432
+2026-10-05T16:44:51.8980654Z ##[endgroup]
+2026-10-05T16:44:51.8990685Z ##[group]Waiting for all services to be ready
+2026-10-05T16:44:51.9008383Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:44:51.9146952Z starting
+2026-10-05T16:44:51.9168572Z postgres service is starting, waiting 2 seconds before checking again.
+2026-10-05T16:44:53.9170988Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:44:53.9297289Z starting
+2026-10-05T16:44:53.9309483Z postgres service is starting, waiting 3 seconds before checking again.
+2026-10-05T16:44:57.8084309Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:44:57.8213565Z starting
+2026-10-05T16:44:57.8231102Z postgres service is starting, waiting 8 seconds before checking again.
+2026-10-05T16:45:06.1503699Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:45:06.1628595Z healthy
+2026-10-05T16:45:06.1645482Z postgres service is healthy.
+2026-10-05T16:45:06.1646201Z ##[endgroup]
+2026-10-05T16:45:06.2002129Z ##[group]Run actions/checkout@v6
+2026-10-05T16:45:06.2002691Z with:
+2026-10-05T16:45:06.2003008Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T16:45:06.2005730Z   token: ***
+2026-10-05T16:45:06.2005936Z   ssh-strict: true
+2026-10-05T16:45:06.2006135Z   ssh-user: git
+2026-10-05T16:45:06.2006339Z   persist-credentials: true
+2026-10-05T16:45:06.2006564Z   clean: true
+2026-10-05T16:45:06.2006775Z   sparse-checkout-cone-mode: true
+2026-10-05T16:45:06.2007028Z   fetch-depth: 1
+2026-10-05T16:45:06.2007219Z   fetch-tags: false
+2026-10-05T16:45:06.2007418Z   show-progress: true
+2026-10-05T16:45:06.2007612Z   lfs: false
+2026-10-05T16:45:06.2007790Z   submodules: false
+2026-10-05T16:45:06.2007993Z   set-safe-directory: true
+2026-10-05T16:45:06.2008229Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:45:06.2008711Z env:
+2026-10-05T16:45:06.2009139Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:06.2009567Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:45:06.2010046Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:06.2010356Z ##[endgroup]
+2026-10-05T16:45:06.2981051Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T16:45:06.2982415Z ##[group]Getting Git version info
+2026-10-05T16:45:06.2982878Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T16:45:06.2983525Z [command]/usr/bin/git version
+2026-10-05T16:45:06.3096051Z git version 2.55.0
+2026-10-05T16:45:06.3126267Z ##[endgroup]
+2026-10-05T16:45:06.3137267Z Temporarily overriding HOME='/home/runner/work/_temp/6a03212b-e07a-4362-a84c-32c4f6490e4e' before making global git config changes
+2026-10-05T16:45:06.3138698Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:45:06.3144269Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T16:45:06.3195962Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T16:45:06.3200199Z ##[group]Determining repository object format
+2026-10-05T16:45:06.3203078Z ##[endgroup]
+2026-10-05T16:45:06.3203992Z ##[group]Initializing the repository
+2026-10-05T16:45:06.3208523Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T16:45:06.3316229Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:45:06.3317081Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:45:06.3317748Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:45:06.3318501Z hint: call:
+2026-10-05T16:45:06.3318838Z hint:
+2026-10-05T16:45:06.3319186Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:45:06.3319517Z hint:
+2026-10-05T16:45:06.3319957Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:45:06.3320939Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:45:06.3321668Z hint:
+2026-10-05T16:45:06.3322065Z hint: 	git branch -m <name>
+2026-10-05T16:45:06.3322513Z hint:
+2026-10-05T16:45:06.3323116Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:45:06.3324352Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-05T16:45:06.3331330Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T16:45:06.3380888Z ##[endgroup]
+2026-10-05T16:45:06.3381344Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:45:06.3384732Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:45:06.3416324Z ##[endgroup]
+2026-10-05T16:45:06.3416705Z ##[group]Setting up auth
+2026-10-05T16:45:06.3417394Z Removing SSH command configuration
+2026-10-05T16:45:06.3423759Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:45:06.3455172Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:45:06.3800350Z Removing HTTP extra header
+2026-10-05T16:45:06.3806821Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:45:06.3838626Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:45:06.4059909Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:45:06.4068717Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:45:06.4101545Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:45:06.4330657Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:45:06.4368078Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:45:06.4399307Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:45:06.4432754Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:45:06.4461667Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:45:06.4488219Z ##[endgroup]
+2026-10-05T16:45:06.4488900Z ##[group]Fetching the repository
+2026-10-05T16:45:06.4498175Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +5739b22b71331198d54bc3f204e5e47b713f43b7:refs/remotes/pull/703/merge
+2026-10-05T16:45:07.6863850Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T16:45:07.6865098Z  * [new ref]         5739b22b71331198d54bc3f204e5e47b713f43b7 -> pull/703/merge
+2026-10-05T16:45:07.6871527Z ##[endgroup]
+2026-10-05T16:45:07.6872410Z ##[group]Determining the checkout info
+2026-10-05T16:45:07.6873192Z ##[endgroup]
+2026-10-05T16:45:07.6878701Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:45:07.6928143Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:45:07.6959351Z ##[group]Checking out the ref
+2026-10-05T16:45:07.6964030Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/703/merge
+2026-10-05T16:45:07.9238645Z Note: switching to 'refs/remotes/pull/703/merge'.
+2026-10-05T16:45:07.9245825Z 
+2026-10-05T16:45:07.9246362Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-05T16:45:07.9247480Z changes and commit them, and you can discard any commits you make in this
+2026-10-05T16:45:07.9248599Z state without impacting any branches by switching back to a branch.
+2026-10-05T16:45:07.9249370Z 
+2026-10-05T16:45:07.9249971Z If you want to create a new branch to retain commits you create, you may
+2026-10-05T16:45:07.9250952Z do so (now or later) by using -c with the switch command. Example:
+2026-10-05T16:45:07.9251552Z 
+2026-10-05T16:45:07.9251785Z   git switch -c <new-branch-name>
+2026-10-05T16:45:07.9252090Z 
+2026-10-05T16:45:07.9252260Z Or undo this operation with:
+2026-10-05T16:45:07.9252591Z 
+2026-10-05T16:45:07.9252757Z   git switch -
+2026-10-05T16:45:07.9253112Z 
+2026-10-05T16:45:07.9253839Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-05T16:45:07.9254717Z 
+2026-10-05T16:45:07.9255867Z HEAD is now at 5739b22 Merge 88940c3f5a0843a5979d1ac3196049e0be516141 into b17888ab6eaa018a49d42a40eb2b773b89198d28
+2026-10-05T16:45:07.9258383Z ##[endgroup]
+2026-10-05T16:45:07.9311653Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:45:07.9336361Z 5739b22b71331198d54bc3f204e5e47b713f43b7
+2026-10-05T16:45:07.9594354Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:45:07.9594651Z with:
+2026-10-05T16:45:07.9595296Z   node-version: 20
+2026-10-05T16:45:07.9595506Z   cache: npm
+2026-10-05T16:45:07.9595705Z   check-latest: false
+2026-10-05T16:45:07.9597993Z   token: ***
+2026-10-05T16:45:07.9598209Z   package-manager-cache: true
+2026-10-05T16:45:07.9598446Z env:
+2026-10-05T16:45:07.9598813Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:07.9599250Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:45:07.9599682Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:07.9599972Z ##[endgroup]
+2026-10-05T16:45:08.1040696Z Attempting to download 20...
+2026-10-05T16:45:08.8037433Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-05T16:45:09.2016453Z Extracting ...
+2026-10-05T16:45:09.2139746Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/d79305f0-7f57-4c47-bd6c-6972603e3a65 -f /home/runner/work/_temp/80d16725-387a-418c-afcd-c6ee152d4e74
+2026-10-05T16:45:10.2216316Z Adding to the cache ...
+2026-10-05T16:45:11.9768821Z ##[group]Environment details
+2026-10-05T16:45:12.1989146Z node: v20.20.2
+2026-10-05T16:45:12.1989666Z npm: 10.8.2
+2026-10-05T16:45:12.1989945Z yarn: 1.22.22
+2026-10-05T16:45:12.1990425Z ##[endgroup]
+2026-10-05T16:45:12.2013408Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-05T16:45:12.3097539Z /home/runner/.npm
+2026-10-05T16:45:12.5791620Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T16:45:13.8538567Z Received 0 of 86828135 (0.0%), 0.0 MBs/sec
+2026-10-05T16:45:14.5568942Z Received 86828135 of 86828135 (100.0%), 48.6 MBs/sec
+2026-10-05T16:45:14.5570566Z Cache Size: ~83 MB (86828135 B)
+2026-10-05T16:45:14.5680223Z [command]/usr/bin/tar -xf /home/runner/work/_temp/7fcc8502-1d5f-4c50-a396-c3c71da3c748/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-05T16:45:14.7403085Z Cache restored successfully
+2026-10-05T16:45:14.7450695Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T16:45:14.7626297Z ##[group]Run npm ci
+2026-10-05T16:45:14.7626593Z [36;1mnpm ci[0m
+2026-10-05T16:45:14.7845723Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:45:14.7846061Z env:
+2026-10-05T16:45:14.7846636Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:14.7847144Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:45:14.7847657Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:14.7848031Z ##[endgroup]
+2026-10-05T16:45:20.8962448Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:45:21.1847149Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-05T16:45:23.3110187Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:45:24.5602948Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:45:24.5856215Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:45:24.6357552Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:45:37.3684545Z 
+2026-10-05T16:45:37.3685345Z > growth-project-backend@1.0.0 postinstall
+2026-10-05T16:45:37.3685847Z > prisma generate
+2026-10-05T16:45:37.3686264Z 
+2026-10-05T16:45:38.3202984Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T16:45:42.2789163Z ┌─────────────────────────────────────────────────────────┐
+2026-10-05T16:45:42.2790320Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+2026-10-05T16:45:42.2790982Z │                                                         │
+2026-10-05T16:45:42.2791538Z │  This is a major update - please follow the guide at    │
+2026-10-05T16:45:42.2792107Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-05T16:45:42.2792600Z │                                                         │
+2026-10-05T16:45:42.2793054Z │  Run the following to update                            │
+2026-10-05T16:45:42.2793589Z │    npm i --save-dev prisma@latest                       │
+2026-10-05T16:45:42.2794063Z │    npm i @prisma/client@latest                          │
+2026-10-05T16:45:42.2794544Z └─────────────────────────────────────────────────────────┘
+2026-10-05T16:45:42.2795483Z 
+2026-10-05T16:45:42.2796006Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.18s
+2026-10-05T16:45:42.2796354Z 
+2026-10-05T16:45:42.2796734Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T16:45:42.2797552Z 
+2026-10-05T16:45:42.2797863Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-05T16:45:42.2798165Z 
+2026-10-05T16:45:42.3329823Z 
+2026-10-05T16:45:42.3330382Z > growth-project-backend@1.0.0 prepare
+2026-10-05T16:45:42.3330763Z > lefthook install
+2026-10-05T16:45:42.3330912Z 
+2026-10-05T16:45:42.3833275Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-05T16:45:42.4018390Z 
+2026-10-05T16:45:42.4019274Z added 1115 packages, and audited 1116 packages in 28s
+2026-10-05T16:45:42.4019583Z 
+2026-10-05T16:45:42.4020093Z 202 packages are looking for funding
+2026-10-05T16:45:42.4020454Z   run `npm fund` for details
+2026-10-05T16:45:42.4052101Z 
+2026-10-05T16:45:42.4052348Z 3 high severity vulnerabilities
+2026-10-05T16:45:42.4052669Z 
+2026-10-05T16:45:42.4052950Z To address all issues (including breaking changes), run:
+2026-10-05T16:45:42.4053519Z   npm audit fix --force
+2026-10-05T16:45:42.4053723Z 
+2026-10-05T16:45:42.4053872Z Run `npm audit` for details.
+2026-10-05T16:45:42.4652983Z ##[group]Run npx prisma generate
+2026-10-05T16:45:42.4653332Z [36;1mnpx prisma generate[0m
+2026-10-05T16:45:42.4719490Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:45:42.4719763Z env:
+2026-10-05T16:45:42.4720220Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:42.4720665Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:45:42.4721108Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:42.4721407Z ##[endgroup]
+2026-10-05T16:45:43.6938309Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T16:45:47.5553211Z 
+2026-10-05T16:45:47.5554608Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.13s
+2026-10-05T16:45:47.5555655Z 
+2026-10-05T16:45:47.5556433Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T16:45:47.5557154Z 
+2026-10-05T16:45:47.5557761Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-05T16:45:47.5558177Z 
+2026-10-05T16:45:47.6184169Z ##[group]Run sudo apt-get update && sudo apt-get install -y postgresql-client
+2026-10-05T16:45:47.6184765Z [36;1msudo apt-get update && sudo apt-get install -y postgresql-client[0m
+2026-10-05T16:45:47.6246617Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:45:47.6246874Z env:
+2026-10-05T16:45:47.6247319Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:47.6247775Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:45:47.6248235Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:47.6248542Z ##[endgroup]
+2026-10-05T16:45:47.6979287Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-10-05T16:45:47.7238926Z Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+2026-10-05T16:45:47.7338682Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+2026-10-05T16:45:47.7348599Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+2026-10-05T16:45:47.7395462Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+2026-10-05T16:45:47.7416822Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+2026-10-05T16:45:47.7876398Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [458 kB]
+2026-10-05T16:45:47.8086529Z Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [511 kB]
+2026-10-05T16:45:47.8169585Z Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.6 kB]
+2026-10-05T16:45:47.9190004Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1366 kB]
+2026-10-05T16:45:47.9272789Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [304 kB]
+2026-10-05T16:45:47.9278526Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
+2026-10-05T16:45:47.9306230Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1699 kB]
+2026-10-05T16:45:47.9394408Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [341 kB]
+2026-10-05T16:45:47.9400059Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+2026-10-05T16:45:47.9424510Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1724 kB]
+2026-10-05T16:45:47.9515125Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [394 kB]
+2026-10-05T16:45:47.9538429Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+2026-10-05T16:45:47.9793003Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5776 B]
+2026-10-05T16:45:48.0232888Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+2026-10-05T16:45:48.0290939Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1069 kB]
+2026-10-05T16:45:48.0348770Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [221 kB]
+2026-10-05T16:45:48.0366482Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+2026-10-05T16:45:48.0375968Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1216 kB]
+2026-10-05T16:45:48.0435785Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [244 kB]
+2026-10-05T16:45:48.0454302Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.4 kB]
+2026-10-05T16:45:48.0474109Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1566 kB]
+2026-10-05T16:45:48.0541738Z Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [361 kB]
+2026-10-05T16:45:52.4963301Z Fetched 12.6 MB in 1s (9282 kB/s)
+2026-10-05T16:45:53.3482699Z Reading package lists...
+2026-10-05T16:45:53.3793448Z Reading package lists...
+2026-10-05T16:45:53.6030262Z Building dependency tree...
+2026-10-05T16:45:53.6038429Z Reading state information...
+2026-10-05T16:45:53.7622101Z The following NEW packages will be installed:
+2026-10-05T16:45:53.7622732Z   postgresql-client
+2026-10-05T16:45:53.7795205Z 0 upgraded, 1 newly installed, 0 to remove and 25 not upgraded.
+2026-10-05T16:45:53.7796022Z Need to get 11.6 kB of archives.
+2026-10-05T16:45:53.7796888Z After this operation, 17.4 kB of additional disk space will be used.
+2026-10-05T16:45:53.7797758Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-10-05T16:45:53.8667138Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 postgresql-client all 16+257build1.1 [11.6 kB]
+2026-10-05T16:45:54.1220036Z Fetched 11.6 kB in 0s (119 kB/s)
+2026-10-05T16:45:54.1433176Z Selecting previously unselected package postgresql-client.
+2026-10-05T16:45:54.1710607Z (Reading database ... 
+2026-10-05T16:45:54.1710993Z (Reading database ... 5%
+2026-10-05T16:45:54.1711294Z (Reading database ... 10%
+2026-10-05T16:45:54.1711629Z (Reading database ... 15%
+2026-10-05T16:45:54.1711912Z (Reading database ... 20%
+2026-10-05T16:45:54.1712178Z (Reading database ... 25%
+2026-10-05T16:45:54.1712447Z (Reading database ... 30%
+2026-10-05T16:45:54.1712719Z (Reading database ... 35%
+2026-10-05T16:45:54.1712982Z (Reading database ... 40%
+2026-10-05T16:45:54.1713250Z (Reading database ... 45%
+2026-10-05T16:45:54.1713518Z (Reading database ... 50%
+2026-10-05T16:45:54.1753861Z (Reading database ... 55%
+2026-10-05T16:45:54.3109483Z (Reading database ... 60%
+2026-10-05T16:45:54.5029089Z (Reading database ... 65%
+2026-10-05T16:45:54.7080272Z (Reading database ... 70%
+2026-10-05T16:45:54.9108869Z (Reading database ... 75%
+2026-10-05T16:45:55.0530526Z (Reading database ... 80%
+2026-10-05T16:45:55.2586137Z (Reading database ... 85%
+2026-10-05T16:45:55.4509268Z (Reading database ... 90%
+2026-10-05T16:45:55.6186510Z (Reading database ... 95%
+2026-10-05T16:45:55.6187156Z (Reading database ... 100%
+2026-10-05T16:45:55.6187893Z (Reading database ... 202296 files and directories currently installed.)
+2026-10-05T16:45:55.6233645Z Preparing to unpack .../postgresql-client_16+257build1.1_all.deb ...
+2026-10-05T16:45:55.6279056Z Unpacking postgresql-client (16+257build1.1) ...
+2026-10-05T16:45:55.6643772Z Setting up postgresql-client (16+257build1.1) ...
+2026-10-05T16:45:56.3085172Z 
+2026-10-05T16:45:56.3086178Z Running kernel seems to be up-to-date.
+2026-10-05T16:45:56.3086587Z 
+2026-10-05T16:45:56.3086856Z No services need to be restarted.
+2026-10-05T16:45:56.3087161Z 
+2026-10-05T16:45:56.3087437Z No containers need to be restarted.
+2026-10-05T16:45:56.3087753Z 
+2026-10-05T16:45:56.3088067Z No user sessions are running outdated binaries.
+2026-10-05T16:45:56.3088436Z 
+2026-10-05T16:45:56.3088928Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-10-05T16:45:57.2852974Z ##[group]Run psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+2026-10-05T16:45:57.2853736Z [36;1mpsql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \[0m
+2026-10-05T16:45:57.2855448Z [36;1m  "DO \$do\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_authenticated') THEN CREATE ROLE app_authenticated NOLOGIN NOINHERIT NOBYPASSRLS; END IF; END \$do\$;"[0m
+2026-10-05T16:45:57.2928206Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:45:57.2928470Z env:
+2026-10-05T16:45:57.2929125Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:57.2929563Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:45:57.2929988Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:57.2930285Z ##[endgroup]
+2026-10-05T16:45:57.4242868Z DO
+2026-10-05T16:45:57.4287955Z ##[group]Run npx jest \
+2026-10-05T16:45:57.4288248Z [36;1mnpx jest \[0m
+2026-10-05T16:45:57.4288498Z [36;1m  test/mwb-3-lock-token.spec.ts \[0m
+2026-10-05T16:45:57.4288844Z [36;1m  test/mwb-3-autosave.controller.spec.ts \[0m
+2026-10-05T16:45:57.4289191Z [36;1m  test/mwb-3-autosave.service.spec.ts \[0m
+2026-10-05T16:45:57.4289499Z [36;1m  test/mwb-3-undo.spec.ts \[0m
+2026-10-05T16:45:57.4289811Z [36;1m  test/mwb-3-revision-prune.cron.spec.ts \[0m
+2026-10-05T16:45:57.4290172Z [36;1m  test/profile-put-concurrency.live.spec.ts \[0m
+2026-10-05T16:45:57.4290556Z [36;1m  test/onboarding-tenancy-fence.live.spec.ts \[0m
+2026-10-05T16:45:57.4290916Z [36;1m  --runInBand --testTimeout=120000[0m
+2026-10-05T16:45:57.4351303Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:45:57.4351571Z env:
+2026-10-05T16:45:57.4352003Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:57.4352422Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:45:57.4352926Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:45:57.4353268Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T16:45:57.4353557Z ##[endgroup]
+2026-10-05T16:46:01.7843925Z [33m[Nest] 3543  - [39m10/05/2026, 4:46:00 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:01.7846585Z [33m[Nest] 3543  - [39m10/05/2026, 4:46:00 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:01.7848906Z [33m[Nest] 3543  - [39m10/05/2026, 4:46:00 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:03.7310969Z [33m[Nest] 3543  - [39m10/05/2026, 4:46:03 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:03.9932164Z PASS test/mwb-3-lock-token.spec.ts (5.464 s, 138 MB heap size)
+2026-10-05T16:46:08.2531903Z [33m[Nest] 3543  - [39m10/05/2026, 4:46:08 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:08.3399514Z PASS test/mwb-3-autosave.controller.spec.ts (171 MB heap size)
+2026-10-05T16:46:12.4905942Z [33m[Nest] 3543  - [39m10/05/2026, 4:46:12 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:12.6798658Z PASS test/mwb-3-autosave.service.spec.ts (116 MB heap size)
+2026-10-05T16:46:13.0980955Z [31m[Nest] 3543  - [39m10/05/2026, 4:46:13 PM [31m  ERROR[39m [38;5;3m[WorkoutBuilderRevisionPruneCron] [39m[31mRevision prune failed for plan B: boom[39m
+2026-10-05T16:46:13.0981718Z Error: boom
+2026-10-05T16:46:13.0982422Z     at Object.<anonymous> (/home/runner/work/growth-project-backend/growth-project-backend/test/mwb-3-revision-prune.cron.spec.ts:81:30)
+2026-10-05T16:46:13.0983634Z     at Promise.finally.completed (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1561:28)
+2026-10-05T16:46:13.0984375Z     at new Promise (<anonymous>)
+2026-10-05T16:46:13.0985465Z     at callAsyncCircusFn (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1501:10)
+2026-10-05T16:46:13.0986647Z     at _callCircusTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1011:40)
+2026-10-05T16:46:13.0987744Z     at _runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:951:3)
+2026-10-05T16:46:13.0988736Z     at /home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:853:7
+2026-10-05T16:46:13.0990240Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:866:11)
+2026-10-05T16:46:13.0991475Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:861:11)
+2026-10-05T16:46:13.0992571Z     at run (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:765:3)
+2026-10-05T16:46:13.0993718Z     at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1993:21)
+2026-10-05T16:46:13.0995039Z     at jestAdapter (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/runner.js:111:19)
+2026-10-05T16:46:13.0996071Z     at runTestInternal (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:276:16)
+2026-10-05T16:46:13.0997059Z     at runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:344:7)
+2026-10-05T16:46:13.1005486Z [31m[Nest] 3543  - [39m10/05/2026, 4:46:13 PM [31m  ERROR[39m [38;5;3m[WorkoutBuilderRevisionPruneCron] [39m[31mRevision prune sweep failed to enumerate plans: db down[39m
+2026-10-05T16:46:13.1006254Z Error: db down
+2026-10-05T16:46:13.1006926Z     at Object.<anonymous> (/home/runner/work/growth-project-backend/growth-project-backend/test/mwb-3-revision-prune.cron.spec.ts:103:28)
+2026-10-05T16:46:13.1008089Z     at Promise.finally.completed (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1561:28)
+2026-10-05T16:46:13.1008825Z     at new Promise (<anonymous>)
+2026-10-05T16:46:13.1009565Z     at callAsyncCircusFn (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1501:10)
+2026-10-05T16:46:13.1010706Z     at _callCircusTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1011:40)
+2026-10-05T16:46:13.1011802Z     at _runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:951:3)
+2026-10-05T16:46:13.1012801Z     at /home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:853:7
+2026-10-05T16:46:13.1013874Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:866:11)
+2026-10-05T16:46:13.1015543Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:861:11)
+2026-10-05T16:46:13.1016659Z     at run (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:765:3)
+2026-10-05T16:46:13.1017817Z     at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1993:21)
+2026-10-05T16:46:13.1018945Z     at jestAdapter (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/runner.js:111:19)
+2026-10-05T16:46:13.1019946Z     at runTestInternal (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:276:16)
+2026-10-05T16:46:13.1020905Z     at runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:344:7)
+2026-10-05T16:46:13.1846046Z [95m[Nest] 3543  - [39m10/05/2026, 4:46:13 PM [95m  DEBUG[39m [38;5;3m[WorkoutBuilderRevisionPruneCron] [39m[95mFEATURE_MWB_AUTOSAVE_UNDO off — revision prune skipped[39m
+2026-10-05T16:46:13.1847477Z [32m[Nest] 3543  - [39m10/05/2026, 4:46:13 PM [32m    LOG[39m [38;5;3m[WorkoutBuilderRevisionPruneCron] [39m[32mStarting MWB-3 revision prune sweep[39m
+2026-10-05T16:46:13.1849506Z [32m[Nest] 3543  - [39m10/05/2026, 4:46:13 PM [32m    LOG[39m [38;5;3m[WorkoutBuilderRevisionPruneCron] [39m[32mMWB-3 revision prune sweep complete: 2 plan(s) pruned, 8 revision(s) deleted[39m
+2026-10-05T16:46:13.1851836Z [32m[Nest] 3543  - [39m10/05/2026, 4:46:13 PM [32m    LOG[39m [38;5;3m[WorkoutBuilderRevisionPruneCron] [39m[32mStarting MWB-3 revision prune sweep[39m
+2026-10-05T16:46:16.7738602Z [33m[Nest] 3543  - [39m10/05/2026, 4:46:16 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:16.8895581Z [32m[Nest] 3543  - [39m10/05/2026, 4:46:16 PM [32m    LOG[39m [38;5;3m[WorkoutBuilderRevisionPruneCron] [39m[32mStarting MWB-3 revision prune sweep[39m
+2026-10-05T16:46:16.8897653Z [32m[Nest] 3543  - [39m10/05/2026, 4:46:16 PM [32m    LOG[39m [38;5;3m[WorkoutBuilderRevisionPruneCron] [39m[32mMWB-3 revision prune sweep complete: 1 plan(s) pruned, 10 revision(s) deleted[39m
+2026-10-05T16:46:17.0020710Z PASS test/mwb-3-revision-prune.cron.spec.ts (155 MB heap size)
+2026-10-05T16:46:20.9151726Z [33m[Nest] 3543  - [39m10/05/2026, 4:46:20 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:21.1486321Z PASS test/mwb-3-undo.spec.ts (141 MB heap size)
+2026-10-05T16:46:25.4621239Z PASS test/onboarding-tenancy-fence.live.spec.ts (178 MB heap size)
+2026-10-05T16:46:29.4001316Z PASS test/profile-put-concurrency.live.spec.ts (152 MB heap size)
+2026-10-05T16:46:29.4041610Z 
+2026-10-05T16:46:29.4054611Z Test Suites: 7 passed, 7 total
+2026-10-05T16:46:29.4055795Z Tests:       62 passed, 62 total
+2026-10-05T16:46:29.4056550Z Snapshots:   0 total
+2026-10-05T16:46:29.4057200Z Time:        31.117 s
+2026-10-05T16:46:29.4059550Z Ran all test suites matching test/mwb-3-lock-token.spec.ts|test/mwb-3-autosave.controller.spec.ts|test/mwb-3-autosave.service.spec.ts|test/mwb-3-undo.spec.ts|test/mwb-3-revision-prune.cron.spec.ts|test/profile-put-concurrency.live.spec.ts|test/onboarding-tenancy-fence.live.spec.ts.
+2026-10-05T16:46:29.5440739Z ##[group]Run npx jest --config jest.rls.config.js test/rls-mwb3-autosave-undo.spec.ts --runInBand --testTimeout=120000
+2026-10-05T16:46:29.5441615Z [36;1mnpx jest --config jest.rls.config.js test/rls-mwb3-autosave-undo.spec.ts --runInBand --testTimeout=120000[0m
+2026-10-05T16:46:29.5503624Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:46:29.5503883Z env:
+2026-10-05T16:46:29.5504593Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:46:29.5505329Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:46:29.5505796Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:46:29.5506131Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T16:46:29.5506419Z ##[endgroup]
+2026-10-05T16:46:36.0750436Z [33m[Nest] 3946  - [39m10/05/2026, 4:46:36 PM [33m   WARN[39m [38;5;3m[AnalyticsService] [39m[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).[39m
+2026-10-05T16:46:36.2222296Z PASS rls-live test/rls-mwb3-autosave-undo.spec.ts (5.595 s, 138 MB heap size)
+2026-10-05T16:46:36.2224138Z   MWB-3 #13 — WorkoutPlanRevision RLS (sub-coach cross-tenant)
+2026-10-05T16:46:36.2226663Z     ✓ a sub-coach on the team CAN read its head coach plan revision (19 ms)
+2026-10-05T16:46:36.2228014Z     ✓ a sub-coach CANNOT read another tenant (foreign coach) revision (13 ms)
+2026-10-05T16:46:36.2229371Z     ✓ the head coach cannot read the foreign tenant revision either (11 ms)
+2026-10-05T16:46:36.2230658Z     ✓ the foreign coach cannot read the head coach revision (16 ms)
+2026-10-05T16:46:36.2231845Z     ✓ service_role bypasses RLS and sees both revisions (10 ms)
+2026-10-05T16:46:36.2232994Z     ✓ the head coach CAN read its own plan revision (10 ms)
+2026-10-05T16:46:36.2234085Z   MWB-3 #1/#8 — autosave concurrency (real service, live DB)
+2026-10-05T16:46:36.2235675Z     ✓ #1/#8 two parallel autosaves at base 0: exactly one commits, the other gets a typed 409 (139 ms)
+2026-10-05T16:46:36.2236382Z 
+2026-10-05T16:46:36.2259115Z Test Suites: 1 passed, 1 total
+2026-10-05T16:46:36.2259892Z Tests:       7 passed, 7 total
+2026-10-05T16:46:36.2260472Z Snapshots:   0 total
+2026-10-05T16:46:36.2260974Z Time:        5.84 s
+2026-10-05T16:46:36.2261866Z Ran all test suites matching test/rls-mwb3-autosave-undo.spec.ts.
+2026-10-05T16:46:36.3654799Z ##[group]Run npx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000
+2026-10-05T16:46:36.3655947Z [36;1mnpx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000[0m
+2026-10-05T16:46:36.3718610Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:46:36.3718886Z env:
+2026-10-05T16:46:36.3719356Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:46:36.3719824Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:46:36.3720304Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:46:36.3720668Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T16:46:36.3720978Z ##[endgroup]
+2026-10-05T16:46:42.6475176Z [31m[Nest] 4045  - [39m10/05/2026, 4:46:42 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.erase_incomplete session=cmuvhfdn0005l1o4db7kjtnpy messages_left=1[39m
+2026-10-05T16:46:42.6682746Z PASS test/roman/roman-session-erase.live.spec.ts (5.334 s, 101 MB heap size)
+2026-10-05T16:46:42.6684719Z   B-635-1 / C-635-1 live: Roman delete erases and frees the day key (Postgres)
+2026-10-05T16:46:42.6687714Z     ✓ negative control: Postgres rejects a second row on a day key a deleted row still holds (108 ms)
+2026-10-05T16:46:42.6689316Z     ✓ open -> append -> delete -> open the same day gives a fresh empty session that takes turns (30 ms)
+2026-10-05T16:46:42.6690673Z     ✓ concurrent opens after a delete converge on one fresh session (39 ms)
+2026-10-05T16:46:42.6692046Z     ✓ the old deleted session stays deleted: a late append to it is a 404 and stores nothing (17 ms)
+2026-10-05T16:46:42.6693303Z     ✓ a delete racing an append leaves no transcript behind (71 ms)
+2026-10-05T16:46:42.6694261Z     ✓ delete + reopen never resets the daily cap (22 ms)
+2026-10-05T16:46:42.6695823Z     ✓ C-635-1: a legacy tombstone holding today's key is erased on open and a fresh session opens (22 ms)
+2026-10-05T16:46:42.6697447Z     ✓ C-635-1: the sweep erases every legacy tombstone, is idempotent, and leaves live chats alone (27 ms)
+2026-10-05T16:46:42.6699354Z     ✓ B-635-2: the list pages every live chat newest first; delete-all erases prior days and today on both surfaces, nobody else, cap kept (59 ms)
+2026-10-05T16:46:42.6703190Z     ✓ B-635-2 / C-635-2: a prior-day chat is erased by id; a repeat delete is a 204; a foreign id is the coded 404 (18 ms)
+2026-10-05T16:46:42.6704144Z     ✓ C-635-3: under a role that RLS stops from deleting, delete is a coded 503 and the chat is left whole (121 ms)
+2026-10-05T16:46:42.6704579Z 
+2026-10-05T16:46:42.6721597Z Test Suites: 1 passed, 1 total
+2026-10-05T16:46:42.6722208Z Tests:       11 passed, 11 total
+2026-10-05T16:46:42.6722722Z Snapshots:   0 total
+2026-10-05T16:46:42.6723168Z Time:        5.579 s
+2026-10-05T16:46:42.6723947Z Ran all test suites matching test/roman/roman-session-erase.live.spec.ts.
+2026-10-05T16:46:42.8067143Z ##[group]Run npx jest test/refund-reversal-concurrency.live.spec.ts --runInBand --testTimeout=120000
+2026-10-05T16:46:42.8068503Z [36;1mnpx jest test/refund-reversal-concurrency.live.spec.ts --runInBand --testTimeout=120000[0m
+2026-10-05T16:46:42.8158250Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:46:42.8158679Z env:
+2026-10-05T16:46:42.8159401Z   DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:46:42.8160202Z   DIRECT_URL: ***localhost:5432/postgres
+2026-10-05T16:46:42.8161013Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+2026-10-05T16:46:42.8161617Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T16:46:42.8162126Z ##[endgroup]
+2026-10-05T16:46:49.5085439Z [33m[Nest] 4148  - [39m10/05/2026, 4:46:49 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=pl refund=c9db1afc-66c4-4328-ae39-bc2cc00ba425 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T16:46:49.6318595Z [33m[Nest] 4148  - [39m10/05/2026, 4:46:49 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=pt refund=92e44b8e-30f4-4417-b78b-b179fba7491a code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T16:46:49.9073783Z [33m[Nest] 4148  - [39m10/05/2026, 4:46:49 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=pd dispute=pd-cd code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T16:46:50.0310164Z [33m[Nest] 4148  - [39m10/05/2026, 4:46:50 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=pr refund=9c1e6993-0c10-4b7b-bdd6-19746bd1ce99 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T16:46:50.0581319Z PASS test/refund-reversal-concurrency.live.spec.ts (6.28 s, 158 MB heap size)
+2026-10-05T16:46:50.0582714Z   B-674-1 live: concurrent reversals of different refunds both count
+2026-10-05T16:46:50.0585340Z     ✓ ledger slices: refunds of 2,000 and 1,000 behind held slice locks reverse 200 + 100 and 1,800 + 900 (150 ms)
+2026-10-05T16:46:50.0587098Z     ✓ head-coach transfer: two refunds racing for the transfer reverse 100 + 50 (the loser via the sweep) (117 ms)
+2026-10-05T16:46:50.0588757Z     ✓ chargeback first close: overlapping deliveries elect one closed_at, used by every posting (249 ms)
+2026-10-05T16:46:50.0590291Z     ✓ refund first success: overlapping deliveries elect one posted_at, used by every posting (118 ms)
+2026-10-05T16:46:50.0591152Z 
+2026-10-05T16:46:50.0620844Z Test Suites: 1 passed, 1 total
+2026-10-05T16:46:50.0621464Z Tests:       4 passed, 4 total
+2026-10-05T16:46:50.0621983Z Snapshots:   0 total
+2026-10-05T16:46:50.0622465Z Time:        6.528 s
+2026-10-05T16:46:50.0623190Z Ran all test suites matching test/refund-reversal-concurrency.live.spec.ts.
+2026-10-05T16:46:50.2076151Z Post job cleanup.
+2026-10-05T16:46:50.3302608Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+2026-10-05T16:46:50.3436292Z Post job cleanup.
+2026-10-05T16:46:50.4335146Z [command]/usr/bin/git version
+2026-10-05T16:46:50.4372498Z git version 2.55.0
+2026-10-05T16:46:50.4413077Z Temporarily overriding HOME='/home/runner/work/_temp/0b8bc2e2-0e73-4b21-be84-3a743c69cafb' before making global git config changes
+2026-10-05T16:46:50.4414245Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:46:50.4418990Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T16:46:50.4450344Z Removing SSH command configuration
+2026-10-05T16:46:50.4457417Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:46:50.4494489Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:46:50.4721106Z Removing HTTP extra header
+2026-10-05T16:46:50.4727076Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:46:50.4761750Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:46:50.4986377Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:46:50.4993710Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:46:50.5029007Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T16:46:50.5030090Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T16:46:50.5031121Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:46:50.5032045Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:46:50.5040789Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T16:46:50.5069779Z /home/runner/work/_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:46:50.5081762Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:46:50.5123981Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T16:46:50.5150913Z /home/runner/work/_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:46:50.5172277Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:46:50.5200406Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:46:50.5225929Z /github/runner_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:46:50.5237216Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:46:50.5275188Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:46:50.5297722Z /github/runner_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:46:50.5308795Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config
+2026-10-05T16:46:50.5355319Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:46:50.5593973Z Removing credentials config '/home/runner/work/_temp/git-credentials-e9a4e9dd-0f39-4627-bd74-059c8e7d2519.config'
+2026-10-05T16:46:50.5732377Z Print service container logs: c5ca2d576906435ca235960726544a67_postgres15_5f4937
+2026-10-05T16:46:50.5737475Z ##[command]/usr/bin/docker logs --details 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:46:50.5867523Z  initdb: warning: enabling "trust" authentication for local connections
+2026-10-05T16:46:50.5868523Z  The files belonging to this database system will be owned by user "postgres".
+2026-10-05T16:46:50.5870276Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-10-05T16:46:50.5871409Z  This user must also own the server process.
+2026-10-05T16:46:50.5871906Z  
+2026-10-05T16:46:50.5872379Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-10-05T16:46:50.5873145Z  The default database encoding has accordingly been set to "UTF8".
+2026-10-05T16:46:50.5873880Z  The default text search configuration will be set to "english".
+2026-10-05T16:46:50.5874515Z  
+2026-10-05T16:46:50.5875068Z  Data page checksums are disabled.
+2026-10-05T16:46:50.5875494Z  
+2026-10-05T16:46:50.5875992Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-10-05T16:46:50.5876688Z  creating subdirectories ... ok
+2026-10-05T16:46:50.5877220Z  selecting dynamic shared memory implementation ... posix
+2026-10-05T16:46:50.5877810Z  selecting default max_connections ... 100
+2026-10-05T16:46:50.5878315Z  selecting default shared_buffers ... 128MB
+2026-10-05T16:46:50.5878808Z  selecting default time zone ... Etc/UTC
+2026-10-05T16:46:50.5879285Z  creating configuration files ... ok
+2026-10-05T16:46:50.5879670Z  running bootstrap script ... ok
+2026-10-05T16:46:50.5879979Z  performing post-bootstrap initialization ... ok
+2026-10-05T16:46:50.5880302Z  syncing data to disk ... ok
+2026-10-05T16:46:50.5880537Z  
+2026-10-05T16:46:50.5880705Z  
+2026-10-05T16:46:50.5880933Z  Success. You can now start the database server using:
+2026-10-05T16:46:50.5881240Z  
+2026-10-05T16:46:50.5881478Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-10-05T16:46:50.5881771Z  
+2026-10-05T16:46:50.5882427Z  waiting for server to start....2026-10-05 16:44:52.482 UTC [48] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-05T16:46:50.5883348Z  2026-10-05 16:44:52.483 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-05T16:46:50.5883916Z  2026-10-05 16:44:52.485 UTC [51] LOG:  database system was shut down at 2026-10-05 16:44:52 UTC
+2026-10-05T16:46:50.5884501Z  2026-10-05 16:44:52.489 UTC [48] LOG:  database system is ready to accept connections
+2026-10-05T16:46:50.5885165Z   done
+2026-10-05T16:46:50.5885478Z  server started
+2026-10-05T16:46:50.5885804Z  
+2026-10-05T16:46:50.5886343Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-10-05T16:46:50.5887022Z  
+2026-10-05T16:46:50.5887455Z  2026-10-05 16:44:52.600 UTC [48] LOG:  received fast shutdown request
+2026-10-05T16:46:50.5888375Z  waiting for server to shut down....2026-10-05 16:44:52.600 UTC [48] LOG:  aborting any active transactions
+2026-10-05T16:46:50.5889595Z  2026-10-05 16:44:52.602 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+2026-10-05T16:46:50.5890502Z  2026-10-05 16:44:52.602 UTC [49] LOG:  shutting down
+2026-10-05T16:46:50.5891612Z  2026-10-05 16:44:52.719 UTC [1] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-05T16:46:50.5892846Z  2026-10-05 16:44:52.719 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-10-05T16:46:50.5893657Z  2026-10-05 16:44:52.719 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-10-05T16:46:50.5894586Z  2026-10-05 16:44:52.720 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-05T16:46:50.5896221Z  2026-10-05 16:44:52.722 UTC [62] LOG:  database system was shut down at 2026-10-05 16:44:52 UTC
+2026-10-05T16:46:50.5897130Z  2026-10-05 16:44:52.725 UTC [1] LOG:  database system is ready to accept connections
+2026-10-05T16:46:50.5898672Z  2026-10-05 16:46:29.285 UTC [154] ERROR:  duplicate key value violates unique constraint "UserProfile_user_id_key"
+2026-10-05T16:46:50.5899546Z  2026-10-05 16:46:29.285 UTC [154] DETAIL:  Key (user_id)=(b606-3-live-new-client) already exists.
+2026-10-05T16:46:50.5906144Z  2026-10-05 16:46:29.285 UTC [154] STATEMENT:  INSERT INTO "public"."UserProfile" ("id","user_id","height_cm","current_weight_lbs","target_weight_lbs","date_of_birth","sex","activity_level","goal_type","workout_experience","has_gym_membership","macro_target_calories","macro_target_protein_g","macro_target_carbs_g","macro_target_fat_g","weight_unit","calorie_display","onboardingCompleted","injuries","updated_at") VALUES ($1,$2,$3,$4,$5,$6,CAST($7::text AS "public"."Sex"),CAST($8::text AS "public"."ActivityLevel"),CAST($9::text AS "public"."GoalType"),CAST($10::text AS "public"."WorkoutExperience"),$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING "public"."UserProfile"."id", "public"."UserProfile"."user_id", "public"."UserProfile"."height_cm", "public"."UserProfile"."current_weight_lbs", "public"."UserProfile"."target_weight_lbs", "public"."UserProfile"."date_of_birth", "public"."UserProfile"."sex"::text, "public"."UserProfile"."activity_level"::text, "public"."UserProfile"."goal_type"::text, "public"."UserProfile"."workout_experience"::text, "public"."UserProfile"."has_gym_membership", "public"."UserProfile"."preferred_snacks", "public"."UserProfile"."dietary_pattern", "public"."UserProfile"."dietary_restrictions", "public"."UserProfile"."workout_days_per_week", "public"."UserProfile"."equipment_access", "public"."UserProfile"."macro_target_calories", "public"."UserProfile"."macro_target_protein_g", "public"."UserProfile"."macro_target_carbs_g", "public"."UserProfile"."macro_target_fat_g", "public"."UserProfile"."avatar_url", "public"."UserProfile"."bio", "public"."UserProfile"."weight_unit", "public"."UserProfile"."meals_per_day", "public"."UserProfile"."water_goal_oz", "public"."UserProfile"."calorie_display", "public"."UserProfile"."onboardingCompleted", "public"."UserProfile"."injuries", "public"."UserProfile"."food_preferences", "public"."UserProfile"."preferred_training_time", "public"."UserProfile"."updated_at"
+2026-10-05T16:46:50.5912591Z  2026-10-05 16:46:36.109 UTC [165] ERROR:  could not serialize access due to concurrent update
+2026-10-05T16:46:50.5913028Z  2026-10-05 16:46:36.109 UTC [165] STATEMENT:  
+2026-10-05T16:46:50.5913461Z  	      SELECT "head_revision_id", "version" FROM "WorkoutPlan" WHERE "id" = $1 FOR UPDATE
+2026-10-05T16:46:50.5913863Z  	    
+2026-10-05T16:46:50.5914329Z  2026-10-05 16:46:42.126 UTC [166] ERROR:  duplicate key value violates unique constraint "RomanSession_user_id_surface_day_key_key"
+2026-10-05T16:46:50.5915362Z  2026-10-05 16:46:42.126 UTC [166] DETAIL:  Key (user_id, surface, day_key)=(b635-live-me, client, 2026-10-05) already exists.
+2026-10-05T16:46:50.5918288Z  2026-10-05 16:46:42.126 UTC [166] STATEMENT:  INSERT INTO "public"."RomanSession" ("id","user_id","surface","day_key","message_count","started_at","last_activity_at","quips_in_session","exclamation_used","created_at","updated_at") VALUES ($1,$2,CAST($3::text AS "public"."RomanSurface"),$4,$5,$6,$7,$8,$9,$10,$11) RETURNING "public"."RomanSession"."id", "public"."RomanSession"."user_id", "public"."RomanSession"."surface"::text, "public"."RomanSession"."day_key", "public"."RomanSession"."message_count", "public"."RomanSession"."started_at", "public"."RomanSession"."last_activity_at", "public"."RomanSession"."quips_in_session", "public"."RomanSession"."exclamation_used", "public"."RomanSession"."subject_context_json", "public"."RomanSession"."created_at", "public"."RomanSession"."updated_at", "public"."RomanSession"."deleted_at"
+2026-10-05T16:46:50.5921415Z  2026-10-05 16:46:42.416 UTC [171] ERROR:  duplicate key value violates unique constraint "RomanSession_user_id_surface_day_key_key"
+2026-10-05T16:46:50.5922198Z  2026-10-05 16:46:42.416 UTC [171] DETAIL:  Key (user_id, surface, day_key)=(b635-live-me, client, 2026-10-05) already exists.
+2026-10-05T16:46:50.5925428Z  2026-10-05 16:46:42.416 UTC [171] STATEMENT:  INSERT INTO "public"."RomanSession" ("id","user_id","surface","day_key","message_count","started_at","last_activity_at","quips_in_session","exclamation_used","created_at","updated_at") VALUES ($1,$2,CAST($3::text AS "public"."RomanSurface"),$4,$5,$6,$7,$8,$9,$10,$11) RETURNING "public"."RomanSession"."id", "public"."RomanSession"."user_id", "public"."RomanSession"."surface"::text, "public"."RomanSession"."day_key", "public"."RomanSession"."message_count", "public"."RomanSession"."started_at", "public"."RomanSession"."last_activity_at", "public"."RomanSession"."quips_in_session", "public"."RomanSession"."exclamation_used", "public"."RomanSession"."subject_context_json", "public"."RomanSession"."created_at", "public"."RomanSession"."updated_at", "public"."RomanSession"."deleted_at"
+2026-10-05T16:46:50.5928187Z  2026-10-05 16:44:52.603 UTC [49] LOG:  checkpoint starting: shutdown immediate
+2026-10-05T16:46:50.5929179Z  2026-10-05 16:44:52.604 UTC [49] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+2026-10-05T16:46:50.5930131Z  2026-10-05 16:44:52.608 UTC [48] LOG:  database system is shut down
+2026-10-05T16:46:50.5930457Z   done
+2026-10-05T16:46:50.5930646Z  server stopped
+2026-10-05T16:46:50.5930839Z  
+2026-10-05T16:46:50.5931078Z  PostgreSQL init process complete; ready for start up.
+2026-10-05T16:46:50.5931382Z  
+2026-10-05T16:46:50.5937582Z Stop and remove container: c5ca2d576906435ca235960726544a67_postgres15_5f4937
+2026-10-05T16:46:50.5943021Z ##[command]/usr/bin/docker rm --force 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:46:50.7408168Z 5fd31ba31efa7936062b97888391424051a355f613178cc28c4cde7fb06adc5e
+2026-10-05T16:46:50.7435666Z Remove container network: github_network_f607c8d59cb64819ae008f7970a4256d
+2026-10-05T16:46:50.7440087Z ##[command]/usr/bin/docker network rm github_network_f607c8d59cb64819ae008f7970a4256d
+2026-10-05T16:46:50.8402167Z github_network_f607c8d59cb64819ae008f7970a4256d
+2026-10-05T16:46:50.8476627Z Cleaning up orphan processes

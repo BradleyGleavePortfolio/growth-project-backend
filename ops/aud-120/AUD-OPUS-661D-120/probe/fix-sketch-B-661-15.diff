@@ -1,0 +1,20 @@
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index 096f3db0..5e087c55 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -1650,6 +1650,7 @@ export class CheckoutWebhookHandlerService {
+           canceled_at: canceledAt,
+           access_expires_at: accessExpiresAt,
+           ...trialStartPatch(fresh, sub, entitled),
++          ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
+           updated_at: nextVersion(fresh),
+         },
+       });
+@@ -2287,6 +2288,7 @@ export class CheckoutWebhookHandlerService {
+             status,
+             entitlement_active: entitled,
+             ...trial,
++            ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
+             current_period_end: currentPeriodEnd,
+             access_expires_at: this.computeAccessExpiry(pkg, fresh, true, currentPeriodEnd),
+             last_error: null,

@@ -1,0 +1,25 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#676 @ 0ee4933d0f227991bde5e41c0a770b4887ec1957 — VERDICT: APPROVE
+
+A/B/C = 0/0/1
+
+Lens AUD-SOL-CM8-120, agent 120. Full independent T4 review of the complete M3 reader/query/fold/CSV/occurrence/recurring contracts, self-only guards and currency/tenant scope, Connect status/refresh/payout copy, fixed-target onboarding landing, module/test wiring and exact lower-piece restack; no original #641 Sol blanket approval is inherited. [FIX ROUND 5](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/676#issuecomment-5999161517)
+
+## Prior findings and evidence applicability
+
+- **B-676-5 closes:** `src/coach-money/coach-money.service.ts:247–252,1404–1411` exports the durable billed predicate and requires trialing or billed membership for active recurring selection. The original actual first-invoice-failure writer→reader probe now reports never-billed MRR/paying **0/0**, while its genuinely billed past-due control remains **4,900/1**; all six new billed controls also pass. [Current billed predicate and membership](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/0ee4933d0f227991bde5e41c0a770b4887ec1957/src/coach-money/coach-money.service.ts) [Fresh independent acceptance](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347397861) [Original failing assertion](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37221311111)
+- **B-676-1/2/3/4 and C-676-2 remain closed on their previously reported boundaries:** historical/source-event readers, limit+1 overflow and authenticated seller/charge/currency occurrence scopes remain intact; event/occurrence and refresh/redacted payout-reason controls pass freshly rather than borrowing the other lens's verdict. [Fresh six-suite execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347397861) [Prior bounded dispositions and failing-before evidence](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/676#issuecomment-5982716659)
+- The round-5 restack exactly equals the automatic merge tree of `296067fb` with #674 `e35c37a1`, tree `5677317536f115395adb535aa3f2731492995d16`; the own reader delta since the last Sol verdict is the billed export/membership correction, with no conflict edits or later-piece import. [Exact restack commit](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/0ee4933d0f227991bde5e41c0a770b4887ec1957) [Current source](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/0ee4933d0f227991bde5e41c0a770b4887ec1957/src/coach-money/coach-money.service.ts)
+
+## C — carried integration release condition
+
+**C-676-1 (= C-641-2):** `src/coach-money/coach-money.service.ts:314–359,542–611,1392–1399,1564–1812`; prove the exact final fee/per-renewal/recovery/dunning-v2/card-update composition's writer→reader cents and sent/recorded semantics before release, including recurring dispute pause/access behavior from its separately owned writer stack. This is a release condition, not a duplicate blocker for another PR's source. [Current read contracts](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/0ee4933d0f227991bde5e41c0a770b4887ec1957/src/coach-money/coach-money.service.ts) [Carried integration disposition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/676#issuecomment-5982716659)
+
+## CI and operator handoff
+
+Independent lane `37347397861`, execution `932965ebaf375c35a2120c55c08a034b753525ae`, executes **24/24 passing tests across six suites** over exact candidate runtime plus audit/test copies and the approved one-job wrapper; these are real writer/read services over stateful/synthetic doubles, not live provider/auth/device acceptance. [Attributable independent execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347397861)
+
+All seven required checks applicable to the stacked base are green; CodeQL JS/TS, danger, banned-casts and SBOM remain absent/main-only obligations, and deploy-readiness's skip is not counted as success. Piece size is **2,984 < 3,000**, leaving only 16 lines of headroom. [Exact-head candidate CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343097282) [Round-5 head/size](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/676#issuecomment-5999161517)
+
+Approval is for M3's own source boundary, not authorization to land the current train: the three M1 recovery/fairness findings are owned by #674 and are not duplicated in these counts. [Independent upstream boundary failures](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347220951) [Independent upstream owner-recovery failures](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347512251)
+
+**Recommended default: HOLD landing, fix M1 and restack, then fresh exact-head dual audits and composed main-only gates; keep C-676-1 as explicit release acceptance and ticket optional follow-ups under the freeze.**

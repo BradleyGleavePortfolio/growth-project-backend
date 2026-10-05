@@ -122,6 +122,7 @@ it('iOS-faithful: a silent Keychain delete failure with working AsyncStorage sti
 it('DOCUMENTS C-369-4: iOS-faithful silent Keychain delete failure never reaches the replacement write; with an AsyncStorage mutation outage too, the old grant is honoured after a restart', async () => {
   await recordLocalAuthorization(old, D1);
   const authorityBefore = secureMap.get(ON_DEVICE_CONSENT_AUTHORITY_KEY);
+  secure.setItemAsync.mockClear(); // count only sign-out's writes
   iosSilentKeychainDeleteFailure();
   asyncStorageMutationOutage();
   await retireOnDeviceStateAtSignOut();

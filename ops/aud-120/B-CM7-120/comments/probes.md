@@ -1,0 +1,24 @@
+**Probe replay, both lenses** (unchanged sources: #674 set from `1795bb61`, #676 set from `adf54347`, byte-identical to the lens copies in ops/aud-118; run on the #703 top `88940c3f`, which carries every runtime line of #674 and #676):
+- replay #674 set + PR specs: [run 37342886928](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37342886928) — 26/30 suites, 306/311 tests
+- replay #676 set + PR specs: [run 37342911198](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37342911198) — 15/17 suites, 123/127 tests
+- adapted replays of the five red cases (store/double gaps only, each change marked `B-CM7-120 adaptation`): [run 37344164972](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37344164972) — 4/4 suites, 15/15 tests
+
+| Lens | Probe | Result | Why / evidence |
+|---|---|---|---|
+| Opus 118 | audit-opus-cm-118-674 (B-674-13 composition) | PASS | |
+| Opus 118 | audit-opus-cm-118-674-send | 2/3; B-674-14 case red | The op engine lists Stripe right after the lost answer, in the same pass, and records the held reversal (Stripe 245, local 245, one send); the probe's precondition (still owed when the list goes bad) no longer arises. Adapted (list incomplete from the first pass): no send, still owed; then a complete list: recorded once, no send. PASS |
+| Opus 117 | audit-opcm1-117-674 | PASS | |
+| Opus 117 | audit-cm1-674-reversal-mirror | 4/6 | `mirror_before_reconcile` red by design since round 3 (B-674-3, legacy `transfer.reversed` observe-only). New red: "B-641-12 (carried)" 122 vs 222. The probe adds 100 to a legacy transfer's `reversed_amount_cents` directly, outside any operation. No such writer exists now: a legacy total is written only by its reversal operations (`completeReversal`, `recordFoundReversal`) under the per-transfer slot, one pending operation at a time; `transfer.reversed` only observes legacy rows (refund-dispute-handler.service.ts:2224). Two refunds on one transfer: live spec on real Postgres counts both (150), green in PR CI on #703 (mwb-3-live-tests). |
+| Sol 118 | audit-sol-cm-118-send-admission | PASS | |
+| Sol 116 (R2 adapted) | audit-sol-cm1-116-boundaries (#674) | 1 red | "two distinct refund transactions add both": TypeError. The probe drives the removed `reverse({ claim })` variant on a hand-built transaction with no TransferReversalOp table, so it cannot run unchanged. Same property: live spec (150/150), transfer-reversal-slot-base, transfer-reversal-found-slot. |
+| Sol 117 | audit-sol-cm1-117-dispute-posting | PASS | |
+| Sol R2 117 | audit-sol-cm1r2-117-boundaries (#674) | 2/3 | "Stripe success plus head-posting commit failure": after the failed posting the local transfer total is 122, not 0, because the operation records the total (= Stripe) before the claim + posting transaction; the dispute stays owed with no head posting. Adapted to assert [122, 122], dispute owed, 0 postings, then the retry: one send, one posting. PASS |
+| Opus 117 | audit-cm1-676-window-cents | PASS | |
+| Opus 117 | audit-opcm1-117-676 | 2 red (B-676-3b, control) | The probe's own store has no TransferReversalOp table, its transfer row has no `kind` (schema default `head_coach_split`; the owed lookup filters on it, same as main), and its Stripe double cannot list reversals. Adapted (op table, `kind`/`settlement_id`/`reversal_seq`, Stripe lists what it made): every case PASS |
+| Opus 118 | audit-opus-cm-118-676 | 2 timeouts | Same store gaps: nothing is owed, so the held Stripe call the probe waits on never comes. Adapted: every case PASS, including C-674-12 composed and B-676-5 |
+| Sol 118 | audit-sol-cm-118-occurrence-boundaries | PASS | |
+| Sol 116 | audit-sol-cm1-116-boundaries (#676) | PASS | |
+| Sol 117 | audit-sol-cm1-117-money-boundaries | PASS | |
+| Sol R2 117 | audit-sol-cm1r2-117-boundaries (#676) | PASS | |
+
+PR and main specs in those lanes, all PASS: refund-reversal-{once,send-time,first-pass,boundaries,reconcile,review}, dispute-transfer-reversal-once, transfer-reversal-slot-base, transfer-reversal-found-slot, refund-dispute-handler.service, cancel-pending-on-refund, split-ledger.service, transfer-orchestrator.service, payment-ops.controller, first-payment-refund-retention, privacy/no-pii-in-logs, s-fee-r19-refund-cas-send-window, s-fee-charge-concurrency, s-fee-r4-money-protocol, s-fee-r5-or-111-1, coach-money-{billed-mrr,event-rows,occurrence-rows,production-writes,reversal-postings}, coach-money.service, coach-connect-{payout-reason,refresh-closed-codes}, coach-connect.service. Adapted sources: ops/aud-120/B-CM7-120/audit-b-cm7-120-adapted-*.spec.ts.

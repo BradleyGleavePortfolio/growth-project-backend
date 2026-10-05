@@ -1,0 +1,25 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#703 @ 88940c3f5a0843a5979d1ac3196049e0be516141 — VERDICT: APPROVE
+
+A/B/C = 0/0/0
+
+Lens AUD-SOL-CM8-120, agent 120. T4 full own-content review of seven new test/CI files and exact restack, including whether replacement probes establish the inherited property; approval is scoped to this M5 test piece. [FIX ROUND 5](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/703#issuecomment-5999162145)
+
+## Identity, execution and proof decision
+
+There is no prior Sol verdict for this new piece to inherit: all six specs and the CI hunk were reviewed fully. Pre-test restack `ba709e05` equals the merge tree of `b16021ab` with #677 `b17888ab`, tree `a16f3d89a64060259dbb05ffc99f21b7052e0f45`; the final commit adds only the 115-line found-slot spec, and top-tree runtime is byte-identical to the corresponding #674/#676 source inputs. [Exact final commit](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/88940c3f5a0843a5979d1ac3196049e0be516141) [Builder restack/test record](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/703#issuecomment-5999162145)
+
+The CI addition at `.github/workflows/ci.yml:590–595` runs the four-case disposable-Postgres spec inside the existing database-backed job with its inherited test URL; logs confirm four actual executions, not skip-as-pass. The slice race records 300/2,700/150 and transfer 150; the two-refund transfer race records transfer/slice 150/150; first-close/first-success trigger observations preserve their elected clocks. [Current CI wiring](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/88940c3f5a0843a5979d1ac3196049e0be516141/.github/workflows/ci.yml) [Actual four-case live job](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105712/job/111874862313)
+
+The two slot specs exercise rereading the base after obtaining the transfer slot and the found-receipt/pending-operation exclusion; all five tests pass independently against exact #674 runtime. The billed spec's six controls and original reader boundary assertions pass independently against exact #676 runtime. [Fresh slot execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347220951) [Fresh billed/reader execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347397861)
+
+**Replacement decision:** accept the new tests as proof of their transfer-slot and ordinary Postgres overlap boundaries, but **do not accept them as complete closure of the two old probes' transfer-plus-slice conservation/recovery property**. The older literal writer hook is obsolete, not the property: fresh normal/found mirror failures leave Stripe/transfer/slice 122/122/0, a delayed older mirror lowers the slice from 150 to 100, and full owner source recovery can terminalize without a posting/receipt; those implementation Bs are assigned to #674 rather than duplicated in this test-only piece. [Boundary counterexamples](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347220951) [Recovery counterexamples](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347512251)
+
+The new send-time and first-pass tests preserve financial assertions while adapting obsolete webhook/list assumptions to the operation engine; minimally adapted original Sol/Opus fairness/date/expiry/incomplete-list controls pass independently, without declaring the removed intermediate mirror authoritative. [Independent original/adapted control execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347512251) [Unchanged Sol118 controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347220951)
+
+## CI and operator decision
+
+Size is **953 < 1,500**; all seven required checks applicable to this stacked base are green, while CodeQL JS/TS, danger, banned-casts and SBOM remain absent/main-only obligations and deploy-readiness's skip is not counted as success. [Exact candidate CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105712) [Exact head/size](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/703#issuecomment-5999162145)
+
+Evidence distinguishes synthetic provider/stateful-double probes from disposable-Postgres lock tests; none claims live Stripe, production or device acceptance. [Independent synthetic-provider execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37347220951) [Disposable-Postgres execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105712/job/111874862313)
+
+**Recommended default: KEEP this regression piece, HOLD the train for M1's three Bs, extend coverage with the saved slice/recovery/fairness acceptance probes in the next named test round, restack and obtain fresh exact-head dual verdicts plus composed main-only gates.** No new C, merge/deploy approval or production action is implied.

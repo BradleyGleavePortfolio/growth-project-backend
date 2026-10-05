@@ -1,0 +1,38 @@
+diff --git a/src/coach-connect/coach-connect.service.ts b/src/coach-connect/coach-connect.service.ts
+index b257f8b1..69ce7a68 100644
+--- a/src/coach-connect/coach-connect.service.ts
++++ b/src/coach-connect/coach-connect.service.ts
+@@ -498,7 +498,10 @@ export class CoachConnectService {
+ 
+     return {
+       revenue_30d: earnings.as_seller.posted_cents / 100,
+-      net_30d: (earnings.as_seller.posted_cents - earnings.as_seller.refunds_cents) / 100,
++      // S-FEE: the shared coach-net figure (posted net of reversals minus
++      // recoveries), identical to the earnings summary. Subtracting refunds
++      // again double-counted what reversals already removed.
++      net_30d: earnings.as_seller.net_cents / 100,
+       currency: 'usd',
+       active_clients: activeClients,
+       clients_added_30d: clientsAdded30d,
+diff --git a/src/coach-money/coach-money.service.ts b/src/coach-money/coach-money.service.ts
+index 9076e876..803f61d3 100644
+--- a/src/coach-money/coach-money.service.ts
++++ b/src/coach-money/coach-money.service.ts
+@@ -244,7 +244,7 @@ const LOST_DISPUTE_STATUS_LIST: string[] = [...LOST_DISPUTE_STATUSES];
+  * A purchase that billed: a paid status, or the ledger holds a posted coach
+  * slice for it. A free trial cancelled before its first bill has neither.
+  */
+-const BILLED_WHERE = {
++export const BILLED_WHERE = {
+   OR: [
+     { status: { in: [...PAID_PURCHASE_STATUSES] } },
+     { splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } } },
+@@ -1407,6 +1407,8 @@ export class CoachMoneyService {
+           entitlement_active: true,
+           source: null,
+           amount_cents: { gt: 0 },
++          // B-676-5: a trial whose first invoice failed never billed: not MRR.
++          OR: [{ status: 'trialing' }, BILLED_WHERE],
+         },
+         select: {
+           client_user_id: true,

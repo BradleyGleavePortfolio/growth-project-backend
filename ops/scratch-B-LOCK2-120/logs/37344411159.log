@@ -1,0 +1,577 @@
+﻿2026-10-05T16:54:51.4896372Z Current runner version: '2.337.0'
+2026-10-05T16:54:51.4918404Z ##[group]Runner Image Provisioner
+2026-10-05T16:54:51.4919168Z Hosted Compute Agent
+2026-10-05T16:54:51.4919680Z Version: 20260901.588
+2026-10-05T16:54:51.4920202Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:54:51.4920937Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:54:51.4921517Z Worker ID: {45068695-df66-438f-b19b-1abad6f1da6e}
+2026-10-05T16:54:51.4922124Z Azure Region: westus3
+2026-10-05T16:54:51.4922622Z ##[endgroup]
+2026-10-05T16:54:51.4923842Z ##[group]Operating System
+2026-10-05T16:54:51.4924595Z Ubuntu
+2026-10-05T16:54:51.4925045Z 24.04.5
+2026-10-05T16:54:51.4925465Z LTS
+2026-10-05T16:54:51.4925975Z ##[endgroup]
+2026-10-05T16:54:51.4926446Z ##[group]Runner Image
+2026-10-05T16:54:51.4927046Z Image: ubuntu-24.04
+2026-10-05T16:54:51.4927528Z Version: 20260927.320.1
+2026-10-05T16:54:51.4928621Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:54:51.4929901Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:54:51.4931037Z ##[endgroup]
+2026-10-05T16:54:51.4932037Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:54:51.4933826Z Contents: read
+2026-10-05T16:54:51.4934489Z Metadata: read
+2026-10-05T16:54:51.4934988Z Packages: read
+2026-10-05T16:54:51.4935577Z ##[endgroup]
+2026-10-05T16:54:51.4937364Z Secret source: Actions
+2026-10-05T16:54:51.4938182Z Cache mode: write
+2026-10-05T16:54:51.4938960Z Prepare workflow directory
+2026-10-05T16:54:51.5236735Z Prepare all required actions
+2026-10-05T16:54:51.5280971Z Getting action download info
+2026-10-05T16:54:51.8380561Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:54:51.9388263Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:54:52.1254718Z Complete job name: targeted
+2026-10-05T16:54:52.1855207Z ##[group]Run actions/checkout@v6
+2026-10-05T16:54:52.1855935Z with:
+2026-10-05T16:54:52.1856382Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:54:52.1859506Z   token: ***
+2026-10-05T16:54:52.1859858Z   ssh-strict: true
+2026-10-05T16:54:52.1860209Z   ssh-user: git
+2026-10-05T16:54:52.1860564Z   persist-credentials: true
+2026-10-05T16:54:52.1860950Z   clean: true
+2026-10-05T16:54:52.1861301Z   sparse-checkout-cone-mode: true
+2026-10-05T16:54:52.1861712Z   fetch-depth: 1
+2026-10-05T16:54:52.1862050Z   fetch-tags: false
+2026-10-05T16:54:52.1862402Z   show-progress: true
+2026-10-05T16:54:52.1862756Z   lfs: false
+2026-10-05T16:54:52.1863084Z   submodules: false
+2026-10-05T16:54:52.1863444Z   set-safe-directory: true
+2026-10-05T16:54:52.1863842Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:54:52.1864533Z ##[endgroup]
+2026-10-05T16:54:52.2654351Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:54:52.2656031Z ##[group]Getting Git version info
+2026-10-05T16:54:52.2656706Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:54:52.2657642Z [command]/usr/bin/git version
+2026-10-05T16:54:52.2712818Z git version 2.55.0
+2026-10-05T16:54:52.2729524Z ##[endgroup]
+2026-10-05T16:54:52.2741344Z Temporarily overriding HOME='/home/runner/work/_temp/01a72f22-81a8-4752-88e8-5a69592aa088' before making global git config changes
+2026-10-05T16:54:52.2742567Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:54:52.2746043Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:54:52.2788877Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:54:52.2792386Z ##[group]Determining repository object format
+2026-10-05T16:54:52.2794110Z ##[endgroup]
+2026-10-05T16:54:52.2794790Z ##[group]Initializing the repository
+2026-10-05T16:54:52.2797759Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:54:52.2894182Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:54:52.2895281Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:54:52.2896220Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:54:52.2896999Z hint: call:
+2026-10-05T16:54:52.2897352Z hint:
+2026-10-05T16:54:52.2897873Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:54:52.2898630Z hint:
+2026-10-05T16:54:52.2899348Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:54:52.2900514Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:54:52.2901418Z hint:
+2026-10-05T16:54:52.2901935Z hint: 	git branch -m <name>
+2026-10-05T16:54:52.2902507Z hint:
+2026-10-05T16:54:52.2903313Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:54:52.2904941Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T16:54:52.2907530Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:54:52.2950734Z ##[endgroup]
+2026-10-05T16:54:52.2951678Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:54:52.2954633Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:54:52.2980704Z ##[endgroup]
+2026-10-05T16:54:52.2981608Z ##[group]Setting up auth
+2026-10-05T16:54:52.2982330Z Removing SSH command configuration
+2026-10-05T16:54:52.2987085Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:54:52.3013332Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:54:52.3310694Z Removing HTTP extra header
+2026-10-05T16:54:52.3315446Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:54:52.3341753Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:54:52.3530235Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:54:52.3531235Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:54:52.3556656Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:54:52.3741965Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:54:52.3772513Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:54:52.3798012Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:54:52.3827010Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:54:52.3861603Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:54:52.3891341Z ##[endgroup]
+2026-10-05T16:54:52.3891939Z ##[group]Fetching the repository
+2026-10-05T16:54:52.3898113Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +4053056900ab2cc17b5e9576b8c58bd9705d0954:refs/remotes/origin/ci/B-LOCK2-120-3
+2026-10-05T16:54:54.0482966Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:54:54.0484798Z  * [new ref]         4053056900ab2cc17b5e9576b8c58bd9705d0954 -> origin/ci/B-LOCK2-120-3
+2026-10-05T16:54:54.0493086Z [command]/usr/bin/git branch --list --remote origin/ci/B-LOCK2-120-3
+2026-10-05T16:54:54.0516673Z   origin/ci/B-LOCK2-120-3
+2026-10-05T16:54:54.0525387Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-LOCK2-120-3
+2026-10-05T16:54:54.0546953Z 4053056900ab2cc17b5e9576b8c58bd9705d0954
+2026-10-05T16:54:54.0554840Z ##[endgroup]
+2026-10-05T16:54:54.0555470Z ##[group]Determining the checkout info
+2026-10-05T16:54:54.0556146Z ##[endgroup]
+2026-10-05T16:54:54.0564838Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:54:54.0604824Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:54:54.0630310Z ##[group]Checking out the ref
+2026-10-05T16:54:54.0634115Z [command]/usr/bin/git checkout --progress --force -B ci/B-LOCK2-120-3 refs/remotes/origin/ci/B-LOCK2-120-3
+2026-10-05T16:54:54.1473535Z Switched to a new branch 'ci/B-LOCK2-120-3'
+2026-10-05T16:54:54.1476617Z branch 'ci/B-LOCK2-120-3' set up to track 'origin/ci/B-LOCK2-120-3'.
+2026-10-05T16:54:54.1484986Z ##[endgroup]
+2026-10-05T16:54:54.1520856Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:54:54.1541203Z 4053056900ab2cc17b5e9576b8c58bd9705d0954
+2026-10-05T16:54:54.1812799Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:54:54.1813405Z with:
+2026-10-05T16:54:54.1813783Z   node-version: 22.13
+2026-10-05T16:54:54.1814360Z   cache: npm
+2026-10-05T16:54:54.1814755Z   check-latest: false
+2026-10-05T16:54:54.1821266Z   token: ***
+2026-10-05T16:54:54.1821686Z   package-manager-cache: true
+2026-10-05T16:54:54.1822208Z ##[endgroup]
+2026-10-05T16:54:54.3794255Z Attempting to download 22.13...
+2026-10-05T16:54:55.5259858Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:54:56.0799182Z Extracting ...
+2026-10-05T16:54:56.0897347Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/0673aa6b-ff2a-4b15-aeea-714566bdebc8 -f /home/runner/work/_temp/270b186d-8780-4b61-a136-19cd076b8c14
+2026-10-05T16:54:57.0879317Z Adding to the cache ...
+2026-10-05T16:54:58.9899258Z ##[group]Environment details
+2026-10-05T16:54:59.1723488Z node: v22.13.1
+2026-10-05T16:54:59.1723900Z npm: 10.9.2
+2026-10-05T16:54:59.1724398Z yarn: 1.22.22
+2026-10-05T16:54:59.1724994Z ##[endgroup]
+2026-10-05T16:54:59.1738933Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:54:59.2514481Z /home/runner/.npm
+2026-10-05T16:54:59.4607999Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:55:00.6780266Z Received 33554432 of 241027159 (13.9%), 32.0 MBs/sec
+2026-10-05T16:55:01.6789948Z Received 209715200 of 241027159 (87.0%), 100.0 MBs/sec
+2026-10-05T16:55:01.8498787Z Received 241027159 of 241027159 (100.0%), 105.8 MBs/sec
+2026-10-05T16:55:01.8504873Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:55:01.8558012Z [command]/usr/bin/tar -xf /home/runner/work/_temp/c16bc6d0-f8f2-4695-b2af-a18571f28a1f/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:55:02.4138765Z Cache restored successfully
+2026-10-05T16:55:02.4234805Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:55:02.4414492Z ##[group]Run npm ci
+2026-10-05T16:55:02.4414787Z npm ci
+2026-10-05T16:55:02.4638821Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:55:02.4639096Z ##[endgroup]
+2026-10-05T16:55:06.5324909Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:55:06.7068732Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T16:55:06.7185677Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T16:55:06.7227050Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T16:55:06.7409030Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T16:55:06.8340611Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T16:55:06.8367334Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:06.8381803Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:06.8386649Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:06.8392110Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:06.8443522Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:06.8645824Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:06.9140752Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T16:55:07.3446600Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T16:55:07.7799885Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T16:55:11.0636109Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T16:55:54.6889301Z 
+2026-10-05T16:55:54.6893132Z added 1108 packages, and audited 1109 packages in 52s
+2026-10-05T16:55:54.6893491Z 
+2026-10-05T16:55:54.6893630Z 187 packages are looking for funding
+2026-10-05T16:55:54.6893894Z   run `npm fund` for details
+2026-10-05T16:55:54.9898701Z 
+2026-10-05T16:55:54.9899579Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T16:55:54.9899822Z 
+2026-10-05T16:55:54.9900002Z To address issues that do not require attention, run:
+2026-10-05T16:55:54.9900800Z   npm audit fix
+2026-10-05T16:55:54.9901019Z 
+2026-10-05T16:55:54.9901196Z To address all issues (including breaking changes), run:
+2026-10-05T16:55:54.9901474Z   npm audit fix --force
+2026-10-05T16:55:54.9901592Z 
+2026-10-05T16:55:54.9901697Z Run `npm audit` for details.
+2026-10-05T16:55:55.1524544Z ##[group]Run set -euo pipefail
+2026-10-05T16:55:55.1524833Z set -euo pipefail
+2026-10-05T16:55:55.1525326Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-05T16:55:55.1525710Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-05T16:55:55.1525999Z echo "specs: ${SPECS[*]}"
+2026-10-05T16:55:55.1526220Z npx jest --ci "${SPECS[@]}"
+2026-10-05T16:55:55.1584329Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:55:55.1584621Z ##[endgroup]
+2026-10-05T16:55:55.1671168Z specs: src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx
+2026-10-05T16:55:59.1500616Z   console.warn
+2026-10-05T16:55:59.1501732Z     SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T16:55:59.1502583Z 
+2026-10-05T16:55:59.1503090Z       184 |
+2026-10-05T16:55:59.1503479Z       185 |   return (
+2026-10-05T16:55:59.1505070Z     > 186 |     <SafeAreaView style={styles.root} testID="dunning-lockout-screen">
+2026-10-05T16:55:59.1505994Z           |      ^
+2026-10-05T16:55:59.1506484Z       187 |       <ScrollView
+2026-10-05T16:55:59.1507142Z       188 |         contentContainerStyle={styles.content}
+2026-10-05T16:55:59.1508314Z       189 |         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+2026-10-05T16:55:59.1508951Z 
+2026-10-05T16:55:59.1509273Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T16:55:59.1509953Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T16:55:59.1510618Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:186:6)
+2026-10-05T16:55:59.1511440Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T16:55:59.1512410Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T16:55:59.1513359Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T16:55:59.1514407Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T16:55:59.1515269Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:55:59.1516146Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T16:55:59.1517032Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T16:55:59.1517888Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T16:55:59.1518727Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T16:55:59.1519666Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T16:55:59.1520472Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T16:55:59.1521183Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+2026-10-05T16:55:59.1521913Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+2026-10-05T16:55:59.1522295Z 
+2026-10-05T16:56:01.8613060Z   console.error
+2026-10-05T16:56:01.8614088Z     The current testing environment is not configured to support act(...)
+2026-10-05T16:56:01.8614690Z 
+2026-10-05T16:56:01.8615845Z       229 |         }
+2026-10-05T16:56:01.8616732Z       230 |         if (!isCurrent()) return;
+2026-10-05T16:56:01.8617795Z     > 231 |         setQuote(fresh);
+2026-10-05T16:56:01.8618527Z           |         ^
+2026-10-05T16:56:01.8619358Z       232 |         approvedRef.current = approvalFor(fresh);
+2026-10-05T16:56:01.8620124Z       233 |         await settle(
+2026-10-05T16:56:01.8620871Z       234 |           await runNativeCardUpdate({
+2026-10-05T16:56:01.8621383Z 
+2026-10-05T16:56:01.8622111Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-05T16:56:01.8623594Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-05T16:56:01.8625042Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:56:01.8626221Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:56:01.8627399Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:56:01.8628336Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+2026-10-05T16:56:01.8629210Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:01.8630119Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:01.8630637Z 
+2026-10-05T16:56:01.9128334Z   console.error
+2026-10-05T16:56:01.9129019Z     The current testing environment is not configured to support act(...)
+2026-10-05T16:56:01.9129415Z 
+2026-10-05T16:56:01.9129826Z       229 |         }
+2026-10-05T16:56:01.9130512Z       230 |         if (!isCurrent()) return;
+2026-10-05T16:56:01.9131249Z     > 231 |         setQuote(fresh);
+2026-10-05T16:56:01.9131835Z           |         ^
+2026-10-05T16:56:01.9132573Z       232 |         approvedRef.current = approvalFor(fresh);
+2026-10-05T16:56:01.9133242Z       233 |         await settle(
+2026-10-05T16:56:01.9133823Z       234 |           await runNativeCardUpdate({
+2026-10-05T16:56:01.9134268Z 
+2026-10-05T16:56:01.9134797Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-05T16:56:01.9135950Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-05T16:56:01.9137044Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:56:01.9138123Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:56:01.9138966Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:56:01.9139448Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+2026-10-05T16:56:01.9139910Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:01.9140368Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:01.9140744Z 
+2026-10-05T16:56:02.1034161Z   console.error
+2026-10-05T16:56:02.1034845Z     The current testing environment is not configured to support act(...)
+2026-10-05T16:56:02.1035224Z 
+2026-10-05T16:56:02.1035645Z       229 |         }
+2026-10-05T16:56:02.1036318Z       230 |         if (!isCurrent()) return;
+2026-10-05T16:56:02.1037423Z     > 231 |         setQuote(fresh);
+2026-10-05T16:56:02.1038006Z           |         ^
+2026-10-05T16:56:02.1038870Z       232 |         approvedRef.current = approvalFor(fresh);
+2026-10-05T16:56:02.1039296Z       233 |         await settle(
+2026-10-05T16:56:02.1039653Z       234 |           await runNativeCardUpdate({
+2026-10-05T16:56:02.1039851Z 
+2026-10-05T16:56:02.1040169Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-05T16:56:02.1040819Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-05T16:56:02.1041446Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:56:02.1042067Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:56:02.1042641Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:56:02.1043124Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+2026-10-05T16:56:02.1043577Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.1044257Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.1044484Z 
+2026-10-05T16:56:02.4482580Z FAIL src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx (5.909 s)
+2026-10-05T16:56:02.4483459Z   B-353-1: the lockout belongs to the signed-in account
+2026-10-05T16:56:02.4486034Z     ✓ sign-out (client tree unmounts) clears the lock: the next account does not see it while its read is pending (1732 ms)
+2026-10-05T16:56:02.4486916Z     ✓ the next account offline: no lock and no previous request reference (13 ms)
+2026-10-05T16:56:02.4487761Z     ✓ a retired provider's late locked read cannot lock the next account (4 ms)
+2026-10-05T16:56:02.4488648Z     ✓ a read started before sign-out (same provider still mounted) is dropped after the auth event (2 ms)
+2026-10-05T16:56:02.4489586Z     ✓ an older clear answer cannot overwrite a newer locked read (latest read wins) (7 ms)
+2026-10-05T16:56:02.4490350Z     ✓ an older failure cannot replace a newer answer with an error (6 ms)
+2026-10-05T16:56:02.4491109Z     ✓ End my plan answered after sign-out shows nothing and does not refresh (1361 ms)
+2026-10-05T16:56:02.4491937Z     ✓ CONTROL: the current account still sees its own lockout from a status read (6 ms)
+2026-10-05T16:56:02.4492592Z   B-353-2: a retired Update card screen starts no further step
+2026-10-05T16:56:02.4493277Z     ✓ leaving while the quote is pending: no SetupIntent, no card form (19 ms)
+2026-10-05T16:56:02.4494093Z     ✓ a late card-form return after leaving sends no confirm (57 ms)
+2026-10-05T16:56:02.4494870Z     ✓ a sign-out while the card form is open (screen still mounted) sends no confirm (55 ms)
+2026-10-05T16:56:02.4495388Z     ✓ CONTROL: a current screen pays and shows the receipt (13 ms)
+2026-10-05T16:56:02.4495833Z   B-353-2: an End my plan confirmation belongs to the screen, account and plan that opened it
+2026-10-05T16:56:02.4496399Z     ✕ Update card: accepted after the screen left (provider still mounted), no cancel is sent (10 ms)
+2026-10-05T16:56:02.4496986Z     ✕ Update card and lockout: accepted after the account changed, no cancel for either account (22 ms)
+2026-10-05T16:56:02.4497598Z     ✕ lockout: accepted after the lockout lifted, no cancel; the plan sent is the one the dialog showed (12 ms)
+2026-10-05T16:56:02.4498257Z     ✓ a cancel already sent when the screen leaves: no late dialog, and the provider re-reads the server truth (14 ms)
+2026-10-05T16:56:02.4498893Z     ✓ CONTROL: a live confirmation on Update card cancels the plan it showed and shows the outcome (16 ms)
+2026-10-05T16:56:02.4499646Z   B-353-2 / B-353-3 (Sol): a reversed payment is described as one
+2026-10-05T16:56:02.4500269Z     ✕ the dispute lockout states R-DISPUTE-PAUSE, leads with Message coach, offers no card or cancel path (6 ms)
+2026-10-05T16:56:02.4501115Z     ✕ D2c dispute pause (reason dispute_paused, no amount, no lock date): same facts; a payment lock keeps its card path (5 ms)
+2026-10-05T16:56:02.4501809Z     ✕ End my plan body for a reversed payment (no screen offers it): access already ended, the coach decides (1 ms)
+2026-10-05T16:56:02.4502451Z     ✓ the lockout End my plan dialog keeps the paid-in-the-meantime caveat (one shared body) (5 ms)
+2026-10-05T16:56:02.4503142Z     ✕ Update card intro and banner for a reversed payment: the three facts, no date, no charge, no card or support fix (4 ms)
+2026-10-05T16:56:02.4503864Z     ✕ the dispute banner offers Message coach only; a dispute that closes stays paused (no automatic restore) (4 ms)
+2026-10-05T16:56:02.4504939Z     ✕ a dispute-only Save card shows what happened: nothing charged, the reversal still open (13 ms)
+2026-10-05T16:56:02.4505839Z     ✕ a payment plan whose quote also names a reversed payment says so before the card form (65 ms)
+2026-10-05T16:56:02.4506487Z   B-353-3: no first person in rendered client copy
+2026-10-05T16:56:02.4506958Z     ✓ lockout screen (payment lock) (5 ms)
+2026-10-05T16:56:02.4507365Z     ✓ lockout screen (dispute lock) (4 ms)
+2026-10-05T16:56:02.4507809Z     ✓ lockout screen (status not loaded) (4 ms)
+2026-10-05T16:56:02.4508211Z     ✓ Update card screen (locked) (7 ms)
+2026-10-05T16:56:02.4508608Z     ✓ Update card screen (past due) (8 ms)
+2026-10-05T16:56:02.4509009Z     ✓ Update card screen (dispute) (7 ms)
+2026-10-05T16:56:02.4509397Z     ✓ Update card screen (clear) (7 ms)
+2026-10-05T16:56:02.4509914Z     ✓ banner, summaries, next steps and end-plan bodies (2 ms)
+2026-10-05T16:56:02.4510498Z   C-353-3: a waived or passed lock date is never shown as a deadline
+2026-10-05T16:56:02.4510968Z     ✓ lock waived: no date, no keep-access deadline (1 ms)
+2026-10-05T16:56:02.4511293Z     ✓ lock date already passed: no date
+2026-10-05T16:56:02.4511564Z   B-353-4: the lockout is modal for screen readers
+2026-10-05T16:56:02.4512063Z     ✓ while the lockout shows, the app underneath is hidden; after it lifts, it is reachable again (6 ms)
+2026-10-05T16:56:02.4512540Z   truthful against today's production backend (no dunning routes, flag off)
+2026-10-05T16:56:02.4513112Z     ✓ status route missing (production 404 envelope): no lockout, no banner, nothing reported (1 ms)
+2026-10-05T16:56:02.4513644Z     ✓ flag off ({ enabled: false }) is never a lock, whatever state it carries (2 ms)
+2026-10-05T16:56:02.4514420Z     ✓ Update card on a server without the card routes says it is not available and nothing was charged (13 ms)
+2026-10-05T16:56:02.4514739Z 
+2026-10-05T16:56:02.4515335Z   ● B-353-2: an End my plan confirmation belongs to the screen, account and plan that opened it › Update card: accepted after the screen left (provider still mounted), no cancel is sent
+2026-10-05T16:56:02.4516217Z 
+2026-10-05T16:56:02.4516431Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:56:02.4516727Z 
+2026-10-05T16:56:02.4516846Z     - Expected  - 1
+2026-10-05T16:56:02.4517110Z     + Received  + 6
+2026-10-05T16:56:02.4517266Z 
+2026-10-05T16:56:02.4517340Z     - Array []
+2026-10-05T16:56:02.4517515Z     + Array [
+2026-10-05T16:56:02.4517678Z     +   Array [
+2026-10-05T16:56:02.4517893Z     +     "/v1/checkout/subscriptions/p1/cancel",
+2026-10-05T16:56:02.4518120Z     +     Object {},
+2026-10-05T16:56:02.4518301Z     +   ],
+2026-10-05T16:56:02.4518460Z     + ]
+2026-10-05T16:56:02.4518548Z 
+2026-10-05T16:56:02.4519292Z       410 |     await screen.rerender(<Provider><Text>elsewhere</Text></Provider>);
+2026-10-05T16:56:02.4520358Z       411 |     await act(async () => confirm?.());
+2026-10-05T16:56:02.4520892Z     > 412 |     expect(cancels()).toEqual([]);
+2026-10-05T16:56:02.4521426Z           |                       ^
+2026-10-05T16:56:02.4521806Z       413 |   });
+2026-10-05T16:56:02.4522032Z       414 |
+2026-10-05T16:56:02.4522649Z       415 |   it('Update card and lockout: accepted after the account changed, no cancel for either account', async () => {
+2026-10-05T16:56:02.4523059Z 
+2026-10-05T16:56:02.4523343Z       at Object.toEqual (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:412:23)
+2026-10-05T16:56:02.4523884Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4524536Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4524769Z 
+2026-10-05T16:56:02.4525357Z   ● B-353-2: an End my plan confirmation belongs to the screen, account and plan that opened it › Update card and lockout: accepted after the account changed, no cancel for either account
+2026-10-05T16:56:02.4525841Z 
+2026-10-05T16:56:02.4526023Z     TypeError: Cannot read properties of undefined (reading 'then')
+2026-10-05T16:56:02.4526232Z 
+2026-10-05T16:56:02.4526427Z       154 |           setEnding(true);
+2026-10-05T16:56:02.4526805Z       155 |           setEndError(null);
+2026-10-05T16:56:02.4527273Z     > 156 |           void onEndPlan('DunningLockoutScreen')
+2026-10-05T16:56:02.4527727Z           |                                                 ^
+2026-10-05T16:56:02.4528096Z       157 |             .then((out) => {
+2026-10-05T16:56:02.4528815Z       158 |               if (!aliveRef.current || ('retired' in out && out.retired)) return;
+2026-10-05T16:56:02.4529426Z       159 |               if (out.ok) {
+2026-10-05T16:56:02.4529614Z 
+2026-10-05T16:56:02.4529813Z       at onPress (src/entitlements/dunning/DunningLockoutScreen.tsx:156:49)
+2026-10-05T16:56:02.4530252Z       at src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:428:19
+2026-10-05T16:56:02.4530732Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4531172Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4531544Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T16:56:02.4531907Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T16:56:02.4532303Z       at callback (node_modules/@testing-library/react-native/src/act.ts:72:33)
+2026-10-05T16:56:02.4532703Z       at callback (node_modules/@testing-library/react-native/src/act.ts:30:24)
+2026-10-05T16:56:02.4533223Z       at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:814:22)
+2026-10-05T16:56:02.4533752Z       at actImplementation (node_modules/@testing-library/react-native/src/act.ts:29:25)
+2026-10-05T16:56:02.4534268Z       at _act (node_modules/@testing-library/react-native/src/act.ts:72:10)
+2026-10-05T16:56:02.4534749Z       at Object.<anonymous> (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:426:14)
+2026-10-05T16:56:02.4535265Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4535716Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4535935Z 
+2026-10-05T16:56:02.4536661Z   ● B-353-2: an End my plan confirmation belongs to the screen, account and plan that opened it › lockout: accepted after the lockout lifted, no cancel; the plan sent is the one the dialog showed
+2026-10-05T16:56:02.4537153Z 
+2026-10-05T16:56:02.4537389Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T16:56:02.4537563Z 
+2026-10-05T16:56:02.4537650Z     - Expected  - 1
+2026-10-05T16:56:02.4537824Z     + Received  + 6
+2026-10-05T16:56:02.4537929Z 
+2026-10-05T16:56:02.4538003Z     - Array []
+2026-10-05T16:56:02.4538167Z     + Array [
+2026-10-05T16:56:02.4538325Z     +   Array [
+2026-10-05T16:56:02.4538535Z     +     "/v1/checkout/subscriptions/p1/cancel",
+2026-10-05T16:56:02.4538770Z     +     Object {},
+2026-10-05T16:56:02.4538940Z     +   ],
+2026-10-05T16:56:02.4539094Z     + ]
+2026-10-05T16:56:02.4539188Z 
+2026-10-05T16:56:02.4539331Z       442 |     });
+2026-10-05T16:56:02.4539796Z       443 |     await act(async () => stale?.());
+2026-10-05T16:56:02.4540321Z     > 444 |     expect(cancels()).toEqual([]);
+2026-10-05T16:56:02.4540730Z           |                       ^
+2026-10-05T16:56:02.4541298Z       445 |     // Live: the status moves to another plan while the dialog is open; the confirmed plan is the one sent.
+2026-10-05T16:56:02.4541841Z       446 |     await act(async () => {
+2026-10-05T16:56:02.4542415Z       447 |       dunningLockoutStore.reportLocked({ requestId: 'req-2' });
+2026-10-05T16:56:02.4542737Z 
+2026-10-05T16:56:02.4543000Z       at Object.toEqual (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:444:23)
+2026-10-05T16:56:02.4543516Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4544104Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4544344Z 
+2026-10-05T16:56:02.4544875Z   ● B-353-2 / B-353-3 (Sol): a reversed payment is described as one › the dispute lockout states R-DISPUTE-PAUSE, leads with Message coach, offers no card or cancel path
+2026-10-05T16:56:02.4545303Z 
+2026-10-05T16:56:02.4545436Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:56:02.4545608Z 
+2026-10-05T16:56:02.4545724Z     Expected substring: "Your access has ended"
+2026-10-05T16:56:02.4547172Z     Received string:    "locked  Payment Your plan is paused Your bank reversed an earlier payment of $150.00 to Avery, so your plan is paused. Your data is safe and nothing has been deleted. Saving a new card does not settle it. To sort it out, email Bradleyapple1031@gmail.com or message Avery. Email support Update card Message Avery End my plan Still available while your plan is paused Download my data Delete my account Email support Sign out Already paid? Pull down to check again."
+2026-10-05T16:56:02.4548316Z 
+2026-10-05T16:56:02.4548681Z       491 |     await screen.findByTestId('dunning-lockout-screen');
+2026-10-05T16:56:02.4549259Z       492 |     const text = textOf(screen.toJSON());
+2026-10-05T16:56:02.4549844Z     > 493 |     expect(text).toContain('Your access has ended');
+2026-10-05T16:56:02.4550284Z           |                  ^
+2026-10-05T16:56:02.4550606Z       494 |     expect(text).toContain(
+2026-10-05T16:56:02.4551479Z       495 |       'Your bank reversed a payment of $150.00 to Avery. Your access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card.',
+2026-10-05T16:56:02.4552156Z       496 |     );
+2026-10-05T16:56:02.4552299Z 
+2026-10-05T16:56:02.4552689Z       at Object.toContain (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:493:18)
+2026-10-05T16:56:02.4553239Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4553777Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4554076Z 
+2026-10-05T16:56:02.4554645Z   ● B-353-2 / B-353-3 (Sol): a reversed payment is described as one › D2c dispute pause (reason dispute_paused, no amount, no lock date): same facts; a payment lock keeps its card path
+2026-10-05T16:56:02.4555121Z 
+2026-10-05T16:56:02.4555234Z     expect(received).toMatch(expected)
+2026-10-05T16:56:02.4555386Z 
+2026-10-05T16:56:02.4555665Z     Expected pattern: /Your bank reversed a payment to Avery\. Your access has ended and billing is paused\./
+2026-10-05T16:56:02.4557431Z     Received string:  " Payment Your plan is paused Your payment to Avery has not gone through since Thursday, October 1, so your plan is paused. Your data is safe and nothing has been deleted.  The card ending 4242 was declined. To restore access, tap Update card and add a card that works. The card is charged right away, and your plan comes back as soon as the payment clears. Update card Message Avery End my plan Still available while your plan is paused Download my data Delete my account Email support Sign out Already paid? Pull down to check again."
+2026-10-05T16:56:02.4558714Z 
+2026-10-05T16:56:02.4559642Z       509 |     const d2c = { ...DISPUTE_LOCKED, kind: null, reason: 'dispute_paused' as const, amount_cents: null, lockout_at: null };
+2026-10-05T16:56:02.4560861Z       510 |     const screen = await render(<DunningLockoutScreen {...lockoutProps(d2c)} />);
+2026-10-05T16:56:02.4561915Z     > 511 |     expect(textOf(screen.toJSON())).toMatch(/Your bank reversed a payment to Avery\. Your access has ended and billing is paused\./);
+2026-10-05T16:56:02.4562585Z           |                                     ^
+2026-10-05T16:56:02.4563177Z       512 |     expect(screen.queryByTestId('dunning-lockout-update-card')).toBeNull();
+2026-10-05T16:56:02.4564267Z       513 |     const payment = await render(<DunningLockoutScreen {...lockoutProps(LOCKED)} />);
+2026-10-05T16:56:02.4565149Z       514 |     expect(payment.getByTestId('dunning-lockout-update-card')).toBeTruthy();
+2026-10-05T16:56:02.4565496Z 
+2026-10-05T16:56:02.4565770Z       at Object.toMatch (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:511:37)
+2026-10-05T16:56:02.4566282Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4566726Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4566949Z 
+2026-10-05T16:56:02.4567461Z   ● B-353-2 / B-353-3 (Sol): a reversed payment is described as one › End my plan body for a reversed payment (no screen offers it): access already ended, the coach decides
+2026-10-05T16:56:02.4567874Z 
+2026-10-05T16:56:02.4568008Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:56:02.4568171Z 
+2026-10-05T16:56:02.4568508Z     Expected substring: "Access to this plan has already ended and its billing is paused. Your coach decides whether to restart it."
+2026-10-05T16:56:02.4569351Z     Received string:    "Your access ends now. Ending the plan does not settle the payment your bank reversed. Email Bradleyapple1031@gmail.com to sort it out. Your data stays in your account."
+2026-10-05T16:56:02.4569826Z 
+2026-10-05T16:56:02.4570695Z       519 |   it('End my plan body for a reversed payment (no screen offers it): access already ended, the coach decides', () => {
+2026-10-05T16:56:02.4571578Z       520 |     const body = endPlanAlertBody(DISPUTE_LOCKED);
+2026-10-05T16:56:02.4572443Z     > 521 |     expect(body).toContain('Access to this plan has already ended and its billing is paused. Your coach decides whether to restart it.');
+2026-10-05T16:56:02.4573065Z           |                  ^
+2026-10-05T16:56:02.4573570Z       522 |     expect(body).toContain('If you end it, the plan ends now instead.');
+2026-10-05T16:56:02.4574394Z       523 |     expect(body).not.toMatch(/sort it out|settle|Your access ends now|unpaid \$150\.00 is canceled/);
+2026-10-05T16:56:02.4574916Z       524 |   });
+2026-10-05T16:56:02.4575059Z 
+2026-10-05T16:56:02.4575354Z       at Object.toContain (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:521:18)
+2026-10-05T16:56:02.4575658Z 
+2026-10-05T16:56:02.4576237Z   ● B-353-2 / B-353-3 (Sol): a reversed payment is described as one › Update card intro and banner for a reversed payment: the three facts, no date, no charge, no card or support fix
+2026-10-05T16:56:02.4576687Z 
+2026-10-05T16:56:02.4576840Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:56:02.4577034Z 
+2026-10-05T16:56:02.4577564Z     Expected: "Your bank took back a payment of $150.00 to Avery. Your access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card."
+2026-10-05T16:56:02.4578606Z     Received: "Your bank took back an earlier payment of $150.00 to Avery, so your plan is paused. A new card does not settle that; email support to sort it out. A card saved here is used for your future payments."
+2026-10-05T16:56:02.4579106Z 
+2026-10-05T16:56:02.4579205Z       534 |
+2026-10-05T16:56:02.4579849Z       535 |   it('Update card intro and banner for a reversed payment: the three facts, no date, no charge, no card or support fix', () => {
+2026-10-05T16:56:02.4580566Z     > 536 |     expect(updateCardIntro(DISPUTE_LOCKED)).toBe(
+2026-10-05T16:56:02.4581032Z           |                                             ^
+2026-10-05T16:56:02.4581918Z       537 |       'Your bank took back a payment of $150.00 to Avery. Your access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card.',
+2026-10-05T16:56:02.4582584Z       538 |     );
+2026-10-05T16:56:02.4583397Z       539 |     for (const s of [DISPUTE_LOCKED, DISPUTE_PAST_DUE, { ...DISPUTE_LOCKED, lock_waived: true }]) {
+2026-10-05T16:56:02.4584051Z 
+2026-10-05T16:56:02.4584369Z       at Object.toBe (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:536:45)
+2026-10-05T16:56:02.4584663Z 
+2026-10-05T16:56:02.4585200Z   ● B-353-2 / B-353-3 (Sol): a reversed payment is described as one › the dispute banner offers Message coach only; a dispute that closes stays paused (no automatic restore)
+2026-10-05T16:56:02.4585623Z 
+2026-10-05T16:56:02.4585759Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:56:02.4585936Z 
+2026-10-05T16:56:02.4586104Z     Expected substring: "access has ended and billing is paused"
+2026-10-05T16:56:02.4587123Z     Received string:    "A payment was reversed Your bank reversed an earlier payment of $150.00. Saving a new card does not settle it. Email Bradleyapple1031@gmail.com or message your coach to sort it out. Message coach"
+2026-10-05T16:56:02.4587685Z 
+2026-10-05T16:56:02.4587937Z       566 |       await ctx?.refresh();
+2026-10-05T16:56:02.4588387Z       567 |     });
+2026-10-05T16:56:02.4589098Z     > 568 |     expect(textOf(screen.getByTestId('dunning-banner'))).toContain('access has ended and billing is paused');
+2026-10-05T16:56:02.4589773Z           |                                                          ^
+2026-10-05T16:56:02.4590092Z       569 |   });
+2026-10-05T16:56:02.4590314Z       570 |
+2026-10-05T16:56:02.4590926Z       571 |   it('a dispute-only Save card shows what happened: nothing charged, the reversal still open', async () => {
+2026-10-05T16:56:02.4591344Z 
+2026-10-05T16:56:02.4591630Z       at Object.toContain (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:568:58)
+2026-10-05T16:56:02.4592153Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4592600Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4592821Z 
+2026-10-05T16:56:02.4593316Z   ● B-353-2 / B-353-3 (Sol): a reversed payment is described as one › a dispute-only Save card shows what happened: nothing charged, the reversal still open
+2026-10-05T16:56:02.4593717Z 
+2026-10-05T16:56:02.4593827Z     expect(received).not.toMatch(expected)
+2026-10-05T16:56:02.4594151Z 
+2026-10-05T16:56:02.4594306Z     Expected pattern: not /was declined|sort it out|settle/
+2026-10-05T16:56:02.4596266Z     Received string:      " Back Payment Update your card Your bank took back an earlier payment of $150.00 to Avery, so your plan is paused. A new card does not settle that; email support to sort it out. A card saved here is used for your future payments. The card on file ends in 4242. Card saved Your card is saved. There was no open invoice to pay, so nothing was charged. Your bank reversed a payment. For that plan, access has ended and billing is paused. Your coach decides whether to restart it. It does not restart on its own or with a new card. Done Email support Card details go straight to Stripe, the payment provider. The Growth Project never sees your full card number."
+2026-10-05T16:56:02.4597803Z 
+2026-10-05T16:56:02.4598221Z       597 |     expect(body).toContain('There was no open invoice to pay, so nothing was charged.');
+2026-10-05T16:56:02.4598934Z       598 |     expect(body).toContain('For that plan, access has ended and billing is paused.');
+2026-10-05T16:56:02.4599731Z     > 599 |     expect(textOf(screen.toJSON())).not.toMatch(/was declined|sort it out|settle/);
+2026-10-05T16:56:02.4600315Z           |                                         ^
+2026-10-05T16:56:02.4600883Z       600 |     expect(screen.queryByTestId('update-card-end-plan')).toBeNull();
+2026-10-05T16:56:02.4601579Z       601 |     expect(screen.getByTestId('update-card-message-coach')).toBeTruthy();
+2026-10-05T16:56:02.4602026Z       602 |   });
+2026-10-05T16:56:02.4602169Z 
+2026-10-05T16:56:02.4602444Z       at Object.toMatch (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:599:41)
+2026-10-05T16:56:02.4602953Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4603393Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4603605Z 
+2026-10-05T16:56:02.4604258Z   ● B-353-2 / B-353-3 (Sol): a reversed payment is described as one › a payment plan whose quote also names a reversed payment says so before the card form
+2026-10-05T16:56:02.4604654Z 
+2026-10-05T16:56:02.4604883Z     expect(received).toBe(expected) // Object.is equality
+2026-10-05T16:56:02.4605069Z 
+2026-10-05T16:56:02.4605624Z     Expected: "Your bank reversed a payment of $90.00 to Blake. For that plan, access has ended and billing is paused. Your coach, Blake, decides whether to restart it. It does not restart on its own or with a new card."
+2026-10-05T16:56:02.4606462Z     Received: "Another plan has a payment your bank reversed. Saving a card does not settle that; email support to sort it out."
+2026-10-05T16:56:02.4606797Z 
+2026-10-05T16:56:02.4607206Z       613 |     void fireEvent.press(screen.getByTestId('update-card-add'));
+2026-10-05T16:56:02.4608013Z       614 |     const note = await screen.findByTestId('update-card-quote-dispute');
+2026-10-05T16:56:02.4608673Z     > 615 |     expect(note.props.children).toBe(
+2026-10-05T16:56:02.4609112Z           |                                 ^
+2026-10-05T16:56:02.4610011Z       616 |       'Your bank reversed a payment of $90.00 to Blake. For that plan, access has ended and billing is paused. Your coach, Blake, decides whether to restart it. It does not restart on its own or with a new card.',
+2026-10-05T16:56:02.4610710Z       617 |     );
+2026-10-05T16:56:02.4611328Z       618 |     await act(async () => present.resolve({ error: { code: 'Canceled' } }));
+2026-10-05T16:56:02.4611710Z 
+2026-10-05T16:56:02.4611968Z       at Object.toBe (src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx:615:33)
+2026-10-05T16:56:02.4612474Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:56:02.4612908Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:56:02.4613130Z 
+2026-10-05T16:56:02.4613265Z Test Suites: 1 failed, 1 total
+2026-10-05T16:56:02.4613525Z Tests:       10 failed, 29 passed, 39 total
+2026-10-05T16:56:02.4613756Z Snapshots:   0 total
+2026-10-05T16:56:02.4614034Z Time:        6.325 s
+2026-10-05T16:56:02.4614445Z Ran all test suites matching /src\/entitlements\/dunning\/__tests__\/dunningLockoutOwnership.test.tsx/i.
+2026-10-05T16:56:02.5991104Z ##[error]Process completed with exit code 1.
+2026-10-05T16:56:02.6104091Z Post job cleanup.
+2026-10-05T16:56:02.6770614Z [command]/usr/bin/git version
+2026-10-05T16:56:02.6800483Z git version 2.55.0
+2026-10-05T16:56:02.6829288Z Temporarily overriding HOME='/home/runner/work/_temp/33e3fb23-0d8a-49fe-b9ae-773c04e75a68' before making global git config changes
+2026-10-05T16:56:02.6830360Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:56:02.6833650Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:56:02.6858514Z Removing SSH command configuration
+2026-10-05T16:56:02.6863497Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:56:02.6890876Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:56:02.7076091Z Removing HTTP extra header
+2026-10-05T16:56:02.7080119Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:56:02.7108092Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:56:02.7287923Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:56:02.7292806Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:56:02.7316396Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:56:02.7317555Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:56:02.7318421Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:56:02.7319055Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:56:02.7324242Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:56:02.7343039Z /home/runner/work/_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:56:02.7351429Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:56:02.7379962Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:56:02.7397692Z /home/runner/work/_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:56:02.7404627Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:56:02.7431299Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:56:02.7448196Z /github/runner_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:56:02.7454789Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:56:02.7481081Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:56:02.7497997Z /github/runner_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:56:02.7506529Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config
+2026-10-05T16:56:02.7534839Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:56:02.7716044Z Removing credentials config '/home/runner/work/_temp/git-credentials-8b38a484-1876-48ef-9d92-04721a27b464.config'
+2026-10-05T16:56:02.7853470Z Cleaning up orphan processes

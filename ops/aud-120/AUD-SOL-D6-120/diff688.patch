@@ -1,0 +1,3037 @@
+diff --git a/src/checkout/dunning-v2/dunning-v2.service.ts b/src/checkout/dunning-v2/dunning-v2.service.ts
+index efb9258e..3716b794 100644
+--- a/src/checkout/dunning-v2/dunning-v2.service.ts
++++ b/src/checkout/dunning-v2/dunning-v2.service.ts
+@@ -1,33 +1,301 @@
+-import { Injectable, Logger } from '@nestjs/common';
++import { randomUUID } from 'node:crypto';
++import { Injectable, Logger, Optional } from '@nestjs/common';
++import type { ClientPurchase, DunningState, Prisma } from '@prisma/client';
+ import { PrismaService } from '../../prisma.service';
++import { StripeConnectApiService } from '../../connect/stripe-connect-api.service';
++import { NotificationKind } from '../../notifications/notification-kind';
+ import { isDunningV2Enabled } from './dunning-v2.feature';
+ import { DunningV2Telemetry } from './dunning-v2.telemetry';
+ import {
+-  DUNNING_V2_FINAL_STEP_INDEX,
+-  DUNNING_V2_LOCKOUT_GRACE_DAYS,
+-  DUNNING_V2_REVERSAL_ENTRY_STEP,
++  ChannelResult,
++  DispatchContext,
++  DunningChannel,
++  DunningV2Dispatcher,
++  dunningChannelsFor,
++} from './dunning-v2.dispatcher';
++import { DunningEscalationClassifier } from './dunning-escalation.classifier';
++import { effectiveLock } from './dunning-effective-access';
++import { dunningErrorCode } from './dunning-v2.safe-error';
++import { formatMinor } from '../client-billing.money';
++import {
++  DUNNING_V2_CADENCE_DAYS,
++  DUNNING_V2_DAY_MS,
++  DUNNING_V2_LOCKOUT_DAY,
+   DUNNING_V2_REVERSAL_COACH_GAP_DAYS,
++  DUNNING_V2_REVERSAL_ENTRY_STEP,
+   DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS,
+   DunningV2State,
++  dunningV2LockoutAt,
++  dunningV2StepForElapsed,
++  DUNNING_UPDATE_CARD_URL,
+ } from './dunning-v2.cadence';
+ 
+ /**
+- * B3 Smart Dunning v2 — state machine + recovery + late-reversal + sweep
+- * (spec §1, §5, §6, §7).
++ * B3 Smart Dunning v2 — the state machine that drives the owner's 10-day
++ * non-payment sequence (S-DUNNING rewrite of the B3 service).
++ *
++ * WHO CHARGES: Stripe, never this code. Stripe's retry schedule (dashboard:
++ * Revenue recovery > Retries, custom schedule 1 / 2 / 4 days after the
++ * previous attempt = Days 1 / 3 / 7) performs every charge. There is no
++ * charge, invoice-pay or payment-intent call anywhere in v2, so v2 cannot
++ * double charge. v2 only (a) tracks the cycle, (b) sends the Day 0/1/3/7
++ * notices, (c) locks on Day 10, (d) unlocks on payment.
++ *
++ * CYCLE ANCHOR: `DunningState.entered_at` is the instant of the first failed
++ * charge of the CURRENT cycle (Day 0). v1 `recordFailure` creates the row (or
++ * reopens a resolved one) with `step_index = -1`; the first v2 call claims
++ * the row by CAS (`step_index: -1 -> 0`) and stamps `entered_at`. Every later
++ * step is derived from elapsed time since `entered_at`, never from Stripe's
++ * `attempt_count`, so notices follow the owner's calendar even when Stripe's
++ * schedule differs or a hard decline suppresses the retry webhooks.
++ *
++ * STEP CLAIMS: a step's notices are sent only by the caller whose
++ * `updateMany({ where: { id, status: 'active', step_index: <prev> } })`
++ * returns count 1. Duplicate webhooks, overlapping crons on several machines
++ * and a webhook racing the cron all collapse to one send per step.
+  *
+- * This service ADDS v2 behaviour ALONGSIDE the v1 DunningService — it does not
+- * rebuild or mutate it. Every public method is a HARD no-op while
+- * FEATURE_DUNNING_V2 is OFF (returns without reading/writing state), so v1
+- * remains the active default. The v2 schema columns (`locked_out_at`,
+- * `reversal_count`) are touched ONLY from here, behind the flag.
++ * DURABLE DELIVERY (B-628-6): the claim CAS and one DunningNoticeDelivery
++ * row per transport commit in ONE transaction; each transport's real result
++ * is recorded, and a failed or never-attempted one is retried by the sweep
++ * (15 min / 1 h / 4 h / 12 h, dead after 6). Keys carry the cycle key.
+  *
+- * State vocabulary (spec §1), mapped onto the shipped v1 enum + new columns
+- * (no `locked`/`recovered` enum value exists — see spec §11 decision 3):
+- *   INACTIVE  → no DunningState row, or status='resolved' with no active cycle.
+- *   ACTIVE    → status='active', locked_out_at IS NULL.
+- *   LOCKED    → status='active', locked_out_at IS NOT NULL (Day-10 sweep).
+- *   RECOVERED → status='resolved', recovered_at set (transient, then INACTIVE).
++ * DELIVERY GUARANTEE (C-628-12): the per-row claim makes the DATABASE the
++ * authority (no two live workers send a row; a stale one never overwrites a
++ * newer receipt). After a claim expires the row is sent again. Email is
++ * deduplicated by the reused idempotency key; the
++ * client push (Expo) and the in-app blocker row: AT-LEAST-ONCE (Expo takes no
++ * key; a duplicate reminder is the accepted failure, a missed one is not). A
++ * queued push outbox (#648) is audited there.
++ *
++ * LOCK TIMING: the Day-10 lock is applied by the hourly sweep, so it lands
++ * up to 1 hour after the Day-10 instant (never before it).
++ *
++ * DISPUTE CYCLES (B-628-8): a compressed cycle opened by a dispute on a
++ * cleared payment is not ended by a later renewal payment or a card update
++ * (no invoice is open for the disputed money); it locks on its Day 10 even
++ * though the subscription is active, and it resolves when the dispute
++ * closes in the client's favour (won / warning_closed).
++ *
++ * ELIGIBILITY: only paid recurring Stripe subscriptions enter v2. A purchase
++ * with `amount_cents <= 0`, no `stripe_subscription_id`, or a non-recurring
++ * billing type (invite-code / free / comp grants, one-time packages) is never
++ * claimed, never notified and never locked.
++ *
++ * Every public method is a hard no-op while FEATURE_DUNNING_V2 is OFF.
++ *
++ * State vocabulary (spec §1), mapped onto the v1 columns:
++ *   INACTIVE  -> no row, or status 'resolved'/'abandoned' with no active cycle.
++ *   ACTIVE    -> status 'active', locked_out_at IS NULL.
++ *   LOCKED    -> status 'active', locked_out_at IS NOT NULL (Day-10 sweep).
++ *   RECOVERED -> status 'resolved', recovered_at set.
++ */
++
++/** The prisma surface v2 writes through: the root client or an open tx. */
++export type DunningV2Db = Prisma.TransactionClient | PrismaService;
++
++/** A claimed step whose notices still need to be sent (outside any tx). */
++export interface DunningV2StepClaim {
++  dunningStateId: string;
++  purchaseId: string;
++  stepIndex: number;
++  isLateReversalCycle: boolean;
++  /** The claimed cycle (entered_at ms). Absent only on legacy claims. */
++  cycleKey?: string;
++}
++
++/** Outbox retry backoff after the Nth failed attempt (1-based). */
++export const DUNNING_NOTICE_BACKOFF_MS = [
++  15 * 60_000,
++  60 * 60_000,
++  4 * 60 * 60_000,
++  12 * 60 * 60_000,
++];
++export const DUNNING_NOTICE_MAX_ATTEMPTS = 6;
++/** Grace before the sweep picks up a pending row the claimer never sent. */
++export const DUNNING_NOTICE_PENDING_GRACE_MS = 10 * 60_000;
++/**
++ * S-DUNNING-R4 (B-628-6): how long one worker owns a claimed delivery
++ * ('sending'). After it, a crashed worker's claim may be taken over.
++ */
++export const DUNNING_NOTICE_CLAIM_MS = 10 * 60_000;
++
++export function dunningCycleKey(enteredAt: Date): string {
++  return String(enteredAt.getTime());
++}
++
++export function noticeDeliveryId(
++  stateId: string,
++  cycleKey: string,
++  step: number,
++  channel: DunningChannel,
++): string {
++  return `${stateId}:${cycleKey}:${step}:${channel}`;
++}
++
++const CLASSIFIER = new DunningEscalationClassifier();
++
++/** Dispute statuses that end a dispute cycle in the client's favour. */
++const DISPUTE_WON_STATUSES = new Set(['won', 'warning_closed']);
++/** Dispute statuses that are final (a later read never moves them back). */
++const DISPUTE_TERMINAL_STATUSES = new Set(['won', 'warning_closed', 'lost', 'charge_refunded']);
++/** Status a dispute obligation is recorded with when its dispute opens. */
++const DISPUTE_OPEN_STATUS = 'open';
++
++/** A delivery row this worker holds (B-628-6). */
++interface ClaimedDelivery {
++  id: string;
++  channel: DunningChannel;
++  token: string;
++  /** Attempts including this claim. */
++  attempts: number;
++  /** Transport idempotency attempt (email key suffix). */
++  keyAttempt: number;
++}
++
++/** The dispute a `charge.dispute.closed` event closes (B-628-8). */
++interface ClosingDispute {
++  disputeId: string | null;
++  chargeId: string | null;
++  status: string | null;
++}
++
++/**
++ * Dispute obligations that still block a purchase-wide reversal lock: every
++ * dispute not closed in the client's favour (open, under review or lost).
++ * The closing dispute counts with its event status; it is matched by its
++ * Stripe dispute id, or by charge when the event carries no id.
++ */
++export function outstandingDisputes<
++  T extends { stripe_dispute_id: string; stripe_charge_id: string; status: string },
++>(disputes: T[], closing: ClosingDispute | null): T[] {
++  const isClosing = (d: T): boolean =>
++    closing != null &&
++    (closing.disputeId
++      ? d.stripe_dispute_id === closing.disputeId
++      : closing.chargeId != null && d.stripe_charge_id === closing.chargeId);
++  return disputes.filter((d) => {
++    // The event decides the closing dispute unless a record already holds
++    // its final status (a final status is never outvoted by an event).
++    const status =
++      isClosing(d) && !DISPUTE_TERMINAL_STATUSES.has(d.status)
++        ? (closing?.status ?? d.status)
++        : d.status;
++    return !DISPUTE_WON_STATUSES.has(status);
++  });
++}
++
++/** One dispute obligation on a purchase, from either record. */
++export interface DisputeObligation {
++  stripe_dispute_id: string;
++  stripe_charge_id: string;
++  status: string;
++}
++
++/**
++ * B-628-8: one obligation per Stripe dispute from the ledger (ChargeDispute)
++ * and the dunning record. Either may lag, so a final status wins; two
++ * conflicting finals resolve against the client (never lift on a conflict).
++ */
++export function mergeDisputeObligations(
++  ledger: Array<{ stripe_dispute_id: string; stripe_charge_id: string; status: string }>,
++  recorded: Array<{ stripe_dispute_id: string; stripe_charge_id: string | null; status: string }>,
++): DisputeObligation[] {
++  const byId = new Map<string, DisputeObligation>();
++  for (const d of ledger) byId.set(d.stripe_dispute_id, { ...d });
++  for (const r of recorded) {
++    const prior = byId.get(r.stripe_dispute_id);
++    if (!prior) {
++      byId.set(r.stripe_dispute_id, {
++        stripe_dispute_id: r.stripe_dispute_id,
++        stripe_charge_id: r.stripe_charge_id ?? '',
++        status: r.status,
++      });
++      continue;
++    }
++    const a = DISPUTE_TERMINAL_STATUSES.has(prior.status);
++    const b = DISPUTE_TERMINAL_STATUSES.has(r.status);
++    if (
++      b &&
++      (!a || (DISPUTE_WON_STATUSES.has(prior.status) && !DISPUTE_WON_STATUSES.has(r.status)))
++    ) {
++      prior.status = r.status;
++    }
++    if (!prior.stripe_charge_id && r.stripe_charge_id) prior.stripe_charge_id = r.stripe_charge_id;
++  }
++  return [...byId.values()];
++}
++
++/** What the client app reads to render the Day 0-9 banner or the lockout. */
++export interface ClientDunningStatus {
++  /** False while FEATURE_DUNNING_V2 is off: no banner, no lockout screen. */
++  enabled: boolean;
++  state: 'none' | 'past_due' | 'locked';
++  /**
++   * S-DUNNING-R3: what the cycle is about. 'dispute' = the bank reversed a
++   * payment already made (no invoice is open, a card update does not end
++   * it); 'payment' = a renewal charge failed. Null with state 'none'.
++   */
++  kind: 'payment' | 'dispute' | null;
++  /**
++   * B-628-7: true when the cycle is locked but the client keeps access
++   * through another live entitlement (the request guard lets them in), so
++   * the app shows the banner instead of the lockout screen.
++   */
++  lock_waived: boolean;
++  purchase_id: string | null;
++  amount_cents: number | null;
++  currency: string | null;
++  /** First failed charge of the cycle (Day 0), ISO. */
++  failed_at: string | null;
++  /** The Day-10 instant access pauses (past_due) or paused (locked), ISO. */
++  lockout_at: string | null;
++  locked_at: string | null;
++  /** Whole days since the first failure, 0-based. */
++  day: number | null;
++  coach_name: string | null;
++  card_last4: string | null;
++  card_brand: string | null;
++  /**
++   * The client action that ends the cycle (OR-110-2, native): POST this route
++   * for a SetupIntent, present the in-app PaymentSheet, then POST
++   * `/v1/checkout/payment-method/confirm`, which (1A) pays the open invoice.
++   */
++  update_payment_route: '/v1/checkout/payment-method/setup-intent';
++  /** Universal link (emails, notifications) that opens the in-app card update. */
++  update_card_url: string;
++  /**
++   * POST to end the plan now (owner 2A: the unpaid invoice is voided, access
++   * ends at once, nothing more is collected). Null when there is no cycle.
++   */
++  cancel_route: string | null;
++}
++
++const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);
++
++/** `last_failure_reason` marker of a compressed late-reversal (dispute) cycle. */
++export const DUNNING_V2_REVERSAL_REASON = 'charge_disputed';
++
++/**
++ * C-680-18 (Opus R34D-119): a plan that ended or was revoked for money. With
++ * no access, no payment or card update hands it back. Same set as the
++ * webhook's `purchaseHasEnded` (REVOKED_STATUSES in
++ * checkout-webhook-handler.service.ts); a spec keeps the two equal.
+  */
++const DUNNING_V2_ENDED_STATUSES = new Set([
++  'canceled',
++  'expired',
++  'incomplete_expired',
++  'refunded',
++  'chargeback_lost',
++  'disputed',
++]);
++
++export function dunningPurchaseEnded(
++  purchase: Pick<ClientPurchase, 'status' | 'entitlement_active'>,
++): boolean {
++  return DUNNING_V2_ENDED_STATUSES.has(purchase.status) && !purchase.entitlement_active;
++}
++
+ @Injectable()
+ export class DunningV2Service {
+   private readonly logger = new Logger(DunningV2Service.name);
+@@ -35,21 +303,22 @@ export class DunningV2Service {
+   constructor(
+     private readonly prisma: PrismaService,
+     private readonly telemetry: DunningV2Telemetry,
++    @Optional() private readonly dispatcher?: DunningV2Dispatcher,
++    @Optional() private readonly stripe?: StripeConnectApiService,
+   ) {}
+ 
+   private enabled(): boolean {
+     return isDunningV2Enabled();
+   }
+ 
+-  /**
+-   * Derive the v2 logical state from a DunningState row (spec §1 mapping).
+-   * Pure — exported for the state-transition unit tests.
+-   */
+-  static deriveState(row: {
+-    status: string;
+-    locked_out_at: Date | null;
+-    recovered_at: Date | null;
+-  } | null): DunningV2State {
++  /** Spec §1 state mapping. Pure. */
++  static deriveState(
++    row: {
++      status: string;
++      locked_out_at: Date | null;
++      recovered_at: Date | null;
++    } | null,
++  ): DunningV2State {
+     if (!row) return 'INACTIVE';
+     if (row.status === 'active') {
+       return row.locked_out_at ? 'LOCKED' : 'ACTIVE';
+@@ -60,64 +329,706 @@ export class DunningV2Service {
+     return 'INACTIVE';
+   }
+ 
+-  // ── §5 Recovery — immediate clear on success (Option A) ───────────────────
+   /**
+-   * v2 additions to apply INSIDE the existing v1 recordResolution transaction
+-   * (spec §5.3). Restores entitlement, lifts the lockout, dismisses blockers,
+-   * revokes recovery tokens — all same-request. Idempotent: a second call after
+-   * the state is already resolved is a no-op.
++   * True when a purchase may enter v2 dunning: a paid, recurring Stripe
++   * subscription. Invite-code / free / comp grants ($0, no subscription) and
++   * one-time packages never qualify. Pure.
++   */
++  static isEligiblePurchase(
++    purchase: Pick<ClientPurchase, 'amount_cents' | 'billing_type' | 'stripe_subscription_id'>,
++  ): boolean {
++    if (!purchase.stripe_subscription_id) return false;
++    if (purchase.billing_type !== 'recurring') return false;
++    if (!(purchase.amount_cents > 0)) return false;
++    // Forward-compatible comp-grant guard: once the entitlement source column
++    // (C01) lands, any purchase that carries a non-null `source` is a grant.
++    const source = (purchase as { source?: unknown }).source;
++    if (source !== undefined && source !== null) return false;
++    return true;
++  }
++
++  // ── Failure entry (invoice.payment_failed) ────────────────────────────────
++  /**
++   * After v1 `recordFailure`: claim Day 0 (stamping `entered_at`) or advance
++   * to the step elapsed time calls for. DB-only; the caller sends the
++   * returned claim's notices after its own transaction.
++   */
++  async recordPaymentFailed(
++    purchaseId: string,
++    now: Date = new Date(),
++  ): Promise<DunningV2StepClaim | null> {
++    if (!this.enabled()) return null;
++    const purchase = await this.prisma.clientPurchase.findUnique({
++      where: { id: purchaseId },
++    });
++    if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
++      return null;
++    }
++    const state = await this.prisma.dunningState.findUnique({
++      where: { purchase_id: purchaseId },
++    });
++    if (!state || state.status !== 'active') return null;
++
++    if (state.step_index < 0 || state.entered_at == null) {
++      // Fresh cycle (v1 just created / reopened the row): claim Day 0.
++      const claim: DunningV2StepClaim = {
++        dunningStateId: state.id,
++        purchaseId,
++        stepIndex: 0,
++        isLateReversalCycle: false,
++        cycleKey: dunningCycleKey(now),
++      };
++      const won = await this.claimWithOutbox(
++        { id: state.id, status: 'active', step_index: state.step_index },
++        { step_index: 0, entered_at: now, locked_out_at: null },
++        claim,
++        now,
++      );
++      return won ? claim : null;
++    }
++    return this.advance(state, now);
++  }
++
++  /**
++   * Advance one active, unlocked cycle to the step its elapsed time calls
++   * for. Claims at most one step per call (a cycle that skipped ahead sends
++   * only the latest step's notices, never a burst). Returns the claim or null.
++   */
++  async advance(
++    state: Pick<
++      DunningState,
++      'id' | 'purchase_id' | 'step_index' | 'entered_at' | 'last_failure_reason'
++    >,
++    now: Date = new Date(),
++  ): Promise<DunningV2StepClaim | null> {
++    if (!this.enabled() || state.entered_at == null) return null;
++    const target = dunningV2StepForElapsed(now.getTime() - state.entered_at.getTime());
++    if (target <= state.step_index) return null;
++    const claim: DunningV2StepClaim = {
++      dunningStateId: state.id,
++      purchaseId: state.purchase_id,
++      stepIndex: target,
++      isLateReversalCycle: state.last_failure_reason === DUNNING_V2_REVERSAL_REASON,
++      cycleKey: dunningCycleKey(state.entered_at),
++    };
++    const won = await this.claimWithOutbox(
++      {
++        id: state.id,
++        status: 'active',
++        locked_out_at: null,
++        // S-DUNNING-R2 2A: a client who ended their plan gets no more notices.
++        client_canceled_at: null,
++        step_index: state.step_index,
++        // The same cycle the caller read (a reopened cycle re-anchors).
++        entered_at: state.entered_at,
++      },
++      {
++        step_index: target,
++        ...(target >= 2 ? { escalated_at: now } : {}),
++      },
++      claim,
++      now,
++    );
++    return won ? claim : null;
++  }
++
++  /**
++   * B-628-6: the step claim (CAS) and its outbox rows commit together, so a
++   * crash between claim and send leaves pending rows the sweep delivers.
++   */
++  private async claimWithOutbox(
++    where: Prisma.DunningStateWhereInput,
++    data: Prisma.DunningStateUpdateManyMutationInput,
++    claim: DunningV2StepClaim,
++    now: Date,
++  ): Promise<boolean> {
++    const channels = dunningChannelsFor(
++      CLASSIFIER.resolve({
++        stepIndex: claim.stepIndex,
++        isLateReversalCycle: claim.isLateReversalCycle,
++      }),
++    );
++    const cycleKey = claim.cycleKey as string;
++    let won = false;
++    await this.prisma.$transaction(async (tx) => {
++      const res = await tx.dunningState.updateMany({ where, data });
++      if (res.count !== 1) return;
++      won = true;
++      for (const channel of channels) {
++        const id = noticeDeliveryId(claim.dunningStateId, cycleKey, claim.stepIndex, channel);
++        await tx.dunningNoticeDelivery.upsert({
++          where: { id },
++          create: {
++            id,
++            dunning_state_id: claim.dunningStateId,
++            cycle_key: cycleKey,
++            step_index: claim.stepIndex,
++            channel,
++            status: 'pending',
++            attempts: 0,
++            next_attempt_at: new Date(now.getTime() + DUNNING_NOTICE_PENDING_GRACE_MS),
++          },
++          update: {},
++        });
++      }
++    });
++    return won;
++  }
++
++  /**
++   * Send a claimed step's notices (client push / email / blocker; the coach
++   * on all three at Day 7). Never throws. B-628-6: each row is CLAIMED
++   * (CAS to 'sending', token + expiry) before its transport, the cycle is
++   * re-checked, and only the holder writes the receipt. `rowIds` limits a
++   * retry to the due rows.
++   */
++  async dispatchClaim(
++    claim: DunningV2StepClaim | null,
++    now: Date = new Date(),
++    opts: { rowIds?: string[] } = {},
++  ): Promise<void> {
++    if (!claim || !this.dispatcher) return;
++    try {
++      const ctx = await this.buildDispatchContext(claim);
++      if (!ctx) return;
++      if (!claim.cycleKey) {
++        await this.dispatcher.dispatchStep(ctx);
++        return;
++      }
++      ctx.cycleKey = claim.cycleKey;
++      const rows = await this.prisma.dunningNoticeDelivery.findMany({
++        where: {
++          dunning_state_id: claim.dunningStateId,
++          cycle_key: claim.cycleKey,
++          step_index: claim.stepIndex,
++          ...(opts.rowIds ? { id: { in: opts.rowIds } } : {}),
++          status: { in: ['pending', 'failed', 'sending'] },
++        },
++      });
++      const claimed = await this.claimDeliveries(rows, now, opts.rowIds != null);
++      if (claimed.length === 0) return;
++      // The cycle may have ended (paid, canceled, locked) between the read
++      // and the claim: close the claimed rows instead of sending.
++      if (!(await this.cycleStillLive(claim.dunningStateId, claim.cycleKey))) {
++        for (const c of claimed) {
++          await this.prisma.dunningNoticeDelivery.updateMany({
++            where: { id: c.id, claim_token: c.token, status: 'sending' },
++            data: { status: 'canceled', claim_token: null, next_attempt_at: null },
++          });
++        }
++        return;
++      }
++      // One transport call per idempotency attempt (normally one group).
++      const byAttempt = new Map<number, ClaimedDelivery[]>();
++      for (const c of claimed) {
++        byAttempt.set(c.keyAttempt, [...(byAttempt.get(c.keyAttempt) ?? []), c]);
++      }
++      for (const [attempt, group] of byAttempt) {
++        const { results } = await this.dispatcher.dispatchStepDetailed(ctx, undefined, {
++          channels: group.map((c) => c.channel),
++          attempt,
++        });
++        for (const c of group) {
++          const result: ChannelResult = results[c.channel] ?? {
++            status: 'skipped',
++            error: 'not_in_step',
++          };
++          await this.recordDelivery(c, result, now);
++        }
++      }
++    } catch (err) {
++      this.logger.warn(
++        `dunning v2 dispatch failed state=${claim.dunningStateId} step=${claim.stepIndex}: ${dunningErrorCode(err)}`,
++      );
++    }
++  }
++
++  /**
++   * CAS-claim each eligible delivery (pending, due failed, or 'sending' with
++   * an expired claim) on status + attempt + token as read: one worker wins.
++   * A takeover reuses the attempt, so a sent email dedups by its key.
++   */
++  private async claimDeliveries(
++    rows: Array<{
++      id: string;
++      channel: string;
++      status: string;
++      attempts: number;
++      next_attempt_at: Date | null;
++      claim_token: string | null;
++      key_attempt: number | null;
++    }>,
++    now: Date,
++    retryPath: boolean,
++  ): Promise<ClaimedDelivery[]> {
++    const out: ClaimedDelivery[] = [];
++    for (const row of rows) {
++      const due = row.next_attempt_at != null && row.next_attempt_at.getTime() <= now.getTime();
++      const takeover = row.status === 'sending';
++      const eligible = takeover
++        ? due
++        : row.status === 'pending'
++          ? !retryPath || due
++          : retryPath && due;
++      if (!eligible) continue;
++      const where = {
++        id: row.id,
++        status: row.status,
++        attempts: row.attempts,
++        claim_token: row.claim_token ?? null,
++      };
++      if (row.attempts >= DUNNING_NOTICE_MAX_ATTEMPTS) {
++        const res = await this.prisma.dunningNoticeDelivery.updateMany({
++          where,
++          data: { status: 'dead', claim_token: null, next_attempt_at: null },
++        });
++        if (res.count === 1) {
++          this.logger.error(
++            JSON.stringify({
++              event: 'dunning_v2.notice_dead',
++              delivery_id: row.id,
++              attempts: row.attempts,
++            }),
++          );
++        }
++        continue;
++      }
++      const token = randomUUID();
++      const keyAttempt = takeover && row.key_attempt != null ? row.key_attempt : row.attempts;
++      const res = await this.prisma.dunningNoticeDelivery.updateMany({
++        where,
++        data: {
++          status: 'sending',
++          claim_token: token,
++          key_attempt: keyAttempt,
++          attempts: row.attempts + 1,
++          next_attempt_at: new Date(now.getTime() + DUNNING_NOTICE_CLAIM_MS),
++        },
++      });
++      if (res.count !== 1) continue;
++      out.push({
++        id: row.id,
++        channel: row.channel as DunningChannel,
++        token,
++        attempts: row.attempts + 1,
++        keyAttempt,
++      });
++    }
++    return out;
++  }
++
++  /** The cycle a delivery belongs to is still the live, unlocked one. */
++  private async cycleStillLive(stateId: string, cycleKey: string): Promise<boolean> {
++    const state = await this.prisma.dunningState.findUnique({ where: { id: stateId } });
++    return (
++      state != null &&
++      state.status === 'active' &&
++      state.locked_out_at == null &&
++      state.client_canceled_at == null &&
++      state.entered_at != null &&
++      dunningCycleKey(state.entered_at) === cycleKey
++    );
++  }
++
++  /** Write a receipt only while this worker still holds the claim. */
++  private async recordDelivery(
++    c: ClaimedDelivery,
++    result: ChannelResult,
++    now: Date,
++  ): Promise<void> {
++    const fence = { id: c.id, claim_token: c.token, status: 'sending' };
++    let res: { count: number };
++    let dead = false;
++    if (result.status === 'sent' || result.status === 'skipped') {
++      res = await this.prisma.dunningNoticeDelivery.updateMany({
++        where: fence,
++        data: {
++          status: result.status,
++          claim_token: null,
++          sent_at: result.status === 'sent' ? now : null,
++          last_error: result.error ?? null,
++          next_attempt_at: null,
++        },
++      });
++    } else {
++      dead = c.attempts >= DUNNING_NOTICE_MAX_ATTEMPTS;
++      const backoff =
++        DUNNING_NOTICE_BACKOFF_MS[Math.min(c.attempts - 1, DUNNING_NOTICE_BACKOFF_MS.length - 1)];
++      res = await this.prisma.dunningNoticeDelivery.updateMany({
++        where: fence,
++        data: {
++          status: dead ? 'dead' : 'failed',
++          claim_token: null,
++          last_error: result.error ?? 'delivery_failed',
++          next_attempt_at: dead ? null : new Date(now.getTime() + backoff),
++        },
++      });
++    }
++    if (res.count !== 1) {
++      // A newer claim owns the row (this worker's claim expired): its
++      // receipt wins; this one is dropped, never overwriting it.
++      this.logger.warn(
++        JSON.stringify({
++          event: 'dunning_v2.notice_stale_receipt',
++          delivery_id: c.id,
++          result: result.status,
++        }),
++      );
++      return;
++    }
++    if (dead) {
++      this.logger.error(
++        JSON.stringify({
++          event: 'dunning_v2.notice_dead',
++          delivery_id: c.id,
++          attempts: c.attempts,
++        }),
++      );
++    }
++  }
++
++  /**
++   * Retry due outbox rows (failed past backoff, pending past grace, expired
++   * 'sending'); a row whose cycle ended, changed or locked is 'canceled'.
++   */
++  async retryDueNotices(now: Date = new Date(), limit = 200): Promise<{ retried: number }> {
++    if (!this.enabled() || !this.dispatcher) return { retried: 0 };
++    const due = await this.prisma.dunningNoticeDelivery.findMany({
++      where: {
++        status: { in: ['pending', 'failed', 'sending'] },
++        next_attempt_at: { lte: now },
++      },
++      orderBy: { next_attempt_at: 'asc' },
++      take: limit,
++    });
++    const groups = new Map<string, typeof due>();
++    for (const row of due) {
++      const k = `${row.dunning_state_id}|${row.cycle_key}|${row.step_index}`;
++      groups.set(k, [...(groups.get(k) ?? []), row]);
++    }
++    let retried = 0;
++    for (const rows of groups.values()) {
++      const first = rows[0];
++      const state = await this.prisma.dunningState.findUnique({
++        where: { id: first.dunning_state_id },
++      });
++      const live =
++        state != null &&
++        state.status === 'active' &&
++        state.locked_out_at == null &&
++        state.client_canceled_at == null &&
++        state.entered_at != null &&
++        dunningCycleKey(state.entered_at) === first.cycle_key;
++      if (!live) {
++        await this.prisma.dunningNoticeDelivery.updateMany({
++          where: {
++            id: { in: rows.map((r) => r.id) },
++            OR: [
++              { status: { in: ['pending', 'failed'] } },
++              { status: 'sending', next_attempt_at: { lte: now } },
++            ],
++          },
++          data: { status: 'canceled', claim_token: null, next_attempt_at: null },
++        });
++        continue;
++      }
++      await this.dispatchClaim(
++        {
++          dunningStateId: state.id,
++          purchaseId: state.purchase_id,
++          stepIndex: first.step_index,
++          isLateReversalCycle: state.last_failure_reason === DUNNING_V2_REVERSAL_REASON,
++          cycleKey: first.cycle_key,
++        },
++        now,
++        { rowIds: rows.map((r) => r.id) },
++      );
++      retried += 1;
++    }
++    return { retried };
++  }
++
++  // ── Hourly sweep: advance steps + Day-10 lockout ──────────────────────────
++  /**
++   * One sweep tick. For every active, unlocked, claimed cycle: lock it if it
++   * reached Day 10 (with positive evidence it is still unpaid), otherwise
++   * advance it to its due step and send that step's notices. Bounded to
++   * `limit` DUE rows per tick, least recently skipped first (B-688-2);
++   * idempotent and overlap-safe.
++   */
++  async runSweep(
++    now: Date = new Date(),
++    limit = 500,
++  ): Promise<{ locked: number; advanced: number; skipped: number }> {
++    if (!this.enabled()) return { locked: 0, advanced: 0, skipped: 0 };
++    // Only v2-CLAIMED cycles (step_index >= 0, entered_at stamped by the claim).
++    // An unclaimed row (step_index -1) is a v1-era or just-reopened cycle whose
++    // entered_at may belong to an EARLIER cycle; sweeping it could lock a
++    // client on the spot. It is adopted by its next invoice.payment_failed.
++    const rows = await this.prisma.dunningState.findMany({
++      where: {
++        status: 'active',
++        locked_out_at: null,
++        // S-DUNNING-R2 2A: never notify or Day-10-lock a client who ended
++        // their plan in dunning; the reconciler finishes that cancel.
++        client_canceled_at: null,
++        step_index: { gte: 0 },
++        entered_at: { not: null },
++        // B-688-2 (Sol): only cycles due for the lock or for a step they
++        // have not claimed, so rows with nothing to do never fill the page.
++        OR: [
++          { entered_at: { lte: daysBefore(now, DUNNING_V2_LOCKOUT_DAY) } },
++          ...DUNNING_V2_CADENCE_DAYS.slice(1).map((day, i) => ({
++            step_index: { lt: i + 1 },
++            entered_at: { lte: daysBefore(now, day) },
++          })),
++        ],
++      },
++      // A row the sweep looked at and could not act on goes behind the rest.
++      orderBy: [{ sweep_checked_at: { sort: 'asc', nulls: 'first' } }, { entered_at: 'asc' }],
++      take: limit,
++    });
++    let locked = 0;
++    let advanced = 0;
++    let skipped = 0;
++    for (const row of rows) {
++      let acted = false;
++      try {
++        const lockAt = dunningV2LockoutAt(row.entered_at as Date);
++        if (now.getTime() >= lockAt.getTime()) {
++          acted = (await this.tryLock(row, now)) === 'locked';
++          if (acted) locked += 1;
++          else skipped += 1;
++        } else {
++          const claim = await this.advance(row, now);
++          if (claim) {
++            acted = true;
++            advanced += 1;
++            await this.dispatchClaim(claim);
++          }
++        }
++      } catch (err) {
++        skipped += 1;
++        this.logger.warn(`dunning v2 sweep row failed state=${row.id}: ${dunningErrorCode(err)}`);
++      }
++      if (!acted) await this.markSweepChecked(row, now);
++    }
++    try {
++      await this.retryDueNotices(now);
++    } catch (err) {
++      this.logger.warn(`dunning v2 notice retry failed: ${dunningErrorCode(err)}`);
++    }
++    return { locked, advanced, skipped };
++  }
++
++  /** B-688-2: stamp a due row the sweep could not act on (same cycle only). */
++  private async markSweepChecked(row: DunningState, now: Date): Promise<void> {
++    try {
++      await this.prisma.dunningState.updateMany({
++        where: { id: row.id, entered_at: row.entered_at },
++        data: { sweep_checked_at: now },
++      });
++    } catch (err) {
++      this.logger.warn(`dunning v2 sweep stamp failed state=${row.id}: ${dunningErrorCode(err)}`);
++    }
++  }
++
++  /** @deprecated name kept for callers/tests: the sweep (lock + advance). */
++  async runLockoutSweep(now: Date = new Date()): Promise<{ locked: number }> {
++    const { locked } = await this.runSweep(now);
++    return { locked };
++  }
++
++  /**
++   * Lock one Day-10 cycle. Requires positive evidence of non-payment (spec P8:
++   * never lock on a TGP-side fault): the purchase is still eligible and
++   * `past_due`/`unpaid`, and — when Stripe is reachable — the subscription is
++   * not paid. A Stripe error skips this tick (retried next hour) instead of
++   * locking on uncertainty. The lock itself is a CAS on `locked_out_at: null`.
++   */
++  private async tryLock(row: DunningState, now: Date): Promise<'locked' | 'skipped'> {
++    const purchase = await this.prisma.clientPurchase.findUnique({
++      where: { id: row.purchase_id },
++    });
++    if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
++      return 'skipped';
++    }
++    const dispute = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
++    if (dispute) {
++      // B-628-8: a dispute cycle's evidence is the dispute itself, not the
++      // subscription (which stays active and keeps renewing). A won dispute
++      // resolves the cycle instead of locking.
++      if (purchase.status === 'canceled') return 'skipped';
++      // S-DUNNING-R4/R5 (B-628-8): the cycle is settled only when EVERY
++      // dispute on the purchase (ledger + dunning obligation record) is
++      // closed in the client's favour, not the latest one.
++      const disputes = await this.disputeObligations(this.prisma, purchase.id);
++      if (disputes.length > 0 && outstandingDisputes(disputes, null).length === 0) {
++        await this.resolveDisputeCycle(row.purchase_id, now, null);
++        return 'skipped';
++      }
++    } else if (purchase.status !== 'past_due' && purchase.status !== 'unpaid') {
++      this.logger.warn(
++        `dunning v2 lock skipped state=${row.id}: purchase status ${purchase.status} is not past_due`,
++      );
++      return 'skipped';
++    }
++    if (!dispute && this.stripe && purchase.stripe_subscription_id) {
++      try {
++        const sub = await this.stripe.retrieveSubscription(purchase.stripe_subscription_id);
++        if (PAID_STRIPE_STATUSES.has(String(sub.status))) {
++          this.logger.warn(
++            `dunning v2 lock skipped state=${row.id}: Stripe reports subscription ${String(sub.status)}; waiting for invoice.paid`,
++          );
++          return 'skipped';
++        }
++        if (String(sub.status) === 'canceled') return 'skipped';
++      } catch (err) {
++        this.logger.warn(
++          `dunning v2 lock deferred state=${row.id}: Stripe check failed: ${dunningErrorCode(err)}`,
++        );
++        return 'skipped';
++      }
++    }
++    let won = false;
++    await this.prisma.$transaction(async (tx) => {
++      // B-688-1 (Sol): under the row lock, lock only the cycle whose Day 10
++      // was read (same entered_at: a cycle reopened during the Stripe await
++      // has its own window) and only while the purchase still shows it.
++      await this.lockDunningState(tx, row.purchase_id);
++      const fresh = await tx.clientPurchase.findUnique({ where: { id: row.purchase_id } });
++      if (!fresh || !DunningV2Service.isEligiblePurchase(fresh)) return;
++      if (dispute ? fresh.status === 'canceled' : !['past_due', 'unpaid'].includes(fresh.status)) {
++        return;
++      }
++      const res = await tx.dunningState.updateMany({
++        where: {
++          id: row.id,
++          status: 'active',
++          locked_out_at: null,
++          client_canceled_at: null,
++          entered_at: row.entered_at,
++          step_index: row.step_index, // Opus B-688-6: a v1 reopen resets the step
++        },
++        data: { locked_out_at: now, step_index: Math.max(row.step_index, 3) },
++      });
++      if (res.count !== 1) return;
++      won = true;
++      await tx.clientPurchase.update({
++        where: { id: row.purchase_id },
++        data: { entitlement_active: false },
++      });
++    });
++    if (!won) return 'skipped';
++    this.telemetry.lockoutEntered(row.purchase_id, { dunning_state_id: row.id });
++    this.logger.log(
++      JSON.stringify({
++        event: 'dunning_v2.locked',
++        dunning_state_id: row.id,
++        purchase_id: row.purchase_id,
++        entered_at: (row.entered_at as Date).toISOString(),
++      }),
++    );
++    return 'locked';
++  }
++
++  // ── §5 Recovery — immediate clear on payment ──────────────────────────────
++  /**
++   * After v1 `recordResolution` on `invoice.paid`: lift a Day-10 lock (and
++   * the entitlement), dismiss open blockers, revoke recovery tokens. `db`
++   * MUST be the caller's open transaction when one is held (it already holds
++   * the ClientPurchase row lock; a second connection would self-deadlock).
+    *
+-   * Returns true if the row was in lockout and has now been lifted.
++   * Idempotent: a second call finds nothing locked and nothing to dismiss.
+    */
+   async applyImmediateClear(
+     purchaseId: string,
+     via: 'card_update' | 'retry' | 'manual' = 'retry',
++    db?: DunningV2Db,
+   ): Promise<{ liftedLockout: boolean }> {
+     if (!this.enabled()) return { liftedLockout: false };
++    const client: DunningV2Db = db ?? this.prisma;
+ 
+-    const state = await this.prisma.dunningState.findUnique({
++    const state = await client.dunningState.findUnique({
+       where: { purchase_id: purchaseId },
+-      select: { id: true, locked_out_at: true, purchase_id: true },
++      select: {
++        id: true,
++        status: true,
++        locked_out_at: true,
++        last_failure_reason: true,
++        entered_at: true,
++        purchase_id: true,
++        purchase: { select: { client_user_id: true } },
++      },
+     });
+     if (!state) return { liftedLockout: false };
+-
++    // B-628-8: a renewal payment or card update does not settle a disputed
++    // payment; only the dispute closing in the client's favour ends it.
++    // B-628-13: decided from the open obligation too, not the marker alone.
++    if (
++      via !== 'manual' &&
++      state.status === 'active' &&
++      (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON ||
++        (await this.hasOpenDisputeObligation(client, purchaseId, state.entered_at)))
++    ) {
++      return { liftedLockout: false };
++    }
+     const wasLocked = state.locked_out_at != null;
+ 
+-    await this.prisma.$transaction(async (tx) => {
+-      // Restore entitlement + lift lockout same-request (§5.3).
+-      await tx.clientPurchase.update({
+-        where: { id: purchaseId },
+-        data: { entitlement_active: true },
+-      });
+-      await tx.dunningState.update({
+-        where: { id: state.id },
+-        data: { locked_out_at: null },
++    let refused = false;
++    const run = async (w: DunningV2Db) => {
++      // C-680-18: decided on the purchase as it is under its row lock. A plan
++      // that ended or was revoked (refund, lost dispute, dispute, cancel,
++      // expiry) is never handed access back, nor its lock lifted.
++      const purchase = await this.lockedPurchaseForClear(w, purchaseId);
++      if (!purchase || dunningPurchaseEnded(purchase)) {
++        refused = true;
++        return;
++      }
++      if (wasLocked) {
++        await w.dunningState.update({
++          where: { id: state.id },
++          data: { locked_out_at: null },
++        });
++        await w.clientPurchase.update({
++          where: { id: purchaseId },
++          data: { entitlement_active: true },
++        });
++      }
++      // Dismiss THIS client's open blockers only (never another tenant's).
++      await w.notification.updateMany({
++        where: {
++          user_id: state.purchase.client_user_id,
++          kind: NotificationKind.DUNNING_BLOCKER,
++          read_at: null,
++        },
++        data: { read_at: new Date() },
+       });
+-      // Dismiss in-app blockers: clear the durable blocker feed rows.
+-      await tx.notification
+-        .updateMany?.({
+-          where: {
+-            user_id: { not: undefined },
+-            kind: 'DUNNING_BLOCKER' as never,
+-          },
+-          data: { read_at: new Date() } as never,
+-        })
+-        .catch(() => undefined);
+-      // Revoke recovery tokens for this state's attempts (§5.3 / §10.6).
+-      const attempts = await tx.dunningAttempt.findMany({
++      const attempts = await w.dunningAttempt.findMany({
+         where: { dunning_state_id: state.id },
+         select: { id: true },
+       });
+-      const attemptIds = attempts.map((a) => a.id);
+-      if (attemptIds.length > 0) {
+-        await tx.paymentRecoveryToken
+-          .updateMany?.({
+-            where: { dunning_attempt_id: { in: attemptIds }, used_at: null },
+-            data: { used_at: new Date() },
+-          })
+-          .catch(() => undefined);
++      if (attempts.length > 0) {
++        await w.paymentRecoveryToken.updateMany({
++          where: {
++            dunning_attempt_id: { in: attempts.map((a) => a.id) },
++            used_at: null,
++          },
++          data: { used_at: new Date() },
++        });
+       }
+-    });
++    };
++    if (db) {
++      await run(db);
++    } else {
++      await this.prisma.$transaction(async (tx) => run(tx));
++    }
++    if (refused) {
++      this.logger.log(
++        JSON.stringify({ event: 'dunning_v2.clear_refused', purchase_id: purchaseId, via }),
++      );
++      return { liftedLockout: false };
++    }
+ 
+     this.telemetry.recovered(state.purchase_id, via);
+     if (wasLocked) {
+@@ -128,24 +1039,71 @@ export class DunningV2Service {
+     return { liftedLockout: wasLocked };
+   }
+ 
+-  // ── §6 Late-reversal handler — compressed re-cadence ──────────────────────
+   /**
+-   * Open a compressed late-reversal cycle if the reversed charge was for a
+-   * PREVIOUSLY-CLEARED purchase (spec §6.1 "previously cleared" test) AND no
+-   * cycle is already in flight (spec §6.4 one-active-cycle-per-state).
+-   *
+-   * Enters at Step 2 (Day-3-equivalent), increments reversal_count exactly once
+-   * per cycle-open, and schedules the Day-7-equivalent. Returns the action so
+-   * callers/tests can assert.
++   * C-680-18: the purchase under the row locks, in the dunning lock order
++   * (DunningState, then ClientPurchase). NO KEY UPDATE is the mode the
++   * webhook takes, so on the caller's transaction the purchase lock is the
++   * one it already holds.
++   */
++  private async lockedPurchaseForClear(
++    w: DunningV2Db,
++    purchaseId: string,
++  ): Promise<Pick<ClientPurchase, 'status' | 'entitlement_active'> | null> {
++    if (typeof (w as { $queryRaw?: unknown }).$queryRaw === 'function') {
++      await w.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
++      await w.$queryRaw`SELECT "id" FROM "ClientPurchase" WHERE "id" = ${purchaseId} FOR NO KEY UPDATE`;
++    }
++    return w.clientPurchase.findUnique({
++      where: { id: purchaseId },
++      select: { status: true, entitlement_active: true },
++    });
++  }
++
++  // ── §6 Late reversal (dispute on a cleared payment) ───────────────────────
++  /**
++   * Open a compressed cycle when a PREVIOUSLY CLEARED payment is disputed
++   * (spec §6). Enters at Step 2 (Day-3 equivalent): `entered_at` is set three
++   * days in the past so the Day-7 coach step and the Day-10 lockout fall 4 and
++   * 7 days from now, driven by the same hourly sweep as a normal cycle.
++   * Only `charge.dispute.created` reaches this (a refund the coach issued is
++   * never treated as non-payment).
+    */
+   async handleLateReversal(input: {
+     purchaseId: string;
+     reversedChargeAt: Date;
++    /** The opening Stripe dispute (`dp_...`) and its charge (B-628-8). */
++    disputeId?: string | null;
++    chargeId?: string | null;
+     now?: Date;
+-  }): Promise<{ opened: boolean; reason: string }> {
++  }): Promise<{ opened: boolean; reason: string; claim?: DunningV2StepClaim }> {
+     if (!this.enabled()) return { opened: false, reason: 'flag_off' };
+     const now = input.now ?? new Date();
+ 
++    const purchase = await this.prisma.clientPurchase.findUnique({
++      where: { id: input.purchaseId },
++    });
++    if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
++      return { opened: false, reason: 'not_eligible' };
++    }
++    // B-628-8: record the obligation under the row lock BEFORE reading the
++    // cycle (a concurrent won resolution sees it, or this reopens below). A
++    // dispute already won (closed webhook first) opens nothing.
++    let openObligation = false;
++    if (input.disputeId) {
++      const recorded = await this.recordDisputeObligation({
++        purchaseId: input.purchaseId,
++        disputeId: input.disputeId,
++        chargeId: input.chargeId ?? null,
++        status: DISPUTE_OPEN_STATUS,
++        now,
++      });
++      if (recorded.priorStatus && DISPUTE_WON_STATUSES.has(recorded.priorStatus)) {
++        return { opened: false, reason: 'dispute_already_won' };
++      }
++      // W4 (Opus D34): new or still open, whatever the webhook order.
++      openObligation =
++        !recorded.priorStatus || !DISPUTE_TERMINAL_STATUSES.has(recorded.priorStatus);
++    }
+     const state = await this.prisma.dunningState.findUnique({
+       where: { purchase_id: input.purchaseId },
+       select: {
+@@ -153,135 +1111,544 @@ export class DunningV2Service {
+         status: true,
+         resolved_at: true,
+         purchase_id: true,
++        last_failure_reason: true,
+       },
+     });
+     if (!state) return { opened: false, reason: 'no_state' };
+-
+-    // §6.4 one active cycle per state: if a cycle is already in flight, no-op.
+     if (state.status === 'active') {
+       return { opened: false, reason: 'cycle_already_active' };
+     }
+-
+-    // §6.1 "previously cleared" test: resolved + resolved_at set, and the
+-    // reversed charge is at/after resolved_at.
++    // An open obligation on a resolved state opens the cycle (W4), as does a
++    // reversal after the resolution (no dispute id).
+     const previouslyCleared =
+       state.status === 'resolved' &&
+       state.resolved_at != null &&
+-      input.reversedChargeAt.getTime() >= state.resolved_at.getTime();
++      (openObligation || input.reversedChargeAt.getTime() >= state.resolved_at.getTime());
+     if (!previouslyCleared) {
+       return { opened: false, reason: 'not_a_cleared_payment_reversal' };
+     }
+ 
+-    // Open the compressed cycle (§6.2): enter at Step 2, +1 reversal_count,
+-    // clear resolved/recovered, schedule Day-7-equivalent.
+-    const coachNotifyAt = addDays(now, DUNNING_V2_REVERSAL_COACH_GAP_DAYS);
+-    await this.prisma.dunningState.update({
+-      where: { id: state.id },
+-      data: {
++    const enteredAt = new Date(
++      now.getTime() -
++        (DUNNING_V2_LOCKOUT_DAY -
++          DUNNING_V2_REVERSAL_COACH_GAP_DAYS -
++          DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS) *
++          DUNNING_V2_DAY_MS,
++    );
++    const claim: DunningV2StepClaim = {
++      dunningStateId: state.id,
++      purchaseId: state.purchase_id,
++      stepIndex: DUNNING_V2_REVERSAL_ENTRY_STEP,
++      isLateReversalCycle: true,
++      cycleKey: dunningCycleKey(enteredAt),
++    };
++    const opened = await this.claimWithOutbox(
++      { id: state.id, status: state.status },
++      {
+         status: 'active',
+         step_index: DUNNING_V2_REVERSAL_ENTRY_STEP,
+         reversal_count: { increment: 1 },
+         resolved_at: null,
+         recovered_at: null,
+         last_failure_at: now,
+-        next_attempt_at: coachNotifyAt,
++        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
++        entered_at: enteredAt,
++        next_attempt_at: addDays(now, DUNNING_V2_REVERSAL_COACH_GAP_DAYS),
+         locked_out_at: null,
++        client_canceled_at: null,
+       },
++      claim,
++      now,
++    );
++    if (!opened) {
++      return { opened: false, reason: 'cycle_already_active' };
++    }
++    await this.prisma.clientPurchase.update({
++      where: { id: input.purchaseId },
++      data: { status: 'past_due' },
+     });
+ 
+     this.telemetry.reversalDetected(state.purchase_id, {
+       dunning_state_id: state.id,
+       entry_step: DUNNING_V2_REVERSAL_ENTRY_STEP,
+-      lockout_in_days:
+-        DUNNING_V2_REVERSAL_COACH_GAP_DAYS +
+-        DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS,
++      lockout_in_days: DUNNING_V2_REVERSAL_COACH_GAP_DAYS + DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS,
+     });
+-    return { opened: true, reason: 'compressed_cycle_opened' };
++    await this.dispatchClaim(claim, now);
++    return { opened: true, reason: 'compressed_cycle_opened', claim };
+   }
+ 
+-  // ── §7 Day-10 hard-lockout sweep ──────────────────────────────────────────
+   /**
+-   * Lock out rows that reached the Day-7 final step and have been unresolved
+-   * for DUNNING_V2_LOCKOUT_GRACE_DAYS more days (spec §7.2). Idempotent: the
+-   * `locked_out_at: null` filter means a re-run never double-locks.
+-   *
+-   * Per candidate, in one transaction: set locked_out_at, turn entitlement off.
+-   * No client notify (client is being locked) and no coach notify (coach was
+-   * notified at Step 3) — spec §7.3.
++   * Late-reversal entry from the webhook (dispute created). Resolves the
++   * purchase from the disputed charge and delegates. No-op while flag off.
+    */
+-  async runLockoutSweep(now: Date = new Date()): Promise<{ locked: number }> {
+-    if (!this.enabled()) return { locked: 0 };
++  async detectAndHandleLateReversal(input: {
++    chargeId: string | null;
++    paymentIntentId?: string | null;
++    /** The opening Stripe dispute (`dp_...`), recorded as an obligation. */
++    disputeId?: string | null;
++    reversedChargeAt: Date;
++    now?: Date;
++  }): Promise<{ opened: boolean; reason: string }> {
++    if (!this.enabled()) return { opened: false, reason: 'flag_off' };
++    const purchaseId = await this.resolvePurchaseFromCharge(
++      input.chargeId,
++      input.paymentIntentId ?? null,
++    );
++    if (!purchaseId) return { opened: false, reason: 'purchase_unresolved' };
++    const res = await this.handleLateReversal({
++      purchaseId,
++      reversedChargeAt: input.reversedChargeAt,
++      disputeId: input.disputeId ?? null,
++      chargeId: input.chargeId,
++      now: input.now,
++    });
++    return { opened: res.opened, reason: res.reason };
++  }
++
++  /**
++   * True while a dispute cycle is open (B-628-8), or an active cycle has an
++   * outstanding recorded dispute (B-628-13), so no renewal settles it.
++   */
++  async isDisputeCycleOpen(purchaseId: string, db?: DunningV2Db): Promise<boolean> {
++    if (!this.enabled()) return false;
++    const client: DunningV2Db = db ?? this.prisma;
++    const state = await client.dunningState.findUnique({
++      where: { purchase_id: purchaseId },
++      select: { status: true, last_failure_reason: true, entered_at: true },
++    });
++    if (state?.status !== 'active') return false;
++    if (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) return true;
++    return this.hasOpenDisputeObligation(client, purchaseId, state.entered_at);
++  }
+ 
+-    const cutoff = addDays(now, -DUNNING_V2_LOCKOUT_GRACE_DAYS);
+-    const candidates = await this.prisma.dunningState.findMany({
++  /**
++   * B-628-13: a renewal payment settled the payment part of an active cycle
++   * while a dispute is still open: the cycle continues as the dispute cycle
++   * (marker restored or set; its lock timeline is unchanged). CAS on the
++   * active row, so a cycle resolved meanwhile is never reopened here.
++   */
++  async keepAsDisputeCycle(purchaseId: string, db?: DunningV2Db): Promise<void> {
++    if (!this.enabled()) return;
++    const client: DunningV2Db = db ?? this.prisma;
++    await client.dunningState.updateMany({
+       where: {
++        purchase_id: purchaseId,
+         status: 'active',
+-        step_index: DUNNING_V2_FINAL_STEP_INDEX,
+-        locked_out_at: null,
+-        last_failure_at: { lt: cutoff },
++        OR: [
++          { last_failure_reason: null },
++          { last_failure_reason: { not: DUNNING_V2_REVERSAL_REASON } },
++        ],
+       },
+-      select: { id: true, purchase_id: true },
++      data: { last_failure_reason: DUNNING_V2_REVERSAL_REASON },
+     });
++  }
+ 
+-    let locked = 0;
+-    for (const c of candidates) {
+-      try {
+-        await this.prisma.$transaction(async (tx) => {
+-          await tx.dunningState.update({
+-            where: { id: c.id },
+-            data: { locked_out_at: now },
+-          });
+-          await tx.clientPurchase.update({
+-            where: { id: c.purchase_id },
+-            data: { entitlement_active: false },
+-          });
+-        });
+-        this.telemetry.lockoutEntered(c.purchase_id, {
+-          dunning_state_id: c.id,
+-        });
+-        locked += 1;
+-      } catch (err) {
+-        this.logger.warn(
+-          `lockout sweep failed for state=${c.id}: ${(err as Error).message}`,
+-        );
+-      }
+-    }
+-    return { locked };
++  /**
++   * B-628-13: a recorded obligation (ledger-only rows never count) whose
++   * merged status is not in the client's favour. B-688-5: lost counts too,
++   * unless it closed before this cycle began (an earlier cycle's).
++   */
++  private async hasOpenDisputeObligation(
++    db: DunningV2Db,
++    purchaseId: string,
++    cycleStart: Date | null,
++  ): Promise<boolean> {
++    const recorded = await db.dunningDisputeObligation.findMany({
++      where: { purchase_id: purchaseId },
++      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true, closed_at: true },
++    });
++    if (recorded.length === 0) return false;
++    const ledger = await db.chargeDispute.findMany({
++      where: { purchase_id: purchaseId },
++      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
++    });
++    const byId = new Map(recorded.map((r) => [r.stripe_dispute_id, r]));
++    return mergeDisputeObligations(ledger, recorded).some((d) => {
++      const r = byId.get(d.stripe_dispute_id);
++      if (!r || DISPUTE_WON_STATUSES.has(d.status)) return false;
++      if (!DISPUTE_TERMINAL_STATUSES.has(d.status)) return true;
++      return !r.closed_at || !cycleStart || r.closed_at >= cycleStart;
++    });
+   }
+ 
+   /**
+-   * Late-reversal entry from the webhook arm (spec §6.1). Resolves the
+-   * purchase from a reversed-charge event and, if it was a previously-cleared
+-   * payment with no active cycle, opens the compressed cycle. Reuses the
+-   * charge→purchase resolution shape from the v1 refund/dispute path
+-   * (ConnectTransfer.source_stripe_charge_id → SplitLedgerEntry → PI metadata)
+-   * but does NOT mutate that v1 service. No-op while the flag is off.
++   * `charge.dispute.closed`: a dispute closed in the client's favour (won /
++   * warning_closed) resolves its cycle, lifts a lock, restores access and
++   * dismisses the blockers. A lost dispute keeps the cycle open (the money
++   * stays reversed; support settles it in v1.0); during a payment cycle it
++   * makes that cycle the dispute cycle (B-688-5), so no payment settles it.
+    */
+-  async detectAndHandleLateReversal(input: {
++  async onDisputeClosed(input: {
+     chargeId: string | null;
+     paymentIntentId?: string | null;
+-    reversedChargeAt: Date;
++    status: string | null;
++    /** The closing Stripe dispute (`dp_...`); matched before the charge. */
++    disputeId?: string | null;
++    /** The closure's own time (event.created); processing time when absent. */
++    closedAt?: Date;
+     now?: Date;
+-  }): Promise<{ opened: boolean; reason: string }> {
+-    if (!this.enabled()) return { opened: false, reason: 'flag_off' };
++  }): Promise<{ resolved: boolean; reason: string }> {
++    if (!this.enabled()) return { resolved: false, reason: 'flag_off' };
+     const purchaseId = await this.resolvePurchaseFromCharge(
+       input.chargeId,
+       input.paymentIntentId ?? null,
+     );
+-    if (!purchaseId) {
+-      return { opened: false, reason: 'purchase_unresolved' };
++    if (!input.status || !DISPUTE_WON_STATUSES.has(input.status)) {
++      // A lost (or otherwise closed) dispute stays an outstanding obligation;
++      // record its final status so no later won event can outvote it.
++      if (purchaseId && input.disputeId && input.status) {
++        await this.recordDisputeObligation({
++          purchaseId,
++          disputeId: input.disputeId,
++          chargeId: input.chargeId ?? null,
++          status: input.status,
++          now: input.closedAt ?? input.now ?? new Date(),
++          keepAsDispute: DISPUTE_TERMINAL_STATUSES.has(input.status),
++        });
++      }
++      return { resolved: false, reason: 'not_won' };
+     }
+-    return this.handleLateReversal({
+-      purchaseId,
+-      reversedChargeAt: input.reversedChargeAt,
+-      now: input.now,
++    if (!purchaseId) return { resolved: false, reason: 'purchase_unresolved' };
++    const closing: ClosingDispute = {
++      disputeId: input.disputeId ?? null,
++      chargeId: input.chargeId ?? null,
++      status: input.status,
++    };
++    const out = await this.resolveDisputeCycle(purchaseId, input.now ?? new Date(), closing);
++    if (out === 'blocked') return { resolved: false, reason: 'other_dispute_outstanding' };
++    return out
++      ? { resolved: true, reason: 'dispute_won' }
++      : { resolved: false, reason: 'no_open_dispute_cycle' };
++  }
++
++  /**
++   * S-DUNNING-R5 (B-628-8): every dispute obligation on a purchase, merged
++   * from the refund / dispute ledger and the dunning obligation record.
++   */
++  private async disputeObligations(
++    db: DunningV2Db,
++    purchaseId: string,
++  ): Promise<DisputeObligation[]> {
++    const ledger = await db.chargeDispute.findMany({
++      where: { purchase_id: purchaseId },
++      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
++    });
++    const recorded = await db.dunningDisputeObligation.findMany({
++      where: { purchase_id: purchaseId },
++      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
++    });
++    return mergeDisputeObligations(ledger, recorded);
++  }
++
++  /** Row lock on the purchase's DunningState (no-op when none exists). */
++  private async lockDunningState(tx: Prisma.TransactionClient, purchaseId: string): Promise<void> {
++    await tx.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
++  }
++
++  /**
++   * Record a dispute obligation under the DunningState row lock. Returns the
++   * status it had before (null when this call created it).
++   */
++  private async recordDisputeObligation(input: {
++    purchaseId: string;
++    disputeId: string;
++    chargeId: string | null;
++    status: string;
++    now: Date;
++    keepAsDispute?: boolean;
++  }): Promise<{ priorStatus: string | null }> {
++    return this.prisma.$transaction(async (tx) => {
++      await this.lockDunningState(tx, input.purchaseId);
++      const out = await this.upsertDisputeObligation(tx, input);
++      // Sol B-688-6: only an obligation outstanding in THIS cycle marks it.
++      if (input.keepAsDispute && (await this.isDisputeCycleOpen(input.purchaseId, tx))) {
++        await this.keepAsDisputeCycle(input.purchaseId, tx);
++      }
++      return out;
++    });
++  }
++
++  /**
++   * Insert or advance one obligation: 'open' never moves a final back; a
++   * final beats a non-final; a not-in-favour final beats won (never reverse).
++   */
++  private async upsertDisputeObligation(
++    tx: Prisma.TransactionClient,
++    input: {
++      purchaseId: string;
++      disputeId: string;
++      chargeId: string | null;
++      status: string;
++      now: Date;
++    },
++  ): Promise<{ priorStatus: string | null }> {
++    const prior = await tx.dunningDisputeObligation.findUnique({
++      where: { stripe_dispute_id: input.disputeId },
++      select: { status: true, stripe_charge_id: true },
++    });
++    const terminal = DISPUTE_TERMINAL_STATUSES.has(input.status);
++    if (!prior) {
++      await tx.dunningDisputeObligation.create({
++        data: {
++          stripe_dispute_id: input.disputeId,
++          purchase_id: input.purchaseId,
++          stripe_charge_id: input.chargeId,
++          status: input.status,
++          closed_at: terminal ? input.now : null,
++        },
++      });
++      return { priorStatus: null };
++    }
++    const priorTerminal = DISPUTE_TERMINAL_STATUSES.has(prior.status);
++    const advance =
++      terminal &&
++      (!priorTerminal ||
++        (DISPUTE_WON_STATUSES.has(prior.status) && !DISPUTE_WON_STATUSES.has(input.status)));
++    if (advance || (!prior.stripe_charge_id && input.chargeId)) {
++      await tx.dunningDisputeObligation.update({
++        where: { stripe_dispute_id: input.disputeId },
++        data: {
++          ...(advance ? { status: input.status, closed_at: input.now } : {}),
++          ...(!prior.stripe_charge_id && input.chargeId
++            ? { stripe_charge_id: input.chargeId }
++            : {}),
++        },
++      });
++    }
++    return { priorStatus: prior.status };
++  }
++
++  /**
++   * Resolve a dispute cycle (B-628-8) unless another obligation is still
++   * open or lost; the closing dispute counts with its event status.
++   */
++  private async resolveDisputeCycle(
++    purchaseId: string,
++    now: Date,
++    closing: ClosingDispute | null,
++  ): Promise<boolean | 'blocked'> {
++    let resolved = false;
++    let blocked = false;
++    let wasLocked = false;
++    let stateId = '';
++    await this.prisma.$transaction(async (tx) => {
++      // R5: serialize with dispute-created recording on the same row.
++      await this.lockDunningState(tx, purchaseId);
++      if (closing?.disputeId && closing.status) {
++        await this.upsertDisputeObligation(tx, {
++          purchaseId,
++          disputeId: closing.disputeId,
++          chargeId: closing.chargeId,
++          status: closing.status,
++          now,
++        });
++      }
++      const state = await tx.dunningState.findUnique({
++        where: { purchase_id: purchaseId },
++        include: { purchase: true },
++      });
++      if (
++        !state ||
++        state.status !== 'active' ||
++        state.last_failure_reason !== DUNNING_V2_REVERSAL_REASON
++      ) {
++        return;
++      }
++      const disputes = await this.disputeObligations(tx, purchaseId);
++      const open = outstandingDisputes(disputes, closing);
++      if (open.length > 0) {
++        blocked = true;
++        this.logger.log(
++          JSON.stringify({
++            event: 'dunning_v2.dispute_cycle_kept',
++            purchase_id: purchaseId,
++            outstanding: open.map((d) => d.stripe_dispute_id),
++          }),
++        );
++        return;
++      }
++      const res = await tx.dunningState.updateMany({
++        where: { id: state.id, status: 'active', last_failure_reason: DUNNING_V2_REVERSAL_REASON },
++        data: { status: 'resolved', resolved_at: now, recovered_at: now, locked_out_at: null },
++      });
++      if (res.count !== 1) return;
++      resolved = true;
++      wasLocked = state.locked_out_at != null;
++      stateId = state.id;
++      if (state.purchase.status !== 'canceled') {
++        await tx.clientPurchase.update({
++          where: { id: purchaseId },
++          data: {
++            entitlement_active: true,
++            ...(state.purchase.status === 'past_due' ? { status: 'active' } : {}),
++          },
++        });
++      }
++      await tx.notification.updateMany({
++        where: {
++          user_id: state.purchase.client_user_id,
++          kind: NotificationKind.DUNNING_BLOCKER,
++          read_at: null,
++        },
++        data: { read_at: now },
++      });
++      await tx.dunningNoticeDelivery.updateMany({
++        where: { dunning_state_id: state.id, status: { in: ['pending', 'failed'] } },
++        data: { status: 'canceled', next_attempt_at: null },
++      });
++    });
++    if (resolved) {
++      this.telemetry.recovered(purchaseId, 'manual');
++      if (wasLocked) this.telemetry.lockoutExited(purchaseId, { dunning_state_id: stateId });
++    }
++    if (blocked) return 'blocked';
++    return resolved;
++  }
++
++  // ── Client read model (banner + lockout screen) ───────────────────────────
++  /**
++   * The signed-in client's dunning view. Scoped to `clientUserId` only.
++   * Returns `state: 'locked'` when any eligible cycle is locked, else
++   * `past_due` for an active cycle (Days 0-9), else `none`.
++   */
++  async getClientStatus(clientUserId: string): Promise<ClientDunningStatus> {
++    const base: ClientDunningStatus = {
++      enabled: this.enabled(),
++      state: 'none',
++      kind: null,
++      lock_waived: false,
++      purchase_id: null,
++      amount_cents: null,
++      currency: null,
++      failed_at: null,
++      lockout_at: null,
++      locked_at: null,
++      day: null,
++      coach_name: null,
++      card_last4: null,
++      card_brand: null,
++      update_payment_route: '/v1/checkout/payment-method/setup-intent',
++      update_card_url: DUNNING_UPDATE_CARD_URL,
++      cancel_route: null,
++    };
++    if (!base.enabled) return base;
++
++    const rows = await this.prisma.dunningState.findMany({
++      where: {
++        status: 'active',
++        client_canceled_at: null,
++        step_index: { gte: 0 },
++        entered_at: { not: null },
++        // Sol B-688-7: eligible rows only, locks first (NULLS LAST on DESC).
++        purchase: {
++          client_user_id: clientUserId,
++          billing_type: 'recurring',
++          amount_cents: { gt: 0 },
++          stripe_subscription_id: { not: null },
++        },
++      },
++      include: { purchase: true },
++      orderBy: [{ locked_out_at: { sort: 'desc', nulls: 'last' } }, { entered_at: 'asc' }],
++      take: 10,
++    });
++    const eligible = rows.filter((r) => DunningV2Service.isEligiblePurchase(r.purchase));
++    const row = eligible.find((r) => r.locked_out_at != null) ?? eligible[0];
++    if (!row) return base;
++    // B-628-7: the guard's rule, so the screen matches what requests do.
++    const lock = row.locked_out_at ? await effectiveLock(this.prisma, clientUserId) : null;
++    const lockWaived = lock != null && !lock.locked;
++
++    const [coach, customer] = await Promise.all([
++      this.prisma.user.findUnique({
++        where: { id: row.purchase.coach_user_id },
++        select: { name: true },
++      }),
++      this.prisma.connectCustomer.findUnique({
++        where: { client_user_id: clientUserId },
++        select: { default_card_last4: true, default_card_brand: true },
++      }),
++    ]);
++    const enteredAt = row.entered_at as Date;
++    const kind = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';
++    return {
++      ...base,
++      state: row.locked_out_at && !lockWaived ? 'locked' : 'past_due',
++      kind,
++      lock_waived: lockWaived,
++      purchase_id: row.purchase_id,
++      // B-689-5 rule: the failed renewal's amount is not the disputed charge's.
++      amount_cents:
++        kind === 'dispute' ? null : (row.last_failed_amount_cents ?? row.purchase.amount_cents),
++      currency: row.purchase.currency,
++      failed_at: enteredAt.toISOString(),
++      lockout_at: dunningV2LockoutAt(enteredAt).toISOString(),
++      locked_at: row.locked_out_at ? row.locked_out_at.toISOString() : null,
++      day: Math.max(0, Math.floor((Date.now() - enteredAt.getTime()) / DUNNING_V2_DAY_MS)),
++      coach_name: coach?.name ?? null,
++      card_last4: customer?.default_card_last4 ?? null,
++      card_brand: customer?.default_card_brand ?? null,
++      cancel_route: `/v1/checkout/subscriptions/${row.purchase_id}/cancel`,
++    };
++  }
++
++  // ── Internals ─────────────────────────────────────────────────────────────
++
++  private async buildDispatchContext(claim: DunningV2StepClaim): Promise<DispatchContext | null> {
++    const state = await this.prisma.dunningState.findUnique({
++      where: { id: claim.dunningStateId },
++      include: { purchase: true },
+     });
++    if (!state || state.status !== 'active' || !state.entered_at) return null;
++    const purchase = state.purchase;
++    const [client, coach, customer, prefs] = await Promise.all([
++      this.prisma.user.findUnique({
++        where: { id: purchase.client_user_id },
++        select: { name: true, email: true },
++      }),
++      this.prisma.user.findUnique({
++        where: { id: purchase.coach_user_id },
++        select: { name: true, email: true },
++      }),
++      this.prisma.connectCustomer.findUnique({
++        where: { client_user_id: purchase.client_user_id },
++        select: { default_card_last4: true },
++      }),
++      this.prisma.notificationPreferences.findUnique({
++        where: { user_id: purchase.client_user_id },
++        select: { timezone: true },
++      }),
++    ]);
++    const clientName = client?.name ?? '';
++    const firstName = clientName.trim().split(/\s+/)[0] || 'there';
++    const amountCents = state.last_failed_amount_cents ?? purchase.amount_cents;
++    return {
++      dunningStateId: state.id,
++      stepIndex: claim.stepIndex,
++      isLateReversalCycle: claim.isLateReversalCycle,
++      clientUserId: purchase.client_user_id,
++      coachUserId: purchase.coach_user_id,
++      clientEmail: client?.email ?? null,
++      coachEmail: coach?.email ?? null,
++      tokens: {
++        firstName,
++        clientName: clientName || 'Your client',
++        coachName: coach?.name ?? 'your coach',
++        amount: claim.isLateReversalCycle ? undefined : formatMoney(amountCents, purchase.currency),
++        cardLast4: customer?.default_card_last4 ?? undefined,
++        attempts: state.last_attempt_number ? String(state.last_attempt_number) : undefined,
++        lockoutDate: formatLockoutDate(
++          dunningV2LockoutAt(state.entered_at),
++          prefs?.timezone ?? null,
++        ),
++      },
++      dunningDetailDeeplink: `tgp://coach/clients/${purchase.client_user_id}`,
++    };
+   }
+ 
+   /**
+-   * Resolve a ClientPurchase id from a Stripe charge / PI, mirroring the v1
+-   * refund-dispute resolution order: ConnectTransfer.source_stripe_charge_id,
+-   * then SplitLedgerEntry, then PI-metadata fallback. Read-only.
++   * Resolve a ClientPurchase id from a disputed Stripe charge / PI, mirroring
++   * the v1 refund-dispute order: ConnectTransfer.source_stripe_charge_id, then
++   * the purchase's payment intent. Read-only.
+    */
+   private async resolvePurchaseFromCharge(
+     chargeId: string | null,
+@@ -289,12 +1656,19 @@ export class DunningV2Service {
+   ): Promise<string | null> {
+     try {
+       if (chargeId) {
+-        const transfer = await this.prisma.connectTransfer?.findFirst?.({
++        const transfer = await this.prisma.connectTransfer.findFirst({
+           where: { source_stripe_charge_id: chargeId },
+           select: { purchase_id: true },
+         });
+-        const tid = (transfer as { purchase_id?: string } | null)?.purchase_id;
+-        if (tid) return tid;
++        if (transfer?.purchase_id) return transfer.purchase_id;
++      }
++      if (chargeId) {
++        // The refund / dispute ledger already resolved this charge.
++        const ledger = await this.prisma.chargeDispute.findFirst({
++          where: { stripe_charge_id: chargeId },
++          select: { purchase_id: true },
++        });
++        if (ledger?.purchase_id) return ledger.purchase_id;
+       }
+       if (paymentIntentId) {
+         const purchase = await this.prisma.clientPurchase.findFirst({
+@@ -303,16 +1677,87 @@ export class DunningV2Service {
+         });
+         if (purchase) return purchase.id;
+       }
+-    } catch {
+-      // Read-only resolution; never throw into the webhook tx.
++      // S-DUNNING-R5: a renewal charge of a subscription (however it was
++      // created: hosted Checkout or the native subscription route) whose
++      // settlement transfer is not written yet resolves through Stripe:
++      // charge -> invoice -> subscription -> purchase.
++      if (chargeId && this.stripe) {
++        const charge = await this.stripe.retrieveCharge(chargeId);
++        // `unknown` on purpose: the charge type differs between main and
++        // #627 (string id vs. expanded object); both shapes are read safely.
++        const invoiceRef: unknown = charge['invoice'];
++        const invoiceId =
++          typeof invoiceRef === 'string'
++            ? invoiceRef
++            : typeof invoiceRef === 'object' && invoiceRef !== null && 'id' in invoiceRef
++              ? String(invoiceRef.id)
++              : null;
++        if (invoiceId) {
++          const invoice = await this.stripe.retrieveInvoice(invoiceId);
++          if (invoice.subscription) {
++            const bySub = await this.prisma.clientPurchase.findFirst({
++              where: { stripe_subscription_id: invoice.subscription },
++              select: { id: true },
++            });
++            if (bySub) return bySub.id;
++          }
++        }
++        const pi = typeof charge.payment_intent === 'string' ? charge.payment_intent : null;
++        if (pi && pi !== paymentIntentId) {
++          const byPi = await this.prisma.clientPurchase.findFirst({
++            where: { stripe_payment_intent_id: pi },
++            select: { id: true },
++          });
++          if (byPi) return byPi.id;
++        }
++      }
++    } catch (err) {
++      const code = dunningErrorCode(err);
++      this.logger.warn(`dunning v2 dispute purchase resolution failed: ${code}`);
++      // W3 (Opus D34): only a clean miss (Stripe 404) is null; a failed read
++      // throws, so the webhook is redelivered, never acknowledged.
++      if (!code.startsWith('stripe_404')) throw err;
+     }
+     return null;
+   }
+ }
+ 
++function daysBefore(now: Date, days: number): Date {
++  return new Date(now.getTime() - days * DUNNING_V2_DAY_MS);
++}
++
+ /** Add (or subtract, with a negative n) whole days to a Date. */
+ export function addDays(d: Date, n: number): Date {
+   const out = new Date(d.getTime());
+   out.setUTCDate(out.getUTCDate() + n);
+   return out;
+ }
++
++/** Integer minor units -> display string ("$150.00", "1,200 JPY"; C-688-5). */
++export function formatMoney(cents: number, currency: string | null): string {
++  return formatMinor(cents, currency);
++}
++
++/**
++ * The lockout date as the client reads it, in their notification time zone
++ * (falls back to America/Los_Angeles, the product default), e.g. "Saturday,
++ * October 11". An invalid zone falls back rather than throwing.
++ */
++export function formatLockoutDate(at: Date, timeZone: string | null): string {
++  const opts: Intl.DateTimeFormatOptions = {
++    weekday: 'long',
++    month: 'long',
++    day: 'numeric',
++  };
++  try {
++    return new Intl.DateTimeFormat('en-US', {
++      ...opts,
++      timeZone: timeZone || 'America/Los_Angeles',
++    }).format(at);
++  } catch {
++    return new Intl.DateTimeFormat('en-US', {
++      ...opts,
++      timeZone: 'America/Los_Angeles',
++    }).format(at);
++  }
++}
+diff --git a/test/dunning-v2-c680-18.spec.ts b/test/dunning-v2-c680-18.spec.ts
+new file mode 100644
+index 00000000..5a695b73
+--- /dev/null
++++ b/test/dunning-v2-c680-18.spec.ts
+@@ -0,0 +1,288 @@
++// C-680-18 (Opus R34D-119, hard obligation before FEATURE_DUNNING_V2=true):
++// with the flag on, a paid invoice must never hand access back to a plan that
++// ended or was revoked for money, nor lift its lock. Regression for the probe
++// in ops/aud-119/AUD-OPUS-R34D-119 (lock variant: on D2 only a locked cycle
++// writes access, dunning-v2.service.ts applyImmediateClear).
++import {
++  CheckoutWebhookHandlerService,
++  purchaseHasEnded,
++} from '../src/checkout/checkout-webhook-handler.service';
++import {
++  DunningV2Service,
++  dunningPurchaseEnded,
++} from '../src/checkout/dunning-v2/dunning-v2.service';
++import { DUNNING_V2_DAY_MS } from '../src/checkout/dunning-v2/dunning-v2.cadence';
++import { makeFakePrisma } from './support/b-recur-fakes';
++import { FakePrisma } from './support/dunning-v2-fake-prisma';
++
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++const stub = (v: unknown): any => v;
++const ENDED = ['refunded', 'chargeback_lost', 'disputed', 'canceled', 'expired'];
++const LOCKED_AT = new Date(Date.now() - 2 * DUNNING_V2_DAY_MS);
++
++const prevFlag = process.env.FEATURE_DUNNING_V2;
++beforeEach(() => {
++  process.env.FEATURE_DUNNING_V2 = 'true';
++});
++afterAll(() => {
++  if (prevFlag === undefined) delete process.env.FEATURE_DUNNING_V2;
++  else process.env.FEATURE_DUNNING_V2 = prevFlag;
++});
++
++function telemetry() {
++  return { recovered: jest.fn(), lockoutExited: jest.fn(), lockoutEntered: jest.fn() };
++}
++
++describe('C-680-18 applyImmediateClear refuses a plan that ended or was revoked', () => {
++  function setup(status: string, entitled = false) {
++    const fake = new FakePrisma();
++    const t = telemetry();
++    const svc = new DunningV2Service(fake.client(), stub(t));
++    fake.seed('clientPurchase', {
++      id: 'p1',
++      client_user_id: 'client-1',
++      coach_user_id: 'coach-1',
++      status,
++      entitlement_active: entitled,
++      billing_type: 'recurring',
++      amount_cents: 15000,
++      currency: 'usd',
++      stripe_subscription_id: 'sub_1',
++    });
++    fake.seed('dunningState', {
++      id: 'ds1',
++      purchase_id: 'p1',
++      status: 'resolved',
++      step_index: 3,
++      entered_at: new Date(LOCKED_AT.getTime() - 10 * DUNNING_V2_DAY_MS),
++      locked_out_at: LOCKED_AT,
++      last_failure_reason: 'card_declined',
++    });
++    fake.seed('notification', {
++      id: 'n1',
++      user_id: 'client-1',
++      kind: 'DUNNING_BLOCKER',
++      read_at: null,
++    });
++    return { fake, svc, t };
++  }
++
++  it.each(ENDED)('%s without access: no access, lock kept, nothing dismissed', async (status) => {
++    for (const via of ['retry', 'card_update', 'manual'] as const) {
++      const { fake, svc, t } = setup(status);
++      expect(await svc.applyImmediateClear('p1', via)).toEqual({ liftedLockout: false });
++      expect(fake.find('clientPurchase', { id: 'p1' })).toMatchObject({
++        status,
++        entitlement_active: false,
++      });
++      expect(fake.find('dunningState', { id: 'ds1' })?.locked_out_at).toEqual(LOCKED_AT);
++      expect(fake.find('notification', { id: 'n1' })?.read_at).toBeNull();
++      expect(t.recovered).not.toHaveBeenCalled();
++    }
++  });
++
++  it('decides on the caller transaction under the row locks, DunningState first', async () => {
++    const { fake, svc } = setup('refunded');
++    const tx = fake.client(true);
++    const locks: string[] = [];
++    tx.$queryRaw = async (sql: TemplateStringsArray) => {
++      locks.push(sql.join('?'));
++      return [];
++    };
++    await svc.applyImmediateClear('p1', 'retry', tx);
++    expect(fake.transactionCalls).toBe(0);
++    expect(locks).toEqual([
++      'SELECT "id" FROM "DunningState" WHERE "purchase_id" = ? FOR UPDATE',
++      'SELECT "id" FROM "ClientPurchase" WHERE "id" = ? FOR NO KEY UPDATE',
++    ]);
++  });
++
++  it('control: a Day-10 locked plan that is still owed (past_due) is unlocked and re-entitled', async () => {
++    const { fake, svc, t } = setup('past_due');
++    expect(await svc.applyImmediateClear('p1', 'card_update')).toEqual({ liftedLockout: true });
++    expect(fake.find('clientPurchase', { id: 'p1' })?.entitlement_active).toBe(true);
++    expect(fake.find('dunningState', { id: 'ds1' })?.locked_out_at).toBeNull();
++    expect(t.recovered).toHaveBeenCalledTimes(1);
++  });
++
++  it('control: an ended status that still has access is not treated as revoked', async () => {
++    const { fake, svc } = setup('disputed', true);
++    expect(await svc.applyImmediateClear('p1')).toEqual({ liftedLockout: true });
++    expect(fake.find('dunningState', { id: 'ds1' })?.locked_out_at).toBeNull();
++  });
++
++  it('a missing purchase is refused', async () => {
++    const { fake, svc } = setup('past_due');
++    fake.rows('clientPurchase').splice(0, 1);
++    expect(await svc.applyImmediateClear('p1')).toEqual({ liftedLockout: false });
++    expect(fake.find('dunningState', { id: 'ds1' })?.locked_out_at).toEqual(LOCKED_AT);
++  });
++});
++
++describe('C-680-18 parity with the webhook fence', () => {
++  const STATUSES = [
++    'pending',
++    'incomplete',
++    'payment_failed',
++    'active',
++    'trialing',
++    'past_due',
++    'unpaid',
++    'paid',
++    'canceled',
++    'expired',
++    'incomplete_expired',
++    'refunded',
++    'chargeback_lost',
++    'disputed',
++  ];
++  it.each(STATUSES)('%s: same answer as purchaseHasEnded', (status) => {
++    for (const entitlement_active of [true, false]) {
++      expect(dunningPurchaseEnded({ status, entitlement_active })).toBe(
++        purchaseHasEnded({ status, entitlement_active }),
++      );
++    }
++  });
++});
++
++describe('C-680-18 through the webhook (invoice.paid, then customer.subscription.updated)', () => {
++  const NOW = Math.floor(Date.now() / 1000);
++  const PERIOD = NOW + 30 * 86400;
++  let seq = 0;
++  const ev = (type: string, object: Record<string, unknown>) => {
++    seq += 1;
++    return { id: `evt_c68018_${seq}`, type, data: { object } };
++  };
++  const sub = (status: string) => ({
++    id: 'sub_18',
++    status,
++    customer: 'cus_18',
++    current_period_end: PERIOD,
++    default_payment_method: 'pm_18',
++    cancel_at_period_end: false,
++  });
++  const paid = () =>
++    ev('invoice.paid', {
++      id: 'in_18',
++      subscription: 'sub_18',
++      amount_paid: 14800,
++      currency: 'usd',
++      charge: 'ch_18',
++      billing_reason: 'subscription_cycle',
++    });
++
++  function harness(status: string, entitled: boolean) {
++    const db = makeFakePrisma();
++    const states = [
++      {
++        id: 'ds_18',
++        purchase_id: 'cp_18',
++        status: 'resolved',
++        locked_out_at: LOCKED_AT as Date | null,
++        last_failure_reason: 'card_declined',
++        entered_at: new Date(LOCKED_AT.getTime() - 10 * DUNNING_V2_DAY_MS),
++      },
++    ];
++    db.dunningState = {
++      findUnique: jest.fn(async ({ where }: { where: { purchase_id: string } }) => {
++        const s = states.find((r) => r.purchase_id === where.purchase_id);
++        return s ? { ...s, purchase: { client_user_id: 'client_18' } } : null;
++      }),
++      update: jest.fn(async ({ where, data }: { where: { id: string }; data: object }) =>
++        Object.assign(states.find((r) => r.id === where.id) as object, data),
++      ),
++    };
++    db.dunningAttempt = { findMany: jest.fn(async () => []) };
++    db.notification = { updateMany: jest.fn(async () => ({ count: 0 })) };
++    db.paymentRecoveryToken = { updateMany: jest.fn(async () => ({ count: 0 })) };
++    db.dunningDisputeObligation = { findMany: jest.fn(async () => []) };
++    db.chargeDispute = { findMany: jest.fn(async () => []) };
++    db._packages.push({ id: 'pkg_18', billing_type: 'recurring', duration_periods: null });
++    db._purchases.push({
++      id: 'cp_18',
++      package_id: 'pkg_18',
++      client_user_id: 'client_18',
++      coach_user_id: 'coach_18',
++      amount_cents: 4900,
++      currency: 'usd',
++      billing_type: 'recurring',
++      stripe_subscription_id: 'sub_18',
++      stripe_checkout_session_id: 'sub_18',
++      stripe_payment_intent_id: 'pi_18',
++      stripe_customer_id: 'cus_18',
++      status,
++      entitlement_active: entitled,
++      trial_days: null,
++      trial_started_at: null,
++      current_period_end: new Date(PERIOD * 1000),
++      access_expires_at: new Date((PERIOD + 86400) * 1000),
++      canceled_at: null,
++      cancel_at_period_end: false,
++      last_error: null,
++      idempotency_key: 'sub-18',
++      created_at: new Date(Date.now() - 60_000),
++      updated_at: new Date(Date.now() - 60_000),
++    });
++    const live = sub('active');
++    const stripe = stub({
++      retrieveSubscription: jest.fn(async () => ({ ...live })),
++      retrieveSubscriptionForCheckout: jest.fn(async () => ({ ...live })),
++      retrieveInvoice: jest.fn(async () => ({ id: 'in_18', status: 'paid' })),
++    });
++    const splits = stub({ onChargeSucceeded: jest.fn(async () => undefined) });
++    const fanout = stub({
++      onPurchaseEntitled: jest.fn(async () => undefined),
++      cancelPendingForPurchase: jest.fn(async () => 0),
++    });
++    const dunning = stub({
++      recordFailure: jest.fn(async () => ({})),
++      recordResolution: jest.fn(async () => null),
++      terminate: jest.fn(async () => null),
++    });
++    const dunningV2 = new DunningV2Service(db, stub(telemetry()));
++    const svc = new CheckoutWebhookHandlerService(
++      db,
++      stripe,
++      splits,
++      dunning,
++      undefined,
++      fanout,
++      undefined,
++      dunningV2,
++      undefined,
++    );
++    const deliver = async (e: ReturnType<typeof ev>) =>
++      svc.handle(e, db, await svc.prefetchForOuterTx(e));
++    return { db, deliver, states, row: () => db._purchases[0] };
++  }
++
++  it.each(ENDED.filter((s) => s !== 'canceled' && s !== 'expired'))(
++    '%s without access and a Day-10 lock: invoice.paid and sub.updated(active) never reopen it',
++    async (status) => {
++      const h = harness(status, false);
++      await h.deliver(paid());
++      expect(h.row()).toMatchObject({ status, entitlement_active: false });
++      expect(h.states[0].locked_out_at).toEqual(LOCKED_AT);
++      h.row().updated_at = new Date(Date.now() - 30_000);
++      await h.deliver(ev('customer.subscription.updated', sub('active')));
++      expect(h.row()).toMatchObject({ status, entitlement_active: false });
++    },
++  );
++
++  it.each(['canceled', 'expired'])(
++    '%s without access and a Day-10 lock: invoice.paid keeps it ended',
++    async (status) => {
++      const h = harness(status, false);
++      await h.deliver(paid());
++      expect(h.row()).toMatchObject({ status, entitlement_active: false });
++      expect(h.states[0].locked_out_at).toEqual(LOCKED_AT);
++    },
++  );
++
++  it('control: a past_due plan locked at Day 10 recovers on invoice.paid (access back, lock lifted)', async () => {
++    const h = harness('past_due', false);
++    await h.deliver(paid());
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true });
++    expect(h.states[0].locked_out_at).toBeNull();
++  });
++});
+diff --git a/test/dunning-v2-service.spec.ts b/test/dunning-v2-service.spec.ts
+index eb93fda5..fa6bd0ee 100644
+--- a/test/dunning-v2-service.spec.ts
++++ b/test/dunning-v2-service.spec.ts
+@@ -1,449 +1,431 @@
+ import {
+   DunningV2Service,
+   addDays,
++  formatLockoutDate,
++  formatMoney,
++  DUNNING_V2_REVERSAL_REASON,
+ } from '../src/checkout/dunning-v2/dunning-v2.service';
+ import {
+-  DUNNING_V2_FINAL_STEP_INDEX,
+-  DUNNING_V2_LOCKOUT_GRACE_DAYS,
++  DUNNING_V2_DAY_MS,
+   DUNNING_V2_REVERSAL_ENTRY_STEP,
++  dunningV2LockoutAt,
++  dunningV2StepForElapsed,
+ } from '../src/checkout/dunning-v2/dunning-v2.cadence';
++import * as copy from '../src/checkout/dunning-v2/dunning-v2.copy';
++import { NotificationKind } from '../src/notifications/notification-kind';
++import { FakePrisma } from './support/dunning-v2-fake-prisma';
+ 
+-// ── In-memory prisma stub ──────────────────────────────────────────────────
+-// Mirrors the surface DunningV2Service touches: dunningState (findUnique by
+-// purchase_id/id, findMany for the sweep, update), clientPurchase (update),
+-// dunningAttempt (findMany), paymentRecoveryToken (updateMany), notification
+-// (updateMany), connectTransfer (findFirst), plus $transaction passthrough.
+-function makePrismaStub() {
+-  const dunning: any[] = [];
+-  const purchases: any[] = [];
+-  const attempts: any[] = [];
+-  const tokens: any[] = [];
+-  const transfers: any[] = [];
++// S-DUNNING rewrite of the DunningV2Service unit spec. The service now drives
++// the whole v2 cycle (claim Day 0, time-driven Day 1/3/7 steps, Day-10 lock,
++// immediate clear), so the spec runs against the shared in-memory FakePrisma.
++// The end-to-end lifecycle (webhook -> v1 -> v2 -> guards) lives in
++// test/dunning-v2-e2e-lifecycle.spec.ts.
+ 
+-  const prisma: any = {
+-    _dunning: dunning,
+-    _purchases: purchases,
+-    _attempts: attempts,
+-    _tokens: tokens,
+-    _transfers: transfers,
+-    dunningState: {
+-      findUnique: jest.fn(async ({ where }: any) =>
+-        dunning.find((d) =>
+-          where.purchase_id
+-            ? d.purchase_id === where.purchase_id
+-            : d.id === where.id,
+-        ) ?? null,
+-      ),
+-      findFirst: jest.fn(async ({ where = {} }: any) =>
+-        dunning.find((d) => {
+-          if (where.status && d.status !== where.status) return false;
+-          if (where.locked_out_at?.not === null && d.locked_out_at == null)
+-            return false;
+-          if (where.purchase) {
+-            const p = purchases.find((x) => x.id === d.purchase_id);
+-            if (!p) return false;
+-            if (
+-              where.purchase.client_user_id &&
+-              p.client_user_id !== where.purchase.client_user_id
+-            )
+-              return false;
+-            if (
+-              where.purchase.entitlement_active !== undefined &&
+-              p.entitlement_active !== where.purchase.entitlement_active
+-            )
+-              return false;
+-          }
+-          return true;
+-        }) ?? null,
+-      ),
+-      findMany: jest.fn(async ({ where = {} }: any) =>
+-        dunning.filter((d) => {
+-          if (where.status && d.status !== where.status) return false;
+-          if (
+-            where.step_index !== undefined &&
+-            d.step_index !== where.step_index
+-          )
+-            return false;
+-          if (where.locked_out_at === null && d.locked_out_at != null)
+-            return false;
+-          if (
+-            where.last_failure_at?.lt &&
+-            !(d.last_failure_at && d.last_failure_at < where.last_failure_at.lt)
+-          )
+-            return false;
+-          return true;
+-        }),
+-      ),
+-      update: jest.fn(async ({ where, data }: any) => {
+-        const row = dunning.find((d) => d.id === where.id);
+-        if (!row) throw new Error('not found');
+-        for (const [k, v] of Object.entries<any>(data)) {
+-          if (v && typeof v === 'object' && 'increment' in v) {
+-            row[k] = (row[k] ?? 0) + v.increment;
+-          } else {
+-            row[k] = v;
+-          }
+-        }
+-        return row;
+-      }),
+-    },
+-    clientPurchase: {
+-      findFirst: jest.fn(async ({ where }: any) =>
+-        purchases.find(
+-          (p) => p.stripe_payment_intent_id === where.stripe_payment_intent_id,
+-        ) ?? null,
+-      ),
+-      update: jest.fn(async ({ where, data }: any) => {
+-        const p = purchases.find((x) => x.id === where.id);
+-        if (!p) throw new Error('not found');
+-        Object.assign(p, data);
+-        return p;
+-      }),
+-    },
+-    dunningAttempt: {
+-      findMany: jest.fn(async ({ where }: any) =>
+-        attempts.filter((a) => a.dunning_state_id === where.dunning_state_id),
+-      ),
+-    },
+-    paymentRecoveryToken: {
+-      updateMany: jest.fn(async ({ where, data }: any) => {
+-        let count = 0;
+-        for (const t of tokens) {
+-          if (
+-            where.dunning_attempt_id?.in?.includes(t.dunning_attempt_id) &&
+-            (where.used_at === null ? t.used_at == null : true)
+-          ) {
+-            Object.assign(t, data);
+-            count += 1;
+-          }
+-        }
+-        return { count };
+-      }),
+-    },
+-    notification: {
+-      updateMany: jest.fn(async () => ({ count: 0 })),
+-    },
+-    connectTransfer: {
+-      findFirst: jest.fn(async ({ where }: any) =>
+-        transfers.find(
+-          (t) => t.source_stripe_charge_id === where.source_stripe_charge_id,
+-        ) ?? null,
+-      ),
+-    },
+-    $transaction: jest.fn(async (fn: any) => fn(prisma)),
+-  };
+-  return prisma;
+-}
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++const stub = (v: unknown): any => v;
++const T0 = new Date('2026-10-05T16:00:00.000Z');
++const at = (days: number) => new Date(T0.getTime() + days * DUNNING_V2_DAY_MS);
+ 
+-function makeTelemetryStub() {
++function makeTelemetry() {
+   return {
+-    recovered: jest.fn(),
+-    lockoutExited: jest.fn(),
+     lockoutEntered: jest.fn(),
++    lockoutExited: jest.fn(),
++    recovered: jest.fn(),
+     reversalDetected: jest.fn(),
+-  } as any;
++  };
++}
++
++function setup(opts: { stripeStatus?: string; stripeThrows?: boolean } = {}) {
++  const fake = new FakePrisma();
++  const telemetry = makeTelemetry();
++  const dispatcher = {
++    dispatchStep: jest.fn(async (_ctx: unknown) => ({})),
++    // S-DUNNING-R3: cycle-scoped claims go through the detailed dispatch
++    // (per-channel results for the outbox); it sends the same step.
++    dispatchStepDetailed: jest.fn(async (ctx: unknown) => {
++      await dispatcher.dispatchStep(ctx);
++      return { decision: {}, results: {} };
++    }),
++  };
++  const stripe = {
++    retrieveSubscription: jest.fn(async () => {
++      if (opts.stripeThrows) throw new Error('stripe unreachable');
++      return { status: opts.stripeStatus ?? 'past_due' };
++    }),
++  };
++  const svc = new DunningV2Service(fake.client(), stub(telemetry), stub(dispatcher), stub(stripe));
++  fake.seed('user', { id: 'coach-1', name: 'Morgan Coach', email: 'coach@tgp.invalid' });
++  fake.seed('user', { id: 'client-1', name: 'Avery Client', email: 'client@tgp.invalid' });
++  fake.seed('clientPurchase', {
++    id: 'p1',
++    client_user_id: 'client-1',
++    coach_user_id: 'coach-1',
++    package_id: 'pkg-1',
++    status: 'past_due',
++    entitlement_active: true,
++    billing_type: 'recurring',
++    amount_cents: 15000,
++    currency: 'usd',
++    stripe_subscription_id: 'sub_1',
++  });
++  return { fake, svc, telemetry, dispatcher, stripe };
+ }
+ 
+-const ON = { FEATURE_DUNNING_V2: 'true' };
++function seedState(fake: FakePrisma, over: Record<string, unknown> = {}) {
++  return fake.seed('dunningState', {
++    id: 'ds1',
++    purchase_id: 'p1',
++    status: 'active',
++    step_index: -1,
++    entered_at: T0,
++    locked_out_at: null,
++    recovered_at: null,
++    resolved_at: null,
++    reversal_count: 0,
++    last_failure_reason: null,
++    last_failed_amount_cents: 15000,
++    ...over,
++  });
++}
+ 
+-describe('DunningV2Service behaviour (flag ON)', () => {
++describe('DunningV2Service', () => {
+   const prevFlag = process.env['FEATURE_DUNNING_V2'];
+   beforeEach(() => {
+-    process.env['FEATURE_DUNNING_V2'] = ON.FEATURE_DUNNING_V2;
++    process.env['FEATURE_DUNNING_V2'] = 'true';
+   });
+   afterAll(() => {
+     if (prevFlag === undefined) delete process.env['FEATURE_DUNNING_V2'];
+     else process.env['FEATURE_DUNNING_V2'] = prevFlag;
+   });
+ 
+-  // ── §5 immediate clear / recovery ──────────────────────────────────────
+-  describe('applyImmediateClear (Option A recovery)', () => {
+-    it('LOCKED → RECOVERED: lifts lockout, restores entitlement, fires telemetry', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      prisma._purchases.push({
+-        id: 'p1',
+-        client_user_id: 'u1',
+-        entitlement_active: false,
+-      });
+-      prisma._dunning.push({
+-        id: 'd1',
+-        purchase_id: 'p1',
+-        status: 'active',
+-        locked_out_at: new Date('2026-02-10T02:00:00Z'),
+-      });
+-      const svc = new DunningV2Service(prisma, telemetry);
++  describe('pure helpers', () => {
++    it('deriveState maps the v1 columns onto the v2 vocabulary', () => {
++      expect(DunningV2Service.deriveState(null)).toBe('INACTIVE');
++      expect(
++        DunningV2Service.deriveState({ status: 'active', locked_out_at: null, recovered_at: null }),
++      ).toBe('ACTIVE');
++      expect(
++        DunningV2Service.deriveState({ status: 'active', locked_out_at: T0, recovered_at: null }),
++      ).toBe('LOCKED');
++      expect(
++        DunningV2Service.deriveState({ status: 'resolved', locked_out_at: null, recovered_at: T0 }),
++      ).toBe('RECOVERED');
++      expect(
++        DunningV2Service.deriveState({
++          status: 'abandoned',
++          locked_out_at: null,
++          recovered_at: null,
++        }),
++      ).toBe('INACTIVE');
++    });
++
++    it('stepForElapsed follows Days 0/1/3/7 and the lock lands on Day 10', () => {
++      expect(dunningV2StepForElapsed(0)).toBe(0);
++      expect(dunningV2StepForElapsed(DUNNING_V2_DAY_MS - 1)).toBe(0);
++      expect(dunningV2StepForElapsed(DUNNING_V2_DAY_MS)).toBe(1);
++      expect(dunningV2StepForElapsed(3 * DUNNING_V2_DAY_MS - 1)).toBe(1);
++      expect(dunningV2StepForElapsed(3 * DUNNING_V2_DAY_MS)).toBe(2);
++      expect(dunningV2StepForElapsed(7 * DUNNING_V2_DAY_MS)).toBe(3);
++      expect(dunningV2StepForElapsed(30 * DUNNING_V2_DAY_MS)).toBe(3);
++      expect(dunningV2LockoutAt(T0).toISOString()).toBe('2026-10-15T16:00:00.000Z');
++    });
+ 
+-      const res = await svc.applyImmediateClear('p1', 'card_update');
++    it('eligibility: only paid recurring Stripe subscriptions (comp / invite-code / one-time never)', () => {
++      const ok = {
++        amount_cents: 15000,
++        billing_type: 'recurring',
++        stripe_subscription_id: 'sub_1',
++      };
++      expect(DunningV2Service.isEligiblePurchase(ok)).toBe(true);
++      expect(DunningV2Service.isEligiblePurchase({ ...ok, amount_cents: 0 })).toBe(false);
++      expect(DunningV2Service.isEligiblePurchase({ ...ok, stripe_subscription_id: null })).toBe(
++        false,
++      );
++      expect(DunningV2Service.isEligiblePurchase({ ...ok, billing_type: 'one_time' })).toBe(false);
++      expect(DunningV2Service.isEligiblePurchase(stub({ ...ok, source: 'invite_code' }))).toBe(
++        false,
++      );
++    });
+ 
+-      expect(res.liftedLockout).toBe(true);
+-      expect(prisma._dunning[0].locked_out_at).toBeNull();
+-      expect(prisma._purchases[0].entitlement_active).toBe(true);
+-      expect(telemetry.recovered).toHaveBeenCalledWith('p1', 'card_update');
+-      expect(telemetry.lockoutExited).toHaveBeenCalled();
++    it('formats money and the lockout date in the client time zone', () => {
++      expect(formatMoney(15000, 'usd')).toBe('$150.00');
++      expect(formatMoney(999, 'eur')).toBe('9.99 EUR');
++      // 2026-10-15T03:00Z is still October 14 in Los Angeles.
++      const d = new Date('2026-10-15T03:00:00.000Z');
++      expect(formatLockoutDate(d, 'America/Los_Angeles')).toBe('Wednesday, October 14');
++      expect(formatLockoutDate(d, 'Europe/London')).toBe('Thursday, October 15');
++      expect(formatLockoutDate(d, 'Not/A_Zone')).toBe('Wednesday, October 14');
++      expect(addDays(T0, -3).toISOString()).toBe('2026-10-02T16:00:00.000Z');
+     });
+ 
+-    it('no row → no-op, no telemetry', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      const svc = new DunningV2Service(prisma, telemetry);
+-      const res = await svc.applyImmediateClear('missing', 'retry');
+-      expect(res.liftedLockout).toBe(false);
+-      expect(telemetry.recovered).not.toHaveBeenCalled();
++    it('no shipped dunning copy contains an exclamation mark', () => {
++      const strings: string[] = [];
++      const walk = (v: unknown) => {
++        if (typeof v === 'string') strings.push(v);
++        else if (v && typeof v === 'object') Object.values(v).forEach(walk);
++      };
++      walk(copy);
++      expect(strings.length).toBeGreaterThan(20);
++      expect(strings.filter((s) => s.includes('!'))).toEqual([]);
+     });
++  });
+ 
+-    it('flag OFF → hard no-op (writes nothing)', async () => {
++  describe('flag OFF', () => {
++    it('every entry point is a no-op that reads nothing', async () => {
+       delete process.env['FEATURE_DUNNING_V2'];
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      prisma._dunning.push({
+-        id: 'd1',
+-        purchase_id: 'p1',
+-        status: 'active',
+-        locked_out_at: new Date(),
+-      });
+-      const svc = new DunningV2Service(prisma, telemetry);
+-      const res = await svc.applyImmediateClear('p1', 'retry');
+-      expect(res.liftedLockout).toBe(false);
+-      expect(prisma.dunningState.findUnique).not.toHaveBeenCalled();
+-      expect(prisma._dunning[0].locked_out_at).toBeInstanceOf(Date);
++      const { fake, svc, dispatcher } = setup();
++      seedState(fake);
++      expect(await svc.recordPaymentFailed('p1', T0)).toBeNull();
++      expect(await svc.runSweep(at(20))).toEqual({ locked: 0, advanced: 0, skipped: 0 });
++      expect(await svc.applyImmediateClear('p1')).toEqual({ liftedLockout: false });
++      expect(
++        (await svc.handleLateReversal({ purchaseId: 'p1', reversedChargeAt: T0 })).opened,
++      ).toBe(false);
++      expect((await svc.getClientStatus('client-1')).enabled).toBe(false);
++      expect(dispatcher.dispatchStep).not.toHaveBeenCalled();
++      expect(fake.writes).toHaveLength(0);
+     });
+   });
+ 
+-  // ── §6 late-reversal handler ────────────────────────────────────────────
+-  describe('handleLateReversal (compressed re-cadence)', () => {
+-    const now = new Date('2026-03-01T12:00:00Z');
+-
+-    function seedResolved(prisma: any) {
+-      prisma._purchases.push({
+-        id: 'p1',
+-        client_user_id: 'u1',
+-        entitlement_active: true,
+-      });
+-      prisma._dunning.push({
+-        id: 'd1',
+-        purchase_id: 'p1',
+-        status: 'resolved',
+-        resolved_at: new Date('2026-02-28T00:00:00Z'),
+-        recovered_at: new Date('2026-02-28T00:00:00Z'),
+-        step_index: -1,
+-        reversal_count: 0,
+-        locked_out_at: null,
+-      });
+-    }
+-
+-    it('opens a compressed cycle for a previously-cleared reversal (ACTIVE→RECOVERED→ACTIVE)', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      seedResolved(prisma);
+-      const svc = new DunningV2Service(prisma, telemetry);
+-
+-      const res = await svc.handleLateReversal({
+-        purchaseId: 'p1',
+-        reversedChargeAt: new Date('2026-03-01T00:00:00Z'),
+-        now,
++  describe('recordPaymentFailed + advance (step claims)', () => {
++    it('claims Day 0 for a fresh v1 cycle and stamps entered_at', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: -1, entered_at: at(-40) }); // stale anchor from an earlier cycle
++      const claim = await svc.recordPaymentFailed('p1', T0);
++      expect(claim).toMatchObject({ stepIndex: 0, isLateReversalCycle: false });
++      expect(fake.find('dunningState', { id: 'ds1' })).toMatchObject({
++        step_index: 0,
++        entered_at: T0,
+       });
++    });
+ 
+-      expect(res.opened).toBe(true);
+-      const row = prisma._dunning[0];
+-      expect(row.status).toBe('active');
+-      expect(row.step_index).toBe(DUNNING_V2_REVERSAL_ENTRY_STEP);
+-      expect(row.reversal_count).toBe(1);
+-      expect(row.resolved_at).toBeNull();
+-      expect(row.recovered_at).toBeNull();
+-      expect(row.locked_out_at).toBeNull();
+-      expect(telemetry.reversalDetected).toHaveBeenCalledTimes(1);
++    it('a duplicate webhook for the same step claims nothing (no double notice)', async () => {
++      const { fake, svc } = setup();
++      seedState(fake);
++      expect(await svc.recordPaymentFailed('p1', T0)).not.toBeNull();
++      expect(await svc.recordPaymentFailed('p1', new Date(T0.getTime() + 60_000))).toBeNull();
+     });
+ 
+-    it('one-active-cycle guard: no double-open when a cycle is already active', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      prisma._dunning.push({
+-        id: 'd1',
+-        purchase_id: 'p1',
+-        status: 'active',
+-        resolved_at: null,
+-        step_index: 2,
+-        reversal_count: 1,
+-      });
+-      const svc = new DunningV2Service(prisma, telemetry);
+-      const res = await svc.handleLateReversal({
+-        purchaseId: 'p1',
+-        reversedChargeAt: now,
+-        now,
+-      });
+-      expect(res.opened).toBe(false);
+-      expect(res.reason).toBe('cycle_already_active');
+-      expect(prisma._dunning[0].reversal_count).toBe(1);
++    it('advances by elapsed time and jumps straight to the newest step (no burst)', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: 0 });
++      const claim = await svc.recordPaymentFailed('p1', at(8));
++      expect(claim?.stepIndex).toBe(3);
++      expect(fake.find('dunningState', { id: 'ds1' })?.step_index).toBe(3);
++      expect(await svc.recordPaymentFailed('p1', at(9))).toBeNull();
+     });
+ 
+-    it('idempotency: a dispute→refund pair only opens (and increments) once', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      seedResolved(prisma);
+-      const svc = new DunningV2Service(prisma, telemetry);
+-      const first = await svc.handleLateReversal({
+-        purchaseId: 'p1',
+-        reversedChargeAt: now,
+-        now,
+-      });
+-      const second = await svc.handleLateReversal({
+-        purchaseId: 'p1',
+-        reversedChargeAt: now,
+-        now,
+-      });
+-      expect(first.opened).toBe(true);
+-      expect(second.opened).toBe(false);
+-      expect(prisma._dunning[0].reversal_count).toBe(1);
+-      expect(telemetry.reversalDetected).toHaveBeenCalledTimes(1);
++    it('two racing claims for one step: exactly one wins', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: 0 });
++      const row = fake.find('dunningState', { id: 'ds1' });
++      const [a, b] = await Promise.all([
++        svc.advance(stub(row), at(1)),
++        svc.advance(stub(row), at(1)),
++      ]);
++      expect([a, b].filter(Boolean)).toHaveLength(1);
+     });
+ 
+-    it('not-a-cleared-payment: a reversal before resolved_at is ignored', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      seedResolved(prisma);
+-      const svc = new DunningV2Service(prisma, telemetry);
+-      const res = await svc.handleLateReversal({
+-        purchaseId: 'p1',
+-        reversedChargeAt: new Date('2026-02-01T00:00:00Z'), // before resolved_at
+-        now,
+-      });
+-      expect(res.opened).toBe(false);
+-      expect(res.reason).toBe('not_a_cleared_payment_reversal');
++    it('ineligible purchases (comp grant) are never claimed', async () => {
++      const { fake, svc } = setup();
++      fake.find('clientPurchase', { id: 'p1' })!.amount_cents = 0;
++      seedState(fake);
++      expect(await svc.recordPaymentFailed('p1', T0)).toBeNull();
++      expect(fake.find('dunningState', { id: 'ds1' })?.step_index).toBe(-1);
+     });
+ 
+-    it('no state → no-op', async () => {
+-      const prisma = makePrismaStub();
+-      const svc = new DunningV2Service(prisma, makeTelemetryStub());
+-      const res = await svc.handleLateReversal({
+-        purchaseId: 'nope',
+-        reversedChargeAt: now,
+-        now,
+-      });
+-      expect(res.opened).toBe(false);
+-      expect(res.reason).toBe('no_state');
++    it('a dispute cycle keeps the late-reversal copy on later steps', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: 2, last_failure_reason: DUNNING_V2_REVERSAL_REASON });
++      expect(
++        (await svc.advance(stub(fake.find('dunningState', { id: 'ds1' })), at(7)))
++          ?.isLateReversalCycle,
++      ).toBe(true);
+     });
+   });
+ 
+-  // ── §7 Day-10 lockout sweep ───────────────────────────────────────────────
+-  describe('runLockoutSweep (Day-10 hard lockout)', () => {
+-    const now = new Date('2026-04-10T02:00:00Z');
+-
+-    it('locks rows past the grace window; idempotent on re-run', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      prisma._purchases.push({
+-        id: 'p1',
+-        client_user_id: 'u1',
+-        entitlement_active: true,
+-      });
+-      prisma._dunning.push({
+-        id: 'd1',
+-        purchase_id: 'p1',
+-        status: 'active',
+-        step_index: DUNNING_V2_FINAL_STEP_INDEX,
+-        locked_out_at: null,
+-        // last failure 4 days ago — past the 3-day grace.
+-        last_failure_at: addDays(now, -(DUNNING_V2_LOCKOUT_GRACE_DAYS + 1)),
+-      });
+-      const svc = new DunningV2Service(prisma, telemetry);
++  describe('runSweep (hourly: advance + Day-10 lock)', () => {
++    it('sends the due step from the sweep when Stripe sent no webhook (hard decline)', async () => {
++      const { fake, svc, dispatcher } = setup();
++      seedState(fake, { step_index: 0 });
++      const out = await svc.runSweep(at(3));
++      expect(out.advanced).toBe(1);
++      expect(dispatcher.dispatchStep).toHaveBeenCalledTimes(1);
++      expect(dispatcher.dispatchStep.mock.calls[0]).toEqual([
++        expect.objectContaining({
++          stepIndex: 2,
++          clientUserId: 'client-1',
++          coachUserId: 'coach-1',
++          clientEmail: 'client@tgp.invalid',
++          tokens: expect.objectContaining({
++            amount: '$150.00',
++            firstName: 'Avery',
++            coachName: 'Morgan Coach',
++          }),
++        }),
++      ]);
++    });
+ 
+-      const res1 = await svc.runLockoutSweep(now);
+-      expect(res1.locked).toBe(1);
+-      expect(prisma._dunning[0].locked_out_at).toEqual(now);
+-      expect(prisma._purchases[0].entitlement_active).toBe(false);
++    it('does not lock before Day 10, locks at Day 10, and only once', async () => {
++      const { fake, svc, telemetry } = setup();
++      seedState(fake, { step_index: 3 });
++      expect((await svc.runSweep(new Date(at(10).getTime() - 1))).locked).toBe(0);
++      expect((await svc.runSweep(at(10))).locked).toBe(1);
++      expect((await svc.runSweep(at(10.1))).locked).toBe(0);
++      expect(fake.find('dunningState', { id: 'ds1' })?.locked_out_at).toEqual(at(10));
++      expect(fake.find('clientPurchase', { id: 'p1' })?.entitlement_active).toBe(false);
+       expect(telemetry.lockoutEntered).toHaveBeenCalledTimes(1);
++    });
+ 
+-      // Re-run: the locked_out_at: null filter excludes it → no double-lock.
+-      const res2 = await svc.runLockoutSweep(now);
+-      expect(res2.locked).toBe(0);
++    it('never sweeps an UNCLAIMED cycle (step -1) even with a stale entered_at (flip safety)', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: -1, entered_at: at(-60) });
++      expect(await svc.runSweep(T0)).toEqual({ locked: 0, advanced: 0, skipped: 0 });
++      expect(fake.find('dunningState', { id: 'ds1' })?.locked_out_at).toBeNull();
+     });
+ 
+-    it('does NOT lock rows still inside the grace window', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      prisma._purchases.push({ id: 'p2', entitlement_active: true });
+-      prisma._dunning.push({
+-        id: 'd2',
+-        purchase_id: 'p2',
+-        status: 'active',
+-        step_index: DUNNING_V2_FINAL_STEP_INDEX,
+-        locked_out_at: null,
+-        last_failure_at: addDays(now, -1), // only 1 day ago
+-      });
+-      const svc = new DunningV2Service(prisma, telemetry);
+-      const res = await svc.runLockoutSweep(now);
+-      expect(res.locked).toBe(0);
+-      expect(prisma._dunning[0].locked_out_at).toBeNull();
++    it.each([
++      ['purchase no longer past_due', { purchaseStatus: 'active' }],
++      ['Stripe reports the subscription paid', { stripeStatus: 'active' }],
++      ['Stripe reports the subscription canceled', { stripeStatus: 'canceled' }],
++      ['Stripe is unreachable', { stripeThrows: true }],
++    ])('skips the lock when %s (positive evidence only)', async (_label, o) => {
++      const opts = o as { purchaseStatus?: string; stripeStatus?: string; stripeThrows?: boolean };
++      const { fake, svc } = setup(opts);
++      if (opts.purchaseStatus)
++        fake.find('clientPurchase', { id: 'p1' })!.status = opts.purchaseStatus;
++      seedState(fake, { step_index: 3 });
++      const out = await svc.runSweep(at(11));
++      expect(out.locked).toBe(0);
++      expect(fake.find('dunningState', { id: 'ds1' })?.locked_out_at).toBeNull();
+     });
++  });
+ 
+-    it('does NOT lock rows that have not reached the final step', async () => {
+-      const prisma = makePrismaStub();
+-      prisma._purchases.push({ id: 'p3', entitlement_active: true });
+-      prisma._dunning.push({
+-        id: 'd3',
+-        purchase_id: 'p3',
+-        status: 'active',
+-        step_index: 1, // not the Day-7 final step
+-        locked_out_at: null,
+-        last_failure_at: addDays(now, -10),
++  describe('applyImmediateClear', () => {
++    it('lifts a lock, restores entitlement, dismisses only THIS client blockers, revokes tokens', async () => {
++      const { fake, svc, telemetry } = setup();
++      seedState(fake, { step_index: 3, locked_out_at: at(10) });
++      fake.find('clientPurchase', { id: 'p1' })!.entitlement_active = false;
++      fake.seed('notification', {
++        id: 'mine',
++        user_id: 'client-1',
++        kind: NotificationKind.DUNNING_BLOCKER,
++        read_at: null,
++      });
++      fake.seed('notification', {
++        id: 'theirs',
++        user_id: 'client-9',
++        kind: NotificationKind.DUNNING_BLOCKER,
++        read_at: null,
+       });
+-      const svc = new DunningV2Service(prisma, makeTelemetryStub());
+-      const res = await svc.runLockoutSweep(now);
+-      expect(res.locked).toBe(0);
++      fake.seed('dunningAttempt', { id: 'a1', dunning_state_id: 'ds1' });
++      fake.seed('paymentRecoveryToken', { id: 't1', dunning_attempt_id: 'a1', used_at: null });
++      expect(await svc.applyImmediateClear('p1', 'card_update')).toEqual({ liftedLockout: true });
++      expect(fake.find('dunningState', { id: 'ds1' })?.locked_out_at).toBeNull();
++      expect(fake.find('clientPurchase', { id: 'p1' })?.entitlement_active).toBe(true);
++      expect(fake.find('notification', { id: 'mine' })?.read_at).toBeInstanceOf(Date);
++      expect(fake.find('notification', { id: 'theirs' })?.read_at).toBeNull();
++      expect(fake.find('paymentRecoveryToken', { id: 't1' })?.used_at).toBeInstanceOf(Date);
++      expect(telemetry.lockoutExited).toHaveBeenCalledTimes(1);
+     });
+ 
+-    it('flag OFF → no sweep', async () => {
+-      delete process.env['FEATURE_DUNNING_V2'];
+-      const prisma = makePrismaStub();
+-      const svc = new DunningV2Service(prisma, makeTelemetryStub());
+-      const res = await svc.runLockoutSweep(now);
+-      expect(res.locked).toBe(0);
+-      expect(prisma.dunningState.findMany).not.toHaveBeenCalled();
++    it('does NOT turn entitlement on when the purchase was not locked', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: 1 });
++      fake.find('clientPurchase', { id: 'p1' })!.entitlement_active = false;
++      expect(await svc.applyImmediateClear('p1')).toEqual({ liftedLockout: false });
++      expect(fake.find('clientPurchase', { id: 'p1' })?.entitlement_active).toBe(false);
+     });
+-  });
+ 
+-  // ── webhook entry: charge → purchase resolution ───────────────────────────
+-  describe('detectAndHandleLateReversal (webhook entry)', () => {
+-    const now = new Date('2026-03-01T12:00:00Z');
++    it('joins the caller transaction when one is passed (no second transaction)', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: 3, locked_out_at: at(10) });
++      await svc.applyImmediateClear('p1', 'retry', fake.client(true));
++      expect(fake.transactionCalls).toBe(0);
++      expect(fake.writes.filter((w) => w.model === 'clientPurchase').every((w) => w.viaTx)).toBe(
++        true,
++      );
++    });
+ 
+-    it('resolves purchase via connectTransfer charge id then opens the cycle', async () => {
+-      const prisma = makePrismaStub();
+-      const telemetry = makeTelemetryStub();
+-      prisma._transfers.push({
+-        source_stripe_charge_id: 'ch_1',
+-        purchase_id: 'p1',
+-      });
+-      prisma._purchases.push({ id: 'p1', entitlement_active: true });
+-      prisma._dunning.push({
+-        id: 'd1',
+-        purchase_id: 'p1',
++    it('is idempotent', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: 3, locked_out_at: at(10) });
++      expect((await svc.applyImmediateClear('p1')).liftedLockout).toBe(true);
++      expect((await svc.applyImmediateClear('p1')).liftedLockout).toBe(false);
++    });
++  });
++
++  describe('handleLateReversal (dispute on a cleared payment)', () => {
++    it('opens a compressed cycle: Step 2 now, coach in 4 days, lock in 7 days', async () => {
++      const { fake, svc, dispatcher } = setup();
++      seedState(fake, {
+         status: 'resolved',
+-        resolved_at: new Date('2026-02-28T00:00:00Z'),
+-        step_index: -1,
+-        reversal_count: 0,
++        step_index: 1,
++        resolved_at: at(-5),
++        recovered_at: at(-5),
+       });
+-      const svc = new DunningV2Service(prisma, telemetry);
+-      const res = await svc.detectAndHandleLateReversal({
+-        chargeId: 'ch_1',
+-        paymentIntentId: null,
+-        reversedChargeAt: now,
+-        now,
++      const res = await svc.handleLateReversal({
++        purchaseId: 'p1',
++        reversedChargeAt: at(-1),
++        now: T0,
+       });
+       expect(res.opened).toBe(true);
++      const row = fake.find('dunningState', { id: 'ds1' });
++      expect(row).toMatchObject({
++        status: 'active',
++        step_index: DUNNING_V2_REVERSAL_ENTRY_STEP,
++        reversal_count: 1,
++        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
++      });
++      expect(dunningV2LockoutAt(row?.entered_at as Date)).toEqual(at(7));
++      expect(dunningV2StepForElapsed(at(4).getTime() - (row?.entered_at as Date).getTime())).toBe(
++        3,
++      );
++      expect(dispatcher.dispatchStep).toHaveBeenCalledWith(
++        expect.objectContaining({ stepIndex: 2, isLateReversalCycle: true }),
++      );
+     });
+ 
+-    it('unresolved charge → no-op', async () => {
+-      const prisma = makePrismaStub();
+-      const svc = new DunningV2Service(prisma, makeTelemetryStub());
+-      const res = await svc.detectAndHandleLateReversal({
+-        chargeId: 'ch_unknown',
+-        paymentIntentId: 'pi_unknown',
+-        reversedChargeAt: now,
+-        now,
++    it('refuses while a cycle is active, and for a charge disputed before it cleared', async () => {
++      const a = setup();
++      seedState(a.fake, { status: 'active', step_index: 1 });
++      expect(
++        (await a.svc.handleLateReversal({ purchaseId: 'p1', reversedChargeAt: T0 })).reason,
++      ).toBe('cycle_already_active');
++      const b = setup();
++      seedState(b.fake, { status: 'resolved', resolved_at: T0 });
++      expect(
++        (await b.svc.handleLateReversal({ purchaseId: 'p1', reversedChargeAt: at(-2) })).reason,
++      ).toBe('not_a_cleared_payment_reversal');
++    });
++  });
++
++  describe('getClientStatus', () => {
++    it('reports past_due with amount, dates and coach; locked once locked; scoped to the caller', async () => {
++      const { fake, svc } = setup();
++      seedState(fake, { step_index: 1 });
++      fake.seed('connectCustomer', {
++        id: 'cc',
++        client_user_id: 'client-1',
++        default_card_last4: '0341',
++      });
++      const s = await svc.getClientStatus('client-1');
++      expect(s).toMatchObject({
++        enabled: true,
++        state: 'past_due',
++        purchase_id: 'p1',
++        amount_cents: 15000,
++        failed_at: T0.toISOString(),
++        lockout_at: at(10).toISOString(),
++        coach_name: 'Morgan Coach',
++        card_last4: '0341',
++        update_payment_route: '/v1/checkout/payment-method/setup-intent',
++        update_card_url: 'https://app.trygrowthproject.com/billing/update-card',
++        cancel_route: '/v1/checkout/subscriptions/p1/cancel',
+       });
+-      expect(res.opened).toBe(false);
+-      expect(res.reason).toBe('purchase_unresolved');
++      fake.find('dunningState', { id: 'ds1' })!.locked_out_at = at(10);
++      expect((await svc.getClientStatus('client-1')).state).toBe('locked');
++      expect((await svc.getClientStatus('someone-else')).state).toBe('none');
+     });
+   });
+ });
+diff --git a/test/privacy/no-pii-in-logs.spec.ts b/test/privacy/no-pii-in-logs.spec.ts
+index d80ef4b7..12d75583 100644
+--- a/test/privacy/no-pii-in-logs.spec.ts
++++ b/test/privacy/no-pii-in-logs.spec.ts
+@@ -534,7 +534,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
+   'src/checkout/checkout.service.ts': 2,
+   'src/checkout/dunning-v2/dunning-lockout.guard.ts': 1,
+   'src/checkout/dunning-v2/dunning-lockout.scheduler.ts': 1,
+-  'src/checkout/dunning-v2/dunning-v2.service.ts': 1,
+   'src/checkout/dunning.service.ts': 6,
+   'src/checkout/refund-dispute-handler.service.ts': 4,
+   'src/coach-connect/coach-connect.service.ts': 2,

@@ -1,0 +1,77 @@
+AUDIT Claude Opus 5.5 — growth-project-mobile#369 @ 3252ec79cd9ab1f28165a1913d8ae3096b590d4a — VERDICT: APPROVE
+
+A/B/C = 0/0/2
+
+AUD-OPUS-H7-120, agent 120. First Opus review of #369: a full T4 review of the whole H7 piece (health data consent, sign-out, and the account-deletion path, which ends in the same `signOut()`). It covers all 7 files of `1266038c..3252ec79`, 1,205 changed lines (156 production, 1,049 test), which is under the 1,500 new-PR limit. Base `agent115/wear-split-6-retire-samsung` is still at `1266038cd311f3dcfd8e472c04e3241a3061866b`, the exact #364 head Opus approved (AUD-OPUS-H46F-119). [FIX ROUND 1](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/369#issuecomment-5985690624).
+
+### Scope and evidence reuse (G09)
+- Reviewed line by line: `src/services/health/onDeviceState.ts` (consent session, SecureStore authority, sign-out chain, committed-sequence rollback), `src/services/authActions.ts` (`signOut` try/finally, health drain in the parallel clear's `finally`) and all 5 test files.
+- Call sites traced at this head:
+  - `useLocalOnDeviceAuthorization` and `useDisconnectProvider` (`src/hooks/useWearableConnections.ts:79,165`)
+  - `connectOnDevice`, `resumeOnDeviceImport` and `refreshOnDevice` (`src/services/health/onDeviceSync.ts:252,273,314`)
+  - `ConnectProviderSheet` `runImport` and `handleContinue`
+  - `connectFailureMessage`
+  - `api.ts` `handleRefreshFailure` (refresh failure goes through `signOut()`)
+  - `DeleteAccountScreen` (calls `signOut()`)
+  - `retireOnDeviceState()` with no source, which has no production caller
+- Native behaviour of the dependency was checked in its source, expo-secure-store 56.0.4:
+  - iOS `deleteValueWithKeyAsync` (`ios/SecureStoreModule.swift:43-51`) calls `SecItemDelete` three times and ignores the status, so it never rejects.
+  - Android `deleteItemImpl` (`SecureStoreModule.kt:243-261`) throws `DeleteException` when `commit()` fails.
+  - Reads reject on Keychain errors such as `errSecInteractionNotAllowed`.
+  - On web, every call rejects (the web module is `{}`).
+- Reused: the H1-H6 Opus approvals at their current heads, for unchanged H1-H6 source only. Not reused: any verdict from the other lens. This round's Sol notes were not read.
+
+### Prior Opus findings
+- **C-362-14: closed.** A failed sign-out removal no longer brings the grant back after a restart. Flipped opus119f case "CLOSED C-362-14": PASS. The original DOCUMENTS case now fails, as expected.
+- **C-362-15: closed.** `authCommittedAt` restores only a sequence that actually reached disk. Flipped "CLOSED C-362-15": PASS. The original DOCUMENTS case now fails, as expected.
+
+### Invariant check (independent; the closure of Sol's B-362-8/B-369-1 is Sol's call)
+- **Two independent bindings.** A grant authorizes only when its consent session (AsyncStorage) and its authority (SecureStore) both match. Sign-out:
+  - revokes the authority synchronously, before signOut's first await (probe: `deleteItemAsync(authority)` is called before `signOut()` yields);
+  - then, in the chain behind any native write in flight, revokes the authority again, replaces the session (or removes it), and only then removes the prefix.
+- **Each binding works alone:**
+  - SecureStore works but every AsyncStorage mutation fails: void after a restart (authorityStore, Sol's sol119g).
+  - The iOS Keychain delete is a silent no-op but AsyncStorage works: void after a restart through the session. Shown with the real `signOut()`, and with logout still emitted.
+  - Android delete and replacement write both reject, AsyncStorage works: void after a restart.
+- **Fail closed:** an unreadable session or authority, a missing one, or a grant without them gives null. A locked Keychain at restart reads null without removing anything, and the same consent authorizes again once the Keychain is readable.
+- **Races:**
+  - A grant write in flight that already read the old authority is void after an app exit.
+  - A Connect queued right after sign-out, behind a held chain, survives the in-chain second revocation and a restart.
+  - A sign-out that starts during a read returns null.
+- **No regressions:**
+  - Same-account restart keeps consent.
+  - Disconnect followed by a new Connect still works after a restart (Disconnect does not touch the authority).
+  - A sign-out with no stored authority writes no SecureStore value.
+  - With SecureStore unavailable, `signOut()` still resolves and emits logout once.
+  - Other accounts never read a grant.
+- **Sign-out ordering:** `signOut` settles, and `logout` fires, only after the health drain, both when the parallel clear rejects and when an earlier step rejects (healthDrainFinally). `healthStateRetired` never rejects, so the extra awaits add no new rejection path.
+- **Remaining case:** consent can come back only when SecureStore and AsyncStorage both fail to change in the same sign-out. In that case the SecureStore token deletes in `signOut()` fail the same way (shown for the iOS case: `supabase_token` survives), so the person is still signed in after a restart. Consent never outlives a sign-out that actually removed the credentials. No B.
+- **Logging:** none added. The nonces are random and hold nothing personal.
+
+### C-369-4: the replacement-write fallback runs on Android only (comment and residual overstate it on iOS)
+- **Where:** `src/services/health/onDeviceState.ts:129-139` (`revokeConsentAuthority`), plus its claims at `:50-58` and `:313-324`, the PR body "Residual", and `src/services/health/__tests__/onDeviceState.authorityStore.test.ts:169-186`.
+- **Problem:** on iOS a failed Keychain delete never rejects (see above), so "a fresh random value replaces it when the delete fails" cannot happen there. The authorityStore case models a rejection iOS never produces.
+- **Proof:** "DOCUMENTS C-369-4" probe. With a silent Keychain delete plus an AsyncStorage mutation outage, the replacement write count is 0, the old authority stays, and the old grant authorizes after a restart. This is the documented two-store residual, reached on iOS without any SecureStore rejection.
+- **Not a B:** the credentials survive the same way (see "Remaining case").
+- **Fix rule:** say it in the comment and the residual: "iOS: a failed Keychain delete is silent; the session replacement is what voids the grant". Optionally verify the delete with a read-back (a value still present leads to the replacement write), with an iOS-faithful test. Keep the Android path as is.
+
+### C-369-5 (outside this diff, pre-existing; H7 adds a trigger): a failed local grant write after registration is reported as "connected"
+- **Where:** `src/services/health/onDeviceSync.ts:252` (`await recordLocalAuthorization(scope)` is not wrapped in `OnDeviceStepError`) and `src/screens/client/wearables/onDeviceCopy.ts:129-133,207-210`.
+- **Problem:** an authority read or write failure is new in H7 (it rejects the grant write, which is correct: nothing is read). It reaches the copy as step `import`. The sheet then says "Health Connect is connected, but your history didn't finish coming in ... Tap Try again", even though this phone holds no grant. The button does work: `resumeTarget` is null, so it falls through to a new Connect.
+- **Proof:** "DOCUMENTS C-369-5" (`onDeviceCopy.opus120`). The error is not an `OnDeviceStepError`, there are 0 sync calls, `getLocalAuthorization` is null, and the copy is the "is connected" text with action `resume`.
+- **Fix rule:** wrap the grant write as its own step (for example `OnDeviceStepError('authorize', err)`) mapped to "couldn't be connected on this phone ... Tap Continue" with a reference. Test the copy and the action.
+
+Agreed as C, with no change requested here: Sol's C-369-2 (progress not bound to the consent session) and C-369-3 (an early throw skips logout).
+
+### Probes (Opus CI lanes, read-only against the candidate)
+- **Lane 1:** [run 37342955547](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37342955547) at execution `de30efde` (3252ec79 + test-only probe commit `62987bd4` + lane workflow). 69 suites, 803 pass / 3 fail:
+  - All PR suites pass.
+  - The full B-HC7 top list passes.
+  - Every prior Opus probe passes: H45-118 emptyImport and settingsReturn, H6-118 samsungRow and healthConnectRationale, H46 opus119 and hcPrivacyTemplate, H46D opus119d, and the H46F copy of opus119e.
+  - The prior Sol probe copies (sol118, sol119, transportSol119, disconnectRetry, retireNativeOrder, sol119e, hc4) pass.
+  - Failures: the 2 original opus119f DOCUMENTS cases fail by design, and 1 failure was a probe counting bug, fixed in lane 2.
+- **Lane 2:** [run 37343605542](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37343605542) at execution `5ea1d40b` (adds `57d78633`). 5 suites, 39/39 pass: `onDeviceState.opus120` (11 cases), `authActions.opus120` (5), `onDeviceCopy.opus120` (1), authorityStore, and sol119g.
+- **Exact-head PR CI:** Typecheck, lint, test success ([run 37244309360](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37244309360/job/111559038041)). Analyze is absent on the stacked base, as for H1-H6.
+
+### Default
+APPROVE. Ticket C-369-4 and C-369-5. H1-H7 land as one, with the main-based required checks at landing. Native, device and release gates stay with the owner-approved build. No device run, real health data, build or deployment claim.

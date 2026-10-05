@@ -1,0 +1,1 @@
+MSG split 2/4: feat(messaging): v2 flag, error codes, idempotent send, reply, read-up-to, mute-aware push (split of #660)

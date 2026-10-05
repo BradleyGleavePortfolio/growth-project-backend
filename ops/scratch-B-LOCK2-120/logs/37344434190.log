@@ -1,0 +1,510 @@
+﻿2026-10-05T16:54:58.2537453Z Current runner version: '2.337.0'
+2026-10-05T16:54:58.2552240Z ##[group]Runner Image Provisioner
+2026-10-05T16:54:58.2552835Z Hosted Compute Agent
+2026-10-05T16:54:58.2553207Z Version: 20260901.588
+2026-10-05T16:54:58.2553741Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T16:54:58.2554166Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T16:54:58.2554560Z Worker ID: {ee01b6c8-e2e0-4d7c-8efc-fff7f1fb6e5d}
+2026-10-05T16:54:58.2555087Z Azure Region: centralus
+2026-10-05T16:54:58.2555504Z ##[endgroup]
+2026-10-05T16:54:58.2556255Z ##[group]Operating System
+2026-10-05T16:54:58.2556683Z Ubuntu
+2026-10-05T16:54:58.2557033Z 24.04.5
+2026-10-05T16:54:58.2557377Z LTS
+2026-10-05T16:54:58.2557716Z ##[endgroup]
+2026-10-05T16:54:58.2558022Z ##[group]Runner Image
+2026-10-05T16:54:58.2558419Z Image: ubuntu-24.04
+2026-10-05T16:54:58.2558749Z Version: 20260927.320.1
+2026-10-05T16:54:58.2559523Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T16:54:58.2560337Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T16:54:58.2561158Z ##[endgroup]
+2026-10-05T16:54:58.2561831Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T16:54:58.2563127Z Contents: read
+2026-10-05T16:54:58.2563567Z Metadata: read
+2026-10-05T16:54:58.2563923Z Packages: read
+2026-10-05T16:54:58.2564262Z ##[endgroup]
+2026-10-05T16:54:58.2565468Z Secret source: Actions
+2026-10-05T16:54:58.2566060Z Cache mode: write
+2026-10-05T16:54:58.2566574Z Prepare workflow directory
+2026-10-05T16:54:58.2760563Z Prepare all required actions
+2026-10-05T16:54:58.2798609Z Getting action download info
+2026-10-05T16:54:58.4975782Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T16:54:58.8195482Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T16:54:59.1219654Z Complete job name: targeted
+2026-10-05T16:54:59.1669119Z ##[group]Run actions/checkout@v6
+2026-10-05T16:54:59.1669558Z with:
+2026-10-05T16:54:59.1669882Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:54:59.1672104Z   token: ***
+2026-10-05T16:54:59.1672354Z   ssh-strict: true
+2026-10-05T16:54:59.1672613Z   ssh-user: git
+2026-10-05T16:54:59.1672873Z   persist-credentials: true
+2026-10-05T16:54:59.1673155Z   clean: true
+2026-10-05T16:54:59.1673590Z   sparse-checkout-cone-mode: true
+2026-10-05T16:54:59.1673944Z   fetch-depth: 1
+2026-10-05T16:54:59.1674194Z   fetch-tags: false
+2026-10-05T16:54:59.1674455Z   show-progress: true
+2026-10-05T16:54:59.1674711Z   lfs: false
+2026-10-05T16:54:59.1674958Z   submodules: false
+2026-10-05T16:54:59.1675216Z   set-safe-directory: true
+2026-10-05T16:54:59.1675511Z   allow-unsafe-pr-checkout: false
+2026-10-05T16:54:59.1675894Z ##[endgroup]
+2026-10-05T16:54:59.2280543Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:54:59.2281769Z ##[group]Getting Git version info
+2026-10-05T16:54:59.2282240Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:54:59.2282942Z [command]/usr/bin/git version
+2026-10-05T16:54:59.2327830Z git version 2.55.0
+2026-10-05T16:54:59.2339526Z ##[endgroup]
+2026-10-05T16:54:59.2351740Z Temporarily overriding HOME='/home/runner/work/_temp/16eb3802-9480-4c27-b176-9ee9c1eddfd2' before making global git config changes
+2026-10-05T16:54:59.2353582Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:54:59.2355578Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:54:59.2423788Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T16:54:59.2424925Z ##[group]Determining repository object format
+2026-10-05T16:54:59.2425687Z ##[endgroup]
+2026-10-05T16:54:59.2426220Z ##[group]Initializing the repository
+2026-10-05T16:54:59.2427053Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:54:59.2526863Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T16:54:59.2527420Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T16:54:59.2527943Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T16:54:59.2528355Z hint: call:
+2026-10-05T16:54:59.2528585Z hint:
+2026-10-05T16:54:59.2528895Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T16:54:59.2529249Z hint:
+2026-10-05T16:54:59.2529578Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T16:54:59.2530095Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T16:54:59.2530505Z hint:
+2026-10-05T16:54:59.2530751Z hint: 	git branch -m <name>
+2026-10-05T16:54:59.2531194Z hint:
+2026-10-05T16:54:59.2531768Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T16:54:59.2532441Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T16:54:59.2537892Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:54:59.2625888Z ##[endgroup]
+2026-10-05T16:54:59.2626337Z ##[group]Disabling automatic garbage collection
+2026-10-05T16:54:59.2627751Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T16:54:59.2717392Z ##[endgroup]
+2026-10-05T16:54:59.2717853Z ##[group]Setting up auth
+2026-10-05T16:54:59.2718334Z Removing SSH command configuration
+2026-10-05T16:54:59.2722537Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:54:59.2744401Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:54:59.3164269Z Removing HTTP extra header
+2026-10-05T16:54:59.3167466Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:54:59.3190467Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:54:59.3362583Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:54:59.3367074Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:54:59.3388933Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:54:59.3548996Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T16:54:59.3615708Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:54:59.3715865Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:54:59.3816203Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:54:59.3921684Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:54:59.4222260Z ##[endgroup]
+2026-10-05T16:54:59.4223010Z ##[group]Fetching the repository
+2026-10-05T16:54:59.4224680Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +76e37d96dfbfd34773edfe86a84a2f341234ecc6:refs/remotes/origin/ci/B-LOCK2-120-4
+2026-10-05T16:55:00.7726317Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T16:55:00.7728139Z  * [new ref]         76e37d96dfbfd34773edfe86a84a2f341234ecc6 -> origin/ci/B-LOCK2-120-4
+2026-10-05T16:55:00.7732838Z [command]/usr/bin/git branch --list --remote origin/ci/B-LOCK2-120-4
+2026-10-05T16:55:00.7751208Z   origin/ci/B-LOCK2-120-4
+2026-10-05T16:55:00.7757097Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-LOCK2-120-4
+2026-10-05T16:55:00.7773984Z 76e37d96dfbfd34773edfe86a84a2f341234ecc6
+2026-10-05T16:55:00.7777665Z ##[endgroup]
+2026-10-05T16:55:00.7778938Z ##[group]Determining the checkout info
+2026-10-05T16:55:00.7780299Z ##[endgroup]
+2026-10-05T16:55:00.7781135Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T16:55:00.8268390Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T16:55:00.8677115Z ##[group]Checking out the ref
+2026-10-05T16:55:00.8679237Z [command]/usr/bin/git checkout --progress --force -B ci/B-LOCK2-120-4 refs/remotes/origin/ci/B-LOCK2-120-4
+2026-10-05T16:55:00.9572463Z Switched to a new branch 'ci/B-LOCK2-120-4'
+2026-10-05T16:55:00.9577157Z branch 'ci/B-LOCK2-120-4' set up to track 'origin/ci/B-LOCK2-120-4'.
+2026-10-05T16:55:00.9584772Z ##[endgroup]
+2026-10-05T16:55:00.9615629Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T16:55:00.9633268Z 76e37d96dfbfd34773edfe86a84a2f341234ecc6
+2026-10-05T16:55:00.9885363Z ##[group]Run actions/setup-node@v6
+2026-10-05T16:55:00.9886066Z with:
+2026-10-05T16:55:00.9886581Z   node-version: 22.13
+2026-10-05T16:55:00.9887141Z   cache: npm
+2026-10-05T16:55:00.9887658Z   check-latest: false
+2026-10-05T16:55:00.9893288Z   token: ***
+2026-10-05T16:55:00.9894063Z   package-manager-cache: true
+2026-10-05T16:55:00.9894704Z ##[endgroup]
+2026-10-05T16:55:01.1004835Z Attempting to download 22.13...
+2026-10-05T16:55:01.9044562Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T16:55:02.3379510Z Extracting ...
+2026-10-05T16:55:02.3460639Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/a3ed6f2a-e38b-43c8-be0b-408d13d816d5 -f /home/runner/work/_temp/f968e246-3611-4832-bd54-4d5f87dfb040
+2026-10-05T16:55:03.1819959Z Adding to the cache ...
+2026-10-05T16:55:05.2173991Z ##[group]Environment details
+2026-10-05T16:55:05.3484392Z node: v22.13.1
+2026-10-05T16:55:05.3484662Z npm: 10.9.2
+2026-10-05T16:55:05.3484836Z yarn: 1.22.22
+2026-10-05T16:55:05.3485228Z ##[endgroup]
+2026-10-05T16:55:05.3496497Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T16:55:05.4048437Z /home/runner/.npm
+2026-10-05T16:55:05.5448926Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:55:06.7174667Z Received 96468992 of 241027159 (40.0%), 92.0 MBs/sec
+2026-10-05T16:55:07.5299832Z Received 241027159 of 241027159 (100.0%), 126.9 MBs/sec
+2026-10-05T16:55:07.5304016Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T16:55:07.5351216Z [command]/usr/bin/tar -xf /home/runner/work/_temp/fcdda41c-1872-4ac2-a887-66fe2428801b/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T16:55:07.9546050Z Cache restored successfully
+2026-10-05T16:55:07.9646462Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T16:55:07.9807690Z ##[group]Run npm ci
+2026-10-05T16:55:07.9807868Z npm ci
+2026-10-05T16:55:08.0536974Z shell: /usr/bin/bash -e {0}
+2026-10-05T16:55:08.0537144Z ##[endgroup]
+2026-10-05T16:55:11.0718923Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T16:55:11.1831399Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T16:55:11.1895558Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T16:55:11.1919593Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T16:55:11.2108620Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T16:55:11.3091392Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T16:55:11.3127557Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:11.3142633Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:11.3164237Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:11.3173872Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:11.3195863Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:11.3544693Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T16:55:11.3862970Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T16:55:11.5990694Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T16:55:11.9255646Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T16:55:13.6593721Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T16:55:46.0359787Z 
+2026-10-05T16:55:46.0360517Z added 1108 packages, and audited 1109 packages in 38s
+2026-10-05T16:55:46.0360800Z 
+2026-10-05T16:55:46.0360952Z 187 packages are looking for funding
+2026-10-05T16:55:46.0361253Z   run `npm fund` for details
+2026-10-05T16:55:46.2501679Z 
+2026-10-05T16:55:46.2502454Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T16:55:46.2502733Z 
+2026-10-05T16:55:46.2502932Z To address issues that do not require attention, run:
+2026-10-05T16:55:46.2504049Z   npm audit fix
+2026-10-05T16:55:46.2504200Z 
+2026-10-05T16:55:46.2504558Z To address all issues (including breaking changes), run:
+2026-10-05T16:55:46.2504877Z   npm audit fix --force
+2026-10-05T16:55:46.2505005Z 
+2026-10-05T16:55:46.2505121Z Run `npm audit` for details.
+2026-10-05T16:55:46.3995546Z ##[group]Run set -euo pipefail
+2026-10-05T16:55:46.3995751Z set -euo pipefail
+2026-10-05T16:55:46.3995971Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-05T16:55:46.3996366Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-05T16:55:46.3996565Z echo "specs: ${SPECS[*]}"
+2026-10-05T16:55:46.3996717Z npx jest --ci "${SPECS[@]}"
+2026-10-05T16:55:46.4048713Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T16:55:46.4048913Z ##[endgroup]
+2026-10-05T16:55:46.4124782Z specs: src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx src/entitlements/dunning/__tests__/dunningLockout.test.tsx src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx src/entitlements/dunning/__tests__/aud117OpusL12.probe.test.tsx src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx src/entitlements/dunning/__tests__/aud119OpusL12_352.probe.test.ts src/entitlements/dunning/__tests__/auditSol119Boundaries.test.ts src/services/__tests__/auditSol117DunningIdentity.test.ts src/entitlements/dunning/__tests__/dunningL1Contract.test.ts src/__tests__/rootNavigatorUpdateCardLink.test.tsx
+2026-10-05T16:55:49.8645170Z PASS src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+2026-10-05T16:55:53.9248284Z PASS src/entitlements/dunning/__tests__/dunningLockout.test.tsx (6.344 s)
+2026-10-05T16:55:53.9376060Z   ● Console
+2026-10-05T16:55:53.9376428Z 
+2026-10-05T16:55:53.9400595Z     console.warn
+2026-10-05T16:55:53.9401787Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T16:55:53.9402617Z 
+2026-10-05T16:55:53.9402990Z       209 |
+2026-10-05T16:55:53.9403649Z       210 |   return (
+2026-10-05T16:55:53.9404788Z     > 211 |     <SafeAreaView style={styles.root} testID="dunning-lockout-screen">
+2026-10-05T16:55:53.9405655Z           |      ^
+2026-10-05T16:55:53.9406183Z       212 |       <ScrollView
+2026-10-05T16:55:53.9406806Z       213 |         contentContainerStyle={styles.content}
+2026-10-05T16:55:53.9407801Z       214 |         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+2026-10-05T16:55:53.9408416Z 
+2026-10-05T16:55:53.9408766Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T16:55:53.9409385Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T16:55:53.9409991Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:211:6)
+2026-10-05T16:55:53.9410838Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T16:55:53.9423915Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T16:55:53.9424730Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T16:55:53.9425499Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T16:55:53.9426231Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:55:53.9427017Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T16:55:53.9427786Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T16:55:53.9428580Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T16:55:53.9429826Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T16:55:53.9430745Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T16:55:53.9431757Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T16:55:53.9432433Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+2026-10-05T16:55:53.9433101Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+2026-10-05T16:55:53.9433668Z 
+2026-10-05T16:55:53.9734858Z PASS src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx
+2026-10-05T16:55:53.9891907Z   ● Console
+2026-10-05T16:55:53.9904571Z 
+2026-10-05T16:55:53.9905013Z     console.warn
+2026-10-05T16:55:53.9906157Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T16:55:53.9906928Z 
+2026-10-05T16:55:53.9907248Z       209 |
+2026-10-05T16:55:53.9907673Z       210 |   return (
+2026-10-05T16:55:53.9908605Z     > 211 |     <SafeAreaView style={styles.root} testID="dunning-lockout-screen">
+2026-10-05T16:55:53.9909409Z           |      ^
+2026-10-05T16:55:53.9909907Z       212 |       <ScrollView
+2026-10-05T16:55:53.9910520Z       213 |         contentContainerStyle={styles.content}
+2026-10-05T16:55:53.9911555Z       214 |         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+2026-10-05T16:55:53.9912210Z 
+2026-10-05T16:55:53.9912579Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T16:55:53.9913231Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T16:55:53.9914053Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:211:6)
+2026-10-05T16:55:53.9914842Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T16:55:53.9915664Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T16:55:53.9916475Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T16:55:53.9917312Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T16:55:53.9918066Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:55:53.9918829Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T16:55:53.9919566Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T16:55:53.9920314Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T16:55:53.9921081Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T16:55:53.9921909Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T16:55:53.9922642Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T16:55:53.9923298Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+2026-10-05T16:55:53.9924123Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+2026-10-05T16:55:53.9924515Z 
+2026-10-05T16:55:53.9924717Z     console.error
+2026-10-05T16:55:53.9925675Z       The current testing environment is not configured to support act(...)
+2026-10-05T16:55:53.9926091Z 
+2026-10-05T16:55:53.9926412Z       235 |         }
+2026-10-05T16:55:53.9927020Z       236 |         if (!isCurrent()) return;
+2026-10-05T16:55:53.9927840Z     > 237 |         setQuote(fresh);
+2026-10-05T16:55:53.9928344Z           |         ^
+2026-10-05T16:55:53.9928961Z       238 |         approvedRef.current = approvalFor(fresh);
+2026-10-05T16:55:53.9929533Z       239 |         await settle(
+2026-10-05T16:55:53.9930060Z       240 |           await runNativeCardUpdate({
+2026-10-05T16:55:53.9930396Z 
+2026-10-05T16:55:53.9930865Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-05T16:55:53.9931755Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-05T16:55:53.9932858Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:55:53.9933853Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:55:53.9934635Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:55:53.9935291Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:237:9)
+2026-10-05T16:55:53.9935942Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:55:53.9936590Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:55:53.9936975Z 
+2026-10-05T16:55:54.1155044Z FAIL src/entitlements/dunning/__tests__/auditSol119Boundaries.test.ts
+2026-10-05T16:55:54.1181832Z   ● R-DISPUTE-PAUSE: a mixed paid/disputed result must not promise automatic access restoration
+2026-10-05T16:55:54.1182228Z 
+2026-10-05T16:55:54.1182399Z     expect(received).toContain(expected) // indexOf
+2026-10-05T16:55:54.1182612Z 
+2026-10-05T16:55:54.1182824Z     Expected substring: "Saving a card does not settle that"
+2026-10-05T16:55:54.1184243Z     Received string:    "Your card is saved and $150.00 went through. The plan you paid for updates within a few minutes. Pull down to refresh. Your bank reversed a payment. For that plan, access has ended and billing is paused. Your coach decides whether to restart it. It does not restart on its own or with a new card."
+2026-10-05T16:55:54.1185247Z 
+2026-10-05T16:55:54.1185651Z       36 |   const body = cardUpdateOutcomeCopy(r).body;
+2026-10-05T16:55:54.1186310Z       37 |   expect(body).toContain('$150.00 went through');
+2026-10-05T16:55:54.1187065Z     > 38 |   expect(body).toContain('Saving a card does not settle that');
+2026-10-05T16:55:54.1187627Z          |                ^
+2026-10-05T16:55:54.1188446Z       39 |   expect(body).not.toMatch(/Your plan updates within a few minutes/);
+2026-10-05T16:55:54.1188994Z       40 | });
+2026-10-05T16:55:54.1189763Z       41 | it('R-DISPUTE-PAUSE: dispute-only save says billing paused, access ended, coach controls restarting', () => {
+2026-10-05T16:55:54.1190270Z 
+2026-10-05T16:55:54.1190592Z       at Object.toContain (src/entitlements/dunning/__tests__/auditSol119Boundaries.test.ts:38:16)
+2026-10-05T16:55:54.1190944Z 
+2026-10-05T16:55:54.1608943Z PASS src/entitlements/dunning/__tests__/aud117OpusL12.probe.test.tsx
+2026-10-05T16:55:54.1650804Z   ● Console
+2026-10-05T16:55:54.1651089Z 
+2026-10-05T16:55:54.1651344Z     console.warn
+2026-10-05T16:55:54.1652635Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T16:55:54.1653745Z 
+2026-10-05T16:55:54.1654018Z       209 |
+2026-10-05T16:55:54.1654572Z       210 |   return (
+2026-10-05T16:55:54.1660608Z     > 211 |     <SafeAreaView style={styles.root} testID="dunning-lockout-screen">
+2026-10-05T16:55:54.1661432Z           |      ^
+2026-10-05T16:55:54.1661919Z       212 |       <ScrollView
+2026-10-05T16:55:54.1662486Z       213 |         contentContainerStyle={styles.content}
+2026-10-05T16:55:54.1663692Z       214 |         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+2026-10-05T16:55:54.1664356Z 
+2026-10-05T16:55:54.1664704Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T16:55:54.1665334Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T16:55:54.1665970Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:211:6)
+2026-10-05T16:55:54.1666729Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T16:55:54.1667553Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T16:55:54.1668336Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T16:55:54.1669100Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T16:55:54.1669856Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:55:54.1670634Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T16:55:54.1671388Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T16:55:54.1672117Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T16:55:54.1672816Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T16:55:54.1673768Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T16:55:54.1674503Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T16:55:54.1675127Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+2026-10-05T16:55:54.1675799Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+2026-10-05T16:55:54.1676200Z 
+2026-10-05T16:55:54.2305486Z PASS src/entitlements/dunning/__tests__/aud119OpusL12_352.probe.test.ts
+2026-10-05T16:55:54.2560124Z PASS src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx
+2026-10-05T16:55:54.2611430Z   ● Console
+2026-10-05T16:55:54.2611779Z 
+2026-10-05T16:55:54.2611993Z     console.warn
+2026-10-05T16:55:54.2612928Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T16:55:54.2613867Z 
+2026-10-05T16:55:54.2614141Z       209 |
+2026-10-05T16:55:54.2614567Z       210 |   return (
+2026-10-05T16:55:54.2615457Z     > 211 |     <SafeAreaView style={styles.root} testID="dunning-lockout-screen">
+2026-10-05T16:55:54.2616736Z           |      ^
+2026-10-05T16:55:54.2617293Z       212 |       <ScrollView
+2026-10-05T16:55:54.2617899Z       213 |         contentContainerStyle={styles.content}
+2026-10-05T16:55:54.2619137Z       214 |         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+2026-10-05T16:55:54.2619772Z 
+2026-10-05T16:55:54.2620127Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T16:55:54.2620764Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T16:55:54.2621404Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:211:6)
+2026-10-05T16:55:54.2622178Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T16:55:54.2623007Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T16:55:54.2623928Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T16:55:54.2624728Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T16:55:54.2625488Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:55:54.2626285Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T16:55:54.2627070Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T16:55:54.2627830Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T16:55:54.2628605Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T16:55:54.2629492Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T16:55:54.2630253Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T16:55:54.2630804Z       at node_modules/react/cjs/react.development.js:847:21
+2026-10-05T16:55:54.2631143Z 
+2026-10-05T16:55:54.3452218Z PASS src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx (6.694 s)
+2026-10-05T16:55:54.3682522Z   ● Console
+2026-10-05T16:55:54.3682967Z 
+2026-10-05T16:55:54.3683189Z     console.warn
+2026-10-05T16:55:54.3684311Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T16:55:54.3685091Z 
+2026-10-05T16:55:54.3685357Z       209 |
+2026-10-05T16:55:54.3685770Z       210 |   return (
+2026-10-05T16:55:54.3686707Z     > 211 |     <SafeAreaView style={styles.root} testID="dunning-lockout-screen">
+2026-10-05T16:55:54.3687503Z           |      ^
+2026-10-05T16:55:54.3688003Z       212 |       <ScrollView
+2026-10-05T16:55:54.3688604Z       213 |         contentContainerStyle={styles.content}
+2026-10-05T16:55:54.3689628Z       214 |         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+2026-10-05T16:55:54.3690279Z 
+2026-10-05T16:55:54.3690631Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T16:55:54.3691276Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T16:55:54.3691913Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:211:6)
+2026-10-05T16:55:54.3693038Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T16:55:54.3693992Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T16:55:54.3694953Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T16:55:54.3695724Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T16:55:54.3696465Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T16:55:54.3697260Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T16:55:54.3698023Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T16:55:54.3698792Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T16:55:54.3699581Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T16:55:54.3700452Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T16:55:54.3701209Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T16:55:54.3701875Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+2026-10-05T16:55:54.3702562Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+2026-10-05T16:55:54.3702971Z 
+2026-10-05T16:55:54.3703175Z     console.error
+2026-10-05T16:55:54.3703721Z       The current testing environment is not configured to support act(...)
+2026-10-05T16:55:54.3704106Z 
+2026-10-05T16:55:54.3704387Z       235 |         }
+2026-10-05T16:55:54.3704959Z       236 |         if (!isCurrent()) return;
+2026-10-05T16:55:54.3705578Z     > 237 |         setQuote(fresh);
+2026-10-05T16:55:54.3706077Z           |         ^
+2026-10-05T16:55:54.3706695Z       238 |         approvedRef.current = approvalFor(fresh);
+2026-10-05T16:55:54.3707290Z       239 |         await settle(
+2026-10-05T16:55:54.3707806Z       240 |           await runNativeCardUpdate({
+2026-10-05T16:55:54.3708145Z 
+2026-10-05T16:55:54.3708630Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-05T16:55:54.3709534Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-05T16:55:54.3710409Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:55:54.3711226Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:55:54.3712019Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:55:54.3712674Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:237:9)
+2026-10-05T16:55:54.3713290Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:55:54.3714049Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:55:54.3714428Z 
+2026-10-05T16:55:54.3714631Z     console.error
+2026-10-05T16:55:54.3715070Z       The current testing environment is not configured to support act(...)
+2026-10-05T16:55:54.3715447Z 
+2026-10-05T16:55:54.3715709Z       235 |         }
+2026-10-05T16:55:54.3716317Z       236 |         if (!isCurrent()) return;
+2026-10-05T16:55:54.3717148Z     > 237 |         setQuote(fresh);
+2026-10-05T16:55:54.3717655Z           |         ^
+2026-10-05T16:55:54.3718275Z       238 |         approvedRef.current = approvalFor(fresh);
+2026-10-05T16:55:54.3718979Z       239 |         await settle(
+2026-10-05T16:55:54.3719504Z       240 |           await runNativeCardUpdate({
+2026-10-05T16:55:54.3719847Z 
+2026-10-05T16:55:54.3720338Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-05T16:55:54.3721240Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-05T16:55:54.3722109Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:55:54.3722951Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:55:54.3723865Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:55:54.3724532Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:237:9)
+2026-10-05T16:55:54.3725169Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:55:54.3725813Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:55:54.3726187Z 
+2026-10-05T16:55:54.3726388Z     console.error
+2026-10-05T16:55:54.3726831Z       The current testing environment is not configured to support act(...)
+2026-10-05T16:55:54.3727210Z 
+2026-10-05T16:55:54.3727467Z       235 |         }
+2026-10-05T16:55:54.3728022Z       236 |         if (!isCurrent()) return;
+2026-10-05T16:55:54.3728636Z     > 237 |         setQuote(fresh);
+2026-10-05T16:55:54.3729141Z           |         ^
+2026-10-05T16:55:54.3729758Z       238 |         approvedRef.current = approvalFor(fresh);
+2026-10-05T16:55:54.3730347Z       239 |         await settle(
+2026-10-05T16:55:54.3730871Z       240 |           await runNativeCardUpdate({
+2026-10-05T16:55:54.3731213Z 
+2026-10-05T16:55:54.3731693Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-05T16:55:54.3732587Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-05T16:55:54.3733550Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T16:55:54.3734384Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T16:55:54.3735188Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T16:55:54.3735915Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:237:9)
+2026-10-05T16:55:54.3736553Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T16:55:54.3737192Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T16:55:54.3737568Z 
+2026-10-05T16:55:54.4964777Z PASS src/services/__tests__/auditSol117DunningIdentity.test.ts
+2026-10-05T16:56:00.2839352Z PASS src/__tests__/rootNavigatorUpdateCardLink.test.tsx (6.013 s)
+2026-10-05T16:56:00.2878497Z   ● Console
+2026-10-05T16:56:00.2878808Z 
+2026-10-05T16:56:00.2879003Z     console.warn
+2026-10-05T16:56:00.2879852Z       Deep imports from the 'react-native' package are deprecated ('react-native/Libraries/Components/TextInput/TextInputState'). Source: /Users/wooj/stripe/stripe-react-native/src/helpers.ts 6:0
+2026-10-05T16:56:00.2880579Z 
+2026-10-05T16:56:00.2880912Z       63 | try {
+2026-10-05T16:56:00.2881926Z       64 |   // eslint-disable-next-line @typescript-eslint/no-var-requires
+2026-10-05T16:56:00.2883829Z     > 65 |   const stripeModule = require('@stripe/stripe-react-native');
+2026-10-05T16:56:00.2884633Z          |                        ^
+2026-10-05T16:56:00.2885314Z       66 |   stripeHookFactory = stripeModule.useStripe ?? null;
+2026-10-05T16:56:00.2885839Z       67 | } catch {
+2026-10-05T16:56:00.2886386Z       68 |   // Native module missing — handled at handleSelectPlan time with a user-safe
+2026-10-05T16:56:00.2886758Z 
+2026-10-05T16:56:00.2887033Z       at Object.<anonymous> (node_modules/@stripe/stripe-react-native/src/helpers.ts:6:1)
+2026-10-05T16:56:00.2887606Z       at Object._interopRequireDefault (node_modules/@stripe/stripe-react-native/src/functions.ts:3:1)
+2026-10-05T16:56:00.2888221Z       at Object.<anonymous> (node_modules/@stripe/stripe-react-native/src/hooks/useStripe.tsx:72:43)
+2026-10-05T16:56:00.2888820Z       at Object._useState2 (node_modules/@stripe/stripe-react-native/src/hooks/useConfirmPayment.tsx:9:48)
+2026-10-05T16:56:00.2889389Z       at Object.<anonymous> (node_modules/@stripe/stripe-react-native/src/index.tsx:3:1)
+2026-10-05T16:56:00.2889849Z       at Object.require (src/components/PackageSelectionSheet.tsx:65:24)
+2026-10-05T16:56:00.2890253Z       at Object.require (src/screens/client/Day1WinScreen.tsx:30:1)
+2026-10-05T16:56:00.2890614Z       at Object.require (src/navigation/RootNavigator.tsx:38:1)
+2026-10-05T16:56:00.2891034Z       at Object.require (src/__tests__/rootNavigatorUpdateCardLink.test.tsx:24:1)
+2026-10-05T16:56:00.2891291Z 
+2026-10-05T16:56:00.8362238Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+2026-10-05T16:56:00.8377479Z 
+2026-10-05T16:56:00.8380968Z Test Suites: 1 failed, 9 passed, 10 total
+2026-10-05T16:56:00.8381252Z Tests:       1 failed, 145 passed, 146 total
+2026-10-05T16:56:00.8381424Z Snapshots:   0 total
+2026-10-05T16:56:00.8381569Z Time:        13.78 s
+2026-10-05T16:56:00.8383116Z Ran all test suites matching /src\/entitlements\/dunning\/__tests__\/dunningLockoutOwnership.test.tsx|src\/entitlements\/dunning\/__tests__\/dunningLockout.test.tsx|src\/entitlements\/dunning\/__tests__\/auditSol117Lifecycle.test.tsx|src\/entitlements\/dunning\/__tests__\/aud117OpusL12.probe.test.tsx|src\/entitlements\/dunning\/__tests__\/aud119OpusL12_353.probe.test.tsx|src\/entitlements\/dunning\/__tests__\/aud119OpusL12_352.probe.test.ts|src\/entitlements\/dunning\/__tests__\/auditSol119Boundaries.test.ts|src\/services\/__tests__\/auditSol117DunningIdentity.test.ts|src\/entitlements\/dunning\/__tests__\/dunningL1Contract.test.ts|src\/__tests__\/rootNavigatorUpdateCardLink.test.tsx/i.
+2026-10-05T16:56:00.8517334Z ##[error]Process completed with exit code 1.
+2026-10-05T16:56:00.8614375Z Post job cleanup.
+2026-10-05T16:56:00.9101752Z [command]/usr/bin/git version
+2026-10-05T16:56:00.9127060Z git version 2.55.0
+2026-10-05T16:56:00.9147865Z Temporarily overriding HOME='/home/runner/work/_temp/764649a6-4ecb-4e7d-a100-1d728e190996' before making global git config changes
+2026-10-05T16:56:00.9148427Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T16:56:00.9150816Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T16:56:00.9172347Z Removing SSH command configuration
+2026-10-05T16:56:00.9176133Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T16:56:00.9200568Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T16:56:00.9362101Z Removing HTTP extra header
+2026-10-05T16:56:00.9365168Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T16:56:00.9386970Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T16:56:00.9542226Z Removing includeIf entries pointing to credentials config files
+2026-10-05T16:56:00.9545971Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T16:56:00.9597648Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:56:00.9598316Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:56:00.9598911Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:56:00.9599337Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:56:00.9604465Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T16:56:00.9620292Z /home/runner/work/_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:56:00.9627356Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:56:00.9651685Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T16:56:00.9666980Z /home/runner/work/_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:56:00.9672709Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:56:00.9695863Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T16:56:00.9711025Z /github/runner_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:56:00.9715962Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:56:00.9738044Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T16:56:00.9752476Z /github/runner_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:56:00.9757666Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config
+2026-10-05T16:56:00.9780911Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T16:56:00.9935647Z Removing credentials config '/home/runner/work/_temp/git-credentials-430c02af-51fc-47ac-96ea-3aa2160e2227.config'
+2026-10-05T16:56:01.0048433Z Cleaning up orphan processes

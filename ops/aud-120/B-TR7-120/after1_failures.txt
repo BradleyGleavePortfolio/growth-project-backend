@@ -1,0 +1,43 @@
+test/aud-sol-t23-118-673-conflict-probe.spec.ts :: AUD-SOL-T23-118 — actual cancellation admission clocks › a late-row cancellation holds a fresh lease while its bounded Stripe operation runs
+test/aud-sol-t3e-119-673-payable-race.spec.ts :: AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void › past_due / open: preserve a paid plan while the active webhook is delayed
+test/aud-sol-t3e-119-673-payable-race.spec.ts :: AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void › past_due / uncollectible: preserve a paid plan while the active webhook is delayed
+test/aud-sol-t3e-119-673-payable-race.spec.ts :: AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void › unpaid / open: preserve a paid plan while the active webhook is delayed
+test/aud-sol-t3e-119-673-payable-race.spec.ts :: AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void › unpaid / uncollectible: preserve a paid plan while the active webhook is delayed
+test/audit-opus-t23-118-673.spec.ts :: C-673-2 probe — an older subscription event rewrites an extended trial end › probe (expected red): a retried pre-extension update keeps the extended end and records no notice
+test/audit-opus-t23-118-673.spec.ts :: C-673-3 probe (outside this diff) — coach metrics count a never-billed trial › probe (expected red): a never-billed trial cancelled during the trial is not churn
+test/audit-opus-t23-118-673.spec.ts :: C-673-3 probe (outside this diff) — coach metrics count a never-billed trial › probe (expected red): a started trial (nothing billed) adds no MRR
+test/audit-opus-t23-119-673.spec.ts :: C-673-4 probe — a worker supersede after out-of-order events › probe (expected red): active applied first, then the older trialing event: the paying client keeps access
+test/audit-opus-t3e-119-673-adapted-b7120adapted.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q2: reads that ate 25 s leave no room for void + DELETE (one invoice): lease_exhausted, no void, no DELETE
+test/audit-opus-t3e-119-673-adapted-b7120adapted.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q7 (C-673-9 pinned): unpaid plan whose only invoice is uncollectible (open list empty) never auto-settles; fails closed
+test/audit-opus-t3e-119-673-adapted.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q1 (C-673-8 pinned): void confirmed, DELETE 503 -> retry; next read active -> superseded + one billed alert, never a second void
+test/audit-opus-t3e-119-673-adapted.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q2: reads that ate 25 s leave no room for void + DELETE (one invoice): lease_exhausted, no void, no DELETE
+test/audit-opus-t3e-119-673-adapted.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q2b control: reads that took 15 s still fit (15 + 40 < 60): void then DELETE
+test/audit-opus-t3e-119-673-adapted.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q5: the void is POST /invoices/<encoded id>/void with an empty form, one per open invoice id
+test/audit-opus-t3e-119-673-adapted.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q6: replay after a cancel is a no-op (not_owed, zero Stripe calls)
+test/audit-opus-t3e-119-673-adapted.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q9: two workers: the second settle during the first one's void is busy; one void, one DELETE
+test/audit-opus-t3e-119-673.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q1 (C-673-8 pinned): void confirmed, DELETE 503 -> retry; next read active -> superseded + one billed alert, never a second void
+test/audit-opus-t3e-119-673.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q2: reads that ate 25 s leave no room for void + DELETE (one invoice): lease_exhausted, no void, no DELETE
+test/audit-opus-t3e-119-673.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q2b control: reads that took 15 s still fit (15 + 40 < 60): void then DELETE
+test/audit-opus-t3e-119-673.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q5: the void is POST /invoices/<encoded id>/void with an empty form, one per open invoice id
+test/audit-opus-t3e-119-673.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q6: replay after a cancel is a no-op (not_owed, zero Stripe calls)
+test/audit-opus-t3e-119-673.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q9: two workers: the second settle during the first one's void is busy; one void, one DELETE
+test/audit-opus-t5-119-707-b7120adapted.spec.ts :: AUD-OPUS-T5-119 #707 probes › P8 (C-707-1 pinned): drafts are outside the read domain; read order is sub, open, uncollectible, paid
+test/audit-opus-t5-119-707-draft-b7120adapted.spec.ts :: AUD-OPUS-T5-119 #707 draft race (B-707-1) › D2 (green, consequence): the worker records cancelled and no billed or failing alert exists
+test/audit-opus-t5-119-707-draft.spec.ts :: AUD-OPUS-T5-119 #707 draft race (B-707-1) › D1 (expected red): a renewal draft finalized and paid after the reads must not be followed by a DELETE
+test/audit-opus-t5-119-707-draft.spec.ts :: AUD-OPUS-T5-119 #707 draft race (B-707-1) › D2 (green, consequence): the worker records cancelled and no billed or failing alert exists
+test/audit-opus-t5-119-707.spec.ts :: AUD-OPUS-T5-119 #707 probes › P1 (C-707-3 pinned): the void of the latest (open) invoice goes first; an active webhook superseding before the next void stops the sequence: stale, one void, no DELETE
+test/audit-opus-t5-119-707.spec.ts :: AUD-OPUS-T5-119 #707 probes › P2: exactly 10 payable invoices (6 open + 4 uncollectible) settle; 11 do not
+test/audit-opus-t5-119-707.spec.ts :: AUD-OPUS-T5-119 #707 probes › P3: ten voids of 15 s each (150 s, past the 60 s lease) settle because each step renews; a second worker at void 7 is busy; the lease held at the DELETE
+test/audit-opus-t5-119-707.spec.ts :: AUD-OPUS-T5-119 #707 probes › P6 (C-707-4 pinned): an uncollectible invoice Stripe refuses to void (partial payment) never DELETEs; three attempts alert once with a closed code
+test/audit-opus-t5-119-707.spec.ts :: AUD-OPUS-T5-119 #707 probes › P7: a void answered 200 with a non-void status is not a confirmed void: no DELETE
+test/audit-opus-t5-119-707.spec.ts :: AUD-OPUS-T5-119 #707 probes › P8 (C-707-1 pinned): drafts are outside the read domain; read order is sub, open, uncollectible, paid
+test/audit-opus-t5-119-707.spec.ts :: AUD-OPUS-T5-119 #707 probes › P9: the subscription was cancelled elsewhere during the last void: final renewal is stale, no DELETE, row cancelled
+test/audit-opus-t5-119-t3e-replay.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q1 (C-673-8 pinned): void confirmed, DELETE 503 -> retry; next read active -> superseded + one billed alert, never a second void
+test/audit-opus-t5-119-t3e-replay.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q2b control: reads that took 15 s still fit (15 + 40 < 60): void then DELETE
+test/audit-opus-t5-119-t3e-replay.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q5: the void is POST /invoices/<encoded id>/void with an empty form, one per open invoice id
+test/audit-opus-t5-119-t3e-replay.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q6: replay after a cancel is a no-op (not_owed, zero Stripe calls)
+test/audit-opus-t5-119-t3e-replay.spec.ts :: AUD-OPUS-T3E-119 #673 round 11 probes › Q9: two workers: the second settle during the first one's void is busy; one void, one DELETE
+test/audit-sol-t5-replay.spec.ts :: AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void › past_due / open: preserve a paid plan while the active webhook is delayed
+test/audit-sol-t5-replay.spec.ts :: AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void › past_due / uncollectible: preserve a paid plan while the active webhook is delayed
+test/audit-sol-t5-replay.spec.ts :: AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void › unpaid / open: preserve a paid plan while the active webhook is delayed
+test/audit-sol-t5-replay.spec.ts :: AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void › unpaid / uncollectible: preserve a paid plan while the active webhook is delayed

@@ -1,0 +1,3492 @@
+From 4de30e8225c22b27efa1efd2346e80f83691c6c7 Mon Sep 17 00:00:00 2001
+From: TGP Agent 116 <agent@tgp.invalid>
+Date: Mon, 5 Oct 2026 16:42:24 +0000
+Subject: [PATCH 1/2] probes: lens T3/T5 probes verbatim (never merge)
+
+---
+ ...aud-sol-t23-118-673-conflict-probe.spec.ts | 100 +++++
+ test/aud-sol-t23-119-673-probe.spec.ts        | 269 ++++++++++++
+ .../aud-sol-t23d-119-673-payment-race.spec.ts | 143 ++++++
+ test/aud-sol-t23d-119-673-replay.spec.ts      | 269 ++++++++++++
+ test/aud-sol-t3e-119-673-payable-race.spec.ts | 178 ++++++++
+ test/audit-opus-t23-118-673.spec.ts           | 346 +++++++++++++++
+ test/audit-opus-t23-119-673.spec.ts           | 409 ++++++++++++++++++
+ test/audit-opus-t23d-119-673.spec.ts          | 149 +++++++
+ test/audit-opus-t3e-119-673-adapted.spec.ts   | 250 +++++++++++
+ test/audit-opus-t3e-119-673.spec.ts           | 248 +++++++++++
+ test/audit-opus-t5-119-707-draft.spec.ts      | 127 ++++++
+ test/audit-opus-t5-119-707.spec.ts            | 292 +++++++++++++
+ test/audit-opus-t5-119-t3e-replay.spec.ts     | 229 ++++++++++
+ test/audit-sol-t5-draft-race.spec.ts          | 174 ++++++++
+ test/audit-sol-t5-replay.spec.ts              | 178 ++++++++
+ 15 files changed, 3361 insertions(+)
+ create mode 100644 test/aud-sol-t23-118-673-conflict-probe.spec.ts
+ create mode 100644 test/aud-sol-t23-119-673-probe.spec.ts
+ create mode 100644 test/aud-sol-t23d-119-673-payment-race.spec.ts
+ create mode 100644 test/aud-sol-t23d-119-673-replay.spec.ts
+ create mode 100644 test/aud-sol-t3e-119-673-payable-race.spec.ts
+ create mode 100644 test/audit-opus-t23-118-673.spec.ts
+ create mode 100644 test/audit-opus-t23-119-673.spec.ts
+ create mode 100644 test/audit-opus-t23d-119-673.spec.ts
+ create mode 100644 test/audit-opus-t3e-119-673-adapted.spec.ts
+ create mode 100644 test/audit-opus-t3e-119-673.spec.ts
+ create mode 100644 test/audit-opus-t5-119-707-draft.spec.ts
+ create mode 100644 test/audit-opus-t5-119-707.spec.ts
+ create mode 100644 test/audit-opus-t5-119-t3e-replay.spec.ts
+ create mode 100644 test/audit-sol-t5-draft-race.spec.ts
+ create mode 100644 test/audit-sol-t5-replay.spec.ts
+
+diff --git a/test/aud-sol-t23-118-673-conflict-probe.spec.ts b/test/aud-sol-t23-118-673-conflict-probe.spec.ts
+new file mode 100644
+index 00000000..5519e3cf
+--- /dev/null
++++ b/test/aud-sol-t23-118-673-conflict-probe.spec.ts
+@@ -0,0 +1,100 @@
++import { TrialConflictService } from '../src/packages/trials/trial-conflict.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++type C = ConstructorParameters<typeof TrialConflictService>;
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((r) => { resolve = r; });
++  return { promise, resolve };
++}
++
++afterEach(() => {
++  jest.restoreAllMocks();
++  jest.useRealTimers();
++});
++
++describe('AUD-SOL-T23-118 — actual cancellation admission clocks', () => {
++  it('a late-row cancellation holds a fresh lease while its bounded Stripe operation runs', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    jest.setSystemTime(NOW);
++    const table = makeTrialConflictTable();
++    for (let i = 0; i < 8; i += 1) {
++      await table.createMany({ data: [{
++        id: `conflict-${i}`, purchase_id: `purchase-${i}`,
++        stripe_subscription_id: `sub-${i}`, next_attempt_at: NOW,
++      }] });
++    }
++    const entered = deferred<void>();
++    const held = deferred<{ id: string; status: string }>();
++    let lateCalls = 0;
++    const cancelSubscription = jest.fn(async (id: string) => {
++      // Seven successful nine-second calls. All are below the real
++      // StripeConnectApiService ten-second HTTP timeout and the worker's
++      // twenty-second wrapper deadline. Only elapsed clock is modeled.
++      if (id !== 'sub-7') jest.setSystemTime(new Date(Date.now() + 9000));
++      if (id === 'sub-7' && ++lateCalls === 1) {
++        entered.resolve();
++        return held.promise;
++      }
++      return { id, status: 'canceled' };
++    });
++    const db = stub<C[0]>({ packageTrialConflict: table });
++    const stripe = stub<C[1]>({ cancelSubscription });
++    const firstService = new TrialConflictService(db, stripe);
++    const replica = new TrialConflictService(db, stripe);
++    const firstSweep = firstService.sweep(NOW);
++    await entered.promise;
++    expect(Date.now() - NOW.getTime()).toBe(63_000);
++    // Five seconds into the final operation: still below both transport
++    // bounds, yet the lease derived from the sweep timestamp expired.
++    jest.setSystemTime(new Date(Date.now() + 5000));
++    const other = await replica.settle('purchase-7');
++    held.resolve({ id: 'sub-7', status: 'canceled' });
++    await firstSweep;
++    expect({ lateCalls, other }).toEqual({ lateCalls: 1, other: 'busy' });
++  });
++});
++
++describe('AUD-SOL-T23-118 — cancellation retry after the card was charged', () => {
++  it('a missed active webhook must not let an owed conflict cancel a paid active plan without the billed alert', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-paid', purchase_id: 'purchase-paid',
++      stripe_subscription_id: 'sub-paid', next_attempt_at: NOW,
++      attempts: 3, alerted_at: NOW,
++    }] });
++    // The cancellation outage spanned the trial end. Stripe charged the
++    // first regular invoice, but customer.subscription.updated has not yet
++    // reached BillingService. The durable local conflict therefore remains
++    // owed. Actual service + actual Stripe API over an intercepted fetch.
++    const originalSecret = process.env.STRIPE_SECRET_KEY;
++    process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++    const calls: string[] = [];
++    jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
++      const method = init?.method ?? 'GET';
++      calls.push(method);
++      const body = method === 'DELETE'
++        ? { id: 'sub-paid', status: 'canceled' }
++        : { id: 'sub-paid', status: 'active', latest_invoice: 'in-paid',
++            trial_end: Math.floor(NOW.getTime() / 1000) - 1 };
++      return new Response(JSON.stringify(body), {
++        status: 200, headers: { 'Content-Type': 'application/json' },
++      });
++    });
++    try {
++      const service = new TrialConflictService(
++        stub<C[0]>({ packageTrialConflict: table }),
++        new StripeConnectApiService(),
++      );
++      await service.sweep(NOW);
++      expect(calls).not.toContain('DELETE');
++      expect(table.rows[0]).toMatchObject({ status: 'superseded' });
++    } finally {
++      if (originalSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++      else process.env.STRIPE_SECRET_KEY = originalSecret;
++    }
++  });
++});
+diff --git a/test/aud-sol-t23-119-673-probe.spec.ts b/test/aud-sol-t23-119-673-probe.spec.ts
+new file mode 100644
+index 00000000..dbd5a388
+--- /dev/null
++++ b/test/aud-sol-t23-119-673-probe.spec.ts
+@@ -0,0 +1,269 @@
++import { TrialConflictService } from '../src/packages/trials/trial-conflict.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { makeTrialConflictTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++type C = ConstructorParameters<typeof TrialConflictService>;
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((r) => { resolve = r; });
++  return { promise, resolve };
++}
++
++afterEach(() => {
++  jest.restoreAllMocks();
++  jest.useRealTimers();
++});
++
++describe('AUD-SOL-T23-118 — actual cancellation admission clocks', () => {
++  it('a late-row cancellation holds a fresh lease while its bounded Stripe operation runs', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    jest.setSystemTime(NOW);
++    const table = makeTrialConflictTable();
++    for (let i = 0; i < 8; i += 1) {
++      await table.createMany({ data: [{
++        id: `conflict-${i}`, purchase_id: `purchase-${i}`,
++        stripe_subscription_id: `sub-${i}`, next_attempt_at: NOW,
++      }] });
++    }
++    const entered = deferred<void>();
++    const held = deferred<{ id: string; status: string }>();
++    let lateCalls = 0;
++    const cancelSubscription = jest.fn(async (id: string) => {
++      // Seven successful nine-second calls. All are below the real
++      // StripeConnectApiService ten-second HTTP timeout and the worker's
++      // twenty-second wrapper deadline. Only elapsed clock is modeled.
++      if (id !== 'sub-7') jest.setSystemTime(new Date(Date.now() + 9000));
++      if (id === 'sub-7' && ++lateCalls === 1) {
++        entered.resolve();
++        return held.promise;
++      }
++      return { id, status: 'canceled' };
++    });
++    const db = stub<C[0]>({ packageTrialConflict: table });
++    const stripe = stub<C[1]>({ cancelSubscription, retrieveSubscription: jest.fn(async (id: string) => ({ id, status: 'trialing', trial_end: Math.floor(NOW.getTime() / 1000) + 86400 })) });
++    const firstService = new TrialConflictService(db, stripe);
++    const replica = new TrialConflictService(db, stripe);
++    const firstSweep = firstService.sweep(NOW);
++    await entered.promise;
++    expect(Date.now() - NOW.getTime()).toBe(63_000);
++    // Five seconds into the final operation: still below both transport
++    // bounds, yet the lease derived from the sweep timestamp expired.
++    jest.setSystemTime(new Date(Date.now() + 5000));
++    const other = await replica.settle('purchase-7');
++    held.resolve({ id: 'sub-7', status: 'canceled' });
++    await firstSweep;
++    expect({ lateCalls, other }).toEqual({ lateCalls: 1, other: 'busy' });
++  });
++});
++
++describe('AUD-SOL-T23-119 — cancellation safety beyond one active snapshot', () => {
++  it('actual active webhook during intercepted Stripe GET preserves its new paid access against obsolete DELETE', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-real-handler', purchase_id: 'purchase-real-handler',
++      stripe_subscription_id: 'sub-real-handler', next_attempt_at: NOW,
++    }] });
++    const purchase: Record<string, unknown> = {
++      id: 'purchase-real-handler', client_user_id: 'client-real-handler',
++      coach_user_id: 'coach-real-handler', package_id: 'package-real-handler',
++      stripe_subscription_id: 'sub-real-handler', billing_type: 'recurring',
++      status: 'trialing', entitlement_active: false, trial_days: 7,
++      trial_ends_at: new Date(NOW.getTime() + 86400000),
++      amount_cents: 4900, currency: 'usd', created_at: NOW,
++    };
++    const rawDb = {
++      packageTrialConflict: table,
++      packageTrialUsage: makeTrialUsageTable(),
++      clientPurchase: {
++        findUnique: jest.fn(async () => ({ ...purchase })),
++        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++          Object.assign(purchase, data);
++          return { ...purchase };
++        }),
++      },
++      coachPackage: { findUnique: jest.fn(async () => ({
++        id: 'package-real-handler', duration_periods: null,
++      })) },
++      $queryRaw: jest.fn(async () => []),
++    };
++    const db = stub<C[0]>(rawDb);
++    const originalSecret = process.env.STRIPE_SECRET_KEY;
++    process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++    const stripe = new StripeConnectApiService();
++    const service = new TrialConflictService(db, stripe);
++    const usage = new TrialUsageService(db);
++    const handler = new CheckoutWebhookHandlerService(
++      db, stripe, undefined, undefined, undefined, undefined, undefined,
++      undefined, undefined, usage, undefined, service,
++    );
++    const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(rawDb);
++    const calls: string[] = [];
++    let paidAccessBeforeDelete: unknown;
++    jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
++      const method = init?.method ?? 'GET';
++      calls.push(method);
++      if (method === 'GET') {
++        await handler.handle({
++          id: 'evt-active-early', type: 'customer.subscription.updated',
++          data: { object: {
++            id: 'sub-real-handler', status: 'active',
++            trial_end: Math.floor(NOW.getTime() / 1000),
++            current_period_end: Math.floor(NOW.getTime() / 1000) + 30 * 86400,
++          } },
++        }, tx);
++        paidAccessBeforeDelete = purchase.entitlement_active;
++        return new Response(JSON.stringify({
++          id: 'sub-real-handler', status: 'trialing',
++          trial_end: Math.floor(NOW.getTime() / 1000) + 86400,
++        }), { status: 200 });
++      }
++      await handler.handle({
++        id: 'evt-deleted-after-stale-retry', type: 'customer.subscription.deleted',
++        data: { object: { id: 'sub-real-handler' } },
++      }, tx);
++      return new Response(JSON.stringify({
++        id: 'sub-real-handler', status: 'canceled',
++      }), { status: 200 });
++    });
++    try {
++      const result = await service.settle('purchase-real-handler', NOW);
++      expect(paidAccessBeforeDelete).toBe(true);
++      expect(result).toBe('stale');
++      expect(table.rows[0].status).toBe('superseded');
++      expect({ calls, paidAccess: purchase.entitlement_active }).toEqual({
++        calls: ['GET'], paidAccess: true,
++      });
++    } finally {
++      if (originalSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++      else process.env.STRIPE_SECRET_KEY = originalSecret;
++    }
++  });
++
++  it.each(['past_due', 'unpaid'])(
++    'does not infer never-billed from %s when previous paid conversion evidence is unavailable',
++    async (status) => {
++      const table = makeTrialConflictTable();
++      await table.createMany({ data: [{
++        id: 'conflict-late', purchase_id: 'purchase-late',
++        stripe_subscription_id: 'sub-late', next_attempt_at: NOW,
++        attempts: 6, alerted_at: NOW,
++      }] });
++      // Durable owed conflict survived an outage: the first regular invoice
++      // was paid; a later invoice is now overdue. All active events were
++      // delayed. Status alone does not reveal that prior paid invoice.
++      const originalSecret = process.env.STRIPE_SECRET_KEY;
++      process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++      const calls: string[] = [];
++      jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
++        const method = init?.method ?? 'GET';
++        calls.push(method);
++        const body = method === 'DELETE'
++          ? { id: 'sub-late', status: 'canceled' }
++          : { id: 'sub-late', status, latest_invoice: 'in-renewal-open',
++              trial_end: Math.floor(NOW.getTime() / 1000) - 40 * 86400 };
++        return new Response(JSON.stringify(body), {
++          status: 200, headers: { 'Content-Type': 'application/json' },
++        });
++      });
++      try {
++        const service = new TrialConflictService(
++          stub<C[0]>({ packageTrialConflict: table }),
++          new StripeConnectApiService(),
++        );
++        await service.sweep(NOW);
++        expect(calls).not.toContain('DELETE');
++        expect(table.rows[0].status).not.toBe('cancelled');
++      } finally {
++        if (originalSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++        else process.env.STRIPE_SECRET_KEY = originalSecret;
++      }
++    },
++  );
++
++  it('a superseding webhook committed during the GET vetoes DELETE even when its older response says trialing far from end', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-race', purchase_id: 'purchase-race',
++      stripe_subscription_id: 'sub-race', next_attempt_at: NOW,
++    }] });
++    const db = stub<C[0]>({ packageTrialConflict: table });
++    const cancelSubscription = jest.fn(async () => ({ id: 'sub-race', status: 'canceled' }));
++    let service!: TrialConflictService;
++    const retrieveSubscription = jest.fn(async () => {
++      // Read captured the pre-conversion snapshot. Before the response
++      // arrives, early conversion's active event commits supersession.
++      await service.supersede(db, 'purchase-race', NOW);
++      return { id: 'sub-race', status: 'trialing',
++        trial_end: Math.floor(NOW.getTime() / 1000) + 86400 };
++    });
++    service = new TrialConflictService(db, stub<C[1]>({ retrieveSubscription, cancelSubscription }));
++    const result = await service.settle('purchase-race', NOW);
++    expect(result).toBe('stale');
++    expect(table.rows[0].status).toBe('superseded');
++    expect(cancelSubscription).not.toHaveBeenCalled();
++  });
++
++  it('an unchanged, still-unbilled trial far from end cancels once', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-control', purchase_id: 'purchase-control',
++      stripe_subscription_id: 'sub-control', next_attempt_at: NOW,
++    }] });
++    const cancelSubscription = jest.fn(async () => ({ id: 'sub-control', status: 'canceled' }));
++    const retrieveSubscription = jest.fn(async () => ({
++      id: 'sub-control', status: 'trialing',
++      trial_end: Math.floor(NOW.getTime() / 1000) + 86400,
++    }));
++    const service = new TrialConflictService(
++      stub<C[0]>({ packageTrialConflict: table }),
++      stub<C[1]>({ retrieveSubscription, cancelSubscription }),
++    );
++    expect(await service.settle('purchase-control', NOW)).toBe('cancelled');
++    expect(cancelSubscription).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('AUD-SOL-T23-118 — cancellation retry after the card was charged', () => {
++  it('a missed active webhook must not let an owed conflict cancel a paid active plan without the billed alert', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-paid', purchase_id: 'purchase-paid',
++      stripe_subscription_id: 'sub-paid', next_attempt_at: NOW,
++      attempts: 3, alerted_at: NOW,
++    }] });
++    // The cancellation outage spanned the trial end. Stripe charged the
++    // first regular invoice, but customer.subscription.updated has not yet
++    // reached BillingService. The durable local conflict therefore remains
++    // owed. Actual service + actual Stripe API over an intercepted fetch.
++    const originalSecret = process.env.STRIPE_SECRET_KEY;
++    process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++    const calls: string[] = [];
++    jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
++      const method = init?.method ?? 'GET';
++      calls.push(method);
++      const body = method === 'DELETE'
++        ? { id: 'sub-paid', status: 'canceled' }
++        : { id: 'sub-paid', status: 'active', latest_invoice: 'in-paid',
++            trial_end: Math.floor(NOW.getTime() / 1000) - 1 };
++      return new Response(JSON.stringify(body), {
++        status: 200, headers: { 'Content-Type': 'application/json' },
++      });
++    });
++    try {
++      const service = new TrialConflictService(
++        stub<C[0]>({ packageTrialConflict: table }),
++        new StripeConnectApiService(),
++      );
++      await service.sweep(NOW);
++      expect(calls).not.toContain('DELETE');
++      expect(table.rows[0]).toMatchObject({ status: 'superseded' });
++    } finally {
++      if (originalSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++      else process.env.STRIPE_SECRET_KEY = originalSecret;
++    }
++  });
++});
+diff --git a/test/aud-sol-t23d-119-673-payment-race.spec.ts b/test/aud-sol-t23d-119-673-payment-race.spec.ts
+new file mode 100644
+index 00000000..ac279c3f
+--- /dev/null
++++ b/test/aud-sol-t23d-119-673-payment-race.spec.ts
+@@ -0,0 +1,143 @@
++import { TrialConflictService, trialPaidHistory } from '../src/packages/trials/trial-conflict.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { makeTrialConflictTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++type C = ConstructorParameters<typeof TrialConflictService>;
++
++afterEach(() => { jest.restoreAllMocks(); });
++
++describe('AUD-SOL-T23D-119 — payment succeeds while history preparation is in flight', () => {
++  it.each(['past_due', 'unpaid'])(
++    '%s: do not DELETE a plan whose first regular invoice just paid while the active webhook is delayed',
++    async (status) => {
++      const table = makeTrialConflictTable();
++      await table.createMany({ data: [{
++        id: 'conflict-payment', purchase_id: 'purchase-payment',
++        stripe_subscription_id: 'sub-payment', next_attempt_at: NOW,
++      }] });
++      const purchase: Record<string, unknown> = {
++        id: 'purchase-payment', client_user_id: 'client-payment',
++        coach_user_id: 'coach-payment', package_id: 'package-payment',
++        stripe_subscription_id: 'sub-payment', billing_type: 'recurring',
++        status: 'trialing', entitlement_active: false, trial_days: 7,
++        trial_ends_at: new Date(NOW.getTime() - 86400000),
++        amount_cents: 4900, currency: 'usd', created_at: NOW,
++      };
++      const rawDb = {
++        packageTrialConflict: table,
++        packageTrialUsage: makeTrialUsageTable(),
++        clientPurchase: {
++          findUnique: jest.fn(async () => ({ ...purchase })),
++          update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++            Object.assign(purchase, data);
++            return { ...purchase };
++          }),
++        },
++        coachPackage: { findUnique: jest.fn(async () => ({
++          id: 'package-payment', duration_periods: null,
++        })) },
++        $queryRaw: jest.fn(async () => []),
++      };
++      const db = stub<C[0]>(rawDb);
++      const previousSecret = process.env.STRIPE_SECRET_KEY;
++      process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++      const stripe = new StripeConnectApiService();
++      const service = new TrialConflictService(db, stripe);
++      const usage = new TrialUsageService(db);
++      const handler = new CheckoutWebhookHandlerService(
++        db, stripe, undefined, undefined, undefined, undefined, undefined,
++        undefined, undefined, usage, undefined, service,
++      );
++      const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(rawDb);
++      const calls: string[] = [];
++      let paidCents = 0;
++      let accessBeforeDeleted: unknown;
++      let paidRemote = false;
++      const activeEvent = async () => handler.handle({
++        id: 'evt-payment-active', type: 'customer.subscription.updated',
++        data: { object: {
++          id: 'sub-payment', status: 'active',
++          trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          current_period_end: Math.floor(NOW.getTime() / 1000) + 30 * 86400,
++        } },
++      }, tx);
++      jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++        const method = init?.method ?? 'GET';
++        const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++        calls.push(`${method} ${path}`);
++        let body: unknown;
++        if (path.startsWith('/invoices?')) {
++          // The authoritative paid list is generated BEFORE a concurrent
++          // successful payment. Its complete response arrives AFTER payment.
++          const captured = { data: [{ id: 'in-trial', amount_paid: 0, total: 0 }], has_more: false };
++          paidCents = 4900;
++          paidRemote = true;
++          // No active event has committed yet: delivery delay is legitimate.
++          body = captured;
++        } else if (method === 'POST' && path.endsWith('/void')) {
++          // A safe implementation encounters paid, not open; no cancellation.
++          return new Response(JSON.stringify({
++            error: { type: 'invalid_request_error', code: 'invoice_not_open' },
++          }), { status: 400 });
++        } else if (method === 'DELETE') {
++          // This is already destructive dispatch. Delayed active delivery
++          // grants paid access; the cancellation's real handler then removes it.
++          await activeEvent();
++          accessBeforeDeleted = purchase.entitlement_active;
++          await handler.handle({
++            id: 'evt-payment-deleted', type: 'customer.subscription.deleted',
++            data: { object: { id: 'sub-payment' } },
++          }, tx);
++          body = { id: 'sub-payment', status: 'canceled' };
++        } else {
++          body = {
++            id: 'sub-payment', status: paidRemote ? 'active' : status,
++            latest_invoice: 'in-first-open',
++            trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          };
++        }
++        return new Response(JSON.stringify(body), { status: 200 });
++      });
++      try {
++        const outcome = await service.settle('purchase-payment', NOW);
++        // Setup controls distinguish paid-state behavior from a fixture failure.
++        expect(paidCents).toBe(4900);
++        expect(calls.some((c) => c.startsWith('GET /invoices?'))).toBe(true);
++        const deleted = calls.filter((c) => c.startsWith('DELETE'));
++        if (deleted.length) {
++          expect(accessBeforeDeleted).toBe(true);
++          expect(purchase.entitlement_active).toBe(false);
++        }
++        console.info('AUD-SOL-T23D-119 PAYMENT_RACE', {
++          paidCents, accessBeforeDeleted, accessAfterDeleted: purchase.entitlement_active,
++          outcome, conflict: table.rows[0].status, deletes: deleted.length,
++        });
++        expect({
++          deleted, outcome, conflict: table.rows[0].status,
++          entitlement: purchase.entitlement_active,
++        }).toMatchObject({ deleted: [] });
++      } finally {
++        if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++        else process.env.STRIPE_SECRET_KEY = previousSecret;
++      }
++    },
++  );
++});
++
++describe('AUD-SOL-T23D-119 — paid-history malformed-amount boundary', () => {
++  it.each([
++    { amount_paid: -1, total: 0 },
++    { amount_paid: 0 }, // missing total cannot distinguish a credit-funded paid invoice
++    { amount_paid: Number.NaN, total: 0 },
++  ])('does not prove none from malformed monetary evidence %p', (invoice) => {
++    expect(trialPaidHistory({ data: [invoice], has_more: false })).toBe('unknown');
++  });
++  it('controls: valid no-charge history, partial no-charge history, and positive paid evidence', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: false })).toBe('none');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: true })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: 4900, total: 4900 }], has_more: true })).toBe('charged');
++  });
++});
+diff --git a/test/aud-sol-t23d-119-673-replay.spec.ts b/test/aud-sol-t23d-119-673-replay.spec.ts
+new file mode 100644
+index 00000000..dbd5a388
+--- /dev/null
++++ b/test/aud-sol-t23d-119-673-replay.spec.ts
+@@ -0,0 +1,269 @@
++import { TrialConflictService } from '../src/packages/trials/trial-conflict.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { makeTrialConflictTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++type C = ConstructorParameters<typeof TrialConflictService>;
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((r) => { resolve = r; });
++  return { promise, resolve };
++}
++
++afterEach(() => {
++  jest.restoreAllMocks();
++  jest.useRealTimers();
++});
++
++describe('AUD-SOL-T23-118 — actual cancellation admission clocks', () => {
++  it('a late-row cancellation holds a fresh lease while its bounded Stripe operation runs', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    jest.setSystemTime(NOW);
++    const table = makeTrialConflictTable();
++    for (let i = 0; i < 8; i += 1) {
++      await table.createMany({ data: [{
++        id: `conflict-${i}`, purchase_id: `purchase-${i}`,
++        stripe_subscription_id: `sub-${i}`, next_attempt_at: NOW,
++      }] });
++    }
++    const entered = deferred<void>();
++    const held = deferred<{ id: string; status: string }>();
++    let lateCalls = 0;
++    const cancelSubscription = jest.fn(async (id: string) => {
++      // Seven successful nine-second calls. All are below the real
++      // StripeConnectApiService ten-second HTTP timeout and the worker's
++      // twenty-second wrapper deadline. Only elapsed clock is modeled.
++      if (id !== 'sub-7') jest.setSystemTime(new Date(Date.now() + 9000));
++      if (id === 'sub-7' && ++lateCalls === 1) {
++        entered.resolve();
++        return held.promise;
++      }
++      return { id, status: 'canceled' };
++    });
++    const db = stub<C[0]>({ packageTrialConflict: table });
++    const stripe = stub<C[1]>({ cancelSubscription, retrieveSubscription: jest.fn(async (id: string) => ({ id, status: 'trialing', trial_end: Math.floor(NOW.getTime() / 1000) + 86400 })) });
++    const firstService = new TrialConflictService(db, stripe);
++    const replica = new TrialConflictService(db, stripe);
++    const firstSweep = firstService.sweep(NOW);
++    await entered.promise;
++    expect(Date.now() - NOW.getTime()).toBe(63_000);
++    // Five seconds into the final operation: still below both transport
++    // bounds, yet the lease derived from the sweep timestamp expired.
++    jest.setSystemTime(new Date(Date.now() + 5000));
++    const other = await replica.settle('purchase-7');
++    held.resolve({ id: 'sub-7', status: 'canceled' });
++    await firstSweep;
++    expect({ lateCalls, other }).toEqual({ lateCalls: 1, other: 'busy' });
++  });
++});
++
++describe('AUD-SOL-T23-119 — cancellation safety beyond one active snapshot', () => {
++  it('actual active webhook during intercepted Stripe GET preserves its new paid access against obsolete DELETE', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-real-handler', purchase_id: 'purchase-real-handler',
++      stripe_subscription_id: 'sub-real-handler', next_attempt_at: NOW,
++    }] });
++    const purchase: Record<string, unknown> = {
++      id: 'purchase-real-handler', client_user_id: 'client-real-handler',
++      coach_user_id: 'coach-real-handler', package_id: 'package-real-handler',
++      stripe_subscription_id: 'sub-real-handler', billing_type: 'recurring',
++      status: 'trialing', entitlement_active: false, trial_days: 7,
++      trial_ends_at: new Date(NOW.getTime() + 86400000),
++      amount_cents: 4900, currency: 'usd', created_at: NOW,
++    };
++    const rawDb = {
++      packageTrialConflict: table,
++      packageTrialUsage: makeTrialUsageTable(),
++      clientPurchase: {
++        findUnique: jest.fn(async () => ({ ...purchase })),
++        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++          Object.assign(purchase, data);
++          return { ...purchase };
++        }),
++      },
++      coachPackage: { findUnique: jest.fn(async () => ({
++        id: 'package-real-handler', duration_periods: null,
++      })) },
++      $queryRaw: jest.fn(async () => []),
++    };
++    const db = stub<C[0]>(rawDb);
++    const originalSecret = process.env.STRIPE_SECRET_KEY;
++    process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++    const stripe = new StripeConnectApiService();
++    const service = new TrialConflictService(db, stripe);
++    const usage = new TrialUsageService(db);
++    const handler = new CheckoutWebhookHandlerService(
++      db, stripe, undefined, undefined, undefined, undefined, undefined,
++      undefined, undefined, usage, undefined, service,
++    );
++    const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(rawDb);
++    const calls: string[] = [];
++    let paidAccessBeforeDelete: unknown;
++    jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
++      const method = init?.method ?? 'GET';
++      calls.push(method);
++      if (method === 'GET') {
++        await handler.handle({
++          id: 'evt-active-early', type: 'customer.subscription.updated',
++          data: { object: {
++            id: 'sub-real-handler', status: 'active',
++            trial_end: Math.floor(NOW.getTime() / 1000),
++            current_period_end: Math.floor(NOW.getTime() / 1000) + 30 * 86400,
++          } },
++        }, tx);
++        paidAccessBeforeDelete = purchase.entitlement_active;
++        return new Response(JSON.stringify({
++          id: 'sub-real-handler', status: 'trialing',
++          trial_end: Math.floor(NOW.getTime() / 1000) + 86400,
++        }), { status: 200 });
++      }
++      await handler.handle({
++        id: 'evt-deleted-after-stale-retry', type: 'customer.subscription.deleted',
++        data: { object: { id: 'sub-real-handler' } },
++      }, tx);
++      return new Response(JSON.stringify({
++        id: 'sub-real-handler', status: 'canceled',
++      }), { status: 200 });
++    });
++    try {
++      const result = await service.settle('purchase-real-handler', NOW);
++      expect(paidAccessBeforeDelete).toBe(true);
++      expect(result).toBe('stale');
++      expect(table.rows[0].status).toBe('superseded');
++      expect({ calls, paidAccess: purchase.entitlement_active }).toEqual({
++        calls: ['GET'], paidAccess: true,
++      });
++    } finally {
++      if (originalSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++      else process.env.STRIPE_SECRET_KEY = originalSecret;
++    }
++  });
++
++  it.each(['past_due', 'unpaid'])(
++    'does not infer never-billed from %s when previous paid conversion evidence is unavailable',
++    async (status) => {
++      const table = makeTrialConflictTable();
++      await table.createMany({ data: [{
++        id: 'conflict-late', purchase_id: 'purchase-late',
++        stripe_subscription_id: 'sub-late', next_attempt_at: NOW,
++        attempts: 6, alerted_at: NOW,
++      }] });
++      // Durable owed conflict survived an outage: the first regular invoice
++      // was paid; a later invoice is now overdue. All active events were
++      // delayed. Status alone does not reveal that prior paid invoice.
++      const originalSecret = process.env.STRIPE_SECRET_KEY;
++      process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++      const calls: string[] = [];
++      jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
++        const method = init?.method ?? 'GET';
++        calls.push(method);
++        const body = method === 'DELETE'
++          ? { id: 'sub-late', status: 'canceled' }
++          : { id: 'sub-late', status, latest_invoice: 'in-renewal-open',
++              trial_end: Math.floor(NOW.getTime() / 1000) - 40 * 86400 };
++        return new Response(JSON.stringify(body), {
++          status: 200, headers: { 'Content-Type': 'application/json' },
++        });
++      });
++      try {
++        const service = new TrialConflictService(
++          stub<C[0]>({ packageTrialConflict: table }),
++          new StripeConnectApiService(),
++        );
++        await service.sweep(NOW);
++        expect(calls).not.toContain('DELETE');
++        expect(table.rows[0].status).not.toBe('cancelled');
++      } finally {
++        if (originalSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++        else process.env.STRIPE_SECRET_KEY = originalSecret;
++      }
++    },
++  );
++
++  it('a superseding webhook committed during the GET vetoes DELETE even when its older response says trialing far from end', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-race', purchase_id: 'purchase-race',
++      stripe_subscription_id: 'sub-race', next_attempt_at: NOW,
++    }] });
++    const db = stub<C[0]>({ packageTrialConflict: table });
++    const cancelSubscription = jest.fn(async () => ({ id: 'sub-race', status: 'canceled' }));
++    let service!: TrialConflictService;
++    const retrieveSubscription = jest.fn(async () => {
++      // Read captured the pre-conversion snapshot. Before the response
++      // arrives, early conversion's active event commits supersession.
++      await service.supersede(db, 'purchase-race', NOW);
++      return { id: 'sub-race', status: 'trialing',
++        trial_end: Math.floor(NOW.getTime() / 1000) + 86400 };
++    });
++    service = new TrialConflictService(db, stub<C[1]>({ retrieveSubscription, cancelSubscription }));
++    const result = await service.settle('purchase-race', NOW);
++    expect(result).toBe('stale');
++    expect(table.rows[0].status).toBe('superseded');
++    expect(cancelSubscription).not.toHaveBeenCalled();
++  });
++
++  it('an unchanged, still-unbilled trial far from end cancels once', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-control', purchase_id: 'purchase-control',
++      stripe_subscription_id: 'sub-control', next_attempt_at: NOW,
++    }] });
++    const cancelSubscription = jest.fn(async () => ({ id: 'sub-control', status: 'canceled' }));
++    const retrieveSubscription = jest.fn(async () => ({
++      id: 'sub-control', status: 'trialing',
++      trial_end: Math.floor(NOW.getTime() / 1000) + 86400,
++    }));
++    const service = new TrialConflictService(
++      stub<C[0]>({ packageTrialConflict: table }),
++      stub<C[1]>({ retrieveSubscription, cancelSubscription }),
++    );
++    expect(await service.settle('purchase-control', NOW)).toBe('cancelled');
++    expect(cancelSubscription).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('AUD-SOL-T23-118 — cancellation retry after the card was charged', () => {
++  it('a missed active webhook must not let an owed conflict cancel a paid active plan without the billed alert', async () => {
++    const table = makeTrialConflictTable();
++    await table.createMany({ data: [{
++      id: 'conflict-paid', purchase_id: 'purchase-paid',
++      stripe_subscription_id: 'sub-paid', next_attempt_at: NOW,
++      attempts: 3, alerted_at: NOW,
++    }] });
++    // The cancellation outage spanned the trial end. Stripe charged the
++    // first regular invoice, but customer.subscription.updated has not yet
++    // reached BillingService. The durable local conflict therefore remains
++    // owed. Actual service + actual Stripe API over an intercepted fetch.
++    const originalSecret = process.env.STRIPE_SECRET_KEY;
++    process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++    const calls: string[] = [];
++    jest.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
++      const method = init?.method ?? 'GET';
++      calls.push(method);
++      const body = method === 'DELETE'
++        ? { id: 'sub-paid', status: 'canceled' }
++        : { id: 'sub-paid', status: 'active', latest_invoice: 'in-paid',
++            trial_end: Math.floor(NOW.getTime() / 1000) - 1 };
++      return new Response(JSON.stringify(body), {
++        status: 200, headers: { 'Content-Type': 'application/json' },
++      });
++    });
++    try {
++      const service = new TrialConflictService(
++        stub<C[0]>({ packageTrialConflict: table }),
++        new StripeConnectApiService(),
++      );
++      await service.sweep(NOW);
++      expect(calls).not.toContain('DELETE');
++      expect(table.rows[0]).toMatchObject({ status: 'superseded' });
++    } finally {
++      if (originalSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++      else process.env.STRIPE_SECRET_KEY = originalSecret;
++    }
++  });
++});
+diff --git a/test/aud-sol-t3e-119-673-payable-race.spec.ts b/test/aud-sol-t3e-119-673-payable-race.spec.ts
+new file mode 100644
+index 00000000..1569248b
+--- /dev/null
++++ b/test/aud-sol-t3e-119-673-payable-race.spec.ts
+@@ -0,0 +1,178 @@
++import { TrialConflictService, trialPaidHistory } from '../src/packages/trials/trial-conflict.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { makeTrialConflictTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++type C = ConstructorParameters<typeof TrialConflictService>;
++
++afterEach(() => { jest.restoreAllMocks(); });
++
++describe('AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void', () => {
++  it.each([
++    ['past_due', 'open'],
++    ['unpaid', 'open'],
++    ['past_due', 'uncollectible'],
++    ['unpaid', 'uncollectible'],
++  ])(
++    '%s / %s: preserve a paid plan while the active webhook is delayed',
++    async (status, payingStatus) => {
++      const table = makeTrialConflictTable();
++      await table.createMany({ data: [{
++        id: 'conflict-payment', purchase_id: 'purchase-payment',
++        stripe_subscription_id: 'sub-payment', next_attempt_at: NOW,
++      }] });
++      const purchase: Record<string, unknown> = {
++        id: 'purchase-payment', client_user_id: 'client-payment',
++        coach_user_id: 'coach-payment', package_id: 'package-payment',
++        stripe_subscription_id: 'sub-payment', billing_type: 'recurring',
++        status: 'trialing', entitlement_active: false, trial_days: 7,
++        trial_ends_at: new Date(NOW.getTime() - 86400000),
++        amount_cents: 4900, currency: 'usd', created_at: NOW,
++      };
++      const rawDb = {
++        packageTrialConflict: table,
++        packageTrialUsage: makeTrialUsageTable(),
++        clientPurchase: {
++          findUnique: jest.fn(async () => ({ ...purchase })),
++          update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++            Object.assign(purchase, data);
++            return { ...purchase };
++          }),
++        },
++        coachPackage: { findUnique: jest.fn(async () => ({
++          id: 'package-payment', duration_periods: null,
++        })) },
++        $queryRaw: jest.fn(async () => []),
++      };
++      const db = stub<C[0]>(rawDb);
++      const previousSecret = process.env.STRIPE_SECRET_KEY;
++      process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++      const stripe = new StripeConnectApiService();
++      const service = new TrialConflictService(db, stripe);
++      const usage = new TrialUsageService(db);
++      const handler = new CheckoutWebhookHandlerService(
++        db, stripe, undefined, undefined, undefined, undefined, undefined,
++        undefined, undefined, usage, undefined, service,
++      );
++      const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(rawDb);
++      const calls: string[] = [];
++      let paidCents = 0;
++      let accessBeforeDeleted: unknown;
++      let paidRemote = false;
++      const voidedIds: string[] = [];
++      const activeEvent = async () => handler.handle({
++        id: 'evt-payment-active', type: 'customer.subscription.updated',
++        data: { object: {
++          id: 'sub-payment', status: 'active',
++          trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          current_period_end: Math.floor(NOW.getTime() / 1000) + 30 * 86400,
++        } },
++      }, tx);
++      jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++        const method = init?.method ?? 'GET';
++        const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++        calls.push(`${method} ${path}`);
++        let body: unknown;
++        if (path.startsWith('/invoices?')) {
++          const queryStatus = new URLSearchParams(path.split('?')[1]).get('status');
++          if (queryStatus === 'open') {
++            // The newest unpaid invoice is open. An older uncollectible
++            // invoice is not part of this complete status-filtered page.
++            body = { data: [{ id: 'in-new-open', status: 'open' }], has_more: false };
++          } else if (queryStatus === 'uncollectible') {
++            body = {
++              data: payingStatus === 'uncollectible'
++                ? [{ id: 'in-old-uncollectible', status: 'uncollectible' }] : [],
++              has_more: false,
++            };
++          } else if (queryStatus === 'paid') {
++            // The response is prepared before the first positive payment,
++            // which succeeds on the still-payable old invoice before delivery.
++            body = { data: [{ id: 'in-trial', amount_paid: 0, total: 0 }], has_more: false };
++            paidCents = 4900;
++            paidRemote = true;
++          } else {
++            throw new Error(`unexpected invoice status filter ${queryStatus}`);
++          }
++        } else if (method === 'POST' && path.endsWith('/void')) {
++          const invoiceId = path.split('/')[2];
++          const paymentWonThisInvoice =
++            payingStatus === 'open' || invoiceId === 'in-old-uncollectible';
++          if (paymentWonThisInvoice) {
++            return new Response(JSON.stringify({
++              error: { type: 'invalid_request_error', code: 'invoice_not_open' },
++            }), { status: 400 });
++          }
++          // Voiding the newest open invoice does not invalidate a separate
++          // payment on the older uncollectible invoice.
++          voidedIds.push(invoiceId);
++          body = { id: invoiceId, status: 'void' };
++        } else if (method === 'DELETE') {
++          // This is already destructive dispatch. Delayed active delivery
++          // grants paid access; the cancellation's real handler then removes it.
++          await activeEvent();
++          accessBeforeDeleted = purchase.entitlement_active;
++          await handler.handle({
++            id: 'evt-payment-deleted', type: 'customer.subscription.deleted',
++            data: { object: { id: 'sub-payment' } },
++          }, tx);
++          body = { id: 'sub-payment', status: 'canceled' };
++        } else {
++          body = {
++            id: 'sub-payment', status: paidRemote ? 'active' : status,
++            latest_invoice: 'in-new-open',
++            trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          };
++        }
++        return new Response(JSON.stringify(body), { status: 200 });
++      });
++      try {
++        const outcome = await service.settle('purchase-payment', NOW);
++        expect(paidCents).toBe(4900);
++        expect(calls.filter((c) => c.startsWith('GET /invoices?'))).toEqual(
++          expect.arrayContaining([
++            'GET /invoices?subscription=sub-payment&status=open&limit=100',
++            'GET /invoices?subscription=sub-payment&status=paid&limit=100',
++          ]),
++        );
++        const deleted = calls.filter((c) => c.startsWith('DELETE'));
++        if (deleted.length) {
++          expect(accessBeforeDeleted).toBe(true);
++          expect(purchase.entitlement_active).toBe(false);
++          expect(voidedIds).toEqual(['in-new-open']);
++        }
++        console.info('AUD-SOL-T3E-119 PAYABLE_INVOICE_RACE', {
++          status, payingStatus, voidedIds, calls,
++          paidCents, accessBeforeDeleted, accessAfterDeleted: purchase.entitlement_active,
++          outcome, conflict: table.rows[0].status, deletes: deleted.length,
++        });
++        expect({
++          deleted, outcome, conflict: table.rows[0].status,
++          entitlement: purchase.entitlement_active,
++        }).toMatchObject({ deleted: [] });
++        await activeEvent();
++        expect(purchase.entitlement_active).toBe(true);
++      } finally {
++        if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++        else process.env.STRIPE_SECRET_KEY = previousSecret;
++      }
++    },
++  );
++});
++
++describe('AUD-SOL-T3E-119 — retained malformed-money controls', () => {
++  it.each([
++    { amount_paid: -1, total: 0 },
++    { amount_paid: 0 }, // missing total cannot distinguish a credit-funded paid invoice
++    { amount_paid: Number.NaN, total: 0 },
++  ])('does not prove none from malformed monetary evidence %p', (invoice) => {
++    expect(trialPaidHistory({ data: [invoice], has_more: false })).toBe('unknown');
++  });
++  it('controls: valid no-charge history, partial no-charge history, and positive paid evidence', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: false })).toBe('none');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: true })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: 4900, total: 4900 }], has_more: true })).toBe('charged');
++  });
++});
+diff --git a/test/audit-opus-t23-118-673.spec.ts b/test/audit-opus-t23-118-673.spec.ts
+new file mode 100644
+index 00000000..359b132c
+--- /dev/null
++++ b/test/audit-opus-t23-118-673.spec.ts
+@@ -0,0 +1,346 @@
++// AUD-OPUS-T23-118 (Claude Opus 5.5 lens, agent 118) — probes on backend
++// #673 @ df76889fb862095170498dccb23f35db3d116690. Audit-only: never merge.
++// "probe" = asserts the safe behaviour, EXPECTED RED at this head;
++// "control" = expected green. The world() helper is copied from the PR's
++// own test/b-trials-notice-and-webhook.spec.ts so the real handler, the real
++// TrialUsageService and the real TrialNoticeService run on the same fakes.
++//   C-673-2  an older (retried) customer.subscription.updated rewrites an
++//            extended trial end back and records a notice for the old date;
++//   C-673-3  outside this diff: GET /coach/connect/metrics counts a started,
++//            never-billed trial in MRR and its cancel in clients_churned_30d;
++//   controls C-671-4 composed (invoice.paid and lost race never write
++//            trial_ends_at); B-672-3 composed (trial_will_end before the
++//            subscription update: retired, then reopened and sent once).
++import { CoachConnectService } from '../src/coach-connect/coach-connect.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { TrialNoticeService } from '../src/packages/trials/trial-notice.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { purchaseTrialView } from '../src/packages/trials/trial-view';
++import { makeTrialNoticeTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const TRIAL_END = new Date('2026-10-12T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++
++function purchaseRow(over: Record<string, unknown> = {}) {
++  return {
++    id: 'pur-1',
++    client_user_id: 'client-1',
++    coach_user_id: 'coach-1',
++    package_id: 'pkg-1',
++    amount_cents: 4900,
++    currency: 'usd',
++    billing_type: 'recurring',
++    status: 'trialing',
++    entitlement_active: true,
++    stripe_subscription_id: 'sub_1',
++    stripe_customer_id: 'cus_1',
++    cancel_at_period_end: false,
++    trial_days: 7,
++    trial_ends_at: TRIAL_END,
++    created_at: new Date('2026-10-05T17:00:00Z'),
++    ...over,
++  };
++}
++
++function trialSub(over: Record<string, unknown> = {}) {
++  return {
++    id: 'sub_1',
++    status: 'trialing',
++    trial_start: epoch(new Date('2026-10-05T17:00:00Z')),
++    trial_end: epoch(TRIAL_END),
++    current_period_end: epoch(TRIAL_END),
++    cancel_at_period_end: false,
++    default_payment_method: 'pm_card_visa',
++    items: { data: [{ quantity: 1, price: { unit_amount: 4900, currency: 'usd' } }] },
++    ...over,
++  };
++}
++
++function world(opts: { tz?: string | null; email?: string | null; pushCode?: string } = {}) {
++  const notices = makeTrialNoticeTable();
++  const usage = makeTrialUsageTable();
++  const purchases = [purchaseRow()];
++  const prisma = {
++    packageTrialNotice: notices,
++    packageTrialUsage: usage,
++    // B-TRIALS-3 (B-656-5) — a completed read: this client has no customer
++    // default card (an unreadable one is "unknown" and defers delivery).
++    connectCustomer: { findUnique: jest.fn(async () => null) },
++    notificationPreferences: {
++      findUnique: jest.fn(async () =>
++        // B-TR2-117 — the client's own (stamped) zone: the date reads bare (C-672-7).
++        opts.tz === null
++          ? null
++          : { timezone: opts.tz ?? 'America/Los_Angeles', timezone_updated_at: NOW },
++      ),
++    },
++    coachPackage: {
++      findUnique: jest.fn(async () => ({ id: 'pkg-1', duration_periods: null, trial_days: 7 })),
++    },
++    clientPurchase: {
++      findUnique: jest.fn(async ({ where }: { where: Record<string, string> }) => {
++        const row = purchases.find(
++          (p) =>
++            (where.id && p.id === where.id) ||
++            (where.stripe_subscription_id &&
++              p.stripe_subscription_id === where.stripe_subscription_id),
++        );
++        if (!row) return null;
++        return {
++          ...row,
++          package: { name: 'GP Monthly', interval: 'month', interval_count: 1 },
++          coach: { name: 'Bradley Coach' },
++          client: {
++            email: opts.email === undefined ? 'client@example.test' : opts.email,
++            name: 'Ana Client',
++          },
++        };
++      }),
++      update: jest.fn(
++        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
++          const row = purchases.find((p) => p.id === where.id);
++          if (!row) throw new Error('not found');
++          Object.assign(row, data);
++          return { ...row };
++        },
++      ),
++    },
++    $queryRaw: jest.fn(async () => []),
++    $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)),
++  };
++  const notifications = {
++    createNotification: jest.fn(async (input: Record<string, unknown>, _tx?: unknown) => ({
++      id: 'n-1',
++      ...input,
++      _tx,
++    })),
++    // B-TRIALS-3 (B-656-4) — delivery re-reads the client's preferences.
++    getPreferences: jest.fn(async () => ({ muted: false })),
++    pushToUser: jest.fn(async () =>
++      opts.pushCode
++        ? { delivered: false, code: opts.pushCode }
++        : { delivered: true, code: 'delivered' },
++    ),
++  };
++  const email = {
++    send: jest.fn(async (input: { idempotencyKey: string }) => ({
++      status: 'sent',
++      providerMessageId: 'm',
++      idempotencyKey: input.idempotencyKey,
++    })),
++  };
++  const noticeSvc = new TrialNoticeService(
++    stub<ConstructorParameters<typeof TrialNoticeService>[0]>(prisma),
++    stub<ConstructorParameters<typeof TrialNoticeService>[1]>(notifications),
++    stub<ConstructorParameters<typeof TrialNoticeService>[2]>(email),
++  );
++  const usageSvc = new TrialUsageService(
++    stub<ConstructorParameters<typeof TrialUsageService>[0]>(prisma),
++  );
++  const stripe = stub<StripeConnectApiService>({
++    cancelSubscription: jest.fn(async () => ({ id: 'sub_x', status: 'canceled' })),
++    retrieveSubscription: jest.fn(),
++  });
++  const handler = new CheckoutWebhookHandlerService(
++    stub<ConstructorParameters<typeof CheckoutWebhookHandlerService>[0]>(prisma),
++    stripe,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    usageSvc,
++    noticeSvc,
++  );
++  const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(prisma);
++  return {
++    prisma,
++    notices,
++    usage,
++    purchases,
++    notifications,
++    email,
++    noticeSvc,
++    usageSvc,
++    handler,
++    stripe,
++    tx,
++  };
++}
++
++const event = (type: string, object: Record<string, unknown>, id = 'evt_1') => ({
++  id,
++  type,
++  data: { object },
++});
++
++const DAY = 864e5;
++/** Stripe second precision, relative to the real clock the handler reads. */
++const at = (ms: number) => new Date(epoch(new Date(Date.now() + ms)) * 1000);
++
++/** The reconciler query (status trialing, access, end inside the window) over the in-memory rows. */
++function withPurchaseList(w: ReturnType<typeof world>) {
++  Object.assign(w.prisma.clientPurchase, {
++    findMany: jest.fn(async ({ where }: { where: { AND?: Array<Record<string, unknown>> } }) => {
++      const base = (where.AND?.[0] ?? {}) as {
++        trial_ends_at?: { gt: Date; lte: Date };
++      };
++      return w.purchases.filter((p) => {
++        const end = p.trial_ends_at as Date | null;
++        return (
++          p.status === 'trialing' &&
++          p.entitlement_active === true &&
++          !!end &&
++          (!base.trial_ends_at ||
++            (end.getTime() > base.trial_ends_at.gt.getTime() &&
++              end.getTime() <= base.trial_ends_at.lte.getTime()))
++        );
++      });
++    }),
++  });
++}
++
++describe('C-673-2 probe — an older subscription event rewrites an extended trial end', () => {
++  it('probe (expected red): a retried pre-extension update keeps the extended end and records no notice', async () => {
++    const w = world();
++    const extended = at(9 * DAY);
++    const original = at(2 * DAY);
++    Object.assign(w.purchases[0], { entitlement_active: true, trial_ends_at: extended });
++    // The pre-extension event (created earlier) arrives last: a Stripe retry.
++    const stale = {
++      ...event('customer.subscription.updated', trialSub({ trial_end: epoch(original), current_period_end: epoch(original) }), 'evt_old'),
++      created: epoch(new Date(Date.now() - DAY)),
++    };
++    const res = await w.handler.handle(stale, w.tx);
++    expect(w.purchases[0].trial_ends_at).toEqual(extended);
++    expect(res.deferredTrialNoticeId ?? null).toBeNull();
++    expect(w.notices.rows).toHaveLength(0);
++  });
++});
++
++describe('C-673-3 probe (outside this diff) — coach metrics count a never-billed trial', () => {
++  function metrics(w: ReturnType<typeof world>) {
++    const match = (p: Record<string, unknown>, where: Record<string, unknown>) =>
++      Object.entries(where).every(([k, v]) => {
++        if (v && typeof v === 'object' && 'gte' in (v as object)) {
++          const d = p[k] as Date | null | undefined;
++          return !!d && d.getTime() >= ((v as { gte: Date }).gte as Date).getTime();
++        }
++        if (v === null) return p[k] === null || p[k] === undefined;
++        return p[k] === v;
++      });
++    const prisma = {
++      clientPurchase: {
++        findMany: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
++          w.purchases
++            .filter((p) => match(p, where))
++            .map((p) => ({ amount_cents: p.amount_cents, package: { interval: 'month' } })),
++        ),
++        count: jest.fn(
++          async ({ where }: { where: Record<string, unknown> }) =>
++            w.purchases.filter((p) => match(p, where)).length,
++        ),
++      },
++      user: { count: jest.fn(async () => 1) },
++      teamSubCoachAssignment: { findMany: jest.fn(async () => []) },
++    };
++    const zero = { as_seller: { posted_cents: 0, refunds_cents: 0 }, as_head_coach: { posted_cents: 0 } };
++    type P = ConstructorParameters<typeof CoachConnectService>;
++    return new CoachConnectService(
++      stub<P[0]>(prisma),
++      stub<P[1]>({}),
++      stub<P[2]>({}),
++      stub<P[3]>({ ready: true }),
++      stub<P[4]>({}),
++      stub<P[5]>({ getCoachEarnings: jest.fn(async () => zero) }),
++    ).getMetrics('coach-1');
++  }
++
++  it('probe (expected red): a started trial (nothing billed) adds no MRR', async () => {
++    const w = world();
++    Object.assign(w.purchases[0], { entitlement_active: false, trial_ends_at: null });
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    expect(w.purchases[0]).toMatchObject({ status: 'trialing', entitlement_active: true });
++    expect((await metrics(w)).mrr).toBe(0);
++  });
++
++  it('probe (expected red): a never-billed trial cancelled during the trial is not churn', async () => {
++    const w = world();
++    Object.assign(w.purchases[0], { entitlement_active: false, trial_ends_at: null });
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    await w.handler.handle(event('customer.subscription.deleted', { id: 'sub_1' }, 'evt_2'), w.tx);
++    expect(w.purchases[0].status).toBe('canceled');
++    expect((await metrics(w)).clients_churned_30d).toBe(0);
++  });
++});
++
++describe('controls — C-671-4 and B-672-3 composed through the real handler', () => {
++  it('control C-671-4: a $0 trial invoice without a card, then the delete, never writes a trial end', async () => {
++    const w = world();
++    Object.assign(w.purchases[0], { entitlement_active: false, trial_ends_at: null });
++    await w.handler.handle(
++      event('invoice.paid', { id: 'in_1', subscription: 'sub_1', amount_paid: 0 }),
++      w.tx,
++      {
++        invoiceSubscription: stub<
++          NonNullable<Parameters<CheckoutWebhookHandlerService['handle']>[2]>['invoiceSubscription']
++        >(trialSub({ default_payment_method: null })),
++      },
++    );
++    expect(w.purchases[0]).toMatchObject({ entitlement_active: false, trial_ends_at: null });
++    expect(purchaseTrialView(w.purchases[0]).state).toBe('setup_incomplete');
++    await w.handler.handle(event('customer.subscription.deleted', { id: 'sub_1' }, 'evt_2'), w.tx);
++    expect(w.purchases[0]).toMatchObject({ status: 'canceled', trial_ends_at: null });
++    expect(purchaseTrialView(w.purchases[0]).state).toBe('none');
++  });
++
++  it('control C-671-4: the lost race (card saved, trial already used) never writes a trial end', async () => {
++    const w = world();
++    Object.assign(w.purchases[0], { entitlement_active: false, trial_ends_at: null });
++    w.usage.rows.push({
++      id: 'u-old',
++      client_user_id: 'client-1',
++      coach_user_id: 'coach-1',
++      package_id: 'pkg-0',
++      purchase_id: 'pur-0',
++      trial_days: 7,
++      status: 'started',
++      reserved_at: new Date(),
++    });
++    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++    expect(w.purchases[0]).toMatchObject({ entitlement_active: false, trial_ends_at: null });
++    await w.handler.handle(
++      event('customer.subscription.updated', trialSub({ status: 'canceled' }), 'evt_2'),
++      w.tx,
++    );
++    expect(w.purchases[0]).toMatchObject({ status: 'canceled', trial_ends_at: null });
++    expect(purchaseTrialView(w.purchases[0]).state).toBe('none');
++  });
++
++  it('control B-672-3: trial_will_end for a shortened trial before its update is retired, then sent once', async () => {
++    const w = world();
++    withPurchaseList(w);
++    const before = at(6 * DAY);
++    const after = at(2 * DAY);
++    Object.assign(w.purchases[0], { entitlement_active: true, trial_ends_at: before });
++    const sub = trialSub({ trial_end: epoch(after), current_period_end: epoch(after) });
++    const r1 = await w.handler.handle(event('customer.subscription.trial_will_end', sub), w.tx);
++    expect(r1.deferredTrialNoticeId).toEqual(expect.any(String));
++    await w.handler.deliverTrialNotice(r1.deferredTrialNoticeId as string);
++    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
++    expect(w.notices.rows[0]).toMatchObject({ push_status: 'skipped', last_error: 'skip:trial_superseded' });
++    const r2 = await w.handler.handle(event('customer.subscription.updated', sub, 'evt_2'), w.tx);
++    expect(w.purchases[0].trial_ends_at).toEqual(after);
++    if (r2.deferredTrialNoticeId) await w.handler.deliverTrialNotice(r2.deferredTrialNoticeId);
++    await w.noticeSvc.reconcileDue();
++    await w.noticeSvc.reconcileDue();
++    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
++    expect(w.email.send).toHaveBeenCalledTimes(1);
++    expect(w.notices.rows).toHaveLength(1);
++    expect(w.notices.rows[0]).toMatchObject({ push_status: 'delivered', email_status: 'sent' });
++  });
++});
+diff --git a/test/audit-opus-t23-119-673.spec.ts b/test/audit-opus-t23-119-673.spec.ts
+new file mode 100644
+index 00000000..8c084ac8
+--- /dev/null
++++ b/test/audit-opus-t23-119-673.spec.ts
+@@ -0,0 +1,409 @@
++// AUD-OPUS-T23-119 (Claude Opus 5.5 lens, agent 119) — probes on backend
++// #673 @ 5fdb5f5cf6fb09a23dd56382a47aafa4d0089c5d (FIX ROUND 9, Sol B-673-1).
++// Audit-only: never merge. The world() harness is copied byte-for-byte from the
++// PR's own test/b-trials-3-fix-round.spec.ts (real handler, usage, notice and
++// conflict services on the same fakes).
++//   controls (expected green): the read decides before any DELETE —
++//     K1 a read that uses up the lease room cancels nothing (lease_exhausted);
++//     K2 trialing with the trial ending in 30 s cancels nothing (trial_ending),
++//        backoff from the fresh clock;
++//     K3 paused (nothing billed) cancels once; K4 a 404 read settles cancelled
++//        with no DELETE; K5 a replica during a slow read stays out (busy);
++//     K6 a subscription.deleted webhook during the read wins (stale).
++//   probe C-673-4 (expected red): an out-of-order delivery (active applied
++//     first, then the older trialing event) leaves a paying client with no
++//     access once the worker supersedes: nothing re-syncs the purchase.
++import { Logger } from '@nestjs/common';
++import * as Sentry from '@sentry/node';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { CheckoutService } from '../src/checkout/checkout.service';
++import {
++  StripeConnectApiError,
++  StripeConnectApiService,
++  type StripeSubscriptionObject,
++} from '../src/connect/stripe-connect-api.service';
++import {
++  TRIAL_CONFLICT_ALERT_AFTER,
++  TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
++  TrialConflictService,
++  trialConflictBackoffMs,
++} from '../src/packages/trials/trial-conflict.service';
++import { trialEndingCopy, willChargeCard } from '../src/packages/trials/trial-copy';
++import { assertValidTrial } from '../src/packages/trials/trial-rules';
++import {
++  TRIAL_NOTICE_LEAD_MS,
++  TRIAL_NOTICE_ABORT_GRACE_MS,
++  TRIAL_NOTICE_LEASE_MS,
++  TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS,
++  TrialNoticeService,
++} from '../src/packages/trials/trial-notice.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { purchaseTrialView } from '../src/packages/trials/trial-view';
++import {
++  makeTable,
++  makeTrialConflictTable,
++  makeTrialNoticeTable,
++  makeTrialUsageTable,
++  stub,
++} from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const TRIAL_END = new Date('2026-10-12T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const CHARGE =
++  'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.';
++const NO_CARD =
++  'Your free trial ends on Oct 12. No card is saved, so nothing will be charged and your plan ends then.';
++
++function deferred<T>() {
++  let resolve!: (v: T) => void;
++  const promise = new Promise<T>((r) => {
++    resolve = r;
++  });
++  return { promise, resolve };
++}
++
++function purchaseRow(over: Record<string, unknown> = {}) {
++  return {
++    id: 'pur-1',
++    client_user_id: 'client-1',
++    coach_user_id: 'coach-1',
++    package_id: 'pkg-1',
++    amount_cents: 4900,
++    currency: 'usd',
++    billing_type: 'recurring',
++    status: 'trialing',
++    entitlement_active: true,
++    stripe_subscription_id: 'sub_1',
++    stripe_customer_id: 'cus_1',
++    cancel_at_period_end: false,
++    card_on_file: true as boolean | null,
++    trial_days: 7,
++    trial_ends_at: TRIAL_END as Date | null,
++    created_at: new Date('2026-10-05T17:00:00Z'),
++    ...over,
++  };
++}
++
++function trialSub(over: Record<string, unknown> = {}) {
++  return {
++    id: 'sub_1',
++    status: 'trialing',
++    trial_start: epoch(new Date('2026-10-05T17:00:00Z')),
++    trial_end: epoch(TRIAL_END),
++    current_period_end: epoch(TRIAL_END),
++    cancel_at_period_end: false,
++    default_payment_method: 'pm_card_visa',
++    items: { data: [{ quantity: 1, price: { unit_amount: 4900, currency: 'usd' } }] },
++    ...over,
++  };
++}
++
++const event = (type: string, object: Record<string, unknown>, id = 'evt_1') => ({
++  id,
++  type,
++  data: { object },
++});
++
++function world(
++  opts: {
++    muted?: boolean;
++    pushCode?: string;
++    customerDefault?: string | null;
++    purchase?: Record<string, unknown>;
++  } = {},
++) {
++  const notices = makeTrialNoticeTable();
++  const usage = makeTrialUsageTable();
++  const conflicts = makeTrialConflictTable();
++  const purchases = makeTable([['id']], () => ({}));
++  purchases.rows.push(purchaseRow(opts.purchase));
++  const withRelations = (row: Record<string, unknown>) => ({
++    ...row,
++    package: { name: 'GP Monthly', interval: 'month', interval_count: 1 },
++    coach: { name: 'Bradley Coach' },
++    client: { email: 'client@example.test', name: 'Ana Client' },
++  });
++  const prisma: Record<string, unknown> = {
++    packageTrialNotice: notices,
++    packageTrialUsage: usage,
++    packageTrialConflict: conflicts,
++    notificationPreferences: {
++      // B-TR2-117 — the client's own (stamped) zone: the date reads bare (C-672-7).
++      findUnique: jest.fn(async () => ({
++        timezone: 'America/Los_Angeles',
++        timezone_updated_at: NOW,
++      })),
++    },
++    connectCustomer: {
++      findUnique: jest.fn(async () =>
++        opts.customerDefault ? { default_payment_method_id: opts.customerDefault } : null,
++      ),
++    },
++    coachPackage: {
++      findUnique: jest.fn(async () => ({ id: 'pkg-1', duration_periods: null, trial_days: 7 })),
++    },
++    clientPurchase: {
++      findUnique: jest.fn(async ({ where }: { where: Record<string, string> }) => {
++        const row = purchases.rows.find(
++          (p) =>
++            (where.id && p.id === where.id) ||
++            (where.stripe_subscription_id &&
++              p.stripe_subscription_id === where.stripe_subscription_id),
++        );
++        return row ? withRelations(row) : null;
++      }),
++      findMany: purchases.findMany,
++      update: jest.fn(
++        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
++          const row = purchases.rows.find((p) => p.id === where.id);
++          if (!row) throw new Error('not found');
++          Object.assign(row, data);
++          return { ...row };
++        },
++      ),
++    },
++    $queryRaw: jest.fn(async () => []),
++  };
++  prisma.$transaction = jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> =>
++    cb(prisma),
++  );
++  const notifications = {
++    createNotification: jest.fn(async (input: Record<string, unknown>, _tx?: unknown) => ({
++      id: 'n-1',
++      ...input,
++    })),
++    getPreferences: jest.fn(async () => ({ muted: !!opts.muted })),
++    pushToUser: jest.fn(
++      async (..._args: unknown[]): Promise<{ delivered: boolean; code: string }> =>
++        opts.pushCode
++          ? { delivered: false, code: opts.pushCode }
++          : { delivered: true, code: 'delivered' },
++    ),
++  };
++  const email = {
++    send: jest.fn(async (input: { idempotencyKey: string }): Promise<Record<string, unknown>> => ({
++      status: 'sent',
++      providerMessageId: 'm',
++      idempotencyKey: input.idempotencyKey,
++    })),
++  };
++  const noticeSvc = new TrialNoticeService(
++    stub<ConstructorParameters<typeof TrialNoticeService>[0]>(prisma),
++    stub<ConstructorParameters<typeof TrialNoticeService>[1]>(notifications),
++    stub<ConstructorParameters<typeof TrialNoticeService>[2]>(email),
++  );
++  const usageSvc = new TrialUsageService(
++    stub<ConstructorParameters<typeof TrialUsageService>[0]>(prisma),
++  );
++  const cancelSubscription = jest.fn(
++    async (_id: string): Promise<{ id: string; status: string }> => ({
++      id: 'sub_1',
++      status: 'canceled',
++    }),
++  );
++  const stripe = stub<StripeConnectApiService>({
++    cancelSubscription,
++    // B-TR3-118 (B-673-1) — the worker reads Stripe's state first: still trialing.
++    retrieveSubscription: jest.fn(async (id: string) => ({
++      id,
++      status: 'trialing',
++      trial_end: epoch(new Date(Date.now() + 30 * 864e5)),
++    })),
++  });
++  const conflictSvc = new TrialConflictService(
++    stub<ConstructorParameters<typeof TrialConflictService>[0]>(prisma),
++    stripe,
++  );
++  const handler = new CheckoutWebhookHandlerService(
++    stub<ConstructorParameters<typeof CheckoutWebhookHandlerService>[0]>(prisma),
++    stripe,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    undefined,
++    usageSvc,
++    noticeSvc,
++    conflictSvc,
++  );
++  const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(prisma);
++  const purchase = () => purchases.rows[0];
++  return {
++    prisma,
++    notices,
++    usage,
++    conflicts,
++    purchases,
++    purchase,
++    notifications,
++    email,
++    noticeSvc,
++    usageSvc,
++    conflictSvc,
++    handler,
++    cancelSubscription,
++    stripe,
++    tx,
++  };
++}
++
++type World = ReturnType<typeof world>;
++type NoticeDeps = ConstructorParameters<typeof TrialNoticeService>;
++/** B-TR2-117 — another replica: one process never starts a second send of a channel (B-672-4). */
++const replica = (w: World) =>
++  new TrialNoticeService(
++    stub<NoticeDeps[0]>(w.prisma),
++    stub<NoticeDeps[1]>(w.notifications),
++    stub<NoticeDeps[2]>(w.email),
++  );
++
++/** Another purchase already holds this client's trial with coach-1. */
++function trialAlreadyStartedElsewhere(w: World) {
++  w.usage.rows.push({
++    id: 'u-old',
++    client_user_id: 'client-1',
++    coach_user_id: 'coach-1',
++    package_id: 'pkg-0',
++    purchase_id: 'pur-0',
++    trial_days: 7,
++    status: 'started',
++    reserved_at: new Date(),
++  });
++}
++
++async function recordNotice(w: World, sub = trialSub()) {
++  const id = await w.noticeSvc.recordTrialWillEnd(
++    stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[0]>(w.prisma),
++    {
++      purchase: stub<Parameters<TrialNoticeService['recordTrialWillEnd']>[1]['purchase']>(
++        w.purchase(),
++      ),
++      sub,
++      eventId: 'evt_1',
++      now: NOW,
++    },
++  );
++  if (!id) throw new Error('expected a notice');
++  return id;
++}
++
++
++beforeEach(() => {
++  jest.mocked(Sentry.captureMessage).mockClear();
++});
++
++async function owedWorld() {
++  const w = world({ purchase: { entitlement_active: false } });
++  trialAlreadyStartedElsewhere(w);
++  await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
++  expect(w.conflicts.rows[0]).toMatchObject({ status: 'owed' });
++  return w;
++}
++const read = (w: World) => jest.mocked(w.stripe.retrieveSubscription);
++const sub = (over: Record<string, unknown> = {}) => stub<StripeSubscriptionObject>(trialSub(over));
++
++describe('K controls — the Stripe read decides before any DELETE (Sol B-673-1 closure)', () => {
++  afterEach(() => jest.useRealTimers());
++
++  it('K1 control: a read that uses up the lease room cancels nothing', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    jest.setSystemTime(NOW);
++    const w = await owedWorld();
++    read(w).mockImplementationOnce(async () => {
++      jest.setSystemTime(Date.now() + 41_000); // 41 s + 20 s cancel deadline > 60 s lease
++      return sub({ trial_end: epoch(TRIAL_END) });
++    });
++    expect(await w.conflictSvc.settle('pur-1', new Date())).toBe('retry');
++    expect(w.cancelSubscription).not.toHaveBeenCalled();
++    expect(w.conflicts.rows[0]).toMatchObject({ status: 'owed', last_error: 'lease_exhausted', lease_token: null });
++  });
++
++  it('K2 control: trialing with the trial ending in 30 s cancels nothing; backoff from the fresh clock', async () => {
++    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
++    const at = new Date(TRIAL_END.getTime() - 40_000);
++    jest.setSystemTime(at);
++    const w = await owedWorld();
++    read(w).mockImplementationOnce(async () => {
++      jest.setSystemTime(Date.now() + 10_000);
++      return sub();
++    });
++    expect(await w.conflictSvc.settle('pur-1', new Date())).toBe('retry');
++    expect(w.cancelSubscription).not.toHaveBeenCalled();
++    const row = w.conflicts.rows[0];
++    expect(row).toMatchObject({ status: 'owed', last_error: 'trial_ending' });
++    expect((row.next_attempt_at as Date).getTime()).toBe(at.getTime() + 10_000 + trialConflictBackoffMs(1));
++  });
++
++  it('K3 control: paused (nothing billed) cancels exactly once', async () => {
++    const w = await owedWorld();
++    read(w).mockResolvedValue(sub({ status: 'paused' }));
++    expect(await w.conflictSvc.settle('pur-1')).toBe('cancelled');
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(1);
++    expect(await w.conflictSvc.settle('pur-1')).toBe('not_owed');
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(1);
++  });
++
++  it('K4 control: a 404 read settles cancelled with no DELETE', async () => {
++    const w = await owedWorld();
++    read(w).mockRejectedValueOnce(new StripeConnectApiError('No such subscription', 404, 'resource_missing', 'invalid_request_error'));
++    expect(await w.conflictSvc.settle('pur-1')).toBe('cancelled');
++    expect(w.cancelSubscription).not.toHaveBeenCalled();
++    expect(w.conflicts.rows[0].status).toBe('cancelled');
++  });
++
++  it('K5 control: a replica during a slow read stays out (busy), and only one DELETE is sent', async () => {
++    const w = await owedWorld();
++    const gate = deferred<StripeSubscriptionObject>();
++    read(w).mockImplementationOnce(() => gate.promise);
++    const first = w.conflictSvc.settle('pur-1');
++    for (let i = 0; i < 20; i += 1) await new Promise((r) => setImmediate(r));
++    const other = new TrialConflictService(
++      stub<ConstructorParameters<typeof TrialConflictService>[0]>(w.prisma),
++      w.stripe,
++    );
++    expect(await other.settle('pur-1')).toBe('busy');
++    gate.resolve(sub({ trial_end: epoch(new Date(Date.now() + 5 * 864e5)) }));
++    expect(await first).toBe('cancelled');
++    expect(w.cancelSubscription).toHaveBeenCalledTimes(1);
++  });
++
++  it('K6 control: a subscription.deleted webhook during the read wins (stale), no double settle', async () => {
++    const w = await owedWorld();
++    read(w).mockImplementationOnce(async () => {
++      await w.handler.handle(event('customer.subscription.deleted', trialSub({ status: 'canceled' }), 'evt_del'), w.tx);
++      return sub({ status: 'canceled' });
++    });
++    expect(await w.conflictSvc.settle('pur-1')).toBe('stale');
++    expect(w.cancelSubscription).not.toHaveBeenCalled();
++    expect(w.conflicts.rows[0].status).toBe('cancelled');
++  });
++});
++
++describe('C-673-4 probe — a worker supersede after out-of-order events', () => {
++  it('probe (expected red): active applied first, then the older trialing event: the paying client keeps access', async () => {
++    const w = world({ purchase: { entitlement_active: false, status: 'incomplete' } });
++    trialAlreadyStartedElsewhere(w);
++    const active = trialSub({ status: 'active', trial_end: epoch(NOW) });
++    await w.handler.handle(event('customer.subscription.updated', active, 'evt_new'), w.tx);
++    const accessAfterActive = w.purchase().entitlement_active;
++    // Stripe retries the older trialing event after the newer one was applied.
++    await w.handler.handle(event('customer.subscription.updated', trialSub(), 'evt_old'), w.tx);
++    read(w).mockResolvedValue(stub<StripeSubscriptionObject>(active));
++    const outcome = await w.conflictSvc.settle('pur-1');
++    expect({ accessAfterActive, outcome, deletes: w.cancelSubscription.mock.calls.length }).toEqual({
++      accessAfterActive: true,
++      outcome: 'superseded',
++      deletes: 0,
++    });
++    // Stripe says active and paid: the purchase must grant access again.
++    expect(w.purchase().entitlement_active).toBe(true);
++  });
++});
+diff --git a/test/audit-opus-t23d-119-673.spec.ts b/test/audit-opus-t23d-119-673.spec.ts
+new file mode 100644
+index 00000000..ed9d804d
+--- /dev/null
++++ b/test/audit-opus-t23d-119-673.spec.ts
+@@ -0,0 +1,149 @@
++// AUD-OPUS-T23D-119 (Claude Opus 5.5 lens, agent 119) — probes on backend
++// #673 @ 904b964250f4b7694b24f78fdef5a5f846957013 (FIX ROUND 10: Sol B-673-1
++// paid-invoice history for past_due/unpaid; Sol B-673-2 re-check after the reads).
++// Audit-only: never merge. Harness conflictWorld() copied from #706
++// test/b-trials-4-fix-round.spec.ts (real TrialConflictService + real
++// StripeConnectApiService over an intercepted fetch). All expected GREEN.
++//   P1 a charged invoice on an INCOMPLETE page (has_more) still decides billed.
++//   P2 pure decision: lease room, default history, unpaid/charged, trialing.
++//   P3 the post-read ownership re-check itself throws: retry, no DELETE, lease released.
++//   P4 trialPaidHistory fails closed on malformed amounts and pages.
++//   P5 a webhook supersession during the invoice read of a CHARGED plan: stale,
++//      no DELETE, exactly one billed alert.
++//   P6 an `active` read never lists invoices (no extra Stripe call on the hot path).
++import * as Sentry from '@sentry/node';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import {
++  TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
++  TrialConflictService,
++  trialConflictAction,
++  trialPaidHistory,
++} from '../src/packages/trials/trial-conflict.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0, currency: 'usd' };
++const PAID_INVOICE = { id: 'in_first', amount_paid: 4900, total: 4900, currency: 'usd' };
++
++type C = ConstructorParameters<typeof TrialConflictService>;
++type Reply = { status?: number; body: unknown } | (() => Promise<{ status?: number; body: unknown }>);
++
++let secret: string | undefined;
++beforeEach(() => {
++  secret = process.env.STRIPE_SECRET_KEY;
++  process.env.STRIPE_SECRET_KEY = 'sk_test_AUDOPUST23D';
++  jest.mocked(Sentry.captureMessage).mockClear();
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  if (secret === undefined) delete process.env.STRIPE_SECRET_KEY;
++  else process.env.STRIPE_SECRET_KEY = secret;
++});
++
++const sentryCodes = () =>
++  jest.mocked(Sentry.captureMessage).mock.calls.map((c) => (c[1] as { tags?: { code?: string } } | undefined)?.tags?.code);
++
++async function conflictWorld(replies: { sub: Reply; invoices?: Reply }) {
++  const table = makeTrialConflictTable();
++  await table.createMany({
++    data: [{ id: 'conflict-1', purchase_id: 'pur-1', stripe_subscription_id: 'sub_1', next_attempt_at: NOW }],
++  });
++  const calls: string[] = [];
++  const reply = async (r: Reply) => {
++    const { status = 200, body } = typeof r === 'function' ? await r() : r;
++    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
++  };
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++    const method = init?.method ?? 'GET';
++    const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++    calls.push(`${method} ${path}`);
++    if (method === 'DELETE') return reply({ body: { id: 'sub_1', status: 'canceled' } });
++    if (path.startsWith('/invoices')) return reply(replies.invoices ?? { status: 500, body: { error: { type: 'api_error' } } });
++    return reply(replies.sub);
++  });
++  const db = stub<C[0]>({ packageTrialConflict: table });
++  const service = new TrialConflictService(db, new StripeConnectApiService());
++  const deletes = () => calls.filter((c) => c.startsWith('DELETE')).length;
++  return { table, calls, db, service, deletes, row: () => table.rows[0] };
++}
++
++const sub = (status: string, over: Record<string, unknown> = {}) => ({
++  body: { id: 'sub_1', status, latest_invoice: 'in_renewal', trial_end: epoch(NOW) - 40 * 86400, ...over },
++});
++const page = (data: unknown[], hasMore = false) => ({ body: { data, has_more: hasMore } });
++
++describe('AUD-OPUS-T23D-119 #673 — round 10 deltas', () => {
++  it('P1 a charge on an incomplete page (has_more) decides billed: superseded, no DELETE', async () => {
++    const w = await conflictWorld({ sub: sub('past_due'), invoices: page([PAID_INVOICE], true) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('superseded');
++    expect(w.deletes()).toBe(0);
++  });
++
++  it('P2 pure decision table', () => {
++    const until = new Date(NOW.getTime() + 60_000);
++    const late = new Date(until.getTime() - TRIAL_CONFLICT_CANCEL_TIMEOUT_MS);
++    const pd = { status: 'past_due', trial_end: epoch(NOW) - 86400 };
++    expect(trialConflictAction(pd, NOW, until, 'none')).toBe('cancel');
++    expect(trialConflictAction(pd, late, until, 'none')).toBe('lease_exhausted');
++    expect(trialConflictAction(pd, NOW, until)).toBe('history_unknown');
++    expect(trialConflictAction(pd, NOW, until, 'unknown')).toBe('history_unknown');
++    expect(trialConflictAction({ status: 'unpaid' }, NOW, until, 'charged')).toBe('billed');
++    expect(trialConflictAction({ status: 'past_due' }, late, until, 'charged')).toBe('billed');
++    expect(trialConflictAction({ status: 'active' }, NOW, until, 'none')).toBe('billed');
++    expect(trialConflictAction({ status: 'Past_Due' }, NOW, until, 'none')).toBe('state_unknown');
++    expect(trialConflictAction({ status: 'paused', trial_end: epoch(NOW) - 86400 }, NOW, until)).toBe('cancel');
++  });
++
++  it('P3 the post-read re-check throws: retry, no DELETE, lease released, still owed', async () => {
++    const w = await conflictWorld({ sub: sub('past_due'), invoices: page([TRIAL_INVOICE]) });
++    const t = w.table as unknown as { findFirst: (a: unknown) => Promise<unknown> };
++    t.findFirst = async () => {
++      throw new Error('connection reset');
++    };
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', lease_token: null, lease_until: null });
++  });
++
++  it('P4 trialPaidHistory fails closed', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: '4900', total: 4900 }], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [null], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [TRIAL_INVOICE] })).toBe('unknown');
++    expect(trialPaidHistory({ data: [TRIAL_INVOICE], has_more: 'false' })).toBe('unknown');
++    expect(trialPaidHistory(null)).toBe('unknown');
++    expect(trialPaidHistory({ data: [], has_more: false })).toBe('none');
++    expect(trialPaidHistory({ data: [TRIAL_INVOICE], has_more: false })).toBe('none');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 1 }], has_more: true })).toBe('charged');
++    // a malformed entry before a charge: the charge still decides (keep the paid plan)
++    expect(trialPaidHistory({ data: [{ id: 'x' }, PAID_INVOICE], has_more: false })).toBe('charged');
++  });
++
++  it('P5 supersession during the invoice read of a charged plan: stale, no DELETE, one billed alert', async () => {
++    let w!: Awaited<ReturnType<typeof conflictWorld>>;
++    w = await conflictWorld({
++      sub: sub('unpaid'),
++      invoices: async () => {
++        await w.service.supersede(w.db, 'pur-1', NOW);
++        return page([TRIAL_INVOICE, PAID_INVOICE]);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('stale');
++    expect(w.deletes()).toBe(0);
++    expect(w.row().status).toBe('superseded');
++    expect(await w.service.alertSuperseded()).toBe(1);
++    expect(await w.service.alertSuperseded()).toBe(0);
++    expect(sentryCodes()).toEqual(['TRIAL_CONFLICT_SUPERSEDED']);
++  });
++
++  it('P6 an active read never lists invoices', async () => {
++    const w = await conflictWorld({ sub: sub('active') });
++    expect(await w.service.settle('pur-1', NOW)).toBe('superseded');
++    expect(w.calls).toEqual(['GET /subscriptions/sub_1']);
++  });
++});
+diff --git a/test/audit-opus-t3e-119-673-adapted.spec.ts b/test/audit-opus-t3e-119-673-adapted.spec.ts
+new file mode 100644
+index 00000000..da2b14d3
+--- /dev/null
++++ b/test/audit-opus-t3e-119-673-adapted.spec.ts
+@@ -0,0 +1,250 @@
++// AUD-OPUS-T3E-119 (Claude Opus 5.5 lens) — probes for #673 FIX ROUND 11 (dcf095b8).
++// Real TrialConflictService + real StripeConnectApiService over an intercepted fetch.
++// Q1-Q10 are expected GREEN (Q1/Q7 pin the builder's ruled Cs C-673-8 / C-673-9 as documented behaviour).
++import * as Sentry from '@sentry/node';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import {
++  TrialConflictService,
++  trialPaidHistory,
++} from '../src/packages/trials/trial-conflict.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0 };
++const PAID_INVOICE = { id: 'in_renewal', amount_paid: 4900, total: 4900 };
++
++type C = ConstructorParameters<typeof TrialConflictService>;
++type Res = { status?: number; body: unknown };
++type Reply = Res | (() => Promise<Res>);
++
++let secret: string | undefined;
++let skewMs = 0;
++beforeEach(() => {
++  secret = process.env.STRIPE_SECRET_KEY;
++  process.env.STRIPE_SECRET_KEY = 'sk_test_OPUST3ESYNTHETIC';
++  jest.mocked(Sentry.captureMessage).mockClear();
++  skewMs = 0;
++  const realNow = Date.now.bind(Date);
++  jest.spyOn(Date, 'now').mockImplementation(() => realNow() + skewMs);
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  if (secret === undefined) delete process.env.STRIPE_SECRET_KEY;
++  else process.env.STRIPE_SECRET_KEY = secret;
++});
++
++const sub = (status: string): Res => ({
++  body: { id: 'sub_1', status, latest_invoice: 'in_renewal', trial_end: epoch(NOW) - 86400 },
++});
++const page = (data: unknown[], hasMore = false): Res => ({ body: { data, has_more: hasMore } });
++const voided = (id: string): Res => ({ body: { id, object: 'invoice', status: 'void' } });
++
++async function world(r: {
++  sub: Reply;
++  open?: Reply;
++  paid?: Reply;
++  void?: (id: string) => Reply;
++  del?: Reply;
++}) {
++  const table = makeTrialConflictTable();
++  await table.createMany({
++    data: [{ id: 'conflict-1', purchase_id: 'pur-1', stripe_subscription_id: 'sub_1', next_attempt_at: NOW }],
++  });
++  const calls: string[] = [];
++  const bodies: string[] = [];
++  const reply = async (x: Reply) => {
++    const { status = 200, body } = typeof x === 'function' ? await x() : x;
++    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
++  };
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++    const method = init?.method ?? 'GET';
++    const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++    calls.push(`${method} ${path}`);
++    if (method === 'DELETE') return reply(r.del ?? { body: { id: 'sub_1', status: 'canceled' } });
++    const voidId = /^\/invoices\/([^/?]+)\/void$/.exec(path)?.[1];
++    if (method === 'POST' && voidId) {
++      bodies.push(String(init?.body ?? ''));
++      return reply((r.void ?? voided)(decodeURIComponent(voidId)));
++    }
++    if (path.startsWith('/invoices?')) {
++      const status = new URLSearchParams(path.split('?')[1]).get('status');
++      // B-TR6-119 adaptation (only change): the new uncollectible list answers a complete empty page.
++      if (status === 'uncollectible') return reply(page([]));
++      const x = status === 'open' ? r.open : status === 'paid' ? r.paid : undefined;
++      return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
++    }
++    return reply(r.sub);
++  });
++  const db = stub<C[0]>({ packageTrialConflict: table });
++  const service = new TrialConflictService(db, new StripeConnectApiService());
++  const count = (prefix: string) => calls.filter((c) => c.startsWith(prefix)).length;
++  return {
++    table,
++    calls,
++    bodies,
++    db,
++    service,
++    deletes: () => count('DELETE'),
++    voids: () => count('POST /invoices/'),
++    row: () => table.rows[0],
++  };
++}
++
++describe('AUD-OPUS-T3E-119 #673 round 11 probes', () => {
++  it('Q1 (C-673-8 pinned): void confirmed, DELETE 503 -> retry; next read active -> superseded + one billed alert, never a second void', async () => {
++    let remote = 'past_due';
++    const w = await world({
++      sub: async () => sub(remote),
++      open: page([{ id: 'in_renewal' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        remote = 'active'; // Stripe walks a voided past_due plan back to active
++        return voided(id);
++      },
++      del: { status: 503, body: { error: { type: 'api_error' } } },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++    expect(w.row()).toMatchObject({ status: 'owed', lease_token: null });
++    w.row().next_attempt_at = NOW;
++    expect(await w.service.settle('pur-1', new Date(NOW.getTime() + 600_000))).toBe('superseded');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++    expect(await w.service.alertSuperseded()).toBe(1);
++  });
++
++  it('Q2: reads that ate 25 s leave no room for void + DELETE (one invoice): lease_exhausted, no void, no DELETE', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: async () => {
++        skewMs = 25_000;
++        return page([TRIAL_INVOICE]);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(0);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', last_error: 'lease_exhausted' });
++  });
++
++  it('Q2b control: reads that took 15 s still fit (15 + 40 < 60): void then DELETE', async () => {
++    const w = await world({
++      sub: sub('unpaid'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: async () => {
++        skewMs = 15_000;
++        return page([TRIAL_INVOICE]);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++  });
++
++  it('Q3: a null entry in the open page is not a list of ids: invoices_unknown, no void', async () => {
++    const w = await world({ sub: sub('past_due'), open: page([null]), paid: page([TRIAL_INVOICE]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(0);
++    expect(w.deletes()).toBe(0);
++    expect(w.row().last_error).toBe('invoices_unknown');
++  });
++
++  it('Q4: paid list fails while the open list is fine: history_unknown, no void, no DELETE', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: { status: 503, body: { error: { type: 'api_error' } } },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(0);
++    expect(w.deletes()).toBe(0);
++    expect(w.row().last_error).toBe('history_unknown');
++  });
++
++  it('Q5: the void is POST /invoices/<encoded id>/void with an empty form, one per open invoice id', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_a/b' }]),
++      paid: page([TRIAL_INVOICE]),
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.calls).toContain('POST /invoices/in_a%2Fb/void');
++    expect(w.bodies).toEqual(['']);
++  });
++
++  it('Q6: replay after a cancel is a no-op (not_owed, zero Stripe calls)', async () => {
++    const w = await world({ sub: sub('past_due'), open: page([{ id: 'in_renewal' }]), paid: page([TRIAL_INVOICE]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    const n = w.calls.length;
++    expect(await w.service.settle('pur-1', new Date(NOW.getTime() + 600_000))).toBe('not_owed');
++    expect(w.calls.length).toBe(n);
++  });
++
++  it('Q7 (C-673-9 pinned): unpaid plan whose only invoice is uncollectible (open list empty) never auto-settles; fails closed', async () => {
++    const w = await world({ sub: sub('unpaid'), open: page([]), paid: page([TRIAL_INVOICE]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.calls.filter((c) => c.includes('status=uncollectible'))).toEqual([]);
++    expect(w.deletes()).toBe(0);
++  });
++
++  it('Q8: C-673-7 edges', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: null }], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: '4900' }], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: Infinity, total: 0 }], has_more: false })).toBe('charged');
++    expect(trialPaidHistory({ data: [null], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [], has_more: false })).toBe('none');
++  });
++
++  it('Q9: two workers: the second settle during the first one\'s void is busy; one void, one DELETE', async () => {
++    let release!: () => void;
++    const gate = new Promise<void>((res) => {
++      release = () => res();
++    });
++    let entered!: () => void;
++    const inVoid = new Promise<void>((res) => {
++      entered = () => res();
++    });
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        entered();
++        await gate;
++        return voided(id);
++      },
++    });
++    const first = w.service.settle('pur-1', NOW);
++    await inVoid;
++    expect(await w.service.settle('pur-1', NOW)).toBe('busy');
++    release();
++    expect(await first).toBe('cancelled');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++  });
++
++  it('Q10: payment lands after the paid read (void answers 400 invoice already paid) then a 404 DELETE path is never reached', async () => {
++    let remote = 'past_due';
++    const w = await world({
++      sub: async () => sub(remote),
++      open: page([{ id: 'in_renewal' }]),
++      paid: async () => page(remote === 'active' ? [TRIAL_INVOICE, PAID_INVOICE] : [TRIAL_INVOICE]),
++      void: () => async () => {
++        remote = 'active';
++        return { status: 400, body: { error: { type: 'invalid_request_error', message: 'invoice is already paid' } } };
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.deletes()).toBe(0);
++    const tags = jest.mocked(Sentry.captureMessage).mock.calls.map((c) => JSON.stringify(c[1] ?? {}));
++    expect(tags.join('')).not.toMatch(/already paid/);
++  });
++});
+diff --git a/test/audit-opus-t3e-119-673.spec.ts b/test/audit-opus-t3e-119-673.spec.ts
+new file mode 100644
+index 00000000..0d1f3364
+--- /dev/null
++++ b/test/audit-opus-t3e-119-673.spec.ts
+@@ -0,0 +1,248 @@
++// AUD-OPUS-T3E-119 (Claude Opus 5.5 lens) — probes for #673 FIX ROUND 11 (dcf095b8).
++// Real TrialConflictService + real StripeConnectApiService over an intercepted fetch.
++// Q1-Q10 are expected GREEN (Q1/Q7 pin the builder's ruled Cs C-673-8 / C-673-9 as documented behaviour).
++import * as Sentry from '@sentry/node';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import {
++  TrialConflictService,
++  trialPaidHistory,
++} from '../src/packages/trials/trial-conflict.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0 };
++const PAID_INVOICE = { id: 'in_renewal', amount_paid: 4900, total: 4900 };
++
++type C = ConstructorParameters<typeof TrialConflictService>;
++type Res = { status?: number; body: unknown };
++type Reply = Res | (() => Promise<Res>);
++
++let secret: string | undefined;
++let skewMs = 0;
++beforeEach(() => {
++  secret = process.env.STRIPE_SECRET_KEY;
++  process.env.STRIPE_SECRET_KEY = 'sk_test_OPUST3ESYNTHETIC';
++  jest.mocked(Sentry.captureMessage).mockClear();
++  skewMs = 0;
++  const realNow = Date.now.bind(Date);
++  jest.spyOn(Date, 'now').mockImplementation(() => realNow() + skewMs);
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  if (secret === undefined) delete process.env.STRIPE_SECRET_KEY;
++  else process.env.STRIPE_SECRET_KEY = secret;
++});
++
++const sub = (status: string): Res => ({
++  body: { id: 'sub_1', status, latest_invoice: 'in_renewal', trial_end: epoch(NOW) - 86400 },
++});
++const page = (data: unknown[], hasMore = false): Res => ({ body: { data, has_more: hasMore } });
++const voided = (id: string): Res => ({ body: { id, object: 'invoice', status: 'void' } });
++
++async function world(r: {
++  sub: Reply;
++  open?: Reply;
++  paid?: Reply;
++  void?: (id: string) => Reply;
++  del?: Reply;
++}) {
++  const table = makeTrialConflictTable();
++  await table.createMany({
++    data: [{ id: 'conflict-1', purchase_id: 'pur-1', stripe_subscription_id: 'sub_1', next_attempt_at: NOW }],
++  });
++  const calls: string[] = [];
++  const bodies: string[] = [];
++  const reply = async (x: Reply) => {
++    const { status = 200, body } = typeof x === 'function' ? await x() : x;
++    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
++  };
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++    const method = init?.method ?? 'GET';
++    const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++    calls.push(`${method} ${path}`);
++    if (method === 'DELETE') return reply(r.del ?? { body: { id: 'sub_1', status: 'canceled' } });
++    const voidId = /^\/invoices\/([^/?]+)\/void$/.exec(path)?.[1];
++    if (method === 'POST' && voidId) {
++      bodies.push(String(init?.body ?? ''));
++      return reply((r.void ?? voided)(decodeURIComponent(voidId)));
++    }
++    if (path.startsWith('/invoices?')) {
++      const status = new URLSearchParams(path.split('?')[1]).get('status');
++      const x = status === 'open' ? r.open : status === 'paid' ? r.paid : undefined;
++      return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
++    }
++    return reply(r.sub);
++  });
++  const db = stub<C[0]>({ packageTrialConflict: table });
++  const service = new TrialConflictService(db, new StripeConnectApiService());
++  const count = (prefix: string) => calls.filter((c) => c.startsWith(prefix)).length;
++  return {
++    table,
++    calls,
++    bodies,
++    db,
++    service,
++    deletes: () => count('DELETE'),
++    voids: () => count('POST /invoices/'),
++    row: () => table.rows[0],
++  };
++}
++
++describe('AUD-OPUS-T3E-119 #673 round 11 probes', () => {
++  it('Q1 (C-673-8 pinned): void confirmed, DELETE 503 -> retry; next read active -> superseded + one billed alert, never a second void', async () => {
++    let remote = 'past_due';
++    const w = await world({
++      sub: async () => sub(remote),
++      open: page([{ id: 'in_renewal' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        remote = 'active'; // Stripe walks a voided past_due plan back to active
++        return voided(id);
++      },
++      del: { status: 503, body: { error: { type: 'api_error' } } },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++    expect(w.row()).toMatchObject({ status: 'owed', lease_token: null });
++    w.row().next_attempt_at = NOW;
++    expect(await w.service.settle('pur-1', new Date(NOW.getTime() + 600_000))).toBe('superseded');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++    expect(await w.service.alertSuperseded()).toBe(1);
++  });
++
++  it('Q2: reads that ate 25 s leave no room for void + DELETE (one invoice): lease_exhausted, no void, no DELETE', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: async () => {
++        skewMs = 25_000;
++        return page([TRIAL_INVOICE]);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(0);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', last_error: 'lease_exhausted' });
++  });
++
++  it('Q2b control: reads that took 15 s still fit (15 + 40 < 60): void then DELETE', async () => {
++    const w = await world({
++      sub: sub('unpaid'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: async () => {
++        skewMs = 15_000;
++        return page([TRIAL_INVOICE]);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++  });
++
++  it('Q3: a null entry in the open page is not a list of ids: invoices_unknown, no void', async () => {
++    const w = await world({ sub: sub('past_due'), open: page([null]), paid: page([TRIAL_INVOICE]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(0);
++    expect(w.deletes()).toBe(0);
++    expect(w.row().last_error).toBe('invoices_unknown');
++  });
++
++  it('Q4: paid list fails while the open list is fine: history_unknown, no void, no DELETE', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: { status: 503, body: { error: { type: 'api_error' } } },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(0);
++    expect(w.deletes()).toBe(0);
++    expect(w.row().last_error).toBe('history_unknown');
++  });
++
++  it('Q5: the void is POST /invoices/<encoded id>/void with an empty form, one per open invoice id', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_a/b' }]),
++      paid: page([TRIAL_INVOICE]),
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.calls).toContain('POST /invoices/in_a%2Fb/void');
++    expect(w.bodies).toEqual(['']);
++  });
++
++  it('Q6: replay after a cancel is a no-op (not_owed, zero Stripe calls)', async () => {
++    const w = await world({ sub: sub('past_due'), open: page([{ id: 'in_renewal' }]), paid: page([TRIAL_INVOICE]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    const n = w.calls.length;
++    expect(await w.service.settle('pur-1', new Date(NOW.getTime() + 600_000))).toBe('not_owed');
++    expect(w.calls.length).toBe(n);
++  });
++
++  it('Q7 (C-673-9 pinned): unpaid plan whose only invoice is uncollectible (open list empty) never auto-settles; fails closed', async () => {
++    const w = await world({ sub: sub('unpaid'), open: page([]), paid: page([TRIAL_INVOICE]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.calls.filter((c) => c.includes('status=uncollectible'))).toEqual([]);
++    expect(w.deletes()).toBe(0);
++  });
++
++  it('Q8: C-673-7 edges', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: null }], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: '4900' }], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: Infinity, total: 0 }], has_more: false })).toBe('charged');
++    expect(trialPaidHistory({ data: [null], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [], has_more: false })).toBe('none');
++  });
++
++  it('Q9: two workers: the second settle during the first one\'s void is busy; one void, one DELETE', async () => {
++    let release!: () => void;
++    const gate = new Promise<void>((res) => {
++      release = () => res();
++    });
++    let entered!: () => void;
++    const inVoid = new Promise<void>((res) => {
++      entered = () => res();
++    });
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        entered();
++        await gate;
++        return voided(id);
++      },
++    });
++    const first = w.service.settle('pur-1', NOW);
++    await inVoid;
++    expect(await w.service.settle('pur-1', NOW)).toBe('busy');
++    release();
++    expect(await first).toBe('cancelled');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++  });
++
++  it('Q10: payment lands after the paid read (void answers 400 invoice already paid) then a 404 DELETE path is never reached', async () => {
++    let remote = 'past_due';
++    const w = await world({
++      sub: async () => sub(remote),
++      open: page([{ id: 'in_renewal' }]),
++      paid: async () => page(remote === 'active' ? [TRIAL_INVOICE, PAID_INVOICE] : [TRIAL_INVOICE]),
++      void: () => async () => {
++        remote = 'active';
++        return { status: 400, body: { error: { type: 'invalid_request_error', message: 'invoice is already paid' } } };
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.deletes()).toBe(0);
++    const tags = jest.mocked(Sentry.captureMessage).mock.calls.map((c) => JSON.stringify(c[1] ?? {}));
++    expect(tags.join('')).not.toMatch(/already paid/);
++  });
++});
+diff --git a/test/audit-opus-t5-119-707-draft.spec.ts b/test/audit-opus-t5-119-707-draft.spec.ts
+new file mode 100644
+index 00000000..234a7395
+--- /dev/null
++++ b/test/audit-opus-t5-119-707-draft.spec.ts
+@@ -0,0 +1,127 @@
++// AUD-OPUS-T5-119 (Claude Opus 5.5 lens) — probes for #707 (T5 payable invoice domain) at ffed434e.
++// Real TrialConflictService + real StripeConnectApiService over an intercepted fetch; in-memory CAS table.
++// DRAFT RACE (B-707-1, this lens's own proof): D1 is EXPECTED RED at ffed434e (a DELETE goes out after a payment);
++// D2 is GREEN and records the consequence in the most likely webhook ordering (cancelled, zero alerts).
++import * as Sentry from '@sentry/node';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { TrialConflictService } from '../src/packages/trials/trial-conflict.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0 };
++
++type C = ConstructorParameters<typeof TrialConflictService>;
++type Res = { status?: number; body: unknown };
++type Reply = Res | (() => Promise<Res>);
++
++let secret: string | undefined;
++let skewMs = 0;
++beforeEach(() => {
++  secret = process.env.STRIPE_SECRET_KEY;
++  process.env.STRIPE_SECRET_KEY = 'sk_test_OPUST5SYNTHETIC';
++  jest.mocked(Sentry.captureMessage).mockClear();
++  skewMs = 0;
++  const realNow = Date.now.bind(Date);
++  jest.spyOn(Date, 'now').mockImplementation(() => realNow() + skewMs);
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  if (secret === undefined) delete process.env.STRIPE_SECRET_KEY;
++  else process.env.STRIPE_SECRET_KEY = secret;
++});
++
++const sub = (status: string): Res => ({
++  body: { id: 'sub_1', status, latest_invoice: 'in_open', trial_end: epoch(NOW) - 86400 },
++});
++const page = (data: unknown[], hasMore = false): Res => ({ body: { data, has_more: hasMore } });
++const voided = (id: string): Res => ({ body: { id, object: 'invoice', status: 'void' } });
++
++async function world(r: {
++  sub: Reply;
++  open?: Reply;
++  uncollectible?: Reply;
++  paid?: Reply;
++  void?: (id: string) => Reply;
++}) {
++  const table = makeTrialConflictTable();
++  await table.createMany({
++    data: [{ id: 'conflict-1', purchase_id: 'pur-1', stripe_subscription_id: 'sub_1', next_attempt_at: NOW }],
++  });
++  const calls: string[] = [];
++  const reply = async (x: Reply) => {
++    const { status = 200, body } = typeof x === 'function' ? await x() : x;
++    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
++  };
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++    const method = init?.method ?? 'GET';
++    const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++    calls.push(`${method} ${path}`);
++    if (method === 'DELETE') return reply({ body: { id: 'sub_1', status: 'canceled' } });
++    const voidId = /^\/invoices\/([^/?]+)\/void$/.exec(path)?.[1];
++    if (method === 'POST' && voidId) return reply((r.void ?? voided)(decodeURIComponent(voidId)));
++    if (path.startsWith('/invoices?')) {
++      const status = new URLSearchParams(path.split('?')[1]).get('status');
++      const x =
++        status === 'open' ? r.open : status === 'uncollectible' ? r.uncollectible : status === 'paid' ? r.paid : undefined;
++      return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
++    }
++    return reply(r.sub);
++  });
++  const db = stub<C[0]>({ packageTrialConflict: table });
++  const service = new TrialConflictService(db, new StripeConnectApiService());
++  return {
++    table,
++    calls,
++    db,
++    service,
++    deletes: () => calls.filter((c) => c.startsWith('DELETE')).length,
++    voids: () => calls.filter((c) => c.startsWith('POST /invoices/')),
++    row: () => table.rows[0],
++  };
++}
++
++
++describe('AUD-OPUS-T5-119 #707 draft race (B-707-1)', () => {
++  const draftWorld = async (state: { paidCents: number }) => {
++    let remotePaid = false;
++    return world({
++      sub: async () => sub('past_due'),
++      open: page([{ id: 'in_open' }]),
++      uncollectible: page([]),
++      // The draft renewal in_draft is in neither payable page, and not paid when the paid list is read.
++      paid: async () => page(remotePaid ? [TRIAL_INVOICE, { id: 'in_draft', amount_paid: 4900, total: 4900 }] : [TRIAL_INVOICE]),
++      void: (id) => async () => {
++        // Stripe auto-finalizes the renewal draft and charges it while the worker voids in_open.
++        remotePaid = true;
++        state.paidCents += 4900;
++        return voided(id);
++      },
++    });
++  };
++
++  it('D1 (expected red): a renewal draft finalized and paid after the reads must not be followed by a DELETE', async () => {
++    const state = { paidCents: 0 };
++    const w = await draftWorld(state);
++    await w.service.settle('pur-1', NOW);
++    expect(state.paidCents).toBe(4900);
++    expect(w.deletes()).toBe(0);
++  });
++
++  it('D2 (green, consequence): the worker records cancelled and no billed or failing alert exists', async () => {
++    const state = { paidCents: 0 };
++    const w = await draftWorld(state);
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(state.paidCents).toBe(4900);
++    expect(w.deletes()).toBe(1);
++    expect(w.calls.filter((c) => c.includes('status=draft'))).toEqual([]);
++    expect(w.row()).toMatchObject({ status: 'cancelled', last_error: null });
++    expect(await w.service.alertSuperseded()).toBe(0);
++    expect(jest.mocked(Sentry.captureMessage)).not.toHaveBeenCalled();
++  });
++});
+diff --git a/test/audit-opus-t5-119-707.spec.ts b/test/audit-opus-t5-119-707.spec.ts
+new file mode 100644
+index 00000000..7241ddea
+--- /dev/null
++++ b/test/audit-opus-t5-119-707.spec.ts
+@@ -0,0 +1,292 @@
++// AUD-OPUS-T5-119 (Claude Opus 5.5 lens) — probes for #707 (T5 payable invoice domain) at ffed434e.
++// Real TrialConflictService + real StripeConnectApiService over an intercepted fetch; in-memory CAS table.
++// All expected GREEN. P1/P6/P8 pin follow-up Cs (C-707-3, C-707-4, C-707-1) as documented current behaviour.
++import * as Sentry from '@sentry/node';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import {
++  TRIAL_CONFLICT_MAX_VOIDS,
++  TrialConflictService,
++  payableInvoiceIds,
++} from '../src/packages/trials/trial-conflict.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0 };
++
++type C = ConstructorParameters<typeof TrialConflictService>;
++type Res = { status?: number; body: unknown };
++type Reply = Res | (() => Promise<Res>);
++
++let secret: string | undefined;
++let skewMs = 0;
++beforeEach(() => {
++  secret = process.env.STRIPE_SECRET_KEY;
++  process.env.STRIPE_SECRET_KEY = 'sk_test_OPUST5SYNTHETIC';
++  jest.mocked(Sentry.captureMessage).mockClear();
++  skewMs = 0;
++  const realNow = Date.now.bind(Date);
++  jest.spyOn(Date, 'now').mockImplementation(() => realNow() + skewMs);
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  if (secret === undefined) delete process.env.STRIPE_SECRET_KEY;
++  else process.env.STRIPE_SECRET_KEY = secret;
++});
++
++const sub = (status: string): Res => ({
++  body: { id: 'sub_1', status, latest_invoice: 'in_open', trial_end: epoch(NOW) - 86400 },
++});
++const page = (data: unknown[], hasMore = false): Res => ({ body: { data, has_more: hasMore } });
++const voided = (id: string): Res => ({ body: { id, object: 'invoice', status: 'void' } });
++const ids = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));
++
++async function world(r: {
++  sub: Reply;
++  open?: Reply;
++  uncollectible?: Reply;
++  paid?: Reply;
++  void?: (id: string) => Reply;
++}) {
++  const table = makeTrialConflictTable();
++  await table.createMany({
++    data: [{ id: 'conflict-1', purchase_id: 'pur-1', stripe_subscription_id: 'sub_1', next_attempt_at: NOW }],
++  });
++  const calls: string[] = [];
++  const reply = async (x: Reply) => {
++    const { status = 200, body } = typeof x === 'function' ? await x() : x;
++    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
++  };
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++    const method = init?.method ?? 'GET';
++    const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++    calls.push(`${method} ${path}`);
++    if (method === 'DELETE') return reply({ body: { id: 'sub_1', status: 'canceled' } });
++    const voidId = /^\/invoices\/([^/?]+)\/void$/.exec(path)?.[1];
++    if (method === 'POST' && voidId) return reply((r.void ?? voided)(decodeURIComponent(voidId)));
++    if (path.startsWith('/invoices?')) {
++      const status = new URLSearchParams(path.split('?')[1]).get('status');
++      const x =
++        status === 'open' ? r.open : status === 'uncollectible' ? r.uncollectible : status === 'paid' ? r.paid : undefined;
++      return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
++    }
++    return reply(r.sub);
++  });
++  const db = stub<C[0]>({ packageTrialConflict: table });
++  const service = new TrialConflictService(db, new StripeConnectApiService());
++  return {
++    table,
++    calls,
++    db,
++    service,
++    deletes: () => calls.filter((c) => c.startsWith('DELETE')).length,
++    voids: () => calls.filter((c) => c.startsWith('POST /invoices/')),
++    row: () => table.rows[0],
++  };
++}
++type World = Awaited<ReturnType<typeof world>>;
++
++describe('AUD-OPUS-T5-119 #707 probes', () => {
++  it('P1 (C-707-3 pinned): the void of the latest (open) invoice goes first; an active webhook superseding before the next void stops the sequence: stale, one void, no DELETE', async () => {
++    let w!: World;
++    w = await world({
++      sub: sub('unpaid'),
++      open: page([{ id: 'in_open' }]),
++      uncollectible: page([{ id: 'in_unc' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        // The void of the latest invoice walks the plan to active; its webhook commits first.
++        if (id === 'in_open') await w.service.supersede(w.db, 'pur-1');
++        return voided(id);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('stale');
++    expect(w.voids()).toEqual(['POST /invoices/in_open/void']);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'superseded', lease_token: null });
++    expect(await w.service.alertSuperseded()).toBe(1);
++  });
++
++  it(`P2: exactly ${TRIAL_CONFLICT_MAX_VOIDS} payable invoices (6 open + 4 uncollectible) settle; ${TRIAL_CONFLICT_MAX_VOIDS + 1} do not`, async () => {
++    const ok = await world({
++      sub: sub('past_due'),
++      open: page(ids('in_o', 6)),
++      uncollectible: page(ids('in_u', 4)),
++      paid: page([TRIAL_INVOICE]),
++    });
++    expect(await ok.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(ok.voids()).toHaveLength(10);
++    expect(ok.deletes()).toBe(1);
++    jest.restoreAllMocks();
++    jest.spyOn(Date, 'now').mockImplementation(() => NOW.getTime());
++    const over = await world({
++      sub: sub('past_due'),
++      open: page(ids('in_o', 6)),
++      uncollectible: page(ids('in_u', 5)),
++      paid: page([TRIAL_INVOICE]),
++    });
++    expect(await over.service.settle('pur-1', NOW)).toBe('retry');
++    expect(over.voids()).toEqual([]);
++    expect(over.deletes()).toBe(0);
++    expect(over.row()).toMatchObject({ status: 'owed', last_error: 'invoices_too_many', lease_token: null });
++  });
++
++  it('P3: ten voids of 15 s each (150 s, past the 60 s lease) settle because each step renews; a second worker at void 7 is busy; the lease held at the DELETE', async () => {
++    let n = 0;
++    let w!: World;
++    const second: string[] = [];
++    let leaseAtDelete: Date | null = null;
++    w = await world({
++      sub: sub('past_due'),
++      open: page(ids('in_o', 5)),
++      uncollectible: page(ids('in_u', 5)),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        n += 1;
++        skewMs += 15_000;
++        if (n === 7) second.push(await w.service.settle('pur-1', new Date(NOW.getTime() + skewMs)));
++        return voided(id);
++      },
++    });
++    const origDelete = w.service['stripe']!.cancelSubscription.bind(w.service['stripe']);
++    jest.spyOn(w.service['stripe']!, 'cancelSubscription').mockImplementation(async (s: string) => {
++      leaseAtDelete = w.row().lease_until as Date;
++      return origDelete(s);
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.voids()).toHaveLength(10);
++    expect(w.deletes()).toBe(1);
++    expect(second).toEqual(['busy']);
++    expect(leaseAtDelete).not.toBeNull();
++    // The renewed lease at the DELETE covers the bounded 20 s call from the moment it starts.
++    expect((leaseAtDelete as unknown as Date).getTime()).toBeGreaterThan(NOW.getTime() + skewMs + 20_000);
++  });
++
++  it('P4 (replaces T3E Q2): reads that ate 41 s still hit the admission gate: lease_exhausted, no void, no DELETE', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_open' }]),
++      uncollectible: page([]),
++      paid: async () => {
++        skewMs = 41_000;
++        return page([TRIAL_INVOICE]);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toEqual([]);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', last_error: 'lease_exhausted' });
++  });
++
++  it.each<[string, Reply]>([
++    ['uncollectible has_more true', page([{ id: 'in_u' }], true)],
++    ['uncollectible id is a number', page([{ id: 42 }])],
++    ['uncollectible id is empty', page([{ id: '' }])],
++    ['uncollectible entry null', page([null])],
++    ['uncollectible data missing', { body: { has_more: false } }],
++    ['uncollectible 503', { status: 503, body: { error: { type: 'api_error' } } }],
++  ])('P5: %s: invoices_unknown, no void, no DELETE', async (_name, unc) => {
++    const w = await world({
++      sub: sub('unpaid'),
++      open: page([{ id: 'in_open' }]),
++      uncollectible: unc,
++      paid: page([TRIAL_INVOICE]),
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toEqual([]);
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', last_error: 'invoices_unknown' });
++  });
++
++  it('P5b: payableInvoiceIds unit edges', () => {
++    const p = (data: unknown[], has_more: unknown = false) => ({ data, has_more }) as never;
++    expect(payableInvoiceIds([p([{ id: 'a' }]), p([{ id: 'a' }, { id: 'b' }])])).toEqual(['a', 'b']);
++    expect(payableInvoiceIds([p([]), p([])])).toEqual([]);
++    expect(payableInvoiceIds([p([{ id: 'a' }]), null])).toBeNull();
++    expect(payableInvoiceIds([p([{ id: 'a' }], 'false')])).toBeNull();
++  });
++
++  it('P6 (C-707-4 pinned): an uncollectible invoice Stripe refuses to void (partial payment) never DELETEs; three attempts alert once with a closed code', async () => {
++    const w = await world({
++      sub: sub('unpaid'),
++      open: page([]),
++      uncollectible: page([{ id: 'in_unc' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: () => ({
++        status: 400,
++        body: { error: { type: 'invalid_request_error', message: 'You cannot void an invoice with payments cus_SECRET' } },
++      }),
++    });
++    for (let i = 0; i < 3; i += 1) {
++      w.row().next_attempt_at = NOW;
++      expect(await w.service.settle('pur-1', new Date(NOW.getTime() + i * 3_600_000))).toBe('retry');
++    }
++    expect(w.deletes()).toBe(0);
++    expect(w.row()).toMatchObject({ status: 'owed', last_error: 'invoice_not_voided' });
++    const sent = jest.mocked(Sentry.captureMessage).mock.calls;
++    expect(sent).toHaveLength(1);
++    expect(JSON.stringify(sent)).not.toMatch(/cus_SECRET|in_unc|cannot void/);
++    expect((sent[0][1] as { tags: Record<string, string> }).tags.last).toBe('invoice_not_voided');
++  });
++
++  it('P7: a void answered 200 with a non-void status is not a confirmed void: no DELETE', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_open' }]),
++      uncollectible: page([{ id: 'in_unc' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => (id === 'in_unc' ? { body: { id, status: 'paid' } } : voided(id)),
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toEqual(['POST /invoices/in_open/void', 'POST /invoices/in_unc/void']);
++    expect(w.deletes()).toBe(0);
++    expect(w.row().last_error).toBe('invoice_not_voided');
++  });
++
++  it('P8 (C-707-1 pinned): drafts are outside the read domain; read order is sub, open, uncollectible, paid', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_open' }]),
++      uncollectible: page([]),
++      paid: page([TRIAL_INVOICE]),
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.calls.filter((c) => c.includes('status=draft'))).toEqual([]);
++    expect(w.calls.slice(0, 4)).toEqual([
++      'GET /subscriptions/sub_1',
++      'GET /invoices?subscription=sub_1&status=open&limit=100',
++      'GET /invoices?subscription=sub_1&status=uncollectible&limit=100',
++      'GET /invoices?subscription=sub_1&status=paid&limit=100',
++    ]);
++  });
++
++  it('P9: the subscription was cancelled elsewhere during the last void: final renewal is stale, no DELETE, row cancelled', async () => {
++    let w!: World;
++    w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_open' }]),
++      uncollectible: page([{ id: 'in_unc' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        if (id === 'in_unc') await w.service.markCancelled(w.db, 'pur-1');
++        return voided(id);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('stale');
++    expect(w.deletes()).toBe(0);
++    expect(w.row().status).toBe('cancelled');
++  });
++
++  it('P10: a trialing plan reads no invoice lists (the T5 lists are past_due/unpaid only)', async () => {
++    const w = await world({
++      sub: { body: { id: 'sub_1', status: 'trialing', trial_end: epoch(NOW) + 7 * 86400 } },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.calls).toEqual(['GET /subscriptions/sub_1', 'DELETE /subscriptions/sub_1']);
++  });
++});
+diff --git a/test/audit-opus-t5-119-t3e-replay.spec.ts b/test/audit-opus-t5-119-t3e-replay.spec.ts
+new file mode 100644
+index 00000000..eb28d6a2
+--- /dev/null
++++ b/test/audit-opus-t5-119-t3e-replay.spec.ts
+@@ -0,0 +1,229 @@
++// AUD-OPUS-T3E-119 probes replayed by AUD-OPUS-T5-119 at #707: builder-adapted fixture (empty uncollectible page);
++// Q2 (old fixed budget) and Q7 (uncollectible not listed) RETIRED by design (replaced by T5 P4 and b-trials-6).
++// Real TrialConflictService + real StripeConnectApiService over an intercepted fetch.
++// Q1-Q10 are expected GREEN (Q1/Q7 pin the builder's ruled Cs C-673-8 / C-673-9 as documented behaviour).
++import * as Sentry from '@sentry/node';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import {
++  TrialConflictService,
++  trialPaidHistory,
++} from '../src/packages/trials/trial-conflict.service';
++import { makeTrialConflictTable, stub } from './utils/trial-fakes';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual<Record<string, unknown>>('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++const epoch = (d: Date) => Math.floor(d.getTime() / 1000);
++const TRIAL_INVOICE = { id: 'in_trial', amount_paid: 0, total: 0 };
++const PAID_INVOICE = { id: 'in_renewal', amount_paid: 4900, total: 4900 };
++
++type C = ConstructorParameters<typeof TrialConflictService>;
++type Res = { status?: number; body: unknown };
++type Reply = Res | (() => Promise<Res>);
++
++let secret: string | undefined;
++let skewMs = 0;
++beforeEach(() => {
++  secret = process.env.STRIPE_SECRET_KEY;
++  process.env.STRIPE_SECRET_KEY = 'sk_test_OPUST3ESYNTHETIC';
++  jest.mocked(Sentry.captureMessage).mockClear();
++  skewMs = 0;
++  const realNow = Date.now.bind(Date);
++  jest.spyOn(Date, 'now').mockImplementation(() => realNow() + skewMs);
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  if (secret === undefined) delete process.env.STRIPE_SECRET_KEY;
++  else process.env.STRIPE_SECRET_KEY = secret;
++});
++
++const sub = (status: string): Res => ({
++  body: { id: 'sub_1', status, latest_invoice: 'in_renewal', trial_end: epoch(NOW) - 86400 },
++});
++const page = (data: unknown[], hasMore = false): Res => ({ body: { data, has_more: hasMore } });
++const voided = (id: string): Res => ({ body: { id, object: 'invoice', status: 'void' } });
++
++async function world(r: {
++  sub: Reply;
++  open?: Reply;
++  paid?: Reply;
++  void?: (id: string) => Reply;
++  del?: Reply;
++}) {
++  const table = makeTrialConflictTable();
++  await table.createMany({
++    data: [{ id: 'conflict-1', purchase_id: 'pur-1', stripe_subscription_id: 'sub_1', next_attempt_at: NOW }],
++  });
++  const calls: string[] = [];
++  const bodies: string[] = [];
++  const reply = async (x: Reply) => {
++    const { status = 200, body } = typeof x === 'function' ? await x() : x;
++    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
++  };
++  jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++    const method = init?.method ?? 'GET';
++    const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++    calls.push(`${method} ${path}`);
++    if (method === 'DELETE') return reply(r.del ?? { body: { id: 'sub_1', status: 'canceled' } });
++    const voidId = /^\/invoices\/([^/?]+)\/void$/.exec(path)?.[1];
++    if (method === 'POST' && voidId) {
++      bodies.push(String(init?.body ?? ''));
++      return reply((r.void ?? voided)(decodeURIComponent(voidId)));
++    }
++    if (path.startsWith('/invoices?')) {
++      const status = new URLSearchParams(path.split('?')[1]).get('status');
++      // B-TR6-119 adaptation (only change): the new uncollectible list answers a complete empty page.
++      if (status === 'uncollectible') return reply(page([]));
++      const x = status === 'open' ? r.open : status === 'paid' ? r.paid : undefined;
++      return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
++    }
++    return reply(r.sub);
++  });
++  const db = stub<C[0]>({ packageTrialConflict: table });
++  const service = new TrialConflictService(db, new StripeConnectApiService());
++  const count = (prefix: string) => calls.filter((c) => c.startsWith(prefix)).length;
++  return {
++    table,
++    calls,
++    bodies,
++    db,
++    service,
++    deletes: () => count('DELETE'),
++    voids: () => count('POST /invoices/'),
++    row: () => table.rows[0],
++  };
++}
++
++describe('AUD-OPUS-T3E-119 #673 round 11 probes', () => {
++  it('Q1 (C-673-8 pinned): void confirmed, DELETE 503 -> retry; next read active -> superseded + one billed alert, never a second void', async () => {
++    let remote = 'past_due';
++    const w = await world({
++      sub: async () => sub(remote),
++      open: page([{ id: 'in_renewal' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        remote = 'active'; // Stripe walks a voided past_due plan back to active
++        return voided(id);
++      },
++      del: { status: 503, body: { error: { type: 'api_error' } } },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++    expect(w.row()).toMatchObject({ status: 'owed', lease_token: null });
++    w.row().next_attempt_at = NOW;
++    expect(await w.service.settle('pur-1', new Date(NOW.getTime() + 600_000))).toBe('superseded');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++    expect(await w.service.alertSuperseded()).toBe(1);
++  });
++
++  it('Q2b control: reads that took 15 s still fit (15 + 40 < 60): void then DELETE', async () => {
++    const w = await world({
++      sub: sub('unpaid'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: async () => {
++        skewMs = 15_000;
++        return page([TRIAL_INVOICE]);
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++  });
++
++  it('Q3: a null entry in the open page is not a list of ids: invoices_unknown, no void', async () => {
++    const w = await world({ sub: sub('past_due'), open: page([null]), paid: page([TRIAL_INVOICE]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(0);
++    expect(w.deletes()).toBe(0);
++    expect(w.row().last_error).toBe('invoices_unknown');
++  });
++
++  it('Q4: paid list fails while the open list is fine: history_unknown, no void, no DELETE', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: { status: 503, body: { error: { type: 'api_error' } } },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.voids()).toBe(0);
++    expect(w.deletes()).toBe(0);
++    expect(w.row().last_error).toBe('history_unknown');
++  });
++
++  it('Q5: the void is POST /invoices/<encoded id>/void with an empty form, one per open invoice id', async () => {
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_a/b' }]),
++      paid: page([TRIAL_INVOICE]),
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    expect(w.calls).toContain('POST /invoices/in_a%2Fb/void');
++    expect(w.bodies).toEqual(['']);
++  });
++
++  it('Q6: replay after a cancel is a no-op (not_owed, zero Stripe calls)', async () => {
++    const w = await world({ sub: sub('past_due'), open: page([{ id: 'in_renewal' }]), paid: page([TRIAL_INVOICE]) });
++    expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
++    const n = w.calls.length;
++    expect(await w.service.settle('pur-1', new Date(NOW.getTime() + 600_000))).toBe('not_owed');
++    expect(w.calls.length).toBe(n);
++  });
++
++  it('Q8: C-673-7 edges', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: null }], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: '4900' }], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: Infinity, total: 0 }], has_more: false })).toBe('charged');
++    expect(trialPaidHistory({ data: [null], has_more: false })).toBe('unknown');
++    expect(trialPaidHistory({ data: [], has_more: false })).toBe('none');
++  });
++
++  it('Q9: two workers: the second settle during the first one\'s void is busy; one void, one DELETE', async () => {
++    let release!: () => void;
++    const gate = new Promise<void>((res) => {
++      release = () => res();
++    });
++    let entered!: () => void;
++    const inVoid = new Promise<void>((res) => {
++      entered = () => res();
++    });
++    const w = await world({
++      sub: sub('past_due'),
++      open: page([{ id: 'in_renewal' }]),
++      paid: page([TRIAL_INVOICE]),
++      void: (id) => async () => {
++        entered();
++        await gate;
++        return voided(id);
++      },
++    });
++    const first = w.service.settle('pur-1', NOW);
++    await inVoid;
++    expect(await w.service.settle('pur-1', NOW)).toBe('busy');
++    release();
++    expect(await first).toBe('cancelled');
++    expect(w.voids()).toBe(1);
++    expect(w.deletes()).toBe(1);
++  });
++
++  it('Q10: payment lands after the paid read (void answers 400 invoice already paid) then a 404 DELETE path is never reached', async () => {
++    let remote = 'past_due';
++    const w = await world({
++      sub: async () => sub(remote),
++      open: page([{ id: 'in_renewal' }]),
++      paid: async () => page(remote === 'active' ? [TRIAL_INVOICE, PAID_INVOICE] : [TRIAL_INVOICE]),
++      void: () => async () => {
++        remote = 'active';
++        return { status: 400, body: { error: { type: 'invalid_request_error', message: 'invoice is already paid' } } };
++      },
++    });
++    expect(await w.service.settle('pur-1', NOW)).toBe('retry');
++    expect(w.deletes()).toBe(0);
++    const tags = jest.mocked(Sentry.captureMessage).mock.calls.map((c) => JSON.stringify(c[1] ?? {}));
++    expect(tags.join('')).not.toMatch(/already paid/);
++  });
++});
+diff --git a/test/audit-sol-t5-draft-race.spec.ts b/test/audit-sol-t5-draft-race.spec.ts
+new file mode 100644
+index 00000000..0c0b8ace
+--- /dev/null
++++ b/test/audit-sol-t5-draft-race.spec.ts
+@@ -0,0 +1,174 @@
++import { TrialConflictService, trialPaidHistory } from '../src/packages/trials/trial-conflict.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { makeTrialConflictTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++type C = ConstructorParameters<typeof TrialConflictService>;
++
++afterEach(() => { jest.restoreAllMocks(); });
++
++describe('AUD-SOL-T5-119 — a draft finalizes and pays outside the void domain', () => {
++  it.each([
++    ['past_due', 'draft'],
++    ['unpaid', 'draft'],
++  ])(
++    '%s / %s: preserve a paid plan while the active webhook is delayed',
++    async (status, payingStatus) => {
++      const table = makeTrialConflictTable();
++      await table.createMany({ data: [{
++        id: 'conflict-payment', purchase_id: 'purchase-payment',
++        stripe_subscription_id: 'sub-payment', next_attempt_at: NOW,
++      }] });
++      const purchase: Record<string, unknown> = {
++        id: 'purchase-payment', client_user_id: 'client-payment',
++        coach_user_id: 'coach-payment', package_id: 'package-payment',
++        stripe_subscription_id: 'sub-payment', billing_type: 'recurring',
++        status: 'trialing', entitlement_active: false, trial_days: 7,
++        trial_ends_at: new Date(NOW.getTime() - 86400000),
++        amount_cents: 4900, currency: 'usd', created_at: NOW,
++      };
++      const rawDb = {
++        packageTrialConflict: table,
++        packageTrialUsage: makeTrialUsageTable(),
++        clientPurchase: {
++          findUnique: jest.fn(async () => ({ ...purchase })),
++          update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++            Object.assign(purchase, data);
++            return { ...purchase };
++          }),
++        },
++        coachPackage: { findUnique: jest.fn(async () => ({
++          id: 'package-payment', duration_periods: null,
++        })) },
++        $queryRaw: jest.fn(async () => []),
++      };
++      const db = stub<C[0]>(rawDb);
++      const previousSecret = process.env.STRIPE_SECRET_KEY;
++      process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++      const stripe = new StripeConnectApiService();
++      const service = new TrialConflictService(db, stripe);
++      const usage = new TrialUsageService(db);
++      const handler = new CheckoutWebhookHandlerService(
++        db, stripe, undefined, undefined, undefined, undefined, undefined,
++        undefined, undefined, usage, undefined, service,
++      );
++      const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(rawDb);
++      const calls: string[] = [];
++      let paidCents = 0;
++      let accessBeforeDeleted: unknown;
++      let paidRemote = false;
++      const voidedIds: string[] = [];
++      let draftState = 'draft';
++      const activeEvent = async () => handler.handle({
++        id: 'evt-payment-active', type: 'customer.subscription.updated',
++        data: { object: {
++          id: 'sub-payment', status: 'active',
++          trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          current_period_end: Math.floor(NOW.getTime() / 1000) + 30 * 86400,
++        } },
++      }, tx);
++      jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++        const method = init?.method ?? 'GET';
++        const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++        calls.push(`${method} ${path}`);
++        let body: unknown;
++        if (path.startsWith('/invoices?')) {
++          const queryStatus = new URLSearchParams(path.split('?')[1]).get('status');
++          if (queryStatus === 'open') {
++            // The newest unpaid invoice is open. An older uncollectible
++            // invoice is not part of this complete status-filtered page.
++            body = { data: [{ id: 'in-new-open', status: 'open' }], has_more: false };
++          } else if (queryStatus === 'uncollectible') {
++            body = { data: [], has_more: false };
++          } else if (queryStatus === 'draft') {
++            body = {
++              data: draftState === 'draft' ? [{ id: 'in-draft-renewal', status: 'draft' }] : [],
++              has_more: false,
++            };
++          } else if (queryStatus === 'paid') {
++            // The response is prepared before the first positive payment,
++            // then Stripe/another authorized actor finalizes the distinct
++            // renewal draft and pays it before the prepared response arrives.
++            body = { data: [{ id: 'in-trial', amount_paid: 0, total: 0 }], has_more: false };
++            draftState = 'open';
++            draftState = 'paid';
++            paidCents = 4900;
++            paidRemote = true;
++          } else {
++            throw new Error(`unexpected invoice status filter ${queryStatus}`);
++          }
++        } else if (method === 'POST' && path.endsWith('/void')) {
++          const invoiceId = path.split('/')[2];
++          const paymentWonThisInvoice = invoiceId === 'in-draft-renewal' && draftState === 'paid';
++          if (paymentWonThisInvoice) {
++            return new Response(JSON.stringify({
++              error: { type: 'invalid_request_error', code: 'invoice_not_open' },
++            }), { status: 400 });
++          }
++          // Voiding the captured open invoice does not invalidate a separate
++          // payment on a draft that was absent from both captured pages.
++          voidedIds.push(invoiceId);
++          body = { id: invoiceId, status: 'void' };
++        } else if (method === 'DELETE') {
++          // This is already destructive dispatch. Delayed active delivery
++          // grants paid access; the cancellation's real handler then removes it.
++          await activeEvent();
++          accessBeforeDeleted = purchase.entitlement_active;
++          await handler.handle({
++            id: 'evt-payment-deleted', type: 'customer.subscription.deleted',
++            data: { object: { id: 'sub-payment' } },
++          }, tx);
++          body = { id: 'sub-payment', status: 'canceled' };
++        } else {
++          body = {
++            id: 'sub-payment', status: paidRemote ? 'active' : status,
++            latest_invoice: 'in-new-open',
++            trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          };
++        }
++        return new Response(JSON.stringify(body), { status: 200 });
++      });
++      try {
++        const outcome = await service.settle('purchase-payment', NOW);
++        if (draftState === 'paid') expect(paidCents).toBe(4900);
++        const deleted = calls.filter((c) => c.startsWith('DELETE'));
++        if (deleted.length) {
++          expect(accessBeforeDeleted).toBe(true);
++          expect(purchase.entitlement_active).toBe(false);
++          expect(voidedIds).toEqual(['in-new-open']);
++        }
++        console.info('AUD-SOL-T5-119 DRAFT_FINALIZATION_RACE', {
++          status, payingStatus, draftState, voidedIds, calls,
++          paidCents, accessBeforeDeleted, accessAfterDeleted: purchase.entitlement_active,
++          outcome, conflict: table.rows[0].status, deletes: deleted.length,
++        });
++        expect({
++          deleted, outcome, conflict: table.rows[0].status,
++          entitlement: purchase.entitlement_active,
++        }).toMatchObject({ deleted: [] });
++        await activeEvent();
++        expect(purchase.entitlement_active).toBe(true);
++      } finally {
++        if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++        else process.env.STRIPE_SECRET_KEY = previousSecret;
++      }
++    },
++  );
++});
++
++describe('AUD-SOL-T3E-119 — retained malformed-money controls', () => {
++  it.each([
++    { amount_paid: -1, total: 0 },
++    { amount_paid: 0 }, // missing total cannot distinguish a credit-funded paid invoice
++    { amount_paid: Number.NaN, total: 0 },
++  ])('does not prove none from malformed monetary evidence %p', (invoice) => {
++    expect(trialPaidHistory({ data: [invoice], has_more: false })).toBe('unknown');
++  });
++  it('controls: valid no-charge history, partial no-charge history, and positive paid evidence', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: false })).toBe('none');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: true })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: 4900, total: 4900 }], has_more: true })).toBe('charged');
++  });
++});
+diff --git a/test/audit-sol-t5-replay.spec.ts b/test/audit-sol-t5-replay.spec.ts
+new file mode 100644
+index 00000000..1569248b
+--- /dev/null
++++ b/test/audit-sol-t5-replay.spec.ts
+@@ -0,0 +1,178 @@
++import { TrialConflictService, trialPaidHistory } from '../src/packages/trials/trial-conflict.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
++import { makeTrialConflictTable, makeTrialUsageTable, stub } from './utils/trial-fakes';
++
++const NOW = new Date('2026-10-09T17:00:00Z');
++type C = ConstructorParameters<typeof TrialConflictService>;
++
++afterEach(() => { jest.restoreAllMocks(); });
++
++describe('AUD-SOL-T3E-119 — payable invoice completeness after confirmed open void', () => {
++  it.each([
++    ['past_due', 'open'],
++    ['unpaid', 'open'],
++    ['past_due', 'uncollectible'],
++    ['unpaid', 'uncollectible'],
++  ])(
++    '%s / %s: preserve a paid plan while the active webhook is delayed',
++    async (status, payingStatus) => {
++      const table = makeTrialConflictTable();
++      await table.createMany({ data: [{
++        id: 'conflict-payment', purchase_id: 'purchase-payment',
++        stripe_subscription_id: 'sub-payment', next_attempt_at: NOW,
++      }] });
++      const purchase: Record<string, unknown> = {
++        id: 'purchase-payment', client_user_id: 'client-payment',
++        coach_user_id: 'coach-payment', package_id: 'package-payment',
++        stripe_subscription_id: 'sub-payment', billing_type: 'recurring',
++        status: 'trialing', entitlement_active: false, trial_days: 7,
++        trial_ends_at: new Date(NOW.getTime() - 86400000),
++        amount_cents: 4900, currency: 'usd', created_at: NOW,
++      };
++      const rawDb = {
++        packageTrialConflict: table,
++        packageTrialUsage: makeTrialUsageTable(),
++        clientPurchase: {
++          findUnique: jest.fn(async () => ({ ...purchase })),
++          update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++            Object.assign(purchase, data);
++            return { ...purchase };
++          }),
++        },
++        coachPackage: { findUnique: jest.fn(async () => ({
++          id: 'package-payment', duration_periods: null,
++        })) },
++        $queryRaw: jest.fn(async () => []),
++      };
++      const db = stub<C[0]>(rawDb);
++      const previousSecret = process.env.STRIPE_SECRET_KEY;
++      process.env.STRIPE_SECRET_KEY = 'sk_test_AUDITSYNTHETIC';
++      const stripe = new StripeConnectApiService();
++      const service = new TrialConflictService(db, stripe);
++      const usage = new TrialUsageService(db);
++      const handler = new CheckoutWebhookHandlerService(
++        db, stripe, undefined, undefined, undefined, undefined, undefined,
++        undefined, undefined, usage, undefined, service,
++      );
++      const tx = stub<Parameters<CheckoutWebhookHandlerService['handle']>[1]>(rawDb);
++      const calls: string[] = [];
++      let paidCents = 0;
++      let accessBeforeDeleted: unknown;
++      let paidRemote = false;
++      const voidedIds: string[] = [];
++      const activeEvent = async () => handler.handle({
++        id: 'evt-payment-active', type: 'customer.subscription.updated',
++        data: { object: {
++          id: 'sub-payment', status: 'active',
++          trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          current_period_end: Math.floor(NOW.getTime() / 1000) + 30 * 86400,
++        } },
++      }, tx);
++      jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
++        const method = init?.method ?? 'GET';
++        const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
++        calls.push(`${method} ${path}`);
++        let body: unknown;
++        if (path.startsWith('/invoices?')) {
++          const queryStatus = new URLSearchParams(path.split('?')[1]).get('status');
++          if (queryStatus === 'open') {
++            // The newest unpaid invoice is open. An older uncollectible
++            // invoice is not part of this complete status-filtered page.
++            body = { data: [{ id: 'in-new-open', status: 'open' }], has_more: false };
++          } else if (queryStatus === 'uncollectible') {
++            body = {
++              data: payingStatus === 'uncollectible'
++                ? [{ id: 'in-old-uncollectible', status: 'uncollectible' }] : [],
++              has_more: false,
++            };
++          } else if (queryStatus === 'paid') {
++            // The response is prepared before the first positive payment,
++            // which succeeds on the still-payable old invoice before delivery.
++            body = { data: [{ id: 'in-trial', amount_paid: 0, total: 0 }], has_more: false };
++            paidCents = 4900;
++            paidRemote = true;
++          } else {
++            throw new Error(`unexpected invoice status filter ${queryStatus}`);
++          }
++        } else if (method === 'POST' && path.endsWith('/void')) {
++          const invoiceId = path.split('/')[2];
++          const paymentWonThisInvoice =
++            payingStatus === 'open' || invoiceId === 'in-old-uncollectible';
++          if (paymentWonThisInvoice) {
++            return new Response(JSON.stringify({
++              error: { type: 'invalid_request_error', code: 'invoice_not_open' },
++            }), { status: 400 });
++          }
++          // Voiding the newest open invoice does not invalidate a separate
++          // payment on the older uncollectible invoice.
++          voidedIds.push(invoiceId);
++          body = { id: invoiceId, status: 'void' };
++        } else if (method === 'DELETE') {
++          // This is already destructive dispatch. Delayed active delivery
++          // grants paid access; the cancellation's real handler then removes it.
++          await activeEvent();
++          accessBeforeDeleted = purchase.entitlement_active;
++          await handler.handle({
++            id: 'evt-payment-deleted', type: 'customer.subscription.deleted',
++            data: { object: { id: 'sub-payment' } },
++          }, tx);
++          body = { id: 'sub-payment', status: 'canceled' };
++        } else {
++          body = {
++            id: 'sub-payment', status: paidRemote ? 'active' : status,
++            latest_invoice: 'in-new-open',
++            trial_end: Math.floor(NOW.getTime() / 1000) - 86400,
++          };
++        }
++        return new Response(JSON.stringify(body), { status: 200 });
++      });
++      try {
++        const outcome = await service.settle('purchase-payment', NOW);
++        expect(paidCents).toBe(4900);
++        expect(calls.filter((c) => c.startsWith('GET /invoices?'))).toEqual(
++          expect.arrayContaining([
++            'GET /invoices?subscription=sub-payment&status=open&limit=100',
++            'GET /invoices?subscription=sub-payment&status=paid&limit=100',
++          ]),
++        );
++        const deleted = calls.filter((c) => c.startsWith('DELETE'));
++        if (deleted.length) {
++          expect(accessBeforeDeleted).toBe(true);
++          expect(purchase.entitlement_active).toBe(false);
++          expect(voidedIds).toEqual(['in-new-open']);
++        }
++        console.info('AUD-SOL-T3E-119 PAYABLE_INVOICE_RACE', {
++          status, payingStatus, voidedIds, calls,
++          paidCents, accessBeforeDeleted, accessAfterDeleted: purchase.entitlement_active,
++          outcome, conflict: table.rows[0].status, deletes: deleted.length,
++        });
++        expect({
++          deleted, outcome, conflict: table.rows[0].status,
++          entitlement: purchase.entitlement_active,
++        }).toMatchObject({ deleted: [] });
++        await activeEvent();
++        expect(purchase.entitlement_active).toBe(true);
++      } finally {
++        if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
++        else process.env.STRIPE_SECRET_KEY = previousSecret;
++      }
++    },
++  );
++});
++
++describe('AUD-SOL-T3E-119 — retained malformed-money controls', () => {
++  it.each([
++    { amount_paid: -1, total: 0 },
++    { amount_paid: 0 }, // missing total cannot distinguish a credit-funded paid invoice
++    { amount_paid: Number.NaN, total: 0 },
++  ])('does not prove none from malformed monetary evidence %p', (invoice) => {
++    expect(trialPaidHistory({ data: [invoice], has_more: false })).toBe('unknown');
++  });
++  it('controls: valid no-charge history, partial no-charge history, and positive paid evidence', () => {
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: false })).toBe('none');
++    expect(trialPaidHistory({ data: [{ amount_paid: 0, total: 0 }], has_more: true })).toBe('unknown');
++    expect(trialPaidHistory({ data: [{ amount_paid: 4900, total: 4900 }], has_more: true })).toBe('charged');
++  });
++});
+-- 
+2.53.0
+

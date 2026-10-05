@@ -1,0 +1,3195 @@
+diff --git a/.env.example b/.env.example
+index e13148b0..bac8875a 100644
+--- a/.env.example
++++ b/.env.example
+@@ -988,3 +988,10 @@ MWB_AUTOSAVE_LOCK_TOKEN_SECRET=
+ # deterministic dev fallback is used. Set 32+ random bytes in production for a
+ # verifiable token. Generate with: openssl rand -hex 32
+ PUBLIC_LISTING_CURSOR_SECRET=
++
++# Smart Dunning v2 — feature flag (DEFAULT OFF everywhere). Exactly "true"
++# enables the 10-day non-payment sequence: Day 0/1/3/7 client notices (Stripe's
++# retry schedule does every charge), Day-7 coach alert, Day-10 lockout
++# (403 LOCKED_DUNNING outside billing / export / deletion / coach thread), and
++# immediate unlock on payment. Unset or any other value = v1 dunning.
++FEATURE_DUNNING_V2=false
+diff --git a/prisma/migrations/20270215000000_dunning_billing_actions/down.sql b/prisma/migrations/20270215000000_dunning_billing_actions/down.sql
+new file mode 100644
+index 00000000..f2aae6f6
+--- /dev/null
++++ b/prisma/migrations/20270215000000_dunning_billing_actions/down.sql
+@@ -0,0 +1,11 @@
++-- Reverse of 20270215000000_dunning_billing_actions. Drops only what that
++-- migration creates (tables take their indexes, FKs and policies with them).
++-- Billing leases, operation journals, notice delivery records, dispute obligations and 2A markers
++-- written after the migration are lost; run only with no billing action in
++-- flight and the dunning v2 flag off.
++DROP TABLE IF EXISTS "DunningDisputeObligation";
++DROP TABLE IF EXISTS "DunningNoticeDelivery";
++DROP TABLE IF EXISTS "ClientBillingOperation";
++DROP TABLE IF EXISTS "ClientBillingLease";
++ALTER TABLE "DunningState" DROP COLUMN IF EXISTS "client_canceled_at";
++ALTER TABLE "DunningState" DROP COLUMN IF EXISTS "sweep_checked_at";
+diff --git a/prisma/migrations/20270215000000_dunning_billing_actions/migration.sql b/prisma/migrations/20270215000000_dunning_billing_actions/migration.sql
+new file mode 100644
+index 00000000..a1f41e19
+--- /dev/null
++++ b/prisma/migrations/20270215000000_dunning_billing_actions/migration.sql
+@@ -0,0 +1,161 @@
++-- S-DUNNING-R2/R3 (owner rulings 1A / 2A, 2026-10-01 16:30 PDT; fix round 3).
++-- Additive only: two nullable columns on "DunningState" and four new
++-- server-only tables. No backfill, no shipped migration altered. Reverse:
++-- down.sql (drops only what this file creates).
++--   "DunningState"."client_canceled_at": the client ended the plan during the
++--     dunning cycle (2A); written with the durable intent before any void.
++--   "DunningState"."sweep_checked_at": when the v2 sweep last looked at a due
++--     cycle without acting on it; the sweep serves the least recently looked
++--     at first, so rows that keep skipping cannot starve a due one (B-688-2).
++--   "ClientBillingLease": per-purchase billing-action lease with a monotonic
++--     fence (CAS on holder before every Stripe money call and inside every
++--     money-write transaction). Works when no DunningState row exists.
++--   "ClientBillingOperation": durable journal of one 1A pay / 2A cancel
++--     (phase, per-invoice integer-cent lines); the reconciler resumes it.
++--   "DunningNoticeDelivery": durable per-channel notice outbox, keyed per
++--     cycle, retried by the hourly sweep. Each delivery is claimed (CAS to
++--     'sending' with a claim_token; next_attempt_at is then the claim's
++--     expiry) before its transport is called; receipts are written only by
++--     the holder of that claim (R4).
++--   "DunningDisputeObligation": one Stripe dispute per purchase as the
++--     dunning path saw it (created -> 'open', closed -> its status), written
++--     under the DunningState row lock, so one won dispute never lifts a
++--     reversal lock while another dispute is open or lost (R5).
++-- RLS: the four tables are server-only (service_role full access; anon and
++-- authenticated get nothing). No client ever reads them directly.
++
++SET lock_timeout = '5s';
++
++-- AlterTable
++ALTER TABLE "DunningState" ADD COLUMN IF NOT EXISTS "client_canceled_at" TIMESTAMP(3);
++ALTER TABLE "DunningState" ADD COLUMN IF NOT EXISTS "sweep_checked_at" TIMESTAMP(3);
++
++-- CreateTable
++CREATE TABLE "ClientBillingLease" (
++    "purchase_id" TEXT NOT NULL,
++    "holder" TEXT,
++    "holder_until" TIMESTAMP(3),
++    "fence" INTEGER NOT NULL DEFAULT 0,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "ClientBillingLease_pkey" PRIMARY KEY ("purchase_id")
++);
++
++-- CreateTable
++CREATE TABLE "ClientBillingOperation" (
++    "id" TEXT NOT NULL,
++    "purchase_id" TEXT NOT NULL,
++    "kind" TEXT NOT NULL,
++    "phase" TEXT NOT NULL,
++    "fence" INTEGER NOT NULL,
++    "setup_intent_id" TEXT,
++    "lines" JSONB,
++    "error_code" TEXT,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++    "completed_at" TIMESTAMP(3),
++
++    CONSTRAINT "ClientBillingOperation_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "DunningNoticeDelivery" (
++    "id" TEXT NOT NULL,
++    "dunning_state_id" TEXT NOT NULL,
++    "cycle_key" TEXT NOT NULL,
++    "step_index" INTEGER NOT NULL,
++    "channel" TEXT NOT NULL,
++    "status" TEXT NOT NULL DEFAULT 'pending',
++    "attempts" INTEGER NOT NULL DEFAULT 0,
++    "last_error" TEXT,
++    "next_attempt_at" TIMESTAMP(3),
++    "sent_at" TIMESTAMP(3),
++    "claim_token" TEXT,
++    "key_attempt" INTEGER,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "DunningNoticeDelivery_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "DunningDisputeObligation" (
++    "stripe_dispute_id" TEXT NOT NULL,
++    "purchase_id" TEXT NOT NULL,
++    "stripe_charge_id" TEXT,
++    "status" TEXT NOT NULL,
++    "closed_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "DunningDisputeObligation_pkey" PRIMARY KEY ("stripe_dispute_id")
++);
++
++-- CreateIndex
++CREATE INDEX "ClientBillingOperation_purchase_id_kind_completed_at_idx" ON "ClientBillingOperation"("purchase_id", "kind", "completed_at");
++
++-- CreateIndex
++CREATE INDEX "ClientBillingOperation_kind_completed_at_updated_at_idx" ON "ClientBillingOperation"("kind", "completed_at", "updated_at");
++
++-- CreateIndex
++CREATE INDEX "ClientBillingOperation_setup_intent_id_idx" ON "ClientBillingOperation"("setup_intent_id");
++
++-- CreateIndex
++CREATE INDEX "DunningNoticeDelivery_status_next_attempt_at_idx" ON "DunningNoticeDelivery"("status", "next_attempt_at");
++
++-- CreateIndex
++CREATE INDEX "DunningNoticeDelivery_dunning_state_id_cycle_key_idx" ON "DunningNoticeDelivery"("dunning_state_id", "cycle_key");
++
++-- CreateIndex
++CREATE INDEX "DunningDisputeObligation_purchase_id_idx" ON "DunningDisputeObligation"("purchase_id");
++
++-- AddForeignKey
++ALTER TABLE "ClientBillingLease" ADD CONSTRAINT "ClientBillingLease_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "ClientBillingOperation" ADD CONSTRAINT "ClientBillingOperation_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "DunningNoticeDelivery" ADD CONSTRAINT "DunningNoticeDelivery_dunning_state_id_fkey" FOREIGN KEY ("dunning_state_id") REFERENCES "DunningState"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "DunningDisputeObligation" ADD CONSTRAINT "DunningDisputeObligation_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++
++-- RLS: server-only tables.
++ALTER TABLE "ClientBillingLease" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "ClientBillingLease" FORCE ROW LEVEL SECURITY;
++ALTER TABLE "ClientBillingOperation" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "ClientBillingOperation" FORCE ROW LEVEL SECURITY;
++ALTER TABLE "DunningNoticeDelivery" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "DunningNoticeDelivery" FORCE ROW LEVEL SECURITY;
++ALTER TABLE "DunningDisputeObligation" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "DunningDisputeObligation" FORCE ROW LEVEL SECURITY;
++
++REVOKE ALL ON TABLE "ClientBillingLease" FROM anon;
++REVOKE ALL ON TABLE "ClientBillingOperation" FROM anon;
++REVOKE ALL ON TABLE "DunningNoticeDelivery" FROM anon;
++REVOKE ALL ON TABLE "DunningDisputeObligation" FROM anon;
++
++CREATE POLICY "p_clientbillinglease_service_role_all" ON "ClientBillingLease"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++CREATE POLICY "deny_all_anon_clientbillinglease" ON "ClientBillingLease"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++CREATE POLICY "p_clientbillingoperation_service_role_all" ON "ClientBillingOperation"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++CREATE POLICY "deny_all_anon_clientbillingoperation" ON "ClientBillingOperation"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++CREATE POLICY "p_dunningnoticedelivery_service_role_all" ON "DunningNoticeDelivery"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++CREATE POLICY "deny_all_anon_dunningnoticedelivery" ON "DunningNoticeDelivery"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++CREATE POLICY "p_dunningdisputeobligation_service_role_all" ON "DunningDisputeObligation"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++CREATE POLICY "deny_all_anon_dunningdisputeobligation" ON "DunningDisputeObligation"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++RESET lock_timeout;
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index a4d571fa..08a854a1 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -3862,6 +3862,11 @@ model ClientPurchase {
+   // S-FEE — one settlement per Stripe charge (first charge + every renewal).
+   settlements            ChargeSettlement[]
+   dunning                DunningState?
++  // S-DUNNING-R3: per-purchase billing-action lease (fenced) and the durable
++  // journal of the client's own billing operations (1A pay, 2A cancel).
++  billing_lease          ClientBillingLease?
++  billing_operations     ClientBillingOperation[]
++  dispute_obligations    DunningDisputeObligation[]
+   reminders              PaymentReminder[]
+   refunds                ChargeRefund[]
+   disputes               ChargeDispute[]
+@@ -4373,14 +4378,128 @@ model DunningState {
+   // charge is later reversed. Drives regular-vs-"again" copy selection.
+   // Defaulted: existing rows read back 0 (zero-mutation-elsewhere).
+   reversal_count           Int            @default(0)
+-
+-  attempts DunningAttempt[]
++  // S-DUNNING-R2/R3 (owner 2A) — the client ended their plan during this
++  // dunning cycle. Written together with the durable ClientBillingOperation
++  // intent BEFORE the first void; status 'abandoned' follows once the
++  // subscription is canceled. Cleared again when the cancel falls back to
++  // option A because the period turned out to be paid. While set, the
++  // cycle sends no notices, never Day-10 locks, and a live
++  // customer.subscription.updated cannot hand access back.
++  client_canceled_at       DateTime?
++  // B-688-2: when the v2 sweep last looked at this due cycle without
++  // advancing or locking it. The sweep serves never and least recently
++  // looked at cycles first, so rows that keep skipping cannot starve a due
++  // cycle behind them.
++  sweep_checked_at         DateTime?
++
++  attempts         DunningAttempt[]
++  // S-DUNNING-R3 (B-628-6): durable per-channel notice outbox.
++  notice_deliveries DunningNoticeDelivery[]
+ 
+   @@index([status])
+   @@index([status, cancel_scheduled_at])
+   @@index([status, next_attempt_at])
+ }
+ 
++/// S-DUNNING-R3 (B-628-9) — per-purchase billing-action lease with a
++/// monotonic fence. A client card update that pays open invoices and a
++/// client cancel that voids them claim it by CAS (free when holder is null
++/// or holder_until has passed; every claim increments fence). The holder
++/// re-checks it (CAS on holder) before every Stripe money call and inside
++/// every money-write transaction, so a stalled holder whose lease expired
++/// can never write after a newer holder took over. One row per purchase,
++/// created on first use, so it works when no DunningState exists.
++model ClientBillingLease {
++  purchase_id  String         @id
++  purchase     ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  holder       String?
++  holder_until DateTime?
++  fence        Int            @default(0)
++  created_at   DateTime       @default(now())
++  updated_at   DateTime       @updatedAt
++}
++
++/// S-DUNNING-R3 (B-628-2/5) — durable journal of one client billing
++/// operation on one purchase. kind 'card_pay' (owner 1A: pay the approved
++/// open invoices with the card just saved; one row per purchase and
++/// SetupIntent) or 'cancel' (owner 2A: written BEFORE the first void).
++/// phase records how far it got; completed_at null + stale updated_at is
++/// resumed by the hourly reconciler. lines holds per-invoice integer-cent
++/// results ([{invoice_id, currency, amount_due_cents, amount_paid_cents,
++/// result}]); never summed across currencies.
++model ClientBillingOperation {
++  id              String         @id @default(uuid())
++  purchase_id     String
++  purchase        ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  kind            String
++  phase           String
++  fence           Int
++  setup_intent_id String?
++  lines           Json?
++  error_code      String?
++  created_at      DateTime       @default(now())
++  updated_at      DateTime       @updatedAt
++  completed_at    DateTime?
++
++  @@index([purchase_id, kind, completed_at])
++  @@index([kind, completed_at, updated_at])
++  @@index([setup_intent_id])
++}
++
++/// S-DUNNING-R3 (B-628-6) — durable per-channel delivery record for one
++/// dunning v2 notice step of one cycle. id is deterministic
++/// "<dunning_state_id>:<cycle_key>:<step_index>:<channel>" so a step is
++/// recorded once per cycle; cycle_key is the cycle's entered_at instant, so
++/// a later renewal cycle on the same DunningState never reuses a key.
++/// status pending | sent | failed | skipped | dead. A pending or failed row
++/// whose next_attempt_at has passed is retried by the hourly sweep.
++model DunningNoticeDelivery {
++  id               String       @id
++  dunning_state_id String
++  dunning_state    DunningState @relation(fields: [dunning_state_id], references: [id], onDelete: Cascade)
++  cycle_key        String
++  step_index       Int
++  channel          String
++  status           String       @default("pending")
++  attempts         Int          @default(0)
++  last_error       String?
++  next_attempt_at  DateTime?
++  sent_at          DateTime?
++  /// S-DUNNING-R4 (B-628-6): the worker that claimed this delivery
++  /// ('sending'; next_attempt_at is then the claim's expiry). Only that
++  /// holder may write the receipt.
++  claim_token      String?
++  /// Transport idempotency attempt of the current claim; a takeover of an
++  /// expired claim reuses it so an email that did go out is not sent again.
++  key_attempt      Int?
++  created_at       DateTime     @default(now())
++  updated_at       DateTime     @updatedAt
++
++  @@index([status, next_attempt_at])
++  @@index([dunning_state_id, cycle_key])
++}
++
++/// S-DUNNING-R5 (B-628-8) — one Stripe dispute obligation on one purchase,
++/// as the dunning v2 path saw it. Written under the purchase's DunningState
++/// row lock by BOTH charge.dispute.created (status 'open') and
++/// charge.dispute.closed (the closing status), so a won dispute can never
++/// lift a purchase-wide reversal lock while another dispute on that purchase
++/// is open or lost, whichever webhook lands first. ChargeDispute (refund /
++/// dispute ledger) is read alongside it; a terminal status on either wins.
++model DunningDisputeObligation {
++  stripe_dispute_id String         @id
++  purchase_id       String
++  purchase          ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  stripe_charge_id  String?
++  /// open | won | warning_closed | lost | <other Stripe dispute status>
++  status            String
++  closed_at         DateTime?
++  created_at        DateTime       @default(now())
++  updated_at        DateTime       @updatedAt
++
++  @@index([purchase_id])
++}
++
+ // DUNNING-V2 (B3 §2.1) — branded JWT recovery links. NEW TABLE ONLY; no FK
+ // alter on any existing table. `dunning_attempt_id` is a bare unique string
+ // (no Prisma @relation) so DunningAttempt is not mutated. The row exists for
+diff --git a/prod-switches.yml b/prod-switches.yml
+index 59a97bde..d4d57b3e 100644
+--- a/prod-switches.yml
++++ b/prod-switches.yml
+@@ -1490,3 +1490,14 @@ switches:
+     auto_flip_on_in_prod: false
+     owner: auth
+     description: "Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500]."
++
++  # ── Smart Dunning v2 (S-DUNNING, 2026-10-01): register the existing v2 flag
++  # (Lens B P2-1). Read via env[FEATURE_DUNNING_V2_ENV] in
++  # src/checkout/dunning-v2/dunning-v2.feature.ts, so the process.env scan
++  # never discovered it. Registry only; no runtime change, never auto-flipped. ──
++  - name: FEATURE_DUNNING_V2
++    tier: feature
++    prod_default: OFF
++    auto_flip_on_in_prod: false
++    owner: payments
++    description: "Smart Dunning v2 (10-day non-payment sequence: Day 0/1/3/7 notices, Day-10 lockout, immediate unlock on payment). Exactly 'true' enables; unset = v1 dunning. Default OFF; flip only per the S-DUNNING flip plan (PR body)."
+diff --git a/src/checkout/client-billing.money.ts b/src/checkout/client-billing.money.ts
+new file mode 100644
+index 00000000..7bdd2a45
+--- /dev/null
++++ b/src/checkout/client-billing.money.ts
+@@ -0,0 +1,83 @@
++/**
++ * S-DUNNING-R3 — integer minor-unit money helpers for the client billing
++ * actions. Amounts are never added across currencies: every total is a list
++ * of { currency, amount_cents } with one entry per currency.
++ */
++
++export interface MoneyTotal {
++  currency: string;
++  amount_cents: number;
++}
++
++/** ISO 4217 currencies Stripe treats as zero-decimal (no minor unit). */
++const ZERO_DECIMAL = new Set([
++  'bif',
++  'clp',
++  'djf',
++  'gnf',
++  'jpy',
++  'kmf',
++  'krw',
++  'mga',
++  'pyg',
++  'rwf',
++  'ugx',
++  'vnd',
++  'vuv',
++  'xaf',
++  'xof',
++  'xpf',
++]);
++
++export function normalizeCurrency(currency: string | null | undefined): string {
++  const c = typeof currency === 'string' ? currency.trim().toLowerCase() : '';
++  return /^[a-z]{3}$/.test(c) ? c : 'usd';
++}
++
++/** Sum integer amounts per currency; one entry per currency, sorted by currency code. */
++export function totalsByCurrency(
++  items: Array<{ currency: string; amount_cents: number }>,
++): MoneyTotal[] {
++  const order: string[] = [];
++  const sums = new Map<string, number>();
++  for (const it of items) {
++    if (!Number.isInteger(it.amount_cents) || it.amount_cents <= 0) continue;
++    const cur = normalizeCurrency(it.currency);
++    if (!sums.has(cur)) {
++      order.push(cur);
++      sums.set(cur, 0);
++    }
++    sums.set(cur, (sums.get(cur) ?? 0) + it.amount_cents);
++  }
++  // Alphabetical by currency code: a stable order for copy and quote digests.
++  order.sort();
++  return order.map((currency) => ({ currency, amount_cents: sums.get(currency) ?? 0 }));
++}
++
++/** One amount as the client reads it: "$150.00", "12,000 JPY", "45.50 EUR". */
++export function formatMinor(cents: number, currency: string | null | undefined): string {
++  const cur = normalizeCurrency(currency);
++  const safe = Number.isInteger(cents) ? cents : 0;
++  if (ZERO_DECIMAL.has(cur)) {
++    return `${safe.toLocaleString('en-US')} ${cur.toUpperCase()}`;
++  }
++  const negative = safe < 0;
++  const abs = Math.abs(safe);
++  const whole = Math.floor(abs / 100).toLocaleString('en-US');
++  const minor = String(abs % 100).padStart(2, '0');
++  const body = `${whole}.${minor}`;
++  if (cur === 'usd') return `${negative ? '-' : ''}$${body}`;
++  return `${negative ? '-' : ''}${body} ${cur.toUpperCase()}`;
++}
++
++/** "$150.00", or "$150.00 and 45.50 EUR" for more than one currency. */
++export function formatTotals(totals: MoneyTotal[]): string {
++  const parts = totals.map((t) => formatMinor(t.amount_cents, t.currency));
++  if (parts.length <= 1) return parts[0] ?? formatMinor(0, 'usd');
++  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
++}
++
++/** The single currency of a total list, or null when there are several. */
++export function singleCurrency(totals: MoneyTotal[]): string | null {
++  return totals.length === 1 ? totals[0].currency : null;
++}
+diff --git a/src/checkout/dunning-v2/dunning-effective-access.ts b/src/checkout/dunning-v2/dunning-effective-access.ts
+new file mode 100644
+index 00000000..1f6c8345
+--- /dev/null
++++ b/src/checkout/dunning-v2/dunning-effective-access.ts
+@@ -0,0 +1,79 @@
++import type { Prisma } from '@prisma/client';
++import type { PrismaService } from '../../prisma.service';
++
++/**
++ * S-DUNNING-R3 (B-628-7): the ONE rule for "does a Day-10 lock actually stop
++ * this client", shared by the request guard (DunningLockoutGuard) and the
++ * client read model (GET /v1/me/dunning-status). Before this the guard waived
++ * the lock for a client holding another live entitlement (comp / invite-code
++ * grant, another paid package, access the coach kept on) while the status
++ * endpoint still answered `locked`, so the app showed a lockout screen to a
++ * client whose requests all went through.
++ */
++type Db = Prisma.TransactionClient | PrismaService;
++
++export interface EffectiveLock {
++  /** The locked cycle's purchase, or null when no cycle is locked. */
++  lockedPurchaseId: string | null;
++  /** True when a locked cycle exists but other live access waives it. */
++  waived: boolean;
++  /** True when the client is actually locked out (locked and not waived). */
++  locked: boolean;
++}
++
++/**
++ * Live access other than `excludePurchaseId`: an entitled, unexpired
++ * purchase in a paid status whose own cycle (if any) is not locked.
++ */
++export async function hasOtherLiveAccess(
++  db: Db,
++  clientUserId: string,
++  excludePurchaseId: string,
++  now: Date = new Date(),
++): Promise<boolean> {
++  // B-687-1 (Sol): "not itself locked" is part of the query, so the one row
++  // fetched is a live grant however many locked alternatives the client
++  // holds (a page of the first N rows could be all locked and hide it). The
++  // same test on the row keeps the answer right for any caller-supplied db.
++  const others = await db.clientPurchase.findMany({
++    where: {
++      client_user_id: clientUserId,
++      id: { not: excludePurchaseId },
++      entitlement_active: true,
++      status: { in: ['paid', 'active', 'trialing'] },
++      AND: [
++        { OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }] },
++        {
++          OR: [
++            { dunning: { is: null } },
++            { dunning: { isNot: { status: 'active', locked_out_at: { not: null } } } },
++          ],
++        },
++      ],
++    },
++    select: {
++      id: true,
++      dunning: { select: { status: true, locked_out_at: true } },
++    },
++    take: 1,
++  });
++  return others.some((p) => !(p.dunning?.status === 'active' && p.dunning.locked_out_at != null));
++}
++
++export async function effectiveLock(
++  db: Db,
++  clientUserId: string,
++  now: Date = new Date(),
++): Promise<EffectiveLock> {
++  const lockedRow = await db.dunningState.findFirst({
++    where: {
++      locked_out_at: { not: null },
++      status: 'active',
++      purchase: { client_user_id: clientUserId },
++    },
++    select: { id: true, purchase_id: true },
++  });
++  if (lockedRow == null) return { lockedPurchaseId: null, waived: false, locked: false };
++  const waived = await hasOtherLiveAccess(db, clientUserId, lockedRow.purchase_id, now);
++  return { lockedPurchaseId: lockedRow.purchase_id, waived, locked: !waived };
++}
+diff --git a/src/checkout/dunning-v2/dunning-v2.cadence.ts b/src/checkout/dunning-v2/dunning-v2.cadence.ts
+index 0d80bbb1..097b161d 100644
+--- a/src/checkout/dunning-v2/dunning-v2.cadence.ts
++++ b/src/checkout/dunning-v2/dunning-v2.cadence.ts
+@@ -41,8 +41,56 @@ export const DUNNING_V2_REVERSAL_ENTRY_STEP = 2;
+ export const DUNNING_V2_REVERSAL_COACH_GAP_DAYS = 4;
+ export const DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS = 3;
+ 
+-/** Daily lockout-sweep cron (spec §7.1). Fixed 02:00 UTC, not the tick loop. */
+-export const DUNNING_LOCKOUT_SWEEP_CRON_EXPRESSION = '0 2 * * *';
++/**
++ * Day of the hard lockout, counted from the first failed charge of the cycle
++ * (Day 0). The owner's sequence: charges on Days 0/1/3/7 (Stripe's retry
++ * schedule), access kept through Day 9, locked from Day 10.
++ */
++export const DUNNING_V2_LOCKOUT_DAY = 10;
++
++/** One day in milliseconds. All cadence arithmetic is UTC instants. */
++export const DUNNING_V2_DAY_MS = 24 * 60 * 60 * 1000;
++
++/**
++ * v2 sweep cron (S-DUNNING). Runs HOURLY at minute 7 UTC (was a single daily
++ * 02:00 UTC run). The sweep does two things, both idempotent and safe to
++ * overlap across machines: it advances each active cycle to the step its
++ * elapsed time calls for (sending that step's notices once, CAS-claimed on
++ * DunningState.step_index), and it locks cycles that reached Day 10. Hourly
++ * means the lockout lands within an hour of the Day-10 instant instead of up
++ * to 24 hours late, and Day 1/3/7 notices still go out when Stripe's retry
++ * does not produce a webhook (hard declines: Stripe schedules the retry but
++ * does not execute it until a new payment method exists).
++ */
++export const DUNNING_V2_SWEEP_CRON_EXPRESSION = '7 * * * *';
++
++/** Back-compat alias: the sweep cron (now hourly, see above). */
++export const DUNNING_LOCKOUT_SWEEP_CRON_EXPRESSION = DUNNING_V2_SWEEP_CRON_EXPRESSION;
++
++/**
++ * The cadence step a cycle should be at after `elapsedMs` since its first
++ * failure: Day 0 -> 0, Day 1 -> 1, Day 3 -> 2, Day 7 -> 3. Pure.
++ */
++export function dunningV2StepForElapsed(elapsedMs: number): number {
++  let step = 0;
++  for (let i = 0; i < DUNNING_V2_CADENCE_DAYS.length; i += 1) {
++    if (elapsedMs >= DUNNING_V2_CADENCE_DAYS[i] * DUNNING_V2_DAY_MS) step = i;
++  }
++  return step;
++}
++
++/** The UTC instant a cycle that started at `cycleStart` locks (Day 10). */
++export function dunningV2LockoutAt(cycleStart: Date): Date {
++  return new Date(cycleStart.getTime() + DUNNING_V2_LOCKOUT_DAY * DUNNING_V2_DAY_MS);
++}
+ 
+ /** Stable 403 error code returned by the lockout guard for non-billing routes. */
+ export const LOCKED_DUNNING_CODE = 'LOCKED_DUNNING';
++
++/**
++ * S-DUNNING-R2 (OR-110-2) — the https path every client dunning notice links
++ * to. A universal link / Android App Link (AASA and assetlinks are served by
++ * this backend) opens the native in-app card update; without the app it
++ * lands on a calm page that asks the client to open the app.
++ */
++export const DUNNING_UPDATE_CARD_URL = 'https://app.trygrowthproject.com/billing/update-card';
+diff --git a/src/checkout/dunning-v2/dunning-v2.copy.ts b/src/checkout/dunning-v2/dunning-v2.copy.ts
+index 8cdb5d55..69a3f65b 100644
+--- a/src/checkout/dunning-v2/dunning-v2.copy.ts
++++ b/src/checkout/dunning-v2/dunning-v2.copy.ts
+@@ -65,9 +65,9 @@ export const DAY1_PUSH: RomanVariantPair = {
+ 
+ export const DAY1_EMAIL: RomanVariantPair = {
+   straight:
+-    'Good day, {firstName}.\n\nYour payment of {amount} has not yet cleared. I attempted it again today, and it was declined. The card on file ends {cardLast4}.\n\nUpdate your payment method and I will see the rest sorted. Nothing else is required of you.\n\n— Roman, on behalf of {coachName}',
++    'Good day, {firstName}.\n\nYour payment of {amount} has not yet cleared. The card on file ends {cardLast4}.\n\nA new card is charged the amount owed. Once that payment goes through, nothing else is required of you.\n\n— Roman, on behalf of {coachName}',
+   dryRoman:
+-    "Good day, {firstName}.\n\nYour payment of {amount} remains unpersuaded. I tried once more today; the card ending {cardLast4} held firm.\n\nA fresh card usually settles the argument. I'll handle the rest.\n\n— Roman, on behalf of {coachName}",
++    "Good day, {firstName}.\n\nYour payment of {amount} remains unpersuaded. The card on file ends {cardLast4}.\n\nA fresh card is charged the amount owed, and once that clears, the argument is over.\n\n— Roman, on behalf of {coachName}",
+ };
+ 
+ // ── §C.3 Day 3 — push + email + in-app blocker ──────────────────────────────
+@@ -80,21 +80,21 @@ export const DAY3_PUSH: RomanVariantPair = {
+ 
+ export const DAY3_EMAIL: RomanVariantPair = {
+   straight:
+-    'Good day, {firstName}.\n\nYour payment of {amount} has now failed three times. If it remains unsettled, you will lose access to your programme. Update your card and I will restore everything at once.\n\n— Roman, on behalf of {coachName}',
++    'Good day, {firstName}.\n\nYour payment of {amount} is still unpaid. If it remains unsettled, access to your programme pauses on {lockoutDate}. A new card is charged the amount owed, and once that payment goes through, everything stays as it is.\n\n— Roman, on behalf of {coachName}',
+   dryRoman:
+-    "Good day, {firstName}.\n\nThree attempts, three refusals. Your access is genuinely at risk now. Update the card and I'll put it all back the moment it clears.\n\n— Roman, on behalf of {coachName}",
++    "Good day, {firstName}.\n\n{amount} is still outstanding, and your access is genuinely at risk now: it pauses on {lockoutDate}. A new card is charged the amount owed, and the moment that clears, nothing changes.\n\n— Roman, on behalf of {coachName}",
+ };
+ 
+ export const DAY3_BLOCKER: BlockerCopy = {
+   straight: {
+     headline: 'You are going to lose access.',
+-    body: 'Your payment of {amount} has not cleared after three attempts, {firstName}. Update your card now and you will keep everything. If it stays unpaid, your access will be locked.',
++    body: 'Your payment of {amount} has not cleared, {firstName}. A new card is charged the amount owed; once that goes through, you keep everything.',
+     primaryCta: 'Update Payment',
+     secondaryCta: 'Not now',
+   },
+   dryRoman: {
+     headline: 'You are going to lose access.',
+-    body: "I have asked your card three times, {firstName}, and three times it's said no. Update it now and we'll forget this ever happened. Leave it, and the door locks.",
++    body: "Your card has said no, {firstName}. A new one is charged the amount owed; once that clears, this is behind you. Leave it, and the door locks.",
+     primaryCta: 'Update Payment',
+     secondaryCta: 'Not now',
+   },
+@@ -110,21 +110,21 @@ export const DAY7_PUSH: RomanVariantPair = {
+ 
+ export const DAY7_EMAIL: RomanVariantPair = {
+   straight:
+-    'Good day, {firstName}.\n\nThis is the final notice. Your payment of {amount} remains unpaid after four attempts. In three days your access will be locked on {lockoutDate}. Update your card now and I will restore everything immediately.\n\n— Roman, on behalf of {coachName}',
++    'Good day, {firstName}.\n\nThis is the final notice. Your payment of {amount} remains unpaid. Your access will be locked on {lockoutDate}. A new card is charged the amount owed, and once that payment goes through, your access stays on.\n\n— Roman, on behalf of {coachName}',
+   dryRoman:
+-    "Good day, {firstName}.\n\nThe final notice, and I do not send many. {amount} is still outstanding after four attempts. On {lockoutDate} the door locks. A working card stops it, and I'll have you back in at once.\n\n— Roman, on behalf of {coachName}",
++    "Good day, {firstName}.\n\nThe final notice, and I do not send many. {amount} is still outstanding. On {lockoutDate} the door locks. A working card is charged the amount owed, and once that clears, the door stays open.\n\n— Roman, on behalf of {coachName}",
+ };
+ 
+ export const DAY7_BLOCKER: BlockerCopy = {
+   straight: {
+     headline: 'Last chance before lockout.',
+-    body: 'Your payment of {amount} has failed four times, {firstName}. On {lockoutDate} your access will be locked. Update your card now to keep everything.',
++    body: 'Your payment of {amount} is still unpaid, {firstName}. Access locks on {lockoutDate}. A new card is charged; once that clears, you keep everything.',
+     primaryCta: 'Update Payment',
+     secondaryCta: 'Not now',
+   },
+   dryRoman: {
+     headline: 'Last chance before lockout.',
+-    body: "Four attempts, {firstName}, and the card hasn't budged. On {lockoutDate} the door locks for good. One working card is all it takes, and I'll let you straight back in.",
++    body: "The card hasn't budged, {firstName}. On {lockoutDate} the door locks. A working card is charged; once that clears, the door stays open.",
+     primaryCta: 'Update Payment',
+     secondaryCta: 'Not now',
+   },
+@@ -135,7 +135,7 @@ export const COACH_INAPP: RomanVariantPair = {
+   straight:
+     "{clientName}'s payment failed — they will be locked out in 3 days.",
+   dryRoman:
+-    "{clientName}'s payment has failed four times. They lock out in 3 days unless the card cooperates.",
++    "{clientName}'s payment still refuses to clear. They lock out in 3 days unless the card cooperates.",
+ };
+ 
+ export const COACH_PUSH: RomanVariantPair = {
+@@ -146,9 +146,9 @@ export const COACH_PUSH: RomanVariantPair = {
+ 
+ export const COACH_EMAIL: RomanVariantPair = {
+   straight:
+-    'Good day, {coachName}.\n\nOne of your clients, {clientName}, has a payment that will not clear. I have attempted it four times and it remains unpaid. Unless it is settled, their access will be locked on {lockoutDate}.\n\nRetry history:\n• Day 0 — {amount} — declined ({reason})\n• Day 1 — {amount} — declined ({reason})\n• Day 3 — {amount} — declined ({reason})\n• Day 7 — {amount} — declined ({reason})\n\nYou may wish to reach out to them directly. The full record is here: {dunningDetailDeeplink}\n\n— Roman',
++    'Good day, {coachName}.\n\nOne of your clients, {clientName}, has a payment of {amount} that has not cleared. Unless it is settled, their access will be locked on {lockoutDate}.\n\nRetry history:\n• Day 0 — {amount} — declined\n• Charge attempts on this invoice so far: {attempts}\n\nYou may wish to reach out to them directly. The full record is in the app: open Clients, then {clientName}.\n\n— Roman',
+   dryRoman:
+-    "Good day, {coachName}.\n\n{clientName}'s card and I have had four conversations this week, none of them productive. {amount} is still outstanding, and their access locks on {lockoutDate}.\n\nRetry history:\n• Day 0 — {amount} — declined ({reason})\n• Day 1 — {amount} — declined ({reason})\n• Day 3 — {amount} — declined ({reason})\n• Day 7 — {amount} — declined ({reason})\n\nA word from you may carry more weight than mine has. The record is here: {dunningDetailDeeplink}\n\n— Roman",
++    "Good day, {coachName}.\n\n{clientName}'s card and the payment have not made peace. {amount} is still outstanding, and their access locks on {lockoutDate}.\n\nRetry history:\n• Day 0 — {amount} — declined\n• Charge attempts on this invoice so far: {attempts}\n\nA word from you may carry more weight. The record is in the app: open Clients, then {clientName}.\n\n— Roman",
+ };
+ 
+ // ── §C.6 Day 10 — lockout screen ────────────────────────────────────────────
+@@ -176,35 +176,35 @@ export const EXPIRED_LINK: RomanVariantPair = {
+     "This link has expired, {firstName}. Links, like milk, do not keep. Request a new one and I'll have it to you within the minute.",
+ };
+ 
+-// ── §C.8 Late-reversal copy (reversal_count ≥ 1) ─────────────────────────────
+-export const LR_DAY3_PUSH: RomanVariantPair = {
+-  straight:
+-    '{firstName}, your last payment update failed. You will be locked out in 3 days unless it is settled. Update your card to keep your access.',
+-  dryRoman:
+-    '{firstName}, the payment we thought was settled has come undone. Three days to a lockout. A fresh card sets it right.',
+-};
+-
+-export const LR_DAY3_BLOCKER: BlockerCopy = {
+-  straight: {
+-    headline: 'Your last payment update failed.',
+-    body: 'The payment that restored your access has been reversed, {firstName}. You will be locked out in 3 days unless your card is updated. Update it now to keep everything.',
+-    primaryCta: 'Update Payment',
+-    secondaryCta: 'Not now',
+-  },
+-  dryRoman: {
+-    headline: 'Your last payment update failed.',
+-    body: "We have been here before, {firstName} — the payment came undone again. Three days until lockout. Update the card and I'll consider the matter closed, this time for good.",
+-    primaryCta: 'Update Payment',
+-    secondaryCta: 'Not now',
+-  },
+-};
+-
+-export const LR_DAY7_ESCALATION: RomanVariantPair = {
+-  straight:
+-    'Good day, {firstName}. This is the second time a settled payment has come undone. Your access will be locked on {lockoutDate} unless {amount} clears. Update your card now and I will restore everything at once. — Roman, on behalf of {coachName}',
+-  dryRoman:
+-    "Good day, {firstName}. Twice now a payment has slipped through after I thought it settled. On {lockoutDate} the door locks. A working card ends the cycle, and I'll let you back in immediately. — Roman, on behalf of {coachName}",
+-};
++// ── §C.8 Dispute (late-reversal) cycle copy ─────────────────────────────────
++// R-DISPUTE-PAUSE (owner 10-04): a dispute ends access and pauses billing at
++// once; only the coach restarts it. One variant (no quip); no amount.
++const same = (text: string): RomanVariantPair => ({ straight: text, dryRoman: text });
++export const LR_DAY3_PUSH: RomanVariantPair = same(
++  '{firstName}, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. {coachName} decides whether to restart it.',
++);
++
++const LR_BLOCKER: BlockerVariant = {
++  headline: 'A payment was reversed after a dispute.',
++  body: 'A recent payment was reversed after a dispute. Access has ended and billing is paused. {coachName} decides whether to restart it.',
++  primaryCta: 'See details',
++  secondaryCta: 'Not now',
++};
++export const LR_DAY3_BLOCKER: BlockerCopy = { straight: LR_BLOCKER, dryRoman: LR_BLOCKER };
++
++export const LR_DAY7_ESCALATION: RomanVariantPair = same(
++  'Good day, {firstName}.\n\nA recent payment was reversed by the bank after a dispute. It was for your plan with {coachName}. Access has ended and billing for the plan is paused.\n\n{coachName} decides whether to restart it. The dispute closing does not restart it on its own.\n\n— Roman, on behalf of {coachName}',
++);
++
++export const LR_COACH_INAPP: RomanVariantPair = same(
++  "{clientName}'s bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision.",
++);
++export const LR_COACH_PUSH: RomanVariantPair = same(
++  '{clientName}: a payment was reversed after a dispute. Access has ended and billing is paused. Restarting is your decision.',
++);
++export const LR_COACH_EMAIL: RomanVariantPair = same(
++  'Good day, {coachName}.\n\nThe bank of one of your clients, {clientName}, reversed a recent payment after a dispute. Their access has ended and billing for the plan is paused. It stays that way when the dispute closes, won or lost.\n\nRestarting access and billing is your decision. The full record is in the app: open Clients, then {clientName}.\n\n— Roman',
++);
+ 
+ // Late-reversal Day-10 lockout copy is IDENTICAL to the regular lockout
+ // (§C.8 final line → §C.6). Re-export so callers do not branch.
+@@ -222,5 +222,5 @@ export const ROMAN_STEMS = {
+   coach: 'locked out in 3 days',
+   day10: 'household ledger',
+   expired: 'Links, like milk',
+-  lateReversal: 'last payment update failed',
++  lateReversal: 'payment was reversed',
+ } as const;
+diff --git a/src/checkout/dunning-v2/dunning-v2.dispatcher.ts b/src/checkout/dunning-v2/dunning-v2.dispatcher.ts
+index a245f81e..2fa63c2d 100644
+--- a/src/checkout/dunning-v2/dunning-v2.dispatcher.ts
++++ b/src/checkout/dunning-v2/dunning-v2.dispatcher.ts
+@@ -4,23 +4,14 @@ import { CoachAlertEmitter } from '../../notifications/emitters/coach-alert.emit
+ import { NotificationKind } from '../../notifications/notification-kind';
+ import { EmailService } from '../../email/email.service';
+ import { EmailTemplateKey } from '../../email/email.types';
+-import {
+-  ChannelDecision,
+-  DunningEscalationClassifier,
+-} from './dunning-escalation.classifier';
+-import {
+-  CopyTokens,
+-  DunningV2Renderer,
+-  QuipRotation,
+-} from './dunning-v2.renderer';
++import { ChannelDecision, DunningEscalationClassifier } from './dunning-escalation.classifier';
++import { CopyTokens, DunningV2Renderer, QuipRotation } from './dunning-v2.renderer';
+ import { DunningV2Telemetry } from './dunning-v2.telemetry';
+-import { DUNNING_V2_CADENCE_DAYS } from './dunning-v2.cadence';
++import { DUNNING_UPDATE_CARD_URL, DUNNING_V2_CADENCE_DAYS } from './dunning-v2.cadence';
+ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+-import {
+-  SurfaceKey,
+-  RomanCopyPayload,
+-} from '../../roman/voice/voice-policy.constants';
+-import { applyTokens } from './dunning-v2.renderer';
++import { SurfaceKey, RomanCopyPayload } from '../../roman/voice/voice-policy.constants';
++import { applyTokensTruthfully } from './dunning-v2.renderer';
++import { dunningErrorCode } from './dunning-v2.safe-error';
+ 
+ /**
+  * Phase 2 — map a dunning classifier `copyKey` to the Roman Phase 2 in-app
+@@ -52,10 +43,12 @@ function phase2SurfaceForCopyKey(copyKey: string): SurfaceKey | undefined {
+  * per channel.
+  *
+  * Channel transports reuse v1 infrastructure (NO new deps):
+- *   - push  → NotificationsService.pushToUser / pushToCoach (Expo).
++ *   - push  → NotificationsService.pushToUser / pushToCoach (Expo; no
++ *     idempotency key, so at-least-once after an expired claim, C-628-12).
+  *   - email → EmailService.send (Resend pipeline; idempotency-keyed).
+  *   - inapp → NotificationsService.createNotification (the durable feed row).
+- *   - coach → CoachNotifierService fans out in-app + push + email at Step 3.
++ *   - coach → CoachAlertEmitter (in-app feed row, then push) and the coach
++ *     email at Step 3, each its own outbox channel (B-688-3).
+  *
+  * Coach-notify idempotency (spec §9.3): per-transport keys
+  * `coach_notify:{dunning_state_id}:{inapp|push|email}` are threaded into the
+@@ -66,9 +59,38 @@ function phase2SurfaceForCopyKey(copyKey: string): SurfaceKey | undefined {
+  * a thin instance; production wiring in the v2 module supplies all three.
+  */
+ 
++/** One transport of a step's notice (S-DUNNING-R3 outbox channel). */
++export type DunningChannel =
++  'client_push' | 'client_email' | 'client_blocker' | 'coach_alert' | 'coach_push' | 'coach_email';
++
++export type ChannelStatus = 'sent' | 'skipped' | 'failed';
++
++export interface ChannelResult {
++  status: ChannelStatus;
++  /** A closed code ("push_ticket-error"), never provider text (B-688-4). */
++  error?: string;
++}
++
++export interface DispatchOutcome {
++  decision: ChannelDecision;
++  results: Partial<Record<DunningChannel, ChannelResult>>;
++}
++
++/** The transports a step's decision calls for, in send order. Pure. */
++export function dunningChannelsFor(decision: ChannelDecision): DunningChannel[] {
++  const out: DunningChannel[] = [];
++  if (decision.push) out.push('client_push');
++  if (decision.email) out.push('client_email');
++  if (decision.inAppBlocker) out.push('client_blocker');
++  if (decision.coachAllChannels) out.push('coach_alert', 'coach_push', 'coach_email');
++  return out;
++}
++
+ /** Resolved context the cadence service hands the dispatcher per step. */
+ export interface DispatchContext {
+   dunningStateId: string;
++  /** B-628-6: the cycle's entered_at in ms; idempotency keys carry it. */
++  cycleKey?: string;
+   stepIndex: number;
+   isLateReversalCycle: boolean;
+   /** The locked-out client. */
+@@ -108,36 +130,65 @@ export class DunningV2Dispatcher {
+     ctx: DispatchContext,
+     rotation: QuipRotation = new QuipRotation(),
+   ): Promise<ChannelDecision> {
++    const { decision } = await this.dispatchStepDetailed(ctx, rotation);
++    return decision;
++  }
++
++  /**
++   * B-628-6: send a step's notices and report each transport's real result.
++   * `channels` limits a retry to the failed transports; `attempt` > 0 gives
++   * the email a fresh idempotency key (EmailService remembers failed keys).
++   */
++  async dispatchStepDetailed(
++    ctx: DispatchContext,
++    rotation: QuipRotation = new QuipRotation(),
++    opts: { channels?: DunningChannel[]; attempt?: number } = {},
++  ): Promise<DispatchOutcome> {
+     const decision = this.classifier.resolve({
+       stepIndex: ctx.stepIndex,
+       isLateReversalCycle: ctx.isLateReversalCycle,
+     });
+     const day = DUNNING_V2_CADENCE_DAYS[ctx.stepIndex] ?? ctx.stepIndex;
++    const wanted = new Set(opts.channels ?? dunningChannelsFor(decision));
++    const attempt = opts.attempt ?? 0;
++    const results: Partial<Record<DunningChannel, ChannelResult>> = {};
+ 
+     // Day-0 charge failure telemetry (spec §5: dunning.attempt.failed).
+-    if (ctx.stepIndex === 0) {
++    if (ctx.stepIndex === 0 && attempt === 0) {
+       this.telemetry.attemptFailed(ctx.clientUserId, { day });
+     }
+ 
+-    if (decision.push) {
+-      await this.safe('client push', () => this.sendClientPush(ctx, decision));
++    if (decision.push && wanted.has('client_push')) {
++      results.client_push = await this.run('client push', () => this.sendClientPush(ctx, decision));
+     }
+-    if (decision.email) {
+-      await this.safe('client email', () =>
+-        this.sendClientEmail(ctx, decision, rotation),
++    if (decision.email && wanted.has('client_email')) {
++      results.client_email = await this.run('client email', () =>
++        this.sendClientEmail(ctx, decision, rotation, attempt),
+       );
+     }
+-    if (decision.inAppBlocker) {
+-      await this.safe('client blocker', () =>
++    if (decision.inAppBlocker && wanted.has('client_blocker')) {
++      results.client_blocker = await this.run('client blocker', () =>
+         this.sendBlocker(ctx, decision, rotation, day),
+       );
+     }
+-    if (decision.coachAllChannels) {
+-      await this.safe('coach notify', () =>
+-        this.notifyCoachAllChannels(ctx),
+-      );
++    const coachWanted = ['coach_alert', 'coach_push', 'coach_email'].some((c) =>
++      wanted.has(c as DunningChannel),
++    );
++    if (decision.coachAllChannels && coachWanted) {
++      const coach = await this.notifyCoachAllChannels(ctx, {
++        alert: wanted.has('coach_alert'),
++        push: wanted.has('coach_push'),
++        email: wanted.has('coach_email'),
++        attempt,
++      });
++      Object.assign(results, coach);
+     }
+-    return decision;
++    return { decision, results };
++  }
++
++  /** Cycle-scoped key segment ("" for a legacy context without a cycle). */
++  private cyclePart(ctx: DispatchContext): string {
++    return ctx.cycleKey ? `:${ctx.cycleKey}` : '';
+   }
+ 
+   // ── Client transports ────────────────────────────────────────────────────
+@@ -145,7 +196,7 @@ export class DunningV2Dispatcher {
+   private async sendClientPush(
+     ctx: DispatchContext,
+     decision: ChannelDecision,
+-  ): Promise<void> {
++  ): Promise<ChannelResult> {
+     // Phase 2: route the Day 0/1/3/7 in-app client copy through the Roman
+     // Voice Policy. With FEATURE_ROMAN_COPY_V2 OFF the policy returns the
+     // LEGACY string — byte-equal to this renderer's `straight` variant — so
+@@ -156,7 +207,7 @@ export class DunningV2Dispatcher {
+     let body: string;
+     if (policy && policy.voice_variant === 'roman_v2') {
+       // Flag ON: use the Roman Option-3 Phase 2 copy.
+-      body = applyTokens(policy.text, ctx.tokens);
++      body = applyTokensTruthfully(policy.text, ctx.tokens);
+     } else {
+       // Flag OFF (or out of Phase 2 scope): keep the EXACT existing rendering,
+       // including the locked quip rotation, so flag-off runtime behaviour is
+@@ -165,11 +216,16 @@ export class DunningV2Dispatcher {
+       const quip = rotation.shouldQuip('client');
+       body = this.renderer.clientPush(decision.copyKey, ctx.tokens, quip);
+     }
+-    if (this.notifications) {
+-      await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body);
++    if (!this.notifications) return { status: 'skipped', error: 'push_not_wired' };
++    const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body);
++    // A transport that returns no verdict (legacy stubs) counts as sent.
++    if (typeof res === 'object' && res !== null && res.delivered === false) {
++      if (res.code === 'no-token') return { status: 'skipped', error: 'push_no_token' };
++      return { status: 'failed', error: `push_${res.code}` };
+     }
+     const day = DUNNING_V2_CADENCE_DAYS[ctx.stepIndex] ?? ctx.stepIndex;
+     this.telemetry.notifySent(ctx.clientUserId, day, 'push', 'client');
++    return { status: 'sent' };
+   }
+ 
+   /**
+@@ -178,10 +234,7 @@ export class DunningV2Dispatcher {
+    * VoicePolicyService is not wired (thin unit tests). Never throws into the
+    * dispatch path — a missing policy falls back to the legacy renderer.
+    */
+-  private resolvePhase2Copy(
+-    copyKey: string,
+-    _ctx: DispatchContext,
+-  ): RomanCopyPayload | undefined {
++  private resolvePhase2Copy(copyKey: string, _ctx: DispatchContext): RomanCopyPayload | undefined {
+     if (!this.voice) {
+       return undefined;
+     }
+@@ -196,19 +249,33 @@ export class DunningV2Dispatcher {
+     ctx: DispatchContext,
+     decision: ChannelDecision,
+     rotation: QuipRotation,
+-  ): Promise<void> {
++    attempt: number,
++  ): Promise<ChannelResult> {
+     const quip = rotation.shouldQuip('client');
+     const body = this.renderer.clientEmail(decision.copyKey, ctx.tokens, quip);
+     const day = DUNNING_V2_CADENCE_DAYS[ctx.stepIndex] ?? ctx.stepIndex;
+-    if (this.email && ctx.clientEmail) {
+-      await this.email.send({
++    if (!this.email) return { status: 'skipped', error: 'email_not_wired' };
++    if (!ctx.clientEmail) return { status: 'skipped', error: 'email_no_address' };
++    {
++      const res = await this.email.send({
+         to: ctx.clientEmail,
+-        template: this.emailTemplateForStep(ctx.stepIndex),
+-        data: { roman_body: body, ...ctx.tokens },
+-        idempotencyKey: `dunning_v2:${ctx.dunningStateId}:email:${ctx.stepIndex}`,
++        template: EmailTemplateKey.DUNNING_V2_CLIENT,
++        data: {
++          roman_body: body,
++          ...ctx.tokens,
++          subject: this.clientEmailSubject(ctx),
++          update_card_url: DUNNING_UPDATE_CARD_URL,
++          // B-687-4/5: card-update and cancel wording differ in a dispute cycle.
++          dispute: ctx.isLateReversalCycle,
++        },
++        idempotencyKey: `dunning_v2:${ctx.dunningStateId}${this.cyclePart(ctx)}:email:${ctx.stepIndex}${attempt > 0 ? `:r${attempt}` : ''}`,
+       });
++      // The provider's error text stays out of the outbox (B-688-4).
++      if (res?.status === 'failed') return { status: 'failed', error: 'email_failed' };
++      if (res?.status === 'skipped') return { status: 'skipped', error: 'email_skipped' };
+     }
+     this.telemetry.notifySent(ctx.clientUserId, day, 'email', 'client');
++    return { status: 'sent' };
+   }
+ 
+   private async sendBlocker(
+@@ -216,20 +283,17 @@ export class DunningV2Dispatcher {
+     decision: ChannelDecision,
+     rotation: QuipRotation,
+     day: number,
+-  ): Promise<void> {
+-    const variant =
+-      decision.blockerVariant === 'none'
++  ): Promise<ChannelResult> {
++    // A dispute cycle shows the dispute blocker at every step (B-687-5).
++    const variant = ctx.isLateReversalCycle
++      ? 'lr_day3'
++      : decision.blockerVariant === 'none'
+         ? 'day3'
+-        : (decision.copyKey === 'lr_day3'
+-            ? 'lr_day3'
+-            : decision.blockerVariant);
++        : decision.blockerVariant;
+     const quip = rotation.shouldQuip('client');
+-    const blocker = this.renderer.blocker(
+-      variant as 'day3' | 'day7' | 'lr_day3',
+-      ctx.tokens,
+-      quip,
+-    );
+-    if (this.notifications) {
++    const blocker = this.renderer.blocker(variant as 'day3' | 'day7' | 'lr_day3', ctx.tokens, quip);
++    if (!this.notifications) return { status: 'skipped', error: 'inapp_not_wired' };
++    {
+       // The blocker flag is a durable in-app notification the client reads on
+       // session start; the mobile client renders the modal from it (§8.2).
+       await this.notifications.createNotification({
+@@ -248,84 +312,128 @@ export class DunningV2Dispatcher {
+       });
+     }
+     this.telemetry.blockerShown(ctx.clientUserId, day);
++    return { status: 'sent' };
+   }
+ 
+   // ── Coach notifier (spec §9) — all three transports, idempotency-keyed ────
+ 
+-  private async notifyCoachAllChannels(ctx: DispatchContext): Promise<void> {
++  private async notifyCoachAllChannels(
++    ctx: DispatchContext,
++    want: { alert: boolean; push: boolean; email: boolean; attempt: number },
++  ): Promise<Partial<Record<DunningChannel, ChannelResult>>> {
+     const rotation = new QuipRotation();
+     // Coach quip rate 0.083; never two in a row across the 3 transports.
+     const inappQuip = rotation.shouldQuip('coach');
+     const pushQuip = rotation.shouldQuip('coach');
+     const emailQuip = rotation.shouldQuip('coach');
++    const dispute = ctx.isLateReversalCycle;
+ 
+-    const inappBody = this.renderer.coachInApp(ctx.tokens, inappQuip);
+-    const pushBody = this.renderer.coachPush(ctx.tokens, pushQuip);
++    const inappBody = this.renderer.coachInApp(ctx.tokens, inappQuip, dispute);
++    const pushBody = this.renderer.coachPush(ctx.tokens, pushQuip, dispute);
+     const emailBody = this.renderer.coachEmail(
+       { ...ctx.tokens, dunningDetailDeeplink: ctx.dunningDetailDeeplink },
+       emailQuip,
++      dispute,
+     );
++    const out: Partial<Record<DunningChannel, ChannelResult>> = {};
++    // Cycle-scoped (B-628-6): a second cycle on the same row alerts again.
++    const alertId = `coach_notify:${ctx.dunningStateId}${this.cyclePart(ctx)}`;
+ 
+-    // In-app + push via the existing CoachAlertEmitter (writes the durable
+-    // feed row AND pushes). Idempotency is keyed on dunning_state_id so a
+-    // retried trigger does not duplicate (§9.3).
+-    if (this.coachAlert) {
+-      await this.coachAlert.emit({
+-        coachId: ctx.coachUserId,
+-        alertId: `coach_notify:${ctx.dunningStateId}`,
+-        alertType: 'dunning_step7',
+-        message: inappBody,
+-        severity: 'warning',
+-        clientUserId: ctx.clientUserId,
+-      });
+-    } else if (this.notifications) {
+-      await this.notifications.pushToCoach(ctx.coachUserId, {
+-        alertId: `coach_notify:${ctx.dunningStateId}`,
+-        alertType: 'dunning_step7',
+-        severity: 'warning',
+-        message: pushBody.slice(0, 160),
++    // B-688-3: ONE emitter call for whichever of feed row and push is still
++    // owed; each is its own outbox channel, so a push retry adds no feed row.
++    if (want.alert || want.push) {
++      const coach = await this.run('coach alert', async () => {
++        if (!this.coachAlert) return { status: 'skipped', error: 'coach_not_wired' };
++        const delivery = await this.coachAlert.emit(
++          {
++            coachId: ctx.coachUserId,
++            alertId,
++            alertType: 'dunning_step7',
++            message: inappBody,
++            severity: 'warning',
++            clientUserId: ctx.clientUserId,
++          },
++          { inapp: want.alert, push: want.push },
++          { title: 'Payment', body: pushBody },
++        );
++        // An emitter that returns no verdict (legacy stubs) counts as sent.
++        const inapp = delivery?.inapp ?? 'sent';
++        const push = delivery?.push ?? 'sent';
++        if (want.alert) out.coach_alert = coachResult(inapp, 'inapp');
++        if (want.push) {
++          // B-687-3: the ticket verdict's code, as on the client push.
++          const code = delivery?.pushCode;
++          out.coach_push = code
++            ? { status: push, error: code === 'no-token' ? 'push_no_token' : `push_${code}` }
++            : coachResult(push, 'push');
++        }
++        if (want.alert && inapp === 'sent') {
++          this.telemetry.coachNotified(ctx.coachUserId, { dunning_state_id: ctx.dunningStateId });
++          this.telemetry.notifySent(ctx.coachUserId, 7, 'inapp', 'coach');
++        }
++        if (want.push && push === 'sent')
++          this.telemetry.notifySent(ctx.coachUserId, 7, 'push', 'coach');
++        return { status: 'sent' };
+       });
++      // A throw (or no emitter) fails or skips every coach channel asked for.
++      if (coach.status !== 'sent') {
++        if (want.alert) out.coach_alert = coach;
++        if (want.push) out.coach_push = coach;
++      }
+     }
+ 
+-    if (this.email && ctx.coachEmail) {
+-      await this.email.send({
+-        to: ctx.coachEmail,
+-        template: EmailTemplateKey.DUNNING_FINAL,
+-        data: { roman_body: emailBody, ...ctx.tokens },
+-        idempotencyKey: `coach_notify:${ctx.dunningStateId}:email`,
++    if (want.email) {
++      out.coach_email = await this.run('coach email', async () => {
++        if (!this.email) return { status: 'skipped', error: 'email_not_wired' };
++        if (!ctx.coachEmail) return { status: 'skipped', error: 'email_no_address' };
++        const res = await this.email.send({
++          to: ctx.coachEmail,
++          template: EmailTemplateKey.DUNNING_V2_COACH,
++          data: { roman_body: emailBody, ...ctx.tokens, dispute },
++          idempotencyKey: `${alertId}:email${want.attempt > 0 ? `:r${want.attempt}` : ''}`,
++        });
++        if (res?.status === 'failed') return { status: 'failed', error: 'email_failed' };
++        if (res?.status === 'skipped') return { status: 'skipped', error: 'email_skipped' };
++        this.telemetry.notifySent(ctx.coachUserId, 7, 'email', 'coach');
++        return { status: 'sent' };
+       });
+     }
+-
+-    this.telemetry.coachNotified(ctx.coachUserId, {
+-      dunning_state_id: ctx.dunningStateId,
+-    });
+-    this.telemetry.notifySent(ctx.coachUserId, 7, 'inapp', 'coach');
+-    this.telemetry.notifySent(ctx.coachUserId, 7, 'push', 'coach');
+-    this.telemetry.notifySent(ctx.coachUserId, 7, 'email', 'coach');
++    return out;
+   }
+ 
+-  /** Map a v2 step to its email template (reuses v1 cadence templates). */
+-  private emailTemplateForStep(stepIndex: number): EmailTemplateKey {
+-    switch (stepIndex) {
++  /** Per-step client subject (F17: v2 has its own `roman_body` templates). */
++  private clientEmailSubject(ctx: DispatchContext): string {
++    if (ctx.isLateReversalCycle) return 'Your recent payment was reversed';
++    switch (ctx.stepIndex) {
++      case 0:
++        return 'Your payment did not go through';
+       case 1:
+-        return EmailTemplateKey.PAYMENT_REMINDER_URGENT;
++        return 'Your payment is still outstanding';
+       case 2:
+-        return EmailTemplateKey.PAYMENT_FINAL_NOTICE;
++        return 'Your access is at risk';
+       case 3:
+-        return EmailTemplateKey.PAYMENT_FINAL_NOTICE;
++        return ctx.tokens.lockoutDate
++          ? `Final notice: access pauses on ${ctx.tokens.lockoutDate}`
++          : 'Final notice before your access pauses';
+       default:
+-        return EmailTemplateKey.PAYMENT_REMINDER_SOFT;
++        return 'About your Growth Project payment';
+     }
+   }
+ 
+-  /** Run a transport; never let a transport failure break the cadence tick. */
+-  private async safe(label: string, fn: () => Promise<void>): Promise<void> {
++  /** Run a transport: a throw is a failed (retried) delivery, never a tick break. */
++  private async run(label: string, fn: () => Promise<ChannelResult>): Promise<ChannelResult> {
+     try {
+-      await fn();
++      return await fn();
+     } catch (err) {
+-      this.logger.warn(
+-        `dunning v2 ${label} transport failed: ${(err as Error).message}`,
+-      );
++      // B-688-4 (Sol): a code, never the exception text.
++      const code = dunningErrorCode(err);
++      this.logger.warn(`dunning v2 ${label} transport failed: ${code}`);
++      return { status: 'failed', error: code };
+     }
+   }
+ }
++
++function coachResult(status: ChannelStatus, transport: 'inapp' | 'push'): ChannelResult {
++  if (status === 'sent') return { status };
++  return { status, error: `coach_${transport}_${status === 'failed' ? 'failed' : 'muted'}` };
++}
+diff --git a/src/checkout/dunning-v2/dunning-v2.renderer.ts b/src/checkout/dunning-v2/dunning-v2.renderer.ts
+index d40cc1b0..4a0a38c0 100644
+--- a/src/checkout/dunning-v2/dunning-v2.renderer.ts
++++ b/src/checkout/dunning-v2/dunning-v2.renderer.ts
+@@ -17,6 +17,9 @@ import {
+   EXPIRED_LINK,
+   LOCKOUT_SCREEN,
+   LOCKOUT_SCREEN_ERROR,
++  LR_COACH_EMAIL,
++  LR_COACH_INAPP,
++  LR_COACH_PUSH,
+   LR_DAY3_BLOCKER,
+   LR_DAY3_PUSH,
+   LR_DAY7_ESCALATION,
+@@ -49,6 +52,8 @@ export interface CopyTokens {
+   lockoutDate?: string;
+   reason?: string;
+   dunningDetailDeeplink?: string;
++  /** Stripe's charge attempt count on the open invoice (coach history). */
++  attempts?: string;
+ }
+ 
+ /**
+@@ -89,6 +94,24 @@ export function applyTokens(template: string, tokens: CopyTokens): string {
+   });
+ }
+ 
++/** B-688-7 (Opus): a sentence (or line) whose token has no value is left out. */
++export function applyTokensTruthfully(template: string, tokens: CopyTokens): string {
++  const missing = (text: string) =>
++    [...text.matchAll(/\{(\w+)\}/g)].some(([, key]) => {
++      const v = (tokens as Record<string, unknown>)[key];
++      return v === undefined || v === null || v === '';
++    });
++  const lines = template.split('\n').flatMap((line) => {
++    if (!missing(line)) return [line];
++    const kept = line
++      .split(/(?<=[.;])\s+/)
++      .filter((part) => !missing(part))
++      .join(' ');
++    return kept ? [kept] : [];
++  });
++  return applyTokens(lines.join('\n'), tokens);
++}
++
+ @Injectable()
+ export class DunningV2Renderer {
+   /** Pick straight vs dry-Roman from a variant pair, then substitute tokens. */
+@@ -97,7 +120,7 @@ export class DunningV2Renderer {
+     tokens: CopyTokens,
+     quip: boolean,
+   ): string {
+-    return applyTokens(quip ? pair.dryRoman : pair.straight, tokens);
++    return applyTokensTruthfully(quip ? pair.dryRoman : pair.straight, tokens);
+   }
+ 
+   /** Render a blocker (headline + body + CTAs) with token substitution. */
+@@ -108,8 +131,8 @@ export class DunningV2Renderer {
+   ): BlockerVariant {
+     const v = quip ? copy.dryRoman : copy.straight;
+     return {
+-      headline: applyTokens(v.headline, tokens),
+-      body: applyTokens(v.body, tokens),
++      headline: applyTokensTruthfully(v.headline, tokens),
++      body: applyTokensTruthfully(v.body, tokens),
+       primaryCta: v.primaryCta,
+       secondaryCta: v.secondaryCta,
+     };
+@@ -157,20 +180,22 @@ export class DunningV2Renderer {
+     return this.renderPair(EXPIRED_LINK, tokens, quip);
+   }
+ 
+-  // ── Coach (all three channels) ───────────────────────────────────────────
+-  coachInApp(tokens: CopyTokens, quip: boolean): string {
+-    return this.renderPair(COACH_INAPP, tokens, quip);
++  // ── Coach (all three channels; `dispute` = a dispute cycle) ─────────────
++  coachInApp(tokens: CopyTokens, quip: boolean, dispute = false): string {
++    return this.renderPair(dispute ? LR_COACH_INAPP : COACH_INAPP, tokens, quip);
+   }
+ 
+-  coachPush(tokens: CopyTokens, quip: boolean): string {
+-    return this.renderPair(COACH_PUSH, tokens, quip);
++  coachPush(tokens: CopyTokens, quip: boolean, dispute = false): string {
++    return this.renderPair(dispute ? LR_COACH_PUSH : COACH_PUSH, tokens, quip);
+   }
+ 
+-  coachEmail(tokens: CopyTokens, quip: boolean): string {
+-    return this.renderPair(COACH_EMAIL, tokens, quip);
++  coachEmail(tokens: CopyTokens, quip: boolean, dispute = false): string {
++    return this.renderPair(dispute ? LR_COACH_EMAIL : COACH_EMAIL, tokens, quip);
+   }
+ 
++  // Every dispute-cycle key (lr_*) renders dispute copy (B-687-5).
+   private pushPair(copyKey: string): RomanVariantPair {
++    if (copyKey.startsWith('lr_')) return LR_DAY3_PUSH;
+     switch (copyKey) {
+       case 'day0':
+         return DAY0_PUSH;
+@@ -180,14 +205,13 @@ export class DunningV2Renderer {
+         return DAY3_PUSH;
+       case 'day7':
+         return DAY7_PUSH;
+-      case 'lr_day3':
+-        return LR_DAY3_PUSH;
+       default:
+         return DAY1_PUSH;
+     }
+   }
+ 
+   private emailPair(copyKey: string): RomanVariantPair {
++    if (copyKey.startsWith('lr_')) return LR_DAY7_ESCALATION;
+     switch (copyKey) {
+       case 'day1':
+         return DAY1_EMAIL;
+@@ -195,8 +219,6 @@ export class DunningV2Renderer {
+         return DAY3_EMAIL;
+       case 'day7':
+         return DAY7_EMAIL;
+-      case 'lr_day7':
+-        return LR_DAY7_ESCALATION;
+       default:
+         return DAY1_EMAIL;
+     }
+diff --git a/src/checkout/dunning-v2/dunning-v2.safe-error.ts b/src/checkout/dunning-v2/dunning-v2.safe-error.ts
+new file mode 100644
+index 00000000..f39608a8
+--- /dev/null
++++ b/src/checkout/dunning-v2/dunning-v2.safe-error.ts
+@@ -0,0 +1,43 @@
++import { StripeConnectApiError } from '../../connect/stripe-connect-api.service';
++
++/**
++ * B-688-4 (Sol): the only error detail dunning v2 writes to logs, Sentry or
++ * the notice outbox (`DunningNoticeDelivery.last_error`). Provider, transport
++ * and database messages can carry an email address, a token or a message
++ * body, so the message never leaves the catch: only a code from a closed
++ * vocabulary does.
++ *
++ *   stripe_<http status>[_<stripe code>]   a Stripe API answer
++ *   db_<P code>                            a Prisma known request error
++ *   error | error_<name>                   an allow-listed error class
++ *   error_unknown                          anything else
++ */
++const SAFE_NAMES = new Set([
++  'Error',
++  'TypeError',
++  'RangeError',
++  'SyntaxError',
++  'AbortError',
++  'TimeoutError',
++  'PrismaClientKnownRequestError',
++  'PrismaClientUnknownRequestError',
++  'PrismaClientValidationError',
++  'PrismaClientInitializationError',
++  'PrismaClientRustPanicError',
++]);
++
++/** Stripe error codes are lowercase snake case ("card_declined"). */
++const STRIPE_CODE = /^[a-z][a-z_]{0,63}$/;
++
++export function dunningErrorCode(err: unknown): string {
++  if (err instanceof StripeConnectApiError) {
++    const status = Number.isInteger(err.httpStatus) ? err.httpStatus : 0;
++    const code = err.stripeCode && STRIPE_CODE.test(err.stripeCode) ? `_${err.stripeCode}` : '';
++    return `stripe_${status}${code}`;
++  }
++  const prismaCode = (err as { code?: unknown } | null)?.code;
++  if (typeof prismaCode === 'string' && /^P\d{4}$/.test(prismaCode)) return `db_${prismaCode}`;
++  const name = err instanceof Error ? err.name : '';
++  if (name === 'Error') return 'error';
++  return SAFE_NAMES.has(name) ? `error_${name.toLowerCase()}` : 'error_unknown';
++}
+diff --git a/src/connect/stripe-connect-api.service.ts b/src/connect/stripe-connect-api.service.ts
+index 10624fef..62b8dd77 100644
+--- a/src/connect/stripe-connect-api.service.ts
++++ b/src/connect/stripe-connect-api.service.ts
+@@ -24,6 +24,12 @@ export class StripeConnectApiError extends Error {
+     public readonly httpStatus: number,
+     public readonly stripeCode: string | null,
+     public readonly stripeType: string | null,
++    // S-DUNNING-R2: the issuer's decline reason on a card_error
++    // (e.g. insufficient_funds), so a failed in-app payment is truthful.
++    public readonly declineCode: string | null = null,
++    // B-628-11 (R9): Stripe's `Idempotent-Replayed: true` header. Only a
++    // replayed answer is the cached result of the key's first execution.
++    public readonly idempotentReplayed: boolean = false,
+   ) {
+     super(message);
+     this.name = 'StripeConnectApiError';
+@@ -194,6 +200,21 @@ export interface StripeChargeObject {
+ // Client-side deadline for every Stripe Connect API call (ms).
+ export const STRIPE_CONNECT_TIMEOUT_MS = 10_000;
+ 
++// S-DUNNING-R2 — an invoice as the dunning paths read it.
++export interface StripeInvoiceObject {
++  id: string;
++  status: string; // draft | open | paid | uncollectible | void
++  subscription?: string | null;
++  customer?: string | null;
++  amount_due?: number;
++  amount_paid?: number;
++  amount_remaining?: number;
++  currency?: string;
++  created?: number;
++  payment_intent?: string | { id?: string; status?: string; client_secret?: string | null } | null;
++  [k: string]: unknown;
++}
++
+ @Injectable()
+ export class StripeConnectApiService {
+   private readonly logger = new Logger(StripeConnectApiService.name);
+@@ -716,10 +737,11 @@ export class StripeConnectApiService {
+ 
+   // B-680-2 — one invoice as Stripe shows it now (draft | open | paid | void |
+   // uncollectible). A late invoice.payment_failed is checked against it.
+-  async retrieveInvoice(
+-    invoiceId: string,
+-  ): Promise<{ id: string; status?: string | null; [k: string]: unknown }> {
+-    return this.get(`/invoices/${encodeURIComponent(invoiceId)}`);
++  // S-DUNNING-R2 — `payment_intent` is expanded so the dunning card-update
++  // path can hand its client_secret to the app when the bank wants 3DS.
++  async retrieveInvoice(invoiceId: string): Promise<StripeInvoiceObject> {
++    const q = new URLSearchParams({ 'expand[0]': 'payment_intent' }).toString();
++    return this.get<StripeInvoiceObject>(`/invoices/${encodeURIComponent(invoiceId)}?${q}`);
+   }
+ 
+   // S-FEE round 3 (B-627-1) — one page of the platform's PAID invoices created
+@@ -1029,6 +1051,120 @@ export class StripeConnectApiService {
+     });
+   }
+ 
++  // --- S-DUNNING-R2 — native card update (OR-110-2) and owner rulings 1A/2A ---
++  //
++  // All on the PLATFORM account (no Stripe-Account header): the client's
++  // Customer, the subscription and its invoices live on the platform; funds
++  // reach the coach through the S-FEE settlement transfer of each paid
++  // charge. Every mutation carries an Idempotency-Key. createSetupIntent,
++  // retrieveSetupIntent, setSubscriptionDefaultPaymentMethod, retrieveInvoice
++  // and voidInvoice are the shared B-RECUR / B-680-2 / C-679-1 methods above.
++
++  /** Customer default for future invoices (priority 3 in Stripe's order). */
++  async setCustomerDefaultPaymentMethod(args: {
++    customerId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<StripeCustomerObject> {
++    return this.post<StripeCustomerObject>(
++      `/customers/${encodeURIComponent(args.customerId)}`,
++      { 'invoice_settings[default_payment_method]': args.paymentMethodId },
++      args.idempotencyKey,
++    );
++  }
++
++  /** Open (finalized, unpaid) invoices of one subscription, newest first. */
++  /**
++   * Every open invoice on a subscription, following Stripe's `has_more`
++   * cursor (S-DUNNING-R3 B-628-4: a single page silently dropped invoices
++   * past the first 10). A partial list is never returned: past the page cap
++   * or on a malformed page this throws, so callers never act on (charge,
++   * void, quote) an incomplete set.
++   */
++  async listOpenInvoices(
++    subscriptionId: string,
++    opts: { pageSize?: number; maxPages?: number } = {},
++  ): Promise<StripeInvoiceObject[]> {
++    const pageSize = Math.min(Math.max(opts.pageSize ?? 100, 1), 100);
++    const maxPages = Math.max(opts.maxPages ?? 10, 1);
++    const all: StripeInvoiceObject[] = [];
++    let startingAfter: string | null = null;
++    for (let page = 0; page < maxPages; page++) {
++      const params: Record<string, string> = {
++        subscription: subscriptionId,
++        status: 'open',
++        limit: String(pageSize),
++      };
++      if (startingAfter) params.starting_after = startingAfter;
++      const q = new URLSearchParams(params).toString();
++      const res = await this.get<{ data?: StripeInvoiceObject[]; has_more?: boolean }>(
++        `/invoices?${q}`,
++      );
++      if (!Array.isArray(res?.data)) {
++        throw new StripeConnectApiError(
++          'Stripe returned a malformed invoice list',
++          502,
++          'invoice_list_malformed',
++          'api_error',
++        );
++      }
++      all.push(...res.data);
++      const last = res.data[res.data.length - 1];
++      if (res.has_more !== true) return all;
++      if (!last?.id) {
++        throw new StripeConnectApiError(
++          'Stripe invoice list said has_more without a cursor',
++          502,
++          'invoice_list_malformed',
++          'api_error',
++        );
++      }
++      startingAfter = last.id;
++    }
++    throw new StripeConnectApiError(
++      `Open invoice list exceeded ${maxPages * pageSize} invoices`,
++      502,
++      'invoice_list_incomplete',
++      'api_error',
++    );
++  }
++
++  /**
++   * Attempt payment of one open invoice with an explicit payment method,
++   * on-session (the client is in the app, having just saved the card). The
++   * invoice owns exactly one PaymentIntent, so this and any Stripe retry
++   * confirm the SAME PaymentIntent: an invoice can be paid at most once.
++   * Stripe answers 402 `invoice_payment_intent_requires_action` when the
++   * bank wants 3DS; the caller then hands the invoice's PaymentIntent
++   * client_secret to the app.
++   */
++  async payInvoice(args: {
++    invoiceId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<StripeInvoiceObject> {
++    return this.post<StripeInvoiceObject>(
++      `/invoices/${encodeURIComponent(args.invoiceId)}/pay`,
++      { payment_method: args.paymentMethodId, off_session: 'false' },
++      args.idempotencyKey,
++    );
++  }
++
++  /**
++   * Voluntary cancel outside dunning (owner 13:43 option A): the client keeps
++   * access through the period already paid, no refund, no proration.
++   */
++  async setCancelAtPeriodEnd(args: {
++    subscriptionId: string;
++    idempotencyKey: string;
++  }): Promise<StripeSubscriptionObject> {
++    return this.post<StripeSubscriptionObject>(
++      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
++      { cancel_at_period_end: 'true', proration_behavior: 'none' },
++      args.idempotencyKey,
++    );
++  }
++
+   // --- Phase 6 — Payout readiness, balance, refunds, disputes ---
+   //
+   // All four read methods use Stripe's `Stripe-Account` header to scope
+@@ -1303,7 +1439,9 @@ export class StripeConnectApiService {
+         (errEnvelope?.message as string | undefined) ?? `Stripe API ${res.status} on ${path}`;
+       const code = (errEnvelope?.code as string | undefined) ?? null;
+       const type = (errEnvelope?.type as string | undefined) ?? null;
+-      throw new StripeConnectApiError(message, res.status, code, type);
++      const declineCode = (errEnvelope?.decline_code as string | undefined) ?? null;
++      const replayed = res.headers?.get?.('idempotent-replayed') === 'true';
++      throw new StripeConnectApiError(message, res.status, code, type, declineCode, replayed);
+     }
+     return parsed as T;
+   }
+diff --git a/src/email/email.service.ts b/src/email/email.service.ts
+index b7984241..5d8f3703 100644
+--- a/src/email/email.service.ts
++++ b/src/email/email.service.ts
+@@ -66,6 +66,11 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
+   'payment-recovered': "You're all set — payment received",
+   // S-FEE round 5 (OR-111-1) — the notice's own title (plain, no exclamation).
+   'coach-payout-adjustment': '{{#if subject}}{{subject}}{{else}}A change to your payouts{{/if}}',
++  // S-DUNNING-R2 — the dispatcher passes a per-step `subject`.
++  'dunning-v2-client':
++    '{{#if subject}}{{subject}}{{else}}About your Growth Project payment{{/if}}',
++  'dunning-v2-coach':
++    '{{#if clientName}}A payment from {{clientName}} needs attention{{else}}A client payment needs attention{{/if}}',
+ };
+ 
+ // EmailService is the single entry point for sending transactional email.
+diff --git a/src/email/email.types.ts b/src/email/email.types.ts
+index e349a76a..7c81e320 100644
+--- a/src/email/email.types.ts
++++ b/src/email/email.types.ts
+@@ -28,6 +28,11 @@ export const EmailTemplateKey = {
+   PAYMENT_RECOVERED: 'payment-recovered',
+   // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
+   COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
++  // S-DUNNING-R2 — Smart Dunning v2 notices. The body is Roman's rendered
++  // copy (`roman_body`); the button opens the native in-app card update via
++  // the https universal link (`update_card_url`). Append-only.
++  DUNNING_V2_CLIENT: 'dunning-v2-client',
++  DUNNING_V2_COACH: 'dunning-v2-coach',
+ } as const;
+ export type EmailTemplateKey =
+   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
+diff --git a/src/email/templates/dunning-v2-client.hbs b/src/email/templates/dunning-v2-client.hbs
+new file mode 100644
+index 00000000..206c8d6d
+--- /dev/null
++++ b/src/email/templates/dunning-v2-client.hbs
+@@ -0,0 +1,17 @@
++<!doctype html>
++<html lang="en">
++  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a; line-height: 1.5;">
++    <div style="white-space: pre-line; font-size: 16px;">{{roman_body}}</div>
++    {{#if update_card_url}}{{#unless dispute}}
++    <p style="margin: 28px 0 8px;">
++      <a href="{{update_card_url}}" style="display: inline-block; background: #1f2a24; color: #ffffff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600;">Update card in the app</a>
++    </p>
++    <p style="font-size: 13px; color: #555; margin: 0 0 24px;">Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Saving a card there charges the amount owed to it, and once that payment goes through, your access stays on.</p>
++    {{/unless}}{{/if}}
++    {{#unless dispute}}
++    <p style="font-size: 13px; color: #555;">If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled, nothing more is charged, and access ends right away.</p>
++    {{/unless}}
++    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
++    <p style="font-size: 12px; color: #888;">Questions about this payment? Reply to this email to reach a person who can help.</p>
++  </body>
++</html>
+diff --git a/src/email/templates/dunning-v2-coach.hbs b/src/email/templates/dunning-v2-coach.hbs
+new file mode 100644
+index 00000000..7c9d3aac
+--- /dev/null
++++ b/src/email/templates/dunning-v2-coach.hbs
+@@ -0,0 +1,8 @@
++<!doctype html>
++<html lang="en">
++  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a; line-height: 1.5;">
++    <div style="white-space: pre-line; font-size: 16px;">{{roman_body}}</div>
++    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
++    <p style="font-size: 12px; color: #888;">Your client has the same details in the app. Questions? Reply to this email to reach a person who can help.</p>
++  </body>
++</html>
+diff --git a/src/notifications/emitters/coach-alert.emitter.ts b/src/notifications/emitters/coach-alert.emitter.ts
+index 15726ff2..0d610020 100644
+--- a/src/notifications/emitters/coach-alert.emitter.ts
++++ b/src/notifications/emitters/coach-alert.emitter.ts
+@@ -1,6 +1,8 @@
+ import { Injectable, Logger } from '@nestjs/common';
+ import { NotificationsService } from '../notifications.service';
+ import { NotificationKind } from '../notification-kind';
++import { DEFAULT_NOTIFICATION_CATEGORY } from '../notification-category.enum';
++import { dunningErrorCode } from '../../checkout/dunning-v2/dunning-v2.safe-error';
+ 
+ export interface CoachAlertNotificationPayload {
+   /** The coach user ID to notify. */
+@@ -17,6 +19,20 @@ export interface CoachAlertNotificationPayload {
+   clientUserId?: string;
+ }
+ 
++export type CoachAlertTransport = 'sent' | 'skipped' | 'failed';
++
++export interface CoachAlertDelivery {
++  /** The durable in-app feed row ('skipped' when muted or not asked for). */
++  inapp: CoachAlertTransport;
++  /** The push and its read-state row ('skipped' when not asked for). */
++  push: CoachAlertTransport;
++  /** Why a verified push was not delivered (B-687-3), e.g. 'ticket-error'. */
++  pushCode?: string;
++}
++
++/** A push whose Expo ticket is checked (B-687-3), with display copy (C-687-7). */
++export type VerifiedCoachPush = { title: string; body: string };
++
+ /**
+  * CoachAlertEmitter — mirrors a CoachAlert row into the notification inbox.
+  *
+@@ -27,7 +43,10 @@ export interface CoachAlertNotificationPayload {
+  * Also calls NotificationsService.pushToCoach for the push delivery path
+  * that was established in Phase 6B.
+  *
+- * Called fire-and-forget from CoachAlertsService.createAlert.
++ * Called fire-and-forget from CoachAlertsService.createAlert: `emit` never
++ * throws. B-688-3 (Sol): it reports each transport's real result, so a
++ * caller that keeps a delivery receipt (dunning v2) records a failed write
++ * or push as failed and retries only that transport (`only`).
+  */
+ @Injectable()
+ export class CoachAlertEmitter {
+@@ -35,43 +54,75 @@ export class CoachAlertEmitter {
+ 
+   constructor(private readonly notifications: NotificationsService) {}
+ 
+-  async emit(payload: CoachAlertNotificationPayload): Promise<void> {
+-    try {
+-      const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
+-      const deepLink = clientUserId
+-        ? `tgp://coach/clients/${clientUserId}`
+-        : 'tgp://coach/alerts';
+-
+-      await this.notifications.createNotification({
+-        user_id: coachId,
+-        kind: NotificationKind.COACH_ALERT,
+-        body: message.slice(0, 160),
+-        payload: { alertId, alertType, severity, clientUserId },
+-        deep_link: deepLink,
+-        channel: 'inapp',
+-      });
+-
+-      // Push via Phase 6B path.
+-      await this.notifications.pushToCoach(coachId, {
+-        alertId,
+-        alertType,
+-        severity,
+-        message: message.slice(0, 160),
+-      });
+-
+-      // Also create a push Notification row so the read state is tracked.
+-      await this.notifications.createNotification({
+-        user_id: coachId,
+-        kind: NotificationKind.COACH_ALERT,
+-        body: message.slice(0, 160),
+-        payload: { alertId, alertType, severity, clientUserId },
+-        deep_link: deepLink,
+-        channel: 'push',
+-      });
+-    } catch (err) {
+-      this.logger.warn(
+-        `CoachAlertEmitter failed for coach=${payload.coachId}: ${(err as Error).message}`,
+-      );
++  async emit(
++    payload: CoachAlertNotificationPayload,
++    only: { inapp?: boolean; push?: boolean } = {},
++    verifiedPush?: VerifiedCoachPush,
++  ): Promise<CoachAlertDelivery> {
++    const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
++    const deepLink = clientUserId ? `tgp://coach/clients/${clientUserId}` : 'tgp://coach/alerts';
++    const row = (channel: 'inapp' | 'push') => ({
++      user_id: coachId,
++      kind: NotificationKind.COACH_ALERT,
++      body: message.slice(0, 160),
++      payload: { alertId, alertType, severity, clientUserId },
++      deep_link: deepLink,
++      channel,
++    });
++    const out: CoachAlertDelivery = { inapp: 'skipped', push: 'skipped' };
++    if (only.inapp !== false) {
++      try {
++        // null: the coach muted this kind (a preference, not a failure).
++        const created = await this.notifications.createNotification(row('inapp'));
++        out.inapp = created ? 'sent' : 'skipped';
++      } catch (err) {
++        out.inapp = 'failed';
++        this.warn('inapp', coachId, err);
++      }
++    }
++    if (only.push !== false) {
++      try {
++        if (verifiedPush) {
++          // B-687-3: pushToUser reads Expo's ticket: rejected = failed, no
++          // usable token = skipped. Display copy, not the alert type (C-687-7).
++          const { title, body } = verifiedPush;
++          const data = { alertId, alertType, category: DEFAULT_NOTIFICATION_CATEGORY };
++          const res = await this.notifications.pushToUser(coachId, title, body, data);
++          if (res?.delivered === false) out.pushCode = res.code;
++          const noDevice = out.pushCode === 'no-token' || out.pushCode === 'invalid-token';
++          out.push = !out.pushCode ? 'sent' : noDevice ? 'skipped' : 'failed';
++        } else {
++          // Push via Phase 6B path; false is a transport failure.
++          const pushed = await this.notifications.pushToCoach(coachId, {
++            alertId,
++            alertType,
++            severity,
++            message: message.slice(0, 160),
++          });
++          out.push = pushed ? 'sent' : 'failed';
++        }
++      } catch (err) {
++        out.push = 'failed';
++        this.warn('push', coachId, err);
++      }
++      if (out.push === 'sent') {
++        // Also create a push Notification row so the read state is tracked.
++        // The push itself went out: a failed bookkeeping row must not make
++        // a retry send it twice.
++        try {
++          await this.notifications.createNotification(row('push'));
++        } catch (err) {
++          this.warn('push_row', coachId, err);
++        }
++      }
+     }
++    return out;
++  }
++
++  /** Ids and a closed error code only: a message or class name can carry user text. */
++  private warn(step: string, coachId: string, err: unknown): void {
++    this.logger.warn(
++      `CoachAlertEmitter ${step} failed for coach=${coachId} error=${dunningErrorCode(err)}`,
++    );
+   }
+ }
+diff --git a/test/dunning-v2-cadence.spec.ts b/test/dunning-v2-cadence.spec.ts
+index a1a6cfb6..a909092f 100644
+--- a/test/dunning-v2-cadence.spec.ts
++++ b/test/dunning-v2-cadence.spec.ts
+@@ -40,8 +40,8 @@ describe('Dunning v2 cadence constants (operator-locked)', () => {
+     expect(DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS).toBe(3);
+   });
+ 
+-  it('sweep cron is the fixed 02:00 UTC daily expression', () => {
+-    expect(DUNNING_LOCKOUT_SWEEP_CRON_EXPRESSION).toBe('0 2 * * *');
++  it('sweep cron is hourly at minute 7 UTC (S-DUNNING: lock within an hour of Day 10)', () => {
++    expect(DUNNING_LOCKOUT_SWEEP_CRON_EXPRESSION).toBe('7 * * * *');
+   });
+ 
+   it('exposes the stable LOCKED 403 code', () => {
+diff --git a/test/dunning-v2-copy.spec.ts b/test/dunning-v2-copy.spec.ts
+index 4d1602e7..5520c334 100644
+--- a/test/dunning-v2-copy.spec.ts
++++ b/test/dunning-v2-copy.spec.ts
+@@ -87,7 +87,7 @@ describe('Day-3 copy (push + email + blocker)', () => {
+     expect(renderer.clientPush('day3', TOKENS, false)).toContain('at risk');
+   });
+   it('email renders with tokens', () => {
+-    expect(renderer.clientEmail('day3', TOKENS, false)).toContain('three times');
++    expect(renderer.clientEmail('day3', TOKENS, false)).toContain('still unpaid');
+   });
+   it('blocker headline contains the Day-3 stem', () => {
+     const straight = renderer.blocker('day3', TOKENS, false);
+@@ -131,7 +131,7 @@ describe('Day-7 coach copy (all three channels)', () => {
+   it('email renders coach name + retry history', () => {
+     const straight = renderer.coachEmail(TOKENS, false);
+     expect(straight).toContain('Coach Vale');
+-    expect(straight).toContain('Day 7');
++    expect(straight).toContain('Retry history');
+     expect(straight).toContain('— Roman');
+   });
+ });
+@@ -162,10 +162,10 @@ describe('Late-reversal copy (§C.8)', () => {
+     const b = renderer.blocker('lr_day3', TOKENS, false);
+     expect(b.headline.toLowerCase()).toContain(ROMAN_STEMS.lateReversal);
+   });
+-  it('LR Day-7 escalation email renders with tokens', () => {
++  it('LR (dispute) email renders with tokens', () => {
+     const e = renderer.clientEmail('lr_day7', TOKENS, false);
+-    expect(e).toContain('second time');
+-    expect(e).toContain('March 10');
++    expect(e).toContain(ROMAN_STEMS.lateReversal);
++    expect(e).toContain('Access has ended and billing for the plan is paused');
+   });
+   it('late-reversal lockout reuses the household-ledger screen', () => {
+     expect(renderer.lockoutScreen(TOKENS, false)).toContain(ROMAN_STEMS.day10);
+diff --git a/test/dunning-v2-foundation-fixes.spec.ts b/test/dunning-v2-foundation-fixes.spec.ts
+new file mode 100644
+index 00000000..f387f273
+--- /dev/null
++++ b/test/dunning-v2-foundation-fixes.spec.ts
+@@ -0,0 +1,432 @@
++import { readdirSync, readFileSync } from 'node:fs';
++import { join } from 'node:path';
++import { Logger } from '@nestjs/common';
++import Handlebars from 'handlebars';
++import { effectiveLock } from '../src/checkout/dunning-v2/dunning-effective-access';
++import {
++  DispatchContext,
++  DunningV2Dispatcher,
++  dunningChannelsFor,
++} from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
++import { DunningEscalationClassifier } from '../src/checkout/dunning-v2/dunning-escalation.classifier';
++import { DunningV2Renderer } from '../src/checkout/dunning-v2/dunning-v2.renderer';
++import { dunningErrorCode } from '../src/checkout/dunning-v2/dunning-v2.safe-error';
++import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
++import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
++import { NotificationsService } from '../src/notifications/notifications.service';
++import { FakePrisma } from './support/dunning-v2-fake-prisma';
++
++// B-D12-116 fix round on #687 (D1). Synthetic ids and sentinels only.
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++const stub = (v: unknown): any => v;
++const NOW = new Date('2026-10-04T02:30:00.000Z');
++const ROOT = join(__dirname, '..');
++const SENTINEL = 'person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY';
++
++function telemetry() {
++  return {
++    attemptFailed: jest.fn(),
++    notifySent: jest.fn(),
++    blockerShown: jest.fn(),
++    coachNotified: jest.fn(),
++  };
++}
++
++function ctx(over: Partial<DispatchContext> = {}): DispatchContext {
++  return {
++    dunningStateId: 'ds-1',
++    cycleKey: String(NOW.getTime()),
++    stepIndex: 3,
++    isLateReversalCycle: false,
++    clientUserId: 'client-a',
++    coachUserId: 'coach-a',
++    clientEmail: 'client@tgp.invalid',
++    coachEmail: 'coach@tgp.invalid',
++    tokens: {
++      firstName: 'Avery',
++      clientName: 'Avery Client',
++      coachName: 'Morgan Coach',
++      amount: '$150.00',
++      lockoutDate: 'October 14',
++    },
++    dunningDetailDeeplink: 'tgp://coach/clients/client-a',
++    ...over,
++  };
++}
++
++function dispatcher(notifications: unknown, email?: unknown, emitter?: unknown) {
++  const t = telemetry();
++  const d = new DunningV2Dispatcher(
++    new DunningEscalationClassifier(),
++    new DunningV2Renderer(),
++    stub(t),
++    stub(notifications),
++    stub(email),
++    stub(emitter ?? new CoachAlertEmitter(stub(notifications))),
++  );
++  return { d, t };
++}
++
++describe('B-687-1 (Sol): effective access is not decided from a truncated page', () => {
++  function fixture(blocked: number, grantOwner = 'client-a') {
++    const fake = new FakePrisma();
++    fake.seed('clientPurchase', { id: 'debt', client_user_id: 'client-a' });
++    fake.seed('dunningState', {
++      id: 'ds-debt',
++      purchase_id: 'debt',
++      status: 'active',
++      locked_out_at: NOW,
++    });
++    for (let i = 0; i < blocked; i++) {
++      fake.seed('clientPurchase', {
++        id: `blocked-${i}`,
++        client_user_id: 'client-a',
++        entitlement_active: true,
++        status: 'active',
++        access_expires_at: null,
++      });
++      fake.seed('dunningState', {
++        id: `ds-blocked-${i}`,
++        purchase_id: `blocked-${i}`,
++        status: 'active',
++        locked_out_at: NOW,
++      });
++    }
++    fake.seed('clientPurchase', {
++      id: 'free-grant',
++      client_user_id: grantOwner,
++      entitlement_active: true,
++      status: 'paid',
++      access_expires_at: null,
++      amount_cents: 0,
++    });
++    return fake.client();
++  }
++
++  it.each([19, 20, 21, 60])(
++    'a live $0 grant after %i locked alternatives waives the lock',
++    async (n) => {
++      expect(await effectiveLock(fixture(n), 'client-a', NOW)).toMatchObject({
++        lockedPurchaseId: 'debt',
++        waived: true,
++        locked: false,
++      });
++    },
++  );
++
++  it('control: only locked alternatives (or another client grant) never waive', async () => {
++    expect(await effectiveLock(fixture(25, 'client-b'), 'client-a', NOW)).toMatchObject({
++      waived: false,
++      locked: true,
++    });
++  });
++});
++
++describe('B-687-2 (Sol), operator ruling OR-113-4: the pending prefix has no dependency-order defect', () => {
++  // OR-113-4: pending migration prefixes keep their numbers unless a migration
++  // references an object a later-sorting migration creates. This pins that the
++  // dunning migration only references objects created before it, and that no
++  // later-sorting migration touches the objects it creates.
++  const dir = join(ROOT, 'prisma', 'migrations');
++  const dirs = readdirSync(dir, { withFileTypes: true })
++    .filter((d) => d.isDirectory() && /^\d{14}_/.test(d.name))
++    .map((d) => d.name)
++    .sort();
++  const mine = dirs.find((d) => d.endsWith('_dunning_billing_actions')) as string;
++  const sql = (d: string) => readFileSync(join(dir, d, 'migration.sql'), 'utf8');
++  const creates = (d: string) =>
++    [...sql(d).matchAll(/CREATE TABLE (?:IF NOT EXISTS )?"(\w+)"/g)].map((m) => m[1]);
++
++  it('every referenced table is created by an earlier-sorting migration', () => {
++    const refs = new Set(
++      [...sql(mine).matchAll(/(?:REFERENCES|ALTER TABLE) "(\w+)"/g)].map((m) => m[1]),
++    );
++    const own = new Set(creates(mine));
++    for (const t of refs) {
++      if (own.has(t)) continue;
++      const by = dirs.filter((d) => creates(d).includes(t));
++      expect(by.length).toBeGreaterThan(0);
++      expect(by.every((d) => d < mine)).toBe(true);
++    }
++  });
++
++  it('no later-sorting migration touches a table it creates', () => {
++    const own = creates(mine);
++    expect(own.length).toBeGreaterThan(0);
++    for (const d of dirs.filter((x) => x > mine)) {
++      for (const t of own) expect(sql(d)).not.toContain(`"${t}"`);
++    }
++  });
++});
++
++describe('B-687-1 (Opus) / C-687-1 (Sol): dunning email copy has no first person', () => {
++  it.each(['dunning-v2-client.hbs', 'dunning-v2-coach.hbs'])('%s', (file) => {
++    const html = readFileSync(join(ROOT, 'src', 'email', 'templates', file), 'utf8');
++    const text = html.replace(/<[^>]*>/g, ' ').replace(/\{\{[^}]*\}\}/g, ' ');
++    expect(text).not.toMatch(/\b(we|our|ours|us)\b/i);
++    expect(text).not.toContain('!');
++    // A real support path stays in the client email.
++    if (file === 'dunning-v2-client.hbs') expect(text).toMatch(/Reply to this email/);
++  });
++});
++
++describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => {
++  beforeEach(() => {
++    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++  });
++  afterEach(() => jest.restoreAllMocks());
++
++  it('the Day-7 step has separate coach in-app, push and email deliveries', () => {
++    const decision = new DunningEscalationClassifier().resolve({
++      stepIndex: 3,
++      isLateReversalCycle: false,
++    });
++    expect(dunningChannelsFor(decision)).toEqual(
++      expect.arrayContaining(['coach_alert', 'coach_push', 'coach_email']),
++    );
++  });
++
++  it('a failed feed write and a failed push are failed (retryable), never sent', async () => {
++    const notifications = {
++      createNotification: jest.fn(async () => {
++        throw new Error('synthetic DB failure');
++      }),
++      pushToUser: jest.fn(async () => ({ delivered: false, code: 'transport-error' })),
++    };
++    const { d, t } = dispatcher(notifications);
++    const { results } = await d.dispatchStepDetailed(
++      ctx(),
++      undefined,
++      stub({ channels: ['coach_alert', 'coach_push'] }),
++    );
++    expect(results.coach_alert?.status).toBe('failed');
++    expect(stub(results).coach_push?.status).toBe('failed');
++    expect(t.coachNotified).not.toHaveBeenCalled();
++  });
++
++  it('a retry of the failed push does not write a second coach feed row', async () => {
++    const notifications = {
++      createNotification: jest.fn(async (): Promise<unknown> => ({ id: 'n1' })),
++      pushToUser: jest.fn(async (): Promise<unknown> => ({
++        delivered: false,
++        code: 'ticket-error',
++      })),
++    };
++    const { d } = dispatcher(notifications);
++    const first = await d.dispatchStepDetailed(
++      ctx(),
++      undefined,
++      stub({ channels: ['coach_alert', 'coach_push'] }),
++    );
++    expect(first.results.coach_alert?.status).toBe('sent');
++    expect(stub(first.results).coach_push?.status).toBe('failed');
++    const inappWrites = () =>
++      notifications.createNotification.mock.calls.filter(
++        (c: unknown[]) => (c[0] as { channel?: string }).channel === 'inapp',
++      ).length;
++    expect(inappWrites()).toBe(1);
++    notifications.pushToUser.mockImplementation(async () => ({ delivered: true }));
++    const retry = await d.dispatchStepDetailed(
++      ctx(),
++      undefined,
++      stub({ channels: ['coach_push'], attempt: 1 }),
++    );
++    expect(stub(retry.results).coach_push?.status).toBe('sent');
++    expect(retry.results.coach_alert).toBeUndefined();
++    expect(inappWrites()).toBe(1);
++    expect(notifications.pushToUser).toHaveBeenCalledTimes(2);
++  });
++
++  it('control: a successful coach delivery is sent on both transports', async () => {
++    const notifications = {
++      createNotification: jest.fn(async () => ({ id: 'n1' })),
++      pushToUser: jest.fn(async () => ({ delivered: true })),
++    };
++    const { d, t } = dispatcher(notifications);
++    const { results } = await d.dispatchStepDetailed(
++      ctx(),
++      undefined,
++      stub({ channels: ['coach_alert', 'coach_push'] }),
++    );
++    expect(results.coach_alert?.status).toBe('sent');
++    expect(stub(results).coach_push?.status).toBe('sent');
++    expect(t.coachNotified).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('B-688-4 (Sol): transport failures cross the log / outbox boundary as codes only', () => {
++  afterEach(() => jest.restoreAllMocks());
++
++  it('a provider email error and a thrown push error never reach the result or the logs', async () => {
++    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++    const notifications = {
++      pushToUser: jest.fn(async () => {
++        throw new Error(SENTINEL);
++      }),
++      createNotification: jest.fn(async () => ({ id: 'n1' })),
++      pushToCoach: jest.fn(async () => true),
++    };
++    const email = { send: jest.fn(async () => ({ status: 'failed', error: SENTINEL })) };
++    const { d } = dispatcher(notifications, email);
++    const { results } = await d.dispatchStepDetailed(ctx({ stepIndex: 1 }), undefined, {
++      channels: ['client_push', 'client_email'],
++    });
++    expect(results.client_push?.status).toBe('failed');
++    expect(results.client_email?.status).toBe('failed');
++    const seen = JSON.stringify([results, warn.mock.calls, error.mock.calls]);
++    expect(seen).not.toContain('SYNTHETIC_SECRET');
++    expect(seen).not.toContain('SYNTHETIC_BODY');
++    expect(seen).not.toContain('person@tgp.invalid');
++    for (const r of Object.values(results)) expect(r?.error).toMatch(/^[a-z0-9_]+$/);
++  });
++
++  it('a coach transport error whose class name is itself a secret is logged as a code', async () => {
++    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++    const secretNamed = () => Object.assign(new Error(SENTINEL), { name: 'SYNTHETIC_SECRET_NAME' });
++    const notifications = {
++      createNotification: jest.fn(async () => {
++        throw secretNamed();
++      }),
++      pushToUser: jest.fn(async () => {
++        throw secretNamed();
++      }),
++    };
++    const { d } = dispatcher(notifications);
++    await d.dispatchStepDetailed(
++      ctx(),
++      undefined,
++      stub({ channels: ['coach_alert', 'coach_push'] }),
++    );
++    const seen = JSON.stringify(warn.mock.calls);
++    expect(warn).toHaveBeenCalled();
++    expect(seen).not.toContain('SYNTHETIC_SECRET');
++    expect(seen).not.toContain('person@tgp.invalid');
++  });
++});
++
++describe('dunningErrorCode: a closed vocabulary, whatever the error carries', () => {
++  class Custom extends Error {
++    constructor() {
++      super(SENTINEL);
++      this.name = SENTINEL;
++    }
++  }
++  it.each([
++    [
++      new StripeConnectApiError(SENTINEL, 402, 'card_declined', 'card_error'),
++      'stripe_402_card_declined',
++    ],
++    [new StripeConnectApiError(SENTINEL, 500, SENTINEL, null), 'stripe_500'],
++    [Object.assign(new Error(SENTINEL), { code: 'P2034' }), 'db_P2034'],
++    [Object.assign(new Error(SENTINEL), { code: SENTINEL }), 'error'],
++    [new TypeError(SENTINEL), 'error_typeerror'],
++    [new Custom(), 'error_unknown'],
++    [SENTINEL, 'error_unknown'],
++    [null, 'error_unknown'],
++  ])('%p -> %s', (err, code) => {
++    expect(dunningErrorCode(err)).toBe(code);
++  });
++});
++
++// B-DUNA-118 fix round (D1). Synthetic ids only; Expo is the only stub.
++describe('B-687-3 (Sol) / C-687-7: the coach push receipt follows the Expo ticket', () => {
++  afterEach(() => jest.restoreAllMocks());
++  const run = async (token: string | null, ticket: object) => {
++    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
++    const fake = new FakePrisma();
++    fake.seed('user', { id: 'coach-a', expo_push_token: token });
++    const notifications = new NotificationsService(stub(fake.client()));
++    const expo = Reflect.get(notifications, 'expo');
++    jest.spyOn(expo, 'chunkPushNotifications').mockImplementation((m) => [m]);
++    const send = jest.spyOn(expo, 'sendPushNotificationsAsync').mockResolvedValue([ticket]);
++    jest.spyOn(expo, 'chunkPushNotificationReceiptIds').mockReturnValue([]);
++    const out = await dispatcher(notifications).d.dispatchStepDetailed(ctx(), undefined, {
++      channels: ['coach_push'],
++    });
++    return { result: out.results.coach_push, msg: stub(send.mock.calls[0]?.[0])?.[0] };
++  };
++  it('a rejected ticket is failed (retried); no token is a coded skip', async () => {
++    const error = await run('ExponentPushToken[a]', { status: 'error', message: 'x' });
++    expect(error.result).toEqual({ status: 'failed', error: 'push_ticket-error' });
++    expect((await run(null, {})).result).toEqual({ status: 'skipped', error: 'push_no_token' });
++  });
++  it('control: an accepted ticket is sent, with display copy, not the alert type', async () => {
++    const { result, msg } = await run('ExponentPushToken[a]', { status: 'ok', id: 't' });
++    expect(result?.status).toBe('sent');
++    expect(msg.body).toContain('Avery Client');
++    expect(JSON.stringify(msg)).not.toMatch(/"(title|body)":"[^"]*dunning_step/);
++  });
++});
++
++/** Every client and coach surface of one step, as the user sees it. */
++async function renderStep(over: Partial<DispatchContext>): Promise<string> {
++  const seen: string[] = [];
++  const hbs = (name: string) => readFileSync(join(ROOT, 'src/email/templates', `${name}.hbs`));
++  const record = async (text: string, ret: unknown) => (seen.push(text), ret);
++  const notifications = {
++    pushToUser: (_u: string, _t: string, body: string) => record(body, { delivered: true }),
++    createNotification: (n: { body?: string; payload?: object }) =>
++      record(`${n.body} ${JSON.stringify(n.payload ?? {})}`, { id: 'n1' }),
++  };
++  const email = {
++    send: (m: { template: string; data: object }) =>
++      record(Handlebars.compile(String(hbs(m.template)))(m.data).replace(/<[^>]*>/g, ' '), {
++        status: 'sent',
++      }),
++  };
++  const channels = ['client_push', 'client_email', 'client_blocker', 'coach_alert'];
++  const all = stub({ channels: [...channels, 'coach_push', 'coach_email'] });
++  await dispatcher(notifications, email).d.dispatchStepDetailed(ctx(over), undefined, all);
++  return seen.join('\n');
++}
++
++describe('B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true', () => {
++  it.each([0, 1, 2, 3])('dispute cycle step %i: no card or cancel promise', async (stepIndex) => {
++    const text = await renderStep({ stepIndex, isLateReversalCycle: true });
++    expect(text).toMatch(/dispute/);
++    // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
++    expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
++    expect(text).toMatch(/decides whether to restart it/);
++    // Step 3 adds the coach channels: the coach is told the restart is theirs.
++    if (stepIndex === 3) expect(text).toMatch(/Restarting is your decision/);
++    expect(text).not.toMatch(
++      /stays on|restore|keep everything|will settle it|paid with it|End my plan|Update card|pauses on|locks/i,
++    );
++    expect(text).not.toMatch(/attempt|declined|failed/i);
++  });
++  it('payment cycle: a card update is a charge; access follows once it goes through', async () => {
++    const text = await renderStep({ stepIndex: 3 });
++    expect(text).not.toMatch(/amount owed is paid with it|four times|attempted it|three times/);
++    expect(text).toMatch(/once that payment goes through, your access stays on/);
++    expect(text).toMatch(/nothing more is charged, and access ends right away/);
++  });
++});
++
++describe('B-688-7 (Opus): no surface shows a raw token', () => {
++  afterEach(() => jest.restoreAllMocks());
++  const tokens = { firstName: 'Avery', clientName: 'Avery Client', coachName: 'Morgan Coach' };
++  it.each([0, 1, 2, 3])('step %i, both kinds and variants, no card / amount', async (stepIndex) => {
++    for (const lr of [false, true]) {
++      for (const quip of [0, 1]) {
++        jest.spyOn(Math, 'random').mockReturnValue(quip);
++        const text = await renderStep({ stepIndex, isLateReversalCycle: lr, tokens });
++        expect(text).not.toMatch(/\{\w+\}|ends \.|of {2}/);
++        expect(text).not.toMatch(/so far: *$/m);
++      }
++    }
++  });
++});
++
++describe('Sol B-688-7 support: the fake sorts like PostgreSQL', () => {
++  it('plain desc puts nulls first, asc puts them last, `nulls` overrides', async () => {
++    const fake = new FakePrisma();
++    fake.seed('dunningState', { id: 'a', locked_out_at: null });
++    fake.seed('dunningState', { id: 'b', locked_out_at: NOW });
++    const rows = (orderBy: object) => stub(fake.client()).dunningState.findMany({ orderBy });
++    const ids = async (orderBy: object) => (await rows(orderBy)).map((r: { id: string }) => r.id);
++    expect(await ids({ locked_out_at: 'desc' })).toEqual(['a', 'b']);
++    expect(await ids({ locked_out_at: { sort: 'desc', nulls: 'last' } })).toEqual(['b', 'a']);
++  });
++});
+diff --git a/test/privacy/no-pii-in-logs.spec.ts b/test/privacy/no-pii-in-logs.spec.ts
+index 0d002b9c..d80ef4b7 100644
+--- a/test/privacy/no-pii-in-logs.spec.ts
++++ b/test/privacy/no-pii-in-logs.spec.ts
+@@ -534,7 +534,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
+   'src/checkout/checkout.service.ts': 2,
+   'src/checkout/dunning-v2/dunning-lockout.guard.ts': 1,
+   'src/checkout/dunning-v2/dunning-lockout.scheduler.ts': 1,
+-  'src/checkout/dunning-v2/dunning-v2.dispatcher.ts': 1,
+   'src/checkout/dunning-v2/dunning-v2.service.ts': 1,
+   'src/checkout/dunning.service.ts': 6,
+   'src/checkout/refund-dispute-handler.service.ts': 4,
+@@ -586,7 +585,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
+   'src/notifications/emitters/booking.emitter.ts': 1,
+   'src/notifications/emitters/build-week-day-unlocked.emitter.ts': 1,
+   'src/notifications/emitters/checkin-submitted.emitter.ts': 1,
+-  'src/notifications/emitters/coach-alert.emitter.ts': 1,
+   'src/notifications/emitters/message-received.emitter.ts': 1,
+   'src/notifications/emitters/milestone-reached.emitter.ts': 1,
+   'src/notifications/emitters/missed-checkin.emitter.ts': 1,
+diff --git a/test/support/dunning-v2-fake-prisma.ts b/test/support/dunning-v2-fake-prisma.ts
+new file mode 100644
+index 00000000..8c2044ad
+--- /dev/null
++++ b/test/support/dunning-v2-fake-prisma.ts
+@@ -0,0 +1,385 @@
++/**
++ * In-memory Prisma stand-in for the Smart Dunning v2 specs (S-DUNNING).
++ *
++ * Deterministic and dependency-free: every model is an array of plain rows.
++ * Supports the query surface the dunning path uses — findUnique / findFirst /
++ * findMany / create / update / updateMany / deleteMany / count / upsert —
++ * with the where operators it needs (equality incl. null, not, in, lt, lte,
++ * gt, gte, AND / OR / NOT, and the to-one relations DunningState.purchase and
++ * ClientPurchase.dunning, plain or via is / isNot), select / include with one
++ * level of relation, orderBy and take, and `{ increment }` updates.
++ *
++ * `$transaction(fn)` runs `fn` against a TX VIEW of the same store and records
++ * the call, so a spec can assert whether code opened its own transaction or
++ * joined the caller's. Writes through a tx view are tagged with `viaTx`.
++ */
++
++type Row = Record<string, unknown>;
++type Where = Record<string, unknown>;
++
++export interface FakeWrite {
++  model: string;
++  op: string;
++  viaTx: boolean;
++  where?: Where;
++}
++
++const RELATIONS: Record<
++  string,
++  Record<string, { model: string; local: string; foreign: string }>
++> = {
++  dunningState: {
++    purchase: { model: 'clientPurchase', local: 'purchase_id', foreign: 'id' },
++  },
++  clientPurchase: {
++    dunning: { model: 'dunningState', local: 'id', foreign: 'purchase_id' },
++    billing_lease: { model: 'clientBillingLease', local: 'id', foreign: 'purchase_id' },
++  },
++  clientBillingOperation: {
++    purchase: { model: 'clientPurchase', local: 'purchase_id', foreign: 'id' },
++  },
++  dunningNoticeDelivery: {
++    dunning_state: { model: 'dunningState', local: 'dunning_state_id', foreign: 'id' },
++  },
++};
++
++const MODELS = [
++  'clientPurchase',
++  'dunningState',
++  'dunningAttempt',
++  'paymentReminder',
++  'notification',
++  'paymentRecoveryToken',
++  'user',
++  'connectCustomer',
++  'connectTransfer',
++  'coachPackage',
++  'notificationPreferences',
++  'stripeProcessedEvent',
++  'clientBillingLease',
++  'clientBillingOperation',
++  'dunningNoticeDelivery',
++  'chargeDispute',
++  'dunningDisputeObligation',
++] as const;
++
++export type FakeModelName = (typeof MODELS)[number];
++
++/** Models whose Prisma schema has `@updatedAt` the code under test reads. */
++const UPDATED_AT_MODELS = new Set<string>([
++  'clientBillingLease',
++  'clientBillingOperation',
++  'dunningNoticeDelivery',
++  'dunningDisputeObligation',
++]);
++
++function isPlainObject(v: unknown): v is Record<string, unknown> {
++  return typeof v === 'object' && v !== null && !(v instanceof Date) && !Array.isArray(v);
++}
++
++function cmp(a: unknown, b: unknown): number {
++  const av = a instanceof Date ? a.getTime() : (a as number);
++  const bv = b instanceof Date ? b.getTime() : (b as number);
++  if (av === bv) return 0;
++  return av < bv ? -1 : 1;
++}
++
++function eq(a: unknown, b: unknown): boolean {
++  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
++  if (a === undefined) return b === null || b === undefined;
++  return a === b;
++}
++
++const SCALAR_OPS = new Set(['not', 'in', 'notIn', 'lt', 'lte', 'gt', 'gte', 'equals']);
++
++function matchScalar(value: unknown, cond: unknown): boolean {
++  if (!isPlainObject(cond) || !Object.keys(cond).every((k) => SCALAR_OPS.has(k))) {
++    return eq(value, cond);
++  }
++  for (const [op, arg] of Object.entries(cond)) {
++    if (arg === undefined) continue;
++    switch (op) {
++      case 'equals':
++        if (!eq(value, arg)) return false;
++        break;
++      case 'not':
++        if (isPlainObject(arg)) {
++          if (matchScalar(value, arg)) return false;
++        } else if (eq(value, arg)) return false;
++        break;
++      case 'in':
++        if (!(arg as unknown[]).some((x) => eq(value, x))) return false;
++        break;
++      case 'notIn':
++        if ((arg as unknown[]).some((x) => eq(value, x))) return false;
++        break;
++      case 'lt':
++        if (value == null || cmp(value, arg) >= 0) return false;
++        break;
++      case 'lte':
++        if (value == null || cmp(value, arg) > 0) return false;
++        break;
++      case 'gt':
++        if (value == null || cmp(value, arg) <= 0) return false;
++        break;
++      case 'gte':
++        if (value == null || cmp(value, arg) < 0) return false;
++        break;
++      default:
++        break;
++    }
++  }
++  return true;
++}
++
++export class FakePrisma {
++  readonly store: Record<FakeModelName, Row[]>;
++  readonly writes: FakeWrite[] = [];
++  transactionCalls = 0;
++  private seq = 0;
++
++  constructor() {
++    const store = {} as Record<FakeModelName, Row[]>;
++    for (const m of MODELS) store[m] = [];
++    this.store = store;
++  }
++
++  /**
++   * The prisma-shaped client. `viaTx` tags writes made inside $transaction.
++   * Typed `any` on purpose: it stands in for PrismaService / TransactionClient
++   * in constructor slots without a cast.
++   */
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  client(viaTx = false): any {
++    const out: Record<string, unknown> = {};
++    for (const m of MODELS) out[m] = this.delegate(m, viaTx);
++    out.$transaction = async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
++      this.transactionCalls += 1;
++      return fn(this.client(true));
++    };
++    out.$queryRaw = async () => [];
++    out.$executeRaw = async () => 0;
++    return out;
++  }
++
++  seed(model: FakeModelName, row: Row): Row {
++    const full = { id: row.id ?? this.nextId(model), ...row };
++    this.store[model].push(full);
++    return full;
++  }
++
++  rows(model: FakeModelName): Row[] {
++    return this.store[model];
++  }
++
++  find(model: FakeModelName, where: Where): Row | undefined {
++    return this.store[model].find((r) => this.matches(model, r, where));
++  }
++
++  private nextId(model: string): string {
++    this.seq += 1;
++    return `${model}_${this.seq}`;
++  }
++
++  matches(model: string, row: Row, where: Where | undefined): boolean {
++    if (!where) return true;
++    for (const [key, cond] of Object.entries(where)) {
++      if (cond === undefined) continue;
++      if (key === 'AND') {
++        const list = Array.isArray(cond) ? cond : [cond];
++        if (!list.every((w) => this.matches(model, row, w as Where))) return false;
++        continue;
++      }
++      if (key === 'OR') {
++        if (!(cond as Where[]).some((w) => this.matches(model, row, w))) return false;
++        continue;
++      }
++      if (key === 'NOT') {
++        const list = Array.isArray(cond) ? cond : [cond];
++        if (list.some((w) => this.matches(model, row, w as Where))) return false;
++        continue;
++      }
++      const rel = RELATIONS[model]?.[key];
++      if (rel) {
++        const related = this.store[rel.model as FakeModelName].find(
++          (r) => r[rel.foreign] === row[rel.local],
++        );
++        const c = cond as Where | null;
++        if (c === null) {
++          if (related) return false;
++          continue;
++        }
++        if (isPlainObject(c) && 'is' in c) {
++          if (c.is === null) {
++            if (related) return false;
++          } else if (!related || !this.matches(rel.model, related, c.is as Where)) {
++            return false;
++          }
++          continue;
++        }
++        if (isPlainObject(c) && 'isNot' in c) {
++          if (c.isNot === null) {
++            if (!related) return false;
++          } else if (related && this.matches(rel.model, related, c.isNot as Where)) {
++            return false;
++          }
++          continue;
++        }
++        if (!related || !this.matches(rel.model, related, c as Where)) return false;
++        continue;
++      }
++      if (!matchScalar(row[key], cond)) return false;
++    }
++    return true;
++  }
++
++  private project(model: string, row: Row, args: { select?: Row; include?: Row }): Row {
++    const withRel = (name: string, spec: unknown): unknown => {
++      const rel = RELATIONS[model]?.[name];
++      if (!rel) return row[name];
++      const related = this.store[rel.model as FakeModelName].find(
++        (r) => r[rel.foreign] === row[rel.local],
++      );
++      if (!related) return null;
++      if (isPlainObject(spec) && (spec.select || spec.include)) {
++        return this.project(rel.model, related, spec as { select?: Row; include?: Row });
++      }
++      return { ...related };
++    };
++    if (args.select) {
++      const out: Row = {};
++      for (const [k, v] of Object.entries(args.select)) {
++        if (!v) continue;
++        out[k] = RELATIONS[model]?.[k] ? withRel(k, v) : row[k];
++      }
++      return out;
++    }
++    const out: Row = { ...row };
++    if (args.include) {
++      for (const [k, v] of Object.entries(args.include)) {
++        if (v) out[k] = withRel(k, v);
++      }
++    }
++    return out;
++  }
++
++  private applyData(row: Row, data: Row): void {
++    for (const [k, v] of Object.entries(data)) {
++      if (v === undefined) continue;
++      if (isPlainObject(v) && 'increment' in v) {
++        row[k] = ((row[k] as number) ?? 0) + (v.increment as number);
++      } else if (isPlainObject(v) && 'set' in v) {
++        row[k] = v.set;
++      } else {
++        row[k] = v;
++      }
++    }
++  }
++
++  private sort(rows: Row[], orderBy: unknown): Row[] {
++    if (!orderBy) return rows;
++    const specs = (Array.isArray(orderBy) ? orderBy : [orderBy]) as Row[];
++    return [...rows].sort((a, b) => {
++      for (const spec of specs) {
++        for (const [k, raw] of Object.entries(spec)) {
++          const av = a[k];
++          const bv = b[k];
++          if (av == null && bv == null) continue;
++          // `{ sort, nulls }` as Prisma takes it; otherwise PostgreSQL's
++          // defaults: ASC sorts nulls last, DESC nulls first (Sol B-688-7).
++          const dir = isPlainObject(raw) ? raw.sort : raw;
++          const nullsFirst =
++            isPlainObject(raw) && raw.nulls ? raw.nulls === 'first' : dir === 'desc';
++          if (av == null) return nullsFirst ? -1 : 1;
++          if (bv == null) return nullsFirst ? 1 : -1;
++          const c = cmp(av, bv);
++          if (c !== 0) return dir === 'desc' ? -c : c;
++        }
++      }
++      return 0;
++    });
++  }
++
++  private delegate(model: FakeModelName, viaTx: boolean) {
++    const rows = () => this.store[model];
++    const record = (op: string, where?: Where) => this.writes.push({ model, op, viaTx, where });
++    const touch = (row: Row) => {
++      if (UPDATED_AT_MODELS.has(model)) row.updated_at = new Date();
++    };
++    type Args = {
++      where?: Where;
++      data?: Row;
++      select?: Row;
++      include?: Row;
++      orderBy?: unknown;
++      take?: number;
++      create?: Row;
++      update?: Row;
++    };
++    const many = (args: Args = {}) => {
++      let out = rows().filter((r) => this.matches(model, r, args.where));
++      out = this.sort(out, args.orderBy);
++      if (typeof args.take === 'number') out = out.slice(0, args.take);
++      return out.map((r) => this.project(model, r, args));
++    };
++    return {
++      findUnique: jest.fn(async (args: Args) => {
++        const r = rows().find((x) => this.matches(model, x, args.where));
++        return r ? this.project(model, r, args) : null;
++      }),
++      findFirst: jest.fn(async (args: Args = {}) => many({ ...args, take: 1 })[0] ?? null),
++      findMany: jest.fn(async (args: Args = {}) => many(args)),
++      count: jest.fn(
++        async (args: Args = {}) => rows().filter((r) => this.matches(model, r, args.where)).length,
++      ),
++      create: jest.fn(async (args: Args) => {
++        record('create');
++        const row: Row = {
++          id: (args.data?.id as string) ?? this.nextId(model),
++          created_at: new Date(),
++          ...args.data,
++        };
++        touch(row);
++        rows().push(row);
++        return this.project(model, row, args);
++      }),
++      update: jest.fn(async (args: Args) => {
++        record('update', args.where);
++        const row = rows().find((x) => this.matches(model, x, args.where));
++        if (!row) throw new Error(`fake ${model}.update: record not found`);
++        this.applyData(row, args.data ?? {});
++        touch(row);
++        return this.project(model, row, args);
++      }),
++      updateMany: jest.fn(async (args: Args) => {
++        record('updateMany', args.where);
++        const hit = rows().filter((x) => this.matches(model, x, args.where));
++        for (const row of hit) {
++          this.applyData(row, args.data ?? {});
++          touch(row);
++        }
++        return { count: hit.length };
++      }),
++      upsert: jest.fn(async (args: Args) => {
++        record('upsert', args.where);
++        const row = rows().find((x) => this.matches(model, x, args.where));
++        if (row) {
++          this.applyData(row, args.update ?? {});
++          touch(row);
++          return { ...row };
++        }
++        const created: Row = { id: this.nextId(model), created_at: new Date(), ...args.create };
++        touch(created);
++        rows().push(created);
++        return { ...created };
++      }),
++      deleteMany: jest.fn(async (args: Args = {}) => {
++        record('deleteMany', args.where);
++        const keep = rows().filter((x) => !this.matches(model, x, args.where));
++        const removed = rows().length - keep.length;
++        this.store[model] = keep;
++        return { count: removed };
++      }),
++    };
++  }
++}
+diff --git a/test/support/fake-stripe-billing.ts b/test/support/fake-stripe-billing.ts
+new file mode 100644
+index 00000000..82e4c287
+--- /dev/null
++++ b/test/support/fake-stripe-billing.ts
+@@ -0,0 +1,477 @@
++/**
++ * Stateful Stripe stand-in for the S-DUNNING-R2 specs (native card update,
++ * owner rulings 1A / 2A). Models exactly the Stripe behaviour those paths
++ * rely on, with integer minor units everywhere:
++ *
++ *   - an invoice owns ONE PaymentIntent and can be paid at most once; paying
++ *     a paid (or void) invoice errors; voiding a paid invoice errors;
++ *   - `invoices.pay` charges the given card on-session: ok / declined
++ *     (card_error + decline_code) / 3DS (`invoice_payment_intent_requires_action`);
++ *   - Stripe's own retry charges the SUBSCRIPTION's default payment method
++ *     (Stripe's priority: subscription default before customer default);
++ *   - voiding the latest open invoice of a past_due subscription makes it
++ *     active (Stripe docs, "Subscription invoices");
++ *   - POSTs carry Idempotency-Keys and a replayed key returns the first result.
++ *
++ * Every charge is appended to `charges`, so a spec can prove "charged once".
++ */
++import { StripeConnectApiError } from '../../src/connect/stripe-connect-api.service';
++
++export type CardBehavior = 'ok' | 'decline' | 'requires_action';
++
++export interface FakeInvoice {
++  id: string;
++  object: 'invoice';
++  status: 'open' | 'paid' | 'void';
++  subscription: string;
++  customer: string;
++  amount_due: number;
++  amount_paid: number;
++  amount_remaining: number;
++  currency: string;
++  created: number;
++  payment_intent: { id: string; status: string; client_secret: string };
++}
++
++export interface FakeSubscription {
++  id: string;
++  status: string;
++  customer: string;
++  current_period_end: number;
++  default_payment_method: string | null;
++  cancel_at_period_end: boolean;
++  latest_invoice: string | null;
++}
++
++export interface FakeSetupIntent {
++  id: string;
++  status: string;
++  client_secret: string;
++  customer: string;
++  payment_method: string | null;
++  usage: string;
++  metadata: Record<string, string>;
++}
++
++export interface FakeCharge {
++  invoice: string;
++  payment_method: string;
++  amount: number;
++  by: 'tgp_pay' | 'stripe_retry' | 'client_3ds';
++}
++
++export class FakeStripeBilling {
++  readonly invoices = new Map<string, FakeInvoice>();
++  readonly subs = new Map<string, FakeSubscription>();
++  readonly customers = new Map<string, { id: string; default_payment_method: string | null }>();
++  readonly setupIntents = new Map<string, FakeSetupIntent>();
++  readonly cards = new Map<
++    string,
++    { behavior: CardBehavior; brand: string; last4: string; exp_month: number; exp_year: number }
++  >();
++  readonly charges: FakeCharge[] = [];
++  readonly calls: Array<{ op: string; key?: string; args?: unknown }> = [];
++  private readonly idem = new Map<string, { ok: unknown } | { err: unknown }>();
++  private seq = 0;
++
++  /** Test hooks: run before a pay / void / cancel executes (e.g. a race). */
++  beforePay?: (invoiceId: string) => Promise<void> | void;
++  beforeVoid?: (invoiceId: string) => Promise<void> | void;
++  /** Number of upcoming cancelSubscription calls that fail with a 503. */
++  cancelFailures = 0;
++  /** S-DUNNING-R3: subscriptions whose open-invoice list answers 503. */
++  readonly listFailures = new Set<string>();
++  /** S-DUNNING-R3: upcoming pays that SETTLE, then lose the reply (timeout). */
++  loseNextPayReply = 0;
++  /** S-DUNNING-R7: upcoming invoice GETs that answer 503 (a failed re-read). */
++  failInvoiceReads = 0;
++  /**
++   * S-DUNNING-R7: errors the next pay calls fail with BEFORE Stripe executes
++   * them (nothing is charged, nothing is stored under the key), e.g. a 503
++   * from the edge or a 409 `idempotency_key_in_use`.
++   */
++  readonly payErrors: StripeConnectApiError[] = [];
++
++  /**
++   * S-DUNNING-R7: Stripe prunes idempotency keys that are at least 24 hours
++   * old; a later request with a pruned key is executed as a NEW request.
++   */
++  pruneIdempotencyKeys(prefix = 'pay:'): void {
++    for (const k of [...this.idem.keys()]) if (k.startsWith(prefix)) this.idem.delete(k);
++  }
++
++  addCard(id: string, behavior: CardBehavior, last4: string, brand = 'visa'): void {
++    this.cards.set(id, { behavior, brand, last4, exp_month: 12, exp_year: 2030 });
++  }
++
++  addInvoice(
++    inv: Partial<FakeInvoice> & { id: string; subscription: string; amount_due: number },
++  ): FakeInvoice {
++    const full: FakeInvoice = {
++      object: 'invoice',
++      status: 'open',
++      customer: 'cus_dv2_client',
++      amount_paid: 0,
++      amount_remaining: inv.amount_due,
++      currency: 'usd',
++      created: 0,
++      payment_intent: {
++        id: `pi_for_${inv.id}`,
++        status: 'requires_payment_method',
++        client_secret: `pi_for_${inv.id}_secret_test`,
++      },
++      ...inv,
++    };
++    this.invoices.set(full.id, full);
++    const sub = this.subs.get(full.subscription);
++    if (sub) sub.latest_invoice = full.id;
++    return full;
++  }
++
++  // ── Stripe API surface (StripeConnectApiService shape) ──────────────────
++
++  async createSetupIntent(args: {
++    customer: string;
++    metadata?: Record<string, string>;
++    idempotencyKey: string;
++  }): Promise<FakeSetupIntent> {
++    this.calls.push({ op: 'createSetupIntent', key: args.idempotencyKey, args });
++    return this.once(`seti:${args.idempotencyKey}`, () => {
++      this.seq += 1;
++      const si: FakeSetupIntent = {
++        id: `seti_test${this.seq}`,
++        status: 'requires_payment_method',
++        client_secret: `seti_test${this.seq}_secret_x`,
++        customer: args.customer,
++        payment_method: null,
++        usage: 'off_session',
++        metadata: { ...(args.metadata ?? {}) },
++      };
++      this.setupIntents.set(si.id, si);
++      return { ...si };
++    });
++  }
++
++  async retrieveSetupIntent(id: string): Promise<FakeSetupIntent> {
++    this.calls.push({ op: 'retrieveSetupIntent', args: id });
++    const si = this.setupIntents.get(id);
++    if (!si) {
++      throw new StripeConnectApiError(
++        `No such setupintent: '${id}'`,
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      );
++    }
++    return { ...si, metadata: { ...si.metadata } };
++  }
++
++  async createEphemeralKey(
++    customerId: string,
++    idempotencyKey: string,
++  ): Promise<{ secret: string }> {
++    this.calls.push({ op: 'createEphemeralKey', key: idempotencyKey, args: customerId });
++    return { secret: `ek_test_${customerId}` };
++  }
++
++  async setCustomerDefaultPaymentMethod(args: {
++    customerId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<{ id: string }> {
++    this.calls.push({ op: 'setCustomerDefaultPaymentMethod', key: args.idempotencyKey, args });
++    const c = this.customers.get(args.customerId);
++    if (c) c.default_payment_method = args.paymentMethodId;
++    return { id: args.customerId };
++  }
++
++  async setSubscriptionDefaultPaymentMethod(args: {
++    subscriptionId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<FakeSubscription> {
++    this.calls.push({ op: 'setSubscriptionDefaultPaymentMethod', key: args.idempotencyKey, args });
++    const sub = this.mustSub(args.subscriptionId);
++    sub.default_payment_method = args.paymentMethodId;
++    return { ...sub };
++  }
++
++  async listOpenInvoices(subscriptionId: string): Promise<FakeInvoice[]> {
++    this.calls.push({ op: 'listOpenInvoices', args: subscriptionId });
++    if (this.listFailures.has(subscriptionId)) {
++      throw new StripeConnectApiError('Stripe API timed out', 503, 'request_timeout', 'api_error');
++    }
++    return [...this.invoices.values()]
++      .filter((i) => i.subscription === subscriptionId && i.status === 'open')
++      .sort((a, b) => b.created - a.created) // Stripe lists newest first
++      .map((i) => this.copy(i));
++  }
++
++  /**
++   * S-DUNNING-R5: Stripe Charge objects a spec seeds (pinned API
++   * 2024-09-30.acacia still carries `charge.invoice`).
++   */
++  readonly chargeObjects = new Map<
++    string,
++    { id: string; amount: number; invoice: string | null; payment_intent: string | null }
++  >();
++
++  async retrieveCharge(id: string): Promise<{
++    id: string;
++    amount: number;
++    invoice: string | null;
++    payment_intent: string | null;
++  }> {
++    this.calls.push({ op: 'retrieveCharge', args: id });
++    const ch = this.chargeObjects.get(id);
++    if (!ch) {
++      throw new StripeConnectApiError(
++        `No such charge: '${id}'`,
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      );
++    }
++    return { ...ch };
++  }
++
++  async retrieveInvoice(id: string): Promise<FakeInvoice> {
++    this.calls.push({ op: 'retrieveInvoice', args: id });
++    if (this.failInvoiceReads > 0) {
++      this.failInvoiceReads -= 1;
++      throw new StripeConnectApiError('Stripe API unavailable', 503, null, 'api_error');
++    }
++    const inv = this.invoices.get(id);
++    if (!inv) {
++      throw new StripeConnectApiError(
++        `No such invoice: '${id}'`,
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      );
++    }
++    return this.copy(inv);
++  }
++
++  async payInvoice(args: {
++    invoiceId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<FakeInvoice> {
++    this.calls.push({ op: 'payInvoice', key: args.idempotencyKey, args });
++    const early = this.payErrors.shift();
++    if (early) throw early;
++    if (this.beforePay) await this.beforePay(args.invoiceId);
++    const paid = this.once(`pay:${args.idempotencyKey}`, () => {
++      const inv = this.invoices.get(args.invoiceId);
++      if (!inv) {
++        throw new StripeConnectApiError(
++          'No such invoice',
++          404,
++          'resource_missing',
++          'invalid_request_error',
++        );
++      }
++      if (inv.status !== 'open') {
++        throw new StripeConnectApiError(
++          `Invoice ${inv.id} is ${inv.status} and cannot be paid.`,
++          400,
++          null,
++          'invalid_request_error',
++        );
++      }
++      const card = this.cards.get(args.paymentMethodId);
++      if (!card || card.behavior === 'decline') {
++        inv.payment_intent.status = 'requires_payment_method';
++        throw new StripeConnectApiError(
++          'Your card has insufficient funds.',
++          402,
++          'card_declined',
++          'card_error',
++          'insufficient_funds',
++        );
++      }
++      if (card.behavior === 'requires_action') {
++        inv.payment_intent.status = 'requires_action';
++        throw new StripeConnectApiError(
++          'Payment for this invoice requires additional user action.',
++          402,
++          'invoice_payment_intent_requires_action',
++          'invalid_request_error',
++        );
++      }
++      this.settle(inv, args.paymentMethodId, 'tgp_pay');
++      return this.copy(inv);
++    });
++    if (this.loseNextPayReply > 0) {
++      this.loseNextPayReply -= 1;
++      // The charge landed; the answer never reached us.
++      throw new StripeConnectApiError('Stripe API timed out', 503, 'request_timeout', 'api_error');
++    }
++    return paid;
++  }
++
++  async voidInvoice(args: { invoiceId: string; idempotencyKey: string }): Promise<FakeInvoice> {
++    this.calls.push({ op: 'voidInvoice', key: args.idempotencyKey, args });
++    if (this.beforeVoid) await this.beforeVoid(args.invoiceId);
++    return this.once(`void:${args.idempotencyKey}`, () => {
++      const inv = this.invoices.get(args.invoiceId);
++      if (!inv || inv.status !== 'open') {
++        throw new StripeConnectApiError(
++          'You can only pass in open invoices.',
++          400,
++          null,
++          'invalid_request_error',
++        );
++      }
++      inv.status = 'void';
++      inv.amount_remaining = 0;
++      inv.payment_intent.status = 'canceled';
++      const sub = this.subs.get(inv.subscription);
++      if (sub && sub.status === 'past_due' && sub.latest_invoice === inv.id) sub.status = 'active';
++      return this.copy(inv);
++    });
++  }
++
++  async setCancelAtPeriodEnd(args: {
++    subscriptionId: string;
++    idempotencyKey: string;
++  }): Promise<FakeSubscription> {
++    this.calls.push({ op: 'setCancelAtPeriodEnd', key: args.idempotencyKey, args });
++    const sub = this.mustSub(args.subscriptionId);
++    sub.cancel_at_period_end = true;
++    return { ...sub };
++  }
++
++  async cancelSubscription(subId: string): Promise<{ id: string; status: string }> {
++    this.calls.push({ op: 'cancelSubscription', args: subId });
++    if (this.cancelFailures > 0) {
++      this.cancelFailures -= 1;
++      throw new StripeConnectApiError(
++        'Stripe API timed out',
++        503,
++        'request_timeout',
++        'api_connection_error',
++      );
++    }
++    const sub = this.mustSub(subId);
++    sub.status = 'canceled';
++    return { id: sub.id, status: sub.status };
++  }
++
++  async retrieveSubscription(id: string): Promise<FakeSubscription> {
++    this.calls.push({ op: 'retrieveSubscription', args: id });
++    return { ...this.mustSub(id) };
++  }
++
++  async retrievePaymentMethod(id: string): Promise<{ id: string; card?: Record<string, unknown> }> {
++    const c = this.cards.get(id);
++    return {
++      id,
++      card: c
++        ? { brand: c.brand, last4: c.last4, exp_month: c.exp_month, exp_year: c.exp_year }
++        : undefined,
++    };
++  }
++
++  // ── Test-side actions (what the app SDK / Stripe itself would do) ───────
++
++  /** The in-app PaymentSheet confirms the SetupIntent with a card. */
++  confirmSetupIntentInSheet(setupIntentId: string, paymentMethodId: string): void {
++    const si = this.setupIntents.get(setupIntentId);
++    if (!si) throw new Error(`unknown SetupIntent ${setupIntentId}`);
++    si.status = 'succeeded';
++    si.payment_method = paymentMethodId;
++  }
++
++  /** The client passes 3DS in the app (handleNextAction) for an invoice. */
++  completeBankConfirmation(invoiceId: string): void {
++    const inv = this.invoices.get(invoiceId);
++    if (!inv || inv.status !== 'open') throw new Error(`invoice ${invoiceId} not open`);
++    const pm = this.subs.get(inv.subscription)?.default_payment_method ?? 'pm_unknown';
++    this.settle(inv, pm, 'client_3ds');
++  }
++
++  /** Stripe's scheduled retry: charges the subscription's default card. */
++  stripeRetry(invoiceId: string): 'paid' | 'failed' | 'not_open' {
++    const inv = this.invoices.get(invoiceId);
++    if (!inv || inv.status !== 'open') return 'not_open';
++    const sub = this.mustSub(inv.subscription);
++    const pm =
++      sub.default_payment_method ??
++      this.customers.get(sub.customer)?.default_payment_method ??
++      null;
++    const card = pm ? this.cards.get(pm) : undefined;
++    if (!pm || !card || card.behavior !== 'ok') return 'failed';
++    this.settle(inv, pm, 'stripe_retry');
++    return 'paid';
++  }
++
++  callsOf(op: string) {
++    return this.calls.filter((c) => c.op === op);
++  }
++
++  // ── internals ───────────────────────────────────────────────────────────
++
++  private settle(inv: FakeInvoice, pm: string, by: FakeCharge['by']): void {
++    if (inv.status !== 'open') throw new Error(`double charge attempted on ${inv.id}`);
++    inv.status = 'paid';
++    inv.amount_paid = inv.amount_due;
++    inv.amount_remaining = 0;
++    inv.payment_intent.status = 'succeeded';
++    this.charges.push({ invoice: inv.id, payment_method: pm, amount: inv.amount_due, by });
++    const sub = this.subs.get(inv.subscription);
++    const stillOpen = [...this.invoices.values()].some(
++      (i) => i.subscription === inv.subscription && i.status === 'open',
++    );
++    if (sub && !stillOpen && sub.status !== 'canceled') sub.status = 'active';
++  }
++
++  private once<T>(key: string, fn: () => T): T {
++    const hit = this.idem.get(key);
++    if (hit) {
++      // Stripe marks a cached answer with `Idempotent-Replayed: true`.
++      if ('err' in hit) {
++        const e = hit.err;
++        throw e instanceof StripeConnectApiError
++          ? Object.assign(
++              new StripeConnectApiError(
++                e.message,
++                e.httpStatus,
++                e.stripeCode,
++                e.stripeType,
++                e.declineCode,
++              ),
++              { idempotentReplayed: true },
++            )
++          : e;
++      }
++      return hit.ok as T;
++    }
++    try {
++      const ok = fn();
++      this.idem.set(key, { ok });
++      return ok;
++    } catch (err) {
++      this.idem.set(key, { err });
++      throw err;
++    }
++  }
++
++  private mustSub(id: string): FakeSubscription {
++    const sub = this.subs.get(id);
++    if (!sub) {
++      throw new StripeConnectApiError(
++        `No such subscription: '${id}'`,
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      );
++    }
++    return sub;
++  }
++
++  private copy(inv: FakeInvoice): FakeInvoice {
++    return { ...inv, payment_intent: { ...inv.payment_intent } };
++  }
++}

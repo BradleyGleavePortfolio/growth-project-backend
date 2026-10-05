@@ -1,0 +1,26 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#687 @ f3c7fd37777ef1cde75ec5fb984edf5cb973f864 — VERDICT: APPROVE
+A/B/C = 0/0/3
+
+Independent T4 lens AUD-SOL-D6-120, agent 120.
+
+## Prior findings and evidence applicability
+
+**B-687-3 closed:** the dunning caller now requests the verified `pushToUser` ticket path through the real CoachAlertEmitter; rejected tickets remain failed, missing tokens are skipped, and accepted tickets produce a sent receipt without resending the successful feed transport. [Fix-round evidence](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5982921310) [Independent exact-source replay, 85/85 passing](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37349204151).
+
+**B-687-4 closed at the reported boundary:** ordinary email success wording is conditional on successful payment; dispute emails hide card/cancel promises and say access has ended, billing is paused, and the coach decides on restart. [Client template](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/f3c7fd37777ef1cde75ec5fb984edf5cb973f864/src/email/templates/dunning-v2-client.hbs#L5-L14) [Independent rendered-copy replay](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37349204151).
+
+The earlier B-687-1 grant-cardinality fix and C-687-1 footer closure remain covered by the current replay; B-687-2 remains withdrawn under the pending-prefix ruling, not misrepresented as a new migration behavior fix. [Prior Sol disposition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5982357490) [Current grant/migration/copy regressions](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37349204151).
+
+No prior Sol APPROVE is inherited: the entire foundation piece, transport dependencies and main-merge conflict resolutions were reviewed, with independent current-head execution of the prior Sol probes and foundation/cadence/copy suites. [Candidate and merge](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/f3c7fd37777ef1cde75ec5fb984edf5cb973f864) [Audit lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37349204151).
+
+## Follow-ups (C, outside the blocking changed behavior)
+
+- **C-687-8 — inherited payment push copy**, `src/checkout/dunning-v2/dunning-v2.copy.ts:59–78,104–108,134–144`: a hard-decline cycle can advance from the hourly clock without a new charge, yet legacy pushes assert “attempted it again today,” “three attempts,” first-person wording, and a fixed three-day remainder even if delivery is late; use observed attempt data, conditional payment success and the actual lock date instead. [Copy and concrete text](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/f3c7fd37777ef1cde75ec5fb984edf5cb973f864/src/checkout/dunning-v2/dunning-v2.copy.ts#L59-L144).
+- **C-687-9 — inherited dispute screen alias**, `src/checkout/dunning-v2/dunning-v2.copy.ts:209–211`: LR_LOCKOUT_SCREEN still aliases ordinary card-update lockout copy, which does not describe a coach-only restart; use dispute-paused copy on that surface rather than payment recovery wording. [Alias](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/f3c7fd37777ef1cde75ec5fb984edf5cb973f864/src/checkout/dunning-v2/dunning-v2.copy.ts#L209-L211).
+- **C-687-10 — inherited blocker destination**, `src/checkout/dunning-v2/dunning-v2.dispatcher.ts:310`: the new dispute “See details” CTA still routes to `tgp://billing/update`; route dispute details to the plan/details surface, never card recovery. [Dispatcher destination](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/f3c7fd37777ef1cde75ec5fb984edf5cb973f864/src/checkout/dunning-v2/dunning-v2.dispatcher.ts#L287-L311).
+
+## Gates and limits
+
+Size is 2,640 changed lines, within the grandfathered 3,000 cap; candidate build, schema/migration checks, security gates and applicable checks are green, while deploy-readiness is skipped rather than passed. [Current builder attestation](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5999323963) [Candidate build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37244818222).
+
+This approves D1 source, not standalone feature activation or release: FEATURE_DUNNING_V2 stays off and the dunning train must land together; #705 has separate consequential findings, and later D3/D4/D5 wiring remains required. [Stack boundary](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/705#issuecomment-5999324895).

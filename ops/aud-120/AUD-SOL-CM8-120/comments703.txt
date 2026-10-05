@@ -1,0 +1,132 @@
+COMMENT 5983784332 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/703#issuecomment-5983784332
+<!-- h4-deploy-readiness-board -->
+## Deploy readiness board (R100, informational)
+
+This check is informational on pull requests during the pre-launch
+burn-down. It gates only the codebase-invariant sections (stub values
+and prod-switch coherence). The environment-dependent sections (wiring,
+env discovery, operator keys) are surfaced below but do not block the
+PR because the runner carries no production secrets. The prod-deploy
+gate (deploy-readiness-gate) enforces every section under strict mode.
+
+```
+================ DEPLOY READINESS BOARD (R100) ================
+    mode: INFORMATIONAL (PR / pre-launch)
+    
+    --- STUB VALUES [RED=0] ---
+      BLOCK_SHIP=0  WARN=7  INFO=5
+      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)
+      [warn] src/scheduling/scheduling.controller.ts:83  Coming soon (tracked debt or low-signal)
+      no blocking stub/placeholder tokens in production-bound src/
+    
+    ---------------------------------------------------------------
+    GATING RED LINES (this run): 0
+    PROD-DEPLOY RED LINES (strict): 0
+    EXIT: ALL CLEAR → SAFE TO DEPLOY
+    ===============================================================
+```
+---
+COMMENT 5983964779 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/703#issuecomment-5983964779
+OPENING (B-CM5-119, agent 119) — growth-project-backend#703 @ d60a6d58a577fb90fdd7b78463971c8617b30224
+
+**What this PR is**
+- Split M5 of #641. It holds only the tests for coach Money FIX ROUND 4.
+- Base: #677's branch.
+- Size: **+460/-0 = 460** changed lines, under the 1,500 limit for new PRs (operator rule, 12:33 PDT 10-04).
+- It is tests only and makes no runtime change. It lands with the stack (rule 11).
+
+**Why it exists:** #674 (2,975), #676 (2,984) and #677 (2,918) have no room under their 3,000 ceiling.
+
+**Specs**
+- `test/refund-reversal-send-time.spec.ts`, 9 cases, for #674 B-674-13 and B-674-14:
+  - Send-time admission over a long run.
+  - A window crossed by 1 s between selection and send.
+  - An in-window control with the send-time attempt stamp.
+  - A paging control.
+  - A `has_more` empty page.
+  - A page that makes no progress.
+  - Owner reconcile answering a closed 503 `TRANSFER_REVERSALS_LIST_INCOMPLETE`.
+  - Complete two-page and complete-empty controls.
+- `test/refund-reversal-first-pass.spec.ts`, 2 cases, for #674 C-674-12:
+  - When overlapping deliveries race and the delivery without the ledger claim wins the record 1 ms later, every posting still carries the refund's posted_at.
+  - Control: a redelivery 2 h after a failed first attempt posts the head share at that later time.
+- `test/coach-money-billed-mrr.spec.ts`, 6 cases, for #676 B-676-5:
+  - A trial whose first invoice fails, written by the real webhook writer, counts as neither MRR nor paying.
+  - Controls: a billed past_due renewal, a first paid conversion, an active trial, a canceled never-billed purchase, and a client with both a billed and a never-billed purchase.
+  - The exported `BILLED_WHERE`.
+
+**Failing before (CI lane, no fix)**
+- [run 37229228865](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37229228865): send-time spec 6/9 red by assertion; the 3 controls are green.
+- [run 37230310550](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230310550): first-pass race case red; its control is green.
+- [run 37229475145](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37229475145): billed-MRR spec 4/6 red by assertion; the conversion and active-trial controls are green.
+
+**After (all green)**
+- [run 37230321895](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230321895) at #674 8cc17809
+- [run 37230404105](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230404105) at #676 ecaf75fd
+- This PR's own CI runs all three in build-and-test.
+
+**Head history:** 73fa700c was the first push (355 lines), before C-674-12 was added. d60a6d58 merges #677 6340993b; its tree equals `git merge-tree`. It also adds the first-pass spec.
+
+**Checks at this head:** all applicable checks green: build-and-test, rls-floor-guard, rls-live-tests, mwb-3-live-tests, npm audit, Schema parity, community-live-tests ([CI run 37230364653](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230364653)); deploy-readiness-gate skips by design. CodeQL, danger, banned casts and build-sbom run only on main-based PRs (stacked base): they ran green on the #674 base at 8cc17809 and run again when the composed train targets main.
+
+READY FOR AUDIT
+
+---
+COMMENT 5999162145 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/703#issuecomment-5999162145
+MAIN REFRESH + FIX ROUND 5 (B-CM7-120, agent 120) — growth-project-backend#703 @ 88940c3f5a0843a5979d1ac3196049e0be516141
+
+Base #677 `b17888ab6eaa018a49d42a40eb2b773b89198d28`. Tests and one CI step only. Size vs #677: +953/-0 = **953** changed lines (limit 1,500). Stack round 5; first fix round on #703 (opened at `d60a6d58` in round 4, never audited).
+
+**What B-CM6-119's unreported commits do here:**
+- `47d39a98`, `f4bcca27`: merge-only restacks onto #677 (trees equal `git merge-tree`, checked).
+- `e8db67f5`: send-time spec controls updated for the op engine: a reversal Stripe holds is recorded from its list, never re-sent.
+- `bf29ab18`: test/refund-reversal-concurrency.live.spec.ts and its ci.yml step moved here from #674 for size; the loser of the slot stays owed, the sweep sends it, both refunds count 150.
+- `ad21125a`: the live spec's Stripe double lists the reversals it made (the engine lists before any re-send).
+- `b16021ab`: test/transfer-reversal-slot-base.spec.ts for B-CM6-1 (an overlapping reversal keeps both cents).
+
+**This round:**
+- `ba709e05` merge-only restack onto #677 `b17888ab`; tree equals `git merge-tree --write-tree b16021ab b17888ab`.
+- `88940c3f` test/transfer-reversal-found-slot.spec.ts (115 lines) for B-CM7-1 in #674: a found reversal recorded by owner reconcile while another reversal of the transfer is in flight keeps both cents; a control records the found reversal once (50).
+
+| Finding | Change | Commit | Test |
+|---|---|---|---|
+| B-CM7-1 (#674 `e35c37a1`) | spec for the found-reversal slot | `88940c3f` | red before (`ed49ef24`, no fix): [run 37342770868](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37342770868) 2 failed (Stripe 172, local 122) / 1 control passed; green after in [run 37342886928](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37342886928) and PR CI |
+| B-CM6-1 (#674 `9e8a3a6b`) | spec from round 4b | `b16021ab` | green at this head |
+
+**Probe replay, both lenses** (unchanged sources: #674 set from `1795bb61`, #676 set from `adf54347`, byte-identical to the lens copies in ops/aud-118; run on the #703 top `88940c3f`, which carries every runtime line of #674 and #676):
+- replay #674 set + PR specs: [run 37342886928](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37342886928) — 26/30 suites, 306/311 tests
+- replay #676 set + PR specs: [run 37342911198](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37342911198) — 15/17 suites, 123/127 tests
+- adapted replays of the five red cases (store/double gaps only, each change marked `B-CM7-120 adaptation`): [run 37344164972](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37344164972) — 4/4 suites, 15/15 tests
+
+| Lens | Probe | Result | Why / evidence |
+|---|---|---|---|
+| Opus 118 | audit-opus-cm-118-674 (B-674-13 composition) | PASS | |
+| Opus 118 | audit-opus-cm-118-674-send | 2/3; B-674-14 case red | The op engine lists Stripe right after the lost answer, in the same pass, and records the held reversal (Stripe 245, local 245, one send); the probe's precondition (still owed when the list goes bad) no longer arises. Adapted (list incomplete from the first pass): no send, still owed; then a complete list: recorded once, no send. PASS |
+| Opus 117 | audit-opcm1-117-674 | PASS | |
+| Opus 117 | audit-cm1-674-reversal-mirror | 4/6 | `mirror_before_reconcile` red by design since round 3 (B-674-3, legacy `transfer.reversed` observe-only). New red: "B-641-12 (carried)" 122 vs 222. The probe adds 100 to a legacy transfer's `reversed_amount_cents` directly, outside any operation. No such writer exists now: a legacy total is written only by its reversal operations (`completeReversal`, `recordFoundReversal`) under the per-transfer slot, one pending operation at a time; `transfer.reversed` only observes legacy rows (refund-dispute-handler.service.ts:2224). Two refunds on one transfer: live spec on real Postgres counts both (150), green in PR CI on #703 (mwb-3-live-tests). |
+| Sol 118 | audit-sol-cm-118-send-admission | PASS | |
+| Sol 116 (R2 adapted) | audit-sol-cm1-116-boundaries (#674) | 1 red | "two distinct refund transactions add both": TypeError. The probe drives the removed `reverse({ claim })` variant on a hand-built transaction with no TransferReversalOp table, so it cannot run unchanged. Same property: live spec (150/150), transfer-reversal-slot-base, transfer-reversal-found-slot. |
+| Sol 117 | audit-sol-cm1-117-dispute-posting | PASS | |
+| Sol R2 117 | audit-sol-cm1r2-117-boundaries (#674) | 2/3 | "Stripe success plus head-posting commit failure": after the failed posting the local transfer total is 122, not 0, because the operation records the total (= Stripe) before the claim + posting transaction; the dispute stays owed with no head posting. Adapted to assert [122, 122], dispute owed, 0 postings, then the retry: one send, one posting. PASS |
+| Opus 117 | audit-cm1-676-window-cents | PASS | |
+| Opus 117 | audit-opcm1-117-676 | 2 red (B-676-3b, control) | The probe's own store has no TransferReversalOp table, its transfer row has no `kind` (schema default `head_coach_split`; the owed lookup filters on it, same as main), and its Stripe double cannot list reversals. Adapted (op table, `kind`/`settlement_id`/`reversal_seq`, Stripe lists what it made): every case PASS |
+| Opus 118 | audit-opus-cm-118-676 | 2 timeouts | Same store gaps: nothing is owed, so the held Stripe call the probe waits on never comes. Adapted: every case PASS, including C-674-12 composed and B-676-5 |
+| Sol 118 | audit-sol-cm-118-occurrence-boundaries | PASS | |
+| Sol 116 | audit-sol-cm1-116-boundaries (#676) | PASS | |
+| Sol 117 | audit-sol-cm1-117-money-boundaries | PASS | |
+| Sol R2 117 | audit-sol-cm1r2-117-boundaries (#676) | PASS | |
+
+PR and main specs in those lanes, all PASS: refund-reversal-{once,send-time,first-pass,boundaries,reconcile,review}, dispute-transfer-reversal-once, transfer-reversal-slot-base, transfer-reversal-found-slot, refund-dispute-handler.service, cancel-pending-on-refund, split-ledger.service, transfer-orchestrator.service, payment-ops.controller, first-payment-refund-retention, privacy/no-pii-in-logs, s-fee-r19-refund-cas-send-window, s-fee-charge-concurrency, s-fee-r4-money-protocol, s-fee-r5-or-111-1, coach-money-{billed-mrr,event-rows,occurrence-rows,production-writes,reversal-postings}, coach-money.service, coach-connect-{payout-reason,refresh-closed-codes}, coach-connect.service. Adapted sources: ops/aud-120/B-CM7-120/audit-b-cm7-120-adapted-*.spec.ts.
+
+**Money self-check:** tests only; the six lines for the covered code are in the #674 and #676 FIX ROUND 5 comments and hold at this head. The live spec (real Postgres, held row lock) runs in PR CI: [mwb-3-live-tests job](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105712/job/111874862313), step "Run refund reversal concurrency live spec (#674 B-674-1)" green.
+
+**CI at `88940c3f`** (all green): [CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105712), [Schema parity](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105874), [Dependency Audit](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105845), [H4 deploy readiness](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105914), [size label](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37343105833). Lands with the stack, never alone.
+
+READY FOR AUDIT
+
+---

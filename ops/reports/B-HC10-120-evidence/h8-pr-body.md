@@ -1,0 +1,44 @@
+**Tier: T4** (health data import completeness, on-device progress and sign-out/account-switch stops). Opened by B-HC10-120 (agent 120). Parent owner: operator (lands with #359-#369 as one).
+
+| Field | Value |
+|---|---|
+| Tier | T4 |
+| Why | Late on-device data was never read (C-360-1) and an interrupted import restarted from scratch (C-360-2): Sol [AUD-SOL-H23-118 counterexample](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/360#issuecomment-5976279445), Opus AUD-OPUS-W12-116. Operator ruling 116: a follow-up after #359-#369, before the clinic Android build |
+| T4 trigger scan | health data import (Health Connect, Apple Health), per-account progress, the sign-out / account-switch fence on every read, post and save |
+| T3 trigger scan | none beyond T4 |
+| Bounded T1 | none |
+| Canonical builder | Claude Opus 5.5 (B-HC10-120 opening) |
+| Parent owner | operator agent 120; stack H1 #359 -> H2 #360 -> H3 #361 -> H4 #362 -> H5 #363 -> H6 #364 -> H7 #369 -> **H8 (this PR)** |
+| Acceptance evidence | OPENING: failing-before [LANE_BEFORE](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/LANE_BEFORE), passing-after [LANE_AFTER](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/LANE_AFTER). PR CI at the head |
+| Promotion triggers | any change to the look-back, the hourly-sum settle, the per-page / per-day save, or the backend dedup key; native/device acceptance stays with the owner-approved EAS build |
+
+**Stack position H8**, base `agent119/wear-split-7-signout-durable` (#369 @ `a2bfe2fa906ff5e3b991613a6838a82456db920c`). Never merge alone: H1-H8 land as one. No change to #359-#369 code; no backend change.
+
+**Size:** SIZE_LINE
+
+## Backend dedup (verified, relied on)
+growth-project-backend main `ee55f814`: every ingested sample gets `dedup_key = sha256(user_id | provider | metric | start | end)` (`src/wearables/ingestion/dedup.util.ts`), `WearableSample.dedup_key` is `@unique` (migration `20260531000000_wearables_foundation`, `CREATE UNIQUE INDEX "WearableSample_dedup_key_key"`), and `ingestion.service.ts` inserts with `createMany({ data, skipDuplicates: true })` in a transaction. So a sample read and posted again is skipped, never counted twice. The same rule keeps the first value posted for a key: a value that changes later under the same start and end is not replaced. Both facts shape the fix below.
+
+## What changes
+- **C-360-1 late data, both platforms.** New `src/services/health/syncWindows.ts`: `LATE_DATA_LOOKBACK_MINUTES = 24 * 60`. Health Connect `SYNC_OVERLAP_MINUTES` (was 5) and Apple Health `SYNC_OVERLAP_MINUTES` (was 60) now equal it. Bound: every finished sample written within one day of its START is read (Apple Health selects by start, `HKQueryOptionStrictStartDate`; a Health Connect `between` read that starts a day back and ends now contains it under the strictest reading). Covers a night of sleep written after waking and a watch or partner app that syncs hours later. Re-reads are skipped by the backend key.
+- **C-360-1 hourly sums (Apple Health).** Steps and active energy are hourly sums, and the backend keeps the first value posted for an hour. `CUMULATIVE_SETTLE_MINUTES = 120`: an hourly sum posts only once its hour ended at least two hours before the read (floored to the local hour), and those metrics' progress stops at that settled hour, so a watch share that arrives within two hours of the hour's end is in the posted value. Every other metric posts as soon as it is read.
+- **C-360-2 resumable import, Health Connect.** `readRecordsPaged` takes an optional page count (default unchanged). The sync reads one page at a time, oldest first, up to `MAX_READ_PAGES` per type per run, and after every page: normalize, post (fence before every request), save that type's progress (a resume token while pages remain, the window end after the last page). A failed POST or a stop keeps every earlier page saved; the page in hand is re-read next time. A failed native read keeps the type's saved progress: a token saved by an earlier run is dropped (it may have expired), a token this run saved is kept. Logging still names only the closed error class (B-360-1).
+- **C-360-2 resumable import, Apple Health.** The window is read oldest first in pieces of at most one day (local-hour boundaries). After every piece that has something to post: post, then save every metric read without failure this run through the piece end (never moving one back). A metric that fails in a piece keeps its progress for the rest of the run. The end of a run that posted saves the empty pieces after the last one that posted; a run that posts nothing saves nothing, as before (a hidden Apple Health permission returns no data, so the history is still read once it is granted). A failed read, POST or a stop keeps every earlier piece saved.
+- **Import passes (`onDeviceSync.ts`).** A Health Connect pass continues only while a type stopped at the page bound, and later passes read only those types (`resumeOnly`), so the day of re-read happens once per visit; a pass that is incomplete only because a read failed is not repeated. A type that failed in an earlier pass keeps the result incomplete. Apple Health reads its whole window in one pass, so it runs one pass (it used to repeat up to 3 times when a metric failed).
+
+## Tests (in this piece)
+- `src/services/health/healthConnect/__tests__/healthConnectSyncService.h8.test.ts` (6): a fake paged store whose `between` filter keeps only records wholly inside the range. A night of sleep written after waking is posted; a watch record 20 hours late is posted; a failed POST on page 3 keeps pages 1-2 saved and the next run reads only page 3 on; a failed native read on page 3 keeps pages 1-2 posted and saved; sign-out while page 2 is read keeps page 1 saved and saves nothing after; a resume-only pass reads only types with a token.
+- `src/services/health/healthkit/__tests__/healthKitSyncService.h8.test.ts` (7): a fake store that answers by start time. A heart rate 5 hours late is posted; an hourly steps sum waits to settle and posts once with the late share; contiguous pieces of at most a day, oldest first, ending at now; failed POST in piece 3 and failed read in piece 3 keep pieces 1-2 saved; a metric failing in piece 2 keeps its progress; sign-out while piece 2 is read.
+- `src/services/health/__tests__/onDeviceSync.test.ts` (+4): pass 2 is resume-only; a failure-only pass is not repeated; an earlier failure keeps the import incomplete; Apple Health runs one pass.
+- Existing tests updated for the new behaviour: the Health Connect page read now passes a page count (2 assertions); the Apple Health fake client answers by window, and 4 assertions follow the day pieces and the settled hour.
+
+## Operator decisions (recommended default first)
+1. Look-back one day (default) vs longer: longer covers later writers at the cost of more re-read per refresh (refresh runs when Health opens).
+2. Apple Health hourly sums settle 2 hours (default): a steps or active-energy hour shows up at the first refresh 2 to 3 hours after it ends instead of the first refresh after it ends; a share written later than 2 hours after the hour still misses that hour, as today. Lasting fix: a backend replace of on-device hourly sums, then settle 0.
+3. A Health Connect record rewritten in place keeps its first value, and one rewritten with a new interval adds a second row (the read side sums rows): backend replace keyed on (provider, source record id). Ticket, not in this job.
+4. Health Connect changes tokens (`getChanges`) as a later efficiency step instead of the day of re-read.
+
+**Rounds**
+| Round | Head | Builder | Change | Comment |
+|---|---|---|---|---|
+| OPENING | HEAD_SHA | B-HC10-120 | C-360-1, C-360-2; SIZE_SHORT | OPENING_LINK |
