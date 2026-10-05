@@ -26,8 +26,8 @@ PRs #198 and #199.
 | `REDIS_URL` | **Production refuses to boot without this.** Pre-Connect cleanup hardened `assertEnv()` AND `buildThrottlerOptions` to throw when `NODE_ENV=production` and `REDIS_URL` is missing — a single-machine in-memory throttler cannot defend a multi-machine Fly deploy. Dev/test still fall back to in-memory. | `rediss://default:PASSWORD@<host>:6379` |
 | `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` | DSN is required for error reporting; sample rate defaults to `0.1`. Release tag is now set from `GIT_SHA` in `src/instrument.ts` (falls back to `RELEASE_VERSION`). | `https://…@o…ingest.sentry.io/…` |
 | `GIT_SHA` | Sentry release tag for the running image. Wired through `fly.toml` `[build.args]` → Dockerfile `ARG/ENV GIT_SHA` → `src/instrument.ts`. Pass on every deploy: `fly deploy --build-arg GIT_SHA=$(git rev-parse HEAD)`. Without it, falls back to `RELEASE_VERSION` and finally to no release. | `3ec015bd…` (40-char SHA) |
-| `STRIPE_CONNECT_REFRESH_URL` | **Connect Phase 1.** Mobile deep link Stripe redirects the coach to if they bail mid-onboarding. `/v1/connect/accounts/onboarding-link` returns 503 when unset. | `growthproject://connect/onboarding/refresh` |
-| `STRIPE_CONNECT_RETURN_URL` | **Connect Phase 1.** Mobile deep link Stripe redirects the coach to after Express onboarding completes. Same 503 if unset. | `growthproject://connect/onboarding/return` |
+| `STRIPE_CONNECT_REFRESH_URL` | **Connect Phase 1.** HTTPS landing (S-COACH) that hands the coach back to the app at tgp://connect/onboarding/refresh when the link expired. `/v1/connect/accounts/onboarding-link` returns 503 when unset. | `https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh` |
+| `STRIPE_CONNECT_RETURN_URL` | **Connect Phase 1.** HTTPS landing (S-COACH) that hands the coach back to the app at tgp://connect/onboarding/return after Express onboarding. Same 503 if unset. | `https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return` |
 
 For every other env var the backend reads at boot, see `.env.example`
 (top to bottom is grouped by subsystem; the audit added inline comments
@@ -61,8 +61,8 @@ the exact next step. Full step-by-step also in `docs/connect-setup.md`.
 7. On Fly, set `STRIPE_CONNECT_REFRESH_URL` and `STRIPE_CONNECT_RETURN_URL`:
    ```
    fly secrets set \
-     STRIPE_CONNECT_REFRESH_URL=growthproject://connect/onboarding/refresh \
-     STRIPE_CONNECT_RETURN_URL=growthproject://connect/onboarding/return
+     STRIPE_CONNECT_REFRESH_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh \
+     STRIPE_CONNECT_RETURN_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return
    ```
 8. Confirm the existing Stripe webhook endpoint is subscribed to:
    - `account.updated`
