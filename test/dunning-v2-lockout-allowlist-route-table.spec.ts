@@ -175,7 +175,6 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'me/ai-consent', // AiConsentController GET — read AI consent (privacy, #622)
   'me/ai-consent/roman', // AiConsentController POST grant / DELETE withdraw
   'readyz',
-  'roman/context/me', // own-data disclosure (RomanContextController)
   'roman/sessions',
   'roman/sessions/:id',
   'roman/sessions/:id/messages',

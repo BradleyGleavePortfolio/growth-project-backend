@@ -40,6 +40,7 @@ export const ROMAN_LOGGABLE_ERROR_NAMES: ReadonlySet<string> = new Set([
   'ServiceUnavailableException',
   'NotFoundException',
   'ForbiddenException',
+  'RomanContextBudgetError',
 ]);
 
 export function romanErrorTag(err: unknown): string {
