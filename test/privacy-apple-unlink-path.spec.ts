@@ -56,10 +56,12 @@ function sentences(text: string): string[] {
 }
 
 const APPLE_SUPPORT_URL = 'https://support.apple.com/en-us/102571';
+// Repinned by agent 117 for the iOS 18 qualifier (C-611-18;
+// test/privacy-apple-ios-version.spec.ts).
 const APPLE_NOW =
   'If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. ' +
-  'To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
-  'On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
+  'To remove the app from your Apple Account as well, on an iPhone with iOS 18 or later open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
+  'On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
 const APPLE_LINK_LABEL = 'Apple Support: Manage your apps with Sign in with Apple';
 
 const privacyHtml = trust.renderTrustPage('privacy');
