@@ -55,6 +55,19 @@ const TEMPLATES: Record<string, LockScreenCopy> = {
     title: 'Session starting soon',
     body: `Your session starts in about an hour. ${DETAILS}`,
   },
+  // B-714-1 / B-653-1 (B-SCHED2-121): the scheduling train's booking kinds.
+  [NotificationKind.BOOKING_LINK_NEEDED]: {
+    title: 'Add a call link',
+    body: 'A session has no call link yet. Open the app to add one.',
+  },
+  [NotificationKind.BOOKING_LINK_READY]: {
+    title: 'Call link ready',
+    body: `The call link for your session is ready. ${OPEN}`,
+  },
+  [NotificationKind.BOOKING_REQUEST_EXPIRED]: {
+    title: 'Session request closed',
+    body: `A session request has closed. ${DETAILS}`,
+  },
   [NotificationKind.MILESTONE_REACHED]: {
     title: 'New milestone',
     body: `You reached a milestone. ${OPEN}`,
@@ -89,6 +102,13 @@ const TEMPLATES: Record<string, LockScreenCopy> = {
   },
 };
 
+// B-653-4: a client's move request keeps the booking_rescheduled kind, but
+// nothing has moved until the coach approves.
+const MOVE_REQUESTED_COPY: LockScreenCopy = {
+  title: 'Time change requested',
+  body: 'A client asked to move a session. Open the app to review.',
+};
+
 const DEFAULT_COPY: LockScreenCopy = {
   title: 'The Growth Project',
   body: `You have a new notification. ${OPEN}`,
@@ -108,6 +128,8 @@ export interface PushContext {
   oldScheduledAt?: string;
   timeZone?: string | null;
   otherPartyDisplayName?: string;
+  /** B-653-4: a booking_rescheduled push for a move that awaits approval. */
+  moveRequested?: boolean;
 }
 
 function contextTime(context: PushContext | null | undefined): { at: Date; tz: string } | null {
@@ -129,6 +151,9 @@ export function lockScreenCopy(
   context?: PushContext | null,
   now: Date = new Date(),
 ): LockScreenCopy {
+  if (kind === NotificationKind.BOOKING_RESCHEDULED && context?.moveRequested === true) {
+    return MOVE_REQUESTED_COPY;
+  }
   const timed = contextTime(context);
   if (timed && kind === NotificationKind.BOOKING_REMINDER_24H) {
     return {

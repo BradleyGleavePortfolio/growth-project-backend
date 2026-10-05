@@ -174,6 +174,7 @@ function asContext(v: Prisma.JsonValue | null): PushContext | null {
     oldScheduledAt: str('oldScheduledAt'),
     timeZone: str('timeZone') ?? null,
     otherPartyDisplayName: str('otherPartyDisplayName'),
+    ...(o.moveRequested === true ? { moveRequested: true } : {}),
   };
 }
 
