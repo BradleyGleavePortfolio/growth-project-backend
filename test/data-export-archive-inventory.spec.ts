@@ -32,6 +32,13 @@ function matches(
     if (key === 'OR' && Array.isArray(want)) {
       return want.some((w: Record<string, unknown>) => matches(row, w, related));
     }
+    if (key === 'AND' && Array.isArray(want)) {
+      return want.every((w: Record<string, unknown>) => matches(row, w, related));
+    }
+    if (want !== null && typeof want === 'object' && 'gt' in want) {
+      // Keyset paging (`id > last`): plain string order, like a C collation.
+      return String(row[key]) > String((want as { gt: unknown }).gt);
+    }
     if (want !== null && typeof want === 'object' && !(want instanceof Date)) {
       const parent = related(key, row);
       return parent !== undefined && matches(parent, stub<Record<string, unknown>>(want), related);
@@ -44,7 +51,15 @@ const U = 'user-1';
 const OTHER = 'user-2';
 const t = (n: number) => new Date(Date.UTC(2026, 9, 1, 0, 0, n));
 
-function store() {
+/**
+ * Store options. `unorderedPlans`: a query without an ORDER BY returns its
+ * rows in an order that depends on the OFFSET, as a database may when the
+ * plan changes between pages (the first page in insertion order, later
+ * pages reversed). `ignoreKeyset`: the store drops an `id > last` filter.
+ */
+type StoreOptions = { unorderedPlans?: boolean; ignoreKeyset?: boolean };
+
+function store(extra: Record<string, Row[]> = {}, opts: StoreOptions = {}) {
   const tables: Record<string, Row[]> = {
     recipe: [
       {
@@ -170,6 +185,8 @@ function store() {
       },
     ],
   };
+  for (const [name, rows] of Object.entries(extra))
+    tables[name] = [...(tables[name] ?? []), ...rows];
   const related = (key: string, row: Row): Row | undefined => {
     if (key === 'session') return tables.romanSession.find((s) => s.id === row.session_id);
     return undefined;
@@ -182,7 +199,12 @@ function store() {
       skip?: number;
       take?: number;
     }) => {
-      let rows = (tables[name] ?? []).filter((r) => matches(r, args.where, related));
+      const where =
+        opts.ignoreKeyset && Array.isArray(args.where.AND)
+          ? stub<Record<string, unknown>>(args.where.AND[0])
+          : args.where;
+      let rows = (tables[name] ?? []).filter((r) => matches(r, where, related));
+      if (opts.unorderedPlans && !args.orderBy && (args.skip ?? 0) > 0) rows = [...rows].reverse();
       for (const order of [...(args.orderBy ?? [])].reverse()) {
         const [col, dir] = Object.entries(order)[0];
         rows = [...rows].sort((a, b) => {
@@ -214,8 +236,11 @@ function store() {
   return stub<PrismaService>(prisma);
 }
 
-async function build(): Promise<Record<string, unknown>> {
-  const svc = new DataExportService(store());
+async function build(
+  extra: Record<string, Row[]> = {},
+  opts: StoreOptions = {},
+): Promise<Record<string, unknown>> {
+  const svc = new DataExportService(store(extra, opts));
   const buildArchive: unknown = Reflect.get(svc, '_buildArchive');
   if (typeof buildArchive !== 'function') throw new Error('no _buildArchive');
   const { buffer } = await buildArchive.call(svc, U, '00000000-0000-4000-8000-000000000001');
@@ -270,5 +295,84 @@ describe('data export archive inventory (C-636-2)', () => {
       [2, 'withdraw'],
     ]);
     expect(events.every((e) => e.user_id === U)).toBe(true);
+  });
+});
+
+// F-EXPORT-TIE: the archive pages through every table 500 rows at a time.
+// Pages used OFFSET over a query without an ORDER BY, so a database that
+// returned the later pages in another order (a plan change between pages)
+// gave an archive with repeated rows and missing rows. Pages now follow the
+// primary key (`id > last id`, ordered by id).
+describe('data export paging (F-EXPORT-TIE)', () => {
+  const COACH = 'coach-1';
+  /** `n` rows in a scrambled insertion order, so id order is not insertion order. */
+  const scrambled = (n: number, row: (i: number) => Row): Row[] =>
+    Array.from({ length: n }, (_, k) => row((k * 7919) % n));
+  const pad = (i: number) => String(i).padStart(5, '0');
+
+  const weightLogs = scrambled(1234, (i) => ({ id: `w-${pad(i)}`, user_id: U, weight_kg: 70 }));
+  const coachMessages = scrambled(1100, (i) => ({
+    id: `cm-${pad(i)}`,
+    sender_id: i % 3 === 0 ? COACH : U,
+    coach_id: COACH,
+    client_id: U,
+    body: i % 3 === 0 ? `coach note ${i}` : `client note ${i}`,
+    created_at: t(i % 60),
+  }));
+  const others = [
+    { id: 'w-other', user_id: OTHER, weight_kg: 90 },
+    { id: 'cm-other', sender_id: OTHER, coach_id: 'coach-2', client_id: OTHER, body: 'not yours' },
+  ];
+
+  const ids = (rows: unknown): string[] => stub<Row[]>(rows).map((r) => String(r.id));
+
+  it('exports every row exactly once when unordered pages come back in another order', async () => {
+    const archive = await build(
+      {
+        weightLog: [...weightLogs, others[0]],
+        coachMessage: [...coachMessages, others[1]],
+      },
+      { unorderedPlans: true },
+    );
+
+    const weights = ids(archive.weight_logs);
+    expect(weights).toHaveLength(1234);
+    expect(new Set(weights).size).toBe(1234);
+    expect([...weights].sort()).toEqual(weightLogs.map((r) => String(r.id)).sort());
+
+    const messages = stub<Row[]>(archive.coach_messages);
+    expect(messages).toHaveLength(1100);
+    expect(new Set(ids(messages)).size).toBe(1100);
+    expect(ids(messages).sort()).toEqual(coachMessages.map((r) => String(r.id)).sort());
+    // Redaction still applies on every page: the coach's own words never leave.
+    const fromCoach = messages.filter((m) => m.redacted === true);
+    expect(fromCoach).toHaveLength(367);
+    expect(JSON.stringify(messages)).not.toContain('coach note');
+    expect(JSON.stringify(archive)).not.toContain('not yours');
+  });
+
+  it('keeps the chronological sections oldest first across pages', async () => {
+    const consent = scrambled(1001, (i) => ({
+      id: `cx-${pad(i)}`,
+      user_id: U,
+      processor: 'anthropic',
+      purpose: 'client_ai_processing',
+      seq: i + 10,
+      action: 'grant',
+      created_at: t(1000 - i),
+    }));
+    const archive = await build({ aiProcessingConsentEvent: consent }, { unorderedPlans: true });
+    const events = stub<Row[]>(archive.ai_processing_consent_events);
+    // The 1,001 rows above plus the two events store() already holds for U.
+    expect(events).toHaveLength(1003);
+    expect(new Set(ids(events)).size).toBe(1003);
+    const times = events.map((e) => new Date(String(e.created_at)).getTime());
+    expect(times).toEqual([...times].sort((x, y) => x - y));
+  });
+
+  it('fails the export with the table name when a page would repeat, instead of looping', async () => {
+    await expect(build({ weightLog: weightLogs }, { ignoreKeyset: true })).rejects.toThrow(
+      'Data export paging stopped on weightLog: a page did not end on a newer row id.',
+    );
   });
 });
