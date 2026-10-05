@@ -140,6 +140,15 @@ FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE
 
 **BOOKING_REMINDERS_ENABLED=on, together with #632 (OR-110-5).** Same sequence with `"BOOKING_REMINDERS_ENABLED": "on"`. Only the literal `on` turns reminders on after #632.
 
+**FEATURE_WEARABLES_INGEST_POST=true (Wave B, on-device wearables).** Apply only after mobile #378 (refresh paced under the 60 per minute ingest limit; one sleep session per night) is approved and merged; the backend code is already deployed, so no deploy is needed:
+
+1. Merge the one-line flip PR (`"FEATURE_WEARABLES_INGEST_POST": "true"`).
+2. Run apply with `deploy_staged=true` (one rolling restart).
+3. Run plan. The row must read `Deployed | match | keep`.
+4. Owner device pass: connect Apple Health and Health Connect on a client account; both import without a 429 and the sleep for one night is counted once.
+
+Roll back with `"FEATURE_WEARABLES_INGEST_POST": "unset"` (or the emergency kill in the table above). The ingest routes then return `503 wearables_ingest_disabled` and the app keeps its saved progress.
+
 **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
 
 ## Notes and limits
