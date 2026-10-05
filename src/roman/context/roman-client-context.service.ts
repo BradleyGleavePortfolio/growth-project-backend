@@ -66,7 +66,7 @@ import { onRomanContextInvalidate } from './roman-context-invalidation';
 export const ROMAN_CONTEXT_MEMO_TTL_MS = 15_000;
 /** C-651-4: hard bound on memoised bundles held in process memory. */
 export const ROMAN_CONTEXT_MEMO_MAX_ENTRIES = 500;
-export const ROMAN_CONTEXT_MAX_QUERIES = 16;
+export const ROMAN_CONTEXT_MAX_QUERIES = 17;
 
 /** Recency windows / caps (ruling #6 scope, kept inside the token budget). */
 export const ROMAN_CTX_LIMITS = {
@@ -362,9 +362,10 @@ export class RomanClientContextService {
     const userId = caller.id;
     let queries = 0;
 
-    // Q1 — the user, profile, prefs and (current) coach in one round trip.
-    queries++;
-    const user = await this.prisma.user.findUnique({
+    // Q1 — the user, profile, prefs and (current) coach in one round trip, with
+    // Q2 — the client's open sub-coach delegation (B-665-3), in parallel.
+    queries += 2;
+    const userRead = this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         name: true,
@@ -380,6 +381,14 @@ export class RomanClientContextService {
         },
       },
     });
+    const [user, overlay] = await Promise.all([
+      userRead,
+      this.prisma.subCoachAssignment.findFirst({
+        where: { client_id: userId, unassigned_at: null },
+        orderBy: { assigned_at: 'desc' },
+        select: { head_coach_id: true, sub_coach_id: true },
+      }),
+    ]);
 
     const clock = localClock(now, user?.notification_prefs?.timezone ?? DEFAULT_TZ);
     const missing: string[] = [];
@@ -393,6 +402,11 @@ export class RomanClientContextService {
     // Both the DB role and the JWT role must say "student" (defence in depth:
     // the service already gates on the caller role; a mismatch gets nothing).
     const coachId = user.role === 'student' && caller.role === 'student' && coach ? coach.id : null;
+    // B-665-3: a delegated sub-coach assigns plans and meal plans and writes in
+    // the head-coach thread as itself (MessagingService pins the thread to the
+    // head coach). Only an open delegation from the current head coach counts.
+    const subCoachId = coachId && overlay?.head_coach_id === coachId ? overlay.sub_coach_id : null;
+    const coachSide: string[] = coachId ? (subCoachId ? [coachId, subCoachId] : [coachId]) : [];
 
     const today = clock.local_date;
     const d7 = addDays(today, -6);
@@ -452,7 +466,7 @@ export class RomanClientContextService {
           this.prisma.clientWorkoutAssignment.findMany({
             where: {
               client_id: userId,
-              assigned_by_coach_id: coachId,
+              assigned_by_coach_id: { in: coachSide },
               scheduled_for: {
                 gte: localDayStart(d14, tz),
                 lt: localDayStart(addDays(today, 1), tz),
@@ -475,7 +489,7 @@ export class RomanClientContextService {
           this.prisma.clientWorkoutAssignment.findMany({
             where: {
               client_id: userId,
-              assigned_by_coach_id: coachId,
+              assigned_by_coach_id: { in: coachSide },
               scheduled_for: {
                 gte: localDayStart(today, tz),
                 lt: localDayStart(addDays(plus14, 1), tz),
@@ -553,15 +567,15 @@ export class RomanClientContextService {
           }))
         : null,
       // Ruling #6: the recent client ↔ coach thread, BOTH directions. Still
-      // scoped to (current coach, this client); a sender outside the pair is
-      // impossible by the thread's own invariant and is dropped if seen.
+      // scoped to (current coach, this client); senders are the coach side
+      // (head coach and an open delegated sub-coach) or the client.
       coachId
         ? (queries++,
           this.prisma.coachMessage.findMany({
             where: {
               coach_id: coachId,
               client_id: userId,
-              sender_id: { in: [coachId, userId] },
+              sender_id: { in: [...coachSide, userId] },
               body: { not: null },
             },
             orderBy: { created_at: 'desc' },
@@ -574,7 +588,7 @@ export class RomanClientContextService {
           this.prisma.dailyMealPlanAssignment.findFirst({
             where: {
               client_id: userId,
-              assigned_by_coach_id: coachId,
+              assigned_by_coach_id: { in: coachSide },
               starts_on: { lte: dateOnly(today) },
               OR: [{ ends_on: null }, { ends_on: { gte: dateOnly(today) } }],
               daily_meal_plan: { archived_at: null },
@@ -871,10 +885,10 @@ export class RomanClientContextService {
     // ── coach ──
     const recent_messages: RomanCtxCoachMessage[] = [...coachMessages]
       .reverse() // oldest first for the model
-      .filter((m) => m.sender_id === coachId || m.sender_id === userId)
+      .filter((m) => m.sender_id === userId || coachSide.includes(m.sender_id ?? ''))
       .map((m) => ({
         date: ymdOf(m.created_at),
-        from: (m.sender_id === coachId ? 'coach' : 'client') as 'coach' | 'client',
+        from: (m.sender_id === userId ? 'client' : 'coach') as 'coach' | 'client',
         excerpt: clamp(m.body, 200),
       }))
       .filter((m): m is RomanCtxCoachMessage => m.excerpt !== null);

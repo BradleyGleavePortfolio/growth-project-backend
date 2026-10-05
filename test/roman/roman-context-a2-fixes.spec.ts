@@ -3,7 +3,9 @@
 // A2 (#665) FIX ROUND 1: B-665-1 one provider per wearable metric (the
 // resolveBest policy), B-665-2 an incomplete sample read publishes no totals,
 // B-665-3 assignment instants grouped by the client's local date,
-// B-665-4 history caps never hide today's or the next session.
+// B-665-4 history caps never hide today's or the next session; Opus B-665-2
+// the context route stays locked in a payment lockout; Opus B-665-3 rows from
+// an open delegated sub-coach are the client's plan and thread.
 
 import 'reflect-metadata';
 import {
@@ -13,6 +15,10 @@ import {
   localDayStart,
   summarizeWearables,
 } from '../../src/roman/context/roman-client-context.service';
+import {
+  isAllowedWhileLocked,
+  normalizePath,
+} from '../../src/checkout/dunning-v2/dunning-lockout.guard';
 import { makePersonaDb, FakeSafetyIntakeSource, NOW, P1 } from './fixtures/roman-personas';
 
 type Row = Record<string, unknown>;
@@ -275,5 +281,69 @@ describe('B-665-4 history caps never hide the next session', () => {
     expect(context.plan?.days_per_week).toBeNull();
     expect(context.data_quality.truncated).toContain('plan.upcoming');
     expect(query_count).toBeLessThanOrEqual(ROMAN_CONTEXT_MAX_QUERIES);
+  });
+});
+
+describe('Opus B-665-2 the context route stays locked during a payment lockout', () => {
+  it('GET /roman/context/me is locked; the Roman chat routes stay reachable', () => {
+    expect(isAllowedWhileLocked(normalizePath('/api/roman/context/me'))).toBe(false);
+    expect(isAllowedWhileLocked(normalizePath('/v1/roman/context'))).toBe(false);
+    expect(isAllowedWhileLocked(normalizePath('/api/roman/sessions'))).toBe(true);
+    expect(isAllowedWhileLocked(normalizePath('/api/roman/sessions/s1/messages'))).toBe(true);
+  });
+});
+
+describe('Opus B-665-3 an open delegated sub-coach writes the plan and the thread', () => {
+  const SUB = 'subcoach-S';
+  function delegated(open: boolean, head = 'coach-A') {
+    const db = makePersonaDb();
+    db.raw.subCoachOverlays.push({
+      client_id: P1,
+      head_coach_id: head,
+      sub_coach_id: SUB,
+      assigned_at: new Date('2026-09-01T00:00:00Z'),
+      unassigned_at: open ? null : new Date('2026-09-20T00:00:00Z'),
+    });
+    const open0 = p1Assignment(db, false);
+    db.raw.assignments.length = 0;
+    db.raw.assignments.push({
+      ...open0,
+      id: 'sub-today',
+      assigned_by_coach_id: SUB,
+      scheduled_for: new Date('2026-09-30T20:00:00Z'),
+      snapshot: { plan_name: 'Sub plan', plan_type: 'strength', exercises_json: [] },
+    });
+    db.raw.mealAssignments = db.raw.mealAssignments.map((m) => ({
+      ...m,
+      assigned_by_coach_id: SUB,
+    }));
+    db.raw.coachMessages.push({
+      coach_id: 'coach-A',
+      client_id: P1,
+      sender_id: SUB,
+      body: 'Swap lunges for step-ups this week',
+      created_at: new Date('2026-09-30T20:00:00Z'),
+    });
+    return { db, svc: new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource()) };
+  }
+
+  it("open delegation: the sub-coach plan, meal plan and message are the client's", async () => {
+    const { svc } = delegated(true);
+    const { context, query_count } = await svc.build(caller, NOW);
+    expect(context.plan?.today_session?.name).toBe('Sub plan');
+    expect(context.meal_plan).not.toBeNull();
+    const msg = context.coach.recent_messages.find((m) => m.excerpt.includes('step-ups'));
+    expect(msg?.from).toBe('coach');
+    expect(context.data_quality.missing).not.toContain('plan');
+    expect(query_count).toBeLessThanOrEqual(ROMAN_CONTEXT_MAX_QUERIES);
+  });
+
+  it('a closed delegation or one under another head coach adds nothing', async () => {
+    for (const { svc } of [delegated(false), delegated(true, 'coach-B')]) {
+      const { context } = await svc.build(caller, NOW);
+      expect(context.plan).toBeNull();
+      expect(context.meal_plan).toBeNull();
+      expect(JSON.stringify(context.coach.recent_messages)).not.toContain('step-ups');
+    }
   });
 });

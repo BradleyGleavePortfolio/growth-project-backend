@@ -308,7 +308,18 @@ const food = (
 
 const loggedFood = [
   // P1 today (PT 2026-09-30): 780 kcal / 62 g protein
-  food(P1, '2026-09-30', 320, 30, 20, 12, '2026-09-30T15:10:00Z', 1, 'Greek yogurt bowl', 'BREAKFAST'),
+  food(
+    P1,
+    '2026-09-30',
+    320,
+    30,
+    20,
+    12,
+    '2026-09-30T15:10:00Z',
+    1,
+    'Greek yogurt bowl',
+    'BREAKFAST',
+  ),
   food(P1, '2026-09-30', 460, 32, 50, 14, '2026-09-30T20:45:00Z', 1, 'Chicken rice bowl', 'LUNCH'),
   // P1 yesterday and earlier
   food(P1, '2026-09-29', 1500, 110, 150, 45, '2026-09-29T23:00:00Z'),
@@ -659,9 +670,30 @@ const communityPosts = [
 ];
 
 const wearableConnections = [
-  { user_id: P1, provider: 'OURA', status: 'connected', last_synced_at: new Date('2026-09-30T14:00:00Z'), disconnected_at: null, encrypted_access_token: 'WEARABLE-TOKEN-CANARY' },
-  { user_id: P1, provider: 'WHOOP', status: 'revoked', last_synced_at: null, disconnected_at: new Date('2026-09-01T00:00:00Z'), encrypted_access_token: 'WEARABLE-TOKEN-CANARY' },
-  { user_id: P4, provider: 'OURA', status: 'connected', last_synced_at: new Date('2026-09-30T14:00:00Z'), disconnected_at: null, encrypted_access_token: 'WEARABLE-TOKEN-CANARY' },
+  {
+    user_id: P1,
+    provider: 'OURA',
+    status: 'connected',
+    last_synced_at: new Date('2026-09-30T14:00:00Z'),
+    disconnected_at: null,
+    encrypted_access_token: 'WEARABLE-TOKEN-CANARY',
+  },
+  {
+    user_id: P1,
+    provider: 'WHOOP',
+    status: 'revoked',
+    last_synced_at: null,
+    disconnected_at: new Date('2026-09-01T00:00:00Z'),
+    encrypted_access_token: 'WEARABLE-TOKEN-CANARY',
+  },
+  {
+    user_id: P4,
+    provider: 'OURA',
+    status: 'connected',
+    last_synced_at: new Date('2026-09-30T14:00:00Z'),
+    disconnected_at: null,
+    encrypted_access_token: 'WEARABLE-TOKEN-CANARY',
+  },
 ];
 
 const sample = (user_id: string, metric: string, value: number, start: string, end = start) => ({
@@ -780,6 +812,8 @@ export interface PersonaDb {
     coachingSessions: Row[];
     /** OR-113-2 content-free spend-ledger rows written by RomanService. */
     aiRequestAudits: Row[];
+    /** SubCoachAssignment overlay rows (delegated sub-coach per client). */
+    subCoachOverlays: Row[];
   };
   /** Count of every delegate call, in order. */
   calls: string[];
@@ -808,6 +842,7 @@ export function makePersonaDb(): PersonaDb {
     wearableSamples: structuredClone(wearableSamples) as Row[],
     coachingSessions: structuredClone(coachingSessions) as Row[],
     aiRequestAudits: [] as Row[],
+    subCoachOverlays: [] as Row[],
   };
   const calls: string[] = [];
   const wheres: Array<{ table: string; where: Where | undefined }> = [];
@@ -882,6 +917,10 @@ export function makePersonaDb(): PersonaDb {
     communityPost: { findMany: many('communityPost', () => raw.communityPosts) },
     wearableConnection: { findMany: many('wearableConnection', () => raw.wearableConnections) },
     wearableSample: { findMany: many('wearableSample', () => raw.wearableSamples) },
+    subCoachAssignment: {
+      findFirst: first('subCoachAssignment', () => raw.subCoachOverlays),
+      findMany: many('subCoachAssignment', () => raw.subCoachOverlays),
+    },
     // Roman transcript tables (used by RomanService in the wiring tests)
     romanMessage: {
       create: jest.fn(async ({ data }: { data: Row }) => {
@@ -909,7 +948,9 @@ export function makePersonaDb(): PersonaDb {
         raw.aiRequestAudits.push({ ...data });
         return data;
       }),
-      aggregate: jest.fn(async () => ({ _sum: { prompt_token_estimate: 0, response_token_estimate: 0 } })),
+      aggregate: jest.fn(async () => ({
+        _sum: { prompt_token_estimate: 0, response_token_estimate: 0 },
+      })),
       update: jest.fn(async ({ where, data }: { where: { request_id: string }; data: Row }) => {
         const row = raw.aiRequestAudits.find((r) => r.request_id === where.request_id);
         if (row) Object.assign(row, data);
@@ -922,13 +963,27 @@ export function makePersonaDb(): PersonaDb {
     // ctx-v3 bookings: only the selected columns ever leave this double, so a
     // builder that stopped selecting would surface the notes canary.
     coachingSession: {
-      findMany: jest.fn(async (args: { where?: Where; orderBy?: Record<string, 'asc' | 'desc'>; take?: number; select?: Record<string, boolean> } = {}) => {
-        calls.push('coachingSession.findMany');
-        wheres.push({ table: 'coachingSession', where: args.where });
-        const rows = applyOrderTake(raw.coachingSessions.filter((r) => matches(r, args.where)), args);
-        const keys = Object.keys(args.select ?? {});
-        return keys.length ? rows.map((r) => Object.fromEntries(keys.map((k) => [k, r[k]]))) : rows;
-      }),
+      findMany: jest.fn(
+        async (
+          args: {
+            where?: Where;
+            orderBy?: Record<string, 'asc' | 'desc'>;
+            take?: number;
+            select?: Record<string, boolean>;
+          } = {},
+        ) => {
+          calls.push('coachingSession.findMany');
+          wheres.push({ table: 'coachingSession', where: args.where });
+          const rows = applyOrderTake(
+            raw.coachingSessions.filter((r) => matches(r, args.where)),
+            args,
+          );
+          const keys = Object.keys(args.select ?? {});
+          return keys.length
+            ? rows.map((r) => Object.fromEntries(keys.map((k) => [k, r[k]])))
+            : rows;
+        },
+      ),
     },
     communityWin: forbidden('communityWin'),
     bloodworkPanel: forbidden('bloodworkPanel'),
@@ -966,8 +1021,16 @@ export class FakeSafetyIntakeSource implements RomanSafetyIntakeSource {
       any_yes: true,
       flag_categories: ['joint_or_bone', 'bp_or_heart_medication'],
       screen: [
-        { question: 'Bone or joint problem?', answer: 'Yes, left knee replacement 2019', flagged: true },
-        { question: 'Blood pressure or heart medication?', answer: 'Yes, lisinopril', flagged: true },
+        {
+          question: 'Bone or joint problem?',
+          answer: 'Yes, left knee replacement 2019',
+          flagged: true,
+        },
+        {
+          question: 'Blood pressure or heart medication?',
+          answer: 'Yes, lisinopril',
+          flagged: true,
+        },
         { question: 'Chest pain with activity?', answer: 'No' },
       ],
       consult: [
@@ -1008,4 +1071,9 @@ export class FakeSafetyIntakeSource implements RomanSafetyIntakeSource {
 }
 
 /** Internal field names of the source that must never reach the prompt. */
-export const INTAKE_CANARIES = ['flag_categories', 'any_yes', 'joint_or_bone', 'bp_or_heart_medication'];
+export const INTAKE_CANARIES = [
+  'flag_categories',
+  'any_yes',
+  'joint_or_bone',
+  'bp_or_heart_medication',
+];
