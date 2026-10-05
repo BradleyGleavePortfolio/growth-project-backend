@@ -91,6 +91,8 @@ interface World {
     retrieveSubscription: jest.Mock;
     retrievePaymentMethod: jest.Mock;
     cancelSubscription: jest.Mock;
+    pauseSubscriptionCollection: jest.Mock;
+    listOpenInvoices: jest.Mock;
   };
   push: jest.Mock;
   email: jest.Mock;
@@ -113,6 +115,9 @@ function buildWorld(): World {
     retrievePaymentMethod: jest.fn(async () => ({ card: { last4: '4242' } })),
     // Present only so a stray cancel would be observed (v2 must never call it).
     cancelSubscription: jest.fn(async () => ({ status: 'canceled' })),
+    // D2c (R-DISPUTE-PAUSE): a dispute pauses billing at Stripe.
+    pauseSubscriptionCollection: jest.fn(async () => ({ status: 'active' })),
+    listOpenInvoices: jest.fn(async () => []),
   };
   const push = jest.fn(async () => true);
   const email = jest.fn(async () => ({ ok: true }));
@@ -575,12 +580,17 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
     expect(stateRow(w)?.locked_out_at).toBeNull();
   });
 
-  it('F5: a skipped renewal resync (outer tx, no prefetch) still closes dunning and unlocks', async () => {
+  it('F5: a renewal resync without its prefetch (outer tx) is redelivered; the redelivery closes dunning and unlocks', async () => {
     await pastDueResync(w);
     await failAttempt(w, 1);
     await w.v2.runSweep(at(10 * DAY + HOUR));
     expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
-    await w.handler.handle(fixture('invoice.paid'), w.fake.client(true), undefined);
+    // Main's B-680-3: never acknowledged without its access and money effects.
+    await expect(
+      w.handler.handle(fixture('invoice.paid'), w.fake.client(true), undefined),
+    ).rejects.toThrow(/prefetch unavailable/);
+    expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
+    await w.handler.handle(fixture('invoice.paid'));
     expect(stateRow(w)).toMatchObject({ status: 'resolved', locked_out_at: null });
     expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
   });
@@ -595,7 +605,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
     expect(stateRow(w)?.locked_out_at).toBeNull();
   });
 
-  it('F11: a refund never opens a dunning cycle; a dispute opens the compressed one', async () => {
+  it('F11: a refund never opens a dunning cycle; a dispute pauses the plan', async () => {
     await pastDueResync(w);
     await failAttempt(w, 1);
     w.stripeSubStatus.value = 'active';
@@ -615,10 +625,10 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
 
     await w.handler.handle(fixture('charge.dispute.created', { created: sec(at(5 * DAY)) }));
     await flush();
-    expect(stateRow(w)).toMatchObject({ status: 'active', step_index: 2, reversal_count: 1 });
-    // Compressed: coach at +4 days, lock at +7 days from the dispute.
-    const status = await w.v2.getClientStatus('client-1');
-    expect(status.lockout_at).toBe(at(12 * DAY).toISOString());
+    // D2c (R-DISPUTE-PAUSE): locked at once, billing paused at Stripe.
+    expect(stateRow(w)).toMatchObject({ status: 'active', last_failure_reason: 'charge_disputed' });
+    expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
+    expect(w.stripe.pauseSubscriptionCollection).toHaveBeenCalledTimes(1);
   });
 
   it('flag OFF: v2 is inert end to end (no claim, no notice, no lock, past_due paywalled as before)', async () => {

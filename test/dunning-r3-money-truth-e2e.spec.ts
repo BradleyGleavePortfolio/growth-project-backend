@@ -729,9 +729,12 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
         status: 'needs_response',
         created_at: at(12 * DAY),
       });
+      // D2c (R-DISPUTE-PAUSE): the pause needs the Stripe dispute id.
       const r = await w.v2.handleLateReversal({
         purchaseId: 'purchase-1',
         reversedChargeAt: at(12 * DAY),
+        disputeId: 'dp_1',
+        chargeId: 'ch_1',
       });
       expect(r.opened).toBe(true);
     }
@@ -770,7 +773,7 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
       expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
     });
 
-    it('B-628-13 order 2: a dispute during a payment cycle, then the renewal is paid: the cycle stays as the dispute cycle until the dispute is won', async () => {
+    it('B-628-13 order 2: a dispute during a payment cycle, then the renewal is paid: the cycle stays as the dispute cycle; a won dispute keeps the pause', async () => {
       await failRenewal(w);
       expect(stateRow(w)?.status).toBe('active');
       expect(stateRow(w)?.last_failure_reason).not.toBe('charge_disputed');
@@ -791,7 +794,8 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
         disputeId: 'dp_9',
         chargeId: 'ch_0',
       });
-      expect(r).toMatchObject({ opened: false, reason: 'cycle_already_active' });
+      // D2c (R-DISPUTE-PAUSE): the dispute pauses the plan in the open cycle.
+      expect(r).toMatchObject({ opened: true, reason: 'paused' });
       expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
       // The renewal is paid while dispute dp_9 is open.
       w.stripe.subs.get('sub_dv2_client')!.default_payment_method = 'pm_new_ok';
@@ -803,17 +807,17 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
         last_failure_reason: 'charge_disputed',
       });
       expect(await w.v2.isDisputeCycleOpen('purchase-1')).toBe(true);
-      // Only the dispute closing in the client's favour ends it.
+      // D2c (R-DISPUTE-PAUSE): a won dispute keeps the pause; the coach restarts.
       const closed = await w.v2.onDisputeClosed({
         chargeId: 'ch_0',
         disputeId: 'dp_9',
         status: 'won',
       });
-      expect(closed).toEqual({ resolved: true, reason: 'dispute_won' });
-      expect(stateRow(w)?.status).toBe('resolved');
+      expect(closed).toEqual({ resolved: false, reason: 'pause_kept' });
+      expect(stateRow(w)?.status).toBe('active');
     });
 
-    it('locks on its Day 10 although the subscription is active; a renewal payment and a card update do not settle it; a won dispute does', async () => {
+    it('locks at once although the subscription is active; a renewal payment, a card update and a won dispute do not settle it', async () => {
       await openDispute();
       // A renewal invoice.paid while the dispute is open keeps the cycle.
       await w.handler.handle(fixture('invoice.paid'));
@@ -822,9 +826,8 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
         status: 'active',
         last_failure_reason: 'charge_disputed',
       });
-      const lockAt = at(19 * DAY + 10 * MIN);
-      jest.setSystemTime(lockAt);
-      expect((await w.v2.runSweep(lockAt)).locked).toBe(1);
+      // D2c (R-DISPUTE-PAUSE): the dispute locked the plan when it paused it.
+      expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
       expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
       expect((await w.v2.getClientStatus('client-1')).kind).toBe('dispute');
       const { res } = await cardUpdate(w, 'pm_new_ok', 8);
@@ -836,10 +839,10 @@ describe('S-DUNNING-R3: money truth, fencing, durable intent (stateful Stripe, f
         source_stripe_charge_id: 'ch_1',
         purchase_id: 'purchase-1',
       });
-      const closed = await w.v2.onDisputeClosed({ chargeId: 'ch_1', status: 'won' });
-      expect(closed.resolved).toBe(true);
-      expect(stateRow(w)).toMatchObject({ status: 'resolved', locked_out_at: null });
-      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
+      const closed = await w.v2.onDisputeClosed({ chargeId: 'ch_1', disputeId: 'dp_1', status: 'won' });
+      expect(closed.resolved).toBe(false);
+      expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
+      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
     });
   });
 
@@ -1501,8 +1504,12 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
       lockedDisputeCycle();
       dispute('won', 'ch_won', 'won', 1);
       dispute('open', 'ch_open', 'needs_response', 2);
-      const closed = await w.v2.onDisputeClosed({ chargeId: 'ch_won', status: 'won' });
-      expect(closed).toEqual({ resolved: false, reason: 'other_dispute_outstanding' });
+      const closed = await w.v2.onDisputeClosed({
+        chargeId: 'ch_won',
+        disputeId: 'dp_won',
+        status: 'won',
+      });
+      expect(closed.resolved).toBe(false);
       expect(stateRow(w)).toMatchObject({
         status: 'active',
         last_failure_reason: 'charge_disputed',
@@ -1539,7 +1546,7 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
       expect(stateRow(w)?.status).toBe('active');
     });
 
-    it('the closing event wins over a table row the dispute handler has not updated yet: last open dispute won -> resolved and unlocked', async () => {
+    it('the closing event wins over a table row the dispute handler has not updated yet: last open dispute won keeps the pause', async () => {
       await failRenewal(w);
       lockedDisputeCycle();
       dispute('a', 'ch_a', 'won', 1);
@@ -1549,9 +1556,10 @@ describe('S-DUNNING-R4: durable money intent, dispute obligations, claimed notic
         disputeId: 'dp_won',
         status: 'won',
       });
-      expect(closed).toEqual({ resolved: true, reason: 'dispute_won' });
-      expect(stateRow(w)).toMatchObject({ status: 'resolved', locked_out_at: null });
-      expect(purchaseRow(w)?.entitlement_active).toBe(true);
+      // D2c (R-DISPUTE-PAUSE): access returns only through the coach restart.
+      expect(closed).toEqual({ resolved: false, reason: 'pause_kept' });
+      expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
+      expect(purchaseRow(w)?.entitlement_active).toBe(false);
     });
   });
 
@@ -1827,7 +1835,7 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
       disputeId: 'dp_b',
       reversedChargeAt: at(13 * DAY),
     });
-    expect(probeB).toEqual({ opened: false, reason: 'cycle_already_active' });
+    expect(probeB).toEqual({ opened: false, reason: 'already_paused' });
     expect(obligation('dp_b')).toMatchObject({ status: 'open', purchase_id: 'purchase-1' });
     w.fake.find('chargeDispute', { id: 'cd-a' })!.status = 'won';
     const closedA = await w.v2.onDisputeClosed({
@@ -1835,20 +1843,20 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
       disputeId: 'dp_a',
       status: 'won',
     });
-    expect(closedA).toEqual({ resolved: false, reason: 'other_dispute_outstanding' });
+    expect(closedA.resolved).toBe(false);
     expect(stateRow(w)).toMatchObject({ status: 'active', last_failure_reason: 'charge_disputed' });
     expect(obligation('dp_a')?.status).toBe('won');
-    // B wins later: now every obligation is settled in the client's favour.
+    // B wins later: D2c (R-DISPUTE-PAUSE) keeps the pause for the coach restart.
     const closedB = await w.v2.onDisputeClosed({
       chargeId: 'ch_b',
       disputeId: 'dp_b',
       status: 'won',
     });
-    expect(closedB).toEqual({ resolved: true, reason: 'dispute_won' });
-    expect(stateRow(w)?.status).toBe('resolved');
+    expect(closedB.resolved).toBe(false);
+    expect(stateRow(w)?.status).toBe('active');
   });
 
-  it("A wins before B's probe runs: B (created before that resolution) reopens the reversal cycle", async () => {
+  it("A wins before B's probe runs: the pause stays and B's probe records its obligation", async () => {
     await cycleFromDisputeA();
     jest.setSystemTime(at(14 * DAY));
     const closedA = await w.v2.onDisputeClosed({
@@ -1856,14 +1864,16 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
       disputeId: 'dp_a',
       status: 'won',
     });
-    expect(closedA.resolved).toBe(true);
-    // B was created on Day 13 (before A's resolution), its probe lands now.
+    // D2c (R-DISPUTE-PAUSE): A's win keeps the pause.
+    expect(closedA.resolved).toBe(false);
+    // B was created on Day 13, its probe lands now.
     const probeB = await w.v2.detectAndHandleLateReversal({
       chargeId: 'ch_b',
       disputeId: 'dp_b',
       reversedChargeAt: at(13 * DAY),
     });
-    expect(probeB).toEqual({ opened: true, reason: 'compressed_cycle_opened' });
+    expect(probeB).toEqual({ opened: false, reason: 'already_paused' });
+    expect(obligation('dp_b')).toMatchObject({ status: 'open', purchase_id: 'purchase-1' });
     expect(stateRow(w)).toMatchObject({ status: 'active', last_failure_reason: 'charge_disputed' });
     // A redelivered created probe for B is a no-op (not a second cycle).
     const again = await w.v2.detectAndHandleLateReversal({
@@ -1874,26 +1884,27 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
     expect(again.opened).toBe(false);
   });
 
-  it("B's closed (won) webhook lands before its created one: the late created event opens nothing", async () => {
+  it("B's closed (won) webhook lands before its created one: the late created event changes nothing", async () => {
     await cycleFromDisputeA();
     w.fake.find('chargeDispute', { id: 'cd-a' })!.status = 'won';
+    // D2c (R-DISPUTE-PAUSE): a won dispute keeps the pause.
     expect(
       (await w.v2.onDisputeClosed({ chargeId: 'ch_a', disputeId: 'dp_a', status: 'won' })).resolved,
-    ).toBe(true);
+    ).toBe(false);
     jest.setSystemTime(at(15 * DAY));
     const closedB = await w.v2.onDisputeClosed({
       chargeId: 'ch_b',
       disputeId: 'dp_b',
       status: 'won',
     });
-    expect(closedB).toEqual({ resolved: false, reason: 'no_open_dispute_cycle' });
+    expect(closedB).toEqual({ resolved: false, reason: 'pause_kept' });
     const lateCreated = await w.v2.detectAndHandleLateReversal({
       chargeId: 'ch_b',
       disputeId: 'dp_b',
       reversedChargeAt: at(15 * DAY),
     });
-    expect(lateCreated).toEqual({ opened: false, reason: 'dispute_already_won' });
-    expect(stateRow(w)?.status).toBe('resolved');
+    expect(lateCreated).toEqual({ opened: false, reason: 'already_paused' });
+    expect(stateRow(w)?.status).toBe('active');
   });
 
   it('a lost closure is recorded and outvotes a later contradictory won event for the same dispute', async () => {
@@ -1903,7 +1914,7 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
       disputeId: 'dp_a',
       status: 'lost',
     });
-    expect(lost).toEqual({ resolved: false, reason: 'not_won' });
+    expect(lost).toEqual({ resolved: false, reason: 'pause_kept' });
     expect(obligation('dp_a')?.status).toBe('lost');
     const won = await w.v2.onDisputeClosed({ chargeId: 'ch_a', disputeId: 'dp_a', status: 'won' });
     expect(won.resolved).toBe(false);
@@ -1911,7 +1922,7 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
     expect(stateRow(w)?.status).toBe('active');
   });
 
-  it('the Day 10 sweep locks while a recorded obligation is open, even when the ledger shows only won disputes', async () => {
+  it('the lock holds through the Day 10 sweep while a recorded obligation is open, even when the ledger shows only won disputes', async () => {
     await cycleFromDisputeA();
     await w.v2.detectAndHandleLateReversal({
       chargeId: 'ch_b',
@@ -1921,7 +1932,8 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
     w.fake.find('chargeDispute', { id: 'cd-a' })!.status = 'won';
     const lockAt = at(19 * DAY + 10 * MIN);
     jest.setSystemTime(lockAt);
-    expect((await w.v2.runSweep(lockAt)).locked).toBe(1);
+    // D2c (R-DISPUTE-PAUSE): the pause locked at once; the sweep keeps it.
+    await w.v2.runSweep(lockAt);
     expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
     expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
   });
@@ -1966,7 +1978,7 @@ describe('S-DUNNING-R5: every dispute webhook records its obligation (B-628-8 ra
       paymentIntentId: 'pi_renewal_9',
       reversedChargeAt: at(13 * DAY),
     });
-    expect(probe.reason).toBe('cycle_already_active');
+    expect(probe.reason).toBe('already_paused');
     expect(obligation('dp_renewal_9')).toMatchObject({
       purchase_id: 'purchase-1',
       status: 'open',
