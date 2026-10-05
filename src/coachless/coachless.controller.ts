@@ -37,6 +37,10 @@ function headerValue(v: string | string[] | undefined): string {
 @ApiBearerAuth('bearer')
 @Controller('coachless')
 @UseGuards(JwtAuthGuard, CoachlessFeatureGuard)
+// Every account role reaches the handlers, which answer non-students
+// specifically (eligible: false on Home, role_cannot_redeem on check and
+// redeem) instead of a bare 403 (roles-enforced gate).
+@Roles('student', 'coach', 'owner', 'sub_coach')
 export class CoachlessController {
   constructor(
     private readonly home: CoachlessHomeService,
