@@ -137,6 +137,9 @@ export class RomanController {
     // OR-113-2 — daily spend cap, checked before the turn is stored (coded
     // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
     if (!crisis) await this.roman.assertDailyCapacity(caller);
+    // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
+    // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
+    if (!crisis) await this.roman.assertCoachPoolOpen(caller);
     await this.roman.appendMessage(caller, session.id, {
       role: 'user',
       content: dto.content,

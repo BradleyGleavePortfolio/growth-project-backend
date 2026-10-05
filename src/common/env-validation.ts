@@ -2114,9 +2114,9 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'ROMAN_DAILY_COST_CAP_USD',
     tier: 'optional',
-    default: 'unset → 25 (ROMAN_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 25, never no cap',
+    default: 'unset → 100 (ROMAN_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 100, never no cap',
     reason:
-      'Daily spend cap for all Roman turns together (UTC day, US dollars). Over the cap Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 25.',
+      'Platform-wide daily spend ceiling for all Roman turns together (UTC day, US dollars), a runaway breaker sized to launch volume; the per-client limit is the 429 ROMAN_RATE_LIMIT turn cap and the per-coach bound is the monthly AI credit pool. Over the ceiling Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 100.',
   },
   {
     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',

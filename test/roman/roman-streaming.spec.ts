@@ -681,6 +681,19 @@ describe('Roman — a crisis message is answered without box 2; nothing else is'
     expect(messages).toHaveLength(2);
   });
 
+  it.each(['I think I am going into anaphylactic shock', 'I took a whole bottle of pills'])(
+    'A-666-1 (Opus) no grant + acute emergency without the trigger word (%s): the 911 template, zero model calls',
+    async (content) => {
+      const { ctrl, anthropic, messages } = setup([]);
+      const { res, writes } = makeRes();
+      await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content });
+      const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+      expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.emergency);
+      expect(anthropic.messages.stream).not.toHaveBeenCalled();
+      expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+    },
+  );
+
   it('no AI provider configured: an emergency message still gets the 911 template', async () => {
     const { ctrl, messages } = setup(['user-A'], false);
     const { res, writes } = makeRes();
