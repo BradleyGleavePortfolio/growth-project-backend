@@ -7,16 +7,33 @@ import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
 export class LessonsService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * The one coach whose lessons this user may see: a coach sees their own,
+   * a client sees their coach's. A client with no coach (coachless sign-up,
+   * or a coach link that was removed) has no lesson scope at all, so every
+   * read returns nothing and every write is refused. Lessons always belong
+   * to a coach (Lesson.coach_id is required); there is no platform library.
+   */
+  private lessonCoachIdFor(
+    user: { id: string; role: string; coach_id: string | null } | null,
+  ): string | null {
+    if (!user) return null;
+    if (user.role === 'coach') return user.id;
+    return user.coach_id ?? null;
+  }
+
   async getLessons(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { profile: true },
     });
 
-    const coachId = user?.role === 'coach' ? user.id : user?.coach_id;
+    // B2: before this, a missing coach meant no coach filter, so a coachless
+    // client's Learn tab listed every coach's lessons.
+    const coachId = this.lessonCoachIdFor(user);
+    if (!coachId) return [];
 
-    const where: Prisma.LessonWhereInput = {};
-    if (coachId) where.coach_id = coachId;
+    const where: Prisma.LessonWhereInput = { coach_id: coachId };
 
     // Filter by user's goal type if available
     if (user?.profile?.goal_type) {
@@ -84,6 +101,17 @@ export class LessonsService {
   }
 
   async completeLesson(userId: string, lessonId: string) {
+    // Only a lesson this client can see may be marked complete.
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const coachId = this.lessonCoachIdFor(user);
+    const lesson = coachId
+      ? await this.prisma.lesson.findFirst({
+          where: { id: lessonId, coach_id: coachId },
+          select: { id: true },
+        })
+      : null;
+    if (!lesson) throw new NotFoundException('Lesson not found');
+
     const existing = await this.prisma.lessonCompletion.findFirst({
       where: { user_id: userId, lesson_id: lessonId },
     });
@@ -101,12 +129,16 @@ export class LessonsService {
       include: { profile: true, lesson_completions: true },
     });
 
-    const completedIds = user?.lesson_completions.map(c => c.lesson_id) || [];
+    // B2: same coach scope as getLessons; no coach means no lessons.
+    const coachId = this.lessonCoachIdFor(user);
+    if (!user || !coachId) return [];
+
+    const completedIds = user.lesson_completions.map(c => c.lesson_id);
 
     return this.prisma.lesson.findMany({
       where: {
         id: { notIn: completedIds },
-        coach_id: user?.coach_id || undefined,
+        coach_id: coachId,
       },
       take: 5,
       orderBy: { order_index: 'asc' },
