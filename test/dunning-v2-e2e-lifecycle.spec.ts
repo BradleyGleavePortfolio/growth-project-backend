@@ -72,8 +72,8 @@ class FakeController {
   handler(): void {}
 }
 
-function ctxFor(path: string, user?: { id: string; role: string }) {
-  const req = { path, user };
+function ctxFor(path: string, user?: { id: string; role: string }, method = 'GET') {
+  const req = { path, user, method };
   return stub({
     switchToHttp: () => ({ getRequest: () => req }),
     getHandler: () => FakeController.prototype.handler,

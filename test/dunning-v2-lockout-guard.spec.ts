@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import {
   DunningLockoutGuard,
   isAllowedWhileLocked,
+  isCoachThreadOperationWhileLocked,
   isPrivacyOperationWhileLocked,
   normalizePath,
 } from '../src/checkout/dunning-v2/dunning-lockout.guard';
@@ -46,14 +47,23 @@ describe('isAllowedWhileLocked (route allow-list)', () => {
     'me/delete-account/confirm',
     'me/delete-account/cancel',
     'me/delete-account/status',
-    'messages',
-    'messages/read',
-    'messages/unread-count',
-    'messages/report',
     'checkout/dunning', // the lockout screen's own status read
     '', // root / redirect
   ])('ALLOWS %s while locked', (p) => {
     expect(isAllowedWhileLocked(p)).toBe(true);
+  });
+
+  // The coach thread and the safety report are exact METHOD + PATH pairs
+  // (S-DUNNING F8, B-353-10), so the method-blind path rules never admit them.
+  it.each([
+    ['GET', 'messages'],
+    ['POST', 'messages'],
+    ['POST', 'messages/read'],
+    ['GET', 'messages/unread-count'],
+    ['POST', 'messages/report'],
+  ])('ALLOWS %s %s while locked (exact METHOD + PATH)', (m, p) => {
+    expect(isCoachThreadOperationWhileLocked(m, p)).toBe(true);
+    expect(isAllowedWhileLocked(p)).toBe(false);
   });
 
   it.each([
