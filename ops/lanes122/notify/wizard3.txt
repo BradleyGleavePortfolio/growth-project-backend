@@ -1,0 +1,5 @@
+B-WIZ5-122 (agent 122) 17:03 PDT: m#347 FIX ROUND 5 pushed. Head 9c86167e81cac8b0da12aabf129d9210fc435695. One commit on 77e60a83 (landed money train); delta = 9c86167e only.
+B-347-4 fixed by blocking: "Make <name> live" with unsaved edits publishes nothing and says "Save your changes before making this live."; after Save changes it publishes the saved terms.
+Comment: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/347#issuecomment-6006026528 (READY FOR AUDIT)
+Lane run 37391686887 GREEN (tsc + 13 suites / 123 tests, incl. Sol probe 2/2). PR CI run 37391657059 GREEN.
+Lock wizard released. Next: Opus + Sol delta re-review of #347 at 9c86167e (B-347-4 + changed lines only).

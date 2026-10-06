@@ -1,0 +1,30 @@
+diff --git a/src/screens/client/MessagesScreen.tsx b/src/screens/client/MessagesScreen.tsx
+index d8d29c7..f206603 100644
+--- a/src/screens/client/MessagesScreen.tsx
++++ b/src/screens/client/MessagesScreen.tsx
+@@ -789,6 +789,8 @@ export function reconcilePending(prev: Message[], serverList: Message[]): Messag
+     : null;
+   return prev.filter((m) => {
+     if (!m.pending) return false;
++    const key = m.v2?.client_message_id; // v2 unsent row: leaves only when the server returns this key
++    if (key) return !serverList.some((s) => s.v2?.client_message_id === key);
+     if (serverList.some((s) => s.body === m.body)) return false;
+     if (oldestServerTs !== null) {
+       const pendingTs = new Date(m.created_at).getTime();
+diff --git a/src/screens/client/__tests__/MessagesScreenCache.test.ts b/src/screens/client/__tests__/MessagesScreenCache.test.ts
+index 3f70072..7f8cbfe 100644
+--- a/src/screens/client/__tests__/MessagesScreenCache.test.ts
++++ b/src/screens/client/__tests__/MessagesScreenCache.test.ts
+@@ -71,6 +71,12 @@ describe('reconcilePending', () => {
+     expect(reconcilePending(prev, server)).toEqual([]);
+   });
+ 
++  it('keeps a keyed unsent row when only an older equal-text row returns; drops it on its own key', () => {
++    const row = (id: string, key: string, pending?: boolean) => ({ id, sender_role: 'client' as const, body: 'Done', created_at: '2026-05-21T10:00:00Z', pending, v2: { reply_to: null, deleted: false, edited_at: null, pinned_at: null, client_message_id: key } });
++    expect(reconcilePending([row('pending_k2', 'k2', true)], [row('srv-1', 'k1')]).map((m) => m.id)).toEqual(['pending_k2']);
++    expect(reconcilePending([row('pending_k2', 'k2', true)], [row('srv-2', 'k2')])).toEqual([]);
++  });
++
+   it('keeps a pending message newer than the oldest server message', () => {
+     const prev: Msg[] = [
+       {

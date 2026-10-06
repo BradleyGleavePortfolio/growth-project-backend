@@ -1,0 +1,9 @@
+B-MSG2-122 Mon Oct  5 16:53:43 PDT 2026 — m#377 FIX ROUND 1 pushed, READY FOR AUDIT
+m#371 d4244f2cab5a3d89124a5f56221ef389527d525b (unchanged, dual APPROVE)
+m#377 fae228c8f1609c24f9a581c74393b072eea23c12 (was 316f0a13); size 1,500/1,500 (zero headroom)
+Fix B-377-1: reconcilePending keeps a keyed v2 unsent row until the server returns the same client_message_id.
+Comment: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/377#issuecomment-6005846596
+Lane (tsc + 10 messaging suites + both lens probes, 77/77): https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37390700458
+PR CI: https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37390955305
+Re-review: B-377-1 + 8 changed lines. Flag-off legacy path not changed (pending rows unkeyed); follow-up only if launching flag OFF.
+PR CI 37390955305 success at fae228c (16:57 PDT)

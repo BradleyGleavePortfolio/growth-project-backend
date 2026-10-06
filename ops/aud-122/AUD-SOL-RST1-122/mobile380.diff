@@ -1,0 +1,599 @@
+diff --git a/src/components/coach/DisputePausedPlansCard.tsx b/src/components/coach/DisputePausedPlansCard.tsx
+new file mode 100644
+index 0000000..a331d2e
+--- /dev/null
++++ b/src/components/coach/DisputePausedPlansCard.tsx
+@@ -0,0 +1,130 @@
++/**
++ * R-DISPUTE-PAUSE coach card on the client detail screen (the screen the
++ * coach's dispute alert opens). Lists each of this client's plans that the
++ * backend reports as paused by a payment dispute or inquiry, with a
++ * "Restart plan" button behind a confirm dialog. Renders nothing when no
++ * plan is dispute-paused or the read fails.
++ */
++import React, { useCallback, useEffect, useState } from 'react';
++import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
++import type { ThemeColors } from '../../theme/ThemeProvider';
++import { formatCurrencyCents } from '../../utils/currency';
++import {
++  loadDisputePausedPlans,
++  restartDisputePausedPlan,
++  type DisputePausedPlan,
++  type RestartOutcome,
++} from '../../entitlements/dunning/coachDisputeRestart';
++
++interface Props {
++  clientUserId: string;
++  clientName: string;
++  /** Bumped by the screen's pull-to-refresh. */
++  reloadKey?: number;
++  colors: ThemeColors;
++}
++
++export const RESTART_CONFIRM_TITLE = 'Restart this plan?';
++export function restartConfirmBody(clientName: string): string {
++  return `Billing for ${clientName || 'the client'} resumes on the plan's usual schedule and access to the plan returns. Restart only once the payment dispute or inquiry is resolved or settled.`;
++}
++
++export function DisputePausedPlansCard({ clientUserId, clientName, reloadKey = 0, colors }: Props) {
++  const [plans, setPlans] = useState<DisputePausedPlan[]>([]);
++  const [busyId, setBusyId] = useState<string | null>(null);
++  const [outcomes, setOutcomes] = useState<Record<string, RestartOutcome>>({});
++
++  useEffect(() => {
++    let live = true;
++    setOutcomes({});
++    loadDisputePausedPlans(clientUserId)
++      .then((list) => {
++        if (live) setPlans(list);
++      })
++      .catch(() => {
++        if (live) setPlans([]);
++      });
++    return () => {
++      live = false;
++    };
++  }, [clientUserId, reloadKey]);
++
++  const restart = useCallback(async (purchaseId: string) => {
++    setBusyId(purchaseId);
++    const out = await restartDisputePausedPlan(purchaseId);
++    setOutcomes((prev) => ({ ...prev, [purchaseId]: out }));
++    setBusyId(null);
++  }, []);
++
++  const confirmRestart = useCallback(
++    (purchaseId: string) => {
++      Alert.alert(RESTART_CONFIRM_TITLE, restartConfirmBody(clientName), [
++        { text: 'Cancel', style: 'cancel' },
++        { text: 'Restart plan', onPress: () => void restart(purchaseId) },
++      ]);
++    },
++    [clientName, restart],
++  );
++
++  if (plans.length === 0) return null;
++
++  return (
++    <View testID="dispute-paused-plans" style={[styles.card, { backgroundColor: colors.noticeWarningBg }]}>
++      {plans.map((plan) => {
++        const out = outcomes[plan.purchaseId];
++        const amount =
++          plan.amountCents !== null ? formatCurrencyCents(plan.amountCents, plan.currency ?? 'usd') : null;
++        const showButton = !out || (!out.ok && !out.final);
++        return (
++          <View key={plan.purchaseId} style={styles.plan}>
++            <Text style={[styles.title, { color: colors.noticeWarningText }]}>
++              {out?.ok ? 'Plan restarted' : 'Plan paused after a payment dispute or inquiry'}
++            </Text>
++            {out?.ok ? null : (
++              <Text style={[styles.body, { color: colors.textSecondary }]}>
++                {`The bank opened a dispute or inquiry about a payment on this plan${
++                  amount ? ` (${amount})` : ''
++                }. Access to this plan has ended and its billing is paused until the plan is restarted.`}
++              </Text>
++            )}
++            {out ? (
++              <Text
++                testID={`dispute-restart-outcome-${plan.purchaseId}`}
++                accessibilityLiveRegion="polite"
++                style={[styles.body, { color: out.ok ? colors.success : colors.textPrimary }]}
++              >
++                {out.message}
++              </Text>
++            ) : null}
++            {showButton ? (
++              <TouchableOpacity
++                testID={`dispute-restart-${plan.purchaseId}`}
++                accessibilityRole="button"
++                accessibilityLabel="Restart plan"
++                disabled={busyId !== null}
++                onPress={() => confirmRestart(plan.purchaseId)}
++                style={[styles.button, { backgroundColor: colors.primary }, busyId !== null && styles.dim]}
++              >
++                {busyId === plan.purchaseId ? (
++                  <ActivityIndicator color={colors.textOnPrimary} />
++                ) : (
++                  <Text style={[styles.buttonText, { color: colors.textOnPrimary }]}>Restart plan</Text>
++                )}
++              </TouchableOpacity>
++            ) : null}
++          </View>
++        );
++      })}
++    </View>
++  );
++}
++
++const styles = StyleSheet.create({
++  card: { borderRadius: 4, padding: 16, marginBottom: 16, gap: 16 },
++  plan: { gap: 8 },
++  title: { fontFamily: 'Inter_600SemiBold', fontSize: 15, fontWeight: '600' },
++  body: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
++  button: { alignSelf: 'flex-start', borderRadius: 4, paddingVertical: 10, paddingHorizontal: 18, minHeight: 44, justifyContent: 'center' },
++  buttonText: { fontFamily: 'Inter_600SemiBold', fontSize: 14, fontWeight: '600', letterSpacing: 0.5 },
++  dim: { opacity: 0.6 },
++});
+diff --git a/src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx b/src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx
+new file mode 100644
+index 0000000..6dd4b6b
+--- /dev/null
++++ b/src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx
+@@ -0,0 +1,214 @@
++/**
++ * R-DISPUTE-PAUSE coach restart: the Restart plan button shows only for a
++ * plan the backend reports as dispute-paused, asks for confirmation, and
++ * every backend refusal maps to its own sentence.
++ */
++import React from 'react';
++import { Alert, type AlertButton } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import type { ThemeColors } from '../../../theme/ThemeProvider';
++import {
++  DisputePausedPlansCard,
++  RESTART_CONFIRM_TITLE,
++} from '../../../components/coach/DisputePausedPlansCard';
++import {
++  RESTART_SUCCESS,
++  isDisputePaused,
++  loadDisputePausedPlans,
++  restartDisputePausedPlan,
++  restartRefusal,
++} from '../coachDisputeRestart';
++
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../../services/api', () => ({
++  __esModule: true,
++  default: {
++    get: (...args: unknown[]) => mockGet(...args),
++    post: (...args: unknown[]) => mockPost(...args),
++  },
++}));
++
++const colors = new Proxy({}, { get: () => '#000000' }) as ThemeColors;
++const CLIENT = 'client-1';
++const PURCHASE = 'purchase-1';
++
++const pausedDunning = {
++  status: 'active',
++  last_failure_reason: 'charge_disputed',
++  entered_at: '2026-10-01T10:00:00.000Z',
++  locked_out_at: '2026-10-01T10:00:00.000Z',
++};
++
++function rosterRow(over: Record<string, unknown> = {}) {
++  return {
++    id: PURCHASE,
++    client_user_id: CLIENT,
++    billing_type: 'recurring',
++    entitlement_active: false,
++    status: 'active',
++    ...over,
++  };
++}
++
++function serve(row: Record<string, unknown>, dunning: Record<string, unknown> | null) {
++  mockGet.mockImplementation(async (url: string) => {
++    if (url === '/v1/coach/purchases') return { data: { purchases: [row], next_cursor: null } };
++    if (url === `/v1/coach/payments/purchases/${row.id}`) {
++      return {
++        data: {
++          purchase: { id: row.id, status: row.status, billing_type: row.billing_type, amount_cents: 4900, currency: 'usd' },
++          dunning,
++        },
++      };
++    }
++    throw new Error(`unexpected GET ${url}`);
++  });
++}
++
++function httpError(status: number, code: string) {
++  return { response: { status, data: { code, error: code, message: 'server text' } } };
++}
++
++let alertSpy: jest.SpyInstance;
++beforeEach(() => {
++  mockGet.mockReset();
++  mockPost.mockReset();
++  alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++});
++afterEach(() => alertSpy.mockRestore());
++
++/** Press the confirm dialog's button with this label. */
++async function pressAlertButton(label: string) {
++  const buttons = alertSpy.mock.calls[alertSpy.mock.calls.length - 1][2] as AlertButton[];
++  const button = buttons.find((b) => b.text === label);
++  await act(async () => {
++    button?.onPress?.();
++  });
++}
++
++describe('button only when the backend says the plan is dispute-paused', () => {
++  it('shows Restart plan for a dispute-paused plan', async () => {
++    serve(rosterRow(), pausedDunning);
++    const r = await render(<DisputePausedPlansCard clientUserId={CLIENT} clientName="Sam Lee" colors={colors} />);
++    await waitFor(() => expect(r.getByTestId(`dispute-restart-${PURCHASE}`)).toBeTruthy());
++    expect(r.getByText('Plan paused after a payment dispute or inquiry')).toBeTruthy();
++  });
++
++  it.each([
++    ['a card decline', { ...pausedDunning, last_failure_reason: 'card_declined' }],
++    ['a resolved cycle', { ...pausedDunning, status: 'resolved' }],
++    ['no dunning row', null],
++  ])('hides the card for %s', async (_label, dunning) => {
++    serve(rosterRow(), dunning);
++    const r = await render(<DisputePausedPlansCard clientUserId={CLIENT} clientName="Sam Lee" colors={colors} />);
++    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(`/v1/coach/payments/purchases/${PURCHASE}`));
++    expect(r.queryByTestId('dispute-paused-plans')).toBeNull();
++  });
++
++  it('never reads plans of another client, a one-time plan or a plan with access', async () => {
++    mockGet.mockResolvedValueOnce({
++      data: {
++        purchases: [
++          rosterRow({ id: 'p-other', client_user_id: 'client-2' }),
++          rosterRow({ id: 'p-once', billing_type: 'one_time' }),
++          rosterRow({ id: 'p-live', entitlement_active: true }),
++          rosterRow({ id: 'p-ended', status: 'canceled' }),
++        ],
++        next_cursor: null,
++      },
++    });
++    await expect(loadDisputePausedPlans(CLIENT)).resolves.toEqual([]);
++    expect(mockGet).toHaveBeenCalledTimes(1);
++  });
++
++  it('isDisputePaused mirrors the backend restart pre-check', () => {
++    const purchase = { status: 'active', billing_type: 'recurring' };
++    expect(isDisputePaused({ purchase, dunning: pausedDunning })).toBe(true);
++    expect(isDisputePaused({ purchase: { ...purchase, status: 'canceled' }, dunning: pausedDunning })).toBe(false);
++    expect(isDisputePaused({ purchase, dunning: { ...pausedDunning, entered_at: null } })).toBe(false);
++  });
++
++  it('renders nothing when the read fails', async () => {
++    mockGet.mockRejectedValue(new Error('offline'));
++    const r = await render(<DisputePausedPlansCard clientUserId={CLIENT} clientName="Sam Lee" colors={colors} />);
++    await waitFor(() => expect(mockGet).toHaveBeenCalled());
++    expect(r.queryByTestId('dispute-paused-plans')).toBeNull();
++  });
++});
++
++describe('restart', () => {
++  it('confirms first, then restarts and says billing resumed', async () => {
++    serve(rosterRow(), pausedDunning);
++    mockPost.mockResolvedValue({ data: { restarted: true } });
++    const r = await render(<DisputePausedPlansCard clientUserId={CLIENT} clientName="Sam Lee" colors={colors} />);
++    await fireEvent.press(await r.findByTestId(`dispute-restart-${PURCHASE}`));
++    expect(alertSpy).toHaveBeenCalledWith(RESTART_CONFIRM_TITLE, expect.stringContaining('Sam Lee'), expect.any(Array));
++    expect(mockPost).not.toHaveBeenCalled();
++    await pressAlertButton('Restart plan');
++    await waitFor(() => expect(r.getByText(RESTART_SUCCESS)).toBeTruthy());
++    expect(mockPost).toHaveBeenCalledWith(`/v1/coach/purchases/${PURCHASE}/dispute-restart`, {});
++    expect(r.queryByTestId(`dispute-restart-${PURCHASE}`)).toBeNull();
++  });
++
++  it('Cancel in the confirm dialog changes nothing', async () => {
++    serve(rosterRow(), pausedDunning);
++    const r = await render(<DisputePausedPlansCard clientUserId={CLIENT} clientName="Sam Lee" colors={colors} />);
++    await fireEvent.press(await r.findByTestId(`dispute-restart-${PURCHASE}`));
++    await pressAlertButton('Cancel');
++    expect(mockPost).not.toHaveBeenCalled();
++    expect(r.getByTestId(`dispute-restart-${PURCHASE}`)).toBeTruthy();
++  });
++
++  it.each([
++    [404, 'PURCHASE_NOT_FOUND', 'That plan is not on your roster, so nothing was changed. Pull down to refresh, then try again.', true],
++    [409, 'PLAN_NOT_DISPUTE_PAUSED', 'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.', true],
++    [409, 'PLAN_ENDED', 'This plan has ended, so it cannot be restarted. The client can buy the package again.', true],
++    [409, 'OTHER_LIVE_PLAN', 'The client already has another active plan for this package, so restarting this one would bill them twice. Nothing was changed.', true],
++    [409, 'NEW_DISPUTE', 'The bank opened another payment dispute or inquiry on this plan, so it stays paused and nothing was charged.', false],
++    [409, 'BILLING_BUSY', 'Billing for this plan is being updated right now, so nothing was changed. Try again in a minute.', false],
++    [503, 'BILLING_UNAVAILABLE', 'Billing could not be reached, so the plan stays paused and nothing was charged. Try again in a few minutes.', false],
++  ])('%i %s maps to its own sentence', async (status, code, sentence, final) => {
++    mockPost.mockRejectedValue(httpError(status, code));
++    await expect(restartDisputePausedPlan(PURCHASE)).resolves.toEqual({ ok: false, code, message: sentence, final });
++  });
++
++  it('shows the refusal and hides the button when the plan cannot be restarted', async () => {
++    serve(rosterRow(), pausedDunning);
++    mockPost.mockRejectedValue(httpError(409, 'OTHER_LIVE_PLAN'));
++    const r = await render(<DisputePausedPlansCard clientUserId={CLIENT} clientName="Sam Lee" colors={colors} />);
++    await fireEvent.press(await r.findByTestId(`dispute-restart-${PURCHASE}`));
++    await pressAlertButton('Restart plan');
++    await waitFor(() => expect(r.getByTestId(`dispute-restart-outcome-${PURCHASE}`)).toBeTruthy());
++    expect(r.getByText(/would bill them twice/)).toBeTruthy();
++    expect(r.queryByTestId(`dispute-restart-${PURCHASE}`)).toBeNull();
++  });
++
++  it('keeps the button after a temporary refusal', async () => {
++    serve(rosterRow(), pausedDunning);
++    mockPost.mockRejectedValue(httpError(409, 'BILLING_BUSY'));
++    const r = await render(<DisputePausedPlansCard clientUserId={CLIENT} clientName="Sam Lee" colors={colors} />);
++    await fireEvent.press(await r.findByTestId(`dispute-restart-${PURCHASE}`));
++    await pressAlertButton('Restart plan');
++    await waitFor(() => expect(r.getByText(/being updated right now/)).toBeTruthy());
++    expect(r.getByTestId(`dispute-restart-${PURCHASE}`)).toBeTruthy();
++  });
++
++  it('no response: says the result is not known and points to refresh', () => {
++    const out = restartRefusal(new Error('Network Error'));
++    expect(out).toMatchObject({ ok: false, code: 'NO_RESPONSE', final: false });
++    expect(out.message).toMatch(/Pull down to refresh/);
++  });
++
++  it('copy is impersonal: no first person, no exclamation marks', () => {
++    const lines = [
++      RESTART_SUCCESS,
++      restartRefusal(new Error('x')).message,
++      restartRefusal({ response: { status: 409, data: { code: 'RESTART_REFUSED' } } }).message,
++    ];
++    for (const line of lines) {
++      expect(line).not.toMatch(/\b(we|us|our|I)\b/i);
++      expect(line).not.toMatch(/!/);
++    }
++  });
++});
+diff --git a/src/entitlements/dunning/coachDisputeRestart.ts b/src/entitlements/dunning/coachDisputeRestart.ts
+new file mode 100644
+index 0000000..46d02f3
+--- /dev/null
++++ b/src/entitlements/dunning/coachDisputeRestart.ts
+@@ -0,0 +1,195 @@
++import api from '../../services/api';
++
++/**
++ * R-DISPUTE-PAUSE, coach side: a bank dispute or inquiry on a client's
++ * recurring plan ends the client's access and pauses billing. Nothing ends
++ * that pause except the plan's own coach restarting it.
++ *
++ * Reads (coach routes, own roster only):
++ *   GET  /v1/coach/purchases                       roster purchases (cursor)
++ *   GET  /v1/coach/payments/purchases/:id          one purchase + its dunning row
++ * Write:
++ *   POST /v1/coach/purchases/:id/dispute-restart   200 { restarted: true }
++ *     404 PURCHASE_NOT_FOUND; 409 PLAN_NOT_DISPUTE_PAUSED | PLAN_ENDED |
++ *     OTHER_LIVE_PLAN | NEW_DISPUTE | BILLING_BUSY; 503 BILLING_UNAVAILABLE.
++ *
++ * The Restart plan button shows only when the backend's dunning row for the
++ * purchase says the plan is dispute-paused (the same test the backend's
++ * restart pre-check uses).
++ */
++
++/** Backend DUNNING_V2_REVERSAL_REASON. */
++export const DISPUTE_PAUSE_REASON = 'charge_disputed';
++
++/** Purchase statuses the backend treats as ended (restart refused). */
++const PLAN_ENDED_STATUSES = new Set(['canceled', 'expired', 'incomplete_expired']);
++
++/** Roster pages read per client view (100 purchases each). */
++const MAX_ROSTER_PAGES = 5;
++
++export interface DisputePausedPlan {
++  purchaseId: string;
++  amountCents: number | null;
++  currency: string | null;
++  pausedAt: string | null;
++}
++
++interface RosterPurchase {
++  id?: unknown;
++  client_user_id?: unknown;
++  billing_type?: unknown;
++  entitlement_active?: unknown;
++  status?: unknown;
++}
++
++interface PurchaseDetail {
++  purchase?: {
++    id?: unknown;
++    status?: unknown;
++    billing_type?: unknown;
++    amount_cents?: unknown;
++    currency?: unknown;
++  } | null;
++  dunning?: {
++    status?: unknown;
++    last_failure_reason?: unknown;
++    entered_at?: unknown;
++  } | null;
++}
++
++function str(v: unknown): string | null {
++  return typeof v === 'string' && v.length > 0 ? v : null;
++}
++
++/** True when the backend reports this purchase as paused by a dispute or inquiry. */
++export function isDisputePaused(detail: PurchaseDetail | null | undefined): boolean {
++  const p = detail?.purchase;
++  const d = detail?.dunning;
++  if (!p || !d) return false;
++  if (p.billing_type !== 'recurring') return false;
++  if (typeof p.status === 'string' && PLAN_ENDED_STATUSES.has(p.status)) return false;
++  return d.status === 'active' && d.last_failure_reason === DISPUTE_PAUSE_REASON && str(d.entered_at) !== null;
++}
++
++/** A roster row that could be dispute-paused (recurring, access off, not ended). */
++function isCandidate(row: RosterPurchase, clientUserId: string): boolean {
++  return (
++    row.client_user_id === clientUserId &&
++    row.billing_type === 'recurring' &&
++    row.entitlement_active === false &&
++    !(typeof row.status === 'string' && PLAN_ENDED_STATUSES.has(row.status)) &&
++    str(row.id) !== null
++  );
++}
++
++/** Purchases of this client that the backend reports as dispute-paused. */
++export async function loadDisputePausedPlans(clientUserId: string): Promise<DisputePausedPlan[]> {
++  const ids: string[] = [];
++  let cursor: string | null = null;
++  for (let page = 0; page < MAX_ROSTER_PAGES; page += 1) {
++    const res: { data?: { purchases?: unknown; next_cursor?: unknown } } = await api.get(
++      '/v1/coach/purchases',
++      { params: cursor ? { limit: 100, cursor } : { limit: 100 } },
++    );
++    const rows = Array.isArray(res.data?.purchases) ? (res.data?.purchases as RosterPurchase[]) : [];
++    for (const row of rows) if (isCandidate(row, clientUserId)) ids.push(row.id as string);
++    cursor = str(res.data?.next_cursor);
++    if (!cursor) break;
++  }
++  const out: DisputePausedPlan[] = [];
++  for (const id of ids) {
++    const res: { data?: PurchaseDetail } = await api.get(
++      `/v1/coach/payments/purchases/${encodeURIComponent(id)}`,
++    );
++    const detail = res.data;
++    if (!isDisputePaused(detail)) continue;
++    const amount = detail?.purchase?.amount_cents;
++    out.push({
++      purchaseId: id,
++      amountCents: typeof amount === 'number' ? amount : null,
++      currency: str(detail?.purchase?.currency),
++      pausedAt: str(detail?.dunning?.entered_at),
++    });
++  }
++  return out;
++}
++
++export type RestartOutcome =
++  | { ok: true; message: string }
++  | { ok: false; code: string; message: string; final: boolean };
++
++export const RESTART_SUCCESS =
++  'Plan restarted. Billing has resumed on its usual schedule and the client has access again.';
++
++/** One plain sentence per backend refusal code. `final`: the plan cannot be restarted from here. */
++const REFUSAL_COPY: Record<string, { message: string; final: boolean }> = {
++  PURCHASE_NOT_FOUND: {
++    message:
++      'That plan is not on your roster, so nothing was changed. Pull down to refresh, then try again.',
++    final: true,
++  },
++  PLAN_NOT_DISPUTE_PAUSED: {
++    message:
++      'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.',
++    final: true,
++  },
++  PLAN_ENDED: {
++    message: 'This plan has ended, so it cannot be restarted. The client can buy the package again.',
++    final: true,
++  },
++  OTHER_LIVE_PLAN: {
++    message:
++      'The client already has another active plan for this package, so restarting this one would bill them twice. Nothing was changed.',
++    final: true,
++  },
++  NEW_DISPUTE: {
++    message:
++      'The bank opened another payment dispute or inquiry on this plan, so it stays paused and nothing was charged.',
++    final: false,
++  },
++  BILLING_BUSY: {
++    message:
++      'Billing for this plan is being updated right now, so nothing was changed. Try again in a minute.',
++    final: false,
++  },
++  BILLING_UNAVAILABLE: {
++    message:
++      'Billing could not be reached, so the plan stays paused and nothing was charged. Try again in a few minutes.',
++    final: false,
++  },
++};
++
++const NO_ANSWER =
++  'No answer came back from the server, so the result is not known yet. Pull down to refresh to see whether the plan restarted.';
++const UNKNOWN_REFUSAL =
++  'The plan could not be restarted, so it stays paused and nothing was charged. Pull down to refresh, then try again.';
++
++/** Map a failed restart call to its one-sentence outcome. */
++export function restartRefusal(err: unknown): Extract<RestartOutcome, { ok: false }> {
++  const response = (err as { response?: { status?: number; data?: unknown } } | null)?.response;
++  if (!response) return { ok: false, code: 'NO_RESPONSE', message: NO_ANSWER, final: false };
++  const body = (response.data && typeof response.data === 'object' ? response.data : {}) as {
++    code?: unknown;
++    error?: unknown;
++    message?: unknown;
++  };
++  const code = str(body.code) ?? str(body.error) ?? `HTTP_${response.status ?? 'ERROR'}`;
++  const known = REFUSAL_COPY[code];
++  if (known) return { ok: false, code, ...known };
++  const server = typeof body.message === 'string' ? body.message.trim() : '';
++  return { ok: false, code, message: server || UNKNOWN_REFUSAL, final: false };
++}
++
++/** Restart a dispute-paused plan. Never throws. */
++export async function restartDisputePausedPlan(purchaseId: string): Promise<RestartOutcome> {
++  try {
++    const res: { data?: { restarted?: unknown } } = await api.post(
++      `/v1/coach/purchases/${encodeURIComponent(purchaseId)}/dispute-restart`,
++      {},
++    );
++    if (res.data?.restarted === true) return { ok: true, message: RESTART_SUCCESS };
++    return { ok: false, code: 'UNEXPECTED_RESPONSE', message: NO_ANSWER, final: false };
++  } catch (err) {
++    return restartRefusal(err);
++  }
++}
+diff --git a/src/screens/coach/ClientDetailScreen.tsx b/src/screens/coach/ClientDetailScreen.tsx
+index 507761d..f4e7511 100644
+--- a/src/screens/coach/ClientDetailScreen.tsx
++++ b/src/screens/coach/ClientDetailScreen.tsx
+@@ -40,6 +40,7 @@ import { useClientDetailData } from './client-detail/useClientDetailData';
+ import { SleepRecoveryTab } from './client-detail/SleepRecoveryTab';
+ // Stream 2 — AskAi sheet for the four execution capabilities.
+ import { AskAiActionSheet } from '../../components/coach/ai-execution/AskAiActionSheet';
++import { DisputePausedPlansCard } from '../../components/coach/DisputePausedPlansCard';
+ import { featureFlags } from '../../config/featureFlags';
+ import { useFeatureFlags } from '../../hooks/useFeatureFlags';
+ 
+@@ -96,6 +97,8 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+   // successful submit (the sheet calls onClose then onAfterSubmit so
+   // the screen can route to the pending-drafts inbox).
+   const [askAiVisible, setAskAiVisible] = useState(false);
++  // R-DISPUTE-PAUSE: pull-to-refresh also re-reads the dispute-paused plans.
++  const [planReloadKey, setPlanReloadKey] = useState(0);
+ 
+   // Server-side meal plans (Tier 2). The legacy local-SQLite `mealPlanDb`
+   // shim was removed in the nutrition P0 cleanup — Grocery / Shopping /
+@@ -247,6 +250,7 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+ 
+   const onRefresh = useCallback(async () => {
+     setRefreshing(true);
++    setPlanReloadKey((k) => k + 1);
+     await loadData();
+     setRefreshing(false);
+   }, [loadData, setRefreshing]);
+@@ -438,6 +442,12 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
+         }
+       >
++        <DisputePausedPlansCard
++          clientUserId={clientId}
++          clientName={clientName}
++          reloadKey={planReloadKey}
++          colors={colors}
++        />
+         {activeTab === 'summary' && (
+           <SummaryTab
+             profile={profile}

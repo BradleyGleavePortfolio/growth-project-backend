@@ -1,0 +1,13 @@
+src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx
+src/__tests__/audit122WM1DraftPublish.test.tsx
+src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+src/__tests__/CoachPackageContentsScreen.test.tsx
+src/__tests__/PackageDetailSurface.preview.test.tsx
+src/components/coach/setup/__tests__/coachSetup.test.tsx
+src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
+src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
+src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx
+src/components/coach/setup/__tests__/w2FixRound118.test.tsx
+src/components/coach/setup/__tests__/w2FixRound119.test.tsx

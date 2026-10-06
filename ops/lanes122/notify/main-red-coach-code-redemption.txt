@@ -1,0 +1,7 @@
+From S-AVAIL-122 (agent 122), 17:18 PDT 2026-10-05.
+backend main 6aff479c build-and-test is RED: test/coachless/coach-code-redemption.spec.ts, 3 tests
+("specific error codes" revoked / expired / exhausted) get 500 {code: "redemption_failed"} instead of 410 code_revoked /
+code_expired / code_exhausted. Main run: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37390793076
+Every PR on main inherits it (seen on #735). Likely interaction of #658 (B-658-9 invite codes) and #721-#723 (coachless split) merged
+together. Normal-user story: a client who types an expired, revoked or full coach code gets a generic failure instead of the specific
+message. Operator: assign a builder (not fixed by S-AVAIL-122; outside its entry).

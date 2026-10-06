@@ -1,0 +1,323 @@
+[heavy] waiting for a slot: npx jest src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx
+FAIL src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx
+  RomanAdjustmentCard
+    ✓ shows Roman's sentence, the evidence and the exact change; names fall back gracefully (98 ms)
+    ✓ Approve waits the undo window before sending; Undo inside it sends nothing (14 ms)
+    ✓ Approve sends after the window and reports the new version (10 ms)
+    ✓ an applied card offers the server undo while the window is open (16 ms)
+    ✓ after the server window closes there is no Undo button (2 ms)
+    ✓ Edit with per-exercise steppers sends explicit set counts (24 ms)
+    ✓ Edit with a percentage chip sends that percentage (19 ms)
+    ✓ Dismiss asks why, then waits the window, then settles the card (11 ms)
+    ✓ a settled refusal (workout started) shows the server copy and asks the list to refresh (9 ms)
+    ✓ a refused, retryable request (429) keeps the card, shows specific copy and the actions again (18 ms)
+    ✕ a lost Approve reply does not say the workout is unchanged and asks the list to reload (13 ms)
+    ✕ a lost server Undo reply does not claim either outcome and asks the list to reload (7 ms)
+  adjustErrorView
+    ✓ known codes use the server message, or the local fallback when it is missing
+    ✓ no response on Dismiss: connection copy, no Sentry noise
+    ✕ timeout on approve: says the result is not confirmed and reloads the list (1 ms)
+    ✕ timeout on edit: says the result is not confirmed and reloads the list
+    ✕ timeout on undo: says the result is not confirmed and reloads the list (1 ms)
+    ✕ 500 on approve: says the result is not confirmed and reloads the list
+    ✕ 502 on edit: says the result is not confirmed and reloads the list
+    ✕ 503 on undo: says the result is not confirmed and reloads the list (1 ms)
+    ✕ unreadable 2xx reply on approve: says the result is not confirmed and reloads the list
+    ✕ unreadable 2xx reply on edit: says the result is not confirmed and reloads the list
+    ✓ a coded refusal or a 4xx still says the workouts are unchanged where that is true (9 ms)
+    ✕ a failed load never claims anything about the workouts (1 ms)
+    ✕ contract drift sends a fixed error to Sentry, never the ZodError or its received values (1 ms)
+    ✕ an unrecognised response code is not forwarded to Sentry unless it is a plain code (1 ms)
+    ✕ the workout-changed fallback does not promise a new suggestion
+    ✕ unknown 500: reference + support path + Sentry without the response body (1 ms)
+    ✓ contract drift is reported and explained (1 ms)
+    ✓ every message follows the house voice (1 ms)
+  RomanAdjustmentsSection
+    ✓ kill switch off (enabled false): renders nothing (1 ms)
+    ✓ lists suggestions; a settled refusal removes the card and keeps the reason on screen (9 ms)
+    ✕ a lost Approve reply reloads the list so the card shows what the server applied (1010 ms)
+    ✓ a load failure says what happened and offers a retry that works (8 ms)
+
+  ● RomanAdjustmentCard › a lost Approve reply does not say the workout is unchanged and asks the list to reload
+
+    expect(jest.fn()).toHaveBeenCalled()
+
+    Expected number of calls: >= 1
+    Received number of calls:    0
+
+    [0m [90m 202 |[39m       jest[33m.[39madvanceTimersByTime([33mADJUST_CLIENT_UNDO_SECONDS[39m [33m*[39m [35m1000[39m)[33m;[39m
+     [90m 203 |[39m     })[33m;[39m
+    [31m[1m>[22m[39m[90m 204 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(onSettled)[33m.[39mtoHaveBeenCalled())[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 205 |[39m     [36mconst[39m [id[33m,[39m opts] [33m=[39m onSettled[33m.[39mmock[33m.[39mcalls[[35m0[39m][33m;[39m
+     [90m 206 |[39m     expect(id)[33m.[39mtoBe([32m'p1'[39m)[33m;[39m
+     [90m 207 |[39m     expect(opts[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:204:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● RomanAdjustmentCard › a lost server Undo reply does not claim either outcome and asks the list to reload
+
+    expect(jest.fn()).toHaveBeenCalled()
+
+    Expected number of calls: >= 1
+    Received number of calls:    0
+
+    [0m [90m 217 |[39m     [36mconst[39m r [33m=[39m [36mawait[39m render([33m<[39m[33mRomanAdjustmentCard[39m proposal[33m=[39m{applied()} onSettled[33m=[39m{onSettled} onChanged[33m=[39m{jest[33m.[39mfn()} deps[33m=[39m{{ undo[33m,[39m now[33m:[39m () [33m=>[39m [33mNOW[39m [33m+[39m [35m60[39m_000 }} [33m/[39m[33m>[39m)[33m;[39m
+     [90m 218 |[39m     [36mawait[39m fireEvent[33m.[39mpress(r[33m.[39mgetByTestId([32m'roman-adjust-card-undo-server'[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 219 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(onSettled)[33m.[39mtoHaveBeenCalled())[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 220 |[39m     expect(onSettled[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m])[33m.[39mtoEqual({ refresh[33m:[39m [36mtrue[39m[33m,[39m notice[33m:[39m expect[33m.[39mstringMatching([35m/not certain whether the change was undone/[39m) })[33m;[39m
+     [90m 221 |[39m   })[33m;[39m
+     [90m 222 |[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:219:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● adjustErrorView › timeout on approve: says the result is not confirmed and reloads the list
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "The server could not be reached to apply the change. Your workouts are unchanged. Check your connection, then try again."
+
+    [0m [90m 257 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: says the result is not confirmed and reloads the list'[39m[33m,[39m (_label[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 258 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/not certain whether/[39m)[33m;[39m
+     [90m 261 |[39m     expect(v[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 262 |[39m     expect(v[33m.[39mcode)[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:259:27)
+
+  ● adjustErrorView › timeout on edit: says the result is not confirmed and reloads the list
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "The server could not be reached to apply your change. Your workouts are unchanged. Check your connection, then try again."
+
+    [0m [90m 257 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: says the result is not confirmed and reloads the list'[39m[33m,[39m (_label[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 258 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/not certain whether/[39m)[33m;[39m
+     [90m 261 |[39m     expect(v[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 262 |[39m     expect(v[33m.[39mcode)[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:259:27)
+
+  ● adjustErrorView › timeout on undo: says the result is not confirmed and reloads the list
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "The server could not be reached to undo the change. Your workouts are unchanged. Check your connection, then try again."
+
+    [0m [90m 257 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: says the result is not confirmed and reloads the list'[39m[33m,[39m (_label[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 258 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/not certain whether/[39m)[33m;[39m
+     [90m 261 |[39m     expect(v[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 262 |[39m     expect(v[33m.[39mcode)[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:259:27)
+
+  ● adjustErrorView › 500 on approve: says the result is not confirmed and reloads the list
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "Roman could not apply the change just now. Your workouts are unchanged. Try again in a minute; if it keeps happening, contact Bradleyapple1031@gmail.com."
+
+    [0m [90m 257 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: says the result is not confirmed and reloads the list'[39m[33m,[39m (_label[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 258 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/not certain whether/[39m)[33m;[39m
+     [90m 261 |[39m     expect(v[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 262 |[39m     expect(v[33m.[39mcode)[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:259:27)
+
+  ● adjustErrorView › 502 on edit: says the result is not confirmed and reloads the list
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "Roman could not apply your change just now. Your workouts are unchanged. Try again in a minute; if it keeps happening, contact Bradleyapple1031@gmail.com."
+
+    [0m [90m 257 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: says the result is not confirmed and reloads the list'[39m[33m,[39m (_label[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 258 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/not certain whether/[39m)[33m;[39m
+     [90m 261 |[39m     expect(v[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 262 |[39m     expect(v[33m.[39mcode)[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:259:27)
+
+  ● adjustErrorView › 503 on undo: says the result is not confirmed and reloads the list
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "Roman could not undo the change just now. Your workouts are unchanged. Try again in a minute; if it keeps happening, contact Bradleyapple1031@gmail.com."
+
+    [0m [90m 257 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: says the result is not confirmed and reloads the list'[39m[33m,[39m (_label[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 258 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/not certain whether/[39m)[33m;[39m
+     [90m 261 |[39m     expect(v[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 262 |[39m     expect(v[33m.[39mcode)[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:259:27)
+
+  ● adjustErrorView › unreadable 2xx reply on approve: says the result is not confirmed and reloads the list
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "The app could not read the reply while trying to apply the change. Your workouts are unchanged. Update the app, then try again; if it keeps happening, contact Bradleyapple1031@gmail.com."
+
+    [0m [90m 257 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: says the result is not confirmed and reloads the list'[39m[33m,[39m (_label[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 258 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/not certain whether/[39m)[33m;[39m
+     [90m 261 |[39m     expect(v[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 262 |[39m     expect(v[33m.[39mcode)[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:259:27)
+
+  ● adjustErrorView › unreadable 2xx reply on edit: says the result is not confirmed and reloads the list
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "The app could not read the reply while trying to apply your change. Your workouts are unchanged. Update the app, then try again; if it keeps happening, contact Bradleyapple1031@gmail.com."
+
+    [0m [90m 257 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: says the result is not confirmed and reloads the list'[39m[33m,[39m (_label[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 258 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 259 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 260 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/not certain whether/[39m)[33m;[39m
+     [90m 261 |[39m     expect(v[33m.[39mrefresh)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 262 |[39m     expect(v[33m.[39mcode)[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:259:27)
+
+  ● adjustErrorView › a failed load never claims anything about the workouts
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "The server could not be reached to load Roman's suggestions. Your workouts are unchanged. Check your connection, then try again."
+
+    [0m [90m 271 |[39m   it([32m'a failed load never claims anything about the workouts'[39m[33m,[39m () [33m=>[39m {
+     [90m 272 |[39m     [36mfor[39m ([36mconst[39m err [36mof[39m [[36mnew[39m [33mError[39m([32m'Network Error'[39m)[33m,[39m httpError([35m500[39m)[33m,[39m httpError([35m503[39m[33m,[39m { code[33m:[39m [32m'ADJUSTMENTS_UNAVAILABLE'[39m })[33m,[39m zodAfter2xx()]) {
+    [31m[1m>[22m[39m[90m 273 |[39m       expect(adjustErrorView(err[33m,[39m [32m'load'[39m)[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                                                        [31m[1m^[22m[39m
+     [90m 274 |[39m     }
+     [90m 275 |[39m   })[33m;[39m
+     [90m 276 |[39m[0m
+
+      at Object.toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:273:56)
+
+  ● adjustErrorView › contract drift sends a fixed error to Sentry, never the ZodError or its received values
+
+    expect(received).not.toBeInstanceOf(expected)
+
+    Expected constructor: not ZodError
+
+    [0m [90m 281 |[39m     expect(captureError)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+     [90m 282 |[39m     [36mconst[39m [sent[33m,[39m extras] [33m=[39m jest[33m.[39mmocked(captureError)[33m.[39mmock[33m.[39mcalls[[35m0[39m][33m;[39m
+    [31m[1m>[22m[39m[90m 283 |[39m     expect(sent)[33m.[39mnot[33m.[39mtoBeInstanceOf(z[33m.[39m[33mZodError[39m)[33m;[39m
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 284 |[39m     expect([33mJSON[39m[33m.[39mstringify([[33mString[39m(sent)[33m,[39m extras]))[33m.[39mnot[33m.[39mtoContain([32m'sleep 3.1'[39m)[33m;[39m
+     [90m 285 |[39m   })[33m;[39m
+     [90m 286 |[39m[0m
+
+      at Object.toBeInstanceOf (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:283:22)
+
+  ● adjustErrorView › an unrecognised response code is not forwarded to Sentry unless it is a plain code
+
+    expect(received).not.toHaveProperty(path)
+
+    Expected path: not "response"
+
+    Received value: {"data": {"code": "maya@example.com 5.6 h"}, "headers": {}, "status": 500}
+
+    [0m [90m 289 |[39m     adjustErrorView(httpError([35m500[39m[33m,[39m { code[33m:[39m [32m'SOME_NEW_CODE'[39m })[33m,[39m [32m'load'[39m)[33m;[39m
+     [90m 290 |[39m     [36mconst[39m calls [33m=[39m jest[33m.[39mmocked(captureError)[33m.[39mmock[33m.[39mcalls[33m;[39m
+    [31m[1m>[22m[39m[90m 291 |[39m     expect(calls[[35m0[39m][[35m0[39m])[33m.[39mnot[33m.[39mtoHaveProperty([32m'response'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 292 |[39m     expect(calls[[35m0[39m][[35m1[39m])[33m.[39mtoEqual({ where[33m:[39m [32m'roman_adjust.load'[39m[33m,[39m status[33m:[39m [35m500[39m[33m,[39m code[33m:[39m undefined })[33m;[39m
+     [90m 293 |[39m     expect(calls[[35m1[39m][[35m1[39m])[33m.[39mtoEqual({ where[33m:[39m [32m'roman_adjust.load'[39m[33m,[39m status[33m:[39m [35m500[39m[33m,[39m code[33m:[39m [32m'SOME_NEW_CODE'[39m })[33m;[39m
+     [90m 294 |[39m   })[33m;[39m[0m
+
+      at Object.toHaveProperty (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:291:29)
+
+  ● adjustErrorView › the workout-changed fallback does not promise a new suggestion
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /new suggestion/i
+    Received string:      "This workout was edited after Roman made the suggestion, so it was not applied. Open the workout to review it, then refresh for a new suggestion."
+
+    [0m [90m 296 |[39m   [90m// B-655-2 mirror: a changed workout gets no new suggestion, so the copy must not promise one.[39m
+     [90m 297 |[39m   it([32m'the workout-changed fallback does not promise a new suggestion'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 298 |[39m     expect([33mADJUST_ERROR_FALLBACKS[39m[33m.[39m[33mADJUSTMENT_WORKOUT_CHANGED[39m)[33m.[39mnot[33m.[39mtoMatch([35m/new suggestion/i[39m)[33m;[39m
+     [90m     |[39m                                                                   [31m[1m^[22m[39m
+     [90m 299 |[39m   })[33m;[39m
+     [90m 300 |[39m
+     [90m 301 |[39m   it([32m'unknown 500: reference + support path + Sentry without the response body'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:298:67)
+
+  ● adjustErrorView › unknown 500: reference + support path + Sentry without the response body
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /unchanged/i
+    Received string:      "Roman could not apply your change just now. Your workouts are unchanged. Try again in a minute; if it keeps happening, contact Bradleyapple1031@gmail.com and quote reference abcd1234."
+
+    [0m [90m 304 |[39m     expect(v[33m.[39mmessage)[33m.[39mtoMatch([35m/contact .+@/[39m)[33m;[39m
+     [90m 305 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoContain([32m'boom'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 306 |[39m     expect(v[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/unchanged/i[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 307 |[39m     expect(captureError)[33m.[39mtoHaveBeenCalledWith(expect[33m.[39many([33mError[39m)[33m,[39m { where[33m:[39m [32m'roman_adjust.edit'[39m[33m,[39m status[33m:[39m [35m500[39m[33m,[39m code[33m:[39m undefined })[33m;[39m
+     [90m 308 |[39m     expect([33mString[39m(jest[33m.[39mmocked(captureError)[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m0[39m]))[33m.[39mnot[33m.[39mtoContain([32m'boom'[39m)[33m;[39m
+     [90m 309 |[39m   })[33m;[39m[0m
+
+      at Object.toMatch (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:306:27)
+
+  ● RomanAdjustmentsSection › a lost Approve reply reloads the list so the card shows what the server applied
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 2
+    Received number of calls: 1
+
+    [0m [90m 385 |[39m     })[33m;[39m
+     [90m 386 |[39m     jest[33m.[39museRealTimers()[33m;[39m
+    [31m[1m>[22m[39m[90m 387 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(load)[33m.[39mtoHaveBeenCalledTimes([35m2[39m))[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 388 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(r[33m.[39mgetByText([32m'Applied. Maya will see 15 sets instead of 18.'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+     [90m 389 |[39m     expect(r[33m.[39mgetByTestId([32m'roman-adjust-section-notice'[39m))[33m.[39mtoBeTruthy()[33m;[39m
+     [90m 390 |[39m     expect(r[33m.[39mqueryByText([35m/unchanged/i[39m))[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at Object.<anonymous> (src/components/roman/adjust/__tests__/RomanAdjustmentCard.test.tsx:387:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       16 failed, 18 passed, 34 total
+Snapshots:   0 total
+Time:        2.43 s, estimated 7 s
+Ran all test suites matching /src\/components\/roman\/adjust\/__tests__\/RomanAdjustmentCard.test.tsx/i.

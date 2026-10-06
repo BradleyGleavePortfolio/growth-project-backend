@@ -9,4 +9,4 @@ Unchanged (dual APPROVE stands): #687 c140575c, #688 610c5254, #704 524c4025, #7
 Re-review scope: #689 4 commits 46fe43f7..68796f67; #690 d46ea900 + 5d41f767 (+ clean merge 79601701); #691 merge-only.
 Lane ci/B-DUNFIX-122-1 run 37388562724 at #691 3dc0e947: GREEN (tsc --noEmit; 26 suites / 571 tests).
 PR CI: all required checks green on all three heads (16:38 PDT).
-Lock dunning: held by B-DUNFIX-122 while it stands by for the re-review verdicts (released at verdicts or 18:15 PDT).
+Lock dunning: RELEASED 17:09 PDT. DUN2 re-review: Opus + Sol APPROVE #689 68796f67, #690 5d41f767, #691 3dc0e947 (17:0x).

@@ -1,0 +1,326 @@
+    99	  async sendMessage(
+   100	    @Req() req: Request & AuthedRequest,
+   101	    @Res() res: Response,
+   102	    @Param('id') id: string,
+   103	    @Body() dto: SendMessageDto,
+   104	  ): Promise<void> {
+   105	    const caller = await this.callerOf(req);
+   106	    // An emergency / self-harm message is answered by the deterministic
+   107	    // SafetyRouter template (911 / 988): no model call, no spend, and none of
+   108	    // the client's data leaves the app. Neither the per-user turn limit, the
+   109	    // daily spend cap, nor the box-2 AI gate (which governs sending data to
+   110	    // the AI processor, CONSENT_D2_CONTRACT) may stand between the client and
+   111	    // that answer. Every other turn keeps all three checks.
+   112	    const crisis = this.roman.isSafetyShortCircuit(dto.content);
+   113	
+   114	    // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
+   115	    // count against the cap). Throws a structured 429 Too Many Requests; we
+   116	    // surface the retry budget as a real Retry-After header (RFC 6585 §4)
+   117	    // before re-throwing so the NestJS filter serialises the body.
+   118	    try {
+   119	      if (!crisis) await this.roman.assertWithinRateLimit(caller);
+   120	    } catch (err) {
+   121	      const payload = (
+   122	        err as { getResponse?: () => unknown }
+   123	      ).getResponse?.() as { retryAfterSeconds?: number } | undefined;
+   124	      if (typeof payload?.retryAfterSeconds === 'number') {
+   125	        res.setHeader('Retry-After', String(payload.retryAfterSeconds));
+   126	      }
+   127	      throw err;
+   128	    }
+   129	
+   130	    const session = await this.roman.getOwnedSession(caller, id);
+   131	    // R2b — a client without a live box-2 grant gets a plain 403
+   132	    // ai_consent_required (Settings > Privacy) before the turn is stored or
+   133	    // the stream opens.
+   134	    // A crisis turn skips it: the template involves no AI processing, and
+   135	    // streamAssistantTurn answers it before its own egress check.
+   136	    if (!crisis) await this.roman.assertMayUseAi(caller);
+   137	    // OR-113-2 — daily spend cap, checked before the turn is stored (coded
+   138	    // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
+   139	    if (!crisis) await this.roman.assertDailyCapacity(caller);
+   140	    await this.roman.appendMessage(caller, session.id, {
+   141	      role: 'user',
+   142	      content: dto.content,
+   143	    });
+   144	
+   145	    // Manual SSE: we own the response stream so we can persist the partial on
+   146	    // client-disconnect. (NestJS @Sse maps an Observable but does not give us a
+   147	    // clean disconnect hook for partial persistence — brief §1.3.)
+   148	    // B-626-2 — the support reference for this stream travels in the
+   149	    // X-Request-ID header (RequestIdMiddleware already set it; repeating it
+   150	    // here keeps it on the SSE response whatever writeHead merges). It is
+   151	    // never added to the strict `{ code, message }` error frame.
+   152	    const requestId = (req as { requestId?: string }).requestId;
+   153	    res.writeHead(HttpStatus.OK, {
+   154	      'Content-Type': 'text/event-stream',
+   155	      'Cache-Control': 'no-cache, no-transform',
+   156	      Connection: 'keep-alive',
+   157	      'X-Accel-Buffering': 'no',
+   158	      ...(requestId ? { 'X-Request-ID': requestId } : {}),
+   159	    });
+   160	    if (typeof (res as { flushHeaders?: () => void }).flushHeaders === 'function') {
+   161	      (res as { flushHeaders: () => void }).flushHeaders();
+   162	    }
+   163	
+   164	    const abort = new AbortController();
+   165	    const onClose = () => abort.abort();
+   166	    req.on('close', onClose);
+   167	
+   168	    try {
+   169	      for await (const chunk of this.roman.streamAssistantTurn(caller, session, {
+   170	        signal: abort.signal,
+   171	        userMessage: dto.content,
+   172	      })) {
+   173	        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+   174	        if (chunk.type === 'done') break;
+   175	      }
+   176	    } catch (err) {
+   177	      // Surface a structured error event, never a raw stack (AGENT_RULES #9).
+   178	      // B-626-2 — exactly `{ code, message }`: the mobile parser is strict,
+   179	      // and the reference is already in the X-Request-ID header above.
+   180	      res.write(`event: error\ndata: ${JSON.stringify(toRomanSseErrorFrame(err))}\n\n`);
+   181	    } finally {
+   182	      req.off('close', onClose);
+   183	      res.end();
+   773	  /** The user-turn cap for a caller's tier (brief §3). */
+   774	  rateLimitCapFor(caller: RomanCaller): number {
+   775	    const tier = caller.tier ?? 'free';
+   776	    return tier === 'free'
+   777	      ? ROMAN_RATE_LIMIT_FREE_PER_DAY
+   778	      : ROMAN_RATE_LIMIT_PRO_PER_DAY;
+   779	  }
+   780	
+   781	  /**
+   782	   * Throw a structured 429 when the caller has exhausted their 24h user-turn
+   783	   * budget. Counts `user` turns in the rolling window, plus the content-free
+   784	   * count of user turns erased by `deleteSession` from a recently active
+   785	   * session (so deleting a chat never resets the cap; conservative: those
+   786	   * turns count until the erased session's last activity leaves the window).
+   787	   * OWNER is exempt.
+   788	   */
+   789	  async assertWithinRateLimit(caller: RomanCaller): Promise<void> {
+   790	    if (caller.role === 'owner') return;
+   791	    const cap = this.rateLimitCapFor(caller);
+   792	    const since = new Date(Date.now() - ROMAN_RATE_LIMIT_WINDOW_MS);
+   793	    const live = await this.prisma.romanMessage.count({
+   794	      where: {
+   795	        user_id: caller.id,
+   796	        role: 'user',
+   797	        created_at: { gte: since },
+   798	      },
+   799	    });
+   800	    // Content-free counts kept by erased shells (deleteSession / the sweep).
+   801	    // Summed in the database, so any number of deleted chats counts in full.
+   802	    // Unerased pre-upgrade tombstones are excluded: their messages still
+   803	    // exist and are already in `live`.
+   804	    const erased = await this.prisma.romanSession.aggregate({
+   805	      where: {
+   806	        user_id: caller.id,
+   807	        deleted_at: { not: null },
+   808	        day_key: { startsWith: ROMAN_ERASED_DAY_KEY_PREFIX },
+   809	        last_activity_at: { gte: since },
+   810	        message_count: { gt: 0 },
+   811	      },
+   812	      _sum: { message_count: true },
+   813	      _min: { last_activity_at: true },
+   814	    });
+   815	    const used = live + (erased._sum.message_count ?? 0);
+   816	    if (used >= cap) {
+   817	      // Retry-after = time until the oldest counted turn (or erased session's
+   818	      // last activity) falls out of the window.
+   819	      const oldest = await this.prisma.romanMessage.findFirst({
+   820	        where: {
+   821	          user_id: caller.id,
+   822	          role: 'user',
+   823	          created_at: { gte: since },
+   824	        },
+   825	        orderBy: { created_at: 'asc' },
+   826	      });
+   827	      const candidates = [
+   828	        ...(oldest ? [oldest.created_at.getTime()] : []),
+   829	        ...(erased._min.last_activity_at ? [erased._min.last_activity_at.getTime()] : []),
+   830	      ];
+   831	      const earliest = candidates.length > 0 ? Math.min(...candidates) : null;
+   832	      const retryAfterSeconds =
+   833	        earliest !== null
+   834	          ? Math.max(
+   835	              1,
+   836	              Math.ceil((earliest + ROMAN_RATE_LIMIT_WINDOW_MS - Date.now()) / 1000),
+   837	            )
+   838	          : Math.ceil(ROMAN_RATE_LIMIT_WINDOW_MS / 1000);
+   839	      throw new HttpException(
+   840	        {
+   841	          code: ROMAN_ERROR_RATE_LIMIT,
+   842	          retryAfterSeconds,
+   843	          message: romanRateLimitMessage(retryAfterSeconds, caller.role),
+   844	        },
+   845	        HttpStatus.TOO_MANY_REQUESTS,
+   846	      );
+  1178	  /**
+  1179	   * Read-only capacity check the controller runs BEFORE storing the user
+  1180	   * turn, so a client who hits the daily cap is told so without leaving an
+  1181	   * unanswered message behind. Same fail-closed rule as the reservation.
+  1182	   */
+  1183	  async assertDailyCapacity(caller?: RomanCaller): Promise<void> {
+  1184	    const now = new Date();
+  1185	    const dayStart = new Date(
+  1186	      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  1187	    );
+  1188	    let used: number;
+  1189	    try {
+  1190	      const agg = await this.prisma.aiRequestAudit.aggregate({
+  1191	        where: { capability: ROMAN_LEDGER_CAPABILITY, created_at: { gte: dayStart } },
+  1192	        _sum: { prompt_token_estimate: true, response_token_estimate: true },
+  1193	      });
+  1194	      used = RomanService.costUsd(
+  1195	        agg._sum.prompt_token_estimate ?? 0,
+  1196	        agg._sum.response_token_estimate ?? 0,
+  1197	      );
+  1198	    } catch (err) {
+  1199	      this.logger.error(`roman.spend_ledger_failed: ${romanErrorTag(err)}`);
+  1200	      Sentry.captureException(romanSanitizedError('roman.spend_ledger_failed', err), {
+  1201	        tags: { feature: 'roman', op: 'roman.spend' },
+  1202	      });
+  1203	      throw new ServiceUnavailableException({
+  1204	        code: ROMAN_ERROR_UNAVAILABLE,
+  1205	        message: romanFailureMessage('capacity_unknown', caller?.role),
+  1206	      });
+  1207	    }
+  1208	    if (used >= this.dailyCostCapUsd()) {
+  1209	      const tomorrow = dayStart.getTime() + 24 * 60 * 60 * 1000;
+  1210	      throw new ServiceUnavailableException({
+  1211	        code: ROMAN_ERROR_CAPACITY_REACHED,
+  1212	        message: romanFailureMessage('capacity_reached', caller?.role),
+  1213	        retryAfterSeconds: Math.max(60, Math.ceil((tomorrow - now.getTime()) / 1000)),
+  1214	      });
+  1215	    }
+  1267	    if (used > cap) {
+  1268	      await this.settleSpend(requestId, 0, 0, { outcome: 'over_cap' });
+  1269	      this.logger.warn(`roman.capacity_reached cap_usd=${cap}`);
+  1270	      Sentry.captureMessage('roman.capacity_reached', {
+  1271	        level: 'warning',
+  1272	        tags: { feature: 'roman', op: 'roman.spend' },
+  1273	      });
+  1274	      const tomorrow = dayStart.getTime() + 24 * 60 * 60 * 1000;
+  1275	      throw new ServiceUnavailableException({
+  1276	        code: ROMAN_ERROR_CAPACITY_REACHED,
+  1277	        message: romanFailureMessage('capacity_reached', caller?.role),
+  1278	        retryAfterSeconds: Math.max(60, Math.ceil((tomorrow - now.getTime()) / 1000)),
+  1279	      });
+  1280	    }
+  1281	    return requestId;
+  1282	  }
+  1283	
+  1284	  /**
+   373	  async chat(
+   374	    userId: string,
+   375	    userMessage: string,
+   376	    // A9 — the wire role is validated to the 'user'|'assistant' union by
+   377	    // ChatRequestDto at the controller (the global ValidationPipe rejects a
+   378	    // forged 'system' role before it reaches here). We keep the param typed
+   379	    // to that strict union — and the two provider branches below still defend
+   380	    // in depth by narrowing any non-'assistant' role to 'user' so a 'system'
+   381	    // entry can never be folded into the prompt WITH a system role.
+   382	    conversationHistory: Array<{ role: ChatRole; content: string }>,
+   383	  ): Promise<ChatResult> {
+   384	    // A1 — build context first (this performs NO provider calls and burns no
+   385	    // billable tokens) so we can assemble + clamp the prompt and reserve the
+   386	    // best-effort worst-case TOTAL-token estimate before any model call.
+   387	    const ctx = await this.contextSvc.build(userId);
+   388	    // R2b — starts as 'fallback' so a refusal thrown mid-call refunds the
+   389	    // reservation in the finally block below.
+   390	    let modelUsed: 'perplexity' | 'anthropic' | 'fallback' = 'fallback';
+   391	    const anthropicReady = Boolean(
+   392	      this.anthropic && this.coachAIState && this.coachAIState.isReady(),
+   393	    );
+   394	    const dataSubject = clientDataSubject(userId, 'client');
+   395	    if (anthropicReady) {
+   396	      // R2b — refuse BEFORE any quota is reserved when the client has not
+   397	      // allowed AI help (403 ai_consent_required, Settings > Privacy).
+   398	      await this.egress.assertMaySend(dataSubject, 'anthropic', 'ai.client_chat');
+   399	    }
+   648	  private async reserveDailyTokens(
+   649	    userId: string,
+   650	    cost: number,
+   651	    minRequired: number,
+   652	  ): Promise<Date> {
+   653	    const quotaDate = this.getQuotaDate();
+   654	
+   655	    // Upsert returns the current row so we can run the explicit pre-call checks
+   656	    // below. The @@unique makes the upsert idempotent under concurrency; we
+   657	    // create the day's row at zero so the guarded increment is the single
+   658	    // source of truth for the reservation (avoids a create that races a
+   659	    // concurrent reserve into double-charging).
+   660	    const row = await this.prisma.userAIQuota.upsert({
+   661	      where: { UserAIQuota_user_id_quota_date_key: { user_id: userId, quota_date: quotaDate } },
+   662	      create: { user_id: userId, quota_date: quotaDate, tokens_used: 0, request_count: 0 },
+   663	      update: {},
+   664	    });
+   665	
+   666	    // (a) + (b) — explicit pre-call checks. Reject when already at/over the cap,
+   667	    // or when the worst-case reservation estimate would not fit in the remaining
+   668	    // budget. These are best-effort pre-spend guards on the estimate; the EXACT
+   669	    // post-call reconcile is what makes the daily total authoritative.
+   670	    const consumed = row?.tokens_used ?? 0;
+   671	    if (
+   672	      consumed >= DAILY_TOKEN_QUOTA ||
+   673	      consumed + minRequired > DAILY_TOKEN_QUOTA
+   674	    ) {
+   675	      throw new HttpException(
+   676	        {
+   677	          error: AI_DAILY_QUOTA_EXCEEDED,
+   678	          message:
+   679	            'You have reached your daily AI coaching limit. It refreshes tomorrow.',
+   680	        },
+   681	        HttpStatus.TOO_MANY_REQUESTS, // 429
+   682	      );
+   683	    }
+   684	
+   685	    // (c) — the atomic race-safe hard gate. Only reserve the full cost if there
+   686	    // is room for it (tokens_used + cost <= cap). At/over the remaining budget
+   687	    // this matches 0 rows and we reject below.
+   688	    const guarded = await this.prisma.userAIQuota.updateMany({
+   689	      where: {
+   690	        user_id: userId,
+   691	        quota_date: quotaDate,
+   692	        tokens_used: { lte: DAILY_TOKEN_QUOTA - cost },
+   693	      },
+   694	      data: {
+   695	        tokens_used: { increment: cost },
+   696	        request_count: { increment: 1 },
+   697	      },
+   698	    });
+   699	
+   700	    if (guarded.count === 0) {
+   701	      throw new HttpException(
+   702	        {
+   703	          error: AI_DAILY_QUOTA_EXCEEDED,
+   704	          message:
+   705	            'You have reached your daily AI coaching limit. It refreshes tomorrow.',
+   706	        },
+   707	        HttpStatus.TOO_MANY_REQUESTS, // 429
+   708	      );
+   709	    }
+   710	
+    51	    if (exception instanceof HttpException && !ormBoundary) {
+    52	      const res = exception.getResponse();
+    53	      if (typeof res === 'string') {
+    54	        message = res;
+    55	        error = exception.name.replace(/Exception$/, '');
+    56	      } else if (res && typeof res === 'object') {
+    57	        const body = res as { message?: string | string[]; error?: string; code?: string };
+    58	        message = body.message ?? exception.message;
+    59	        error = body.error ?? exception.name.replace(/Exception$/, '');
+    60	        if (typeof body.code === 'string') code = body.code;
+    61	      }
+    93	    response.status(status).json(
+    94	      buildErrorEnvelope(request, {
+    95	        statusCode: status,
+    96	        code,
+    97	        message,
+    98	        error,
+    99	        requestId: reqWithId.requestId,
+   100	      }),
+   101	    );
+   102	  }

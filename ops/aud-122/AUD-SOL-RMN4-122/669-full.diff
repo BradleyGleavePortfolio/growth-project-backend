@@ -1,0 +1,2035 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 2881aab4..99d66d86 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -586,3 +586,13 @@ jobs:
+         run: npx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
++
++      - name: Run Roman spend admission live spec (#651 B-651-5)
++        # test/roman/roman-spend-admission.live.spec.ts: on real Postgres,
++        # concurrent Roman turns are admitted against the daily cap under a
++        # per-UTC-day advisory lock, so turns that fit are never both refused
++        # and admitted reservations never sum above the cap. Same
++        # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap.
++        run: npx jest test/roman/roman-spend-admission.live.spec.ts --runInBand --testTimeout=120000
++        env:
++          NODE_OPTIONS: --max-old-space-size=4096
+diff --git a/src/roman/guardrails/roman-post-check.ts b/src/roman/guardrails/roman-post-check.ts
+index e0cd3aed..5b7e3987 100644
+--- a/src/roman/guardrails/roman-post-check.ts
++++ b/src/roman/guardrails/roman-post-check.ts
+@@ -325,6 +325,12 @@ const PLAN_WORD = /\b(meal plan|your plan|the plan|planned)\b/i;
+ /** B-668-3 (Sol): wording that states the whole day's intake ("logged 450 kcal today", "so far"). */
+ const DAY_TOTAL_CLAIM =
+   /\b(today|so far|in total|total|for the day|daily|you are at|you'?re at|sitting at|intake)\b/i;
++/** B-666-5 (Sol): one named meal or food item (singular: "at lunch", "a 450 kcal bowl"). */
++const SINGLE_MEAL_CLAUSE =
++  /\b(breakfast|lunch|dinner|supper|snack|meal|serving|portion|plate|bowl|bar|shake)\b/i;
++/** B-666-5 (Sol): wording that sums the day; it wins over a meal word ("across two meals"). */
++const AGGREGATE_CLAIM =
++  /\b(in total|total|so far|for the day|daily|intake|across|combined|altogether|meals|snacks|all (of )?(your|my|the|today'?s))\b/i;
+ 
+ /**
+  * kcal facts of the given field families (B-651-7: never pooled across
+@@ -345,10 +351,15 @@ function kcalFacts(
+     if (past) out.push(...(f.intake_past_days ?? []));
+     else {
+       out.push(ctx.today.kcal);
+-      // B-668-3 (Sol): one meal never validates a whole-day claim. Entry
+-      // values only count when the clause is about a meal, or makes no
+-      // whole-day claim at all ("you logged a 450 kcal salad").
+-      if (MEAL_CLAUSE.test(clause) || !DAY_TOTAL_CLAIM.test(clause)) {
++      // B-668-3 / B-666-5 (Sol): one meal never validates a whole-day claim.
++      // Entry values only count when the clause makes no whole-day claim at
++      // all ("you logged a 450 kcal salad"), or names one meal without any
++      // summing wording ("450 kcal at lunch today", never "today across two
++      // meals" or "your total intake").
++      if (
++        !DAY_TOTAL_CLAIM.test(clause) ||
++        (SINGLE_MEAL_CLAUSE.test(clause) && !AGGREGATE_CLAIM.test(clause))
++      ) {
+         out.push(...(f.intake_entries_today ?? []));
+       }
+     }
+diff --git a/src/roman/guardrails/safety-router.ts b/src/roman/guardrails/safety-router.ts
+index dd7966ab..daaf785b 100644
+--- a/src/roman/guardrails/safety-router.ts
++++ b/src/roman/guardrails/safety-router.ts
+@@ -73,6 +73,10 @@ const EMERGENCY: RegExp[] = [
+   // A-666-2 (Opus): an overdose given as a count ("I took 20 of my sleeping
+   // pills", "a bunch of pills"). Five or more; "took 2 pills" is a dose.
+   /\b(took|taken|swallowed|have taken|i'?ve taken) ([5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the)? (\w+ )?(pills|tablets|meds|capsules|painkillers)\b/i,
++  // A-666-3 (Opus): the same overdose with the medicine named instead of
++  // "pills" ("a whole bottle of Tylenol", "30 ibuprofen", "a bunch of Xanax").
++  // Five or more, or a bottle/pack/handful; "took 2 Tylenol" is a dose.
++  /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of|[5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the| his| her| their)? (\w+ )?(tylenol|acetaminophen|paracetamol|advil|motrin|ibuprofen|aleve|naproxen|aspirin|excedrin|nyquil|benadryl|diphenhydramine|xanax|valium|ativan|klonopin|ambien|zolpidem|oxy|oxys|oxycodone|oxycontin|percocet|vicodin|hydrocodone|codeine|tramadol|morphine|fentanyl|adderall|lithium|seroquel|antidepressants|sleeping meds|sleep meds)s?\b/i,
+   /\b(coughing|throwing|vomiting) up blood\b/i,
+ ];
+ 
+diff --git a/src/roman/roman.constants.ts b/src/roman/roman.constants.ts
+index 3c859d23..ab311206 100644
+--- a/src/roman/roman.constants.ts
++++ b/src/roman/roman.constants.ts
+@@ -114,10 +114,12 @@ export const ROMAN_CURSOR_INVALID_MESSAGE =
+  * 121, 13:33): about 2,000 to 3,000 ordinary turns a day at $0.03 to $0.05
+  * each, or 23 clients each at the full 50-turn limit at the worst-case
+  * reservation, so ordinary launch use never meets it. A turn
+- * RESERVES its worst-case cost in the content-free ledger (AiRequestAudit,
+- * capability `roman.chat`) before the provider call and settles the actual
+- * tokens after it, so concurrent turns see each other. Fail closed: when
+- * today's spend cannot be read, no paid call is made.
++ * RESERVES the upper bound of its exact payload plus max output in the
++ * content-free ledger (AiRequestAudit, capability `roman.chat`) under a
++ * per-day advisory lock before the provider call (B-651-4/5), and settles
++ * the known tokens after it, keeping the reserved value for any side whose
++ * usage the provider never reported (B-651-1). Fail closed: when today's
++ * spend cannot be read, no paid call is made.
+  */
+ export const ROMAN_DAILY_COST_CAP_USD_ENV = 'ROMAN_DAILY_COST_CAP_USD';
+ export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 100;
+diff --git a/src/roman/roman.prompts.ts b/src/roman/roman.prompts.ts
+index e3cf0308..79d5109c 100644
+--- a/src/roman/roman.prompts.ts
++++ b/src/roman/roman.prompts.ts
+@@ -38,7 +38,7 @@ export const ROMAN_VOICE_CONTRACT = `You are Roman, the single AI persona of The
+ - Precise, slightly elevated vocab. Banned: synergy/leverage/circle back/bandwidth.
+ - Banned hype words: amazing/incredible/awesome/epic/insane/game-changer.
+ - NO emoji. Ever.
+-- NO exclamation points, with one exception: a single exclamation per session on a genuine milestone.
++- NO exclamation points. Ever. A milestone is marked in plain words, never with an exclamation point.
+ - Banned fitness-bro: crushing it/let's go/beast mode/grind/let's get it.
+ - Banned Gen-Z: slay/bet/no cap/rizz/lowkey/vibe/it's giving.
+ 
+@@ -111,9 +111,10 @@ function surfaceFraming(surface: RomanSurface): string {
+ export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
+   const { surface, voice, subjectContext, routerHint, clientData, clientDataUnavailable } = input;
+ 
+-  const remainingExclamation = voice.exclamationUsed
+-    ? 'The single per-session exclamation has already been spent. Do not use an exclamation point for the rest of this session.'
+-    : 'You may spend the single per-session exclamation point ONLY on a genuine milestone, and only once.';
++  // B-651-9: shipped replies carry no exclamation marks at all, so the old
++  // one-per-session allowance is gone whatever the session recorded.
++  const remainingExclamation =
++    'Do not use an exclamation point in this reply. Mark a milestone in plain, warm words.';
+ 
+   const quipGuidance = voice.lastTurnHadQuip
+     ? `Your previous turn carried a dry quip, so this turn MUST NOT. (Quips used this session: ${voice.quipsInSession}.)`
+diff --git a/src/roman/roman.service.ts b/src/roman/roman.service.ts
+index b3840c6b..0542391a 100644
+--- a/src/roman/roman.service.ts
++++ b/src/roman/roman.service.ts
+@@ -64,6 +64,11 @@ import {
+   ROMAN_ERASE_SWEEP_MAX_BATCHES,
+ } from './roman.constants';
+ import { isRomanChatEnabled } from './roman.feature';
++import {
++  ROMAN_LOGGABLE_ERROR_NAMES,
++  romanErrorTag,
++  romanSanitizedError,
++} from './roman-error-tag';
+ import { randomUUID } from 'node:crypto';
+ import {
+   ROMAN_DAILY_COST_CAP_USD_DEFAULT,
+@@ -84,12 +89,13 @@ import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
+ import {
+   classifySafety,
+   routerHintFor,
++  ROMAN_SAFETY_ROUTE_REASON,
+   ROMAN_SAFETY_ROUTER_MODEL_ID,
+   ROMAN_SAFETY_TEMPLATES,
+ } from './guardrails/safety-router';
+ import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
+ import { RomanClientContextService } from './context/roman-client-context.service';
+-import { AuditService } from '../audit/audit.service';
++import { AuditAction, AuditService } from '../audit/audit.service';
+ import type {
+   RomanClientContext,
+   RomanClientContextBundle,
+@@ -747,8 +753,6 @@ export class RomanService {
+       modelId?: string | null;
+       interrupted?: boolean;
+       parentMessageId?: string | null;
+-      /** This Roman turn spends the session's single exclamation mark. */
+-      spendsExclamation?: boolean;
+     },
+   ): Promise<RomanMessage> {
+     return this.prisma.$transaction(async (tx) => {
+@@ -757,7 +761,6 @@ export class RomanService {
+         data: {
+           message_count: { increment: 1 },
+           last_activity_at: new Date(),
+-          ...(data.spendsExclamation ? { exclamation_used: true } : {}),
+         },
+       });
+       if (live.count === 0) {
+@@ -954,15 +957,20 @@ export class RomanService {
+         modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
+         interrupted: false,
+       });
++      // OR-115-1 (C-651-5): one neutral action name and no class in the log
++      // line. The closed reason code lives only in AuditLog.metadata, which
++      // the owner audit list never returns and #608's erasure manifest nulls
++      // for this actor.
+       this.logger.warn(
+-        `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=false`,
++        `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=false template=fixed`,
+       );
+       await this.audit?.write({
+-        action: route.class === 'emergency' ? 'roman.safety_emergency' : 'roman.safety_self_harm',
++        action: AuditAction.ROMAN_SAFETY_ROUTE,
+         actorId: caller.id,
+         actorRole: caller.role,
+         targetType: 'RomanSession',
+         targetId: session.id,
++        metadata: { route_reason: ROMAN_SAFETY_ROUTE_REASON[route.class] },
+       });
+       yield { type: 'delta', text };
+       yield { type: 'done', text, messageId: persisted.id, interrupted: false };
+@@ -989,16 +997,6 @@ export class RomanService {
+     // B-668-1: the coach pool is re-checked here (the controller checked it
+     // before storing the turn) and refuses before any spend is reserved.
+     const poolCoachId = await this.assertCoachPoolOpen(caller);
+-    const reservation = await this.reserveDailySpend(caller);
+-    // Every settle path that spent tokens also debits the coach pool.
+-    const settle = async (
+-      inputTokens: number,
+-      outputTokens: number,
+-      metadata: Record<string, string | number | boolean | string[] | null>,
+-    ): Promise<void> => {
+-      await this.settleSpend(reservation, inputTokens, outputTokens, metadata);
+-      await this.debitCoachPool(poolCoachId, inputTokens, outputTokens, reservation);
+-    };
+ 
+     let bundle: RomanClientContextBundle | null = null;
+     let contextUnavailable = false;
+@@ -1016,13 +1014,35 @@ export class RomanService {
+       clientData: bundle?.rendered ?? null,
+       clientDataUnavailable: contextUnavailable,
+     });
+-    const messages = await this.buildContextTurns(session.id);
++    // B-651-4: the reservation is an upper bound of THIS payload, built from
++    // the exact system prompt and history that will be sent (trimmed to the
++    // enforceable input budget, oldest turns first), never a fixed estimate.
++    const payload = boundRomanPayload(system, await this.buildContextTurns(session.id));
++    const messages = payload.messages;
++    const reservation = await this.reserveDailySpend(caller, payload.inputTokenBound);
++    // Every settle path that spent tokens also debits the coach pool (B-668-1).
++    const settle = async (
++      inputTokens: number,
++      outputTokens: number,
++      metadata: Record<string, string | number | boolean | string[] | null>,
++    ): Promise<void> => {
++      await this.settleSpend(reservation, inputTokens, outputTokens, metadata);
++      await this.debitCoachPool(poolCoachId, inputTokens, outputTokens, reservation);
++    };
+ 
+     let acc = '';
+     let interrupted = false;
+     let failed = false;
+     let promptTokens: number | null = null;
+     let completionTokens: number | null = null;
++    // B-651-1: what is known about provider usage. `dispatched` turns true the
++    // moment the request is handed to the SDK; `usageFinal` only when the final
++    // message_delta carried the output count. A provider HTTP error before any
++    // event (it answered with an error status) generated nothing.
++    let dispatched = false;
++    let sawEvent = false;
++    let usageFinal = false;
++    let providerRejected = false;
+ 
+     // Own AbortController forwarded to the SDK so a client disconnect actively
+     // cancels the upstream request (no orphan generation).
+@@ -1034,6 +1054,7 @@ export class RomanService {
+     }
+ 
+     try {
++      dispatched = true;
+       const stream = await this.egress.anthropicMessagesStream(
+         this.anthropic,
+         subject,
+@@ -1047,6 +1068,7 @@ export class RomanService {
+         { signal: upstream.signal },
+       );
+       for await (const event of stream) {
++        sawEvent = true;
+         if (opts.signal?.aborted) {
+           interrupted = true;
+           break;
+@@ -1054,21 +1076,25 @@ export class RomanService {
+         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+           acc += event.delta.text;
+         } else if (event.type === 'message_delta') {
+-          completionTokens = event.usage?.output_tokens ?? completionTokens;
++          const out = event.usage?.output_tokens;
++          if (typeof out === 'number') {
++            completionTokens = out;
++            usageFinal = true;
++          }
+         } else if (event.type === 'message_start') {
+           promptTokens = event.message?.usage?.input_tokens ?? promptTokens;
+         }
+       }
+     } catch (err) {
+       if (isAiEgressRefusal(err)) {
+-        await settle(0, 0, { outcome: 'refused' });
++        // Refused by the consent gate before anything was sent: known zero.
++        await settle(0, 0, { outcome: 'refused', usage: 'none_sent' });
+         throw err;
+       }
+       interrupted = true;
+       failed = !opts.signal?.aborted;
+-      this.logger.warn(
+-        `roman.stream_error session=${session.id}: ${romanErrorTag(err)}`,
+-      );
++      providerRejected = !sawEvent && isProviderHttpError(err);
++      this.logger.warn(`roman.stream_error session=${session.id}: ${romanErrorTag(err)}`);
+     } finally {
+       opts.signal?.removeEventListener('abort', forwardAbort);
+       upstream.abort();
+@@ -1076,9 +1102,25 @@ export class RomanService {
+ 
+     // Model failure before any text: honest, specific, coded. The user turn
+     // stays stored; nothing is invented for Roman.
++    if (promptTokens !== null && promptTokens > payload.inputTokenBound) {
++      // Should be impossible (tokens never exceed bytes); surfaced so the
++      // bound can be corrected if a provider ever counts differently.
++      this.logger.warn(
++        `roman.input_bound_exceeded session=${session.id} reported=${promptTokens} bound=${payload.inputTokenBound}`,
++      );
++    }
++    const usage = settledUsage({
++      dispatched,
++      providerRejected,
++      usageFinal,
++      promptTokens,
++      completionTokens,
++      inputTokenBound: payload.inputTokenBound,
++    });
+     if (failed && acc.trim().length === 0) {
+-      await settle(promptTokens ?? 0, completionTokens ?? 0, {
++      await settle(usage.input, usage.output, {
+         outcome: 'model_error',
++        usage: usage.kind,
+       });
+       Sentry.captureMessage('roman.model_unavailable', {
+         level: 'warning',
+@@ -1094,7 +1136,7 @@ export class RomanService {
+       routerClass: route.class,
+       context: bundle ? postCheckContextOf(bundle.context) : null,
+       contextUnavailable: grounded && contextUnavailable,
+-      exclamationAllowed: !session.exclamation_used,
++      exclamationAllowed: false,
+     });
+ 
+     // Persisted ONCE, already checked: what is stored is what the client sees.
+@@ -1107,32 +1149,32 @@ export class RomanService {
+         completionTokens,
+         modelId: ROMAN_MODEL_PHASE_1,
+         interrupted,
+-        // The voice contract allows ONE exclamation per session: once a stored
+-        // reply carries it, the session records it so the next turn's prompt
+-        // and post-check allow none.
+-        spendsExclamation: !session.exclamation_used && checked.text.includes('!'),
+       });
+     } catch (err) {
+       // The chat was deleted (or the write failed) while the model answered:
+       // nothing is stored, but the tokens were spent, so the ledger settles
+       // with the real usage instead of keeping the reservation estimate.
+-      await settle(promptTokens ?? 0, completionTokens ?? 0, {
++      await settle(usage.input, usage.output, {
+         outcome: err instanceof NotFoundException ? 'session_gone' : 'persist_failed',
+-        router_class: route.class,
++        usage: usage.kind,
+       });
+       throw err;
+     }
+-    await settle(promptTokens ?? 0, completionTokens ?? 0, {
++    // OR-115-1: no router class and no guardrail names in the ledger (they
++    // are health inferences); only whether the reply was rewritten and how
++    // many checks fired.
++    await settle(usage.input, usage.output, {
+       outcome: interrupted ? 'interrupted' : 'ok',
+-      router_class: route.class,
+-      guardrails_applied: checked.guardrails_applied,
++      usage: usage.kind,
++      rewritten: checked.rewritten,
++      guardrail_count: checked.guardrails_applied.length,
+       prompt_version: PROMPT_VERSION,
+       context_version: bundle?.context.version ?? null,
+       context_hash: bundle?.hash ?? null,
+       context_unavailable: grounded && contextUnavailable,
+     });
+     this.logger.log(
+-      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=true rewritten=${checked.rewritten} guardrails_applied=${JSON.stringify(checked.guardrails_applied)} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
++      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
+     );
+ 
+     if (checked.text.length > 0) yield { type: 'delta', text: checked.text };
+@@ -1253,44 +1295,53 @@ export class RomanService {
+   }
+ 
+   /**
+-   * Reserve this turn's worst-case cost in the content-free ledger, then
+-   * check today's total INCLUDING the reservation. Over the cap: the
+-   * reservation is released and the turn is a coded 503 with a specific
+-   * message. Any ledger failure: coded 503, no provider call (fail closed).
++   * B-651-4 / B-651-5: admit this turn only if today's total PLUS this turn's
++   * upper-bound cost (exact payload bound + max output) stays within the cap,
++   * and do the compare and the reservation insert atomically. A transaction-
++   * scoped advisory lock keyed on the UTC day serialises every admission
++   * across replicas, so two concurrent affordable turns can never both be
++   * rejected, and admitted reservations never sum above the cap. Over the
++   * cap: nothing is inserted and the turn is a coded 503 with specific copy.
++   * Any ledger failure: coded 503, no provider call (fail closed).
+    */
+-  async reserveDailySpend(caller: RomanCaller): Promise<string> {
++  async reserveDailySpend(caller: RomanCaller, inputTokenBound: number): Promise<string> {
+     const requestId = `roman:${randomUUID()}`;
+     const cap = this.dailyCostCapUsd();
+     const now = new Date();
+-    const dayStart = new Date(
+-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+-    );
+-    const promptReserve = RomanService.PROMPT_RESERVE_TOKENS;
+-    let used: number;
++    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
++    const dayKey = Math.floor(dayStart.getTime() / 86_400_000);
++    const promptReserve = Math.max(0, Math.ceil(inputTokenBound));
++    const reserveUsd = RomanService.costUsd(promptReserve, ROMAN_MAX_OUTPUT_TOKENS);
++    let admitted: boolean;
+     try {
+-      await this.prisma.aiRequestAudit.create({
+-        data: {
+-          request_id: requestId,
+-          capability: ROMAN_LEDGER_CAPABILITY,
+-          requester_id: caller.id,
+-          requester_role: caller.role,
+-          subject_user_id: caller.role === 'student' ? caller.id : null,
+-          provider: 'anthropic',
+-          model: ROMAN_MODEL_PHASE_1,
+-          enabled: true,
+-          prompt_token_estimate: promptReserve,
+-          response_token_estimate: ROMAN_MAX_OUTPUT_TOKENS,
+-          metadata: { state: 'reserved' },
+-        },
+-      });
+-      const agg = await this.prisma.aiRequestAudit.aggregate({
+-        where: { capability: ROMAN_LEDGER_CAPABILITY, created_at: { gte: dayStart } },
+-        _sum: { prompt_token_estimate: true, response_token_estimate: true },
++      admitted = await this.prisma.$transaction(async (tx) => {
++        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ROMAN_SPEND_LOCK_NAMESPACE}::int4, ${dayKey}::int4)`;
++        const agg = await tx.aiRequestAudit.aggregate({
++          where: { capability: ROMAN_LEDGER_CAPABILITY, created_at: { gte: dayStart } },
++          _sum: { prompt_token_estimate: true, response_token_estimate: true },
++        });
++        const used = RomanService.costUsd(
++          agg._sum.prompt_token_estimate ?? 0,
++          agg._sum.response_token_estimate ?? 0,
++        );
++        if (used + reserveUsd > cap) return false;
++        await tx.aiRequestAudit.create({
++          data: {
++            request_id: requestId,
++            capability: ROMAN_LEDGER_CAPABILITY,
++            requester_id: caller.id,
++            requester_role: caller.role,
++            subject_user_id: caller.role === 'student' ? caller.id : null,
++            provider: 'anthropic',
++            model: ROMAN_MODEL_PHASE_1,
++            enabled: true,
++            prompt_token_estimate: promptReserve,
++            response_token_estimate: ROMAN_MAX_OUTPUT_TOKENS,
++            metadata: { state: 'reserved' },
++          },
++        });
++        return true;
+       });
+-      used = RomanService.costUsd(
+-        agg._sum.prompt_token_estimate ?? 0,
+-        agg._sum.response_token_estimate ?? 0,
+-      );
+     } catch (err) {
+       this.logger.error(`roman.spend_ledger_failed: ${romanErrorTag(err)}`);
+       Sentry.captureException(romanSanitizedError('roman.spend_ledger_failed', err), {
+@@ -1301,8 +1352,7 @@ export class RomanService {
+         message: romanFailureMessage('capacity_unknown', caller?.role),
+       });
+     }
+-    if (used > cap) {
+-      await this.settleSpend(requestId, 0, 0, { outcome: 'over_cap' });
++    if (!admitted) {
+       this.logger.warn(`roman.capacity_reached cap_usd=${cap}`);
+       Sentry.captureMessage('roman.capacity_reached', {
+         level: 'warning',
+@@ -1481,6 +1531,98 @@ export class RomanService {
+   }
+ }
+ 
++/** pg_advisory_xact_lock namespace for the Roman daily spend admission: ASCII 'rmsp'. */
++export const ROMAN_SPEND_LOCK_NAMESPACE = 0x72_6d_73_70;
++
++/**
++ * B-651-4: the enforceable input budget of one Roman request. History is
++ * trimmed (oldest turns first) only when a payload would exceed it; ordinary
++ * chats are far below it, so no turn of a normal conversation is dropped.
++ */
++export const ROMAN_MAX_INPUT_TOKEN_BOUND = 100_000;
++/** Fixed per-request and per-message framing allowance (roles, separators). */
++const ROMAN_REQUEST_OVERHEAD_TOKENS = 256;
++const ROMAN_MESSAGE_OVERHEAD_TOKENS = 16;
++
++/**
++ * An upper bound of the input tokens a payload can cost: the provider's
++ * tokenizer never emits more tokens than UTF-8 bytes, plus fixed framing.
++ */
++export function inputTokenUpperBound(
++  system: string,
++  messages: ReadonlyArray<{ content: string }>,
++): number {
++  let bytes = Buffer.byteLength(system, 'utf8') + ROMAN_REQUEST_OVERHEAD_TOKENS;
++  for (const m of messages)
++    bytes += Buffer.byteLength(m.content, 'utf8') + ROMAN_MESSAGE_OVERHEAD_TOKENS;
++  return bytes;
++}
++
++/**
++ * B-651-4: the exact payload that will be sent and its input-token upper
++ * bound. Drops the oldest turns while the bound exceeds the budget, always
++ * keeps the newest turn, and never starts the history with a Roman turn.
++ */
++export function boundRomanPayload(
++  system: string,
++  history: Array<{ role: 'user' | 'assistant'; content: string }>,
++  budget: number = ROMAN_MAX_INPUT_TOKEN_BOUND,
++): {
++  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
++  inputTokenBound: number;
++  trimmed: number;
++} {
++  const messages = [...history];
++  let trimmed = 0;
++  while (messages.length > 1 && inputTokenUpperBound(system, messages) > budget) {
++    messages.shift();
++    trimmed += 1;
++  }
++  while (messages.length > 1 && messages[0].role !== 'user') {
++    messages.shift();
++    trimmed += 1;
++  }
++  return { messages, inputTokenBound: inputTokenUpperBound(system, messages), trimmed };
++}
++
++/** The provider answered with an HTTP error status (it generated nothing). */
++function isProviderHttpError(err: unknown): boolean {
++  const status = err instanceof Error ? (err as { status?: unknown }).status : undefined;
++  return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599;
++}
++
++/**
++ * B-651-1: what the ledger settles to. Known usage replaces the reservation;
++ * unknown usage after a dispatched request keeps the conservative reserved
++ * value for the unknown side (over-counting is the safe side of a hard cap):
++ *   - not dispatched, or the provider answered with an HTTP error before any
++ *     event: nothing was generated, known zero;
++ *   - input unknown (no message_start): the payload's input bound;
++ *   - output unknown (no final message_delta): the max output reservation.
++ */
++export function settledUsage(u: {
++  dispatched: boolean;
++  providerRejected: boolean;
++  usageFinal: boolean;
++  promptTokens: number | null;
++  completionTokens: number | null;
++  inputTokenBound: number;
++}): {
++  input: number;
++  output: number;
++  kind: 'none_sent' | 'provider_rejected' | 'final' | 'partial';
++} {
++  if (!u.dispatched) return { input: 0, output: 0, kind: 'none_sent' };
++  if (u.providerRejected) return { input: 0, output: 0, kind: 'provider_rejected' };
++  const input = u.promptTokens ?? u.inputTokenBound;
++  if (u.usageFinal && u.completionTokens !== null && u.promptTokens !== null) {
++    return { input, output: u.completionTokens, kind: 'final' };
++  }
++  const output =
++    u.usageFinal && u.completionTokens !== null ? u.completionTokens : ROMAN_MAX_OUTPUT_TOKENS;
++  return { input, output, kind: 'partial' };
++}
++
+ /**
+  * The typed facts the post-check may compare against, from the SAME bundle
+  * the model saw (B-R8-2). B-668-3: the extra kcal facts keep their family,
+@@ -1513,65 +1655,6 @@ export function postCheckContextOf(ctx: RomanClientContext): PostCheckContext {
+   };
+ }
+ 
+-/**
+- * Content-free error tag for Roman's logs and Sentry events: the error class
+- * plus, when present, a Prisma code or an HTTP status. Never `err.message`:
+- * a context read, a provider error or a ledger write can carry query
+- * arguments, client facts or transcript text, and `safeDiagnostic` only
+- * redacts ORM errors.
+- */
+-/** Error class names that may appear in Roman logs and Sentry; anything else is `OtherError`. */
+-export const ROMAN_LOGGABLE_ERROR_NAMES: ReadonlySet<string> = new Set([
+-  'Error',
+-  'TypeError',
+-  'RangeError',
+-  'SyntaxError',
+-  'ReferenceError',
+-  'AbortError',
+-  'TimeoutError',
+-  'DatabaseRequestError',
+-  'PrismaClientKnownRequestError',
+-  'PrismaClientUnknownRequestError',
+-  'PrismaClientInitializationError',
+-  'PrismaClientValidationError',
+-  'PrismaClientRustPanicError',
+-  'APIError',
+-  'APIConnectionError',
+-  'APIConnectionTimeoutError',
+-  'APIUserAbortError',
+-  'BadRequestError',
+-  'AuthenticationError',
+-  'PermissionDeniedError',
+-  'NotFoundError',
+-  'ConflictError',
+-  'UnprocessableEntityError',
+-  'RateLimitError',
+-  'InternalServerError',
+-  'OverloadedError',
+-  'HttpException',
+-  'ServiceUnavailableException',
+-  'NotFoundException',
+-  'ForbiddenException',
+-]);
+-
+-export function romanErrorTag(err: unknown): string {
+-  const d = safeDiagnostic(err);
+-  if (!(d instanceof Error)) return 'NonError';
+-  // Closed allowlist (pre-push checklist (a)): an error's `name` is set by
+-  // code, but a thrown object can carry any string there.
+-  const name = ROMAN_LOGGABLE_ERROR_NAMES.has(d.name) ? d.name : 'OtherError';
+-  const prismaCode = name === 'DatabaseRequestError' ? /\((P\d{4})\)/.exec(d.message)?.[1] : undefined;
+-  const status = (err as { status?: unknown } | null)?.status;
+-  return [
+-    name,
+-    ...(prismaCode ? [`code=${prismaCode}`] : []),
+-    ...(typeof status === 'number' && Number.isInteger(status) ? [`status=${status}`] : []),
+-  ].join(' ');
+-}
+-
+-/** A Sentry-safe stand-in for a Roman failure: the op and the content-free tag only. */
+-export function romanSanitizedError(op: string, err: unknown): Error {
+-  const e = new Error(`${op}: ${romanErrorTag(err)}`);
+-  e.name = 'RomanSanitizedError';
+-  return e;
+-}
++// C-668-4: one copy of the content-free error tag helpers (A's
++// roman-error-tag.ts), re-exported for existing importers.
++export { ROMAN_LOGGABLE_ERROR_NAMES, romanErrorTag, romanSanitizedError };
+diff --git a/test/roman/fixtures/roman-personas.ts b/test/roman/fixtures/roman-personas.ts
+index fa3145d2..1c558dc6 100644
+--- a/test/roman/fixtures/roman-personas.ts
++++ b/test/roman/fixtures/roman-personas.ts
+@@ -958,6 +958,8 @@ export function makePersonaDb(): PersonaDb {
+       }),
+     },
+     coachSubscription: { findUnique: jest.fn(async () => null) },
++    // B-651-5: the spend admission takes a per-day advisory lock in its tx.
++    $executeRaw: jest.fn(async () => 1),
+     $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
+     // Must never be read by the builder.
+     // ctx-v3 bookings: only the selected columns ever leave this double, so a
+diff --git a/test/roman/roman-c2-pool.spec.ts b/test/roman/roman-c2-pool.spec.ts
+new file mode 100644
+index 00000000..bc8b6796
+--- /dev/null
++++ b/test/roman/roman-c2-pool.spec.ts
+@@ -0,0 +1,187 @@
++/**
++ * B-668-1 turn-path tests (ruled into #669 by B-ROMAN-BFIX-121; written by
++ * B-RMNC2-122, agent 122) with a real CoachAIBudgetService over a stateful
++ * pool row: an interrupted reply still debits the pool, a sub-coach's client
++ * debits the head coach, a used-up pool refuses before the ledger or the
++ * provider with copy that carries no credit figures, and a crisis turn is
++ * still answered with a used-up pool.
++ */
++import 'reflect-metadata';
++import { HttpException, Logger } from '@nestjs/common';
++import { Prisma } from '@prisma/client';
++import type { RomanSession } from '@prisma/client';
++import { RomanService } from '../../src/roman/roman.service';
++import { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
++import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
++import {
++  ROMAN_COACH_POOL_EMPTY_MESSAGE,
++  ROMAN_MAX_OUTPUT_TOKENS,
++} from '../../src/roman/roman.constants';
++import { ROMAN_SAFETY_TEMPLATES } from '../../src/roman/guardrails/safety-router';
++import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
++import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
++
++const CLIENT = { id: 'c2-client', role: 'student', tier: 'free' as const };
++const SESSION = fakeOf<RomanSession>({
++  id: 'c2-session', user_id: CLIENT.id, surface: 'client',
++  day_key: 'c2-day', message_count: 1, exclamation_used: false,
++  quips_in_session: 0, subject_context_json: null, deleted_at: null,
++});
++
++let savedFlag: string | undefined;
++let savedCap: string | undefined;
++beforeEach(() => {
++  savedFlag = process.env[FEATURE_ROMAN_CHAT_ENABLED_ENV];
++  savedCap = process.env.ROMAN_DAILY_COST_CAP_USD;
++  process.env[FEATURE_ROMAN_CHAT_ENABLED_ENV] = 'true';
++  process.env.ROMAN_DAILY_COST_CAP_USD = '100';
++  jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
++  jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++  jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++});
++afterEach(() => {
++  if (savedFlag === undefined) delete process.env[FEATURE_ROMAN_CHAT_ENABLED_ENV];
++  else process.env[FEATURE_ROMAN_CHAT_ENABLED_ENV] = savedFlag;
++  if (savedCap === undefined) delete process.env.ROMAN_DAILY_COST_CAP_USD;
++  else process.env.ROMAN_DAILY_COST_CAP_USD = savedCap;
++  jest.restoreAllMocks();
++});
++
++interface SetupOpts {
++  usedCents: number;
++  clientCoachId?: string;
++  headCoachId?: string | null;
++  abortAfterFirstDelta?: AbortController;
++}
++
++function setup(o: SetupOpts) {
++  const clientCoachId = o.clientCoachId ?? 'c2-coach';
++  const poolOwner = o.headCoachId ?? clientCoachId;
++  const row = {
++    id: 'c2-budget', coach_user_id: poolOwner,
++    period_start: new Date('2026-10-01T00:00:00Z'),
++    period_end: new Date('2099-11-01T00:00:00Z'),
++    base_actual_cents: 4000, value_multiplier: new Prisma.Decimal(5),
++    base_displayed_cents: 20000, pack_paid_cents: 0, pack_displayed_cents: 0,
++    total_pack_actual_cents: 0, actual_used_cents: o.usedCents,
++  };
++  const romanSession = { updateMany: jest.fn(async () => ({ count: 1 })) };
++  const romanMessage = {
++    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
++      id: 'c2-reply', ...data,
++    })),
++    findMany: jest.fn(async () => [{ role: 'user', content: 'What should I train today?' }]),
++  };
++  const aiRequestAudit = {
++    create: jest.fn(async () => ({ request_id: 'c2-request' })),
++    aggregate: jest.fn(async () => ({ _sum: { prompt_token_estimate: 0, response_token_estimate: 0 } })),
++    update: jest.fn(async () => ({})),
++  };
++  const coachAIBudget = {
++    findUnique: jest.fn(async ({ where }: { where: { coach_user_id?: string } }) =>
++      where.coach_user_id === undefined || where.coach_user_id === poolOwner ? { ...row } : null),
++    updateMany: jest.fn(async ({ where, data }: {
++      where: { coach_user_id?: string; actual_used_cents: { lte: number } };
++      data: { actual_used_cents: { increment: number } };
++    }) => {
++      if (where.coach_user_id !== undefined && where.coach_user_id !== poolOwner) return { count: 0 };
++      if (row.actual_used_cents > where.actual_used_cents.lte) return { count: 0 };
++      row.actual_used_cents += data.actual_used_cents.increment;
++      return { count: 1 };
++    }),
++  };
++  const executeRaw = jest.fn(async () => 1);
++  const prisma = fakeOf<ConstructorParameters<typeof CoachAIBudgetService>[0]>({
++    user: { findUnique: jest.fn(async () => ({ coach_id: clientCoachId })) },
++    teamSubCoachAssignment: {
++      findFirst: jest.fn(async () => (o.headCoachId ? { head_coach_id: o.headCoachId } : null)),
++    },
++    coachAIBudget, romanSession, romanMessage, aiRequestAudit,
++    $transaction: jest.fn(async (fn: (tx: object) => Promise<unknown>) =>
++      fn({ romanSession, romanMessage, aiRequestAudit, $executeRaw: executeRaw })),
++  });
++  const abort = o.abortAfterFirstDelta;
++  const client = {
++    messages: {
++      stream: jest.fn(() => ({
++        async *[Symbol.asyncIterator]() {
++          yield { type: 'message_start', message: { usage: { input_tokens: 6000 } } };
++          yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Keep the plan ' } };
++          abort?.abort();
++          yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'as written.' } };
++          yield { type: 'message_delta', usage: { output_tokens: 300 } };
++        },
++      })),
++      create: jest.fn(),
++    },
++  };
++  const handle = AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(client));
++  const budget = new CoachAIBudgetService(prisma);
++  const usage = jest.spyOn(budget, 'recordUsage');
++  const canCharge = jest.spyOn(budget, 'canCharge');
++  const svc = new RomanService(prisma, grantAllEgress(), handle, null, null, budget);
++  return { svc, row, client, usage, canCharge, aiRequestAudit, executeRaw };
++}
++
++async function drain(
++  svc: RomanService,
++  userMessage: string,
++  signal?: AbortSignal,
++): Promise<Array<{ type: string; text?: string; interrupted?: boolean }>> {
++  const out: Array<{ type: string; text?: string; interrupted?: boolean }> = [];
++  for await (const chunk of svc.streamAssistantTurn(CLIENT, SESSION, { userMessage, signal })) {
++    out.push(chunk as { type: string; text?: string; interrupted?: boolean });
++  }
++  return out;
++}
++
++describe('B-668-1 coach pool on the live turn (#669)', () => {
++  it('an interrupted reply still debits the pool at the reserved worst case', async () => {
++    const abort = new AbortController();
++    const t = setup({ usedCents: 0, abortAfterFirstDelta: abort });
++    const out = await drain(t.svc, 'What should I train today?', abort.signal);
++    expect(out.find((c) => c.type === 'done')?.interrupted).toBe(true);
++    expect(t.executeRaw).toHaveBeenCalledTimes(1);
++    const cents = Math.ceil(RomanService.costUsd(6000, ROMAN_MAX_OUTPUT_TOKENS) * 100);
++    expect(t.usage).toHaveBeenCalledTimes(1);
++    expect(t.usage.mock.calls[0][0]).toEqual(
++      expect.objectContaining({ coachId: 'c2-coach', actualCostCents: cents, capability: 'roman.chat' }),
++    );
++    expect(t.row.actual_used_cents).toBe(cents);
++  });
++
++  it("a sub-coach's client debits the head coach's pool", async () => {
++    const t = setup({ usedCents: 0, clientCoachId: 'c2-sub-coach', headCoachId: 'c2-head-coach' });
++    await drain(t.svc, 'What should I train today?');
++    expect(t.usage).toHaveBeenCalledTimes(1);
++    expect(t.usage.mock.calls[0][0]).toEqual(expect.objectContaining({ coachId: 'c2-head-coach' }));
++    expect(t.row.actual_used_cents).toBeGreaterThan(0);
++  });
++
++  it('a used-up pool refuses with 402 before the ledger and the provider; client copy has no credit figures', async () => {
++    const t = setup({ usedCents: 4000 });
++    let err: unknown;
++    try {
++      await drain(t.svc, 'What should I train today?');
++    } catch (e) {
++      err = e;
++    }
++    expect(err).toBeInstanceOf(HttpException);
++    expect((err as HttpException).getStatus()).toBe(402);
++    const body = (err as HttpException).getResponse() as Record<string, unknown>;
++    expect(body).toEqual({ code: 'COACH_AI_BUDGET_EXHAUSTED', message: ROMAN_COACH_POOL_EMPTY_MESSAGE });
++    expect(JSON.stringify(body)).not.toMatch(/\d/);
++    expect(t.client.messages.stream).not.toHaveBeenCalled();
++    expect(t.aiRequestAudit.create).not.toHaveBeenCalled();
++    expect(t.usage).not.toHaveBeenCalled();
++  });
++
++  it('a crisis message is still answered with a used-up pool, with no pool read and no provider call', async () => {
++    const t = setup({ usedCents: 4000 });
++    const out = await drain(t.svc, 'I want to kill myself');
++    expect(out.find((c) => c.type === 'done')?.text).toBe(ROMAN_SAFETY_TEMPLATES.self_harm);
++    expect(t.client.messages.stream).not.toHaveBeenCalled();
++    expect(t.canCharge).not.toHaveBeenCalled();
++    expect(t.usage).not.toHaveBeenCalled();
++  });
++});
+diff --git a/test/roman/roman-c2-rmn3-fixes.spec.ts b/test/roman/roman-c2-rmn3-fixes.spec.ts
+new file mode 100644
+index 00000000..cb6b1727
+--- /dev/null
++++ b/test/roman/roman-c2-rmn3-fixes.spec.ts
+@@ -0,0 +1,81 @@
++/**
++ * RMN3 items fixed in #669 (B-RMNC2-122, agent 122; the Roman train lands as
++ * one, so #666 stays unchanged). Failing-before at #668 fefe73c6:
++ * - A-666-3 (Opus): an overdose named by the medicine ("a whole bottle of
++ *   Tylenol") reaches the emergency template; adapted from the
++ *   AUD-OPUS-RMN3-122 probe.
++ * - B-666-5 (Sol, residual B-668-3): a daily summary that mentions "meals"
++ *   cannot pass one meal off as the whole day; adapted from the
++ *   AUD-SOL-RMN3-122 probe.
++ */
++import { classifySafety } from '../../src/roman/guardrails/safety-router';
++import {
++  postCheckRomanReply,
++  type PostCheckContext,
++} from '../../src/roman/guardrails/roman-post-check';
++
++describe('A-666-3 (Opus) overdose named by the medicine, not the word "pills"', () => {
++  it.each([
++    'I took a whole bottle of Tylenol',
++    'I just swallowed a bottle of Advil',
++    'I took 30 Tylenol',
++    'I took 20 ibuprofen an hour ago',
++    'I took a bunch of Xanax',
++    'I took a whole bottle of my sleeping meds',
++  ])('%s -> emergency template (short circuit)', (msg) => {
++    const route = classifySafety(msg);
++    expect(route.class).toBe('emergency');
++    expect(route.short_circuit).toBe(true);
++  });
++
++  it.each([
++    'I took 2 Tylenol for my headache',
++    'I took 2 pills of ibuprofen for my headache',
++    'Can I take Advil before a run?',
++    'I took a whole bottle of water to the gym',
++    'I took lots of vitamins',
++    'Can I end my workout early today?',
++  ])('control: %s -> not emergency or self_harm', (msg) => {
++    const cls = classifySafety(msg).class;
++    expect(cls === 'emergency' || cls === 'self_harm').toBe(false);
++  });
++});
++
++const CONTEXT: PostCheckContext = {
++  targets: { source: 'coach_set', calories: 2000, protein_g: 120, carbs_g: 200, fat_g: 60 },
++  today: {
++    kcal: 780, protein_g: 60, carbs_g: 70, fat_g: 25,
++    meals_logged: 2, remaining_kcal: 1220, remaining_protein_g: 60,
++    remaining_carbs_g: 130, remaining_fat_g: 35, pct_kcal: 39, pct_protein: 50,
++  },
++  last_7_days: {
++    days_logged: 0, avg_kcal_on_logged_days: null,
++    avg_protein_g_on_logged_days: null, days_within_10pct_kcal: null,
++  },
++  macro_method: { floor_kcal: 1200 },
++  coach: { has_coach: true, coach_first_name: 'Alex' },
++  kcal_facts: { intake_entries_today: [330, 450] },
++};
++
++const check = (text: string) => postCheckRomanReply(text, { routerClass: 'normal', context: CONTEXT });
++
++describe('B-666-5 (Sol) a daily total that mentions meals is checked against the whole day', () => {
++  it.each([
++    'You have logged 450 kcal today across two meals.',
++    'Your total intake today is 450 kcal from your meals.',
++  ])('rejected (lunch passed off as the day): %s', (text) => {
++    const result = check(text);
++    expect(result.rewritten).toBe(true);
++    expect(result.guardrails_applied).toContain('ungrounded_number');
++  });
++
++  it.each([
++    'You have logged 780 kcal today across two meals.',
++    'Your total intake today is 780 kcal from your meals.',
++    'You logged 450 kcal at lunch today.',
++    'You have logged 780 kcal today.',
++    'Breakfast was 330 kcal.',
++  ])('control (correct total or one actual meal): %s', (text) => {
++    expect(check(text)).toEqual({ text, guardrails_applied: [], rewritten: false });
++  });
++});
+diff --git a/test/roman/roman-guardrails-wiring.spec.ts b/test/roman/roman-guardrails-wiring.spec.ts
+index 1951ac85..c59abd82 100644
+--- a/test/roman/roman-guardrails-wiring.spec.ts
++++ b/test/roman/roman-guardrails-wiring.spec.ts
+@@ -121,12 +121,15 @@ function makeDb(userMessage: string) {
+     aggregate: jest.fn(async () => ({ _sum: { prompt_token_estimate: 0, response_token_estimate: 0 } })),
+     update: jest.fn(async () => ({})),
+   };
++  // B-651-5: the spend admission takes a per-day advisory lock in its tx.
++  const $executeRaw = jest.fn(async () => 1);
+   const prisma = {
+     romanMessage,
+     romanSession,
+     aiRequestAudit,
++    $executeRaw,
+     $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+-      fn({ romanMessage, romanSession }),
++      fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
+     ),
+   };
+   return { prisma, messages };
+@@ -203,8 +206,10 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
+     });
+     expect(audit.write).toHaveBeenCalledTimes(1);
+     const row = audit.write.mock.calls[0][0];
++    // OR-115-1: one neutral action; the closed reason code only in metadata.
+     expect(row).toMatchObject({
+-      action: 'roman.safety_emergency',
++      action: 'roman.safety_route',
++      metadata: { route_reason: 'call_911' },
+       actorId: 'user-A',
+       targetType: 'RomanSession',
+       targetId: 'sess_1',
+@@ -220,7 +225,10 @@ describe('R4 wiring — router short-circuit, buffered emit, post-check, audit',
+     const chunks = await drain(svc.streamAssistantTurn(CALLER, SESSION, {}));
+     expect(anthropic.messages.stream).not.toHaveBeenCalled();
+     expect(chunks[0].text).toContain('988');
+-    expect(audit.write.mock.calls[0][0]).toMatchObject({ action: 'roman.safety_self_harm' });
++    expect(audit.write.mock.calls[0][0]).toMatchObject({
++      action: 'roman.safety_route',
++      metadata: { route_reason: 'call_988' },
++    });
+   });
+ 
+   it('the explicit userMessage option is preferred over the DB lookup', async () => {
+diff --git a/test/roman/roman-launch-hardening.spec.ts b/test/roman/roman-launch-hardening.spec.ts
+index b605a3de..2f641ba6 100644
+--- a/test/roman/roman-launch-hardening.spec.ts
++++ b/test/roman/roman-launch-hardening.spec.ts
+@@ -126,11 +126,16 @@ function makePrisma(opts: { spentTokens?: { in: number; out: number }; ledgerFai
+       return row;
+     }),
+   };
++  // B-651-5: the spend admission takes a per-day advisory lock in its tx.
++  const $executeRaw = jest.fn(async () => 1);
+   const prisma = {
+     romanMessage,
+     romanSession,
+     aiRequestAudit,
+-    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn({ romanMessage, romanSession })),
++    $executeRaw,
++    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
++      fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
++    ),
+   };
+   return { prisma, stored, audits };
+ }
+@@ -755,38 +760,22 @@ describe('FR1-651-2 Roman failure copy is written for the caller (a coach is nev
+   });
+ });
+ 
+-describe('FR1-651-3 the single per-session exclamation is spent once, then never allowed again', () => {
+-  it('a stored reply that uses the exclamation marks the session; a spent session gets none', async () => {
+-    const first = makePrisma();
+-    const svc = new RomanService(fakeOf(first.prisma), grantAllEgress(), makeAnthropic('Nice work! Keep it up!').handle);
+-    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'I hit my protein' }));
+-    const roman1 = first.stored.filter((m) => m.role === 'roman');
+-    expect(roman1[0].content).toBe('Nice work! Keep it up.');
+-    const marks = first.prisma.romanSession.updateMany.mock.calls.map(
+-      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
+-    );
+-    expect(marks).toContain(true);
+-
+-    const second = makePrisma();
+-    const svc2 = new RomanService(fakeOf(second.prisma), grantAllEgress(), makeAnthropic('Nice work! Keep it up!').handle);
+-    await drain(
+-      svc2.streamAssistantTurn(CLIENT, fakeOf({ ...session(), exclamation_used: true }), { userMessage: 'again' }),
+-    );
+-    expect(second.stored.filter((m) => m.role === 'roman')[0].content).toBe('Nice work. Keep it up.');
+-    const marks2 = second.prisma.romanSession.updateMany.mock.calls.map(
+-      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
+-    );
+-    expect(marks2).not.toContain(true);
+-  });
+-
+-  it('a reply without an exclamation leaves the allowance unspent', async () => {
+-    const p = makePrisma();
+-    const svc = new RomanService(fakeOf(p.prisma), grantAllEgress(), makeAnthropic('Good. Keep going.').handle);
+-    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hi' }));
+-    const marks = p.prisma.romanSession.updateMany.mock.calls.map(
+-      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
+-    );
+-    expect(marks).not.toContain(true);
++describe('B-651-9 (supersedes FR1-651-3): no shipped reply carries an exclamation mark', () => {
++  it('a reply with exclamations is stored and emitted with none, on a fresh or spent session', async () => {
++    for (const exclamation_used of [false, true]) {
++      const p = makePrisma();
++      const svc = new RomanService(fakeOf(p.prisma), grantAllEgress(), makeAnthropic('Nice work! Keep the plan as written!').handle);
++      const chunks = await drain(
++        svc.streamAssistantTurn(CLIENT, fakeOf({ ...session(), exclamation_used }), { userMessage: 'I hit my protein' }),
++      );
++      expect(p.stored.filter((m) => m.role === 'roman')[0].content).toBe('Nice work. Keep the plan as written.');
++      expect(JSON.stringify(chunks)).not.toContain('!');
++      // There is no allowance left to spend, so the session is never marked.
++      const marks = p.prisma.romanSession.updateMany.mock.calls.map(
++        (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
++      );
++      expect(marks).not.toContain(true);
++    }
+   });
+ });
+ 
+diff --git a/test/roman/roman-rmn2-fixes.spec.ts b/test/roman/roman-rmn2-fixes.spec.ts
+index c4275b82..dfe8b8e1 100644
+--- a/test/roman/roman-rmn2-fixes.spec.ts
++++ b/test/roman/roman-rmn2-fixes.spec.ts
+@@ -82,8 +82,10 @@ function setup(initialUsedCents: number, inputTokens = 6000) {
+     user: { findUnique: jest.fn(async () => ({ coach_id: 'rmn2-coach' })) },
+     teamSubCoachAssignment: { findFirst: jest.fn(async () => null) },
+     coachAIBudget, romanSession, romanMessage, aiRequestAudit,
++    // C2 (#669): the daily reservation runs inside a transaction behind an
++    // advisory lock, so the tx carries the ledger and $executeRaw too.
+     $transaction: jest.fn(async (fn: (tx: object) => Promise<unknown>) =>
+-      fn({ romanSession, romanMessage })),
++      fn({ romanSession, romanMessage, aiRequestAudit, $executeRaw: jest.fn(async () => 1) })),
+   });
+   const client = {
+     messages: {
+diff --git a/test/roman/roman-round2.spec.ts b/test/roman/roman-round2.spec.ts
+new file mode 100644
+index 00000000..23046b2b
+--- /dev/null
++++ b/test/roman/roman-round2.spec.ts
+@@ -0,0 +1,676 @@
++/**
++ * #651 fix round 2, stacked piece C (live turns): one regression per finding
++ * that belongs to the turn path (B-651-1 unknown usage, B-651-4 payload-bound
++ * reservation, B-651-5 atomic admission), plus the turn-path application of
++ * B-651-9 (no exclamation allowance in prompt or session) and of operator
++ * rulings OR-115-1 (neutral safety audit; no health words in ledger or logs)
++ * and OR-115-2 (crisis templates answer without consent, nothing reaches the
++ * provider). Red on the carried #651 @ a8fa651c turn path (tests-only commit
++ * on ci/B-SCHED-ROMAN-C-before), green with the fix. Only APIs that already
++ * existed at a8fa651c are imported.
++ */
++import 'reflect-metadata';
++import { HttpException, Logger } from '@nestjs/common';
++import { RomanService } from '../../src/roman/roman.service';
++import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
++import { ROMAN_MAX_OUTPUT_TOKENS } from '../../src/roman/roman.constants';
++import { ROMAN_SAFETY_TEMPLATES } from '../../src/roman/guardrails/safety-router';
++import type { PostCheckContext } from '../../src/roman/guardrails/roman-post-check';
++import { RomanClientContextService } from '../../src/roman/context/roman-client-context.service';
++import type { RomanClientContextBundle } from '../../src/roman/context/roman-client-context.types';
++import { AuditService } from '../../src/audit/audit.service';
++import {
++  AnthropicHandle,
++  type AnthropicMessagesClient,
++} from '../../src/ai-egress/ai-egress.service';
++import type { PrismaService } from '../../src/prisma.service';
++import { egressWithGrants, fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
++
++const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
++let savedFlag: string | undefined;
++beforeEach(() => {
++  savedFlag = process.env[FLAG];
++  process.env[FLAG] = 'true';
++  delete process.env.ROMAN_DAILY_COST_CAP_USD;
++  jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
++  jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++  jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++});
++afterEach(() => {
++  if (savedFlag === undefined) delete process.env[FLAG];
++  else process.env[FLAG] = savedFlag;
++  delete process.env.ROMAN_DAILY_COST_CAP_USD;
++  jest.restoreAllMocks();
++});
++
++// ─── doubles ────────────────────────────────────────────────────────────────
++
++const CLIENT = { id: 'client-1', role: 'student', tier: 'free' as const };
++
++function session(over: Record<string, unknown> = {}) {
++  return {
++    id: 'sess_1',
++    user_id: CLIENT.id,
++    surface: 'client' as const,
++    day_key: '2026-10-03',
++    message_count: 1,
++    started_at: new Date(),
++    last_activity_at: new Date(),
++    quips_in_session: 0,
++    exclamation_used: false,
++    subject_context_json: null,
++    created_at: new Date(),
++    updated_at: new Date(),
++    deleted_at: null,
++    ...over,
++  };
++}
++
++type Row = Record<string, unknown>;
++
++/**
++ * A Prisma double whose ledger behaves like Postgres for the admission path:
++ * `$executeRaw` of pg_advisory_xact_lock blocks until the holder's
++ * transaction ends, aggregate sums today's rows, create inserts. Every await
++ * yields, so two turns started together genuinely interleave unless the lock
++ * serialises them.
++ */
++function makePrisma(
++  opts: {
++    history?: Array<{ role: string; content: string }>;
++    deleteAfterGeneration?: boolean;
++  } = {},
++) {
++  const stored: Array<{ role: string; content: string; interrupted: boolean }> = [];
++  const audits: Row[] = [];
++  const tick = () => new Promise<void>((r) => setImmediate(r));
++  const romanMessage = {
++    create: jest.fn(
++      async ({ data }: { data: { role: string; content: string; interrupted: boolean } }) => {
++        stored.push({ role: data.role, content: data.content, interrupted: data.interrupted });
++        return { id: `msg_${stored.length}`, ...data };
++      },
++    ),
++    findMany: jest.fn(async () =>
++      [...(opts.history ?? [{ role: 'user', content: 'hello' }])]
++        .reverse()
++        .map((m) => ({ ...m, created_at: new Date() })),
++    ),
++    findFirst: jest.fn(async () => ({ content: 'hello' })),
++    update: jest.fn(),
++  };
++  const romanSession = {
++    updateMany: jest.fn(async () => ({ count: opts.deleteAfterGeneration ? 0 : 1 })),
++  };
++  const aiRequestAudit = {
++    create: jest.fn(async ({ data }: { data: Row }) => {
++      await tick();
++      audits.push({ ...data });
++      return data;
++    }),
++    aggregate: jest.fn(async () => {
++      await tick();
++      const sum = audits.reduce<{ in: number; out: number }>(
++        (a, r) => ({
++          in: a.in + Number(r.prompt_token_estimate ?? 0),
++          out: a.out + Number(r.response_token_estimate ?? 0),
++        }),
++        { in: 0, out: 0 },
++      );
++      return { _sum: { prompt_token_estimate: sum.in, response_token_estimate: sum.out } };
++    }),
++    update: jest.fn(async ({ where, data }: { where: { request_id: string }; data: Row }) => {
++      const row = audits.find((a) => a.request_id === where.request_id);
++      if (row) Object.assign(row, data);
++      return row;
++    }),
++    deleteMany: jest.fn(async ({ where }: { where: { request_id: string } }) => {
++      await tick();
++      const i = audits.findIndex((a) => a.request_id === where.request_id);
++      if (i >= 0) audits.splice(i, 1);
++      return { count: i >= 0 ? 1 : 0 };
++    }),
++    delete: jest.fn(async ({ where }: { where: { request_id: string } }) => {
++      await tick();
++      const i = audits.findIndex((a) => a.request_id === where.request_id);
++      if (i >= 0) audits.splice(i, 1);
++      return {};
++    }),
++  };
++  // Transaction-scoped advisory lock: one holder at a time per key.
++  let lockTail: Promise<void> = Promise.resolve();
++  const lockCalls: string[] = [];
++  const $transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
++    let release: () => void = () => undefined;
++    let holding = false;
++    const tx = {
++      romanMessage,
++      romanSession,
++      aiRequestAudit,
++      $executeRaw: jest.fn(async (strings: TemplateStringsArray) => {
++        lockCalls.push(strings.join('?'));
++        const prev = lockTail;
++        lockTail = new Promise<void>((r) => {
++          release = r;
++        });
++        holding = true;
++        await prev;
++        return 1;
++      }),
++    };
++    try {
++      return await fn(tx);
++    } finally {
++      if (holding) release();
++    }
++  });
++  const prisma = { romanMessage, romanSession, aiRequestAudit, $transaction };
++  return { prisma, stored, audits, lockCalls };
++}
++
++type StreamEvent = { type: string; message?: unknown; delta?: unknown; usage?: unknown };
++type StreamStep = StreamEvent | { throw: Error } | { abort: AbortController };
++
++function makeAnthropic(steps: StreamStep[] | Error) {
++  const bodies: Array<{ system: string; messages: Array<{ role: string; content: string }> }> = [];
++  const client = {
++    messages: {
++      stream: jest.fn(
++        (body: { system: string; messages: Array<{ role: string; content: string }> }) => {
++          bodies.push(body);
++          if (steps instanceof Error) throw steps;
++          return {
++            async *[Symbol.asyncIterator]() {
++              for (const s of steps) {
++                if ('throw' in s) throw s.throw;
++                if ('abort' in s) {
++                  s.abort.abort();
++                  continue;
++                }
++                yield s;
++              }
++            },
++          };
++        },
++      ),
++      create: jest.fn(),
++    },
++  };
++  return { client, bodies, handle: AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(client)) };
++}
++
++function reply(text: string, input = 1000, output = 50): StreamStep[] {
++  return [
++    { type: 'message_start', message: { usage: { input_tokens: input } } },
++    { type: 'content_block_delta', delta: { type: 'text_delta', text } },
++    { type: 'message_delta', usage: { output_tokens: output } },
++  ];
++}
++
++async function drain(gen: AsyncGenerator<{ type: string; text?: string }>) {
++  const out: Array<{ type: string; text?: string }> = [];
++  for await (const c of gen) out.push(c);
++  return out;
++}
++
++async function settle<T>(p: Promise<T>): Promise<{ ok: T } | { err: unknown }> {
++  try {
++    return { ok: await p };
++  } catch (err) {
++    return { err };
++  }
++}
++
++function codeOf(err: unknown): string | undefined {
++  if (!(err instanceof HttpException)) return undefined;
++  const body = err.getResponse();
++  return typeof body === 'object' && body !== null ? (body as { code?: string }).code : undefined;
++}
++
++/** Persona: target 1450, remaining 670, floor 1200. */
++const _LEAN: PostCheckContext = {
++  targets: { source: 'coach_set', calories: 1450, protein_g: 120, carbs_g: 140, fat_g: 45 },
++  today: {
++    kcal: 780,
++    protein_g: 60,
++    carbs_g: 70,
++    fat_g: 25,
++    meals_logged: 2,
++    remaining_kcal: 670,
++    remaining_protein_g: 60,
++    remaining_carbs_g: 70,
++    remaining_fat_g: 20,
++    pct_kcal: 54,
++    pct_protein: 50,
++  },
++  last_7_days: {
++    days_logged: 5,
++    avg_kcal_on_logged_days: 1100,
++    avg_protein_g_on_logged_days: 110,
++    days_within_10pct_kcal: 4,
++  },
++  macro_method: { floor_kcal: 1200 },
++  coach: { has_coach: true, coach_first_name: 'Alex' },
++};
++
++function bundleFor(ctx: PostCheckContext): RomanClientContextBundle {
++  const context = {
++    version: 'ctx-v3',
++    identity: {
++      first_name: 'Maya',
++      timezone: 'UTC',
++      local_date: '2026-10-03',
++      local_time: '10:00',
++    },
++    targets: {
++      ...ctx.targets,
++      fiber_g: null,
++      water_ml: null,
++      meals_per_day: null,
++      effective_from: null,
++      notes: null,
++    },
++    today: { ...ctx.today, date: '2026-10-03', last_logged_at: null, entries: [] },
++    last_7_days: { ...ctx.last_7_days, days: [] },
++    macro_method: { summary: 'x', floor_kcal: 1200, floor_applied: false },
++    coach: { has_coach: true, coach_first_name: 'Alex', guidelines: null, recent_messages: [] },
++    wearables: {
++      connected: false,
++      providers: [],
++      last_synced_at: null,
++      avg_7d: { active_kcal: null },
++      last_night_sleep_hours: null,
++      latest_sleep: null,
++      days: [],
++    },
++    meal_plan: null,
++  };
++  return fakeOf<RomanClientContextBundle>({
++    context,
++    rendered: '<client_data as_of="x" version="ctx-v3">{}</client_data>',
++    hash: 'h'.repeat(64),
++    generated_at: new Date(),
++    estimated_tokens: 10,
++    query_count: 1,
++  });
++}
++
++function svcWith(
++  prisma: ReturnType<typeof makePrisma>['prisma'],
++  steps: StreamStep[] | Error,
++  opts: { ctx?: PostCheckContext; audit?: { write: jest.Mock } } = {},
++) {
++  const a = makeAnthropic(steps);
++  const clientContext = opts.ctx
++    ? fakeOf<RomanClientContextService>({ getBundle: jest.fn(async () => bundleFor(opts.ctx!)) })
++    : null;
++  const svc = new RomanService(
++    fakeOf<PrismaService>(prisma),
++    grantAllEgress(),
++    a.handle,
++    clientContext,
++    opts.audit ? fakeOf<AuditService>(opts.audit) : null,
++  );
++  return { svc, anthropic: a };
++}
++
++function ledger(audits: Row[]) {
++  expect(audits).toHaveLength(1);
++  return audits[0];
++}
++
++// ─── B-651-1: unknown usage never settles as free ───────────────────────────
++
++describe('B-651-1 a dispatched turn whose usage is unknown keeps the conservative reservation', () => {
++  it('abort after dispatch, before the first event: input = payload bound, output = max output', async () => {
++    const { prisma, audits } = makePrisma();
++    const ac = new AbortController();
++    const { svc } = svcWith(prisma, [{ abort: ac }, ...reply('Hello.')]);
++    await drain(
++      svc.streamAssistantTurn(CLIENT, fakeOf(session()), {
++        userMessage: 'hello',
++        signal: ac.signal,
++      }),
++    );
++    const row = ledger(audits);
++    expect(Number(row.prompt_token_estimate)).toBeGreaterThan(0);
++    expect(row.response_token_estimate).toBe(ROMAN_MAX_OUTPUT_TOKENS);
++    expect(row.metadata).toMatchObject({ state: 'settled', outcome: 'interrupted' });
++  });
++
++  it('abort mid-stream after message_start: reported input, max output (final count never arrived)', async () => {
++    const { prisma, audits } = makePrisma();
++    const ac = new AbortController();
++    const { svc } = svcWith(prisma, [
++      { type: 'message_start', message: { usage: { input_tokens: 1800 } } },
++      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Protein first. ' } },
++      { abort: ac },
++      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Then carbs.' } },
++    ]);
++    await drain(
++      svc.streamAssistantTurn(CLIENT, fakeOf(session()), {
++        userMessage: 'hello',
++        signal: ac.signal,
++      }),
++    );
++    const row = ledger(audits);
++    expect(row.prompt_token_estimate).toBe(1800);
++    expect(row.response_token_estimate).toBe(ROMAN_MAX_OUTPUT_TOKENS);
++  });
++
++  it('transport failure after partial text: reported input, max output', async () => {
++    const { prisma, audits, stored } = makePrisma();
++    const { svc } = svcWith(prisma, [
++      { type: 'message_start', message: { usage: { input_tokens: 1500 } } },
++      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Protein first.' } },
++      { throw: Object.assign(new TypeError('terminated'), { code: 'UND_ERR_SOCKET' }) },
++    ]);
++    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' }));
++    expect(stored.find((m) => m.role === 'roman')?.interrupted).toBe(true);
++    const row = ledger(audits);
++    expect(row.prompt_token_estimate).toBe(1500);
++    expect(row.response_token_estimate).toBe(ROMAN_MAX_OUTPUT_TOKENS);
++  });
++
++  it('transport failure before any event: both sides stay at the reservation (never zero)', async () => {
++    const { prisma, audits } = makePrisma();
++    const { svc } = svcWith(prisma, [
++      { throw: Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }) },
++    ]);
++    const r = await settle(
++      drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' })),
++    );
++    expect('err' in r).toBe(true);
++    const row = ledger(audits);
++    expect(Number(row.prompt_token_estimate)).toBeGreaterThan(0);
++    expect(row.response_token_estimate).toBe(ROMAN_MAX_OUTPUT_TOKENS);
++    expect(row.metadata).toMatchObject({ outcome: 'model_error' });
++  });
++
++  it('the chat is deleted after partial generation: the session_gone settle keeps the generated cost', async () => {
++    const { prisma, audits } = makePrisma({ deleteAfterGeneration: true });
++    const { svc } = svcWith(prisma, [
++      { type: 'message_start', message: { usage: { input_tokens: 1200 } } },
++      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Protein first.' } },
++    ]);
++    const r = await settle(
++      drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' })),
++    );
++    expect('err' in r).toBe(true);
++    const row = ledger(audits);
++    expect(row.prompt_token_estimate).toBe(1200);
++    expect(row.response_token_estimate).toBe(ROMAN_MAX_OUTPUT_TOKENS);
++    expect(row.metadata).toMatchObject({ outcome: 'session_gone' });
++  });
++
++  it('control: a complete stream settles the exact reported usage', async () => {
++    const { prisma, audits } = makePrisma();
++    const { svc } = svcWith(prisma, reply('Protein first.', 1000, 50));
++    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' }));
++    const row = ledger(audits);
++    expect(row.prompt_token_estimate).toBe(1000);
++    expect(row.response_token_estimate).toBe(50);
++  });
++
++  it('control: the provider answered with an HTTP error before any event: known zero', async () => {
++    const { prisma, audits } = makePrisma();
++    const { svc } = svcWith(prisma, Object.assign(new Error('overloaded'), { status: 529 }));
++    await settle(
++      drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' })),
++    );
++    const row = ledger(audits);
++    expect(row.prompt_token_estimate).toBe(0);
++    expect(row.response_token_estimate).toBe(0);
++  });
++});
++
++// ─── B-651-4: the reservation bounds the real payload ───────────────────────
++
++describe('B-651-4 the reservation is an upper bound of the payload actually sent', () => {
++  const longHistory = () => {
++    const h: Array<{ role: string; content: string }> = [];
++    for (let i = 0; i < 15; i += 1) {
++      h.push({ role: 'user', content: 'u'.repeat(8000) });
++      h.push({ role: 'roman', content: 'r'.repeat(8000) });
++    }
++    h.push({ role: 'user', content: 'what now' });
++    return h;
++  };
++
++  it('Sol probe: a legal 30-turn tail of 8,000-character messages is not admitted under cap 0.1, and nothing is sent', async () => {
++    process.env.ROMAN_DAILY_COST_CAP_USD = '0.1';
++    const { prisma, audits } = makePrisma({ history: longHistory() });
++    const { svc, anthropic } = svcWith(prisma, reply('ok', 40_000, 50));
++    const r = await settle(
++      drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'what now' })),
++    );
++    expect('err' in r && codeOf(r.err)).toBe('ROMAN_CAPACITY_REACHED');
++    expect(anthropic.client.messages.stream).not.toHaveBeenCalled();
++    expect(audits).toHaveLength(0);
++  });
++
++  it('the reserved input covers every UTF-8 byte of the system prompt and every message sent', async () => {
++    const { prisma, audits } = makePrisma({ history: longHistory() });
++    const { svc, anthropic } = svcWith(prisma, [
++      { type: 'message_start', message: { usage: { input_tokens: 10 } } },
++      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Fine.' } },
++    ]);
++    // Capture the reservation before it is settled.
++    const reserved: number[] = [];
++    prisma.aiRequestAudit.create.mockImplementationOnce(async ({ data }: { data: Row }) => {
++      reserved.push(Number(data.prompt_token_estimate));
++      audits.push({ ...data });
++      return data;
++    });
++    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'what now' }));
++    const body = anthropic.bodies[0];
++    const bytes =
++      Buffer.byteLength(body.system, 'utf8') +
++      body.messages.reduce((n, m) => n + Buffer.byteLength(m.content, 'utf8'), 0);
++    expect(reserved[0]).toBeGreaterThanOrEqual(bytes);
++    // The settled cost of any usage the provider can report for this payload
++    // (tokens never exceed bytes) stays within the reservation.
++    expect(RomanService.costUsd(bytes, ROMAN_MAX_OUTPUT_TOKENS)).toBeLessThanOrEqual(
++      RomanService.costUsd(reserved[0], ROMAN_MAX_OUTPUT_TOKENS),
++    );
++  });
++
++  it('cap boundary: a payload whose reservation fits exactly is admitted; one byte over is not', async () => {
++    const probe = makePrisma();
++    const reserved: number[] = [];
++    probe.prisma.aiRequestAudit.create.mockImplementationOnce(async ({ data }: { data: Row }) => {
++      reserved.push(Number(data.prompt_token_estimate));
++      return data;
++    });
++    await drain(
++      svcWith(probe.prisma, reply('Fine.')).svc.streamAssistantTurn(CLIENT, fakeOf(session()), {
++        userMessage: 'hello',
++      }),
++    );
++    const exact = RomanService.costUsd(reserved[0], ROMAN_MAX_OUTPUT_TOKENS);
++
++    process.env.ROMAN_DAILY_COST_CAP_USD = String(exact);
++    const fits = makePrisma();
++    const ok = svcWith(fits.prisma, reply('Fine.'));
++    await drain(ok.svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' }));
++    expect(ok.anthropic.client.messages.stream).toHaveBeenCalledTimes(1);
++
++    process.env.ROMAN_DAILY_COST_CAP_USD = String(exact - 0.000003);
++    const over = makePrisma();
++    const no = svcWith(over.prisma, reply('Fine.'));
++    const r = await settle(
++      drain(no.svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' })),
++    );
++    expect('err' in r && codeOf(r.err)).toBe('ROMAN_CAPACITY_REACHED');
++    expect(no.anthropic.client.messages.stream).not.toHaveBeenCalled();
++  });
++
++  it('a very long history is trimmed oldest-first to the input budget; the newest turn is always sent and leads with a user turn', async () => {
++    const h: Array<{ role: string; content: string }> = [];
++    for (let i = 0; i < 15; i += 1) {
++      h.push({ role: 'user', content: `${i} ` + 'u'.repeat(20_000) });
++      h.push({ role: 'roman', content: 'r'.repeat(20_000) });
++    }
++    h.push({ role: 'user', content: 'the newest question' });
++    const { prisma } = makePrisma({ history: h });
++    const { svc, anthropic } = svcWith(prisma, reply('Fine.'));
++    await drain(
++      svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'the newest question' }),
++    );
++    const sent = anthropic.bodies[0].messages;
++    expect(sent[sent.length - 1].content).toBe('the newest question');
++    expect(sent[0].role).toBe('user');
++    expect(sent.length).toBeLessThan(h.length);
++  });
++});
++
++// ─── B-651-5: atomic admission ──────────────────────────────────────────────
++
++describe('B-651-5 concurrent admission is atomic: never both rejected, never both admitted', () => {
++  async function capForOne(): Promise<{ usd: number; input: number }> {
++    const probe = makePrisma();
++    const reserved: number[] = [];
++    probe.prisma.aiRequestAudit.create.mockImplementationOnce(async ({ data }: { data: Row }) => {
++      reserved.push(Number(data.prompt_token_estimate));
++      return data;
++    });
++    await drain(
++      svcWith(probe.prisma, reply('Fine.')).svc.streamAssistantTurn(CLIENT, fakeOf(session()), {
++        userMessage: 'hello',
++      }),
++    );
++    return { usd: RomanService.costUsd(reserved[0], ROMAN_MAX_OUTPUT_TOKENS), input: reserved[0] };
++  }
++
++  it('Sol probe: two interleaved turns where exactly one fits: one is answered, one gets capacity copy', async () => {
++    // Each turn really costs its full reservation, so the settle never frees room.
++    const one = await capForOne();
++    process.env.ROMAN_DAILY_COST_CAP_USD = String(one.usd * 1.5);
++    const { prisma, audits } = makePrisma();
++    const a = svcWith(prisma, reply('First.', one.input, ROMAN_MAX_OUTPUT_TOKENS));
++    const b = svcWith(prisma, reply('Second.', one.input, ROMAN_MAX_OUTPUT_TOKENS));
++    const [ra, rb] = await Promise.all([
++      settle(drain(a.svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' }))),
++      settle(
++        drain(
++          b.svc.streamAssistantTurn(CLIENT, fakeOf(session({ id: 'sess_2' })), {
++            userMessage: 'hello',
++          }),
++        ),
++      ),
++    ]);
++    const outcomes = [ra, rb].map((r) => ('ok' in r ? 'answered' : codeOf(r.err)));
++    expect(outcomes.sort()).toEqual(['ROMAN_CAPACITY_REACHED', 'answered']);
++    expect(
++      a.anthropic.client.messages.stream.mock.calls.length +
++        b.anthropic.client.messages.stream.mock.calls.length,
++    ).toBe(1);
++    expect(audits).toHaveLength(1);
++  });
++
++  it('four interleaved turns where two fit: exactly two are answered, reservations never sum above the cap', async () => {
++    const one = await capForOne();
++    process.env.ROMAN_DAILY_COST_CAP_USD = String(one.usd * 2.5);
++    const { prisma, audits } = makePrisma();
++    const runs = [0, 1, 2, 3].map((i) => {
++      const s = svcWith(prisma, reply('Fine.', one.input, ROMAN_MAX_OUTPUT_TOKENS));
++      return settle(
++        drain(
++          s.svc.streamAssistantTurn(CLIENT, fakeOf(session({ id: `sess_${i}` })), {
++            userMessage: 'hello',
++          }),
++        ),
++      );
++    });
++    const results = await Promise.all(runs);
++    expect(results.filter((r) => 'ok' in r)).toHaveLength(2);
++    expect(audits).toHaveLength(2);
++  });
++
++  it('the admission takes a per-day advisory lock inside its transaction', async () => {
++    const { prisma, lockCalls } = makePrisma();
++    const { svc } = svcWith(prisma, reply('Fine.'));
++    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' }));
++    expect(lockCalls.some((q) => /pg_advisory_xact_lock/.test(q))).toBe(true);
++  });
++});
++
++// ─── B-651-9: no exclamation marks ship ─────────────────────────────────────
++
++describe('B-651-9 no shipped reply carries an exclamation mark', () => {
++  it('a fresh session (allowance unspent) still ships none', async () => {
++    const { prisma, stored } = makePrisma();
++    const { svc } = svcWith(prisma, reply('Nice work! Keep the plan as written.'));
++    const chunks = await drain(
++      svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hit my protein' }),
++    );
++    expect(stored.find((m) => m.role === 'roman')?.content).toBe(
++      'Nice work. Keep the plan as written.',
++    );
++    expect(JSON.stringify(chunks)).not.toContain('!');
++  });
++
++  it('the system prompt offers no per-session exclamation', async () => {
++    const { prisma } = makePrisma();
++    const { svc, anthropic } = svcWith(prisma, reply('Fine.'));
++    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hello' }));
++    expect(anthropic.bodies[0].system).not.toMatch(/may spend the single per-session exclamation/i);
++    expect(anthropic.bodies[0].system).not.toMatch(/a single exclamation per session/i);
++  });
++});
++
++// ─── OR-115-1 / C-651-5: neutral safety audit, no health words in ledger/logs
++
++describe('OR-115-1 the safety audit row is neutral and its reason is restricted-read', () => {
++  it.each([
++    ['I am having chest pain right now', 'call_911'],
++    ['I want to kill myself', 'call_988'],
++  ])(
++    '%s -> action roman.safety_route, reason %s, no provider call, no consent needed (OR-115-2)',
++    async (msg, reason) => {
++      const { prisma, audits } = makePrisma();
++      const audit = { write: jest.fn(async (_row: Record<string, unknown>) => undefined) };
++      const { svc, anthropic } = svcWith(prisma, reply('never'), { audit });
++      await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: msg }));
++      expect(anthropic.client.messages.stream).not.toHaveBeenCalled();
++      expect(audits).toHaveLength(0);
++      const row = audit.write.mock.calls[0]?.[0] ?? {};
++      expect(row).toMatchObject({
++        action: 'roman.safety_route',
++        metadata: { route_reason: reason },
++      });
++      expect(String(row.action)).not.toMatch(/emergency|self_harm|crisis|suicid/);
++    },
++  );
++
++  it('OR-115-2: with no box-2 consent grant, a crisis turn still gets the fixed template and nothing reaches the provider', async () => {
++    const { prisma, stored, audits } = makePrisma();
++    const a = makeAnthropic(reply('never'));
++    const svc = new RomanService(
++      fakeOf<PrismaService>(prisma),
++      egressWithGrants([]).egress,
++      a.handle,
++    );
++    await drain(
++      svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'I want to kill myself' }),
++    );
++    expect(a.client.messages.stream).not.toHaveBeenCalled();
++    expect(stored.find((m) => m.role === 'roman')?.content).toBe(ROMAN_SAFETY_TEMPLATES.self_harm);
++    expect(audits).toHaveLength(0);
++  });
++
++  it('the spend ledger and the turn log line carry no router class and no guardrail names', async () => {
++    const warn = jest.spyOn(Logger.prototype, 'log');
++    const { prisma, audits } = makePrisma();
++    const { svc } = svcWith(prisma, reply('Take 400 mg of ibuprofen and push through.'));
++    await drain(
++      svc.streamAssistantTurn(CLIENT, fakeOf(session()), {
++        userMessage: 'my knee hurts when I squat',
++      }),
++    );
++    const meta = JSON.stringify(ledger(audits).metadata);
++    expect(meta).not.toMatch(/router_class|injury|medical|guardrails_applied|ibuprofen|diagnos/);
++    const lines = warn.mock.calls.map((c) => String(c[0])).join('\n');
++    expect(lines).not.toMatch(/router=|guardrails_applied|injury_pain|medical_scope|diagnosis/);
++  });
++});
+diff --git a/test/roman/roman-spend-admission.live.spec.ts b/test/roman/roman-spend-admission.live.spec.ts
+new file mode 100644
+index 00000000..28d0617f
+--- /dev/null
++++ b/test/roman/roman-spend-admission.live.spec.ts
+@@ -0,0 +1,126 @@
++/**
++ * B-651-5 / B-651-4 live proof on real Postgres: the Roman daily spend
++ * admission compares and reserves atomically under a per-UTC-day advisory
++ * lock, so concurrent turns never both pass the cap (no overspend) and never
++ * both fail when one of them fits (no double rejection).
++ *
++ * Runs RomanService.reserveDailySpend against a Prisma-faithful schema built
++ * by the shared bootstrap helper. Gated on MWB3_TEST_DATABASE_URL (the
++ * mwb-3-live-tests CI job); skipped with a logged reason elsewhere.
++ */
++import { ServiceUnavailableException } from '@nestjs/common';
++import { PrismaService } from '../../src/prisma.service';
++import { RomanCaller, RomanService } from '../../src/roman/roman.service';
++import {
++  ROMAN_ERROR_CAPACITY_REACHED,
++  ROMAN_LEDGER_CAPABILITY,
++  ROMAN_MAX_OUTPUT_TOKENS,
++} from '../../src/roman/roman.constants';
++import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
++import { bootstrapTestSchema } from '../utils/bootstrap-test-schema';
++import { resetPublicSchema } from '../utils/reset-public-schema';
++
++const TEST_DB_URL = process.env.MWB3_TEST_DATABASE_URL || '';
++const liveDescribe = TEST_DB_URL ? describe : describe.skip;
++if (!TEST_DB_URL) {
++  // eslint-disable-next-line no-console
++  console.warn('[roman-spend-admission.live] MWB3_TEST_DATABASE_URL not set; live suite skipped.');
++}
++
++function withPool(url: string): string {
++  const sep = url.includes('?') ? '&' : '?';
++  return url.includes('connection_limit=') ? url : `${url}${sep}connection_limit=12`;
++}
++
++const CALLERS: RomanCaller[] = Array.from({ length: 8 }, (_, i) => ({
++  id: `b651-live-${i}`,
++  role: 'student',
++  tier: 'free',
++}));
++
++/** Input bound whose reservation (bound + max output) costs exactly `usd`. */
++function boundFor(usd: number): number {
++  const outputUsd = RomanService.costUsd(0, ROMAN_MAX_OUTPUT_TOKENS);
++  return Math.round(((usd - outputUsd) * 1_000_000) / 3);
++}
++
++liveDescribe('B-651-5 live: Roman spend admission is atomic per UTC day (Postgres)', () => {
++  let prisma: PrismaService;
++  let svc: RomanService;
++  const savedCap = process.env.ROMAN_DAILY_COST_CAP_USD;
++
++  beforeAll(async () => {
++    prisma = new PrismaService({ datasources: { db: { url: withPool(TEST_DB_URL) } } });
++    await prisma.$connect();
++    await resetPublicSchema(prisma);
++    await bootstrapTestSchema(prisma);
++    svc = new RomanService(prisma, grantAllEgress());
++    for (const c of CALLERS) {
++      await prisma.user.create({
++        data: {
++          id: c.id,
++          supabase_id: `sb-${c.id}`,
++          email: `${c.id}@example.test`,
++          name: 'Client',
++        },
++      });
++    }
++  }, 180_000);
++
++  afterAll(async () => {
++    if (savedCap === undefined) delete process.env.ROMAN_DAILY_COST_CAP_USD;
++    else process.env.ROMAN_DAILY_COST_CAP_USD = savedCap;
++    if (prisma) await prisma.$disconnect();
++  });
++
++  beforeEach(async () => {
++    await prisma.aiRequestAudit.deleteMany({ where: { capability: ROMAN_LEDGER_CAPABILITY } });
++  });
++
++  async function race(n: number, bound: number) {
++    return Promise.allSettled(CALLERS.slice(0, n).map((c) => svc.reserveDailySpend(c, bound)));
++  }
++
++  function capacityCode(r: PromiseSettledResult<string>): string | null {
++    if (r.status !== 'rejected') return null;
++    const reason: unknown = r.reason;
++    if (!(reason instanceof ServiceUnavailableException)) return 'other';
++    const body = reason.getResponse() as { code?: string };
++    return body.code ?? 'other';
++  }
++
++  it('two concurrent turns where exactly one fits: exactly one is admitted, one row is reserved', async () => {
++    // Each reservation costs 0.06; the cap 0.1 fits one, not two.
++    process.env.ROMAN_DAILY_COST_CAP_USD = '0.1';
++    const bound = boundFor(0.06);
++    const results = await race(2, bound);
++    const admitted = results.filter((r) => r.status === 'fulfilled');
++    expect(admitted).toHaveLength(1);
++    expect(results.map(capacityCode).filter((c) => c !== null)).toEqual([
++      ROMAN_ERROR_CAPACITY_REACHED,
++    ]);
++    const rows = await prisma.aiRequestAudit.findMany({
++      where: { capability: ROMAN_LEDGER_CAPABILITY },
++    });
++    expect(rows).toHaveLength(1);
++    // Content-free: ids, counts and a state marker only.
++    expect(rows[0].metadata).toEqual({ state: 'reserved' });
++    expect(rows[0].prompt_token_estimate).toBe(bound);
++  });
++
++  it('eight concurrent turns: admitted reservations never sum above the cap, and every fitting turn is admitted', async () => {
++    process.env.ROMAN_DAILY_COST_CAP_USD = '0.2';
++    const bound = boundFor(0.06); // 3 fit (0.18), the 4th would be 0.24
++    const results = await race(8, bound);
++    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(3);
++    const agg = await prisma.aiRequestAudit.aggregate({
++      where: { capability: ROMAN_LEDGER_CAPABILITY },
++      _sum: { prompt_token_estimate: true, response_token_estimate: true },
++    });
++    const used = RomanService.costUsd(
++      agg._sum.prompt_token_estimate ?? 0,
++      agg._sum.response_token_estimate ?? 0,
++    );
++    expect(used).toBeLessThanOrEqual(0.2);
++  });
++});
+diff --git a/test/roman/roman-sse-error-contract.spec.ts b/test/roman/roman-sse-error-contract.spec.ts
+index 1654c1ca..720a0c9e 100644
+--- a/test/roman/roman-sse-error-contract.spec.ts
++++ b/test/roman/roman-sse-error-contract.spec.ts
+@@ -60,6 +60,7 @@ function controllerThatThrows(thrown: unknown) {
+     getOwnedSession: jest.fn(async () => ({ id: 'sess_1' })),
+     assertMayUseAi: jest.fn(async () => undefined),
+     assertDailyCapacity: jest.fn(async () => undefined),
++    assertCoachPoolOpen: jest.fn(async () => null),
+     isSafetyShortCircuit: jest.fn(() => false),
+     appendMessage: jest.fn(async () => ({ id: 'm1' })),
+     // eslint-disable-next-line require-yield
+diff --git a/test/roman/roman-streaming.spec.ts b/test/roman/roman-streaming.spec.ts
+index 20836fea..40627b14 100644
+--- a/test/roman/roman-streaming.spec.ts
++++ b/test/roman/roman-streaming.spec.ts
+@@ -169,12 +169,15 @@ function makePrisma(sessionOwner = 'user-A') {
+     ),
+   };
+ 
++  // B-651-5: the spend admission takes a per-day advisory lock in its tx.
++  const $executeRaw = jest.fn(async () => 1);
+   const prisma = {
+     romanSession,
+     romanMessage,
+     aiRequestAudit,
++    $executeRaw,
+     $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
+-      fn({ romanMessage, romanSession }),
++      fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
+     ),
+   };
+   return { prisma, session, messages, romanMessage, audits };
+diff --git a/test/roman/roman.controller.spec.ts b/test/roman/roman.controller.spec.ts
+index 68430813..9e1455ab 100644
+--- a/test/roman/roman.controller.spec.ts
++++ b/test/roman/roman.controller.spec.ts
+@@ -99,6 +99,10 @@ function makeService() {
+   const assertDailyCapacity = jest.fn((..._a: unknown[]): Promise<void> =>
+     Promise.resolve(undefined),
+   );
++  // B-668-1 coach AI pool pre-check (resolves = the pool covers a turn).
++  const assertCoachPoolOpen = jest.fn((..._a: unknown[]): Promise<string | null> =>
++    Promise.resolve(null),
++  );
+   // SafetyRouter crisis short-circuit (false = an ordinary message).
+   const isSafetyShortCircuit = jest.fn((..._a: unknown[]): boolean => false);
+   const appendMessage = jest.fn((..._a: unknown[]) =>
+@@ -147,6 +151,7 @@ function makeService() {
+     assertWithinRateLimit,
+     assertMayUseAi,
+     assertDailyCapacity,
++    assertCoachPoolOpen,
+     isSafetyShortCircuit,
+     appendMessage,
+     listMessages,
+@@ -428,6 +433,35 @@ describe('RomanController — POST /roman/sessions/:id/messages (SSE)', () => {
+     expect(service.streamAssistantTurn).not.toHaveBeenCalled();
+   });
+ 
++  it('B-668-1: a used-up coach pool (402) refuses before the user turn is stored or streamed', async () => {
++    flagOn();
++    const { ctrl, service, req } = makeController();
++    const { res } = makeRes();
++    service.assertCoachPoolOpen.mockRejectedValueOnce(
++      new HttpException({ code: 'COACH_AI_BUDGET_EXHAUSTED' }, HttpStatus.PAYMENT_REQUIRED),
++    );
++
++    await expect(
++      ctrl.sendMessage(req, res as never, 'sess_1', { content: 'hi' }),
++    ).rejects.toMatchObject({ status: HttpStatus.PAYMENT_REQUIRED });
++
++    expect(service.appendMessage).not.toHaveBeenCalled();
++    expect(service.streamAssistantTurn).not.toHaveBeenCalled();
++  });
++
++  it('B-668-1: a crisis turn skips the coach pool check and is stored and answered', async () => {
++    flagOn();
++    const { ctrl, service, req } = makeController();
++    const { res } = makeRes();
++    service.isSafetyShortCircuit.mockReturnValueOnce(true);
++
++    await ctrl.sendMessage(req, res as never, 'sess_1', { content: 'hi' });
++
++    expect(service.assertCoachPoolOpen).not.toHaveBeenCalled();
++    expect(service.appendMessage).toHaveBeenCalledTimes(1);
++    expect(service.streamAssistantTurn).toHaveBeenCalledTimes(1);
++  });
++
+   it('sets a Retry-After header (RFC 6585) when the rate-limit gate returns 429', async () => {
+     flagOn();
+     const { ctrl, service, req } = makeController();
+diff --git a/test/roman/roman.prompts.spec.ts b/test/roman/roman.prompts.spec.ts
+index 6490c09b..ba14d2fa 100644
+--- a/test/roman/roman.prompts.spec.ts
++++ b/test/roman/roman.prompts.spec.ts
+@@ -12,10 +12,7 @@
+  *     operator decisions — the prompt is the summarised operative contract).
+  */
+ 
+-import {
+-  buildRomanSystemPrompt,
+-  ROMAN_VOICE_CONTRACT,
+-} from '../../src/roman/roman.prompts';
++import { buildRomanSystemPrompt, ROMAN_VOICE_CONTRACT } from '../../src/roman/roman.prompts';
+ 
+ describe('buildRomanSystemPrompt — voice contract anchors', () => {
+   const base = buildRomanSystemPrompt({
+@@ -43,9 +40,9 @@ describe('buildRomanSystemPrompt — voice contract anchors', () => {
+     expect(base).toMatch(/NO emoji\. Ever\./);
+   });
+ 
+-  it('encodes the single-exclamation-per-session rule', () => {
+-    expect(base).toContain('NO exclamation points');
+-    expect(base).toContain('a single exclamation per session');
++  it('B-651-9: encodes the no-exclamation rule with no per-session exception', () => {
++    expect(base).toContain('NO exclamation points. Ever.');
++    expect(base).not.toContain('a single exclamation per session');
+   });
+ 
+   it('encodes the dry-humour ~1-in-8 frequency and never-two-in-a-row rule', () => {
+@@ -104,12 +101,16 @@ describe('buildRomanSystemPrompt — surface framing', () => {
+ });
+ 
+ describe('buildRomanSystemPrompt — live session voice budget', () => {
+-  it('instructs no exclamation once the per-session budget is spent', () => {
+-    const p = buildRomanSystemPrompt({
+-      surface: 'client',
+-      voice: { quipsInSession: 1, exclamationUsed: true },
+-    });
+-    expect(p).toContain('already been spent');
++  it('B-651-9: instructs no exclamation on every turn, spent or not', () => {
++    for (const exclamationUsed of [true, false]) {
++      const p = buildRomanSystemPrompt({
++        surface: 'client',
++        voice: { quipsInSession: 1, exclamationUsed },
++      });
++      expect(p).toContain('Do not use an exclamation point in this reply.');
++      expect(p).not.toMatch(/may spend the single per-session exclamation/i);
++      expect(p).toContain('NO exclamation points. Ever.');
++    }
+   });
+ 
+   it('forbids a quip on the turn after a quip (never two in a row)', () => {
+diff --git a/test/roman/roman.service.spec.ts b/test/roman/roman.service.spec.ts
+index a57929f3..ded53822 100644
+--- a/test/roman/roman.service.spec.ts
++++ b/test/roman/roman.service.spec.ts
+@@ -347,6 +347,8 @@ function makeFakePrisma() {
+       })),
+       update: jest.fn(async () => ({})),
+     },
++    // B-651-5: the spend admission takes a per-day advisory lock in its tx.
++    $executeRaw: jest.fn(async () => 1),
+     $transaction: undefined as unknown,
+     _state: { sessions, messages },
+     // Opt-in rollback for sequential tests: a callback that throws restores

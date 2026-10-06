@@ -1,0 +1,338 @@
+diff --git a/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx b/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+new file mode 100644
+index 0000000..06b4f2c
+--- /dev/null
++++ b/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+@@ -0,0 +1,143 @@
++// FIX ROUND 4 (B-WIZ4-122): Sol's W3 full-review Bs on the package editor.
++//   B-347-1 the free first package saves a name change at its unchanged $0.
++//   B-347-2 no trial input while trial_days never reaches the server; the
++//           buyer preview shows only the trial the saved package carries.
++//   B-347-3 a draft made in the editor has a reachable "Make ... live" action
++//           (the wizard's publish route); the server row decides the state.
++import AsyncStorage from "@react-native-async-storage/async-storage";
++import React from "react";
++import { Alert } from "react-native";
++import { fireEvent, render, waitFor } from "@testing-library/react-native";
++
++jest.mock("../theme/ThemeProvider", () => {
++  const tokens = jest.requireActual("../theme/tokens").default;
++  return {
++    useTheme: () => ({
++      tokens,
++      semanticColors: tokens.lightTokens,
++      colors: jest.requireActual("../constants/colors").default,
++    }),
++  };
++});
++jest.mock("expo-font", () => ({ isLoaded: () => true }));
++jest.mock("../lib/analytics", () => ({ track: jest.fn() }));
++jest.mock("../utils/haptics", () => ({
++  mediumTap: jest.fn(),
++  successTap: jest.fn(),
++  warningTap: jest.fn(),
++}));
++jest.mock("../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "coach_w4", name: "Coach Lee" }),
++}));
++jest.mock("../screens/client/packageDetail/PackageDetailSurface", () => {
++  const R = require("react");
++  const { Text } = require("react-native");
++  return ({ package: pkg }: { package: { trialDays: number | null } }) =>
++    R.createElement(Text, { testID: "w4-preview-trial" }, String(pkg.trialDays));
++});
++
++const mockPost = jest.fn();
++const mockPatch = jest.fn();
++jest.mock("../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: jest.fn(),
++    post: (...a: unknown[]) => mockPost(...a),
++    patch: (...a: unknown[]) => mockPatch(...a),
++  },
++}));
++
++import CoachPackageEditScreen from "../screens/coach/payments/CoachPackageEditScreen";
++import type { CoachPackage } from "../api/packagesApi";
++
++const T = "2026-10-01T12:00:00Z";
++const row = (o: Partial<CoachPackage> = {}): CoachPackage => ({
++  id: "pkg_w4", coachUserId: "coach_w4", title: "Coaching", description: "Weekly coaching",
++  priceCents: 9900, currency: "usd", billingInterval: "monthly", intervalCount: 1, trialDays: null,
++  features: [], status: "active", shareToken: null, subscriberCount: 0, monthlyRevenueCents: 0,
++  createdAt: T, updatedAt: T, archivedAt: null, publishedAt: T, ...o,
++});
++const serverRow = (o: Record<string, unknown> = {}) => ({
++  id: "pkg_w4", name: "Coaching", description: "Weekly coaching", amount_cents: 9900, currency: "usd",
++  billing_type: "recurring", billing_interval: "month", billing_interval_count: 1, is_active: true,
++  published_at: T, ...o,
++});
++const nav = () => ({ navigate: jest.fn(), goBack: jest.fn(), dispatch: jest.fn() });
++const edit = (pkg: CoachPackage) =>
++  ({ key: "w4", name: "CoachPackageEdit", params: { packageId: pkg.id, initialPackage: pkg } }) as never;
++const alerts = () => (Alert.alert as jest.Mock).mock.calls.map((c) => c[0]);
++
++beforeEach(async () => {
++  jest.clearAllMocks();
++  jest.spyOn(Alert, "alert").mockImplementation(() => {});
++  await AsyncStorage.clear();
++});
++
++describe("B-347-1 free first package", () => {
++  it("saves a new name at the unchanged $0 one-time price", async () => {
++    mockPatch.mockResolvedValue({
++      data: serverRow({ name: "Free intro", amount_cents: 0, billing_type: "one_time", billing_interval: null }),
++    });
++    const free = row({ priceCents: 0, billingInterval: "one_time" });
++    const s = await render(<CoachPackageEditScreen navigation={nav() as never} route={edit(free)} />);
++    await fireEvent.changeText(s.getByPlaceholderText("e.g. 12-week transformation"), "Free intro");
++    await fireEvent.press(s.getByLabelText("Save changes"));
++    await waitFor(() => expect(alerts()).toContain("Package updated"));
++    expect(mockPatch).toHaveBeenCalledTimes(1);
++    expect(mockPatch.mock.calls[0][1]).toEqual(
++      expect.objectContaining({ name: "Free intro", amount_cents: 0, billing_type: "one_time" }),
++    );
++  });
++});
++
++describe("B-347-2 trial terms", () => {
++  it("offers no trial input and previews only the saved trial", async () => {
++    const s = await render(<CoachPackageEditScreen navigation={nav() as never} route={edit(row())} />);
++    expect(s.queryByText(/Trial days/i)).toBeNull();
++    expect(s.queryByPlaceholderText("0")).toBeNull();
++    await fireEvent.press(s.getByLabelText("Preview as buyer"));
++    expect(s.getByTestId("w4-preview-trial").props.children).toBe("null");
++  });
++});
++
++describe("B-347-3 draft made in the editor", () => {
++  it("creates a draft, then makes it live with the wizard's publish route", async () => {
++    mockPost.mockImplementation(async (url: string) =>
++      url === "/v1/coach/packages/pkg_w4/publish"
++        ? { data: serverRow() }
++        : { data: serverRow({ published_at: null }) },
++    );
++    const n = nav();
++    const s = await render(
++      <CoachPackageEditScreen
++        navigation={n as never}
++        route={{ key: "w4c", name: "CoachPackageEdit", params: { packageId: null } } as never}
++      />,
++    );
++    await fireEvent.changeText(s.getByPlaceholderText("e.g. 12-week transformation"), "Coaching");
++    await fireEvent.changeText(s.getByPlaceholderText("199.00"), "99");
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(n.dispatch).toHaveBeenCalledTimes(1));
++    const created = n.dispatch.mock.calls[0][0].payload.params.initialPackage;
++    expect(created.publishedAt).toBeNull();
++    await s.rerender(<CoachPackageEditScreen navigation={n as never} route={edit(created)} />);
++    expect(s.getByText(/Coaching is saved as a draft/)).toBeTruthy();
++    await fireEvent.press(s.getByLabelText("Make Coaching live"));
++    await waitFor(() => expect(alerts()).toContain("Package is live"));
++    expect(mockPost).toHaveBeenCalledWith("/v1/coach/packages/pkg_w4/publish");
++    expect(s.queryByLabelText("Make Coaching live")).toBeNull();
++  });
++
++  it("keeps the draft and the action when publishing fails", async () => {
++    mockPost.mockRejectedValue(
++      Object.assign(new Error("x"), { response: { status: 400, data: { code: "PACKAGE_INVALID" } } }),
++    );
++    const s = await render(
++      <CoachPackageEditScreen navigation={nav() as never} route={edit(row({ publishedAt: null }))} />,
++    );
++    await fireEvent.press(s.getByLabelText("Make Coaching live"));
++    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
++    expect(alerts()).not.toContain("Package is live");
++    expect(s.getByLabelText("Make Coaching live")).toBeTruthy();
++  });
++});
+diff --git a/src/api/packagesApi.ts b/src/api/packagesApi.ts
+index f16c9ac..fd174ef 100644
+--- a/src/api/packagesApi.ts
++++ b/src/api/packagesApi.ts
+@@ -588,6 +588,17 @@ export const coachPackagesApi = {
+     return { ...res, data: fromBackend(row) };
+   },
+ 
++  /**
++   * B-347-3: make a draft live from the editor. Same route the setup wizard
++   * calls (coachSetupApi.publishPackage); answers the row as now stored.
++   */
++  publish: async (id: string) => {
++    const res = await api.post<BackendPackageRow>(
++      `/v1/coach/packages/${encodeURIComponent(id)}/publish`,
++    );
++    return { ...res, data: fromBackend(res.data) };
++  },
++
+   // TODO(backend): `GET /v1/coach/packages/:id/subscribers` not yet deployed.
+   // 404 is surfaced to the caller — we do NOT convert to an empty list so
+   // a missing endpoint doesn't masquerade as "0 subscribers".
+diff --git a/src/screens/coach/payments/CoachPackageEditScreen.tsx b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+index 6203a06..e336b35 100644
+--- a/src/screens/coach/payments/CoachPackageEditScreen.tsx
++++ b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+@@ -39,6 +39,7 @@ import {
+ import {
+   coachPackagesApi,
+   CoachPackage,
++  isLivePackage,
+   PackageBillingInterval,
+   PackageCreateInput,
+   PackageUpdateInput,
+@@ -184,11 +185,17 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     if (cents == null) {
+       return { payload: null, message: "Enter a valid price." };
+     }
+-    if (cents === 0) {
++    // B-347-1: the free one-time package from setup keeps its $0 price when
++    // the coach edits its name or details. A new $0 price is still refused.
++    const freeKept =
++      isEdit && original?.priceCents === 0 && billingInterval === "one_time";
++    if (cents === 0 && !freeKept) {
+       return {
+         payload: null,
+         message:
+-          "Price must be greater than zero. Use a free invite code for comps.",
++          original?.priceCents === 0
++            ? "Free packages are one-time. Choose One-time, or enter a price."
++            : "Price must be greater than zero. Use a free invite code for comps.",
+       };
+     }
+     const features = featuresText
+@@ -218,7 +225,8 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       },
+       message: null,
+     };
+-  }, [title, description, priceText, billingInterval, trialText, featuresText]);
++  }, [title, description, priceText, billingInterval, trialText, featuresText,
++    isEdit, original]);
+ 
+   // OR-112-16 + B-329-1: one create attempt = one Idempotency-Key and one
+   // body, stored on the device before the request leaves (see
+@@ -334,6 +342,34 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     }
+   }, [validate, isEdit, original, navigation, coachId]);
+ 
++  // B-347-3: a draft made here (or skipped in setup) can go live from the
++  // editor with the wizard's publish call; the row the server answers decides
++  // what the screen shows next.
++  const [publishing, setPublishing] = useState(false);
++  const handlePublish = useCallback(async () => {
++    if (!original || publishing) return;
++    setPublishing(true);
++    try {
++      const res = await coachPackagesApi.publish(original.id);
++      setOriginal(res.data);
++      if (isLivePackage(res.data)) {
++        successTap();
++        track("coach_package_published", { package_id: original.id });
++        Alert.alert("Package is live", `${res.data.title} is live.`);
++      } else {
++        Alert.alert(
++          "Still a draft",
++          `TGP did not confirm ${res.data.title} as live, so clients cannot see it yet. Try again.`,
++        );
++      }
++    } catch (err) {
++      const f = describeError(err, "make your package live");
++      Alert.alert(f.title, f.body);
++    } finally {
++      setPublishing(false);
++    }
++  }, [original, publishing]);
++
+   const handleArchive = useCallback(() => {
+     if (!original) return;
+     warningTap();
+@@ -409,13 +445,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       .split("\n")
+       .map((f) => f.trim())
+       .filter(Boolean);
+-    const trimmedTrial = trialText.trim();
++    // B-347-2: only a trial the server returned on the saved package; this
++    // build never sends trial_days, so a typed trial is never previewed.
++    const savedTrial = original?.trialDays ?? null;
+     const trialDays =
+-      billingInterval !== "one_time" &&
+-      trimmedTrial &&
+-      Number.isInteger(Number(trimmedTrial))
+-        ? Number(trimmedTrial)
+-        : null;
++      billingInterval !== "one_time" && savedTrial ? savedTrial : null;
+     return {
+       id: original?.id ?? "preview",
+       title: title.trim() || "Untitled package",
+@@ -431,7 +465,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   }, [
+     priceText,
+     featuresText,
+-    trialText,
+     billingInterval,
+     title,
+     description,
+@@ -448,6 +481,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   }
+ 
+   const archived = original?.status === "archived";
++  const draft = isEdit && !!original && !archived && !isLivePackage(original);
+   // Pricing is immutable once a package has active subscribers — surface that
+   // up-front (helper copy) and again if the backend rejects a price change.
+   const pricingLocked = isEdit && (original?.subscriberCount ?? 0) > 0;
+@@ -573,22 +607,8 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           </View>
+         ) : null}
+ 
+-        {billingInterval !== "one_time" ? (
+-          <>
+-            <Label semanticColors={semanticColors} tokens={tokens}>
+-              Trial days (optional)
+-            </Label>
+-            <TextInput
+-              value={trialText}
+-              onChangeText={setTrialText}
+-              placeholder="0"
+-              style={styles.input}
+-              placeholderTextColor={semanticColors.textMuted}
+-              keyboardType="number-pad"
+-              maxLength={3}
+-            />
+-          </>
+-        ) : null}
++        {/* B-347-2: no trial input until trial_days reaches the server
++            (backend trials + m#338 bring it back together). */}
+ 
+         <Label semanticColors={semanticColors} tokens={tokens}>
+           Features (one per line)
+@@ -628,6 +648,30 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+ 
+         {isEdit && original ? (
+           <>
++            {draft ? (
++              <View testID="package-edit-draft">
++                <Text style={styles.resumedText}>
++                  {original.title} is saved as a draft. Clients cannot see it
++                  until it is live.
++                </Text>
++                <TouchableOpacity
++                  style={[
++                    styles.secondaryBtn,
++                    publishing && styles.primaryBtnDisabled,
++                  ]}
++                  onPress={() => void handlePublish()}
++                  disabled={publishing}
++                  accessibilityRole="button"
++                  accessibilityLabel={`Make ${original.title} live`}
++                  accessibilityState={{ busy: publishing, disabled: publishing }}
++                  testID="package-edit-publish"
++                >
++                  <Text style={styles.secondaryBtnText}>
++                    {publishing ? "Making it live" : `Make ${original.title} live`}
++                  </Text>
++                </TouchableOpacity>
++              </View>
++            ) : null}
+             <TouchableOpacity
+               style={styles.secondaryBtn}
+               onPress={() => {

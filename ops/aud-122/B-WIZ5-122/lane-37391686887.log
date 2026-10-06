@@ -1,0 +1,1025 @@
+targeted	Set up job	﻿2026-10-06T00:00:59.6423644Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-06T00:00:59.6450752Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-06T00:00:59.6451646Z Hosted Compute Agent
+targeted	Set up job	2026-10-06T00:00:59.6452294Z Version: 20260901.588
+targeted	Set up job	2026-10-06T00:00:59.6452975Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-06T00:00:59.6453715Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-06T00:00:59.6454486Z Worker ID: {1e587171-cd87-4408-a063-81ac9af91e76}
+targeted	Set up job	2026-10-06T00:00:59.6455212Z Azure Region: westus
+targeted	Set up job	2026-10-06T00:00:59.6456023Z ##[endgroup]
+targeted	Set up job	2026-10-06T00:00:59.6457730Z ##[group]Operating System
+targeted	Set up job	2026-10-06T00:00:59.6458381Z Ubuntu
+targeted	Set up job	2026-10-06T00:00:59.6458988Z 24.04.5
+targeted	Set up job	2026-10-06T00:00:59.6459496Z LTS
+targeted	Set up job	2026-10-06T00:00:59.6459984Z ##[endgroup]
+targeted	Set up job	2026-10-06T00:00:59.6460623Z ##[group]Runner Image
+targeted	Set up job	2026-10-06T00:00:59.6461208Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-06T00:00:59.6461836Z Version: 20260927.320.1
+targeted	Set up job	2026-10-06T00:00:59.6462888Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-06T00:00:59.6464667Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-06T00:00:59.6465632Z ##[endgroup]
+targeted	Set up job	2026-10-06T00:00:59.6467436Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-06T00:00:59.6469626Z Contents: read
+targeted	Set up job	2026-10-06T00:00:59.6470696Z Metadata: read
+targeted	Set up job	2026-10-06T00:00:59.6471272Z Packages: read
+targeted	Set up job	2026-10-06T00:00:59.6471793Z ##[endgroup]
+targeted	Set up job	2026-10-06T00:00:59.6473956Z Secret source: Actions
+targeted	Set up job	2026-10-06T00:00:59.6474952Z Cache mode: write
+targeted	Set up job	2026-10-06T00:00:59.6476156Z Prepare workflow directory
+targeted	Set up job	2026-10-06T00:00:59.6841232Z Prepare all required actions
+targeted	Set up job	2026-10-06T00:00:59.6916897Z Getting action download info
+targeted	Set up job	2026-10-06T00:01:00.0472696Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-06T00:01:00.1657476Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-06T00:01:00.3548823Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-06T00:01:00.4335496Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4336731Z with:
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4337339Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4341007Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4341439Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4341873Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4342313Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4342798Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4343236Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4343747Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4344169Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4344607Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4345038Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4345447Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4346067Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4346570Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.4347342Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5312580Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5314560Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5315510Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5317055Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5412371Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5436665Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5451056Z Temporarily overriding HOME='/home/runner/work/_temp/903413ca-54cc-43b0-8f16-03fd71cafd1d' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5452703Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5457098Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5517007Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5521497Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5524260Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5525143Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5529109Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5636327Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5637734Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5639432Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5640826Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5641585Z hint:
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5642325Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5642983Z hint:
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5643599Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5644592Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5645326Z hint:
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5646033Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5646547Z hint:
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5647482Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5648904Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5652091Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5698182Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5698956Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5701705Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5731457Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5732734Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5733503Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5739463Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.5769285Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6134326Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6141451Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6183558Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6399535Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6406091Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6438274Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6659609Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6695141Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6724233Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6756053Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6791072Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6820654Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6821422Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-06T00:01:00.6828918Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b343e6d20aa0dbe2577b7b1faca354d9848f4cfe:refs/remotes/origin/ci/B-WIZ5-122-347
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3154949Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3157768Z  * [new ref]         b343e6d20aa0dbe2577b7b1faca354d9848f4cfe -> origin/ci/B-WIZ5-122-347
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3165256Z [command]/usr/bin/git branch --list --remote origin/ci/B-WIZ5-122-347
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3192609Z   origin/ci/B-WIZ5-122-347
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3203275Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-WIZ5-122-347
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3227055Z b343e6d20aa0dbe2577b7b1faca354d9848f4cfe
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3231873Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3233161Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3234391Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3239087Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3292416Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3323207Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.3328635Z [command]/usr/bin/git checkout --progress --force -B ci/B-WIZ5-122-347 refs/remotes/origin/ci/B-WIZ5-122-347
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.4415919Z Switched to a new branch 'ci/B-WIZ5-122-347'
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.4425066Z branch 'ci/B-WIZ5-122-347' set up to track 'origin/ci/B-WIZ5-122-347'.
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.4434124Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.4479264Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-06T00:01:02.4504120Z b343e6d20aa0dbe2577b7b1faca354d9848f4cfe
+targeted	Run actions/setup-node@v6	﻿2026-10-06T00:01:02.4873517Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:02.4874649Z with:
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:02.4875406Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:02.4876459Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:02.4877250Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:02.4886714Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:02.4887607Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:02.4888609Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:02.6315117Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:03.2682445Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:03.7858118Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:03.8071493Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/9cfffcd4-9421-43d7-97fb-05705a4a14fd -f /home/runner/work/_temp/0ff1db7a-5171-4fdb-a832-051fad0b8092
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:04.9713188Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:06.9635044Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:07.1827152Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:07.1828422Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:07.1828714Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:07.1829211Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:07.1853889Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:07.2768201Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:07.5379695Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:08.8443492Z Received 0 of 241027159 (0.0%), 0.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:09.8450609Z Received 109051904 of 241027159 (45.2%), 52.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:10.7817671Z Received 241027159 of 241027159 (100.0%), 78.2 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:10.7819241Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:10.7956211Z [command]/usr/bin/tar -xf /home/runner/work/_temp/2be370a4-37df-48d7-8645-b8ed9e6db3a0/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:11.4387376Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-06T00:01:11.4501905Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-06T00:01:11.4702791Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-06T00:01:11.4703143Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-06T00:01:11.4991238Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-06T00:01:11.4991712Z ##[endgroup]
+targeted	Run npm ci	2026-10-06T00:01:16.5401307Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-06T00:01:16.7611139Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-06T00:01:16.7771354Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-06T00:01:16.7826373Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-06T00:01:16.8113807Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-06T00:01:16.9541238Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-06T00:01:16.9588817Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:01:16.9610125Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:01:16.9613108Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:01:16.9633479Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:01:16.9668473Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:01:16.9998077Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:01:17.0539540Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-06T00:01:17.5250826Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-06T00:01:18.1098022Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-06T00:01:22.0050852Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-06T00:02:14.0682515Z 
+targeted	Run npm ci	2026-10-06T00:02:14.0686436Z added 1108 packages, and audited 1109 packages in 1m
+targeted	Run npm ci	2026-10-06T00:02:14.0687159Z 
+targeted	Run npm ci	2026-10-06T00:02:14.0687876Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-06T00:02:14.0688717Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-06T00:02:14.4683578Z 
+targeted	Run npm ci	2026-10-06T00:02:14.4684447Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-06T00:02:14.4684854Z 
+targeted	Run npm ci	2026-10-06T00:02:14.4685216Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-06T00:02:14.4686062Z   npm audit fix
+targeted	Run npm ci	2026-10-06T00:02:14.4687014Z 
+targeted	Run npm ci	2026-10-06T00:02:14.4687519Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-06T00:02:14.4688341Z   npm audit fix --force
+targeted	Run npm ci	2026-10-06T00:02:14.4688670Z 
+targeted	Run npm ci	2026-10-06T00:02:14.4688929Z Run `npm audit` for details.
+targeted	Type-check (only when .ci-lane-tsc exists)	﻿2026-10-06T00:02:14.6708801Z ##[group]Run npx tsc --noEmit
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-06T00:02:14.6709165Z ^[[36;1mnpx tsc --noEmit^[[0m
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-06T00:02:14.6774717Z shell: /usr/bin/bash -e {0}
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-06T00:02:14.6775047Z ##[endgroup]
+targeted	Targeted jest	﻿2026-10-06T00:02:42.6526319Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-06T00:02:42.6526714Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-06T00:02:42.6527146Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-06T00:02:42.6527698Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-06T00:02:42.6528100Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-06T00:02:42.6528398Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-06T00:02:42.6593873Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-06T00:02:42.6594388Z ##[endgroup]
+targeted	Targeted jest	2026-10-06T00:02:42.6703832Z specs: src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx src/__tests__/audit122WM1DraftPublish.test.tsx src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx src/__tests__/CoachPackageEditScreen.idempotency.test.tsx src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx src/__tests__/CoachPackageContentsScreen.test.tsx src/__tests__/PackageDetailSurface.preview.test.tsx src/components/coach/setup/__tests__/coachSetup.test.tsx src/components/coach/setup/__tests__/coachSetupRound2.test.tsx src/components/coach/setup/__tests__/packageCreateDurability.test.tsx src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx src/components/coach/setup/__tests__/w2FixRound118.test.tsx src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+targeted	Targeted jest	2026-10-06T00:02:56.2539774Z PASS src/components/coach/setup/__tests__/w2FixRound118.test.tsx (11.372 s)
+targeted	Targeted jest	2026-10-06T00:02:56.3276338Z   ● Console
+targeted	Targeted jest	2026-10-06T00:02:56.3280538Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3280987Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.3336155Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.3337069Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3338018Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.3338768Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3339097Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.3339598Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.3340090Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.3340507Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.3340939Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3342046Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.3342992Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3343923Z     ^[[0m ^[[90m 89 |^[[39m       ^[[36mif^[[39m (^[[33m!^[[39mmounted^[[33m.^[[39mcurrent) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3345179Z      ^[[90m 90 |^[[39m       ^[[90m// Nothing from the earlier account stays on screen.^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3346523Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 91 |^[[39m       setView(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3347332Z      ^[[90m    |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3348111Z      ^[[90m 92 |^[[39m       setStale(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3348918Z      ^[[90m 93 |^[[39m       setError(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3349765Z      ^[[90m 94 |^[[39m       setFailed(^[[36mnull^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.3350201Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3350732Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.3352002Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3353537Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3355115Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3356862Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3358309Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3359371Z       at setView (src/components/coach/setup/GetPaidPanel.tsx:91:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3360154Z       at fn (src/utils/authEvents.ts:27:31)
+targeted	Targeted jest	2026-10-06T00:02:56.3360506Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-06T00:02:56.3361127Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+targeted	Targeted jest	2026-10-06T00:02:56.3361710Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+targeted	Targeted jest	2026-10-06T00:02:56.3362377Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.3362966Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3363266Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3363381Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.3363743Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.3364104Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3364487Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.3364900Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3365084Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.3365354Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.3365629Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.3416565Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.3417044Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3418101Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.3419010Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3419766Z     ^[[0m ^[[90m 90 |^[[39m       ^[[90m// Nothing from the earlier account stays on screen.^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3420751Z      ^[[90m 91 |^[[39m       setView(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3421658Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 92 |^[[39m       setStale(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3422546Z      ^[[90m    |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3423266Z      ^[[90m 93 |^[[39m       setError(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3424076Z      ^[[90m 94 |^[[39m       setFailed(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3424897Z      ^[[90m 95 |^[[39m       setOpening(^[[36mfalse^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.3425361Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3426137Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.3427412Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3428931Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3430459Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3431906Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3433280Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3434354Z       at setStale (src/components/coach/setup/GetPaidPanel.tsx:92:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3435049Z       at fn (src/utils/authEvents.ts:27:31)
+targeted	Targeted jest	2026-10-06T00:02:56.3435581Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-06T00:02:56.3436431Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+targeted	Targeted jest	2026-10-06T00:02:56.3437289Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+targeted	Targeted jest	2026-10-06T00:02:56.3438380Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.3439429Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3439972Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3440146Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.3440870Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.3441614Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3442324Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.3443067Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3443399Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.3443851Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.3444712Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.3445127Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.3454250Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3455490Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.3456717Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3457248Z     ^[[0m ^[[90m 91 |^[[39m       setView(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3458101Z      ^[[90m 92 |^[[39m       setStale(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3459036Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 93 |^[[39m       setError(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3459817Z      ^[[90m    |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3460518Z      ^[[90m 94 |^[[39m       setFailed(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3461319Z      ^[[90m 95 |^[[39m       setOpening(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3462137Z      ^[[90m 96 |^[[39m       setChecking(^[[36mfalse^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.3462573Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3463069Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.3464307Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3466008Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3467516Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3468966Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3470353Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3471455Z       at setError (src/components/coach/setup/GetPaidPanel.tsx:93:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3472180Z       at fn (src/utils/authEvents.ts:27:31)
+targeted	Targeted jest	2026-10-06T00:02:56.3472747Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-06T00:02:56.3473440Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+targeted	Targeted jest	2026-10-06T00:02:56.3474423Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+targeted	Targeted jest	2026-10-06T00:02:56.3475577Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.3508136Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3508690Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3508861Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.3509491Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.3510117Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3510828Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.3511570Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3511893Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.3512345Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.3512830Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.3513239Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.3513674Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3514763Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.3515680Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3516441Z     ^[[0m ^[[90m 92 |^[[39m       setStale(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3517279Z      ^[[90m 93 |^[[39m       setError(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3518200Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 94 |^[[39m       setFailed(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3518987Z      ^[[90m    |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3519744Z      ^[[90m 95 |^[[39m       setOpening(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3520566Z      ^[[90m 96 |^[[39m       setChecking(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3521401Z      ^[[90m 97 |^[[39m       setLoading(^[[36mfalse^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.3521830Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3522408Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.3523944Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3525667Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3527459Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3528950Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3530398Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3531505Z       at setFailed (src/components/coach/setup/GetPaidPanel.tsx:94:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3532223Z       at fn (src/utils/authEvents.ts:27:31)
+targeted	Targeted jest	2026-10-06T00:02:56.3532796Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-06T00:02:56.3533485Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+targeted	Targeted jest	2026-10-06T00:02:56.3534461Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+targeted	Targeted jest	2026-10-06T00:02:56.3535646Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.3536996Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3537545Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3537715Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.3538359Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.3539017Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3539713Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.3540469Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3540798Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.3541249Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.3541737Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.3542140Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.3542579Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3543657Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.3544621Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3545099Z     ^[[0m ^[[90m 93 |^[[39m       setError(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3546167Z      ^[[90m 94 |^[[39m       setFailed(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3547137Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 95 |^[[39m       setOpening(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3547957Z      ^[[90m    |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3548742Z      ^[[90m 96 |^[[39m       setChecking(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3549664Z      ^[[90m 97 |^[[39m       setLoading(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3550379Z      ^[[90m 98 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.3550716Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3551221Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.3552489Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3554048Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3555630Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3557364Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3558790Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3559928Z       at setOpening (src/components/coach/setup/GetPaidPanel.tsx:95:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3560678Z       at fn (src/utils/authEvents.ts:27:31)
+targeted	Targeted jest	2026-10-06T00:02:56.3561258Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-06T00:02:56.3561953Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+targeted	Targeted jest	2026-10-06T00:02:56.3563211Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+targeted	Targeted jest	2026-10-06T00:02:56.3564649Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.3565952Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3566509Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3566677Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.3567324Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.3567978Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3568674Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.3569405Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3569732Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.3570171Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.3570652Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.3571040Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.3571470Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3572550Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.3573505Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3573978Z     ^[[0m ^[[90m 94 |^[[39m       setFailed(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3574823Z      ^[[90m 95 |^[[39m       setOpening(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3576042Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 96 |^[[39m       setChecking(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3576891Z      ^[[90m    |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3577644Z      ^[[90m 97 |^[[39m       setLoading(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3578341Z      ^[[90m 98 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3579045Z      ^[[90m 99 |^[[39m     ^[[36mreturn^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.3579448Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3579975Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.3581218Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3582770Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3584375Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3586150Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3587548Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3588632Z       at setChecking (src/components/coach/setup/GetPaidPanel.tsx:96:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3589343Z       at fn (src/utils/authEvents.ts:27:31)
+targeted	Targeted jest	2026-10-06T00:02:56.3589871Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-06T00:02:56.3590512Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+targeted	Targeted jest	2026-10-06T00:02:56.3591444Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+targeted	Targeted jest	2026-10-06T00:02:56.3592572Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.3593627Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3594153Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3594312Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.3594924Z       An update to GetPaidPanel inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.3595556Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3596435Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.3597158Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3597517Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.3597952Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.3598416Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.3598798Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.3599206Z       
+targeted	Targeted jest	2026-10-06T00:02:56.3600251Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.3601395Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3601874Z     ^[[0m ^[[90m  95 |^[[39m       setOpening(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3602849Z      ^[[90m  96 |^[[39m       setChecking(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3603754Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  97 |^[[39m       setLoading(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3604532Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3605117Z      ^[[90m  98 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3606081Z      ^[[90m  99 |^[[39m     ^[[36mreturn^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-06T00:02:56.3607093Z      ^[[90m 100 |^[[39m       mounted^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.3607633Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3608137Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.3609354Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3610861Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3612383Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3613839Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3615205Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3646315Z       at setLoading (src/components/coach/setup/GetPaidPanel.tsx:97:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3647026Z       at fn (src/utils/authEvents.ts:27:31)
+targeted	Targeted jest	2026-10-06T00:02:56.3647548Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-06T00:02:56.3648165Z       at Object.forEach [as emit] (src/utils/authEvents.ts:27:15)
+targeted	Targeted jest	2026-10-06T00:02:56.3649065Z       at Object.emit (src/components/coach/setup/__tests__/w2FixRound118.test.tsx:430:16)
+targeted	Targeted jest	2026-10-06T00:02:56.3650374Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.3700362Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.3700953Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3701123Z     console.warn
+targeted	Targeted jest	2026-10-06T00:02:56.3702709Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-06T00:02:56.3704033Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3705322Z     ^[[0m ^[[90m 25 |^[[39m   ^[[36mconst^[[39m section ^[[33m=^[[39m route^[[33m.^[[39mparams^[[33m?^[[39m^[[33m.^[[39msection ^[[33m?^[[39m^[[33m?^[[39m ^[[32m"get_paid"^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3706862Z      ^[[90m 26 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-06T00:02:56.3708097Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 27 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mcontainer}^[[33m>^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3709216Z      ^[[90m    |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3710483Z      ^[[90m 28 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39minner}^[[33m>^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3711695Z      ^[[90m 29 |^[[39m         ^[[33m<^[[39m^[[33mTouchableOpacity^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.3712751Z      ^[[90m 30 |^[[39m           onPress^[[33m=^[[39m{() ^[[33m=>^[[39m navigation^[[33m.^[[39mgoBack()}^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.3713315Z 
+targeted	Targeted jest	2026-10-06T00:02:56.3736322Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3737438Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-06T00:02:56.3738440Z       at SafeAreaView (src/screens/coach/setup/CoachSetupScreen.tsx:27:6)
+targeted	Targeted jest	2026-10-06T00:02:56.3739683Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-06T00:02:56.3741090Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-06T00:02:56.3742865Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-06T00:02:56.3744404Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-06T00:02:56.3777532Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.3779105Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-06T00:02:56.3780466Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-06T00:02:56.3781796Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3783131Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-06T00:02:56.3784657Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-06T00:02:56.3786257Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-06T00:02:56.3787156Z       at node_modules/react/cjs/react.development.js:847:21
+targeted	Targeted jest	2026-10-06T00:02:56.3787607Z 
+targeted	Targeted jest	2026-10-06T00:02:56.5887255Z PASS src/__tests__/CoachPackageContentsScreen.test.tsx (11.76 s)
+targeted	Targeted jest	2026-10-06T00:02:56.6696650Z   ● Console
+targeted	Targeted jest	2026-10-06T00:02:56.6697106Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6697306Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6698113Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6698847Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6699542Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6700259Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6700580Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6701028Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6701522Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6701941Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6702416Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6703508Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6704472Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6705252Z     ^[[0m ^[[90m 367 |^[[39m       ^[[90m// NEXT push intent can proceed once this one finishes.^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6706708Z      ^[[90m 368 |^[[39m       previewInFlightRef^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6707870Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 369 |^[[39m       setAudienceCount(res^[[33m.^[[39mdata^[[33m.^[[39mcount)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6708799Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6709562Z      ^[[90m 370 |^[[39m       setBuyerNotify(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6710230Z      ^[[90m 371 |^[[39m       setFireAt(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6710929Z      ^[[90m 372 |^[[39m       setPushSubmitting(^[[36mfalse^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6711312Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6711777Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6712962Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6714475Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6716280Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.6717778Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6719149Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6720389Z       at setAudienceCount (src/screens/coach/payments/CoachPackageContentsScreen.tsx:369:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6721660Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.6723307Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6724183Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6724370Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6725150Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6726200Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6726961Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6727750Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6728103Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6728588Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6729105Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6729518Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6729966Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6731074Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6732032Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6732881Z     ^[[0m ^[[90m 368 |^[[39m       previewInFlightRef^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6734173Z      ^[[90m 369 |^[[39m       setAudienceCount(res^[[33m.^[[39mdata^[[33m.^[[39mcount)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6735290Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 370 |^[[39m       setBuyerNotify(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6736423Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6737137Z      ^[[90m 371 |^[[39m       setFireAt(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6738014Z      ^[[90m 372 |^[[39m       setPushSubmitting(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6739261Z      ^[[90m 373 |^[[39m       ^[[90m// The push INTENT begins here: mint ONE stable idempotency key now and^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6739943Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6740463Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6741708Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6743244Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6744771Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.6746520Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6747937Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6749222Z       at setBuyerNotify (src/screens/coach/payments/CoachPackageContentsScreen.tsx:370:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6750376Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.6751468Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6752023Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6752192Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6753012Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6753778Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6754484Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6755187Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6755515Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6756263Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6756753Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6757157Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6757590Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6758660Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6759542Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6760220Z     ^[[0m ^[[90m 369 |^[[39m       setAudienceCount(res^[[33m.^[[39mdata^[[33m.^[[39mcount)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6761278Z      ^[[90m 370 |^[[39m       setBuyerNotify(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6762300Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 371 |^[[39m       setFireAt(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6763490Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6764695Z      ^[[90m 372 |^[[39m       setPushSubmitting(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6766261Z      ^[[90m 373 |^[[39m       ^[[90m// The push INTENT begins here: mint ONE stable idempotency key now and^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6767669Z      ^[[90m 374 |^[[39m       ^[[90m// reuse it for the push call and any retry of this same intent. Both the^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6768288Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6768790Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6770016Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6771520Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6773004Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.6774437Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6776108Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6777316Z       at setFireAt (src/screens/coach/payments/CoachPackageContentsScreen.tsx:371:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6778435Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.6779468Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6779981Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6780137Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6780893Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6781664Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6782372Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6783158Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6783494Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6783964Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6784471Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6784881Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6785308Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6786657Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6787565Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6788068Z     ^[[0m ^[[90m 370 |^[[39m       setBuyerNotify(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6788880Z      ^[[90m 371 |^[[39m       setFireAt(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6789869Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 372 |^[[39m       setPushSubmitting(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6790719Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6791796Z      ^[[90m 373 |^[[39m       ^[[90m// The push INTENT begins here: mint ONE stable idempotency key now and^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6793241Z      ^[[90m 374 |^[[39m       ^[[90m// reuse it for the push call and any retry of this same intent. Both the^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6794709Z      ^[[90m 375 |^[[39m       ^[[90m// ref (synchronous source of truth) and state (debug/inspection) carry it.^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6795405Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6796208Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6797492Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6798995Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6800598Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.6802189Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6803646Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6805286Z       at setPushSubmitting (src/screens/coach/payments/CoachPackageContentsScreen.tsx:372:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6851026Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.6852143Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6852778Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6852961Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6853748Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6854528Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6855242Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6867266Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6867649Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6868214Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6868703Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6869101Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6869562Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6870624Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6871590Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6872381Z     ^[[0m ^[[90m 377 |^[[39m       pushIdemKeyRef^[[33m.^[[39mcurrent ^[[33m=^[[39m intentKey^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6873653Z      ^[[90m 378 |^[[39m       submitInFlightRef^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6874924Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 379 |^[[39m       setPreviewLoading(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6876058Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6876885Z      ^[[90m 380 |^[[39m       setConfirmVisible(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6877644Z      ^[[90m 381 |^[[39m     } ^[[36mcatch^[[39m (err) {
+targeted	Targeted jest	2026-10-06T00:02:56.6878716Z      ^[[90m 382 |^[[39m       ^[[90m// Only the CURRENT intent surfaces an error / resets state. A stale^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6879382Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6879880Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6881050Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6882659Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6884216Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.6885686Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6887286Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6888586Z       at setPreviewLoading (src/screens/coach/payments/CoachPackageContentsScreen.tsx:379:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6889829Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.6890992Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6891562Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6891741Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6892518Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6893293Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6894005Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6894770Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6895137Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6895594Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6896393Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6896781Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6897244Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6898323Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6899289Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6900407Z     ^[[0m ^[[90m 378 |^[[39m       submitInFlightRef^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6901885Z      ^[[90m 379 |^[[39m       setPreviewLoading(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6903009Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 380 |^[[39m       setConfirmVisible(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6903963Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6904688Z      ^[[90m 381 |^[[39m     } ^[[36mcatch^[[39m (err) {
+targeted	Targeted jest	2026-10-06T00:02:56.6906072Z      ^[[90m 382 |^[[39m       ^[[90m// Only the CURRENT intent surfaces an error / resets state. A stale^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6907505Z      ^[[90m 383 |^[[39m       ^[[90m// failed preview is ignored so it cannot disturb an in-flight push.^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6908169Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6908720Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6910012Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6911620Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6913208Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.6914768Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6916413Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6917769Z       at setConfirmVisible (src/screens/coach/payments/CoachPackageContentsScreen.tsx:380:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6919031Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.6920170Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6920736Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6920914Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6921728Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6922522Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6923222Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6923941Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6924289Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6924762Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6925241Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6925639Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6926361Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6927447Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6928361Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6929087Z     ^[[0m ^[[90m 367 |^[[39m       ^[[90m// NEXT push intent can proceed once this one finishes.^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6930410Z      ^[[90m 368 |^[[39m       previewInFlightRef^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6931879Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 369 |^[[39m       setAudienceCount(res^[[33m.^[[39mdata^[[33m.^[[39mcount)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6932927Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6933726Z      ^[[90m 370 |^[[39m       setBuyerNotify(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6934571Z      ^[[90m 371 |^[[39m       setFireAt(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6935543Z      ^[[90m 372 |^[[39m       setPushSubmitting(^[[36mfalse^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6936306Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6936841Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6938110Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6939624Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6941252Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.6943031Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6944779Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6946353Z       at setAudienceCount (src/screens/coach/payments/CoachPackageContentsScreen.tsx:369:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6947526Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.6948645Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6949168Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6949336Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6950094Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6950896Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6951613Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6952393Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6952811Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6953286Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6953782Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6954192Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6954643Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6955961Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6956906Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6957743Z     ^[[0m ^[[90m 368 |^[[39m       previewInFlightRef^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6959108Z      ^[[90m 369 |^[[39m       setAudienceCount(res^[[33m.^[[39mdata^[[33m.^[[39mcount)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6960325Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 370 |^[[39m       setBuyerNotify(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6961228Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6962022Z      ^[[90m 371 |^[[39m       setFireAt(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6962935Z      ^[[90m 372 |^[[39m       setPushSubmitting(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6964186Z      ^[[90m 373 |^[[39m       ^[[90m// The push INTENT begins here: mint ONE stable idempotency key now and^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6964903Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6965452Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6969966Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6971589Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6973216Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.6974837Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.6976604Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6977943Z       at setBuyerNotify (src/screens/coach/payments/CoachPackageContentsScreen.tsx:370:7)
+targeted	Targeted jest	2026-10-06T00:02:56.6979212Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.6980255Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.6980793Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6980960Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.6981752Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.6982540Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6983267Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.6984043Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6984379Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.6984838Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.6985347Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.6986021Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.6986828Z       
+targeted	Targeted jest	2026-10-06T00:02:56.6987947Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.6989169Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6989914Z     ^[[0m ^[[90m 369 |^[[39m       setAudienceCount(res^[[33m.^[[39mdata^[[33m.^[[39mcount)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6990996Z      ^[[90m 370 |^[[39m       setBuyerNotify(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6991985Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 371 |^[[39m       setFireAt(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6992780Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6993647Z      ^[[90m 372 |^[[39m       setPushSubmitting(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6994910Z      ^[[90m 373 |^[[39m       ^[[90m// The push INTENT begins here: mint ONE stable idempotency key now and^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.6996708Z      ^[[90m 374 |^[[39m       ^[[90m// reuse it for the push call and any retry of this same intent. Both the^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.6997411Z 
+targeted	Targeted jest	2026-10-06T00:02:56.6997955Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.6999270Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.7000817Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.7002425Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.7003983Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.7005409Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.7007053Z       at setFireAt (src/screens/coach/payments/CoachPackageContentsScreen.tsx:371:7)
+targeted	Targeted jest	2026-10-06T00:02:56.7008256Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.7009362Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.7009930Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7010104Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.7010892Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.7011626Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7012359Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.7013112Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7013445Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.7013903Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.7014401Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.7014799Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.7015228Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7016569Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.7017408Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7017912Z     ^[[0m ^[[90m 370 |^[[39m       setBuyerNotify(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7018970Z      ^[[90m 371 |^[[39m       setFireAt(^[[36mnull^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7019983Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 372 |^[[39m       setPushSubmitting(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7020821Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7021931Z      ^[[90m 373 |^[[39m       ^[[90m// The push INTENT begins here: mint ONE stable idempotency key now and^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7023311Z      ^[[90m 374 |^[[39m       ^[[90m// reuse it for the push call and any retry of this same intent. Both the^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7024777Z      ^[[90m 375 |^[[39m       ^[[90m// ref (synchronous source of truth) and state (debug/inspection) carry it.^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.7025488Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7026299Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.7027574Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.7029476Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.7031339Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.7032843Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.7034312Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.7035941Z       at setPushSubmitting (src/screens/coach/payments/CoachPackageContentsScreen.tsx:372:7)
+targeted	Targeted jest	2026-10-06T00:02:56.7037213Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.7038303Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.7038812Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7038979Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.7039747Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.7040546Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7041266Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.7042022Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7042373Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.7042849Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.7043334Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.7043742Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.7044193Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7045276Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.7046520Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7047280Z     ^[[0m ^[[90m 377 |^[[39m       pushIdemKeyRef^[[33m.^[[39mcurrent ^[[33m=^[[39m intentKey^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7048655Z      ^[[90m 378 |^[[39m       submitInFlightRef^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7049913Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 379 |^[[39m       setPreviewLoading(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7050808Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7051609Z      ^[[90m 380 |^[[39m       setConfirmVisible(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7052404Z      ^[[90m 381 |^[[39m     } ^[[36mcatch^[[39m (err) {
+targeted	Targeted jest	2026-10-06T00:02:56.7053612Z      ^[[90m 382 |^[[39m       ^[[90m// Only the CURRENT intent surfaces an error / resets state. A stale^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.7054260Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7054777Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.7056326Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.7057963Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.7059570Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.7061079Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.7062612Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.7063865Z       at setPreviewLoading (src/screens/coach/payments/CoachPackageContentsScreen.tsx:379:7)
+targeted	Targeted jest	2026-10-06T00:02:56.7065058Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.7066401Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.7066964Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7067141Z     console.error
+targeted	Targeted jest	2026-10-06T00:02:56.7067929Z       An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-06T00:02:56.7068723Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7069447Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-06T00:02:56.7070513Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7070870Z       act(() => {
+targeted	Targeted jest	2026-10-06T00:02:56.7071578Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-06T00:02:56.7072063Z       });
+targeted	Targeted jest	2026-10-06T00:02:56.7072483Z       /* assert on the output */
+targeted	Targeted jest	2026-10-06T00:02:56.7072929Z       
+targeted	Targeted jest	2026-10-06T00:02:56.7074018Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-06T00:02:56.7074942Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7076027Z     ^[[0m ^[[90m 378 |^[[39m       submitInFlightRef^[[33m.^[[39mcurrent ^[[33m=^[[39m ^[[36mfalse^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7077194Z      ^[[90m 379 |^[[39m       setPreviewLoading(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7078168Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 380 |^[[39m       setConfirmVisible(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7079042Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7079732Z      ^[[90m 381 |^[[39m     } ^[[36mcatch^[[39m (err) {
+targeted	Targeted jest	2026-10-06T00:02:56.7080850Z      ^[[90m 382 |^[[39m       ^[[90m// Only the CURRENT intent surfaces an error / resets state. A stale^[[39m
+targeted	Targeted jest	2026-10-06T00:02:56.7082254Z      ^[[90m 383 |^[[39m       ^[[90m// failed preview is ignored so it cannot disturb an in-flight push.^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:56.7082923Z 
+targeted	Targeted jest	2026-10-06T00:02:56.7083456Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-06T00:02:56.7084776Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:56.7086636Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-06T00:02:56.7088245Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-06T00:02:56.7089793Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-06T00:02:56.7091262Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-06T00:02:56.7092612Z       at setConfirmVisible (src/screens/coach/payments/CoachPackageContentsScreen.tsx:380:7)
+targeted	Targeted jest	2026-10-06T00:02:56.7093892Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:02:56.7095032Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:02:56.7095586Z 
+targeted	Targeted jest	2026-10-06T00:02:57.4527224Z PASS src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
+targeted	Targeted jest	2026-10-06T00:02:58.0743313Z PASS src/components/coach/setup/__tests__/coachSetup.test.tsx
+targeted	Targeted jest	2026-10-06T00:02:58.4261129Z PASS src/components/coach/setup/__tests__/coachSetupRound2.test.tsx (13.785 s)
+targeted	Targeted jest	2026-10-06T00:02:58.4349385Z   ● Console
+targeted	Targeted jest	2026-10-06T00:02:58.4349886Z 
+targeted	Targeted jest	2026-10-06T00:02:58.4350227Z     console.warn
+targeted	Targeted jest	2026-10-06T00:02:58.4351832Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-06T00:02:58.4353460Z 
+targeted	Targeted jest	2026-10-06T00:02:58.4353973Z     ^[[0m ^[[90m 175 |^[[39m
+targeted	Targeted jest	2026-10-06T00:02:58.4354545Z      ^[[90m 176 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-06T00:02:58.4355953Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 177 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mcontainer}^[[33m>^[[39m
+targeted	Targeted jest	2026-10-06T00:02:58.4357015Z      ^[[90m     |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:02:58.4357729Z      ^[[90m 178 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m
+targeted	Targeted jest	2026-10-06T00:02:58.4358617Z      ^[[90m 179 |^[[39m         contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39minner}
+targeted	Targeted jest	2026-10-06T00:02:58.4359622Z      ^[[90m 180 |^[[39m         keyboardShouldPersistTaps^[[33m=^[[39m^[[32m"handled"^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:02:58.4360121Z 
+targeted	Targeted jest	2026-10-06T00:02:58.4360564Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-06T00:02:58.4361568Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-06T00:02:58.4363326Z       at SafeAreaView (src/navigation/CoachWizardNavigator.tsx:177:6)
+targeted	Targeted jest	2026-10-06T00:02:58.4364828Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-06T00:02:58.4366505Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-06T00:02:58.4367891Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-06T00:02:58.4369104Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-06T00:02:58.4370306Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-06T00:02:58.4371531Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-06T00:02:58.4372815Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-06T00:02:58.4374075Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-06T00:02:58.4375428Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-06T00:02:58.4377403Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-06T00:02:58.4378666Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-06T00:02:58.4379717Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+targeted	Targeted jest	2026-10-06T00:02:58.4380846Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+targeted	Targeted jest	2026-10-06T00:02:58.4381413Z 
+targeted	Targeted jest	2026-10-06T00:02:58.5707202Z PASS src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+targeted	Targeted jest	2026-10-06T00:02:59.0084183Z PASS src/__tests__/PackageDetailSurface.preview.test.tsx
+targeted	Targeted jest	2026-10-06T00:02:59.0590806Z PASS src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx
+targeted	Targeted jest	2026-10-06T00:03:01.6143833Z PASS src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+targeted	Targeted jest	2026-10-06T00:03:01.6550697Z PASS src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+targeted	Targeted jest	2026-10-06T00:03:01.6599315Z   ● Console
+targeted	Targeted jest	2026-10-06T00:03:01.6600087Z 
+targeted	Targeted jest	2026-10-06T00:03:01.6600419Z     console.warn
+targeted	Targeted jest	2026-10-06T00:03:01.6601372Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+targeted	Targeted jest	2026-10-06T00:03:01.6602115Z 
+targeted	Targeted jest	2026-10-06T00:03:01.6602940Z     ^[[0m ^[[90m 322 |^[[39m         ^[[90m// CommonActions.reset equivalent via dispatch with a single route.^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.6603968Z      ^[[90m 323 |^[[39m         navigation^[[33m.^[[39mdispatch(
+targeted	Targeted jest	2026-10-06T00:03:01.6604636Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 324 |^[[39m           ^[[33mCommonActions^[[39m^[[33m.^[[39mnavigate({
+targeted	Targeted jest	2026-10-06T00:03:01.6605187Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.6605936Z      ^[[90m 325 |^[[39m             name^[[33m:^[[39m ^[[32m"CoachPackageEdit"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.6606912Z      ^[[90m 326 |^[[39m             params^[[33m:^[[39m { packageId^[[33m:^[[39m res^[[33m.^[[39mdata^[[33m.^[[39mid^[[33m,^[[39m initialPackage^[[33m:^[[39m res^[[33m.^[[39mdata }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.6607643Z      ^[[90m 327 |^[[39m           })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:03:01.6607847Z 
+targeted	Targeted jest	2026-10-06T00:03:01.6608212Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+targeted	Targeted jest	2026-10-06T00:03:01.6608894Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:324:25)
+targeted	Targeted jest	2026-10-06T00:03:01.6609509Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:03:01.6610096Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:03:01.6610390Z 
+targeted	Targeted jest	2026-10-06T00:03:01.8308680Z PASS src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+targeted	Targeted jest	2026-10-06T00:03:01.8852744Z   ● Console
+targeted	Targeted jest	2026-10-06T00:03:01.8853084Z 
+targeted	Targeted jest	2026-10-06T00:03:01.8853257Z     console.warn
+targeted	Targeted jest	2026-10-06T00:03:01.8854816Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+targeted	Targeted jest	2026-10-06T00:03:01.8855611Z 
+targeted	Targeted jest	2026-10-06T00:03:01.8856796Z     ^[[0m ^[[90m 322 |^[[39m         ^[[90m// CommonActions.reset equivalent via dispatch with a single route.^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.8857985Z      ^[[90m 323 |^[[39m         navigation^[[33m.^[[39mdispatch(
+targeted	Targeted jest	2026-10-06T00:03:01.8859067Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 324 |^[[39m           ^[[33mCommonActions^[[39m^[[33m.^[[39mnavigate({
+targeted	Targeted jest	2026-10-06T00:03:01.8860090Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.8861119Z      ^[[90m 325 |^[[39m             name^[[33m:^[[39m ^[[32m"CoachPackageEdit"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.8862897Z      ^[[90m 326 |^[[39m             params^[[33m:^[[39m { packageId^[[33m:^[[39m res^[[33m.^[[39mdata^[[33m.^[[39mid^[[33m,^[[39m initialPackage^[[33m:^[[39m res^[[33m.^[[39mdata }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.8864253Z      ^[[90m 327 |^[[39m           })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:03:01.8864654Z 
+targeted	Targeted jest	2026-10-06T00:03:01.8865313Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+targeted	Targeted jest	2026-10-06T00:03:01.8866777Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:324:25)
+targeted	Targeted jest	2026-10-06T00:03:01.8867926Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:03:01.8869034Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:03:01.8869657Z 
+targeted	Targeted jest	2026-10-06T00:03:01.8870126Z     console.warn
+targeted	Targeted jest	2026-10-06T00:03:01.8871232Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+targeted	Targeted jest	2026-10-06T00:03:01.8983012Z 
+targeted	Targeted jest	2026-10-06T00:03:01.8984059Z     ^[[0m ^[[90m 322 |^[[39m         ^[[90m// CommonActions.reset equivalent via dispatch with a single route.^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.8998858Z      ^[[90m 323 |^[[39m         navigation^[[33m.^[[39mdispatch(
+targeted	Targeted jest	2026-10-06T00:03:01.8999899Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 324 |^[[39m           ^[[33mCommonActions^[[39m^[[33m.^[[39mnavigate({
+targeted	Targeted jest	2026-10-06T00:03:01.9000843Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9001756Z      ^[[90m 325 |^[[39m             name^[[33m:^[[39m ^[[32m"CoachPackageEdit"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9003398Z      ^[[90m 326 |^[[39m             params^[[33m:^[[39m { packageId^[[33m:^[[39m res^[[33m.^[[39mdata^[[33m.^[[39mid^[[33m,^[[39m initialPackage^[[33m:^[[39m res^[[33m.^[[39mdata }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9004606Z      ^[[90m 327 |^[[39m           })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:03:01.9005075Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9005944Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+targeted	Targeted jest	2026-10-06T00:03:01.9037513Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:324:25)
+targeted	Targeted jest	2026-10-06T00:03:01.9038674Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:03:01.9039816Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:03:01.9040404Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9040588Z     console.warn
+targeted	Targeted jest	2026-10-06T00:03:01.9041536Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+targeted	Targeted jest	2026-10-06T00:03:01.9042340Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9043193Z     ^[[0m ^[[90m 322 |^[[39m         ^[[90m// CommonActions.reset equivalent via dispatch with a single route.^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9044358Z      ^[[90m 323 |^[[39m         navigation^[[33m.^[[39mdispatch(
+targeted	Targeted jest	2026-10-06T00:03:01.9045395Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 324 |^[[39m           ^[[33mCommonActions^[[39m^[[33m.^[[39mnavigate({
+targeted	Targeted jest	2026-10-06T00:03:01.9046635Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9047645Z      ^[[90m 325 |^[[39m             name^[[33m:^[[39m ^[[32m"CoachPackageEdit"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9049885Z      ^[[90m 326 |^[[39m             params^[[33m:^[[39m { packageId^[[33m:^[[39m res^[[33m.^[[39mdata^[[33m.^[[39mid^[[33m,^[[39m initialPackage^[[33m:^[[39m res^[[33m.^[[39mdata }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9051536Z      ^[[90m 327 |^[[39m           })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:03:01.9051912Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9052515Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+targeted	Targeted jest	2026-10-06T00:03:01.9053610Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:324:25)
+targeted	Targeted jest	2026-10-06T00:03:01.9054680Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:03:01.9056018Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:03:01.9056592Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9056769Z     console.warn
+targeted	Targeted jest	2026-10-06T00:03:01.9057694Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+targeted	Targeted jest	2026-10-06T00:03:01.9058459Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9059303Z     ^[[0m ^[[90m 322 |^[[39m         ^[[90m// CommonActions.reset equivalent via dispatch with a single route.^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9060425Z      ^[[90m 323 |^[[39m         navigation^[[33m.^[[39mdispatch(
+targeted	Targeted jest	2026-10-06T00:03:01.9061457Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 324 |^[[39m           ^[[33mCommonActions^[[39m^[[33m.^[[39mnavigate({
+targeted	Targeted jest	2026-10-06T00:03:01.9062461Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9063439Z      ^[[90m 325 |^[[39m             name^[[33m:^[[39m ^[[32m"CoachPackageEdit"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9065179Z      ^[[90m 326 |^[[39m             params^[[33m:^[[39m { packageId^[[33m:^[[39m res^[[33m.^[[39mdata^[[33m.^[[39mid^[[33m,^[[39m initialPackage^[[33m:^[[39m res^[[33m.^[[39mdata }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9066788Z      ^[[90m 327 |^[[39m           })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:03:01.9067162Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9067805Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+targeted	Targeted jest	2026-10-06T00:03:01.9069031Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:324:25)
+targeted	Targeted jest	2026-10-06T00:03:01.9070293Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:03:01.9071391Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:03:01.9071954Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9072135Z     console.warn
+targeted	Targeted jest	2026-10-06T00:03:01.9073117Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+targeted	Targeted jest	2026-10-06T00:03:01.9073898Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9074729Z     ^[[0m ^[[90m 322 |^[[39m         ^[[90m// CommonActions.reset equivalent via dispatch with a single route.^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9076121Z      ^[[90m 323 |^[[39m         navigation^[[33m.^[[39mdispatch(
+targeted	Targeted jest	2026-10-06T00:03:01.9077244Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 324 |^[[39m           ^[[33mCommonActions^[[39m^[[33m.^[[39mnavigate({
+targeted	Targeted jest	2026-10-06T00:03:01.9078248Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9079238Z      ^[[90m 325 |^[[39m             name^[[33m:^[[39m ^[[32m"CoachPackageEdit"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9080985Z      ^[[90m 326 |^[[39m             params^[[33m:^[[39m { packageId^[[33m:^[[39m res^[[33m.^[[39mdata^[[33m.^[[39mid^[[33m,^[[39m initialPackage^[[33m:^[[39m res^[[33m.^[[39mdata }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9082333Z      ^[[90m 327 |^[[39m           })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:03:01.9082704Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9083358Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+targeted	Targeted jest	2026-10-06T00:03:01.9084565Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:324:25)
+targeted	Targeted jest	2026-10-06T00:03:01.9085958Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:03:01.9087069Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:03:01.9087629Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9087809Z     console.warn
+targeted	Targeted jest	2026-10-06T00:03:01.9088730Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+targeted	Targeted jest	2026-10-06T00:03:01.9089978Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9090808Z     ^[[0m ^[[90m 322 |^[[39m         ^[[90m// CommonActions.reset equivalent via dispatch with a single route.^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9091957Z      ^[[90m 323 |^[[39m         navigation^[[33m.^[[39mdispatch(
+targeted	Targeted jest	2026-10-06T00:03:01.9092984Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 324 |^[[39m           ^[[33mCommonActions^[[39m^[[33m.^[[39mnavigate({
+targeted	Targeted jest	2026-10-06T00:03:01.9093975Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9095055Z      ^[[90m 325 |^[[39m             name^[[33m:^[[39m ^[[32m"CoachPackageEdit"^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9097047Z      ^[[90m 326 |^[[39m             params^[[33m:^[[39m { packageId^[[33m:^[[39m res^[[33m.^[[39mdata^[[33m.^[[39mid^[[33m,^[[39m initialPackage^[[33m:^[[39m res^[[33m.^[[39mdata }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-06T00:03:01.9098383Z      ^[[90m 327 |^[[39m           })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-06T00:03:01.9098747Z 
+targeted	Targeted jest	2026-10-06T00:03:01.9099394Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+targeted	Targeted jest	2026-10-06T00:03:01.9100601Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:324:25)
+targeted	Targeted jest	2026-10-06T00:03:01.9101761Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-06T00:03:01.9102845Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-06T00:03:01.9103393Z 
+targeted	Targeted jest	2026-10-06T00:03:02.1340320Z PASS src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx
+targeted	Targeted jest	2026-10-06T00:03:02.1344681Z PASS src/__tests__/audit122WM1DraftPublish.test.tsx
+targeted	Targeted jest	2026-10-06T00:03:02.6935014Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+targeted	Targeted jest	2026-10-06T00:03:02.6954897Z 
+targeted	Targeted jest	2026-10-06T00:03:02.6972744Z Test Suites: 13 passed, 13 total
+targeted	Targeted jest	2026-10-06T00:03:02.6973378Z Tests:       123 passed, 123 total
+targeted	Targeted jest	2026-10-06T00:03:02.6973837Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-06T00:03:02.6974186Z Time:        18.83 s
+targeted	Targeted jest	2026-10-06T00:03:02.6981859Z Ran all test suites matching /src\/__tests__\/CoachPackageEditScreen.w3FixRound5.test.tsx|src\/__tests__\/audit122WM1DraftPublish.test.tsx|src\/__tests__\/CoachPackageEditScreen.w3FixRound4.test.tsx|src\/__tests__\/CoachPackageEditScreen.idempotency.test.tsx|src\/__tests__\/CoachPackageEditScreen.lockPreview.test.tsx|src\/__tests__\/CoachPackageContentsScreen.test.tsx|src\/__tests__\/PackageDetailSurface.preview.test.tsx|src\/components\/coach\/setup\/__tests__\/coachSetup.test.tsx|src\/components\/coach\/setup\/__tests__\/coachSetupRound2.test.tsx|src\/components\/coach\/setup\/__tests__\/packageCreateDurability.test.tsx|src\/components\/coach\/setup\/__tests__\/packageCreateIdempotency.test.tsx|src\/components\/coach\/setup\/__tests__\/w2FixRound118.test.tsx|src\/components\/coach\/setup\/__tests__\/w2FixRound119.test.tsx/i.
+targeted	Post Run actions/setup-node@v6	﻿2026-10-06T00:03:02.7209226Z Post job cleanup.
+targeted	Post Run actions/setup-node@v6	2026-10-06T00:03:02.8413357Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06, not saving cache.
+targeted	Post Run actions/checkout@v6	﻿2026-10-06T00:03:02.8559399Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9407502Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9444699Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9485678Z Temporarily overriding HOME='/home/runner/work/_temp/9afc3a64-913e-4f22-956d-5ca0735d042e' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9487544Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9492730Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9524179Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9532075Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9564716Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9788820Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9795221Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:02.9831228Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0049498Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0057155Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0085589Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0087321Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0088421Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0089181Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0095278Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0116049Z /home/runner/work/_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0128143Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0165405Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0187321Z /home/runner/work/_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0197645Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0231137Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0252653Z /github/runner_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0263466Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0295658Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0317119Z /github/runner_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0326374Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0361225Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-06T00:03:03.0607712Z Removing credentials config '/home/runner/work/_temp/git-credentials-d685a662-a48b-4dea-99f7-6a2cdd9f7c06.config'
+targeted	Complete job	﻿2026-10-06T00:03:03.0794388Z Cleaning up orphan processes

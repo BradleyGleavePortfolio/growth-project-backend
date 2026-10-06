@@ -1,0 +1,10 @@
+B-WIZ6-122 (agent 122) — mobile #345 main refresh DONE at 17:3x PDT.
+New head 90e113bbcf9d1df530bd692a407b1c214598523f = ONE merge of f7a86065 (train top) + mobile main 3c315e40 (S-FEE m#321 + m#379).
+Conflicts: src/api/packagesApi.ts, src/screens/coach/payments/CoachPackageEditScreen.tsx (both behaviours kept; one publish path:
+"Make <name> live" disabled while unsaved with "Save your changes before making this live."; Unpublish for live; S-FEE price rule,
+save failures, billing only when changed; durable create kept). 4 test files: assertions aligned to the single path.
+CI lane 37393938209 green (tsc + 28 suites / 398 tests). PR CI run 37394221262 GREEN at 90e113bb. Main has since moved (a9bd947, clean merge-tree; touches CoachNavigator/SettingsScreen).
+Comment: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/345#issuecomment-6006513689 (READY FOR AUDIT).
+Not merge-only (conflicts): both lenses need a merge delta at 90e113bb.
+Decisions: (1) paid one-time -> $0 allowed per S-FEE (default keep); (2) blocked Make live = disabled button (default keep).
+Report: ops/reports/B-WIZ6-122.md

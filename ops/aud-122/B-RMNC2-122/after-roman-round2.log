@@ -1,0 +1,33 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-round2.spec.ts
+PASS test/roman/roman-round2.spec.ts (13.868 s)
+  B-651-1 a dispatched turn whose usage is unknown keeps the conservative reservation
+    ✓ abort after dispatch, before the first event: input = payload bound, output = max output (46 ms)
+    ✓ abort mid-stream after message_start: reported input, max output (final count never arrived) (13 ms)
+    ✓ transport failure after partial text: reported input, max output (3 ms)
+    ✓ transport failure before any event: both sides stay at the reservation (never zero) (3 ms)
+    ✓ the chat is deleted after partial generation: the session_gone settle keeps the generated cost (2 ms)
+    ✓ control: a complete stream settles the exact reported usage (1 ms)
+    ✓ control: the provider answered with an HTTP error before any event: known zero (1271 ms)
+  B-651-4 the reservation is an upper bound of the payload actually sent
+    ✓ Sol probe: a legal 30-turn tail of 8,000-character messages is not admitted under cap 0.1, and nothing is sent (2 ms)
+    ✓ the reserved input covers every UTF-8 byte of the system prompt and every message sent (3 ms)
+    ✓ cap boundary: a payload whose reservation fits exactly is admitted; one byte over is not (3 ms)
+    ✓ a very long history is trimmed oldest-first to the input budget; the newest turn is always sent and leads with a user turn (3 ms)
+  B-651-5 concurrent admission is atomic: never both rejected, never both admitted
+    ✓ Sol probe: two interleaved turns where exactly one fits: one is answered, one gets capacity copy (4 ms)
+    ✓ four interleaved turns where two fit: exactly two are answered, reservations never sum above the cap (2 ms)
+    ✓ the admission takes a per-day advisory lock inside its transaction (2 ms)
+  B-651-9 no shipped reply carries an exclamation mark
+    ✓ a fresh session (allowance unspent) still ships none (1 ms)
+    ✓ the system prompt offers no per-session exclamation (1 ms)
+  OR-115-1 the safety audit row is neutral and its reason is restricted-read
+    ✓ I am having chest pain right now -> action roman.safety_route, reason call_911, no provider call, no consent needed (OR-115-2) (1 ms)
+    ✓ I want to kill myself -> action roman.safety_route, reason call_988, no provider call, no consent needed (OR-115-2) (1 ms)
+    ✓ OR-115-2: with no box-2 consent grant, a crisis turn still gets the fixed template and nothing reaches the provider (1 ms)
+    ✓ the spend ledger and the turn log line carry no router class and no guardrail names (13 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        14.117 s, estimated 15 s
+Ran all test suites matching test/roman/roman-round2.spec.ts.

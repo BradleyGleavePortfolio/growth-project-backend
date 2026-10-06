@@ -1,0 +1,1348 @@
+community-live-tests	Set up job	﻿2026-10-05T23:47:46.5816813Z Current runner version: '2.337.0'
+community-live-tests	Set up job	2026-10-05T23:47:46.5853146Z ##[group]Runner Image Provisioner
+community-live-tests	Set up job	2026-10-05T23:47:46.5854563Z Hosted Compute Agent
+community-live-tests	Set up job	2026-10-05T23:47:46.5855466Z Version: 20260901.588
+community-live-tests	Set up job	2026-10-05T23:47:46.5856712Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+community-live-tests	Set up job	2026-10-05T23:47:46.5858011Z Build Date: 2026-09-01T19:56:44Z
+community-live-tests	Set up job	2026-10-05T23:47:46.5859078Z Worker ID: {aefc5108-cdf4-46e0-a4de-0d6255cd11a8}
+community-live-tests	Set up job	2026-10-05T23:47:46.5860639Z Azure Region: eastus
+community-live-tests	Set up job	2026-10-05T23:47:46.5861571Z ##[endgroup]
+community-live-tests	Set up job	2026-10-05T23:47:46.5863946Z ##[group]Operating System
+community-live-tests	Set up job	2026-10-05T23:47:46.5864996Z Ubuntu
+community-live-tests	Set up job	2026-10-05T23:47:46.5865780Z 24.04.5
+community-live-tests	Set up job	2026-10-05T23:47:46.5866754Z LTS
+community-live-tests	Set up job	2026-10-05T23:47:46.5867586Z ##[endgroup]
+community-live-tests	Set up job	2026-10-05T23:47:46.5868564Z ##[group]Runner Image
+community-live-tests	Set up job	2026-10-05T23:47:46.5869601Z Image: ubuntu-24.04
+community-live-tests	Set up job	2026-10-05T23:47:46.5870757Z Version: 20260927.320.1
+community-live-tests	Set up job	2026-10-05T23:47:46.5872679Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+community-live-tests	Set up job	2026-10-05T23:47:46.5875693Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+community-live-tests	Set up job	2026-10-05T23:47:46.5877417Z ##[endgroup]
+community-live-tests	Set up job	2026-10-05T23:47:46.5879396Z ##[group]GITHUB_TOKEN Permissions
+community-live-tests	Set up job	2026-10-05T23:47:46.5882261Z Contents: read
+community-live-tests	Set up job	2026-10-05T23:47:46.5883428Z Metadata: read
+community-live-tests	Set up job	2026-10-05T23:47:46.5884389Z Packages: read
+community-live-tests	Set up job	2026-10-05T23:47:46.5885247Z ##[endgroup]
+community-live-tests	Set up job	2026-10-05T23:47:46.5888147Z Secret source: Actions
+community-live-tests	Set up job	2026-10-05T23:47:46.5889631Z Cache mode: write
+community-live-tests	Set up job	2026-10-05T23:47:46.5891140Z Prepare workflow directory
+community-live-tests	Set up job	2026-10-05T23:47:46.6514629Z Prepare all required actions
+community-live-tests	Set up job	2026-10-05T23:47:46.6584444Z Getting action download info
+community-live-tests	Set up job	2026-10-05T23:47:46.8732284Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+community-live-tests	Set up job	2026-10-05T23:47:46.9774485Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+community-live-tests	Set up job	2026-10-05T23:47:47.2104092Z Complete job name: community-live-tests
+community-live-tests	Initialize containers	﻿2026-10-05T23:47:47.2631023Z ##[group]Checking docker version
+community-live-tests	Initialize containers	2026-10-05T23:47:47.2644178Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3491389Z '1.48'
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3506295Z Docker daemon API version: '1.48'
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3507121Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3661498Z '1.48'
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3673333Z Docker client API version: '1.48'
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3678197Z ##[endgroup]
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3681527Z ##[group]Clean up resources from previous jobs
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3686758Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=d1bf4c"
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3828261Z ##[command]/usr/bin/docker network prune --force --filter "label=d1bf4c"
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3955887Z ##[endgroup]
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3956446Z ##[group]Create local container network
+community-live-tests	Initialize containers	2026-10-05T23:47:47.3965936Z ##[command]/usr/bin/docker network create --label d1bf4c github_network_286c864adb324e64afa76b46b6ec46ff
+community-live-tests	Initialize containers	2026-10-05T23:47:47.4460044Z f04f56cffb6068cdfb8d0cfa18dd1cbf4b7585c9ce8ecea2b15bc27f7c4decb0
+community-live-tests	Initialize containers	2026-10-05T23:47:47.4481079Z ##[endgroup]
+community-live-tests	Initialize containers	2026-10-05T23:47:47.4505704Z ##[group]Starting postgres service container
+community-live-tests	Initialize containers	2026-10-05T23:47:47.4527072Z ##[command]/usr/bin/docker pull postgres:15
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7163515Z 15: Pulling from library/postgres
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7942265Z 6b37362b3da7: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7943847Z 0d791b2b75ae: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7944902Z 0d39881c83f7: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7945721Z c95afe7c234f: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7946289Z bc176b99a33a: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7947222Z 08a5cd487deb: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7948135Z eb4d92aaee0a: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7948964Z 75a4dff090e8: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7949510Z afe9a40fb214: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7950175Z ca5e97c0cd7d: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7950867Z 53fa82bdba52: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7951638Z 7b9c6b8e5e6e: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7952739Z b65147f15943: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7953277Z 170d9ea1cd85: Pulling fs layer
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7953966Z c95afe7c234f: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7954447Z bc176b99a33a: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7955066Z 08a5cd487deb: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7955541Z 75a4dff090e8: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7956090Z 53fa82bdba52: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7956650Z eb4d92aaee0a: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7957116Z 7b9c6b8e5e6e: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7957751Z afe9a40fb214: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7958328Z ca5e97c0cd7d: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7959148Z b65147f15943: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.7959946Z 170d9ea1cd85: Waiting
+community-live-tests	Initialize containers	2026-10-05T23:47:47.8262067Z 0d791b2b75ae: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.8263127Z 0d791b2b75ae: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.8592704Z 0d39881c83f7: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.8594538Z 0d39881c83f7: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.8813839Z c95afe7c234f: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.8815340Z c95afe7c234f: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9312974Z 08a5cd487deb: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9314254Z 08a5cd487deb: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9324413Z 6b37362b3da7: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9325696Z 6b37362b3da7: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9334408Z bc176b99a33a: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9335423Z bc176b99a33a: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9631514Z 75a4dff090e8: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9632705Z 75a4dff090e8: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9634046Z eb4d92aaee0a: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9634984Z eb4d92aaee0a: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9894183Z 53fa82bdba52: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9895593Z 53fa82bdba52: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9945397Z ca5e97c0cd7d: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:47.9946844Z ca5e97c0cd7d: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:48.0185239Z 7b9c6b8e5e6e: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:48.0337086Z 7b9c6b8e5e6e: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:48.0340022Z b65147f15943: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:48.0341537Z b65147f15943: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:48.0579695Z 170d9ea1cd85: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:48.0592068Z 170d9ea1cd85: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:48.3784951Z afe9a40fb214: Verifying Checksum
+community-live-tests	Initialize containers	2026-10-05T23:47:48.3786659Z afe9a40fb214: Download complete
+community-live-tests	Initialize containers	2026-10-05T23:47:49.0145957Z 6b37362b3da7: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:52.2289222Z 0d791b2b75ae: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:52.4001580Z 0d39881c83f7: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:52.4408481Z c95afe7c234f: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:52.7404649Z bc176b99a33a: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:52.8190668Z 08a5cd487deb: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:52.8271962Z eb4d92aaee0a: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:52.8385991Z 75a4dff090e8: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:55.7663038Z afe9a40fb214: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:55.7795615Z ca5e97c0cd7d: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:55.7921149Z 53fa82bdba52: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:55.7997503Z 7b9c6b8e5e6e: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:55.8107168Z b65147f15943: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:55.8194142Z 170d9ea1cd85: Pull complete
+community-live-tests	Initialize containers	2026-10-05T23:47:55.8254055Z Digest: sha256:724292da1f2e50bdccfc3302ce75bbba7f4a6076701b588cc795fcac65683550
+community-live-tests	Initialize containers	2026-10-05T23:47:55.8265360Z Status: Downloaded newer image for postgres:15
+community-live-tests	Initialize containers	2026-10-05T23:47:55.8284298Z docker.io/library/postgres:15
+community-live-tests	Initialize containers	2026-10-05T23:47:55.8347531Z ##[command]/usr/bin/docker create --name b0e604eb09494755950f0aba8b7e2034_postgres15_c00b3d --label d1bf4c --network github_network_286c864adb324e64afa76b46b6ec46ff --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=postgres" -e GITHUB_ACTIONS=true -e CI=true postgres:15
+community-live-tests	Initialize containers	2026-10-05T23:47:55.8588033Z 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Initialize containers	2026-10-05T23:47:55.8610831Z ##[command]/usr/bin/docker start 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Initialize containers	2026-10-05T23:47:56.0696501Z 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Initialize containers	2026-10-05T23:47:56.0726912Z ##[command]/usr/bin/docker ps --all --filter id=9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+community-live-tests	Initialize containers	2026-10-05T23:47:56.0854959Z 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d Up Less than a second (health: starting)
+community-live-tests	Initialize containers	2026-10-05T23:47:56.0874558Z ##[command]/usr/bin/docker port 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Initialize containers	2026-10-05T23:47:56.1034392Z 5432/tcp -> 0.0.0.0:5432
+community-live-tests	Initialize containers	2026-10-05T23:47:56.1035074Z 5432/tcp -> [::]:5432
+community-live-tests	Initialize containers	2026-10-05T23:47:56.1081143Z ##[endgroup]
+community-live-tests	Initialize containers	2026-10-05T23:47:56.1089495Z ##[group]Waiting for all services to be ready
+community-live-tests	Initialize containers	2026-10-05T23:47:56.1104694Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Initialize containers	2026-10-05T23:47:56.1233665Z starting
+community-live-tests	Initialize containers	2026-10-05T23:47:56.1266065Z postgres service is starting, waiting 2 seconds before checking again.
+community-live-tests	Initialize containers	2026-10-05T23:47:58.1273448Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Initialize containers	2026-10-05T23:47:58.1392719Z starting
+community-live-tests	Initialize containers	2026-10-05T23:47:58.1422890Z postgres service is starting, waiting 3 seconds before checking again.
+community-live-tests	Initialize containers	2026-10-05T23:48:01.9511681Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Initialize containers	2026-10-05T23:48:01.9635466Z starting
+community-live-tests	Initialize containers	2026-10-05T23:48:01.9649330Z postgres service is starting, waiting 7 seconds before checking again.
+community-live-tests	Initialize containers	2026-10-05T23:48:09.6125967Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Initialize containers	2026-10-05T23:48:09.6249815Z healthy
+community-live-tests	Initialize containers	2026-10-05T23:48:09.6266820Z postgres service is healthy.
+community-live-tests	Initialize containers	2026-10-05T23:48:09.6267576Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	﻿2026-10-05T23:48:09.6630664Z ##[group]Run actions/checkout@v6
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6631337Z with:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6631650Z   repository: BradleyGleavePortfolio/growth-project-backend
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6634307Z   token: ***
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6634518Z   ssh-strict: true
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6634736Z   ssh-user: git
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6634955Z   persist-credentials: true
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6635204Z   clean: true
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6635421Z   sparse-checkout-cone-mode: true
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6635677Z   fetch-depth: 1
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6635877Z   fetch-tags: false
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6636086Z   show-progress: true
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6636295Z   lfs: false
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6636488Z   submodules: false
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6636691Z   set-safe-directory: true
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6636946Z   allow-unsafe-pr-checkout: false
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6637382Z env:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6637829Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6638249Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6638705Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6639107Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6639468Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.6639820Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7597511Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7598906Z ##[group]Getting Git version info
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7599407Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7600079Z [command]/usr/bin/git version
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7706794Z git version 2.55.0
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7728568Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7742530Z Temporarily overriding HOME='/home/runner/work/_temp/154d3ede-ab22-4a2b-a414-31dba13b00d8' before making global git config changes
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7744136Z Adding repository directory to the temporary git global config as a safe directory
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7748597Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7793519Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7797326Z ##[group]Determining repository object format
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7799618Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7800441Z ##[group]Initializing the repository
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7804550Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7909115Z hint: Using 'master' as the name for the initial branch. This default branch name
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7909780Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7910776Z hint: to use in all of your new repositories, which will suppress this warning,
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7911275Z hint: call:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7911498Z hint:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7911842Z hint: 	git config --global init.defaultBranch <name>
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7912216Z hint:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7912785Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7913697Z hint: 'development'. The just-created branch can be renamed via this command:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7914389Z hint:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7914753Z hint: 	git branch -m <name>
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7915159Z hint:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7915724Z hint: Disable this message with "git config set advice.defaultBranchName false"
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7916801Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7923955Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7999252Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.7999897Z ##[group]Disabling automatic garbage collection
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8003730Z [command]/usr/bin/git config --local gc.auto 0
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8031216Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8031639Z ##[group]Setting up auth
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8032791Z Removing SSH command configuration
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8038806Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8068927Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8404617Z Removing HTTP extra header
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8409622Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8439775Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8658090Z Removing includeIf entries pointing to credentials config files
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8664172Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8918546Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8929467Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8967786Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.8999093Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.9041616Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.9074170Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.9102729Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.9103351Z ##[group]Fetching the repository
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:09.9112030Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f959f086072585ebe7302086452d20d0dba032f0:refs/remotes/pull/730/merge
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.4954575Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.4955438Z  * [new ref]         f959f086072585ebe7302086452d20d0dba032f0 -> pull/730/merge
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.4960697Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.4961738Z ##[group]Determining the checkout info
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.4967283Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.4967823Z [command]/usr/bin/git sparse-checkout disable
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.5016705Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.5044399Z ##[group]Checking out the ref
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.5051379Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/730/merge
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7307517Z Note: switching to 'refs/remotes/pull/730/merge'.
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7308141Z 
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7308527Z You are in 'detached HEAD' state. You can look around, make experimental
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7309443Z changes and commit them, and you can discard any commits you make in this
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7310595Z state without impacting any branches by switching back to a branch.
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7311147Z 
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7311491Z If you want to create a new branch to retain commits you create, you may
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7312367Z do so (now or later) by using -c with the switch command. Example:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7312864Z 
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7313036Z   git switch -c <new-branch-name>
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7313336Z 
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7313517Z Or undo this operation with:
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7314061Z 
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7314221Z   git switch -
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7314463Z 
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7314849Z Turn off this advice by setting config variable advice.detachedHead to false
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7315448Z 
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7316174Z HEAD is now at f959f08 Merge afbb4c1a846422df6b09a028d71d2a763a6ccf76 into ec53c87f7bd800b9f2c469c7d4b36b16b8e67e65
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7324507Z ##[endgroup]
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7370892Z [command]/usr/bin/git log -1 --format=%H
+community-live-tests	Run actions/checkout@v6	2026-10-05T23:48:11.7397653Z f959f086072585ebe7302086452d20d0dba032f0
+community-live-tests	Run actions/setup-node@v6	﻿2026-10-05T23:48:11.7655589Z ##[group]Run actions/setup-node@v6
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7655886Z with:
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7656075Z   node-version: 20
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7656285Z   cache: npm
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7656480Z   check-latest: false
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7659082Z   token: ***
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7659317Z   package-manager-cache: true
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7659560Z env:
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7659936Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7660668Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7661131Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7661464Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7661834Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.7662179Z ##[endgroup]
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:11.9063528Z Attempting to download 20...
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:12.4066276Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:13.1778733Z Extracting ...
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:13.1947532Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/9dd1689e-b00c-4a44-995e-ee94336fdeb1 -f /home/runner/work/_temp/5ec2dcdd-2e84-49e2-9d1e-75015e9ffbda
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:14.2392325Z Adding to the cache ...
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:16.0569901Z ##[group]Environment details
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:16.2927946Z node: v20.20.2
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:16.2928358Z npm: 10.8.2
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:16.2928680Z yarn: 1.22.22
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:16.2929395Z ##[endgroup]
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:16.2949266Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:16.3962216Z /home/runner/.npm
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:16.4784748Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:17.0140848Z Received 86828135 of 86828135 (100.0%), 174.7 MBs/sec
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:17.0141811Z Cache Size: ~83 MB (86828135 B)
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:17.0174921Z [command]/usr/bin/tar -xf /home/runner/work/_temp/d87fa128-f8aa-4ee2-8072-44c272d9deb7/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:17.1996039Z Cache restored successfully
+community-live-tests	Run actions/setup-node@v6	2026-10-05T23:48:17.2041248Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+community-live-tests	Install dependencies	﻿2026-10-05T23:48:17.2234112Z ##[group]Run npm ci
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2234419Z ^[[36;1mnpm ci^[[0m
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2454081Z shell: /usr/bin/bash -e {0}
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2454429Z env:
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2454974Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2455504Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2456105Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2456544Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2457020Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	Install dependencies	2026-10-05T23:48:17.2457504Z ##[endgroup]
+community-live-tests	Install dependencies	2026-10-05T23:48:22.9473954Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+community-live-tests	Install dependencies	2026-10-05T23:48:23.9316687Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+community-live-tests	Install dependencies	2026-10-05T23:48:25.1880748Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+community-live-tests	Install dependencies	2026-10-05T23:48:26.6248658Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+community-live-tests	Install dependencies	2026-10-05T23:48:26.6400998Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+community-live-tests	Install dependencies	2026-10-05T23:48:26.6965073Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+community-live-tests	Install dependencies	2026-10-05T23:48:39.8767225Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:39.8767871Z > growth-project-backend@1.0.0 postinstall
+community-live-tests	Install dependencies	2026-10-05T23:48:39.8768288Z > prisma generate
+community-live-tests	Install dependencies	2026-10-05T23:48:40.8141510Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:40.8142291Z Prisma schema loaded from prisma/schema.prisma
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8219087Z ┌─────────────────────────────────────────────────────────┐
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8220173Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8221382Z │                                                         │
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8222352Z │  This is a major update - please follow the guide at    │
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8223440Z │  https://pris.ly/d/major-version-upgrade                │
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8224859Z │                                                         │
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8225781Z │  Run the following to update                            │
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8226787Z │    npm i --save-dev prisma@latest                       │
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8227755Z │    npm i @prisma/client@latest                          │
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8228746Z └─────────────────────────────────────────────────────────┘
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8229450Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8230963Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.18s
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8231585Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8232315Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8232954Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8233981Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8234795Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8774867Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8775633Z > growth-project-backend@1.0.0 prepare
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8776324Z > lefthook install
+community-live-tests	Install dependencies	2026-10-05T23:48:44.8776585Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9311754Z sync hooks: ✔️(pre-commit, commit-msg)
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9482987Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9483927Z added 1115 packages, and audited 1116 packages in 28s
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9484558Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9485174Z 202 packages are looking for funding
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9485576Z   run `npm fund` for details
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9529699Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9530178Z 3 high severity vulnerabilities
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9531083Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9531524Z To address all issues (including breaking changes), run:
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9532270Z   npm audit fix --force
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9532620Z 
+community-live-tests	Install dependencies	2026-10-05T23:48:44.9532867Z Run `npm audit` for details.
+community-live-tests	Generate Prisma client	﻿2026-10-05T23:48:45.0164928Z ##[group]Run npx prisma generate
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0165277Z ^[[36;1mnpx prisma generate^[[0m
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0228747Z shell: /usr/bin/bash -e {0}
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0229018Z env:
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0229493Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0229922Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0230764Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0231148Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0231524Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	Generate Prisma client	2026-10-05T23:48:45.0231887Z ##[endgroup]
+community-live-tests	Generate Prisma client	2026-10-05T23:48:46.2777517Z Prisma schema loaded from prisma/schema.prisma
+community-live-tests	Generate Prisma client	2026-10-05T23:48:50.3786699Z 
+community-live-tests	Generate Prisma client	2026-10-05T23:48:50.3788209Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.23s
+community-live-tests	Generate Prisma client	2026-10-05T23:48:50.3788909Z 
+community-live-tests	Generate Prisma client	2026-10-05T23:48:50.3789637Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+community-live-tests	Generate Prisma client	2026-10-05T23:48:50.3790615Z 
+community-live-tests	Generate Prisma client	2026-10-05T23:48:50.3791453Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+community-live-tests	Generate Prisma client	2026-10-05T23:48:50.3791939Z 
+community-live-tests	Install postgresql-client	﻿2026-10-05T23:48:50.4437589Z ##[group]Run sudo apt-get update && sudo apt-get install -y postgresql-client
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4438225Z ^[[36;1msudo apt-get update && sudo apt-get install -y postgresql-client^[[0m
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4501319Z shell: /usr/bin/bash -e {0}
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4501653Z env:
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4502137Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4502576Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4503044Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4503390Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4503755Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.4504117Z ##[endgroup]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.5339001Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.5809678Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.5827469Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.5880060Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.5904743Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.5933554Z Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7178438Z Get:7 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1370 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7319957Z Get:8 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [305 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7351668Z Get:9 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7372354Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1701 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7465894Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [341 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7496533Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7528413Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1728 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7627148Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [395 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7672997Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [13.3 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.7674819Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8134726Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5764 B]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8151718Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8241733Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1071 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8293160Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [222 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8317530Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8341502Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1216 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8431522Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [244 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8434492Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8521564Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1566 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8551647Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [361 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8893784Z Get:27 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [458 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8953476Z Get:28 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.6 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:50.8975559Z Get:29 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [515 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:55.2924047Z Fetched 12.6 MB in 1s (9197 kB/s)
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.1304806Z Reading package lists...
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.1617815Z Reading package lists...
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.3699067Z Building dependency tree...
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.3706514Z Reading state information...
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.5478976Z The following NEW packages will be installed:
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.5479836Z   postgresql-client
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.5667647Z 0 upgraded, 1 newly installed, 0 to remove and 25 not upgraded.
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.5668467Z Need to get 11.6 kB of archives.
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.5669229Z After this operation, 17.4 kB of additional disk space will be used.
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.5670107Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.6641836Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 postgresql-client all 16+257build1.1 [11.6 kB]
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9166374Z Fetched 11.6 kB in 0s (106 kB/s)
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9375273Z Selecting previously unselected package postgresql-client.
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9716104Z (Reading database ... 
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9716758Z (Reading database ... 5%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9717228Z (Reading database ... 10%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9717609Z (Reading database ... 15%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9717963Z (Reading database ... 20%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9718304Z (Reading database ... 25%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9718641Z (Reading database ... 30%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9718970Z (Reading database ... 35%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9719300Z (Reading database ... 40%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9719628Z (Reading database ... 45%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9720058Z (Reading database ... 50%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:56.9772603Z (Reading database ... 55%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:57.1147183Z (Reading database ... 60%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:57.3209651Z (Reading database ... 65%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:57.5264817Z (Reading database ... 70%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:57.7099637Z (Reading database ... 75%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:57.8664908Z (Reading database ... 80%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:58.0733307Z (Reading database ... 85%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:58.2242159Z (Reading database ... 90%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:58.4265804Z (Reading database ... 95%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:58.4266355Z (Reading database ... 100%
+community-live-tests	Install postgresql-client	2026-10-05T23:48:58.4267049Z (Reading database ... 202296 files and directories currently installed.)
+community-live-tests	Install postgresql-client	2026-10-05T23:48:58.4309196Z Preparing to unpack .../postgresql-client_16+257build1.1_all.deb ...
+community-live-tests	Install postgresql-client	2026-10-05T23:48:58.4346061Z Unpacking postgresql-client (16+257build1.1) ...
+community-live-tests	Install postgresql-client	2026-10-05T23:48:58.4702352Z Setting up postgresql-client (16+257build1.1) ...
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1092436Z 
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1093081Z Running kernel seems to be up-to-date.
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1093479Z 
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1093741Z No services need to be restarted.
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1094045Z 
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1094295Z No containers need to be restarted.
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1094606Z 
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1094921Z No user sessions are running outdated binaries.
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1095289Z 
+community-live-tests	Install postgresql-client	2026-10-05T23:48:59.1095774Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	﻿2026-10-05T23:49:00.0079962Z ##[group]Run psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0081122Z ^[[36;1mpsql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql^[[0m
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0143483Z shell: /usr/bin/bash -e {0}
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0143761Z env:
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0144381Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0144832Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0145306Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0145666Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0146047Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0146427Z ##[endgroup]
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0686210Z CREATE SCHEMA
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0696757Z CREATE FUNCTION
+community-live-tests	Bootstrap Supabase-equivalent environment (CI only)	2026-10-05T23:49:00.0725448Z DO
+community-live-tests	Apply all migrations (prisma migrate deploy)	﻿2026-10-05T23:49:00.0770153Z ##[group]Run npx prisma migrate deploy
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0770806Z ^[[36;1mnpx prisma migrate deploy^[[0m
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0832148Z shell: /usr/bin/bash -e {0}
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0832412Z env:
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0832854Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0833288Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0833780Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0834126Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0834497Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:00.0834855Z ##[endgroup]
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.3486261Z Prisma schema loaded from prisma/schema.prisma
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.3894644Z Datasource "db": PostgreSQL database "postgres", schema "public" at "localhost:5432"
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.5378724Z 
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.5379476Z 191 migrations found in prisma/migrations
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.5379884Z 
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.6840669Z Applying migration `00000000000000_baseline`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7367132Z Applying migration `20260423190000_add_indexes_and_orphan_fks`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7413369Z Applying migration `20260424000000_add_invite_codes`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7481519Z Applying migration `20260424120000_add_coach_messages`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7557646Z Applying migration `20260424180000_add_coach_nudges`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7645016Z Applying migration `20260424200000_add_meal_plans_and_extend_checkins`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7725395Z Applying migration `20260425030000_add_community_win_and_coach_guideline`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7826135Z Applying migration `20260425030001_add_community_win_visibility`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7851013Z Applying migration `20260427000000_add_owner_role_and_coach_profile`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.7941110Z Applying migration `20260427000100_add_saas_billing_and_drafts`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8183440Z Applying migration `20260427120000_add_audit_log_and_gdpr_lifecycle`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8317482Z Applying migration `20260428000000_add_client_coach_consent`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8381830Z Applying migration `20260429210000_add_diet_and_workout_cadence_to_user_profile`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8408709Z Applying migration `20260430000000_drop_doctrine_drift_remnants`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8431063Z Applying migration `20260430120000_add_equipment_access_to_user_profile`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8456145Z Applying migration `20260506000000_add_ptm_phase_1`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8591803Z Applying migration `20260506010000_add_diagnostic_engine`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8682636Z Applying migration `20260506020000_add_build_week`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8800308Z Applying migration `20260506030000_add_coach_signals`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8901340Z Applying migration `20260506040000_add_voice_notes_and_coach_onboarding`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8959718Z Applying migration `20260506050000_add_first_win`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.8991652Z Applying migration `20260506060000_add_leaderboard`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9019405Z Applying migration `20260507000000_add_notification_center`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9162918Z Applying migration `20260507100000_add_gdpr_deletion_flow`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9224603Z Applying migration `20260508000000_add_data_export`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9288036Z Applying migration `20260508000000_add_workout_builder`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9437150Z Applying migration `20260508000001_rls_workout_builder`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9478067Z Applying migration `20260508000002_workout_exercise_soft_delete`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9526220Z Applying migration `20260508000003_workout_builder_idempotency_and_completion`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9617030Z Applying migration `20260509000000_add_sprint_b_macros_meals_insights`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9846873Z Applying migration `20260509120000_coach_practice_type_stage3`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:01.9872593Z Applying migration `20260510000000_add_ai_gateway_audit_and_drafts`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0025001Z Applying migration `20260510000000_add_team_mode`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0156959Z Applying migration `20260510000001_team_audit_revenue_sharing_changed`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0180958Z Applying migration `20260511000000_add_bloodwork`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0330792Z Applying migration `20260512000000_concierge_scheduling`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0601189Z Applying migration `20260513000000_food_logger_trainerize_floor`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0630160Z Applying migration `20260515100000_add_secret_rotation_log`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0687953Z Applying migration `20260516000000_kms_wrap_bloodwork_and_calendar`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0718648Z Applying migration `20260517000000_booking_notifications`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0794430Z Applying migration `20260520000000_setnull_owner_rels`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0898449Z Applying migration `20260520000001_add_gcal_channel_tracking_to_calendar_connection`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.0939769Z Applying migration `20260521000000_add_connect_account`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1009723Z Applying migration `20260524000000_add_sub_coach_assignment_and_idempotency`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1109250Z Applying migration `20260525000000_sub_coach_rls_and_fks`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1180908Z Applying migration `20260525120000_add_coach_brief_tables`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1324375Z Applying migration `20260525130000_add_coach_brief_last_push_date`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1351692Z Applying migration `20260525170000_data_export_one_active_per_user`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1382216Z Applying migration `20260525180000_recent_auth_nonce`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1432670Z Applying migration `20260528000000_stream1_coach_ai_credits`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1594354Z Applying migration `20260528120000_stream1_round1_fixes`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1640515Z Applying migration `20260530000000_coach_ai_engine_v1`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.1754026Z Applying migration `20260531000000_wearables_foundation`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.2043250Z Applying migration `20260601000000_add_connect_packages_purchases_customers`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.2231701Z Applying migration `20260601000000_add_email_send_log`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.2297580Z Applying migration `20260601000000_add_exercise_catalog_video`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.2371036Z Applying migration `20260602000000_add_connect_fee_split_and_dunning`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.2686576Z Applying migration `20260602000000_add_exercise_video_provider_fields`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.2719267Z Applying migration `20260603000000_add_connect_payout_reconciliation_refund_dispute`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.2918199Z Applying migration `20260604000000_add_team_profile_and_sub_coach_invite`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3028217Z Applying migration `20260604000001_subcoach_invite_token_hash`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3060929Z Applying migration `20260605000000_add_meal_plan_days_json`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3089005Z Applying migration `20260606000000_add_expo_push_token`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3115935Z Applying migration `20260606000001_payment_failure_event_unique`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3147581Z Applying migration `20260606000002_food_entry_client_uuid`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3179605Z Applying migration `20260606000003_rls_financial_tables`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3219681Z Applying migration `20260607000000_rls_remaining_gaps`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3323651Z Applying migration `20260607000001_workout_assignment_completion_payload`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3358512Z Applying migration `20260608000000_rls_team_tables`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3405408Z Applying migration `20260609000000_add_coach_direct_enabled`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3430865Z Applying migration `20260610000000_fasting_unique_active`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3462349Z Applying migration `20260611000000_invite_intended_email`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3495429Z Applying migration `20260611000001_messagedraft_rls`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3524093Z Applying migration `20260612000000_add_message_model_and_checkin_reviewed`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3594680Z Applying migration `20260612000001_message_rls`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3626811Z Applying migration `20260613000000_message_rls_split_update`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3655915Z Applying migration `20260613000001_message_fk_cascade`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3698671Z Applying migration `20260613000002_message_thread_reverse_index`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3748685Z Applying migration `20260614000000_coach_subscription_tier`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3784070Z Applying migration `20260614065425_add_coach_first_payment_notification`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3841470Z Applying migration `20260615000000_drop_coach_direct_enabled`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3868085Z Applying migration `20260616000000_add_message_reports_and_user_blocks`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.3998849Z Applying migration `20260617000000_fix_message_report_rls_participation_check`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4025833Z Applying migration `20260618000000_add_rls_payment_revenue_tables`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4076553Z Applying migration `20260619000000_add_churn_intervention`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4162361Z Applying migration `20260620000000_workout_builder_p1_fixes`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4211765Z Applying migration `20260621000000_fix_workout_rls_policies`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4240018Z Applying migration `20260701235900_add_sub_coach_role_value`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4262026Z Applying migration `20260702000000_fix_workout_rls_coach_role`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4289476Z Applying migration `20260703000000_add_coach_brief_generation_lease`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4320819Z Applying migration `20260703000001_add_coach_brief_push_ledger`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4379082Z Applying migration `20260703000002_add_coach_brief_check_constraints`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4429994Z Applying migration `20260704000000_coach_brief_push_ledger_bounded_retry`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4455715Z Applying migration `20260704000000_rls01_helper_searchpath_hibp`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4488359Z Applying migration `20260704000001_coach_brief_cwa_index_concurrent`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4528851Z Applying migration `20260801000000_r43_storefront_phase1`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4620732Z Applying migration `20260803000000_share_token_21char_invalidate_legacy`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4647514Z Applying migration `20260804000000_guest_checkout_retryable_conversion`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4695510Z Applying migration `20260805000000_guest_checkout_pii_retention`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4730081Z Applying migration `20260806000000_share_link_expiry_revoke`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.4756235Z Applying migration `20260901000000_r46_landing_page_builder_phase1`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5001077Z Applying migration `20260902000000_r47_landing_pages_phase3_crm_sync`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5035535Z Applying migration `20260903000000_r47_lead_sync_persistent_state`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5079192Z Applying migration `20260903000000_r52_landing_pages_renderer_v2`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5102512Z Applying migration `20260920000000_r48_checkout_hardening`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5141053Z Applying migration `20260921000000_add_refunded_disputed_to_guest_checkout_status`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5168320Z Applying migration `20261001000000_dunning_v1`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5251444Z Applying migration `20261002000000_dunning_v1_send_retry_cas`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5285745Z Applying migration `20261002000000_nudge_v1`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5386491Z Applying migration `20261110000000_ai_action_draft_materialised`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5411840Z Applying migration `20261201000000_stream2_ai_execution_draft_links`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5467303Z Applying migration `20261202000000_pr3_drip_schema_foundation`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5669846Z Applying migration `20261203000000_pr7_meal_plan_drip_drop_unique`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5699683Z Applying migration `20261203100000_pr6_packages_publish_pricing`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5733329Z Applying migration `20261204000000_pr9_drip_resolver_marker`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5787299Z Applying migration `20261205000000_pr10_scheduled_drop_retry_lock`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5825945Z Applying migration `20261206000000_pr12_coach_media_upload_status`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5890276Z Applying migration `20261207000000_pr14_client_purchase_landing_page_id_and_guest_subscription`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5941042Z Applying migration `20261207000001_pr14_client_purchase_landing_page_idx_concurrent`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.5975535Z Applying migration `20261208000000_pr15_coach_new_purchase_prefs`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.6004653Z Applying migration `20261209000000_pr17_scheduled_drop_push_seq`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.6039175Z Applying migration `20261210000000_pr_wave0_ai_quota_ltv_peak`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.6132816Z Applying migration `20261211000000_add_sleep_consistency_metrics`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.6155250Z Applying migration `20261211000001_seed_sleep_consistency_metric_defs`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.6183574Z Applying migration `20261212000000_community_v1_1_schema`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7124519Z Applying migration `20261212000000_rls_helper_search_path`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7155658Z Applying migration `20261212010000_rls_tier2_coach_team`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7264698Z Applying migration `20261213000000_rls_tier1_phi_financial_privacy`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7395750Z Applying migration `20261213000000_rls_tier2_sessions`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7459778Z Applying migration `20261213000000_rls_tier3_nutrition`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7560583Z Applying migration `20261213000000_rls_tier3_workouts`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7659893Z Applying migration `20261213000000_rls_tier4_learning_analytics`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7774910Z Applying migration `20261213000000_rls_tier5_notifications_community`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7861376Z Applying migration `20261214000000_dunning_v2_lockout_recovery`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.7928107Z Applying migration `20261215000000_b5_digital_contracts`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8142883Z Applying migration `20261215000000_mwb_1_data_model`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8396827Z Applying migration `20261215000000_payouts_v2_bank_payout_methods`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8473101Z Applying migration `20261215000100_seed_b5_contract_templates`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8517174Z Applying migration `20261215000200_contracts_rls`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8565133Z Applying migration `20261215000300_named_regimes_and_partial_refund_decision`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8638848Z Applying migration `20261216000000_add_roman_chat`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8765967Z Applying migration `20261216000100_add_plan_context_payload`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8794876Z Applying migration `20261216000200_community_classroom_posts`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8903237Z Applying migration `20261217000000_community_voice_notes`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.8987376Z Applying migration `20261217000100_community_search_index`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9103027Z Applying migration `20261217000200_community_wearable_prompts`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9218650Z Applying migration `20261218000000_add_coach_reviewed_at`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9320837Z Applying migration `20261218000100_rls_partial_refund_decision`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9354486Z Applying migration `20261218000200_rename_decided_by_coach_user_id`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9379168Z Applying migration `20261219000000_community_wearable_prompts_uuid_id`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9537537Z Applying migration `20261219000000_conv_review_coach_reviewed_at_idx`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9578254Z Applying migration `20261220000000_talent_marketplace_rls`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9911434Z Applying migration `20261220000010_marketplace_idempotency_claim_nonce`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:02.9939784Z Applying migration `20261220000020_marketplace_abuse_signal_rls`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0002156Z Applying migration `20261220000030_marketplace_connect_event`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0063901Z Applying migration `20261220000031_application_applicant_listing_unique`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0095068Z Applying migration `20261221000000_enable_pg_stat_statements`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0189650Z Applying migration `20261221010000_add_signup_ref_to_user`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0215641Z Applying migration `20261222000000_add_extension_pair_codes`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0293942Z Applying migration `20261222000000_scout_ingest_entity`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0375080Z Applying migration `20261222000000_scout_progress_and_completion`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0471211Z Applying migration `20261223000100_scout_import_state`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0534421Z Applying migration `20261223000200_scout_reconstruction`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0628981Z Applying migration `20261223000300_scout_reconstructed_entity`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0689913Z Applying migration `20261224000000_rls_close_public_exposure`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0858849Z Applying migration `20270117000000_durable_import_setup`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0956008Z Applying migration `20270118000000_scout_ledger_platform_expand`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.0991501Z Applying migration `20270119000000_scout_ledger_obsolete_writer_fence`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1032615Z Applying migration `20270120000000_scout_identity_ready`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1098734Z Applying migration `20270121000000_scout_identity_contract`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1151735Z Applying migration `20270122000000_scout_native_provenance_expand`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1242106Z Applying migration `20270123000000_scout_run_lifecycle_expand`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1309334Z Applying migration `20270124000000_scout_run_observation_expand`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1432653Z Applying migration `20270125000000_restore_schema_declared_objects`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1695608Z Applying migration `20270203000000_ai_processing_consent_ledger`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1763953Z Applying migration `20270204000000_recipe_private_by_default`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1796892Z Applying migration `20270205000000_invite_grant_bindings`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.1861747Z Applying migration `20270210000000_s_fee_charge_settlement`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2185073Z Applying migration `20270211000000_community_reports_voice_notes_and_wins`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2335411Z Applying migration `20270212000000_clinic_onboarding_intake`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2511721Z Applying migration `20270213000000_clinic_engagement`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2707213Z Applying migration `20270216000000_package_first_published_at`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2741807Z Applying migration `20270220000000_data_export_archive_cleanup`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2800069Z Applying migration `20270221000000_data_export_storage_bucket`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2824061Z Applying migration `20270223000000_mwb_program_delivery`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2878415Z Applying migration `20270224000000_build_week_day1_consultation_copy`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2910754Z Applying migration `20270225000000_native_subscription_trials`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2937305Z Applying migration `20270301000000_community_win_coach_matcher`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.2968927Z Applying migration `20270301000000_notification_zone_provenance_reminder_generation`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3021694Z Applying migration `20270304000000_a4_broadcasts_cards_saved_replies`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3345418Z Applying migration `20270311000000_subscription_checkout_terms`
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3390399Z 
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3408029Z The following migration(s) have been applied:
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3408701Z 
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3409117Z migrations/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3409952Z   └─ 00000000000000_baseline/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3411048Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3411910Z   └─ 20260423190000_add_indexes_and_orphan_fks/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3412513Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3413017Z   └─ 20260424000000_add_invite_codes/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3413522Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3414021Z   └─ 20260424120000_add_coach_messages/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3414533Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3414997Z   └─ 20260424180000_add_coach_nudges/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3415458Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3416028Z   └─ 20260424200000_add_meal_plans_and_extend_checkins/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3416676Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3417261Z   └─ 20260425030000_add_community_win_and_coach_guideline/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3417863Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3418385Z   └─ 20260425030001_add_community_win_visibility/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3418911Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3419459Z   └─ 20260427000000_add_owner_role_and_coach_profile/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3420008Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3428615Z   └─ 20260427000100_add_saas_billing_and_drafts/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3429043Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3429412Z   └─ 20260427120000_add_audit_log_and_gdpr_lifecycle/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3429765Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3430085Z   └─ 20260428000000_add_client_coach_consent/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3430752Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3431174Z   └─ 20260429210000_add_diet_and_workout_cadence_to_user_profile/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3431558Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3431884Z   └─ 20260430000000_drop_doctrine_drift_remnants/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3432535Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3432898Z   └─ 20260430120000_add_equipment_access_to_user_profile/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3433245Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3433519Z   └─ 20260506000000_add_ptm_phase_1/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3433807Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3434097Z   └─ 20260506010000_add_diagnostic_engine/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3434387Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3434658Z   └─ 20260506020000_add_build_week/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3434933Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3435211Z   └─ 20260506030000_add_coach_signals/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3435491Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3435826Z   └─ 20260506040000_add_voice_notes_and_coach_onboarding/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3436162Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3436428Z   └─ 20260506050000_add_first_win/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3436741Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3437015Z   └─ 20260506060000_add_leaderboard/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3437300Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3437589Z   └─ 20260507000000_add_notification_center/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3438062Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3438349Z   └─ 20260507100000_add_gdpr_deletion_flow/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3438651Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3438918Z   └─ 20260508000000_add_data_export/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3439194Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3439511Z   └─ 20260508000000_add_workout_builder/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3439795Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3440069Z   └─ 20260508000001_rls_workout_builder/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3440607Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3440936Z   └─ 20260508000002_workout_exercise_soft_delete/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3441254Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3441620Z   └─ 20260508000003_workout_builder_idempotency_and_completion/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3441982Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3442316Z   └─ 20260509000000_add_sprint_b_macros_meals_insights/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3442671Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3443008Z   └─ 20260509120000_coach_practice_type_stage3/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3443354Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3443686Z   └─ 20260510000000_add_ai_gateway_audit_and_drafts/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3444055Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3444358Z   └─ 20260510000000_add_team_mode/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3444662Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3445027Z   └─ 20260510000001_team_audit_revenue_sharing_changed/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3445390Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3445702Z   └─ 20260511000000_add_bloodwork/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3446022Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3446336Z   └─ 20260512000000_concierge_scheduling/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3446659Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3446990Z   └─ 20260513000000_food_logger_trainerize_floor/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3447334Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3447654Z   └─ 20260515100000_add_secret_rotation_log/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3447978Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3448328Z   └─ 20260516000000_kms_wrap_bloodwork_and_calendar/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3448707Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3449012Z   └─ 20260517000000_booking_notifications/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3449332Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3449631Z   └─ 20260520000000_setnull_owner_rels/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3449947Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3450604Z   └─ 20260520000001_add_gcal_channel_tracking_to_calendar_connection/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3451042Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3451356Z   └─ 20260521000000_add_connect_account/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3451669Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3452048Z   └─ 20260524000000_add_sub_coach_assignment_and_idempotency/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3452437Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3452744Z   └─ 20260525000000_sub_coach_rls_and_fks/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3453057Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3453374Z   └─ 20260525120000_add_coach_brief_tables/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3453696Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3454225Z   └─ 20260525130000_add_coach_brief_last_push_date/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3454584Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3454913Z   └─ 20260525170000_data_export_one_active_per_user/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3455251Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3455546Z   └─ 20260525180000_recent_auth_nonce/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3455857Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3456168Z   └─ 20260528000000_stream1_coach_ai_credits/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3456490Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3456794Z   └─ 20260528120000_stream1_round1_fixes/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3457104Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3457385Z   └─ 20260530000000_coach_ai_engine_v1/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3457699Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3458001Z   └─ 20260531000000_wearables_foundation/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3458310Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3458671Z   └─ 20260601000000_add_connect_packages_purchases_customers/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3459043Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3459338Z   └─ 20260601000000_add_email_send_log/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3459653Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3460145Z   └─ 20260601000000_add_exercise_catalog_video/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3460744Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3461102Z   └─ 20260602000000_add_connect_fee_split_and_dunning/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3461447Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3461818Z   └─ 20260602000000_add_exercise_video_provider_fields/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3462168Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3462579Z   └─ 20260603000000_add_connect_payout_reconciliation_refund_dispute/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3462995Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3463377Z   └─ 20260604000000_add_team_profile_and_sub_coach_invite/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3463741Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3464055Z   └─ 20260604000001_subcoach_invite_token_hash/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3464390Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3464709Z   └─ 20260605000000_add_meal_plan_days_json/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3465034Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3465364Z   └─ 20260606000000_add_expo_push_token/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3465690Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3466032Z   └─ 20260606000001_payment_failure_event_unique/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3466382Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3466693Z   └─ 20260606000002_food_entry_client_uuid/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3467012Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3467324Z   └─ 20260606000003_rls_financial_tables/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3467637Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3467933Z   └─ 20260607000000_rls_remaining_gaps/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3468247Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3468612Z   └─ 20260607000001_workout_assignment_completion_payload/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3469001Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3469295Z   └─ 20260608000000_rls_team_tables/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3469598Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3469911Z   └─ 20260609000000_add_coach_direct_enabled/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3470228Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3470805Z   └─ 20260610000000_fasting_unique_active/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3471134Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3471441Z   └─ 20260611000000_invite_intended_email/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3471754Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3472036Z   └─ 20260611000001_messagedraft_rls/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3472340Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3472711Z   └─ 20260612000000_add_message_model_and_checkin_reviewed/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3473076Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3473362Z   └─ 20260612000001_message_rls/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3473653Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3473976Z   └─ 20260613000000_message_rls_split_update/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3474305Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3474600Z   └─ 20260613000001_message_fk_cascade/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3474909Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3475233Z   └─ 20260613000002_message_thread_reverse_index/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3475570Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3475890Z   └─ 20260614000000_coach_subscription_tier/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3476407Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3476771Z   └─ 20260614065425_add_coach_first_payment_notification/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3477147Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3477466Z   └─ 20260615000000_drop_coach_direct_enabled/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3477794Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3478150Z   └─ 20260616000000_add_message_reports_and_user_blocks/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3478524Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3478923Z   └─ 20260617000000_fix_message_report_rls_participation_check/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3479310Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3479659Z   └─ 20260618000000_add_rls_payment_revenue_tables/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3480022Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3480575Z   └─ 20260619000000_add_churn_intervention/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3480906Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3481225Z   └─ 20260620000000_workout_builder_p1_fixes/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3481553Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3481873Z   └─ 20260621000000_fix_workout_rls_policies/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3482202Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3482661Z   └─ 20260701235900_add_sub_coach_role_value/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3483000Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3483321Z   └─ 20260702000000_fix_workout_rls_coach_role/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3483649Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3483994Z   └─ 20260703000000_add_coach_brief_generation_lease/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3484374Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3484696Z   └─ 20260703000001_add_coach_brief_push_ledger/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3485060Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3485427Z   └─ 20260703000002_add_coach_brief_check_constraints/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3485790Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3486193Z   └─ 20260704000000_coach_brief_push_ledger_bounded_retry/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3486557Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3486896Z   └─ 20260704000000_rls01_helper_searchpath_hibp/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3487245Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3487561Z   └─ 20260704000001_coach_brief_cwa_index_concurrent/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3487890Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3488202Z   └─ 20260801000000_r43_storefront_phase1/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3488501Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3488832Z   └─ 20260803000000_share_token_21char_invalidate_legacy/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3489160Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3489492Z   └─ 20260804000000_guest_checkout_retryable_conversion/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3489817Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3490140Z   └─ 20260805000000_guest_checkout_pii_retention/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3490721Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3491040Z   └─ 20260806000000_share_link_expiry_revoke/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3491341Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3491683Z   └─ 20260901000000_r46_landing_page_builder_phase1/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3492026Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3492371Z   └─ 20260902000000_r47_landing_pages_phase3_crm_sync/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3492718Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3493037Z   └─ 20260903000000_r47_lead_sync_persistent_state/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3493381Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3493726Z   └─ 20260903000000_r52_landing_pages_renderer_v2/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3494166Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3494525Z   └─ 20260920000000_r48_checkout_hardening/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3494869Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3495372Z   └─ 20260921000000_add_refunded_disputed_to_guest_checkout_status/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3495795Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3496117Z   └─ 20261001000000_dunning_v1/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3496430Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3496776Z   └─ 20261002000000_dunning_v1_send_retry_cas/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3497140Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3497410Z   └─ 20261002000000_nudge_v1/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3497728Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3498088Z   └─ 20261110000000_ai_action_draft_materialised/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3498444Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3498822Z   └─ 20261201000000_stream2_ai_execution_draft_links/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3499384Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3499891Z   └─ 20261202000000_pr3_drip_schema_foundation/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3500447Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3500986Z   └─ 20261203000000_pr7_meal_plan_drip_drop_unique/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3501351Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3501720Z   └─ 20261203100000_pr6_packages_publish_pricing/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3502081Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3502412Z   └─ 20261204000000_pr9_drip_resolver_marker/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3502767Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3503127Z   └─ 20261205000000_pr10_scheduled_drop_retry_lock/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3503502Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3503853Z   └─ 20261206000000_pr12_coach_media_upload_status/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3504202Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3504742Z   └─ 20261207000000_pr14_client_purchase_landing_page_id_and_guest_subscription/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3505236Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3505703Z   └─ 20261207000001_pr14_client_purchase_landing_page_idx_concurrent/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3506179Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3506548Z   └─ 20261208000000_pr15_coach_new_purchase_prefs/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3506911Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3507266Z   └─ 20261209000000_pr17_scheduled_drop_push_seq/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3507656Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3507998Z   └─ 20261210000000_pr_wave0_ai_quota_ltv_peak/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3508350Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3508717Z   └─ 20261211000000_add_sleep_consistency_metrics/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3509077Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3509480Z   └─ 20261211000001_seed_sleep_consistency_metric_defs/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3509860Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3510189Z   └─ 20261212000000_community_v1_1_schema/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3510800Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3511138Z   └─ 20261212000000_rls_helper_search_path/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3511511Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3511833Z   └─ 20261212010000_rls_tier2_coach_team/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3512184Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3512589Z   └─ 20261213000000_rls_tier1_phi_financial_privacy/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3513060Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3513466Z   └─ 20261213000000_rls_tier2_sessions/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3513806Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3514127Z   └─ 20261213000000_rls_tier3_nutrition/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3514488Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3514807Z   └─ 20261213000000_rls_tier3_workouts/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3515133Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3515491Z   └─ 20261213000000_rls_tier4_learning_analytics/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3515863Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3516254Z   └─ 20261213000000_rls_tier5_notifications_community/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3516648Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3517012Z   └─ 20261214000000_dunning_v2_lockout_recovery/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3517368Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3517933Z   └─ 20261215000000_b5_digital_contracts/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3518285Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3518601Z   └─ 20261215000000_mwb_1_data_model/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3518923Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3519302Z   └─ 20261215000000_payouts_v2_bank_payout_methods/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3519660Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3520020Z   └─ 20261215000100_seed_b5_contract_templates/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3520641Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3520968Z   └─ 20261215000200_contracts_rls/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3521309Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3521736Z   └─ 20261215000300_named_regimes_and_partial_refund_decision/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3522154Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3522466Z   └─ 20261216000000_add_roman_chat/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3522783Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3523139Z   └─ 20261216000100_add_plan_context_payload/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3523492Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3523866Z   └─ 20261216000200_community_classroom_posts/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3524398Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3524728Z   └─ 20261217000000_community_voice_notes/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3525081Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3525414Z   └─ 20261217000100_community_search_index/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3525754Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3526116Z   └─ 20261217000200_community_wearable_prompts/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3526477Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3526818Z   └─ 20261218000000_add_coach_reviewed_at/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3527151Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3527492Z   └─ 20261218000100_rls_partial_refund_decision/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3527853Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3528209Z   └─ 20261218000200_rename_decided_by_coach_user_id/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3528608Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3528986Z   └─ 20261219000000_community_wearable_prompts_uuid_id/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3529362Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3529742Z   └─ 20261219000000_conv_review_coach_reviewed_at_idx/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3530161Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3530837Z   └─ 20261220000000_talent_marketplace_rls/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3531286Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3531756Z   └─ 20261220000010_marketplace_idempotency_claim_nonce/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3532234Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3532665Z   └─ 20261220000020_marketplace_abuse_signal_rls/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3533096Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3533502Z   └─ 20261220000030_marketplace_connect_event/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3533918Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3534370Z   └─ 20261220000031_application_applicant_listing_unique/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3534829Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3535240Z   └─ 20261221000000_enable_pg_stat_statements/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3535651Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3536068Z   └─ 20261221010000_add_signup_ref_to_user/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3536451Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3536886Z   └─ 20261222000000_add_extension_pair_codes/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3537323Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3537691Z   └─ 20261222000000_scout_ingest_entity/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3538084Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3538503Z   └─ 20261222000000_scout_progress_and_completion/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3538915Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3539196Z   └─ 20261223000100_scout_import_state/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3539487Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3539791Z   └─ 20261223000200_scout_reconstruction/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3540106Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3540656Z   └─ 20261223000300_scout_reconstructed_entity/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3541013Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3541593Z   └─ 20261224000000_rls_close_public_exposure/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3542255Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3542698Z   └─ 20270117000000_durable_import_setup/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3543015Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3543332Z   └─ 20270118000000_scout_ledger_platform_expand/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3543945Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3544281Z   └─ 20270119000000_scout_ledger_obsolete_writer_fence/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3544618Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3544904Z   └─ 20270120000000_scout_identity_ready/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3545186Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3545473Z   └─ 20270121000000_scout_identity_contract/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3545775Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3546090Z   └─ 20270122000000_scout_native_provenance_expand/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3546406Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3546699Z   └─ 20270123000000_scout_run_lifecycle_expand/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3547009Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3547303Z   └─ 20270124000000_scout_run_observation_expand/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3547608Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3547922Z   └─ 20270125000000_restore_schema_declared_objects/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3548237Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3548535Z   └─ 20270203000000_ai_processing_consent_ledger/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3548852Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3549283Z   └─ 20270204000000_recipe_private_by_default/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3549808Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3550244Z   └─ 20270205000000_invite_grant_bindings/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3551182Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3551698Z   └─ 20270210000000_s_fee_charge_settlement/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3552172Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3552531Z   └─ 20270211000000_community_reports_voice_notes_and_wins/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3552881Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3553178Z   └─ 20270212000000_clinic_onboarding_intake/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3553486Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3553761Z   └─ 20270213000000_clinic_engagement/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3554046Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3554354Z   └─ 20270216000000_package_first_published_at/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3554670Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3554971Z   └─ 20270220000000_data_export_archive_cleanup/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3555297Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3555633Z   └─ 20270221000000_data_export_storage_bucket/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3555934Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3556219Z   └─ 20270223000000_mwb_program_delivery/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3556505Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3556827Z   └─ 20270224000000_build_week_day1_consultation_copy/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3557161Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3557452Z   └─ 20270225000000_native_subscription_trials/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3557753Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3558052Z   └─ 20270301000000_community_win_coach_matcher/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3558362Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3558753Z   └─ 20270301000000_notification_zone_provenance_reminder_generation/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3559138Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3559463Z   └─ 20270304000000_a4_broadcasts_cards_saved_replies/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3559784Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3560080Z   └─ 20270311000000_subscription_checkout_terms/
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3560926Z     └─ migration.sql
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3561178Z       
+community-live-tests	Apply all migrations (prisma migrate deploy)	2026-10-05T23:49:03.3561478Z All migrations have been successfully applied.
+community-live-tests	Run community live suites	﻿2026-10-05T23:49:03.3712475Z ##[group]Run npx jest test/community/rls/community-wins-rls.live.spec.ts test/community/rls/community-message-shape.live.spec.ts test/community/community-moderation.e2e.spec.ts test/community/community-reactions.e2e.spec.ts test/community/community-dms.e2e.spec.ts test/community/community-foundation.e2e.spec.ts test/community/community-plan-context.e2e.spec.ts test/community/community-posts.e2e.spec.ts test/community/community-messages.e2e.spec.ts test/community/events/community-events.e2e.spec.ts test/broadcasts/broadcasts-dispatch.live.spec.ts --runInBand --testTimeout=60000
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3716684Z ^[[36;1mnpx jest test/community/rls/community-wins-rls.live.spec.ts test/community/rls/community-message-shape.live.spec.ts test/community/community-moderation.e2e.spec.ts test/community/community-reactions.e2e.spec.ts test/community/community-dms.e2e.spec.ts test/community/community-foundation.e2e.spec.ts test/community/community-plan-context.e2e.spec.ts test/community/community-posts.e2e.spec.ts test/community/community-messages.e2e.spec.ts test/community/events/community-events.e2e.spec.ts test/broadcasts/broadcasts-dispatch.live.spec.ts --runInBand --testTimeout=60000^[[0m
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3779181Z shell: /usr/bin/bash -e {0}
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3779451Z env:
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3779952Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3780670Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3781138Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3781480Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3781847Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3782238Z   NODE_OPTIONS: --max-old-space-size=4096
+community-live-tests	Run community live suites	2026-10-05T23:49:03.3782520Z ##[endgroup]
+community-live-tests	Run community live suites	2026-10-05T23:49:11.1483934Z PASS test/broadcasts/broadcasts-dispatch.live.spec.ts (6.666 s, 142 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:13.4169220Z PASS test/community/events/community-events.e2e.spec.ts (150 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:14.4462103Z PASS test/community/community-foundation.e2e.spec.ts (198 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:15.4725386Z PASS test/community/community-plan-context.e2e.spec.ts (257 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5768473Z ^[[31m[Nest] 3589  - ^[[39m10/05/2026, 11:49:16 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[ExceptionsHandler] ^[[39mPrismaClientUnknownRequestError: 
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5769537Z Invalid `tx.notification.create()` invocation in
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5787282Z /home/runner/work/growth-project-backend/growth-project-backend/src/community/safety/community-moderation-notices.ts:81:25
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5787992Z 
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5788356Z   78 if (existing.some((n) => isJsonObject(n.payload) && n.payload.idempotency_key === key)) {
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5788850Z   79   return 'exists';
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5789091Z   80 }
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5789492Z → 81 await tx.notification.create(
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5789860Z Error occurred during query execution:
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5791350Z ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "P0001", message: "B-610-13 probe: notice insert refused", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5793229Z     at ei.handleRequestError ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/RequestHandler.ts:237:13^[[90m)^[[39m
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5795995Z     at ei.handleAndLogRequestError ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/RequestHandler.ts:174:12^[[90m)^[[39m
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5797963Z     at ei.request ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/RequestHandler.ts:143:12^[[90m)^[[39m
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5799560Z     at a ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/getPrismaClient.ts:833:24^[[90m)^[[39m
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5802522Z     at storeModerationNotice ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39msrc/community/safety/community-moderation-notices.ts:81:3^[[90m)^[[39m
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5803844Z     at ^[[90m/home/runner/work/growth-project-backend/growth-project-backend/^[[39msrc/community/moderation/community-moderation.service.ts:471:18
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5805292Z     at Proxy._transactionWithCallback ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/getPrismaClient.ts:722:18^[[90m)^[[39m
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5806852Z     at CommunityModerationService.act ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39msrc/community/moderation/community-moderation.service.ts:449:44^[[90m)^[[39m
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5808211Z     at ^[[90m/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@nestjs/core^[[24m/router/router-execution-context.js:47:62
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5809946Z     at ^[[90m/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@nestjs/core^[[24m/router/router-proxy.js:9:17 {
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5811272Z   clientVersion: ^[[32m'6.19.3'^[[39m
+community-live-tests	Run community live suites	2026-10-05T23:49:16.5811549Z }
+community-live-tests	Run community live suites	2026-10-05T23:49:16.6907447Z PASS test/community/community-moderation.e2e.spec.ts (330 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:17.7581373Z PASS test/community/community-messages.e2e.spec.ts (381 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:18.7202077Z PASS test/community/community-dms.e2e.spec.ts (206 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:19.3391913Z PASS test/community/rls/community-wins-rls.live.spec.ts (229 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:20.3310078Z PASS test/community/community-posts.e2e.spec.ts (276 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:21.2256280Z PASS test/community/community-reactions.e2e.spec.ts (338 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:21.5716919Z PASS test/community/rls/community-message-shape.live.spec.ts (352 MB heap size)
+community-live-tests	Run community live suites	2026-10-05T23:49:21.5742535Z 
+community-live-tests	Run community live suites	2026-10-05T23:49:21.5752716Z Test Suites: 11 passed, 11 total
+community-live-tests	Run community live suites	2026-10-05T23:49:21.5753379Z Tests:       110 passed, 110 total
+community-live-tests	Run community live suites	2026-10-05T23:49:21.5753876Z Snapshots:   0 total
+community-live-tests	Run community live suites	2026-10-05T23:49:21.5754272Z Time:        17.334 s
+community-live-tests	Run community live suites	2026-10-05T23:49:21.5759136Z Ran all test suites matching test/community/rls/community-wins-rls.live.spec.ts|test/community/rls/community-message-shape.live.spec.ts|test/community/community-moderation.e2e.spec.ts|test/community/community-reactions.e2e.spec.ts|test/community/community-dms.e2e.spec.ts|test/community/community-foundation.e2e.spec.ts|test/community/community-plan-context.e2e.spec.ts|test/community/community-posts.e2e.spec.ts|test/community/community-messages.e2e.spec.ts|test/community/events/community-events.e2e.spec.ts|test/broadcasts/broadcasts-dispatch.live.spec.ts.
+community-live-tests	Run community live suites	2026-10-05T23:49:22.5795429Z Jest did not exit one second after the test run has completed.
+community-live-tests	Run community live suites	2026-10-05T23:49:22.5796129Z 
+community-live-tests	Run community live suites	2026-10-05T23:49:22.5797118Z 'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+community-live-tests	Post Run actions/setup-node@v6	﻿2026-10-05T23:50:18.9946825Z Post job cleanup.
+community-live-tests	Post Run actions/setup-node@v6	2026-10-05T23:50:19.1123697Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+community-live-tests	Post Run actions/checkout@v6	﻿2026-10-05T23:50:19.1252842Z Post job cleanup.
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2169239Z [command]/usr/bin/git version
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2209906Z git version 2.55.0
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2251080Z Temporarily overriding HOME='/home/runner/work/_temp/b262712f-496a-4ab2-927c-03424691c839' before making global git config changes
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2252616Z Adding repository directory to the temporary git global config as a safe directory
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2256977Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2289167Z Removing SSH command configuration
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2297698Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2332862Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2558121Z Removing HTTP extra header
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2564344Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2603213Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2846541Z Removing includeIf entries pointing to credentials config files
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2854563Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2884012Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2884940Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2885571Z includeif.gitdir:/github/workspace/.git.path
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2886032Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2895304Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2916939Z /home/runner/work/_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2928006Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2963021Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2985039Z /home/runner/work/_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.2995817Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.3028510Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.3049462Z /github/runner_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.3057599Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.3089779Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.3110209Z /github/runner_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.3120600Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.3155063Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+community-live-tests	Post Run actions/checkout@v6	2026-10-05T23:50:19.3376525Z Removing credentials config '/home/runner/work/_temp/git-credentials-a0387ad4-be8c-40e2-bd9c-8a6450a523d4.config'
+community-live-tests	Stop containers	﻿2026-10-05T23:50:19.3494715Z Print service container logs: b0e604eb09494755950f0aba8b7e2034_postgres15_c00b3d
+community-live-tests	Stop containers	2026-10-05T23:50:19.3499128Z ##[command]/usr/bin/docker logs --details 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Stop containers	2026-10-05T23:50:19.3637580Z  initdb: warning: enabling "trust" authentication for local connections
+community-live-tests	Stop containers	2026-10-05T23:50:19.3638868Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+community-live-tests	Stop containers	2026-10-05T23:50:19.3639917Z  2026-10-05 23:47:56.937 UTC [1] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+community-live-tests	Stop containers	2026-10-05T23:50:19.3641183Z  2026-10-05 23:47:56.938 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+community-live-tests	Stop containers	2026-10-05T23:50:19.3641975Z  2026-10-05 23:47:56.938 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+community-live-tests	Stop containers	2026-10-05T23:50:19.3643598Z  2026-10-05 23:47:56.939 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3644600Z  2026-10-05 23:47:56.941 UTC [62] LOG:  database system was shut down at 2026-10-05 23:47:56 UTC
+community-live-tests	Stop containers	2026-10-05T23:50:19.3645432Z  2026-10-05 23:47:56.944 UTC [1] LOG:  database system is ready to accept connections
+community-live-tests	Stop containers	2026-10-05T23:50:19.3646399Z  2026-10-05 23:49:10.908 UTC [138] ERROR:  new row violates row-level security policy for table "coach_saved_replies"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3648168Z  2026-10-05 23:49:10.908 UTC [138] STATEMENT:  INSERT INTO "coach_saved_replies" (id, owner_user_id, title, body, updated_at) VALUES ('260061d9-49fa-4af9-83e8-7eec6aff5482', '72f0d193-5baa-41d7-b264-b6614e40b44e', 'xanon', 'y', now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3649920Z  2026-10-05 23:49:11.032 UTC [138] ERROR:  new row violates row-level security policy for table "coach_saved_replies"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3651981Z  2026-10-05 23:49:11.032 UTC [138] STATEMENT:  INSERT INTO "coach_saved_replies" (id, owner_user_id, title, body, updated_at) VALUES ('f053285c-eaae-4988-aa37-bd61cb8ca353', '72f0d193-5baa-41d7-b264-b6614e40b44e', 'xauthenticated', 'y', now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3653693Z  2026-10-05 23:49:16.465 UTC [153] ERROR:  B-610-13 probe: notice insert refused
+community-live-tests	Stop containers	2026-10-05T23:50:19.3654637Z  2026-10-05 23:49:16.465 UTC [153] CONTEXT:  PL/pgSQL function b610_13_notice_probe_0f69158725c9() line 1 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3658253Z  2026-10-05 23:49:16.465 UTC [153] STATEMENT:  INSERT INTO "public"."Notification" ("id","user_id","kind","payload","body","deep_link","channel","created_at") VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING "public"."Notification"."id", "public"."Notification"."user_id", "public"."Notification"."kind", "public"."Notification"."payload", "public"."Notification"."body", "public"."Notification"."deep_link", "public"."Notification"."channel", "public"."Notification"."read_at", "public"."Notification"."created_at", "public"."Notification"."ai_draft_id"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3661842Z  2026-10-05 23:49:19.031 UTC [164] ERROR:  community.win.moderation_column: only a moderator can hide or unhide a win
+community-live-tests	Stop containers	2026-10-05T23:50:19.3662577Z  2026-10-05 23:49:19.031 UTC [164] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 40 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3663231Z  2026-10-05 23:49:19.031 UTC [164] STATEMENT:  UPDATE "CommunityWin" SET hidden_at = now() WHERE id = $1
+community-live-tests	Stop containers	2026-10-05T23:50:19.3663934Z  2026-10-05 23:49:19.148 UTC [164] ERROR:  community.win.moderation_column: author, coach and visibility cannot be changed
+community-live-tests	Stop containers	2026-10-05T23:50:19.3664658Z  2026-10-05 23:49:19.148 UTC [164] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 32 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3665323Z  2026-10-05 23:49:19.148 UTC [164] STATEMENT:  UPDATE "CommunityWin" SET visibility = 'public' WHERE id = $1
+community-live-tests	Stop containers	2026-10-05T23:50:19.3666013Z  2026-10-05 23:49:19.153 UTC [164] ERROR:  community.win.moderation_column: author, coach and visibility cannot be changed
+community-live-tests	Stop containers	2026-10-05T23:50:19.3666724Z  2026-10-05 23:49:19.153 UTC [164] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 32 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3667579Z  2026-10-05 23:49:19.153 UTC [164] STATEMENT:  UPDATE "CommunityWin" SET coach_id = $1 WHERE id = $2
+community-live-tests	Stop containers	2026-10-05T23:50:19.3668199Z  2026-10-05 23:49:19.157 UTC [164] ERROR:  community.win.moderation_column: only a moderator can hide a win
+community-live-tests	Stop containers	2026-10-05T23:50:19.3668844Z  2026-10-05 23:49:19.157 UTC [164] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 20 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3669336Z  2026-10-05 23:49:19.157 UTC [164] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3669808Z  	          INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility, hidden_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3670545Z  	          VALUES ($1, $2, $3, 'x', 'y', 'circle', now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3671114Z  2026-10-05 23:49:19.162 UTC [164] ERROR:  new row violates row-level security policy for table "CommunityWin"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3671602Z  2026-10-05 23:49:19.162 UTC [164] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3672026Z  	          INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3672469Z  	          VALUES ($1, $2, $3, 'x', 'y', 'public')
+community-live-tests	Stop containers	2026-10-05T23:50:19.3672951Z  2026-10-05 23:49:19.177 UTC [164] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+community-live-tests	Stop containers	2026-10-05T23:50:19.3673621Z  2026-10-05 23:49:19.177 UTC [164] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3674129Z  2026-10-05 23:49:19.177 UTC [164] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3674545Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3674968Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+community-live-tests	Stop containers	2026-10-05T23:50:19.3675432Z  2026-10-05 23:49:19.181 UTC [164] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+community-live-tests	Stop containers	2026-10-05T23:50:19.3676090Z  2026-10-05 23:49:19.181 UTC [164] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3676570Z  2026-10-05 23:49:19.181 UTC [164] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3676985Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3677402Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+community-live-tests	Stop containers	2026-10-05T23:50:19.3677862Z  2026-10-05 23:49:19.185 UTC [164] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+community-live-tests	Stop containers	2026-10-05T23:50:19.3678665Z  2026-10-05 23:49:19.185 UTC [164] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3679140Z  2026-10-05 23:49:19.185 UTC [164] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3679541Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3679959Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+community-live-tests	Stop containers	2026-10-05T23:50:19.3680791Z  2026-10-05 23:49:19.188 UTC [164] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+community-live-tests	Stop containers	2026-10-05T23:50:19.3681493Z  2026-10-05 23:49:19.188 UTC [164] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+community-live-tests	Stop containers	2026-10-05T23:50:19.3681992Z  2026-10-05 23:49:19.188 UTC [164] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3682403Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3682821Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+community-live-tests	Stop containers	2026-10-05T23:50:19.3683254Z  2026-10-05 23:49:19.228 UTC [164] ERROR:  permission denied for function community_win_author_coach
+community-live-tests	Stop containers	2026-10-05T23:50:19.3683829Z  2026-10-05 23:49:19.228 UTC [164] STATEMENT:  SELECT app.community_win_author_coach($1) AS c
+community-live-tests	Stop containers	2026-10-05T23:50:19.3684390Z  2026-10-05 23:49:19.232 UTC [164] ERROR:  permission denied for function community_win_author_coach
+community-live-tests	Stop containers	2026-10-05T23:50:19.3684946Z  2026-10-05 23:49:19.232 UTC [164] STATEMENT:  SELECT app.community_win_author_coach($1) AS c
+community-live-tests	Stop containers	2026-10-05T23:50:19.3685702Z  2026-10-05 23:49:21.415 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3687431Z  2026-10-05 23:49:21.415 UTC [167] DETAIL:  Failing row contains (2bceb97f-000b-4dc5-acc2-e771e09934df, 2026-10-05 23:49:21.415305+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, null, cohort, null, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, null, 106b17f4-1e17-4124-ab21-9f3ee9972cb0, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.415305+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3688986Z  2026-10-05 23:49:21.415 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3689286Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3689629Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3690047Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3690703Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3690919Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3691152Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3691408Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3691724Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3692332Z  2026-10-05 23:49:21.512 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3693956Z  2026-10-05 23:49:21.512 UTC [167] DETAIL:  Failing row contains (6715b6cf-e18d-4a33-ba4d-e7a0319f7a70, 2026-10-05 23:49:21.512227+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, null, cohort, null, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.512227+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3695238Z  2026-10-05 23:49:21.512 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3695538Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3695870Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3696256Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3696557Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3696756Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3696975Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3697229Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3697537Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3698122Z  2026-10-05 23:49:21.514 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3699934Z  2026-10-05 23:49:21.514 UTC [167] DETAIL:  Failing row contains (7d2729f0-fc1f-40dc-aba5-690b99d92b0d, 2026-10-05 23:49:21.514244+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, null, cohort, null, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, community_post_comment, null, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.514244+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3701692Z  2026-10-05 23:49:21.514 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3702009Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3702357Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3702746Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3703048Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3703250Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3703473Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3703736Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3704056Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3704649Z  2026-10-05 23:49:21.515 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3706403Z  2026-10-05 23:49:21.515 UTC [167] DETAIL:  Failing row contains (c50f9046-86b0-4038-9ec8-3d31eb27d00d, 2026-10-05 23:49:21.515744+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, null, cohort, null, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, plan_week, ab3804c9-30f5-4f09-a5c6-431a6e3b70d6, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.515744+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3707962Z  2026-10-05 23:49:21.515 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3708254Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3708587Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3708975Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3709274Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3709462Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3709685Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3710021Z  The files belonging to this database system will be owned by user "postgres".
+community-live-tests	Stop containers	2026-10-05T23:50:19.3710835Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3711161Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3711755Z  2026-10-05 23:49:21.517 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3713589Z  2026-10-05 23:49:21.517 UTC [167] DETAIL:  Failing row contains (96c26fe3-55b0-4bfa-b09a-689a824241e7, 2026-10-05 23:49:21.517479+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, null, cohort, dm:838bdad0, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, community_post_comment, 060e534e-e0c4-40f5-9f97-eece0f500220, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.517479+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3715072Z  2026-10-05 23:49:21.517 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3715364Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3715697Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3716078Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3716371Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3716563Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3716780Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3717034Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3717348Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3717925Z  2026-10-05 23:49:21.519 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3719706Z  2026-10-05 23:49:21.519 UTC [167] DETAIL:  Failing row contains (271932f7-2392-4fc0-9361-3ccd37e41254, 2026-10-05 23:49:21.519099+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, b69ec9bb-54af-4d49-82be-f515177de199, cohort, dm:838bdad0, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.519099+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3721545Z  2026-10-05 23:49:21.519 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3721841Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3722168Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3722551Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3722849Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3723036Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3723257Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3723511Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3723812Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3724404Z  2026-10-05 23:49:21.520 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3726134Z  2026-10-05 23:49:21.520 UTC [167] DETAIL:  Failing row contains (6d846e49-e422-4471-ad08-29d436877a80, 2026-10-05 23:49:21.520368+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, b69ec9bb-54af-4d49-82be-f515177de199, dm, dm:838bdad0, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.520368+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3727525Z  2026-10-05 23:49:21.520 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3727947Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3728273Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3728646Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3728938Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3729125Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3729343Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3729592Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3729890Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3730724Z  2026-10-05 23:49:21.521 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3732336Z  2026-10-05 23:49:21.521 UTC [167] DETAIL:  Failing row contains (719b69f7-9377-4957-9f6e-bd2e5efe6a6b, 2026-10-05 23:49:21.521823+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, null, dm, null, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.521823+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3733610Z  2026-10-05 23:49:21.521 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3733895Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3734224Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3734606Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3734894Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3735084Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3735299Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3735540Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3735844Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3736422Z  2026-10-05 23:49:21.523 UTC [167] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3738190Z  2026-10-05 23:49:21.523 UTC [167] DETAIL:  Failing row contains (4fc00389-e4c5-43e8-b081-6eaa67483666, 2026-10-05 23:49:21.523101+00, 6e5483a2-191d-4e2f-bf4f-60c2504ff9aa, null, dm, null, null, 0682c24a-56aa-4a20-8156-22614f44294e, text, shape probe, null, null, null, null, community_post_comment, 4f234457-9bf9-4325-9c2b-34d9cb8ed876, null, null, null, null, null, null, active, null, 2026-10-05 23:49:21.523101+00, null).
+community-live-tests	Stop containers	2026-10-05T23:50:19.3739823Z  2026-10-05 23:49:21.523 UTC [167] STATEMENT:  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3740103Z  	      INSERT INTO community_messages
+community-live-tests	Stop containers	2026-10-05T23:50:19.3740718Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3741130Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	Stop containers	2026-10-05T23:50:19.3741428Z  	      VALUES
+community-live-tests	Stop containers	2026-10-05T23:50:19.3741616Z  	        ($1::uuid, $2::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3741837Z  	         $3::uuid,
+community-live-tests	Stop containers	2026-10-05T23:50:19.3742089Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	Stop containers	2026-10-05T23:50:19.3742394Z  	         $7, $8::uuid, now())
+community-live-tests	Stop containers	2026-10-05T23:50:19.3742659Z  This user must also own the server process.
+community-live-tests	Stop containers	2026-10-05T23:50:19.3742924Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3743199Z  The database cluster will be initialized with locale "en_US.utf8".
+community-live-tests	Stop containers	2026-10-05T23:50:19.3743634Z  The default database encoding has accordingly been set to "UTF8".
+community-live-tests	Stop containers	2026-10-05T23:50:19.3744077Z  The default text search configuration will be set to "english".
+community-live-tests	Stop containers	2026-10-05T23:50:19.3744403Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3744591Z  Data page checksums are disabled.
+community-live-tests	Stop containers	2026-10-05T23:50:19.3744835Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3745118Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+community-live-tests	Stop containers	2026-10-05T23:50:19.3745500Z  creating subdirectories ... ok
+community-live-tests	Stop containers	2026-10-05T23:50:19.3745808Z  selecting dynamic shared memory implementation ... posix
+community-live-tests	Stop containers	2026-10-05T23:50:19.3746162Z  selecting default max_connections ... 100
+community-live-tests	Stop containers	2026-10-05T23:50:19.3746458Z  selecting default shared_buffers ... 128MB
+community-live-tests	Stop containers	2026-10-05T23:50:19.3746752Z  selecting default time zone ... Etc/UTC
+community-live-tests	Stop containers	2026-10-05T23:50:19.3747165Z  creating configuration files ... ok
+community-live-tests	Stop containers	2026-10-05T23:50:19.3747431Z  running bootstrap script ... ok
+community-live-tests	Stop containers	2026-10-05T23:50:19.3747722Z  performing post-bootstrap initialization ... ok
+community-live-tests	Stop containers	2026-10-05T23:50:19.3748032Z  syncing data to disk ... ok
+community-live-tests	Stop containers	2026-10-05T23:50:19.3748252Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3748414Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3748640Z  Success. You can now start the database server using:
+community-live-tests	Stop containers	2026-10-05T23:50:19.3748939Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3749170Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+community-live-tests	Stop containers	2026-10-05T23:50:19.3749465Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3750111Z  waiting for server to start....2026-10-05 23:47:56.701 UTC [48] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+community-live-tests	Stop containers	2026-10-05T23:50:19.3751145Z  2026-10-05 23:47:56.702 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+community-live-tests	Stop containers	2026-10-05T23:50:19.3751713Z  2026-10-05 23:47:56.704 UTC [51] LOG:  database system was shut down at 2026-10-05 23:47:56 UTC
+community-live-tests	Stop containers	2026-10-05T23:50:19.3752235Z  2026-10-05 23:47:56.707 UTC [48] LOG:  database system is ready to accept connections
+community-live-tests	Stop containers	2026-10-05T23:50:19.3752606Z   done
+community-live-tests	Stop containers	2026-10-05T23:50:19.3752783Z  server started
+community-live-tests	Stop containers	2026-10-05T23:50:19.3752972Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3753287Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+community-live-tests	Stop containers	2026-10-05T23:50:19.3753676Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3753948Z  2026-10-05 23:47:56.819 UTC [48] LOG:  received fast shutdown request
+community-live-tests	Stop containers	2026-10-05T23:50:19.3754471Z  waiting for server to shut down....2026-10-05 23:47:56.819 UTC [48] LOG:  aborting any active transactions
+community-live-tests	Stop containers	2026-10-05T23:50:19.3755156Z  2026-10-05 23:47:56.821 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+community-live-tests	Stop containers	2026-10-05T23:50:19.3755700Z  2026-10-05 23:47:56.822 UTC [49] LOG:  shutting down
+community-live-tests	Stop containers	2026-10-05T23:50:19.3756084Z  2026-10-05 23:47:56.822 UTC [49] LOG:  checkpoint starting: shutdown immediate
+community-live-tests	Stop containers	2026-10-05T23:50:19.3757042Z  2026-10-05 23:47:56.824 UTC [49] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+community-live-tests	Stop containers	2026-10-05T23:50:19.3757974Z  2026-10-05 23:47:56.828 UTC [48] LOG:  database system is shut down
+community-live-tests	Stop containers	2026-10-05T23:50:19.3758296Z   done
+community-live-tests	Stop containers	2026-10-05T23:50:19.3758472Z  server stopped
+community-live-tests	Stop containers	2026-10-05T23:50:19.3758786Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3759014Z  PostgreSQL init process complete; ready for start up.
+community-live-tests	Stop containers	2026-10-05T23:50:19.3759312Z  
+community-live-tests	Stop containers	2026-10-05T23:50:19.3764685Z Stop and remove container: b0e604eb09494755950f0aba8b7e2034_postgres15_c00b3d
+community-live-tests	Stop containers	2026-10-05T23:50:19.3769494Z ##[command]/usr/bin/docker rm --force 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Stop containers	2026-10-05T23:50:19.4971749Z 9573ba464c60210a90dcd764714efffbd147002cfec63e026e4b9bb06ba7769d
+community-live-tests	Stop containers	2026-10-05T23:50:19.5004821Z Remove container network: github_network_286c864adb324e64afa76b46b6ec46ff
+community-live-tests	Stop containers	2026-10-05T23:50:19.5009095Z ##[command]/usr/bin/docker network rm github_network_286c864adb324e64afa76b46b6ec46ff
+community-live-tests	Stop containers	2026-10-05T23:50:19.6063558Z github_network_286c864adb324e64afa76b46b6ec46ff
+community-live-tests	Complete job	﻿2026-10-05T23:50:19.6145730Z Cleaning up orphan processes

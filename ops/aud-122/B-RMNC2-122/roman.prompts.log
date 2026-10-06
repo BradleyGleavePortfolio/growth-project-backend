@@ -1,0 +1,31 @@
+[heavy] waiting for a slot: npx jest test/roman/roman.prompts.spec.ts
+PASS test/roman/roman.prompts.spec.ts (9.971 s)
+  buildRomanSystemPrompt — voice contract anchors
+    ✓ opens by naming the single Roman persona (identity) (3 ms)
+    ✓ encodes the dignified / composed tonal anchors
+    ✓ encodes the no-contraction default and the quip exception
+    ✓ encodes the NO emoji rule (1 ms)
+    ✓ B-651-9: encodes the no-exclamation rule with no per-session exception
+    ✓ encodes the dry-humour ~1-in-8 frequency and never-two-in-a-row rule
+    ✓ encodes the banned registers (hype, fitness-bro, gen-z, corporate) (1 ms)
+    ✓ encodes the failure tone (own it without grovelling)
+    ✓ includes the verbatim voice-contract block (brief §2 requires it present)
+  buildRomanSystemPrompt — surface framing
+    ✓ frames the client surface (1 ms)
+    ✓ frames the coach surface (1 ms)
+    ✓ keeps the identical voice contract across both surfaces
+  buildRomanSystemPrompt — live session voice budget
+    ✓ B-651-9: instructs no exclamation on every turn, spent or not (1 ms)
+    ✓ forbids a quip on the turn after a quip (never two in a row) (1 ms)
+    ✓ surfaces the running quip count (1 ms)
+    ✓ includes optional subject context as reference only
+  buildRomanSystemPrompt — does NOT leak the spec doc verbatim
+    ✓ omits mascot art-direction (that lives in the spec, not the runtime prompt) (1 ms)
+    ✓ omits the open operator-decision section
+    ✓ omits the sample-copy token table verbatim (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        10.436 s
+Ran all test suites matching test/roman/roman.prompts.spec.ts.

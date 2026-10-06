@@ -1,0 +1,940 @@
+diff --git a/src/api/packagesApi.ts b/src/api/packagesApi.ts
+remerge CONFLICT (content): Merge conflict in src/api/packagesApi.ts
+index 91b061f..548850c 100644
+--- a/src/api/packagesApi.ts
++++ b/src/api/packagesApi.ts
+@@ -266,8 +266,6 @@ interface BackendPackageRow {
+   billing_type?: 'one_time' | 'recurring';
+   billing_interval?: 'week' | 'month' | 'year' | PackageBillingInterval | 'quarter';
+   billing_interval_count?: number;
+-  /** Raw CoachPackage rows (create / PATCH answers) name the cadence `interval`. */
+-  interval?: 'week' | 'month' | 'year' | null;
+   interval_count?: number;
+   trial_days?: number | null;
+   features?: string[];
+@@ -279,7 +277,6 @@ interface BackendPackageRow {
+   created_at?: string;
+   updated_at?: string;
+   archived_at?: string | null;
+-  published_at?: string | null;
+ }
+ 
+ function fromBackendInterval(
+@@ -312,22 +309,14 @@ function statusOf(row: BackendPackageRow): PackageStatus {
+ /** Exported for tests (C-321-5 weekly mapping). */
+ export function fromBackend(row: BackendPackageRow): CoachPackage {
+   const count = row.billing_interval_count ?? row.interval_count ?? 1;
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-=======
+   // S-FEE round 4: the backend row carries `interval`; reading only
+   // `billing_interval` showed every yearly package as monthly.
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+   const interval = fromBackendInterval(
+     row.billing_interval ?? row.interval ?? undefined,
+     count,
+     row.billing_type,
+   );
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-  const status: PackageStatus =
+-    row.status ?? (row.is_active === false ? 'archived' : 'active');
+-=======
+   const status = statusOf(row);
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+   return {
+     id: row.id ?? '',
+     coachUserId: row.coach_user_id ?? row.coach_id ?? '',
+@@ -389,21 +378,14 @@ interface BackendUpdateBody {
+   amount_cents?: number;
+   currency?: string;
+   billing_type?: 'one_time' | 'recurring';
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+   /** null clears the cadence (a one-time package has none). */
+   billing_interval?: 'week' | 'month' | 'year' | null;
+   /** null resets the count to 1. */
+   billing_interval_count?: number | null;
+-=======
+-  // null clears the cadence (one-time); backend #629 round 4.
+-  billing_interval?: 'week' | 'month' | 'year' | null;
+-  billing_interval_count?: number;
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+   is_active?: boolean;
+   // TODO(backend): UpdatePackageDto does not accept trial_days or features.
+ }
+ 
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+ /**
+  * B-345-1 / B-345-2 (agent 118): a cadence picked after the package was made
+  * reaches the server. The PATCH carries the same billing fields the create
+@@ -411,38 +393,25 @@ interface BackendUpdateBody {
+  * is cleared (backend B-629-4), which also lets a recurring package become
+  * free in one PATCH.
+  */
+-=======
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+ export function toBackendUpdate(input: PackageUpdateInput): BackendUpdateBody {
+   const out: BackendUpdateBody = {};
+   if (input.title !== undefined) out.name = input.title;
+   if (input.description !== undefined) out.description = input.description;
+   if (input.priceCents !== undefined) out.amount_cents = input.priceCents;
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-  if (input.currency !== undefined) out.currency = input.currency;
+-=======
++  // #321 (B-321-2): the currency is sent lower-case, like the create body.
+   if (input.currency !== undefined) out.currency = input.currency.toLowerCase();
+-  // #321 (B-321-3): a billing change reaches the backend. Callers pass
+-  // billingInterval only when the coach changed it (see the edit screen).
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
++  // #321 (B-321-3): a billing change reaches the backend. The edit screen
++  // passes billingInterval only when the coach changed it; the setup wizard
++  // always passes the billing the coach picked.
+   if (input.billingInterval !== undefined) {
+     out.billing_type = BILLING_TYPE_FOR_INTERVAL[input.billingInterval];
+     if (input.billingInterval === 'one_time') {
+       out.billing_interval = null;
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+       out.billing_interval_count = null;
+     } else {
+       const f = toBackendIntervalFields(input.billingInterval, input.intervalCount);
+       out.billing_interval = f.billing_interval ?? null;
+       out.billing_interval_count = f.billing_interval_count ?? null;
+-=======
+-    } else {
+-      const fields = toBackendIntervalFields(input.billingInterval, input.intervalCount);
+-      if (fields.billing_interval) out.billing_interval = fields.billing_interval;
+-      if (fields.billing_interval_count != null) {
+-        out.billing_interval_count = fields.billing_interval_count;
+-      }
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     }
+   }
+   if (input.status !== undefined) out.is_active = input.status === 'active';
+@@ -549,9 +518,11 @@ export const coachPackagesApi = {
+     return { ...res, data: fromBackend(res.data) };
+   },
+ 
+-  // Put a draft on sale (`POST /v1/coach/packages/:id/publish`). The backend
+-  // applies the $19.99 floor to a package that was never on sale and answers
+-  // PACKAGE_PRICE_BELOW_MINIMUM / PACKAGE_ARCHIVED with a code. Idempotent.
++  // Put a draft on sale (`POST /v1/coach/packages/:id/publish`), the same
++  // route the setup wizard calls (coachSetupApi.publishPackage; B-347-3 "Make
++  // <name> live" in the editor). The backend applies the $19.99 floor to a
++  // package that was never on sale and answers PACKAGE_PRICE_BELOW_MINIMUM /
++  // PACKAGE_ARCHIVED with a code. Idempotent.
+   publish: async (id: string, idempotencyKey?: string) => {
+     const res = await api.post<BackendPackageRow>(
+       `/v1/coach/packages/${encodeURIComponent(id)}/publish`,
+@@ -585,17 +556,6 @@ export const coachPackagesApi = {
+     return { ...res, data: fromBackend(row) };
+   },
+ 
+-  /**
+-   * B-347-3: make a draft live from the editor. Same route the setup wizard
+-   * calls (coachSetupApi.publishPackage); answers the row as now stored.
+-   */
+-  publish: async (id: string) => {
+-    const res = await api.post<BackendPackageRow>(
+-      `/v1/coach/packages/${encodeURIComponent(id)}/publish`,
+-    );
+-    return { ...res, data: fromBackend(res.data) };
+-  },
+-
+   // TODO(backend): `GET /v1/coach/packages/:id/subscribers` not yet deployed.
+   // 404 is surfaced to the caller — we do NOT convert to an empty list so
+   // a missing endpoint doesn't masquerade as "0 subscribers".
+diff --git a/src/screens/coach/payments/CoachPackageEditScreen.tsx b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+remerge CONFLICT (content): Merge conflict in src/screens/coach/payments/CoachPackageEditScreen.tsx
+index 60b27dd..3155b4b 100644
+--- a/src/screens/coach/payments/CoachPackageEditScreen.tsx
++++ b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+@@ -7,7 +7,6 @@
+  * inputs. Mode is derived from the `packageId` param: null → create.
+  */
+ 
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+ import React, {
+   useCallback,
+   useEffect,
+@@ -15,9 +14,6 @@ import React, {
+   useRef,
+   useState,
+ } from "react";
+-=======
+-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+ import {
+   ActivityIndicator,
+   Alert,
+@@ -47,9 +43,8 @@ import {
+   PackageBillingInterval,
+   PackageCreateInput,
+   PackageUpdateInput,
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+ } from "../../../api/packagesApi";
+-import { errorCode, errorMessage } from "../../../types/common";
++import { errorMessage } from "../../../types/common";
+ import {
+   createPackageOnce,
+   intentStorageCopy,
+@@ -64,25 +59,17 @@ import { track } from "../../../lib/analytics";
+ import { useTheme } from "../../../theme/ThemeProvider";
+ import type { SemanticTokens, Tokens } from "../../../theme/tokens";
+ import { parseDollarsToCents } from "../../../utils/currency";
+-import { buildPackageShareUrl } from "../../../utils/packageShare";
+-import { useCurrentUser } from "../../../hooks/useCurrentUser";
+-=======
+-} from '../../../api/packagesApi';
+-import { errorMessage } from '../../../types/common';
+-import { mediumTap, successTap, warningTap } from '../../../utils/haptics';
+-import { track } from '../../../lib/analytics';
+-import { useTheme } from '../../../theme/ThemeProvider';
+-import type { SemanticTokens, Tokens } from '../../../theme/tokens';
+-import { parseDollarsToCents } from '../../../utils/currency';
+-import { packagePriceHelper, packagePriceIssue } from '../../../utils/packagePrice';
++import {
++  packagePriceHelper,
++  packagePriceIssue,
++} from "../../../utils/packagePrice";
+ import {
+   describePackageSaveFailure,
+   type PackageSaveFailure,
+-} from '../../../utils/packageSaveFailure';
+-import { signOut } from '../../../services/authActions';
+-import { buildPackageShareUrl } from '../../../utils/packageShare';
+-import { useCurrentUser } from '../../../hooks/useCurrentUser';
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
++} from "../../../utils/packageSaveFailure";
++import { signOut } from "../../../services/authActions";
++import { buildPackageShareUrl } from "../../../utils/packageShare";
++import { useCurrentUser } from "../../../hooks/useCurrentUser";
+ import PackageDetailSurface, {
+   type PackageDetailViewModel,
+ } from "../../client/packageDetail/PackageDetailSurface";
+@@ -103,9 +90,11 @@ interface Props {
+   route: RouteProp<ParamList, "CoachPackageEdit">;
+ }
+ 
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-// B-347-4: the editable terms as one comparable value.
+-const formKey = (...fields: string[]) => JSON.stringify(fields);
++/**
++ * #321 (Opus B-321-5) + B-347-4: "Make <name> live" publishes the stored row,
++ * so it waits for a save while the form has edits.
++ */
++export const SAVE_BEFORE_PUBLISH = "Save your changes before making this live.";
+ 
+ const INTERVAL_OPTIONS: Array<{
+   label: string;
+@@ -115,16 +104,6 @@ const INTERVAL_OPTIONS: Array<{
+   { label: "Monthly", value: "monthly" },
+   { label: "Quarterly", value: "quarterly" },
+   { label: "Yearly", value: "yearly" },
+-=======
+-/** #321 (Opus B-321-5): Publish waits for a save when the form has edits. */
+-export const SAVE_BEFORE_PUBLISH = 'Save your changes before you publish.';
+-
+-const INTERVAL_OPTIONS: Array<{ label: string; value: PackageBillingInterval }> = [
+-  { label: 'One-time', value: 'one_time' },
+-  { label: 'Monthly', value: 'monthly' },
+-  { label: 'Quarterly', value: 'quarterly' },
+-  { label: 'Yearly', value: 'yearly' },
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+ ];
+ 
+ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+@@ -145,26 +124,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   const [description, setDescription] = useState("");
+   const [priceText, setPriceText] = useState("");
+   const [billingInterval, setBillingInterval] =
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+     useState<PackageBillingInterval>("monthly");
+-  const [trialText, setTrialText] = useState("");
+-  const [featuresText, setFeaturesText] = useState("");
+   const [saving, setSaving] = useState(false);
+   const [archiving, setArchiving] = useState(false);
+   const [error, setError] = useState("");
+-=======
+-    useState<PackageBillingInterval>('monthly');
+-  const [saving, setSaving] = useState(false);
+-  const [archiving, setArchiving] = useState(false);
+-  const [publishing, setPublishing] = useState(false);
+-  const [error, setError] = useState('');
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+   const [previewOpen, setPreviewOpen] = useState(false);
+-  // B-347-4: "Make live" publishes the stored row, so it waits until the
+-  // terms on screen are the terms last loaded or saved.
+-  const [savedForm, setSavedForm] = useState<string | null>(null);
+-  const formNow = formKey(title, description, priceText, billingInterval, featuresText);
+-  const unsaved = savedForm !== null && formNow !== savedForm;
+   // B-329-1 (B-COACH-5): a create from this editor is durable like the
+   // wizard's. Its Idempotency-Key and body are on disk before the request
+   // leaves; reopening the editor after a kill resumes that same create.
+@@ -182,8 +146,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       setDescription(it.input.description ?? "");
+       setPriceText((it.input.priceCents / 100).toFixed(2));
+       setBillingInterval(it.input.billingInterval);
+-      setTrialText(it.input.trialDays ? String(it.input.trialDays) : "");
+-      setFeaturesText((it.input.features ?? []).join("\n"));
+       setResumedCreate(true);
+     });
+     return () => {
+@@ -207,22 +169,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       setDescription(initialPackage.description ?? "");
+       setPriceText(((initialPackage.priceCents ?? 0) / 100).toFixed(2));
+       setBillingInterval(initialPackage.billingInterval);
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-      setTrialText(
+-        initialPackage.trialDays ? String(initialPackage.trialDays) : "",
+-      );
+-      setFeaturesText((initialPackage.features ?? []).join("\n"));
+-      setSavedForm(
+-        formKey(
+-          initialPackage.title ?? "",
+-          initialPackage.description ?? "",
+-          ((initialPackage.priceCents ?? 0) / 100).toFixed(2),
+-          initialPackage.billingInterval,
+-          (initialPackage.features ?? []).join("\n"),
+-        ),
+-      );
+-=======
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+       setLoaded(true);
+       return;
+     }
+@@ -243,78 +189,39 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       return { payload: null, message: "Please give the package a name." };
+     }
+     const cents = parseDollarsToCents(priceText);
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-    if (cents == null) {
+-      return { payload: null, message: "Enter a valid price." };
+-    }
+-    // B-347-1: the free one-time package from setup keeps its $0 price when
+-    // the coach edits its name or details. A new $0 price is still refused.
+-    const freeKept =
+-      isEdit && original?.priceCents === 0 && billingInterval === "one_time";
+-    if (cents === 0 && !freeKept) {
+-      return {
+-        payload: null,
+-        message:
+-          original?.priceCents === 0
+-            ? "Free packages are one-time. Choose One-time, or enter a price."
+-            : "Price must be greater than zero. Use a free invite code for comps.",
+-      };
+-    }
+-    const features = featuresText
+-      .split("\n")
+-      .map((f) => f.trim())
+-      .filter(Boolean);
+-    let trialDays: number | null = null;
+-    if (trialText.trim()) {
+-      const n = Number(trialText.trim());
+-      if (!Number.isInteger(n) || n < 0 || n > 365) {
+-        return {
+-          payload: null,
+-          message: "Trial days must be a whole number between 0 and 365.",
+-        };
+-      }
+-      trialDays = n;
+-=======
++    // S-FEE: free (exactly $0, one-time) or $19.99 and up. B-347-1: the free
++    // first package from setup keeps saving at its unchanged $0 one-time
++    // price; a $0 recurring price is still refused.
+     const priceIssue = packagePriceIssue(cents, billingInterval, original);
+     if (cents == null || priceIssue) {
+       return { payload: null, message: priceIssue };
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     }
+-    // #321 (Opus B-321-4): trial days and features are not stored by the
+-    // backend (no package column, no checkout trial), so the editor no
+-    // longer offers them; every input on this screen reaches the request.
++    // #321 (Opus B-321-4) + B-347-2: trial days and features are not stored
++    // by the backend (no package column, no checkout trial), so the editor
++    // does not offer them; every input on this screen reaches the request.
+     return {
+       payload: {
+         title: trimmedTitle,
+         description: description.trim() || null,
+         priceCents: cents,
+         billingInterval,
+-        intervalCount: billingInterval === 'weekly' ? original?.intervalCount ?? 1 : 1,
++        intervalCount:
++          billingInterval === "weekly" ? original?.intervalCount ?? 1 : 1,
+       },
+       message: null,
+     };
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-  }, [title, description, priceText, billingInterval, trialText, featuresText,
+-    isEdit, original]);
+-
+-  // OR-112-16 + B-329-1: one create attempt = one Idempotency-Key and one
+-  // body, stored on the device before the request leaves (see
+-  // lib/coachSetup/packageCreateIntent.ts). Every retry, including after the
+-  // app restarts, re-sends that pair, so the backend returns the package it
+-  // already made instead of a second one.
+-  const saveInFlight = useRef(false);
+-=======
+   }, [title, description, priceText, billingInterval, original]);
+ 
+-  // #321 (Opus B-321-5): the form differs from the saved row. Publishing
+-  // then would put the SAVED price on sale while the screen shows another,
+-  // so Publish waits until the coach saves.
+-  const unsavedChanges = useMemo(() => {
++  // #321 (Opus B-321-5) + B-347-4: the form differs from the saved row.
++  // Publishing then would put the SAVED terms on sale while the screen shows
++  // others, so "Make <name> live" waits until the coach saves.
++  const unsaved = useMemo(() => {
+     if (!original) return false;
+     const cents = parseDollarsToCents(priceText);
+     return (
+-      title.trim() !== (original.title ?? '').trim() ||
+-      (description.trim() || null) !== ((original.description ?? '').trim() || null) ||
++      title.trim() !== (original.title ?? "").trim() ||
++      (description.trim() || null) !==
++        ((original.description ?? "").trim() || null) ||
+       cents !== (original.priceCents ?? 0) ||
+       billingInterval !== original.billingInterval
+     );
+@@ -323,43 +230,59 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   // Retry from the failure dialog runs the latest save (current form state).
+   const handleSaveRef = useRef<() => Promise<void>>(async () => undefined);
+   const showSaveFailure = useCallback(
+-    (f: PackageSaveFailure, retry: () => void = () => void handleSaveRef.current()) => {
++    (
++      f: PackageSaveFailure,
++      retry: () => void = () => void handleSaveRef.current(),
++    ) => {
+       warningTap();
+       setError(f.message);
+-      const close = { text: 'Close', style: 'cancel' as const };
++      const close = { text: "Close", style: "cancel" as const };
+       const support = {
+-        text: 'Contact support',
+-        onPress: () => navigation.navigate('SupportInbox'),
++        text: "Contact support",
++        onPress: () => navigation.navigate("SupportInbox"),
+       };
+-      const buttons: Array<{ text: string; style?: 'cancel'; onPress?: () => void }> = [];
++      const buttons: Array<{
++        text: string;
++        style?: "cancel";
++        onPress?: () => void;
++      }> = [];
+       switch (f.action) {
+-        case 'retry':
+-          buttons.push({ text: 'Try again', onPress: retry });
++        case "retry":
++          buttons.push({ text: "Try again", onPress: retry });
+           if (f.support) buttons.push(support);
+           buttons.push(close);
+           break;
+-        case 'sign_in':
+-          buttons.push({ text: 'Sign in', onPress: () => void signOut() }, close);
++        case "sign_in":
++          buttons.push({ text: "Sign in", onPress: () => void signOut() }, close);
+           break;
+-        case 'billing':
+-          buttons.push({ text: 'Open billing', onPress: () => navigation.navigate('Billing') }, close);
++        case "billing":
++          buttons.push(
++            { text: "Open billing", onPress: () => navigation.navigate("Billing") },
++            close,
++          );
+           break;
+-        case 'back_to_packages':
++        case "back_to_packages":
+           buttons.push({
+-            text: 'Back to packages',
+-            onPress: () => navigation.navigate('CoachPackagesList'),
++            text: "Back to packages",
++            onPress: () => navigation.navigate("CoachPackagesList"),
+           });
+           if (f.support) buttons.push(support);
+           buttons.push(close);
+           break;
+         default:
+-          buttons.push({ text: 'OK' });
++          buttons.push({ text: "OK" });
+       }
+       Alert.alert(f.title, f.message, buttons);
+     },
+     [navigation],
+   );
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
++
++  // OR-112-16 + B-329-1: one create attempt = one Idempotency-Key and one
++  // body, stored on the device before the request leaves (see
++  // lib/coachSetup/packageCreateIntent.ts). Every retry, including after the
++  // app restarts, re-sends that pair, so the backend returns the package it
++  // already made instead of a second one.
++  const saveInFlight = useRef(false);
+ 
+   const handleSave = useCallback(async () => {
+     if (saveInFlight.current) return;
+@@ -376,15 +299,17 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       if (isEdit && original) {
+         // #321 (B-321-3): billing goes to the backend only when the coach
+         // changed it, so a name or description edit never touches the price
+-        // configuration (no pricing lock, no floor re-check, no cadence drift).
+-        const { billingInterval: nextInterval, intervalCount, ...rest } = v.payload;
++        // configuration (no pricing lock, no floor re-check, no cadence
++        // drift). A changed cadence is sent and checked against the row the
++        // server answers (B-345-1 / B-345-2, PACKAGE_UPDATE_NOT_APPLIED).
++        const { billingInterval: nextInterval, intervalCount, ...rest } =
++          v.payload;
+         const updated: PackageUpdateInput =
+           nextInterval !== original.billingInterval
+             ? { ...rest, billingInterval: nextInterval, intervalCount }
+             : rest;
+         const res = await coachPackagesApi.update(original.id, updated);
+         setOriginal(res.data);
+-        setSavedForm(formNow);
+         successTap();
+         Alert.alert("Package updated", "Changes saved.");
+       } else {
+@@ -445,64 +370,64 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+         return;
+       }
+     } catch (err) {
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-      const code = errorCode(err);
+       if (err instanceof IntentStorageError) {
+         const copy = intentStorageCopy(err);
+         Alert.alert(copy.title, copy.body);
+-      } else if (code === "PACKAGES_NOT_CONFIGURED") {
+-        Alert.alert(
+-          "Packages not enabled yet",
+-          errorMessage(
+-            err,
+-            "The packages backend module is not deployed in this environment.",
+-          ),
+-        );
+-      } else if (code === "PACKAGE_PRICING_LOCKED") {
+-        warningTap();
+-        Alert.alert(
+-          "Pricing is locked",
+-          "Pricing is locked because this package already has active subscribers. Create a new package for new pricing; you can still edit name, description, deliverables, and availability.",
++      } else if (isEdit) {
++        // #321 (Sol B-321-1): status + machine code decide the message and
++        // the next action; unknown failures carry a reference (request_id)
++        // and are reported to Sentry. The form keeps the coach's edits.
++        showSaveFailure(
++          describePackageSaveFailure(err, "update", billingInterval),
+         );
+       } else {
+-        const f = describeError(
+-          err,
+-          isEdit ? "save this package" : "create this package",
+-        );
++        // B-329-1: a create is durable (its key and body stay on the device
++        // until it lands), so it keeps the wizard's create failure copy.
++        const f = describeError(err, "create this package");
+         Alert.alert(f.title, f.body);
+       }
+-=======
+-      // #321 (Sol B-321-1): status + machine code decide the message and
+-      // the next action; unknown failures carry a reference (request_id)
+-      // and are reported to Sentry. The form keeps the coach's edits.
+-      showSaveFailure(describePackageSaveFailure(err, isEdit ? 'update' : 'create', billingInterval));
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     } finally {
+       saveInFlight.current = false;
+       setSaving(false);
+     }
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-  }, [validate, isEdit, original, navigation, coachId, formNow]);
++  }, [validate, isEdit, original, navigation, coachId, showSaveFailure,
++    billingInterval]);
++  handleSaveRef.current = handleSave;
+ 
+-  // B-347-3: a draft made here (or skipped in setup) can go live from the
+-  // editor with the wizard's publish call; the row the server answers decides
+-  // what the screen shows next.
++  // B-347-3 + S-FEE round 4: a draft made here (or skipped in setup) goes
++  // live from the editor (POST :id/publish, the wizard's route; the backend
++  // applies the $19.99 floor to a first publish); a live package can be taken
++  // off sale. The row the server answers decides what the screen shows next.
+   const [publishing, setPublishing] = useState(false);
+-  const handlePublish = useCallback(async () => {
++  const handlePublishToggleRef = useRef<() => Promise<void>>(
++    async () => undefined,
++  );
++  const handlePublishToggle = useCallback(async () => {
+     if (!original || publishing) return;
+-    if (unsaved) {
++    const mode = isLivePackage(original) ? "unpublish" : "publish";
++    // The button is disabled while the form has edits; the line under it
++    // says why (SAVE_BEFORE_PUBLISH).
++    if (mode === "publish" && unsaved) {
+       warningTap();
+-      Alert.alert(
+-        "Save your changes first",
+-        "Save your changes before making this live.",
+-      );
+       return;
+     }
++    mediumTap();
++    setError("");
+     setPublishing(true);
+     try {
+-      const res = await coachPackagesApi.publish(original.id);
++      const res =
++        mode === "publish"
++          ? await coachPackagesApi.publish(original.id)
++          : await coachPackagesApi.unpublish(original.id);
+       setOriginal(res.data);
+-      if (isLivePackage(res.data)) {
++      if (mode === "unpublish") {
++        successTap();
++        track("coach_package_unpublished", { package_id: original.id });
++        Alert.alert(
++          "Package unpublished",
++          "New clients cannot buy it now. Current clients keep their access.",
++        );
++      } else if (isLivePackage(res.data)) {
+         successTap();
+         track("coach_package_published", { package_id: original.id });
+         Alert.alert("Package is live", `${res.data.title} is live.`);
+@@ -512,49 +437,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           `TGP did not confirm ${res.data.title} as live, so clients cannot see it yet. Try again.`,
+         );
+       }
+-    } catch (err) {
+-      const f = describeError(err, "make your package live");
+-      Alert.alert(f.title, f.body);
+-    } finally {
+-      setPublishing(false);
+-    }
+-  }, [original, publishing, unsaved]);
+-=======
+-  }, [validate, isEdit, original, navigation, showSaveFailure, billingInterval]);
+-  handleSaveRef.current = handleSave;
+-
+-  // Round 4: drafts are not on sale until the coach publishes them (backend
+-  // POST :id/publish applies the $19.99 floor to a first publish).
+-  const handlePublishToggleRef = useRef<() => Promise<void>>(async () => undefined);
+-  const handlePublishToggle = useCallback(async () => {
+-    if (!original) return;
+-    const mode = original.status === 'draft' ? 'publish' : 'unpublish';
+-    if (mode === 'publish' && unsavedChanges) {
+-      warningTap();
+-      setError(SAVE_BEFORE_PUBLISH);
+-      return;
+-    }
+-    mediumTap();
+-    setError('');
+-    setPublishing(true);
+-    try {
+-      const res =
+-        mode === 'publish'
+-          ? await coachPackagesApi.publish(original.id)
+-          : await coachPackagesApi.unpublish(original.id);
+-      setOriginal(res.data);
+-      successTap();
+-      track(mode === 'publish' ? 'coach_package_published' : 'coach_package_unpublished', {
+-        package_id: original.id,
+-      });
+-      if (mode === 'publish') {
+-        Alert.alert('Package published', 'Clients can now buy this package.');
+-      } else {
+-        Alert.alert(
+-          'Package unpublished',
+-          'New clients cannot buy it now. Current clients keep their access.',
+-        );
+-      }
+     } catch (err) {
+       showSaveFailure(
+         describePackageSaveFailure(err, mode, original.billingInterval),
+@@ -563,9 +445,8 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     } finally {
+       setPublishing(false);
+     }
+-  }, [original, showSaveFailure, unsavedChanges]);
++  }, [original, publishing, unsaved, showSaveFailure]);
+   handlePublishToggleRef.current = handlePublishToggle;
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+ 
+   const handleArchive = useCallback(() => {
+     if (!original) return;
+@@ -587,16 +468,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+               track("coach_package_archived", { package_id: original.id });
+             } catch (err) {
+               Alert.alert(
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+                 "Could not archive",
+-                errorMessage(err, "Please try again."),
+-=======
+-                'Could not archive',
+                 errorMessage(
+                   err,
+-                  'We could not archive the package. Check your connection, then tap Archive again.',
++                  "We could not archive the package. Check your connection, then tap Archive again.",
+                 ),
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+               );
+             } finally {
+               setArchiving(false);
+@@ -646,19 +522,12 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   // No network round-trip: everything here comes from local state + `original`.
+   const previewViewModel = useMemo<PackageDetailViewModel>(() => {
+     const cents = parseDollarsToCents(priceText) ?? original?.priceCents ?? 0;
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-    const features = featuresText
+-      .split("\n")
+-      .map((f) => f.trim())
+-      .filter(Boolean);
+-    // B-347-2: only a trial the server returned on the saved package; this
+-    // build never sends trial_days, so a typed trial is never previewed.
++    // B-321-4 + B-347-2: the preview shows only what clients will really see:
++    // no typed trial or features (neither reaches the server), only a trial
++    // the saved package carries.
+     const savedTrial = original?.trialDays ?? null;
+     const trialDays =
+       billingInterval !== "one_time" && savedTrial ? savedTrial : null;
+-=======
+-    // B-321-4: the preview shows only what clients will really see.
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     return {
+       id: original?.id ?? "preview",
+       title: title.trim() || "Untitled package",
+@@ -667,16 +536,12 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       currency: original?.currency ?? "usd",
+       billingInterval,
+       intervalCount: original?.intervalCount ?? 1,
+-      trialDays: null,
++      trialDays,
+       features: [],
+       coach: { displayName: coachDisplayName, bio: null },
+     };
+   }, [
+     priceText,
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-    featuresText,
+-=======
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     billingInterval,
+     title,
+     description,
+@@ -692,16 +557,12 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     );
+   }
+ 
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+   const archived = original?.status === "archived";
+   const draft = isEdit && !!original && !archived && !isLivePackage(original);
+-=======
+-  const archived = original?.status === 'archived';
+   // S-FEE — inline price rule under the field, as the coach types.
+   const priceInlineIssue = priceText.trim()
+     ? packagePriceIssue(parseDollarsToCents(priceText), billingInterval, original)
+     : null;
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+   // Pricing is immutable once a package has active subscribers — surface that
+   // up-front (helper copy) and again if the backend rejects a price change.
+   const pricingLocked = isEdit && (original?.subscriberCount ?? 0) > 0;
+@@ -786,24 +647,22 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+         />
+         <Text
+           testID="package-price-helper"
+-          style={priceInlineIssue ? styles.priceIssueText : styles.priceHelperText}
++          style={
++            priceInlineIssue ? styles.priceIssueText : styles.priceHelperText
++          }
+         >
+           {priceInlineIssue ?? packagePriceHelper(billingInterval)}
+         </Text>
+ 
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+         <Label semanticColors={semanticColors} tokens={tokens}>
+           Billing
+         </Label>
+-=======
+-        <Label semanticColors={semanticColors} tokens={tokens}>Billing</Label>
+-        {billingInterval === 'weekly' ? (
++        {billingInterval === "weekly" ? (
+           <Text style={styles.priceHelperText} testID="package-weekly-note">
+             Billed weekly. Leave this as it is to keep weekly billing, or pick
+             another option to change it.
+           </Text>
+         ) : null}
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+         <View style={styles.segment}>
+           {INTERVAL_OPTIONS.map((opt) => {
+             const active = billingInterval === opt.value;
+@@ -843,21 +702,8 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           </View>
+         ) : null}
+ 
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+-        {/* B-347-2: no trial input until trial_days reaches the server
+-            (backend trials + m#338 bring it back together). */}
+-
+-        <Label semanticColors={semanticColors} tokens={tokens}>
+-          Features (one per line)
+-        </Label>
+-        <TextInput
+-          value={featuresText}
+-          onChangeText={setFeaturesText}
+-          placeholder={"Weekly check-ins\nCustom workout plan\nMeal plan"}
+-          style={[styles.input, styles.inputMultiline, { minHeight: 120 }]}
+-          placeholderTextColor={semanticColors.textMuted}
+-          multiline
+-        />
++        {/* B-347-2 + B-321-4: no trial or features input until the backend
++            stores them (backend trials + m#338 bring trials back). */}
+ 
+         {resumedCreate ? (
+           <Text style={styles.resumedText} testID="package-edit-resumed">
+@@ -865,8 +711,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+             finish that same package.
+           </Text>
+         ) : null}
+-=======
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+ 
+         <TouchableOpacity
+@@ -898,11 +742,14 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+                     styles.secondaryBtn,
+                     (publishing || unsaved) && styles.primaryBtnDisabled,
+                   ]}
+-                  onPress={() => void handlePublish()}
+-                  disabled={publishing}
++                  onPress={() => void handlePublishToggle()}
++                  disabled={publishing || unsaved}
+                   accessibilityRole="button"
+                   accessibilityLabel={`Make ${original.title} live`}
+-                  accessibilityState={{ busy: publishing, disabled: publishing }}
++                  accessibilityState={{
++                    busy: publishing,
++                    disabled: publishing || unsaved,
++                  }}
+                   testID="package-edit-publish"
+                 >
+                   <Text style={styles.secondaryBtnText}>
+@@ -914,10 +761,46 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+                     style={styles.resumedText}
+                     testID="package-edit-publish-unsaved"
+                   >
+-                    Save your changes before making this live.
++                    {SAVE_BEFORE_PUBLISH}
+                   </Text>
+                 ) : null}
+               </View>
++            ) : !archived ? (
++              <View testID="package-edit-live">
++                <Text
++                  style={styles.priceHelperText}
++                  testID="package-publish-state"
++                >
++                  On sale. Unpublishing stops new sales; current clients keep
++                  access.
++                </Text>
++                <TouchableOpacity
++                  style={[
++                    styles.secondaryBtn,
++                    publishing && styles.primaryBtnDisabled,
++                  ]}
++                  onPress={() => void handlePublishToggle()}
++                  disabled={publishing}
++                  accessibilityRole="button"
++                  accessibilityLabel="Unpublish package"
++                  accessibilityState={{ busy: publishing, disabled: publishing }}
++                >
++                  {publishing ? (
++                    <ActivityIndicator color={semanticColors.accent} />
++                  ) : (
++                    <>
++                      <Ionicons
++                        name="eye-off-outline"
++                        size={18}
++                        color={semanticColors.accent}
++                      />
++                      <Text style={styles.secondaryBtnText}>
++                        Unpublish package
++                      </Text>
++                    </>
++                  )}
++                </TouchableOpacity>
++              </View>
+             ) : null}
+             <TouchableOpacity
+               style={styles.secondaryBtn}
+@@ -967,49 +850,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+               </View>
+             )}
+ 
+-            {!archived ? (
+-              <>
+-                <Text style={styles.priceHelperText} testID="package-publish-state">
+-                  {original.status === 'draft'
+-                    ? unsavedChanges
+-                      ? SAVE_BEFORE_PUBLISH
+-                      : 'Draft. Clients can buy this package after you publish it.'
+-                    : 'On sale. Unpublishing stops new sales; current clients keep access.'}
+-                </Text>
+-                <TouchableOpacity
+-                  style={[
+-                    styles.secondaryBtn,
+-                    (publishing || (original.status === 'draft' && unsavedChanges)) &&
+-                      styles.primaryBtnDisabled,
+-                  ]}
+-                  onPress={() => void handlePublishToggle()}
+-                  disabled={publishing || (original.status === 'draft' && unsavedChanges)}
+-                  accessibilityState={{
+-                    disabled: publishing || (original.status === 'draft' && unsavedChanges),
+-                  }}
+-                  accessibilityRole="button"
+-                  accessibilityLabel={
+-                    original.status === 'draft' ? 'Publish package' : 'Unpublish package'
+-                  }
+-                >
+-                  {publishing ? (
+-                    <ActivityIndicator color={semanticColors.accent} />
+-                  ) : (
+-                    <>
+-                      <Ionicons
+-                        name={original.status === 'draft' ? 'storefront-outline' : 'eye-off-outline'}
+-                        size={18}
+-                        color={semanticColors.accent}
+-                      />
+-                      <Text style={styles.secondaryBtnText}>
+-                        {original.status === 'draft' ? 'Publish package' : 'Unpublish package'}
+-                      </Text>
+-                    </>
+-                  )}
+-                </TouchableOpacity>
+-              </>
+-            ) : null}
+-
+             <TouchableOpacity
+               style={[
+                 styles.tertiaryBtn,
+@@ -1305,17 +1145,11 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+       justifyContent: "space-between",
+       paddingVertical: 12,
+     },
+-<<<<<<< f7a8606 (Merge pull request #346 from BradleyGleavePortfolio/agent115/wizard-split-2-setup-components)
+     linkBtnText: {
+       fontSize: 14,
+       color: semanticColors.accent,
+       fontWeight: "500",
+     },
+-=======
+-    linkBtnText: { fontSize: 14, color: semanticColors.accent, fontWeight: '500' },
+-    priceHelperText: { marginTop: 6, fontSize: 12, color: semanticColors.textMuted },
+-    priceIssueText: { marginTop: 6, fontSize: 12, color: tokens.colors.error },
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     errorText: {
+       marginTop: 12,
+       color: tokens.colors.error,
+@@ -1326,4 +1160,10 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+       color: semanticColors.textMuted,
+       fontSize: 13,
+     },
++    priceHelperText: {
++      marginTop: 6,
++      fontSize: 12,
++      color: semanticColors.textMuted,
++    },
++    priceIssueText: { marginTop: 6, fontSize: 12, color: tokens.colors.error },
+   });

@@ -1,0 +1,51 @@
+diff --git a/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx b/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+index 06b4f2c..6d704c2 100644
+--- a/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
++++ b/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+@@ -84,9 +84,12 @@ describe("B-347-1 free first package", () => {
+     await fireEvent.press(s.getByLabelText("Save changes"));
+     await waitFor(() => expect(alerts()).toContain("Package updated"));
+     expect(mockPatch).toHaveBeenCalledTimes(1);
++    // Main refresh (B-WIZ6-122): S-FEE B-321-3 sends billing only when the
++    // coach changed it, so a name edit keeps the stored one-time billing.
+     expect(mockPatch.mock.calls[0][1]).toEqual(
+-      expect.objectContaining({ name: "Free intro", amount_cents: 0, billing_type: "one_time" }),
++      expect.objectContaining({ name: "Free intro", amount_cents: 0 }),
+     );
++    expect(mockPatch.mock.calls[0][1].billing_type).toBeUndefined();
+   });
+ });
+ 
+@@ -124,7 +127,12 @@ describe("B-347-3 draft made in the editor", () => {
+     expect(s.getByText(/Coaching is saved as a draft/)).toBeTruthy();
+     await fireEvent.press(s.getByLabelText("Make Coaching live"));
+     await waitFor(() => expect(alerts()).toContain("Package is live"));
+-    expect(mockPost).toHaveBeenCalledWith("/v1/coach/packages/pkg_w4/publish");
++    // S-FEE round 4: the one publish call carries an Idempotency-Key.
++    expect(mockPost).toHaveBeenCalledWith(
++      "/v1/coach/packages/pkg_w4/publish",
++      {},
++      expect.objectContaining({ headers: expect.objectContaining({ "Idempotency-Key": expect.any(String) }) }),
++    );
+     expect(s.queryByLabelText("Make Coaching live")).toBeNull();
+   });
+ 
+diff --git a/src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx b/src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx
+index d0eb682..a7ed884 100644
+--- a/src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx
++++ b/src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx
+@@ -87,8 +87,12 @@ describe("B-347-4 Make live with unsaved terms", () => {
+     expect(s.queryByTestId("package-edit-publish-unsaved")).toBeNull();
+     await fireEvent.changeText(s.getByPlaceholderText("199.00"), "199");
+     expect(s.getByText("Save your changes before making this live.")).toBeTruthy();
+-    await fireEvent.press(s.getByLabelText("Make Coaching live"));
+-    await waitFor(() => expect(alerts()).toContain("Save your changes first"));
++    // Main refresh (B-WIZ6-122): one publish-waits-for-save path with S-FEE
++    // B-321-5: the button is disabled and the line under it says why.
++    const makeLive = s.getByLabelText("Make Coaching live");
++    expect(makeLive.props.accessibilityState).toMatchObject({ disabled: true });
++    await fireEvent.press(makeLive);
++    expect(alerts()).not.toContain("Package is live");
+     expect(mockPost).not.toHaveBeenCalled();
+     expect(soldCents).toBeNull();
+     expect(s.getByText(/Coaching is saved as a draft/)).toBeTruthy();

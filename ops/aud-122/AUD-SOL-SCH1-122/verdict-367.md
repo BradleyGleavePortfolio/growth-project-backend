@@ -18,4 +18,6 @@ Counterexample: `my-coaches` returns `welcome: null`, and the coach's offered ty
 
 Exact-head [Typecheck, lint, test](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37155600279/job/111298233398) succeeded before the audit probe. Main-only analyses are absent at the stacked base; required checks must run on the landing tree. Do not release the stack before B-367-1 is fixed.
 
+**Failing-before proof:** The [targeted CI probe](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37389639924) completed red with **40 existing tests passing and only the two added regression tests failing**: the regular appointment still displayed the welcome-call header, and successful booking emitted `welcome_call_booked` once. Probe commit: `0c009c1ae22f1571e954c63bb542e52653db7806`; no product changes were made.
+
 No local tests/builds; no time-zone, race or retry investigation.

@@ -1,0 +1,7 @@
+Test Suites: 1 passed, 1 total
+Tests:       36 passed, 36 total
+    ✕ B. fail through Day 10 -> locked (calm 403 + reachable recovery surfaces) -> pays -> unlocked at once (28 ms)
+    Expected: "allowed"
+    Received: "LOCKED_DUNNING"
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 9 passed, 10 total

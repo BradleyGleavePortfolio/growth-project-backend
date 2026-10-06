@@ -1,0 +1,88 @@
+api/wearableInsightsApi.ts [first_person] I think
+components/auth/RoleChoice.tsx [first_person] I coach clients
+components/auth/RoleChoice.tsx [first_person] I'm here to train
+components/coach/ai-budget/AIBudgetTutorialModal.tsx [first_person] I&apos;ll buy later
+components/coach/ai-budget/AIBudgetTutorialModal.tsx [first_person] Pick a pack to keep AI features uninterrupted. Or tap "I'll buy later" — this appears once per month, and you can always top up from the Coach Home meter.
+components/coach/ai-execution/AskAiActionSheet.tsx [first_person] What should I help you draft for
+components/community/coach/coachVoice.ts [first_person] Quiet morning. When your cohorts need you, I will bring it here. — Roman
+components/community/romanVoice.ts [first_person] Posted, {firstName}. I shall pretend I am not impressed. The Hall has it.
+components/community/romanVoice.ts [first_person] Welcome to the Community, {firstName}. I keep the small things in order here so you can attend to the work that matters.
+components/roman/romanVoice.ts [first_person] . I am ready. What needs attention?
+components/roman/romanVoice.ts [first_person] Good day. My name is Roman. I will be looking after things here. Whenever you need me, I am present.
+components/roman/romanVoice.ts [first_person] I am gathering the earlier messages.
+components/roman/romanVoice.ts [first_person] I am not able to attend to this just yet. I will be here when the service is ready.
+components/roman/romanVoice.ts [first_person] I am ready. What needs attention?
+components/roman/romanVoice.ts [first_person] I cannot reach the service.
+components/roman/romanVoice.ts [first_person] That request did not complete, and my attempts to retry have not succeeded either. I have logged the matter. Please try again in a few minutes.
+components/roman/romanVoice.ts [first_person] That request did not complete. I will try again.
+components/roman/romanVoice.ts [first_person] That request did not complete. Send it once more, and I will try again.
+components/roman/romanVoice.ts [first_person] There appears to be no connection at the moment. I will try again once it returns.
+components/roman/romanVoice.ts [first_person] This reply was interrupted. Send it again, and I will continue.
+components/roman/romanVoice.ts [first_person] Whenever you need me, I am present. Send a message to begin.
+components/roman/romanVoice.ts [first_person] Your message is saved above, but I could not answer it. Tap Send again to ask once more.
+constants/bloodworkCopy.ts [first_person] I understand
+db/educationDb.ts [first_person] Cravings are normal and not a sign of weakness. Understanding them helps you manage them. **Why cravings happen:** • Restricting too aggressively (deficit too large) • Not eating enough protein or fiber • Stress, boredom, or emotional triggers • Dehydration (thirst mimics hunger) • Poor sleep (increases ghrelin, the hunger hormone) **Strategies that work:** • The 80/20 rule: Eat nutritious food 80% of the time, enjoy treats 20% • Don't ban foods — this increases cravings • Find healthier versions: protein ice cream, dark chocolate, fruit + PB • Wait 15 minutes — cravings often pass • Drink water first • Ask: "Am I hungry or just bored/stressed?" **Build treats into your plan:** • A daily small treat (150-200 cal) prevents binge episodes • Weekly free meal where you don't track (not a "cheat" — that implies wrongdoing) • Focus on portion, not restriction Sustainable nutrition includes foods you enjoy.
+db/educationDb.ts [first_person] Motivation fades. Habits last. Here's the science of building habits that stick. **The habit loop:** 1. Cue (trigger that starts the behavior) 2. Routine (the behavior itself) 3. Reward (the benefit you get) **Start tiny:** • Don't say "I'll work out 5x/week" — say "I'll do 5 push-ups after my morning coffee" • Don't say "I'll meal prep all week" — say "I'll prep tomorrow's lunch tonight" • Success builds momentum **Stack habits:** Attach new habits to existing ones: • "After I pour my coffee, I'll drink a glass of water" • "After I park at work, I'll walk an extra 5 minutes" • "After dinner, I'll prep tomorrow's lunch" **Track and celebrate:** • Use this app's habit tracker. • Don't break the chain — visual streaks are powerful • Celebrate small wins (not with food — with acknowledgment) **When you slip:** • Never miss twice in a row • A bad day doesn't erase a good week • Progress is not perfection • The best plan is the one you actually follow
+db/notificationsDb.ts [first_person] I've reviewed your profile and goals. Let's build a plan that works for your schedule and preferences.
+files 815 offending 87
+lib/consultation/copy.ts [first_person] I agree to the training waiver, and to The Growth Project and my coach collecting and using my information to coach me.
+lib/consultation/copy.ts [first_person] I could not confirm that Roman and AI is switched off yet, so it may still be allowed for now. I will keep trying, including the next time you open the app. You can also switch it off in Settings > Privacy > Roman and AI.
+lib/consultation/copy.ts [first_person] I could not confirm your Roman and AI choice just now, so it may or may not be saved yet. Your training is not affected. You can check or change it at any time in Settings > Privacy > Roman and AI.
+lib/consultation/copy.ts [first_person] I could not save your Roman and AI choice just now, so it is not allowed yet. Your training is not affected. You can allow it at any time in Settings > Privacy > Roman and AI.
+lib/consultation/copy.ts [first_person] I've kept this at a steady minimum so you have enough energy to train.
+lib/consultation/copy.ts [first_person] Optional: I allow Roman and my coach's AI tools to use my information, processed by Anthropic.
+lib/consultation/copy.ts [first_person] Switching this off is not confirmed yet. I will keep trying. You can check it in Settings > Privacy > Roman and AI.
+lib/consultation/definitions.ts [first_person] For your energy estimate, which formula should I use?
+lib/consultation/definitions.ts [first_person] I haven't followed a program
+lib/consultation/definitions.ts [first_person] I train consistently and know the main lifts
+lib/consultation/definitions.ts [first_person] I'll only use what's in your space.
+lib/consultation/definitions.ts [first_person] I'm Roman. Before {coach} builds anything for you, I'd like to understand you properly, the way a good trainer would at a first consultation. It takes about five minutes. You can pause at any point, and I'll keep your place.
+lib/consultation/definitions.ts [first_person] I've trained on and off
+lib/consultation/definitions.ts [first_person] One small promise, and then I'll prepare everything.
+lib/consultation/definitions.ts [first_person] So I explain your numbers at the right depth.
+lib/intendedRole.ts [first_person] Coach sign-up is not available right now. No account was created. You can try again later, or choose "I'm here to train" to create a client account.
+lib/roman/copy.ts [first_person] . A month without a missed day. This is the kind of record I am glad to keep.
+lib/roman/copy.ts [first_person] . Every client is on track this morning. I cannot recall a tidier brief.
+lib/roman/copy.ts [first_person] . I have seen a great many first payments, and they never stop meaning something. Congratulations.
+lib/roman/copy.ts [first_person] . The brief is not yet complete — one of my sources is slow to respond. I will have it shortly.
+lib/roman/copy.ts [first_person] I did not catch that cleanly. Tell me the weight and the reps once more, and I will record it.
+lib/roman/copy.ts [first_person] I was unable to send your payout of
+lib/roman/copy.ts [first_person] That request did not complete, and my attempts to retry have not succeeded either. I have logged the matter. Please try again in a few minutes.
+lib/roman/copy.ts [first_person] That request did not complete. I will try again.
+lib/roman/copy.ts [first_person] Your workout is finished, but I have not yet been able to save it. Do not close the app — I am writing it down now.
+lib/roman/copy.ts [first_person] has a check-in consistency claim awaiting your sign-off, but I could not retrieve its proof. I am trying again now.
+lib/roman/copy.ts [first_person] has joined, but their intake details did not transfer cleanly. I will reconcile it and confirm.
+lib/roman/copy.ts [first_person] just now — the bank declined the transfer instruction. Nothing is lost; I will retry and confirm once it is moving.
+lib/roman/copy.ts [first_person] — I am simply slow to tally it this morning. The number will be along shortly.
+screens/auth/CreateAccountScreen.tsx [first_person] I verified my email
+screens/auth/LoginScreen.tsx [first_person] I am new, create an account
+screens/auth/LoginScreen.tsx [first_person] I am new, create an account
+screens/client/AIGuideScreen.tsx [first_person] 's approach. I have your goals, recent logs, and check-ins on hand.
+screens/client/AIGuideScreen.tsx [first_person] Trained on your coach’s approach. I have your goals, recent logs, and check-ins on hand.
+screens/client/ProgressScreen.tsx [first_person] That chart did not load. I will try again.
+screens/coach/ClientInsightScreen.tsx [first_person] One thing I want to dig into:
+screens/coach/ClientInsightScreen.tsx [first_person] Wins I noticed:
+screens/consultation/RevealScreens.tsx [first_person] Before I can prepare your plan, I'll need the first box at the start of the consultation, the training waiver and agreement to coach you. Nothing more is sent until it is ticked.
+screens/consultation/RevealScreens.tsx [first_person] I could not prepare your plan just now.
+screens/consultation/RevealScreens.tsx [first_person] I couldn't reach the server.
+screens/consultation/RevealScreens.tsx [first_person] One moment. I'm working through your numbers.
+screens/consultation/RevealScreens.tsx [first_person] That's everything I need. Shall I prepare your numbers and your plan?
+screens/consultation/RevealScreens.tsx [first_person] Your answers are saved on this phone. When you are back online, I can prepare everything.
+screens/consultation/RevealScreens.tsx [first_person] Your answers are saved. I'll take you to the first one that still needs an answer.
+screens/consultation/RevealScreens.tsx [first_person] Your answers are saved. Once your account is linked to your coach, I can prepare your numbers and your plan. Please try again in a moment.
+screens/onboarding/LeanQ1GoalScreen.tsx [first_person] Skip — I'll set this later
+screens/onboarding/LeanQ2ExperienceScreen.tsx [first_person] Skip — I'll set this later
+screens/onboarding/LeanQ3IntentScreen.tsx [first_person] Skip — I'll set this later
+screens/onboarding/LeanQ4MetricsScreen.tsx [first_person] Skip — I’ll add later
+screens/onboarding/LeanQ5Screen.tsx [first_person] Skip — I'll add later
+screens/onboarding/LeanQ6Screen.tsx [first_person] Skip — I'll add later
+screens/onboarding/OnboardingStep6.tsx [first_person] I often skip meals
+screens/onboarding/OnboardingStep8.tsx [first_person] I work out at home
+screens/onboarding/OnboardingStep8.tsx [first_person] Yes — I go regularly
+screens/settings/RomanAiConsentScreen.tsx [first_person] I could not reach the server to load your choice. Check your connection, then tap Try again.
+screens/settings/RomanAiConsentScreen.tsx [first_person] I could not reach the server, so your change is not confirmed. The choice shown above is the current one. Check your connection, then try again.
+screenshots/fixtures.ts [first_person] Sounds good. Travelling Thursday — I will pre-log lunch.
+screenshots/fixtures.ts [first_person] Twelve weeks in — first time I have ever stayed consistent through a busy month. The plan made it portable.
+tutorial/tutorialSteps.ts [first_person] I am Roman. I work with
+tutorial/tutorialSteps.ts [first_person] to help you get the most from your plan. This takes about three minutes. I will show you where everything lives, and then you will try two things yourself.
+utils/authFailure.ts [first_person] Your email is not verified yet. Open the link sent to this address, then tap I verified my email.

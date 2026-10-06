@@ -1,0 +1,13 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-c2-pool.spec.ts
+PASS test/roman/roman-c2-pool.spec.ts (18.15 s)
+  B-668-1 coach pool on the live turn (#669)
+    ✓ an interrupted reply still debits the pool at the reserved worst case (28 ms)
+    ✓ a sub-coach's client debits the head coach's pool (13 ms)
+    ✓ a used-up pool refuses with 402 before the ledger and the provider; client copy has no credit figures (3 ms)
+    ✓ a crisis message is still answered with a used-up pool, with no pool read and no provider call (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        18.859 s, estimated 24 s
+Ran all test suites matching test/roman/roman-c2-pool.spec.ts.

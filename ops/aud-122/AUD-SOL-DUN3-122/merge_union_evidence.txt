@@ -1,0 +1,12 @@
+Approved parent: 0716a0f4ebf82fe6d73399fe80d4930d9bd77589
+Main parent: a70533d53c5833c5e998a8de363de3eeb81d9eb8
+Merge head: aa736434287c7ebcf2b68e87ee8a0b5dabf2b015
+Merge base: 5cde6253f941112f2d9afbcf572a4da838dbb16a
+Actual parents: 0716a0f4ebf82fe6d73399fe80d4930d9bd77589 a70533d53c5833c5e998a8de363de3eeb81d9eb8
+Main parent is on local origin/main: PASS
+Unexpected non-main commits: 0
+Exact conflict-free three-way union: prisma/schema.prisma PASS expected=974db4af26b9fc6b47229a1e47396367e6f78254 actual=974db4af26b9fc6b47229a1e47396367e6f78254
+Exact conflict-free three-way union: src/common/env-validation.ts PASS expected=d8956a095c27a76cb82247ef7da7b27b4386250c actual=d8956a095c27a76cb82247ef7da7b27b4386250c
+Schema declarations: 271; duplicate model/enum/type names: []
+Duplicate schema fields within a model: {}
+ENV_RULES keys: 354; duplicate env keys: ['PUBLIC_INVITE_BASE_URL', 'STRIPE_PUBLISHABLE_KEY', 'STRIPE_WEBHOOK_SECRET', 'ANTHROPIC_API_KEY', 'STRIPE_CHECKOUT_SUCCESS_URL', 'STRIPE_CHECKOUT_CANCEL_URL', 'STOREFRONT_BASE_URL', 'APPLE_TEAM_ID', 'GUEST_CHECKOUT_PII_SALT', 'CHECKOUT_RECOVERY_SECRET', 'RESEND_FROM_EMAIL', 'COACH_AI_MAX_ACTUAL_CENTS', 'COACH_AI_VALUE_MULTIPLIER', 'ANDROID_CERT_SHA256_FINGERPRINTS', 'LANDING_VIEW_HASH_SECRET', 'KMS_MASTER_KEY']

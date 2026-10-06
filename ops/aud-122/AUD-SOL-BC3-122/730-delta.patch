@@ -1,0 +1,564 @@
+diff --git a/src/broadcasts/broadcast-scope.service.ts b/src/broadcasts/broadcast-scope.service.ts
+index edadcd7f..257beb31 100644
+--- a/src/broadcasts/broadcast-scope.service.ts
++++ b/src/broadcasts/broadcast-scope.service.ts
+@@ -1,5 +1,6 @@
+ import { Injectable } from '@nestjs/common';
+ import type { Prisma } from '@prisma/client';
++import { PrismaService } from '../prisma.service';
+ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+ 
+ export interface CoachScope {
+@@ -7,7 +8,7 @@ export interface CoachScope {
+   actorId: string;
+   /** Head coach id: the tenant and the CoachMessage thread namespace. */
+   tenantId: string;
+-  /** Clients the caller may message (live students only). */
++  /** Clients the caller may message (live, unarchived students only). */
+   clientIds: string[];
+ }
+ 
+@@ -19,6 +20,7 @@ interface LockedUser {
+   role: string;
+   coach_id: string | null;
+   deleted_at: Date | null;
++  archived_at: Date | null;
+ }
+ 
+ /**
+@@ -29,13 +31,29 @@ interface LockedUser {
+  */
+ @Injectable()
+ export class BroadcastScopeService {
+-  constructor(private readonly subCoachScope: SubCoachScopeService) {}
++  constructor(
++    private readonly subCoachScope: SubCoachScopeService,
++    private readonly prisma: PrismaService,
++  ) {}
+ 
+   async resolve(actorId: string): Promise<CoachScope> {
+-    const [clientIds, head] = await Promise.all([
++    const [authorized, head] = await Promise.all([
+       this.subCoachScope.getAuthorizedClientIds(actorId),
+       this.subCoachScope.getHeadCoachIdForSubCoach(actorId),
+     ]);
++    // C-727-1: a client the coach archived is in no broadcast audience.
++    const live =
++      authorized.length === 0
++        ? new Set<string>()
++        : new Set(
++            (
++              await this.prisma.user.findMany({
++                where: { id: { in: authorized }, archived_at: null },
++                select: { id: true },
++              })
++            ).map((u) => u.id),
++          );
++    const clientIds = authorized.filter((id) => live.has(id));
+     return { actorId, tenantId: head ?? actorId, clientIds };
+   }
+ 
+@@ -61,7 +79,13 @@ export class BroadcastScopeService {
+     const head = await this.subCoachScope.lockMembershipHeadCoachIdInTx(tx, authorId, author);
+     if ((head ?? authorId) !== tenantId) return 'author_not_in_tenant';
+     const client = await lockUser(tx, clientId);
+-    if (!client || client.deleted_at || client.role !== 'student' || client.coach_id !== tenantId) {
++    if (
++      !client ||
++      client.deleted_at ||
++      client.archived_at ||
++      client.role !== 'student' ||
++      client.coach_id !== tenantId
++    ) {
+       return 'not_on_roster';
+     }
+     if (authorId === tenantId) return null;
+@@ -75,7 +99,7 @@ export class BroadcastScopeService {
+ 
+ async function lockUser(tx: Prisma.TransactionClient, id: string): Promise<LockedUser | null> {
+   const rows = await tx.$queryRaw<LockedUser[]>`
+-    SELECT "id", "role"::text AS "role", "coach_id", "deleted_at"
++    SELECT "id", "role"::text AS "role", "coach_id", "deleted_at", "archived_at"
+     FROM "User" WHERE "id" = ${id} FOR SHARE`;
+   return rows[0] ?? null;
+ }
+diff --git a/src/broadcasts/broadcasts.service.ts b/src/broadcasts/broadcasts.service.ts
+index f1955eea..8ffb2988 100644
+--- a/src/broadcasts/broadcasts.service.ts
++++ b/src/broadcasts/broadcasts.service.ts
+@@ -88,8 +88,14 @@ export class BroadcastsService {
+         orderBy: { created_at: 'desc' },
+         take: 100,
+       }),
++      // B-728-1: the library's read rule (own or tenant_shared masters only).
+       this.prisma.workoutProgram.findMany({
+-        where: { coach_id: scope.tenantId, is_template: true, archived_at: null },
++        where: {
++          coach_id: scope.tenantId,
++          is_template: true,
++          archived_at: null,
++          OR: [{ owner_user_id: scope.actorId }, { visibility: 'tenant_shared' }],
++        },
+         select: { id: true, name: true },
+         orderBy: { updated_at: 'desc' },
+         take: 100,
+@@ -123,6 +129,7 @@ export class BroadcastsService {
+     scope: CoachScope,
+     input: BroadcastInput,
+     now: Date,
++    currentStatus: 'draft' | 'scheduled' = 'scheduled',
+   ): Promise<ValidBroadcast> {
+     if (typeof input.body !== 'string') throw broadcastError('broadcast.body_invalid');
+     const body = input.body.trim();
+@@ -151,7 +158,7 @@ export class BroadcastsService {
+     const recurrence = input.recurrence == null ? null : parseRecurrence(input.recurrence);
+     if (input.urgent !== undefined && typeof input.urgent !== 'boolean')
+       throw broadcastError('broadcast.body_invalid', { field: 'urgent' });
+-    const status = input.status ?? 'scheduled';
++    const status = input.status ?? currentStatus;
+     if (status !== 'draft' && status !== 'scheduled')
+       throw broadcastError('broadcast.invalid_transition');
+     return {
+@@ -273,7 +280,13 @@ export class BroadcastsService {
+     const row = await this.load(scope, id);
+     if (!EDITABLE.has(row.status)) throw broadcastError('broadcast.not_editable');
+     const lastRun = await this.lastClaimed(row.id);
+-    const v = await this.validate(scope, input, now);
++    // C-728-1: an edit that omits status keeps a draft a draft (never arms it).
++    const v = await this.validate(
++      scope,
++      input,
++      now,
++      row.status === 'draft' ? 'draft' : 'scheduled',
++    );
+     // B-659-1: a claimed occurrence is never sent twice. A one-off that has
+     // started sending is immutable (its run carries its own frozen payload);
+     // a series may be edited, and the edit applies from the next occurrence.
+diff --git a/src/broadcasts/segment-resolver.service.ts b/src/broadcasts/segment-resolver.service.ts
+index 6cc33ffd..c87a912d 100644
+--- a/src/broadcasts/segment-resolver.service.ts
++++ b/src/broadcasts/segment-resolver.service.ts
+@@ -72,8 +72,15 @@ export class SegmentResolverService {
+         if (n !== rule.values.length)
+           throw broadcastError('broadcast.segment_ref_not_found', { field: 'package' });
+       } else if (rule.field === 'program') {
++        // B-728-1: only a master the caller can read in the program library
++        // (their own, or shared with the team), as ProgramLibraryService does.
+         const n = await this.prisma.workoutProgram.count({
+-          where: { id: { in: rule.values }, coach_id: scope.tenantId },
++          where: {
++            id: { in: rule.values },
++            coach_id: scope.tenantId,
++            is_template: true,
++            OR: [{ owner_user_id: scope.actorId }, { visibility: 'tenant_shared' }],
++          },
+         });
+         if (n !== rule.values.length)
+           throw broadcastError('broadcast.segment_ref_not_found', { field: 'program' });
+@@ -101,8 +108,25 @@ export class SegmentResolverService {
+         return new Set(rows.map((r) => r.client_user_id));
+       }
+       case 'program': {
++        // B-727-1: assigning a master gives the client a live copy
++        // (cloned_from_id = master) whose days carry the copy's id.
+         const rows = await this.prisma.clientWorkoutAssignment.findMany({
+-          where: { client_id: { in: roster }, workout_plan: { program_id: { in: rule.values } } },
++          where: {
++            client_id: { in: roster },
++            workout_plan: {
++              OR: [
++                { program_id: { in: rule.values } },
++                {
++                  program: {
++                    cloned_from_id: { in: rule.values },
++                    is_template: false,
++                    archived_at: null,
++                    coach_id: scope.tenantId,
++                  },
++                },
++              ],
++            },
++          },
+           select: { client_id: true },
+           distinct: ['client_id'],
+         });
+diff --git a/test/broadcasts/broadcast-scope.spec.ts b/test/broadcasts/broadcast-scope.spec.ts
+index ffe10faf..4d66dc5f 100644
+--- a/test/broadcasts/broadcast-scope.spec.ts
++++ b/test/broadcasts/broadcast-scope.spec.ts
+@@ -1,5 +1,6 @@
+ import type { Prisma } from '@prisma/client';
+ import { BroadcastScopeService } from '../../src/broadcasts/broadcast-scope.service';
++import type { PrismaService } from '../../src/prisma.service';
+ import type { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
+ import { stub } from './_stub';
+ 
+@@ -8,7 +9,13 @@ import { stub } from './_stub';
+  * Postgres in broadcasts-dispatch.live.spec.ts; this pins the decision table
+  * and that every read is a FOR SHARE lock.
+  */
+-type U = { id: string; role: string; coach_id: string | null; deleted_at: Date | null };
++type U = {
++  id: string;
++  role: string;
++  coach_id: string | null;
++  deleted_at: Date | null;
++  archived_at?: Date | null;
++};
+ 
+ function harness(opts: {
+   users: Record<string, U | undefined>;
+@@ -32,6 +39,7 @@ function harness(opts: {
+   const lockMembershipHeadCoachIdInTx = jest.fn(async () => opts.membershipHead ?? null);
+   const svc = new BroadcastScopeService(
+     stub<SubCoachScopeService>({ lockMembershipHeadCoachIdInTx }),
++    stub<PrismaService>({}),
+   );
+   const check = (authorId: string, clientId = 'client-1') =>
+     svc.lockSendAuthority(stub<Prisma.TransactionClient>(tx), 'head-1', authorId, clientId);
+@@ -63,6 +71,14 @@ describe('BroadcastScopeService.lockSendAuthority (A-659-7)', () => {
+     ).toBe('not_on_roster');
+   });
+ 
++  it('C-727-1: a client the coach archived is off the roster at send time', async () => {
++    expect(
++      await harness({
++        users: { 'head-1': head, 'client-1': { ...client, archived_at: new Date() } },
++      }).check('head-1'),
++    ).toBe('not_on_roster');
++  });
++
+   it('a sub-coach with a live seat and an open assignment may message the client', async () => {
+     const h = harness({
+       users: { 'sub-1': sub, 'client-1': client },
+@@ -116,3 +132,28 @@ describe('BroadcastScopeService.lockSendAuthority (A-659-7)', () => {
+     );
+   });
+ });
++
++describe('BroadcastScopeService.resolve (C-727-1)', () => {
++  it('an archived client is in no broadcast audience; live clients keep roster order', async () => {
++    const archived = new Set(['c2']);
++    const findMany = jest.fn(async (a: { where: { id: { in: string[] } } }) =>
++      a.where.id.in.filter((id) => !archived.has(id)).map((id) => ({ id })),
++    );
++    const svc = new BroadcastScopeService(
++      stub<SubCoachScopeService>({
++        getAuthorizedClientIds: async () => ['c3', 'c2', 'c1'],
++        getHeadCoachIdForSubCoach: async () => null,
++      }),
++      stub<PrismaService>({ user: { findMany } }),
++    );
++    expect(await svc.resolve('head-1')).toEqual({
++      actorId: 'head-1',
++      tenantId: 'head-1',
++      clientIds: ['c3', 'c1'],
++    });
++    expect(findMany).toHaveBeenCalledWith({
++      where: { id: { in: ['c3', 'c2', 'c1'] }, archived_at: null },
++      select: { id: true },
++    });
++  });
++});
+diff --git a/test/broadcasts/broadcasts-dispatch.live.spec.ts b/test/broadcasts/broadcasts-dispatch.live.spec.ts
+index a8687bab..c5468a91 100644
+--- a/test/broadcasts/broadcasts-dispatch.live.spec.ts
++++ b/test/broadcasts/broadcasts-dispatch.live.spec.ts
+@@ -70,13 +70,14 @@ itLive('A4 broadcasts on a live database', () => {
+     subA: randomUUID(),
+     subB: randomUUID(),
+     subClient: randomUUID(),
++    subClientB: randomUUID(),
+   };
+   const savedFlag = process.env.FEATURE_COACH_BROADCASTS;
+   /** Push attempts (recipient ids) across all dispatcher instances. */
+   const emits: string[] = [];
+ 
+   function build(p: PrismaService) {
+-    const scopes = new BroadcastScopeService(new SubCoachScopeService(p));
++    const scopes = new BroadcastScopeService(new SubCoachScopeService(p), p);
+     const segments = new SegmentResolverService(p);
+     const audit = stub<AuditService>({ write: async () => undefined });
+     const service = new BroadcastsService(p, scopes, segments, new CardsService(p), audit);
+@@ -123,17 +124,22 @@ itLive('A4 broadcasts on a live database', () => {
+       [id.subA, 'coach', id.coach, 'Sub Alpha'],
+       [id.subB, 'coach', id.coach, 'Sub Beta'],
+       [id.subClient, 'student', id.coach, 'Sam Assigned'],
++      [id.subClientB, 'student', id.coach, 'Bea Assigned'],
+     ];
+     for (const [uid, role, coachId, name] of users) {
+       await insertLiveUser(db, { id: uid, role, name: `${name} ${tag}`, coachId });
+     }
+-    // Two sub-coaches on the head coach's team, both assigned to subClient.
+-    for (const sub of [id.subA, id.subB]) {
++    // Two sub-coaches on the head coach's team, each with one assigned client
++    // (SubCoachAssignment_one_open_per_client allows one open sub-coach per client).
++    for (const [sub, client] of [
++      [id.subA, id.subClient],
++      [id.subB, id.subClientB],
++    ]) {
+       await db.teamSubCoachAssignment.create({
+         data: { head_coach_id: id.coach, sub_coach_id: sub },
+       });
+       await db.subCoachAssignment.create({
+-        data: { head_coach_id: id.coach, sub_coach_id: sub, client_id: id.subClient },
++        data: { head_coach_id: id.coach, sub_coach_id: sub, client_id: client },
+       });
+     }
+     await db.notificationPreferences.create({
+@@ -175,7 +181,16 @@ itLive('A4 broadcasts on a live database', () => {
+       await db.user.deleteMany({
+         where: {
+           id: {
+-            in: [id.ny, id.tokyo, id.la, id.blocker, id.untagged, id.otherClient, id.subClient],
++            in: [
++              id.ny,
++              id.tokyo,
++              id.la,
++              id.blocker,
++              id.untagged,
++              id.otherClient,
++              id.subClient,
++              id.subClientB,
++            ],
+           },
+         },
+       });
+diff --git a/test/broadcasts/broadcasts.service.spec.ts b/test/broadcasts/broadcasts.service.spec.ts
+index cdd640f6..754466fa 100644
+--- a/test/broadcasts/broadcasts.service.spec.ts
++++ b/test/broadcasts/broadcasts.service.spec.ts
+@@ -15,7 +15,7 @@ const NOW = new Date('2027-02-01T15:00:00Z');
+ 
+ function harness(
+   scope: CoachScope,
+-  opts: { recipients?: string[]; row?: Record<string, unknown> | null } = {},
++  opts: { recipients?: string[]; row?: Record<string, unknown> | null; lastRun?: Date | null } = {},
+ ) {
+   const findFirst = jest.fn(async () => opts.row ?? null);
+   const findMany = jest.fn(async () => []);
+@@ -33,10 +33,14 @@ function harness(
+       findMany,
+       create,
+       count: jest.fn(async () => 0),
+-      updateMany: jest.fn(async () => ({ count: 1 })),
++      updateMany: jest.fn(async (_a: { data: Record<string, unknown> }) => ({ count: 1 })),
+     },
+     coachBroadcastDelivery: { groupBy: jest.fn(async () => []) },
+-    coachBroadcastRun: { findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
++    coachBroadcastRun: {
++      findMany: jest.fn(async () => []),
++      count: jest.fn(async () => (opts.lastRun ? 1 : 0)),
++      findFirst: jest.fn(async () => (opts.lastRun ? { scheduled_for: opts.lastRun } : null)),
++    },
+   };
+   const svc = new BroadcastsService(
+     stub<PrismaService>(prisma),
+@@ -257,13 +261,7 @@ describe('BroadcastsService idempotency (A-659-6)', () => {
+ 
+ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
+   function withRun(row: Record<string, unknown>, lastRun: Date | null) {
+-    const h = harness(head, { row });
+-    h.prisma.coachBroadcastRun = {
+-      findMany: jest.fn(async () => []),
+-      count: jest.fn(async () => (lastRun ? 1 : 0)),
+-      findFirst: jest.fn(async () => (lastRun ? { scheduled_for: lastRun } : null)),
+-    } as unknown as typeof h.prisma.coachBroadcastRun;
+-    return h;
++    return harness(head, { row, lastRun });
+   }
+   const base = {
+     id: 'b1',
+@@ -312,11 +310,7 @@ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
+       { ...input, recurrence: { freq: 'daily', local_time: '10:00' } },
+       NOW,
+     );
+-    const data = (
+-      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
+-        { data: { next_run_at: Date } },
+-      ]
+-    )[0].data;
++    const data = h.prisma.coachBroadcast.updateMany.mock.calls[0][0].data;
+     expect(data.next_run_at).toEqual(new Date('2027-02-02T16:00:00Z'));
+   });
+ 
+@@ -328,15 +322,23 @@ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
+   it('resume never re-arms a one-off that already has a run', async () => {
+     const h = withRun({ ...base, status: 'paused', recurrence: null, next_run_at: NOW }, today0700);
+     await h.svc.transition('coach-a', 'b1', 'resume', NOW);
+-    const data = (
+-      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
+-        { data: Record<string, unknown> },
+-      ]
+-    )[0].data;
++    const data = h.prisma.coachBroadcast.updateMany.mock.calls[0][0].data;
+     expect(data.next_run_at).toBeNull();
+     expect(data.status).toBe('sending');
+   });
+ 
++  it('C-728-1: editing a draft without a status keeps it a draft and never arms it', async () => {
++    const h = withRun({ ...base, status: 'draft', recurrence: null, next_run_at: null }, null);
++    expect(await code(h.svc.update('coach-a', 'b1', { ...input, body: 'Draft v2' }, NOW))).toBe(
++      'resolved',
++    );
++    expect(h.prisma.coachBroadcast.updateMany).toHaveBeenCalledWith(
++      expect.objectContaining({
++        data: expect.objectContaining({ status: 'draft', next_run_at: null, body: 'Draft v2' }),
++      }),
++    );
++  });
++
+   it('resume of a series skips to a day that has not had a copy yet', async () => {
+     const rule = { freq: 'daily', interval: 1, local_time: '10:00', anchor_date: '2027-01-30' };
+     const h = withRun(
+@@ -344,12 +346,45 @@ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
+       today0700,
+     );
+     await h.svc.transition('coach-a', 'b1', 'resume', NOW);
+-    const data = (
+-      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
+-        { data: Record<string, unknown> },
+-      ]
+-    )[0].data;
++    const data = h.prisma.coachBroadcast.updateMany.mock.calls[0][0].data;
+     expect(data.next_run_at).toEqual(new Date('2027-02-02T16:00:00Z'));
+     expect(data.status).toBe('scheduled');
+   });
+ });
++
++// ---- B-728-1: the audience picker lists only programs the caller can read ----
++
++describe('BroadcastsService.segmentOptions (B-728-1)', () => {
++  type Row = Record<string, unknown>;
++  const readable = (p: Row, w: { coach_id: string; OR: Array<Row> }) =>
++    p.coach_id === w.coach_id &&
++    p.is_template === true &&
++    p.archived_at === null &&
++    w.OR.some((alt) => Object.entries(alt).every(([k, v]) => p[k] === v));
++  const programs: Row[] = [
++    { id: 'head-private', owner_user_id: 'coach-a', visibility: 'owner_only' },
++    { id: 'sibling-private', owner_user_id: 'sub-2', visibility: 'owner_only' },
++    { id: 'mine', owner_user_id: 'sub-1', visibility: 'owner_only' },
++    { id: 'shared', owner_user_id: 'coach-a', visibility: 'tenant_shared' },
++  ].map((p) => ({ ...p, coach_id: 'coach-a', is_template: true, archived_at: null }));
++
++  it("a sub-coach sees their own and team-shared programs, never another author's private ones", async () => {
++    const workoutProgramFindMany = jest.fn(
++      async (a: { where: { coach_id: string; OR: Array<Row> } }) =>
++        programs.filter((p) => readable(p, a.where)).map((p) => ({ id: p.id })),
++    );
++    const svc = new BroadcastsService(
++      stub<PrismaService>({
++        coachPackage: { findMany: async () => [] },
++        workoutProgram: { findMany: workoutProgramFindMany },
++        coachClientTag: { groupBy: async () => [] },
++      }),
++      stub<BroadcastScopeService>({ resolve: async () => sub }),
++      stub<SegmentResolverService>({}),
++      stub<CardsService>({}),
++      stub<AuditService>({ write: async () => undefined }),
++    );
++    const out = await svc.segmentOptions('sub-1');
++    expect(out.programs.map((p) => p.id).sort()).toEqual(['mine', 'shared']);
++  });
++});
+diff --git a/test/broadcasts/segment-resolver.spec.ts b/test/broadcasts/segment-resolver.spec.ts
+new file mode 100644
+index 00000000..6416905a
+--- /dev/null
++++ b/test/broadcasts/segment-resolver.spec.ts
+@@ -0,0 +1,94 @@
++import { BroadcastHttpError } from '../../src/broadcasts/broadcast-errors';
++import type { CoachScope } from '../../src/broadcasts/broadcast-scope.service';
++import { SegmentResolverService } from '../../src/broadcasts/segment-resolver.service';
++import type { Segment } from '../../src/broadcasts/segment';
++import type { PrismaService } from '../../src/prisma.service';
++import { stub } from './_stub';
++
++/** Applies the Prisma where shapes the resolver uses to plain rows. */
++type Row = Record<string, unknown>;
++function matches(row: Row, where: Row): boolean {
++  return Object.entries(where).every(([key, want]) => {
++    if (key === 'OR') return (want as Row[]).some((w) => matches(row, w));
++    if (want && typeof want === 'object') {
++      const f = want as Row;
++      if ('in' in f) return (f.in as unknown[]).includes(row[key]);
++      const child = row[key];
++      return !!child && typeof child === 'object' && matches(child as Row, f);
++    }
++    return row[key] === want;
++  });
++}
++
++const HEAD = 'head-1';
++const SUB = 'sub-1';
++const program = (id: string, extra: Row = {}): Row => ({
++  id,
++  coach_id: HEAD,
++  owner_user_id: HEAD,
++  visibility: 'owner_only',
++  is_template: true,
++  archived_at: null,
++  cloned_from_id: null,
++  ...extra,
++});
++const PROGRAMS: Row[] = [
++  program('master'),
++  program('copy-c1', { is_template: false, cloned_from_id: 'master' }),
++  program('copy-c2', { is_template: false, cloned_from_id: 'master', archived_at: new Date() }),
++  program('shared', { visibility: 'tenant_shared' }),
++  program('mine', { owner_user_id: SUB }),
++  program('sibling', { owner_user_id: 'sub-2' }),
++];
++const byId = new Map(PROGRAMS.map((p) => [p.id as string, p]));
++const day = (programId: string): Row => ({ program_id: programId, program: byId.get(programId) });
++const ASSIGNMENTS: Row[] = [
++  { client_id: 'c1', workout_plan: day('copy-c1') },
++  { client_id: 'c2', workout_plan: day('copy-c2') },
++];
++
++function resolver() {
++  const where = (a: { where: Row }) => a.where;
++  return new SegmentResolverService(
++    stub<PrismaService>({
++      workoutProgram: {
++        count: async (a: { where: Row }) => PROGRAMS.filter((p) => matches(p, where(a))).length,
++      },
++      clientWorkoutAssignment: {
++        findMany: async (a: { where: Row }) =>
++          ASSIGNMENTS.filter((r) => matches(r, where(a))).map((r) => ({ client_id: r.client_id })),
++      },
++      userBlock: { findMany: async () => [] },
++    }),
++  );
++}
++const segment = (values: string[]): Segment => ({
++  match: 'all',
++  rules: [{ field: 'program', op: 'in', values }],
++  exclude_client_ids: [],
++});
++async function code(p: Promise<unknown>) {
++  return p.then(
++    () => 'resolved',
++    (e: unknown) => (e instanceof BroadcastHttpError ? e.code : String(e)),
++  );
++}
++
++describe('SegmentResolverService program rule', () => {
++  const head: CoachScope = { actorId: HEAD, tenantId: HEAD, clientIds: ['c1', 'c2', 'c3'] };
++
++  it('B-727-1: a master reaches the clients holding a live copy of it, not an archived copy', async () => {
++    const aud = await resolver().resolve(head, segment(['master']));
++    expect(aud.recipientIds).toEqual(['c1']);
++  });
++
++  it('B-728-1: a sub-coach can target only their own or team-shared masters', async () => {
++    const sub: CoachScope = { actorId: SUB, tenantId: HEAD, clientIds: ['c1'] };
++    expect(await code(resolver().resolve(sub, segment(['mine', 'shared'])))).toBe('resolved');
++    for (const id of ['master', 'sibling', 'copy-c1']) {
++      expect(await code(resolver().resolve(sub, segment([id])))).toBe(
++        'broadcast.segment_ref_not_found',
++      );
++    }
++  });
++});

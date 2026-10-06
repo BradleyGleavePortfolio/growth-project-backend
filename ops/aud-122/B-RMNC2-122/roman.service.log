@@ -1,0 +1,76 @@
+[heavy] waiting for a slot: npx jest test/roman/roman.service.spec.ts
+[31m[Nest] 15797  - [39m10/06/2026, 12:11:36 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.erase_deleted_session_failed session=legacy_u_a_2026-09-27: Error: db hiccup[39m
+[31m[Nest] 15797  - [39m10/06/2026, 12:11:36 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.delete_all_bound_hit erased=2 left=1[39m
+[31m[Nest] 15797  - [39m10/06/2026, 12:11:36 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 15797  - [39m10/06/2026, 12:11:36 AM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable[39m
+[31m[Nest] 15797  - [39m10/06/2026, 12:11:36 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 15797  - [39m10/06/2026, 12:11:36 AM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=partial context=unavailable[39m
+PASS test/roman/roman.service.spec.ts (11.662 s)
+  RomanService — sessions
+    ✓ opens a new session for (user, surface, day) (4 ms)
+    ✓ resumes the SAME session on a second open (idempotent on day-key) (1 ms)
+    ✓ routes coach and client surfaces to distinct sessions (15 ms)
+    ✓ getOwnedSession throws the coded 404 for a session the caller does not own (2 ms)
+    ✓ deleting a session hides it from resume (a fresh session opens) (1 ms)
+  RomanService — client delete erases the conversation
+    ✓ hard-deletes every message of the session and clears the subject context (2 ms)
+    ✓ a non-owner cannot delete (404) and nothing is erased (1 ms)
+    ✓ a second delete of the same session is a no-op 204 (C-635-2: idempotent, nothing rewritten) (2 ms)
+    ✓ a turn arriving after the delete (e.g. a streamed reply finishing) is refused and never stored (1 ms)
+    ✓ deleting a chat never resets the daily Roman cap (9 ms)
+    ✓ erased turns stop counting once the erased session is outside the window (2 ms)
+  RomanService — same-day fresh session after a delete (B-635-1)
+    ✓ the fake enforces the real unique key across deleted rows (negative control) (2 ms)
+    ✓ open -> append -> delete -> open gives a fresh, empty session that takes turns (2 ms)
+    ✓ the old deleted session stays deleted: a late append to it is refused (404) (1 ms)
+    ✓ concurrent opens after a delete converge on ONE fresh session (5 ms)
+    ✓ delete + reopen (three chats in one day) never resets the daily cap (3 ms)
+    ✓ another user's same-day session is untouched by my delete and reopen (1 ms)
+  RomanService — pre-upgrade soft-deleted sessions are erased (C-635-1)
+    ✓ open erases a legacy tombstone holding today's key, then opens a fresh session (1 ms)
+    ✓ the legacy erase keeps the cap: 50 legacy turns today still block a new turn
+    ✓ an unerased legacy tombstone is counted once (its messages), not twice
+    ✓ the sweep erases every legacy tombstone, is idempotent, and leaves live chats and erased shells alone (2 ms)
+    ✓ a row that fails to erase is logged and skipped; the rest still erase (2 ms)
+  RomanService — the client can find and delete ANY chat, not only today's (B-635-2)
+    ✓ listSessions returns only the caller's live chats, newest first, across days and surfaces (1 ms)
+    ✓ listSessions pages with the caller's own cursor, and a chat deleted between pages does not break it (1 ms)
+    ✓ listSessions refuses a cursor that is not one of the caller's sessions (400, no foreign lookup leak) (1 ms)
+    ✓ listSessions returns metadata only and clamps the page size (1 ms)
+    ✓ deleteSession erases a PRIOR-DAY chat found through the list (messages, context, day key) (1 ms)
+    ✓ deleteAllSessions erases every chat of the caller (prior days, today, both surfaces) and nobody else's (13 ms)
+    ✓ deleteAllSessions also erases the caller's own pre-#635 tombstones that still hold content
+    ✓ deleteAllSessions is idempotent: with nothing left it resolves 0 and writes nothing
+    ✓ deleteAllSessions never resets the daily cap (1 ms)
+    ✓ a failure part-way is a coded 503; chats already erased stay erased, the rest stay untouched, a retry finishes (3 ms)
+    ✓ when the per-request bound is hit with chats left, it is a coded 503 and a retry finishes (2 ms)
+  RomanService — coded, idempotent session answers (C-635-2)
+    ✓ deleting the caller's own pre-#635 tombstone by id erases it now (204) (1 ms)
+    ✓ an unknown id and another user's id get the same coded 404 (1 ms)
+    ✓ a delete that loses a race to a concurrent change re-reads once and finishes (1 ms)
+  RomanService — the erase is verified, never assumed (C-635-3)
+    ✓ a delete whose message delete removed nothing is a coded 503, not a silent 204 (1 ms)
+    ✓ an open whose legacy day-key holder cannot be erased answers ROMAN_UNAVAILABLE, not a delete message
+    ✓ delete-all and the sweep treat it the same way (never counted as erased)
+  RomanService — erasure failures are sanitized and reported (B-635-3)
+    ✓ a failed row is counted, its sanitized diagnostic returned, healthy rows still erase, no raw ORM text is logged (1 ms)
+    ✓ reports boundHit when the run stops at its batch bound with rows still waiting (1 ms)
+  RomanService — messages
+    ✓ appends a turn and bumps message_count + last_activity_at
+    ✓ paginates messages newest-first with a cursor
+    ✓ builds a tail-slice of context turns, oldest-first (1 ms)
+  RomanService — rate limiting
+    ✓ selects the free vs pro cap by tier (1 ms)
+    ✓ throws a structured 429 once the cap is exhausted (1 ms)
+    ✓ exempts the owner from the rate limit (1 ms)
+  RomanService — streaming
+    ✓ streams deltas then persists the full assistant turn on completion (20 ms)
+    ✓ persists a partial turn with interrupted=true on client disconnect (12 ms)
+    ✓ refuses to call the model when the feature flag is OFF (1 ms)
+    ✓ surfaces ROMAN_UNAVAILABLE when no Anthropic client is configured (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       51 passed, 51 total
+Snapshots:   0 total
+Time:        11.916 s
+Ran all test suites matching test/roman/roman.service.spec.ts.

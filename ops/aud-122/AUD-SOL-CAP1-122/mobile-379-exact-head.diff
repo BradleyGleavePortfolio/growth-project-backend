@@ -1,0 +1,872 @@
+diff --git a/src/__tests__/aiDailyCapSurfaces.test.tsx b/src/__tests__/aiDailyCapSurfaces.test.tsx
+new file mode 100644
+index 0000000..c76d124
+--- /dev/null
++++ b/src/__tests__/aiDailyCapSurfaces.test.tsx
+@@ -0,0 +1,167 @@
++/**
++ * Daily AI cap pop-up on every client AI surface (M-ROMANCAP):
++ *   - Roman chat (client and coach surface): sendError kind `dailyCap` shows
++ *     the pop-up with the owner words and the reset time, no inline error row,
++ *     OK clears it, and the composer stays usable (crisis turns are never
++ *     capped on the server, so nothing may block sending).
++ *   - AI Guide (POST /ai/chat): 429 AI_DAILY_QUOTA_EXCEEDED shows the pop-up,
++ *     the draft returns and nothing is saved; never the generic service reply.
++ */
++import React from 'react';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++jest.mock('@expo/vector-icons', () => {
++  function Icon() {
++    return null;
++  }
++  return { Ionicons: Icon, MaterialIcons: Icon, Feather: Icon };
++});
++
++jest.mock('react-native-reanimated', () => {
++  const View = jest.requireActual('react-native').View;
++  return {
++    __esModule: true,
++    default: { View },
++    useSharedValue: (v: number) => ({ value: v }),
++    useAnimatedStyle: () => ({}),
++    withTiming: (v: number) => v,
++    withRepeat: (v: number) => v,
++    withDelay: (_d: number, v: number) => v,
++    withSequence: (...v: number[]) => v[0],
++  };
++});
++
++jest.mock('../theme/ThemeProvider', () => {
++  const colors = new Proxy({}, { get: (_t, prop) => (typeof prop === 'string' ? `#${prop}` : '#000') });
++  const Pass = ({ children }: { children: React.ReactNode }) => children;
++  return { __esModule: true, ThemeProvider: Pass, default: Pass, useTheme: () => ({ colors }) };
++});
++
++jest.mock('../theme/useTheme', () => {
++  const { lightTokens } = jest.requireActual('../theme/tokens');
++  return { useTheme: () => ({ colorScheme: 'light', semanticColors: lightTokens }) };
++});
++
++jest.mock('../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++const mockChat = jest.fn();
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn() },
++  aiApi: {
++    chat: (...a: unknown[]) => mockChat(...a),
++    getStructuredContext: jest.fn(async () => ({ data: null })),
++  },
++}));
++
++const mockSaveChatMessage = jest.fn(async () => undefined);
++jest.mock('../db/chatDb', () => ({
++  getChatHistory: jest.fn(async () => []),
++  saveChatMessage: (...a: unknown[]) => mockSaveChatMessage(...(a as [])),
++}));
++
++jest.mock('@react-native-community/netinfo', () => ({
++  __esModule: true,
++  default: { fetch: jest.fn(async () => ({ isConnected: true, isInternetReachable: true })) },
++}));
++
++jest.mock('../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'client-1', role: 'client', firstName: 'Jane' }),
++}));
++
++const mockUseRomanChat = jest.fn();
++jest.mock('../screens/roman/useRomanChat', () => ({
++  useRomanChat: (surface: unknown) => mockUseRomanChat(surface),
++}));
++
++const mockUseClientInsight = jest.fn();
++jest.mock('../hooks/useWearableInsight', () => ({
++  useClientInsight: (args: unknown) => mockUseClientInsight(args),
++}));
++jest.mock('../screens/client/wearables/components/useReduceMotion', () => ({ useReduceMotion: () => true }));
++
++import AIGuideScreen from '../screens/client/AIGuideScreen';
++import RomanChatScreen from '../screens/roman/RomanChatScreen';
++import { AI_DAILY_CAP_TITLE } from '../lib/ai/aiDailyCap';
++
++function httpError(status: number, data: Record<string, unknown>, headers: Record<string, string> = {}) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    isAxiosError: true,
++    response: { status, data, headers },
++    config: { headers: {} },
++  });
++}
++
++beforeEach(() => {
++  mockChat.mockReset();
++  mockSaveChatMessage.mockClear();
++  mockUseRomanChat.mockReset();
++});
++
++const RESETS_AT = new Date(Date.now() + 3 * 3600 * 1000);
++
++function romanState(sendError: unknown) {
++  return {
++    phase: 'ready',
++    session: { id: 's1', surface: 'client' },
++    isFirstOpen: false,
++    messages: [],
++    sending: false,
++    sendError,
++    nextCursor: null,
++    loadingOlder: false,
++    reload: jest.fn(),
++    loadOlder: jest.fn(),
++    send: jest.fn(async () => 'send-failed'),
++    clearSendError: jest.fn(),
++  };
++}
++
++describe('RomanChatScreen — daily AI cap pop-up', () => {
++  it.each(['client', 'coach'] as const)('%s surface: owner words + reset time, no inline error, OK clears', async (surface) => {
++    const state = romanState({ kind: 'dailyCap', message: 'x', dailyCap: { resetsAt: RESETS_AT } });
++    mockUseRomanChat.mockReturnValue(state);
++    const r = await render(<RomanChatScreen surface={surface} />);
++    expect(r.getByTestId('roman-daily-cap-title').props.children).toBe(AI_DAILY_CAP_TITLE);
++    const body = String(r.getByTestId('roman-daily-cap-body').props.children);
++    expect(body).toMatch(/^AI help resets (today|tomorrow) at /);
++    expect(body).toContain(surface === 'client' ? 'Your coach is in Messages' : 'Your clients, messages');
++    expect(r.queryByTestId('roman-send-error')).toBeNull();
++    expect(r.queryByText(/not available|did not complete/)).toBeNull();
++    await fireEvent.press(r.getByTestId('roman-daily-cap-ok'));
++    expect(state.clearSendError).toHaveBeenCalledTimes(1);
++    // The composer is not blocked: a later (crisis) message can still be sent.
++    expect(r.getByTestId('roman-composer')).toBeTruthy();
++  });
++
++  it('no pop-up for other send errors', async () => {
++    mockUseRomanChat.mockReturnValue(romanState({ kind: 'rateLimited', message: 'x', retryAfterSeconds: 5 }));
++    const r = await render(<RomanChatScreen surface="client" />);
++    expect(r.queryByTestId('roman-daily-cap-title')).toBeNull();
++    expect(r.getByTestId('roman-send-error')).toBeTruthy();
++  });
++});
++
++describe('AIGuideScreen — daily AI cap pop-up', () => {
++  async function send(text: string) {
++    const r = await render(<AIGuideScreen />);
++    await fireEvent.changeText(r.getByPlaceholderText('Ask me anything...'), text);
++    await fireEvent.press(r.getByLabelText('Send message'));
++    return r;
++  }
++
++  it('429 AI_DAILY_QUOTA_EXCEEDED: pop-up, draft returns, nothing saved, no generic reply', async () => {
++    mockChat.mockRejectedValueOnce(
++      httpError(429, { statusCode: 429, error: 'AI_DAILY_QUOTA_EXCEEDED', message: 'x' }),
++    );
++    const r = await send('Plan for tomorrow');
++    await waitFor(() => expect(r.getByTestId('ai-guide-daily-cap-title').props.children).toBe(AI_DAILY_CAP_TITLE));
++    expect(String(r.getByTestId('ai-guide-daily-cap-body').props.children)).toMatch(/^AI help resets (today|tomorrow) at /);
++    expect(r.getByPlaceholderText('Ask me anything...').props.value).toBe('Plan for tomorrow');
++    expect(mockSaveChatMessage).not.toHaveBeenCalled();
++    expect(r.queryByText(/Guidance could not answer this time/)).toBeNull();
++    await fireEvent.press(r.getByTestId('ai-guide-daily-cap-ok'));
++    await waitFor(() => expect(r.queryByTestId('ai-guide-daily-cap-title')).toBeNull());
++  });
++});
+diff --git a/src/api/romanApi.ts b/src/api/romanApi.ts
+index 0db5a3c..555a05d 100644
+--- a/src/api/romanApi.ts
++++ b/src/api/romanApi.ts
+@@ -51,7 +51,9 @@
+  *     `content` and never read an idempotency header, so the client does not
+  *     send one and never presents a retry as duplicate-safe.
+  *   - Errors are mapped to a typed RomanApiError union: unavailable (404 /
+- *     feature-off), rateLimited (429 + retryAfterSeconds), offline (no network),
++ *     feature-off), rateLimited (uncoded 429 + retryAfterSeconds), dailyCap
++ *     (429 ROMAN_RATE_LIMIT / 503 ROMAN_CAPACITY_REACHED, HTTP or in-stream:
++ *     the daily AI cap pop-up, src/lib/ai/aiDailyCap.ts), offline (no network),
+  *     aiRefused (R2b 403 ai_consent_required / 503 ai_egress_blocked, over HTTP
+  *     or in the stream's strict { code, message } error frame), and generic. Screens render calm Roman-voiced copy off these kinds; this
+  *     layer never throws a raw axios error into the UI.
+@@ -70,6 +72,12 @@ import {
+   aiRefusalOf,
+   type AiRefusal,
+ } from '../lib/ai/aiRefusal';
++import {
++  aiDailyCapFromHttp,
++  aiDailyCapFromStreamCode,
++  aiDailyCapOf,
++  type AiDailyCap,
++} from '../lib/ai/aiDailyCap';
+ 
+ // ─── Surfaces (mirror backend ROMAN_SURFACES, dto L18) ───────────────────────
+ 
+@@ -190,7 +198,8 @@ export type RomanStreamError = z.infer<typeof RomanStreamErrorSchema>;
+ 
+ export type RomanErrorKind =
+   | 'unavailable' // 404 — feature flag off OR session not found / not owned
+-  | 'rateLimited' // 429 — @Throttle / per-tier cap
++  | 'rateLimited' // uncoded 429 — burst throttle
++  | 'dailyCap' // 429 ROMAN_RATE_LIMIT / 503 ROMAN_CAPACITY_REACHED — daily cap pop-up
+   | 'offline' // no network reachability
+   | 'aiRefused' // R2b: 403 ai_consent_required / 503 ai_egress_blocked (HTTP or in-stream)
+   | 'generic'; // anything else (5xx, malformed, unknown)
+@@ -208,6 +217,8 @@ export class RomanApiError extends Error {
+    * keep it and must never append it again on its own.
+    */
+   readonly turnStored: boolean;
++  /** Present only for `dailyCap`: when AI help resets. */
++  readonly dailyCap?: AiDailyCap;
+ 
+   constructor(
+     kind: RomanErrorKind,
+@@ -215,6 +226,7 @@ export class RomanApiError extends Error {
+     retryAfterSeconds?: number,
+     refusal?: AiRefusal,
+     turnStored = false,
++    dailyCap?: AiDailyCap,
+   ) {
+     super(message);
+     this.name = 'RomanApiError';
+@@ -222,6 +234,7 @@ export class RomanApiError extends Error {
+     this.retryAfterSeconds = retryAfterSeconds;
+     this.refusal = refusal;
+     this.turnStored = turnStored;
++    this.dailyCap = dailyCap;
+   }
+ }
+ 
+@@ -259,12 +272,18 @@ function parseRetryAfter(value: unknown): number | undefined {
+   return undefined;
+ }
+ 
++const ROMAN_DAILY_CAP_MESSAGE = 'Daily AI limit reached.';
++
+ /** Map any thrown error (axios or otherwise) to a typed RomanApiError. */
+ function toRomanApiError(err: unknown): RomanApiError {
+   if (err instanceof RomanApiError) return err;
+   if (axios.isAxiosError(err)) {
+     if (err.response) {
+       const status = err.response.status;
++      const dailyCap = aiDailyCapOf(err);
++      if (dailyCap) {
++        return new RomanApiError('dailyCap', ROMAN_DAILY_CAP_MESSAGE, undefined, undefined, false, dailyCap);
++      }
+       if (status === 404) {
+         return new RomanApiError(
+           'unavailable',
+@@ -482,6 +501,20 @@ export async function sendMessage(
+       if (response.status === 404) {
+         throw new RomanApiError('unavailable', 'Roman is not available right now.');
+       }
++      const coded = response.status === 429 || response.status === 403 || response.status === 503;
++      const errorBody = coded ? await readErrorBody(response) : null;
++      if (response.status === 429 || response.status === 503) {
++        // Daily AI cap (429 ROMAN_RATE_LIMIT / 503 ROMAN_CAPACITY_REACHED),
++        // before the turn is stored: the pop-up, never a generic error.
++        const dailyCap = aiDailyCapFromHttp(
++          response.status,
++          errorBody,
++          parseRetryAfter(response.headers.get('retry-after')),
++        );
++        if (dailyCap) {
++          throw new RomanApiError('dailyCap', ROMAN_DAILY_CAP_MESSAGE, undefined, undefined, false, dailyCap);
++        }
++      }
+       if (response.status === 429) {
+         const retry = parseRetryAfter(response.headers.get('retry-after'));
+         throw new RomanApiError(
+@@ -496,7 +529,7 @@ export async function sendMessage(
+       if (response.status === 403 || response.status === 503) {
+         const refusal = aiRefusalFromHttp(
+           response.status,
+-          await readErrorBody(response),
++          errorBody,
+           responseRequestId(response),
+         );
+         if (refusal) {
+@@ -528,6 +561,12 @@ export async function sendMessage(
+         }
+         throw new RomanApiError('aiRefused', streamError.message, undefined, refusal, true);
+       }
++      // The spend cap reached after the turn was stored (reserveDailySpend):
++      // the turn stays, and the daily cap pop-up explains why no answer came.
++      const dailyCap = aiDailyCapFromStreamCode(streamError.code);
++      if (dailyCap) {
++        throw new RomanApiError('dailyCap', ROMAN_DAILY_CAP_MESSAGE, undefined, undefined, true, dailyCap);
++      }
+       const kind: RomanErrorKind =
+         streamError.code === 'ROMAN_UNAVAILABLE' ? 'unavailable' : 'generic';
+       throw new RomanApiError(kind, streamError.message, undefined, undefined, true);
+@@ -550,7 +589,14 @@ export async function sendMessage(
+     const mapped = toRomanApiError(err);
+     // A failure while reading an accepted (200) stream: the turn is stored.
+     if (accepted) {
+-      throw new RomanApiError(mapped.kind, mapped.message, mapped.retryAfterSeconds, mapped.refusal, true);
++      throw new RomanApiError(
++        mapped.kind,
++        mapped.message,
++        mapped.retryAfterSeconds,
++        mapped.refusal,
++        true,
++        mapped.dailyCap,
++      );
+     }
+     throw mapped;
+   } finally {
+diff --git a/src/components/ai/AiDailyCapModal.tsx b/src/components/ai/AiDailyCapModal.tsx
+new file mode 100644
+index 0000000..d5c7136
+--- /dev/null
++++ b/src/components/ai/AiDailyCapModal.tsx
+@@ -0,0 +1,113 @@
++/**
++ * AiDailyCapModal: the one pop-up every AI surface shows when the person has
++ * reached a daily AI limit (src/lib/ai/aiDailyCap.ts). Title is the owner's
++ * words verbatim; the body gives the reset time in the person's local time and
++ * what keeps working. One "OK" closes it; nothing else on the surface is
++ * blocked, so a later message (including a crisis message, which the server
++ * never caps) can still be sent.
++ */
++import React, { useMemo } from 'react';
++import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
++import {
++  AI_DAILY_CAP_DISMISS,
++  AI_DAILY_CAP_TITLE,
++  aiDailyCapBody,
++  type AiDailyCap,
++  type AiDailyCapAudience,
++} from '../../lib/ai/aiDailyCap';
++import { useTheme, type ThemeColors } from '../../theme/ThemeProvider';
++
++export interface AiDailyCapModalProps {
++  /** The cap to show; null hides the pop-up. */
++  cap: AiDailyCap | null;
++  audience: AiDailyCapAudience;
++  onClose: () => void;
++  testID?: string;
++}
++
++export default function AiDailyCapModal({
++  cap,
++  audience,
++  onClose,
++  testID = 'ai-daily-cap',
++}: AiDailyCapModalProps): React.ReactElement {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const body = cap ? aiDailyCapBody(cap, audience) : '';
++
++  return (
++    <Modal
++      visible={cap != null}
++      transparent
++      animationType="fade"
++      onRequestClose={onClose}
++      testID={testID}
++    >
++      <View style={styles.backdrop}>
++        <View
++          style={styles.card}
++          accessibilityViewIsModal
++          accessibilityRole="alert"
++          accessibilityLiveRegion="assertive"
++        >
++          <Text style={styles.title} accessibilityRole="header" testID={`${testID}-title`}>
++            {AI_DAILY_CAP_TITLE}
++          </Text>
++          <Text style={styles.body} testID={`${testID}-body`}>
++            {body}
++          </Text>
++          <TouchableOpacity
++            style={styles.button}
++            onPress={onClose}
++            accessibilityRole="button"
++            accessibilityLabel={AI_DAILY_CAP_DISMISS}
++            testID={`${testID}-ok`}
++          >
++            <Text style={styles.buttonLabel}>{AI_DAILY_CAP_DISMISS}</Text>
++          </TouchableOpacity>
++        </View>
++      </View>
++    </Modal>
++  );
++}
++
++function makeStyles(colors: ThemeColors) {
++  return StyleSheet.create({
++    backdrop: {
++      flex: 1,
++      backgroundColor: 'rgba(10,10,9,0.55)',
++      justifyContent: 'center',
++      paddingHorizontal: 24,
++    },
++    card: {
++      backgroundColor: colors.surface,
++      borderRadius: 16,
++      padding: 24,
++      gap: 12,
++    },
++    title: {
++      fontSize: 20,
++      lineHeight: 26,
++      fontWeight: '600',
++      color: colors.textPrimary,
++    },
++    body: {
++      fontSize: 15,
++      lineHeight: 22,
++      color: colors.textSecondary,
++    },
++    button: {
++      marginTop: 8,
++      minHeight: 48,
++      borderRadius: 12,
++      alignItems: 'center',
++      justifyContent: 'center',
++      backgroundColor: colors.primary,
++    },
++    buttonLabel: {
++      fontSize: 16,
++      fontWeight: '600',
++      color: colors.textOnPrimary,
++    },
++  });
++}
+diff --git a/src/lib/ai/__tests__/aiDailyCap.test.ts b/src/lib/ai/__tests__/aiDailyCap.test.ts
+new file mode 100644
+index 0000000..ddd355a
+--- /dev/null
++++ b/src/lib/ai/__tests__/aiDailyCap.test.ts
+@@ -0,0 +1,141 @@
++/**
++ * Daily AI cap (M-ROMANCAP): which backend answers mean "today's AI limit is
++ * reached", when it resets, and the pop-up copy. Roman send route mapping is
++ * checked against the real romanApi.sendMessage with a mocked fetch.
++ */
++import {
++  AI_DAILY_CAP_TITLE,
++  aiDailyCapBody,
++  aiDailyCapFromHttp,
++  aiDailyCapFromStreamCode,
++  aiDailyCapOf,
++  aiDailyCapResetPhrase,
++  nextUtcMidnight,
++} from '../aiDailyCap';
++import { RomanApiError, sendMessage } from '../../../api/romanApi';
++
++jest.mock('../../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
++}));
++jest.mock('../../../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('../../../services/secureStorage', () => ({
++  secureStorage: { getItem: jest.fn(async () => 'test-token') },
++}));
++
++const NOW = new Date('2026-10-05T18:30:00.000Z');
++
++describe('aiDailyCapFromHttp', () => {
++  it('429 ROMAN_RATE_LIMIT resets when Retry-After says', () => {
++    const cap = aiDailyCapFromHttp(429, { code: 'ROMAN_RATE_LIMIT' }, 3600, NOW);
++    expect(cap?.resetsAt.toISOString()).toBe('2026-10-05T19:30:00.000Z');
++  });
++
++  it('503 ROMAN_CAPACITY_REACHED without a wait resets at the next UTC midnight', () => {
++    const cap = aiDailyCapFromHttp(503, { code: 'ROMAN_CAPACITY_REACHED', message: 'x' }, undefined, NOW);
++    expect(cap?.resetsAt.toISOString()).toBe('2026-10-06T00:00:00.000Z');
++  });
++
++  it('429 AI_DAILY_QUOTA_EXCEEDED (legacy error slot) resets at the next UTC midnight', () => {
++    const cap = aiDailyCapFromHttp(429, { error: 'AI_DAILY_QUOTA_EXCEEDED', message: 'x' }, 60, NOW);
++    expect(cap?.resetsAt.toISOString()).toBe('2026-10-06T00:00:00.000Z');
++  });
++
++  it('an uncoded 429 (burst throttle) and other 503s are not the daily cap', () => {
++    expect(aiDailyCapFromHttp(429, { error: 'Too Many Requests', retryAfter: 60 }, 60, NOW)).toBeNull();
++    expect(aiDailyCapFromHttp(429, null, 60, NOW)).toBeNull();
++    expect(aiDailyCapFromHttp(503, { code: 'ai_egress_blocked' }, undefined, NOW)).toBeNull();
++    expect(aiDailyCapFromHttp(503, { code: 'ROMAN_UNAVAILABLE' }, undefined, NOW)).toBeNull();
++    expect(aiDailyCapFromHttp(500, { code: 'ROMAN_CAPACITY_REACHED' }, undefined, NOW)).toBeNull();
++  });
++
++  it('axios-shaped errors and the in-stream frame code', () => {
++    const err = { response: { status: 429, data: { code: 'ROMAN_RATE_LIMIT' }, headers: { 'retry-after': '120' } } };
++    expect(aiDailyCapOf(err, NOW)?.resetsAt.toISOString()).toBe('2026-10-05T18:32:00.000Z');
++    expect(aiDailyCapOf(new Error('x'), NOW)).toBeNull();
++    expect(aiDailyCapFromStreamCode('ROMAN_CAPACITY_REACHED', NOW)?.resetsAt).toEqual(nextUtcMidnight(NOW));
++    expect(aiDailyCapFromStreamCode('ROMAN_UNAVAILABLE', NOW)).toBeNull();
++  });
++});
++
++describe('pop-up copy', () => {
++  const FIRST_PERSON = /\b(i|i'm|me|my|we|we're|us|our)\b/i;
++  it('title is the owner words verbatim', () => {
++    expect(AI_DAILY_CAP_TITLE).toBe("You've used your maximum AI allotment today.");
++  });
++
++  it('body names the local reset time and a working next step, quietly', () => {
++    const local = new Date(2026, 9, 5, 9, 0);
++    const later = new Date(2026, 9, 5, 17, 0);
++    const time = later.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
++    expect(aiDailyCapResetPhrase(later, local)).toBe(`today at ${time}`);
++    expect(aiDailyCapResetPhrase(new Date(2026, 9, 6, 17, 0), local)).toBe(`tomorrow at ${time}`);
++    for (const audience of ['client', 'coach'] as const) {
++      const body = aiDailyCapBody({ resetsAt: later }, audience, local);
++      expect(body).toContain(`resets today at ${time}`);
++      expect(body).not.toMatch(FIRST_PERSON);
++      expect(body).not.toContain('!');
++      expect(body).not.toMatch(/unavailable|went wrong/i);
++    }
++    expect(aiDailyCapBody({ resetsAt: later }, 'client', local)).toContain('Your coach is in Messages');
++    expect(aiDailyCapBody({ resetsAt: later }, 'coach', local)).not.toContain('Your coach');
++  });
++});
++
++describe('romanApi.sendMessage maps the daily cap', () => {
++  const realFetch = global.fetch;
++  afterEach(() => {
++    global.fetch = realFetch;
++  });
++  function mockFetchOnce(init: { ok?: boolean; status?: number; text?: string; headers?: Record<string, string> }) {
++    const headers = init.headers ?? {};
++    const response: Pick<Response, 'ok' | 'status' | 'headers' | 'text'> = {
++      ok: init.ok ?? true,
++      status: init.status ?? 200,
++      headers: { get: (k: string) => headers[k.toLowerCase()] ?? null } as Headers,
++      text: async () => init.text ?? '',
++    };
++    global.fetch = jest.fn(async () => response as Response);
++  }
++  async function failureOf(p: Promise<unknown>): Promise<RomanApiError> {
++    try {
++      await p;
++    } catch (err) {
++      return err as RomanApiError;
++    }
++    throw new Error('expected a rejection');
++  }
++
++  it('429 ROMAN_RATE_LIMIT -> dailyCap (not stored), reset from Retry-After', async () => {
++    mockFetchOnce({
++      ok: false,
++      status: 429,
++      text: JSON.stringify({ statusCode: 429, code: 'ROMAN_RATE_LIMIT', message: 'x' }),
++      headers: { 'retry-after': '7200' },
++    });
++    const before = Date.now();
++    const err = await failureOf(sendMessage('s1', 'hi'));
++    expect(err).toMatchObject({ kind: 'dailyCap', turnStored: false });
++    const ms = err.dailyCap!.resetsAt.getTime() - before;
++    expect(ms).toBeGreaterThanOrEqual(7200_000);
++    expect(ms).toBeLessThan(7260_000);
++  });
++
++  it('503 ROMAN_CAPACITY_REACHED -> dailyCap, never generic', async () => {
++    mockFetchOnce({ ok: false, status: 503, text: JSON.stringify({ statusCode: 503, code: 'ROMAN_CAPACITY_REACHED', message: 'x' }) });
++    const err = await failureOf(sendMessage('s1', 'hi'));
++    expect(err).toMatchObject({ kind: 'dailyCap', turnStored: false });
++  });
++
++  it('in-stream ROMAN_CAPACITY_REACHED -> dailyCap with the turn stored', async () => {
++    mockFetchOnce({ text: 'event: error\ndata: {"code":"ROMAN_CAPACITY_REACHED","message":"x"}\n\n' });
++    const err = await failureOf(sendMessage('s1', 'hi'));
++    expect(err).toMatchObject({ kind: 'dailyCap', turnStored: true });
++  });
++
++  it('an uncoded 429 stays the short wait (rateLimited)', async () => {
++    mockFetchOnce({ ok: false, status: 429, headers: { 'retry-after': '5' } });
++    const err = await failureOf(sendMessage('s1', 'hi'));
++    expect(err).toMatchObject({ kind: 'rateLimited', retryAfterSeconds: 5 });
++  });
++});
+diff --git a/src/lib/ai/aiDailyCap.ts b/src/lib/ai/aiDailyCap.ts
+new file mode 100644
+index 0000000..e8a94de
+--- /dev/null
++++ b/src/lib/ai/aiDailyCap.ts
+@@ -0,0 +1,143 @@
++/**
++ * AI daily cap (owner 2026-10-04 11:20, M-ROMANCAP): when a person reaches a
++ * daily AI limit, every AI entry point shows one calm pop-up with the owner's
++ * words and the local time it resets, never a generic error and never
++ * "Roman is unavailable".
++ *
++ * Backend codes that mean "today's AI limit is reached" (growth-project-backend):
++ *   - 429 `ROMAN_RATE_LIMIT` (roman.service.ts assertWithinRateLimit): the
++ *     person's own Roman turns for a rolling 24 h (50 free / 500 pro). The
++ *     controller sends the wait as a `Retry-After` header (seconds).
++ *   - 503 `ROMAN_CAPACITY_REACHED` (backend #669 assertDailyCapacity /
++ *     reserveDailySpend): the daily Roman spend cap (env
++ *     ROMAN_DAILY_COST_CAP_USD, default 25 USD, UTC day). Sent as an HTTP body
++ *     before the turn is stored, or as the in-stream `{ code, message }` frame.
++ *   - 429 `AI_DAILY_QUOTA_EXCEEDED` (ai.service.ts reserveDailyTokens, in the
++ *     legacy `error` slot): the AI guide's per-person daily token quota
++ *     (DAILY_TOKEN_QUOTA, UTC day).
++ * An uncoded 429 is the burst throttle, which clears within a minute; it keeps
++ * its own short wait copy and never shows this pop-up.
++ *
++ * Crisis turns are exempt on the server (no cap is checked for them), so the
++ * app never blocks the composer after a cap hit: a crisis message sent later
++ * still reaches the safety answer.
++ */
++
++export const ROMAN_RATE_LIMIT_CODE = 'ROMAN_RATE_LIMIT';
++export const ROMAN_CAPACITY_REACHED_CODE = 'ROMAN_CAPACITY_REACHED';
++export const AI_DAILY_QUOTA_EXCEEDED_CODE = 'AI_DAILY_QUOTA_EXCEEDED';
++
++/** The owner's words, verbatim. */
++export const AI_DAILY_CAP_TITLE = "You've used your maximum AI allotment today.";
++export const AI_DAILY_CAP_DISMISS = 'OK';
++
++export type AiDailyCapAudience = 'client' | 'coach';
++
++export interface AiDailyCap {
++  /** When AI help is available again (absolute time; shown in local time). */
++  resetsAt: Date;
++}
++
++function isRecord(v: unknown): v is Record<string, unknown> {
++  return !!v && typeof v === 'object' && !Array.isArray(v);
++}
++
++/** The code of an error body: `code`, or the legacy `error` slot ai.service.ts uses. */
++function capCodeOf(body: unknown): string | null {
++  if (!isRecord(body)) return null;
++  for (const key of ['code', 'error']) {
++    const v = body[key];
++    if (typeof v === 'string' && v) return v;
++  }
++  return null;
++}
++
++/** Both backend daily buckets restart at midnight UTC. */
++export function nextUtcMidnight(now: Date = new Date()): Date {
++  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
++}
++
++/** Read a Retry-After value (seconds) from a header or body field. */
++export function retryAfterSecondsOf(value: unknown): number | undefined {
++  const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
++  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : undefined;
++}
++
++function capWith(retryAfterSeconds: number | undefined, now: Date): AiDailyCap {
++  return {
++    resetsAt:
++      retryAfterSeconds !== undefined
++        ? new Date(now.getTime() + retryAfterSeconds * 1000)
++        : nextUtcMidnight(now),
++  };
++}
++
++/**
++ * Map an HTTP status + parsed body to a daily cap, or null. The status AND the
++ * code must match, so an uncoded throttle 429 stays a short wait.
++ */
++export function aiDailyCapFromHttp(
++  status: number | null | undefined,
++  body: unknown,
++  retryAfterSeconds?: number,
++  now: Date = new Date(),
++): AiDailyCap | null {
++  const code = capCodeOf(body);
++  const bodyRetry = isRecord(body) ? retryAfterSecondsOf(body.retryAfterSeconds) : undefined;
++  if (status === 429 && code === ROMAN_RATE_LIMIT_CODE) {
++    return capWith(retryAfterSeconds ?? bodyRetry, now);
++  }
++  if (status === 503 && code === ROMAN_CAPACITY_REACHED_CODE) {
++    return capWith(retryAfterSeconds ?? bodyRetry, now);
++  }
++  if (status === 429 && code === AI_DAILY_QUOTA_EXCEEDED_CODE) {
++    // The quota is a UTC-day bucket; the throttler's Retry-After is unrelated.
++    return capWith(undefined, now);
++  }
++  return null;
++}
++
++/** Roman's in-stream error frame (HTTP 200): only the spend cap code can arrive here. */
++export function aiDailyCapFromStreamCode(
++  code: string | null | undefined,
++  now: Date = new Date(),
++): AiDailyCap | null {
++  return code === ROMAN_CAPACITY_REACHED_CODE ? capWith(undefined, now) : null;
++}
++
++/** Map an axios-style error (`err.response.{status,data,headers}`) to a daily cap. */
++export function aiDailyCapOf(err: unknown, now: Date = new Date()): AiDailyCap | null {
++  if (!isRecord(err)) return null;
++  const response = err.response;
++  if (!isRecord(response)) return null;
++  const status = typeof response.status === 'number' ? response.status : null;
++  const headers = isRecord(response.headers) ? response.headers : null;
++  return aiDailyCapFromHttp(status, response.data, retryAfterSecondsOf(headers?.['retry-after']), now);
++}
++
++function sameLocalDay(a: Date, b: Date): boolean {
++  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
++}
++
++/** The reset time in the person's own time, e.g. "today at 5:00 PM". */
++export function aiDailyCapResetPhrase(resetsAt: Date, now: Date = new Date()): string {
++  const time = resetsAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
++  if (sameLocalDay(resetsAt, now)) return `today at ${time}`;
++  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
++  if (sameLocalDay(resetsAt, tomorrow)) return `tomorrow at ${time}`;
++  const day = resetsAt.toLocaleDateString(undefined, { weekday: 'long' });
++  return `on ${day} at ${time}`;
++}
++
++/** Pop-up body: when it resets, then what still works. */
++export function aiDailyCapBody(
++  cap: AiDailyCap,
++  audience: AiDailyCapAudience,
++  now: Date = new Date(),
++): string {
++  const next =
++    audience === 'client'
++      ? 'Your coach is in Messages any time, and your plan and logs work as usual.'
++      : 'Your clients, messages and the rest of the app work as usual.';
++  return `AI help resets ${aiDailyCapResetPhrase(cap.resetsAt, now)}. ${next}`;
++}
+diff --git a/src/screens/client/AIGuideScreen.tsx b/src/screens/client/AIGuideScreen.tsx
+index 4330221..544b9b3 100644
+--- a/src/screens/client/AIGuideScreen.tsx
++++ b/src/screens/client/AIGuideScreen.tsx
+@@ -27,7 +27,9 @@ import { ChatMessage } from '../../types';
+ import { generateId } from '../../utils/date';
+ import FadeInView from '../../components/FadeInView';
+ import AiRefusalNotice from '../../components/ai/AiRefusalNotice';
++import AiDailyCapModal from '../../components/ai/AiDailyCapModal';
+ import { aiRefusalOf, type AiRefusal } from '../../lib/ai/aiRefusal';
++import { aiDailyCapOf, type AiDailyCap } from '../../lib/ai/aiDailyCap';
+ import { shortReference, supportReferenceOf, diagnosticReference } from '../../utils/correlation';
+ import { captureError } from '../../services/sentry';
+ 
+@@ -127,6 +129,9 @@ export default function AIGuideScreen() {
+   // with a working action; never an invented AI reply.
+   const [refusal, setRefusal] = useState<AiRefusal | null>(null);
+   const [refusedText, setRefusedText] = useState<string | null>(null);
++  // 429 AI_DAILY_QUOTA_EXCEEDED: the daily AI cap pop-up, never the generic
++  // service-problem reply.
++  const [dailyCap, setDailyCap] = useState<AiDailyCap | null>(null);
+   const listRef = useRef<FlatList>(null);
+ 
+   const userId = currentUser?.id || '';
+@@ -219,6 +224,17 @@ export default function AIGuideScreen() {
+           return;
+         }
+ 
++        // Daily AI cap: nothing was answered, so the turn is not kept; the
++        // draft goes back in the input and the pop-up says when it resets.
++        const cap = aiDailyCapOf(err);
++        if (cap) {
++          setIsTyping(false);
++          setInput(text.trim());
++          setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
++          setDailyCap(cap);
++          return;
++        }
++
+         // Detect axios network-level failures (no response from server). These
+         // can happen on a flaky connection even when NetInfo still reports
+         // reachable, so we treat them as the "offline" branch.
+@@ -407,6 +423,13 @@ export default function AIGuideScreen() {
+         />
+       ) : null}
+ 
++      <AiDailyCapModal
++        cap={dailyCap}
++        audience="client"
++        onClose={() => setDailyCap(null)}
++        testID="ai-guide-daily-cap"
++      />
++
+       {/* Input Bar */}
+       <View style={styles.inputBar}>
+         <TextInput
+diff --git a/src/screens/roman/RomanChatScreen.tsx b/src/screens/roman/RomanChatScreen.tsx
+index 8fd2d58..5eaf0fb 100644
+--- a/src/screens/roman/RomanChatScreen.tsx
++++ b/src/screens/roman/RomanChatScreen.tsx
+@@ -14,7 +14,8 @@
+  *
+  * Typed states (brief §3): loading skeleton, "Roman unavailable" (404 flag-off
+  * — calm, no retry loop), offline, generic error, send-failure (message stays
+- * in the composer for retry), and rate-limited (calm backoff copy).
++ * in the composer for retry), rate-limited (calm backoff copy), and the daily
++ * AI cap pop-up (AiDailyCapModal, owner words + local reset time).
+  *
+  * Emotional target (DESIGN_INTELLIGENCE §5.1): the user leaves feeling attended
+  * to and in capable hands. Primary path (Hick's Law §4.4): a single composer +
+@@ -41,6 +42,7 @@ import RomanTypingIndicator from '../../components/roman/RomanTypingIndicator';
+ import RomanComposer from '../../components/roman/RomanComposer';
+ import RomanState from '../../components/roman/RomanState';
+ import AiRefusalNotice from '../../components/ai/AiRefusalNotice';
++import AiDailyCapModal from '../../components/ai/AiDailyCapModal';
+ import { aiRefusalCopy } from '../../lib/ai/aiRefusal';
+ import { Skeleton } from '../../ui/skeletons/Skeleton';
+ import {
+@@ -183,8 +185,12 @@ export default function RomanChatScreen({
+   // generic send-failed row.
+   const refusal = sendError?.kind === 'aiRefused' ? (sendError.refusal ?? null) : null;
+   const refusalAudience = surface === 'coach' ? 'coach' : 'client';
++  // Daily AI cap: the pop-up carries the copy, so no inline error row. The
++  // draft (or the stored turn) stays; the composer is never blocked, so a
++  // crisis message, which the server never caps, still goes through.
++  const dailyCap = sendError?.kind === 'dailyCap' ? (sendError.dailyCap ?? null) : null;
+   const sendErrorCopy =
+-    sendError == null
++    sendError == null || dailyCap
+       ? null
+       : refusal
+         ? (() => {
+@@ -356,6 +362,13 @@ export default function RomanChatScreen({
+           />
+         ) : null}
+ 
++        <AiDailyCapModal
++          cap={dailyCap}
++          audience={refusalAudience}
++          onClose={clearSendError}
++          testID="roman-daily-cap"
++        />
++
+         {askAgainHint && sendError == null ? (
+           <View style={styles.sendError} testID="roman-ask-again" accessibilityLiveRegion="polite">
+             <RomanAvatar crop="neutral" size={28} />
+diff --git a/src/screens/roman/useRomanChat.ts b/src/screens/roman/useRomanChat.ts
+index 1344358..c6fe6f8 100644
+--- a/src/screens/roman/useRomanChat.ts
++++ b/src/screens/roman/useRomanChat.ts
+@@ -35,6 +35,7 @@ import {
+ } from '../../api/romanApi';
+ import { logger } from '../../utils/logger';
+ import type { AiRefusal } from '../../lib/ai/aiRefusal';
++import type { AiDailyCap } from '../../lib/ai/aiDailyCap';
+ import { romanChatsEvents } from '../settings/romanChatsEvents';
+ 
+ /** Page size for the initial / "load older" message fetch (<= backend cap 100). */
+@@ -53,6 +54,8 @@ export interface RomanSendError {
+   retryAfterSeconds?: number;
+   /** R2b refusal (kind `aiRefused`): consent required or egress blocked. */
+   refusal?: AiRefusal;
++  /** Kind `dailyCap`: when AI help resets (shown in the daily cap pop-up). */
++  dailyCap?: AiDailyCap;
+   /**
+    * The server had already stored the user turn when this failed (an
+    * in-stream error after HTTP 200). The turn stays in the thread; nothing
+@@ -256,6 +259,7 @@ export function useRomanChat(surface: RomanSurface): UseRomanChatResult {
+             kind: e?.kind ?? 'generic',
+             message: e?.message ?? 'Roman could not finish this answer.',
+             ...(e?.refusal ? { refusal: e.refusal } : {}),
++            ...(e?.dailyCap ? { dailyCap: e.dailyCap } : {}),
+             turnStored: true,
+           });
+         }
+@@ -284,6 +288,7 @@ export function useRomanChat(surface: RomanSurface): UseRomanChatResult {
+           message: e?.message ?? 'That request did not complete.',
+           retryAfterSeconds: e?.retryAfterSeconds,
+           ...(e?.refusal ? { refusal: e.refusal } : {}),
++          ...(e?.dailyCap ? { dailyCap: e.dailyCap } : {}),
+         });
+       }
+       sendingRef.current = false;

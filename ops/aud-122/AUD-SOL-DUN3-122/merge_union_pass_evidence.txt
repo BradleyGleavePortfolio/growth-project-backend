@@ -1,0 +1,22 @@
+Approved parent: 0716a0f4ebf82fe6d73399fe80d4930d9bd77589
+Main parent: a70533d53c5833c5e998a8de363de3eeb81d9eb8
+Merge head: aa736434287c7ebcf2b68e87ee8a0b5dabf2b015
+Merge base: 5cde6253f941112f2d9afbcf572a4da838dbb16a
+Actual parents: 0716a0f4ebf82fe6d73399fe80d4930d9bd77589 a70533d53c5833c5e998a8de363de3eeb81d9eb8
+Main parent is on local origin/main: PASS
+Unexpected non-main commits: 0
+Exact conflict-free three-way union: prisma/schema.prisma PASS expected=974db4af26b9fc6b47229a1e47396367e6f78254 actual=974db4af26b9fc6b47229a1e47396367e6f78254
+Exact conflict-free three-way union: src/common/env-validation.ts PASS expected=d8956a095c27a76cb82247ef7da7b27b4386250c actual=d8956a095c27a76cb82247ef7da7b27b4386250c
+Schema declarations: 271; duplicate model/enum/type names: []
+Duplicate schema fields within a model: {}
+ENV_RULES keys: 338; duplicate env keys: []
+Entire migration tree plain union: PASS (253 files; no overwritten, missing or extra blobs)
+Dunning-added migrations: ['20270215000000_dunning_billing_actions', '20270318000000_dunning_dispute_pause_effects']
+Main-added migrations: ['20270301000000_coachless_featured_coach', '20270302000000_coach_code_tools']
+dunning created tables: ['ClientBillingLease', 'ClientBillingOperation', 'DunningDisputeObligation', 'DunningNoticeDelivery']
+dunning referenced tables: ['ClientPurchase', 'DunningState']
+dunning altered tables: ['ClientBillingLease', 'ClientBillingOperation', 'DunningDisputeObligation', 'DunningNoticeDelivery', 'DunningState']
+main created tables: ['CoachCodeRedemption', 'CoachlessPromptState', 'FeaturedCoachConfig', 'InviteRedemption']
+main referenced tables: ['CoachPackage', 'InviteCode', 'User']
+main altered tables: ['CoachCodeRedemption', 'CoachlessPromptState', 'FeaturedCoachConfig', 'InviteCode', 'InviteRedemption']
+No table-name collisions across the sides: PASS

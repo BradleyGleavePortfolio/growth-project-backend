@@ -1,0 +1,21 @@
+AUDIT GPT-6.1 Sol — growth-project-mobile#379 @ 67d9aaa33afe9740201f8e110649967c832bd461 — VERDICT: APPROVE
+A/B/C = 0/0/3
+
+AUD-SOL-CAP1-122, agent 122 — independent first review, T3.
+
+**A/B: none.**
+
+The actual HTTP 429 `ROMAN_RATE_LIMIT`, HTTP 503 `ROMAN_CAPACITY_REACHED`, in-stream capacity frame, and legacy 429 `AI_DAILY_QUOTA_EXCEEDED` all reach the daily-cap pop-up rather than the generic error path; uncoded burst throttles remain distinct. ([Daily-cap classifier](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/67d9aaa33afe9740201f8e110649967c832bd461/src%2Flib%2Fai%2FaiDailyCap.ts), [Roman transport](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/67d9aaa33afe9740201f8e110649967c832bd461/src%2Fapi%2FromanApi.ts))
+
+Client and coach Roman screens share the dismissible modal without introducing a daily-cap composer lock; the guide restores the rejected draft and returns before saving a fabricated answer. ([Roman screen](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/67d9aaa33afe9740201f8e110649967c832bd461/src%2Fscreens%2Froman%2FRomanChatScreen.tsx), [Guide screen](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/67d9aaa33afe9740201f8e110649967c832bd461/src%2Fscreens%2Fclient%2FAIGuideScreen.tsx))
+
+The reset contract matches the backend: Roman's rolling allowance uses `Retry-After`; capacity and guide quotas use their daily bucket reset, including the capacity SSE frame that carries no wait field. ([Daily-cap classifier](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/67d9aaa33afe9740201f8e110649967c832bd461/src%2Flib%2Fai%2FaiDailyCap.ts), [Backend reference at 6386c00b](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/6386c00b2bdbb2c120a5f173dea4753574d415e8))
+
+**C — outside this mobile diff; backend follow-ups, not merge blockers here:**
+- **C-379-1:** Backend `src/ai/ai.service.ts:373–460` lacks the guide crisis bypass; add deterministic safety routing before the quota gate before launch. ([Backend reference](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/6386c00b2bdbb2c120a5f173dea4753574d415e8))
+- **C-379-2:** Backend `src/roman/roman.service.ts:1183–1214,1224–1278` uses platform-wide spend accounting; align its scope with the personal-allotment copy in the authorized backend follow-up. ([Backend reference](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/6386c00b2bdbb2c120a5f173dea4753574d415e8))
+- **C-379-3:** Backend `src/ai/ai.service.ts:61,460,648–710` reserves 6,600 against a 12,000-token allowance; quota sizing remains the operator's backend follow-up. ([Backend reference](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/6386c00b2bdbb2c120a5f173dea4753574d415e8))
+
+**Evidence:** exact-head PR CI is green, with 510/510 suites and 7,107/7,107 tests passing, including both new cap specs; CodeQL is also green. ([Typecheck, lint, test](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37391878122/job/112040590428), [CodeQL](https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112038847832))
+
+No local npm/Jest/tsc/builds, probe push, merge, deployment, or production access. No other lens's work read before this verdict.

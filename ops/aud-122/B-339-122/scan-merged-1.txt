@@ -1,0 +1,6 @@
+screens/coach/payments/CoachPackageEditScreen.tsx:330 [first_person] We could not archive the package. Check your connection, then tap Archive again.
+utils/packageSaveFailure.ts:137 [first_person] Contact support and we will fix the package.
+utils/packageSaveFailure.ts:212 [first_person] We could not reach the server.
+utils/packageSaveFailure.ts:282 [first_person] Contact support and we will turn them on.
+utils/packageSaveFailure.ts:355 [first_person] There was a problem on our side.
+files 815 offending 5

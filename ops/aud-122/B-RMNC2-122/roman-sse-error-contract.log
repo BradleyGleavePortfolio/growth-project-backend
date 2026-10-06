@@ -1,0 +1,21 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-sse-error-contract.spec.ts
+PASS test/roman/roman-sse-error-contract.spec.ts (12.096 s)
+  Roman SSE error frame: pinned to the mobile strict parser (B-626-2)
+    ✓ the backend key allowlist is exactly the mobile schema keys (3 ms)
+    ✓ negative control: the mobile schema rejects a frame with an extra requestId key (2 ms)
+    ✓ client consent refusal: passes the mobile strict schema with exactly {code, message} (4 ms)
+    ✓ coach-audience consent refusal: passes the mobile strict schema with exactly {code, message} (2 ms)
+    ✓ egress policy refusal (503): passes the mobile strict schema with exactly {code, message} (1 ms)
+    ✓ ROMAN_UNAVAILABLE (flag or client missing): passes the mobile strict schema with exactly {code, message} (1 ms)
+    ✓ a structured body with extra keys (retryAfterSeconds, requestId, statusCode): passes the mobile strict schema with exactly {code, message} (1 ms)
+    ✓ a NestJS default body without a code: passes the mobile strict schema with exactly {code, message} (17 ms)
+    ✓ a raw Error (never leaks its text): passes the mobile strict schema with exactly {code, message} (5 ms)
+    ✓ a non-object throw: passes the mobile strict schema with exactly {code, message} (1 ms)
+    ✓ no request id on the request: no X-Request-ID override, frame unchanged (6 ms)
+    ✓ toRomanSseErrorFrame never returns the shared fallback object itself (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        12.358 s
+Ran all test suites matching test/roman/roman-sse-error-contract.spec.ts.

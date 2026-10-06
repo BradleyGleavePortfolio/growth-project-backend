@@ -1,0 +1,315 @@
+﻿2026-10-05T23:38:44.6091259Z Current runner version: '2.337.0'
+2026-10-05T23:38:44.6116086Z ##[group]Runner Image Provisioner
+2026-10-05T23:38:44.6117181Z Hosted Compute Agent
+2026-10-05T23:38:44.6117777Z Version: 20260901.588
+2026-10-05T23:38:44.6118514Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T23:38:44.6119281Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T23:38:44.6119989Z Worker ID: {d013b8b5-0c12-4527-9c79-88d64756cc84}
+2026-10-05T23:38:44.6120949Z Azure Region: eastus
+2026-10-05T23:38:44.6121528Z ##[endgroup]
+2026-10-05T23:38:44.6123503Z ##[group]Operating System
+2026-10-05T23:38:44.6124157Z Ubuntu
+2026-10-05T23:38:44.6124670Z 24.04.5
+2026-10-05T23:38:44.6125301Z LTS
+2026-10-05T23:38:44.6125817Z ##[endgroup]
+2026-10-05T23:38:44.6126459Z ##[group]Runner Image
+2026-10-05T23:38:44.6127154Z Image: ubuntu-24.04
+2026-10-05T23:38:44.6127731Z Version: 20260927.320.1
+2026-10-05T23:38:44.6129055Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T23:38:44.6131199Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T23:38:44.6132209Z ##[endgroup]
+2026-10-05T23:38:44.6133884Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T23:38:44.6136107Z Contents: read
+2026-10-05T23:38:44.6136782Z Metadata: read
+2026-10-05T23:38:44.6137374Z Packages: read
+2026-10-05T23:38:44.6137931Z ##[endgroup]
+2026-10-05T23:38:44.6140593Z Secret source: Actions
+2026-10-05T23:38:44.6141552Z Cache mode: write
+2026-10-05T23:38:44.6142532Z Prepare workflow directory
+2026-10-05T23:38:44.6476755Z Prepare all required actions
+2026-10-05T23:38:44.6524282Z Getting action download info
+2026-10-05T23:38:44.9029714Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T23:38:45.0705879Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T23:38:45.2942448Z Complete job name: targeted
+2026-10-05T23:38:45.3723703Z ##[group]Run actions/checkout@v6
+2026-10-05T23:38:45.3724619Z with:
+2026-10-05T23:38:45.3725185Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T23:38:45.3729521Z   token: ***
+2026-10-05T23:38:45.3730022Z   ssh-strict: true
+2026-10-05T23:38:45.3730663Z   ssh-user: git
+2026-10-05T23:38:45.3731119Z   persist-credentials: true
+2026-10-05T23:38:45.3731615Z   clean: true
+2026-10-05T23:38:45.3732066Z   sparse-checkout-cone-mode: true
+2026-10-05T23:38:45.3732587Z   fetch-depth: 1
+2026-10-05T23:38:45.3733019Z   fetch-tags: false
+2026-10-05T23:38:45.3733466Z   show-progress: true
+2026-10-05T23:38:45.3733972Z   lfs: false
+2026-10-05T23:38:45.3734388Z   submodules: false
+2026-10-05T23:38:45.3734854Z   set-safe-directory: true
+2026-10-05T23:38:45.3735362Z   allow-unsafe-pr-checkout: false
+2026-10-05T23:38:45.3736170Z ##[endgroup]
+2026-10-05T23:38:45.4756343Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T23:38:45.4758424Z ##[group]Getting Git version info
+2026-10-05T23:38:45.4759366Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T23:38:45.4760942Z [command]/usr/bin/git version
+2026-10-05T23:38:45.4842151Z git version 2.55.0
+2026-10-05T23:38:45.4867213Z ##[endgroup]
+2026-10-05T23:38:45.4883001Z Temporarily overriding HOME='/home/runner/work/_temp/5eb6ae2c-4fba-4052-b4dc-00c93db86e1d' before making global git config changes
+2026-10-05T23:38:45.4885049Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T23:38:45.4888635Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T23:38:45.4939331Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T23:38:45.4944628Z ##[group]Determining repository object format
+2026-10-05T23:38:45.4947046Z ##[endgroup]
+2026-10-05T23:38:45.4947875Z ##[group]Initializing the repository
+2026-10-05T23:38:45.4952370Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T23:38:45.5062552Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T23:38:45.5063830Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T23:38:45.5065597Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T23:38:45.5067049Z hint: call:
+2026-10-05T23:38:45.5067936Z hint:
+2026-10-05T23:38:45.5069034Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T23:38:45.5070676Z hint:
+2026-10-05T23:38:45.5072018Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T23:38:45.5073975Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T23:38:45.5075798Z hint:
+2026-10-05T23:38:45.5076740Z hint: 	git branch -m <name>
+2026-10-05T23:38:45.5077833Z hint:
+2026-10-05T23:38:45.5079104Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T23:38:45.5081686Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T23:38:45.5085074Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T23:38:45.5137329Z ##[endgroup]
+2026-10-05T23:38:45.5139005Z ##[group]Disabling automatic garbage collection
+2026-10-05T23:38:45.5141327Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T23:38:45.5172747Z ##[endgroup]
+2026-10-05T23:38:45.5174108Z ##[group]Setting up auth
+2026-10-05T23:38:45.5175130Z Removing SSH command configuration
+2026-10-05T23:38:45.5181561Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T23:38:45.5216153Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T23:38:45.5578624Z Removing HTTP extra header
+2026-10-05T23:38:45.5584641Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T23:38:45.5617846Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T23:38:45.5842866Z Removing includeIf entries pointing to credentials config files
+2026-10-05T23:38:45.5854268Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T23:38:45.5890945Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T23:38:45.6122551Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T23:38:45.6174194Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:38:45.6208130Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:38:45.6250371Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:38:45.6283977Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:38:45.6324710Z ##[endgroup]
+2026-10-05T23:38:45.6326262Z ##[group]Fetching the repository
+2026-10-05T23:38:45.6335332Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +29129d8c96247e95b937a0377c14efa19c34f29f:refs/remotes/origin/audit/AUD-SOL-SCH1-122/367-welcome
+2026-10-05T23:38:46.4309364Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T23:38:46.4312297Z  * [new ref]         29129d8c96247e95b937a0377c14efa19c34f29f -> origin/audit/AUD-SOL-SCH1-122/367-welcome
+2026-10-05T23:38:46.4320977Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-SCH1-122/367-welcome
+2026-10-05T23:38:46.4348110Z   origin/audit/AUD-SOL-SCH1-122/367-welcome
+2026-10-05T23:38:46.4361134Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-SCH1-122/367-welcome
+2026-10-05T23:38:46.4386665Z 29129d8c96247e95b937a0377c14efa19c34f29f
+2026-10-05T23:38:46.4399473Z ##[endgroup]
+2026-10-05T23:38:46.4401086Z ##[group]Determining the checkout info
+2026-10-05T23:38:46.4402557Z ##[endgroup]
+2026-10-05T23:38:46.4405132Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T23:38:46.4456078Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T23:38:46.4486647Z ##[group]Checking out the ref
+2026-10-05T23:38:46.4490790Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-SCH1-122/367-welcome refs/remotes/origin/audit/AUD-SOL-SCH1-122/367-welcome
+2026-10-05T23:38:46.5569006Z Switched to a new branch 'audit/AUD-SOL-SCH1-122/367-welcome'
+2026-10-05T23:38:46.5571919Z branch 'audit/AUD-SOL-SCH1-122/367-welcome' set up to track 'origin/audit/AUD-SOL-SCH1-122/367-welcome'.
+2026-10-05T23:38:46.5582222Z ##[endgroup]
+2026-10-05T23:38:46.5625780Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T23:38:46.5652521Z 29129d8c96247e95b937a0377c14efa19c34f29f
+2026-10-05T23:38:46.6037690Z ##[group]Run actions/setup-node@v6
+2026-10-05T23:38:46.6038933Z with:
+2026-10-05T23:38:46.6039874Z   node-version: 22.13
+2026-10-05T23:38:46.6041119Z   cache: npm
+2026-10-05T23:38:46.6042088Z   check-latest: false
+2026-10-05T23:38:46.6052015Z   token: ***
+2026-10-05T23:38:46.6053046Z   package-manager-cache: true
+2026-10-05T23:38:46.6054182Z ##[endgroup]
+2026-10-05T23:38:46.7502992Z Attempting to download 22.13...
+2026-10-05T23:38:47.4191684Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T23:38:47.7842072Z Extracting ...
+2026-10-05T23:38:47.7951940Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/bde03e3c-7900-4a5c-97af-af5648d37ae8 -f /home/runner/work/_temp/f07a7a73-50bc-46c1-ae94-419e791c3c46
+2026-10-05T23:38:49.0077780Z Adding to the cache ...
+2026-10-05T23:38:51.6684163Z ##[group]Environment details
+2026-10-05T23:38:51.8866352Z node: v22.13.1
+2026-10-05T23:38:51.8866952Z npm: 10.9.2
+2026-10-05T23:38:51.8869324Z yarn: 1.22.22
+2026-10-05T23:38:51.8870457Z ##[endgroup]
+2026-10-05T23:38:51.8888737Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T23:38:51.9828328Z /home/runner/.npm
+2026-10-05T23:38:52.0463453Z npm cache is not found
+2026-10-05T23:38:52.0665710Z ##[group]Run npm ci
+2026-10-05T23:38:52.0666129Z [36;1mnpm ci[0m
+2026-10-05T23:38:52.0968613Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:38:52.0969105Z ##[endgroup]
+2026-10-05T23:38:54.7216348Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T23:38:55.1624725Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T23:38:56.4303247Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T23:38:56.9811046Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T23:38:57.2268832Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T23:38:57.7426396Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T23:38:58.7689699Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T23:38:58.8241226Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T23:38:59.6654086Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:38:59.7975583Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:38:59.8643187Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:39:00.2209380Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:39:00.2217336Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:39:00.4173862Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:39:00.4355003Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T23:39:06.1274492Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T23:40:03.2457460Z 
+2026-10-05T23:40:03.2458256Z added 1109 packages, and audited 1110 packages in 1m
+2026-10-05T23:40:03.2458753Z 
+2026-10-05T23:40:03.2459049Z 187 packages are looking for funding
+2026-10-05T23:40:03.2459559Z   run `npm fund` for details
+2026-10-05T23:40:03.6474401Z 
+2026-10-05T23:40:03.6475321Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T23:40:03.6475934Z 
+2026-10-05T23:40:03.6476462Z To address issues that do not require attention, run:
+2026-10-05T23:40:03.6477943Z   npm audit fix
+2026-10-05T23:40:03.6478268Z 
+2026-10-05T23:40:03.6478767Z To address all issues (including breaking changes), run:
+2026-10-05T23:40:03.6479521Z   npm audit fix --force
+2026-10-05T23:40:03.6479814Z 
+2026-10-05T23:40:03.6480510Z Run `npm audit` for details.
+2026-10-05T23:40:03.8142614Z ##[group]Run set -euo pipefail
+2026-10-05T23:40:03.8142976Z [36;1mset -euo pipefail[0m
+2026-10-05T23:40:03.8143372Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T23:40:03.8143856Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T23:40:03.8144211Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T23:40:03.8144472Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T23:40:03.8211135Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T23:40:03.8211497Z ##[endgroup]
+2026-10-05T23:40:03.8316934Z specs: src/screens/client/calendar/__tests__/calendarScreens.test.tsx
+2026-10-05T23:40:14.5298981Z FAIL src/screens/client/calendar/__tests__/calendarScreens.test.tsx (9.135 s)
+2026-10-05T23:40:14.5300872Z   pickWelcomeType
+2026-10-05T23:40:14.5303744Z     ✓ marker id first, then is_welcome, then the seed name (3 ms)
+2026-10-05T23:40:14.5321607Z   CalendarHomeScreen
+2026-10-05T23:40:14.5323073Z     ✓ lists the coach and their appointment types; tapping one opens booking (1778 ms)
+2026-10-05T23:40:14.5324531Z     ✓ no types yet -> calm note and Message your coach (62 ms)
+2026-10-05T23:40:14.5325517Z     ✓ no coach -> calm note, no booking (57 ms)
+2026-10-05T23:40:14.5327167Z     ✓ S-SCHED-5 merge (#324): no coach -> Contact support opens the one support draft; no email app -> address, Copy, Try again (77 ms)
+2026-10-05T23:40:14.5328801Z     ✓ shows upcoming with status using the existing list contract (58 ms)
+2026-10-05T23:40:14.5329995Z     ✓ welcome card: not booked yet -> books in welcome mode (57 ms)
+2026-10-05T23:40:14.5331656Z     ✓ welcome card: booked -> shows its status and opens the session; done -> no card (108 ms)
+2026-10-05T23:40:14.5333150Z     ✓ a confirmed session without a call link reads calm, not broken (56 ms)
+2026-10-05T23:40:14.5334758Z     ✓ past sessions: newest first, Show earlier pages with the before cursor (81 ms)
+2026-10-05T23:40:14.5336095Z     ✓ no past sessions -> a plain note (54 ms)
+2026-10-05T23:40:14.5337292Z     ✓ failed sessions never pretend to be an empty schedule (55 ms)
+2026-10-05T23:40:14.5338209Z   CalendarBookScreen
+2026-10-05T23:40:14.5339218Z     ✓ auto-approve: one tap books once and reads Booked (118 ms)
+2026-10-05T23:40:14.5340707Z     ✓ needs approval: reads Requested, waiting for your coach (71 ms)
+2026-10-05T23:40:14.5342184Z     ✓ a slot taken a moment earlier: calm message and the list refreshes (70 ms)
+2026-10-05T23:40:14.5343734Z     ✓ welcome mode preselects the seeded type and uses its approved duration (68 ms)
+2026-10-05T23:40:14.5345278Z     ✓ welcome mode follows the server marker even when the type was renamed (53 ms)
+2026-10-05T23:40:14.5346964Z     ✓ welcome already booked -> shows it, satisfies the tutorial step, offers no second booking (54 ms)
+2026-10-05T23:40:14.5348769Z     ✓ welcome already done -> plain note and the tutorial step is satisfied (53 ms)
+2026-10-05T23:40:14.5350396Z     ✓ pending request limit and busy calendar get their own next step (73 ms)
+2026-10-05T23:40:14.5351573Z     ✓ a booking with no call link yet says the coach will add it (70 ms)
+2026-10-05T23:40:14.5352806Z     ✓ welcome mode without a welcome type falls back to Calendar and Message your coach (53 ms)
+2026-10-05T23:40:14.5353924Z     ✓ no open times -> fallback, nothing to submit (52 ms)
+2026-10-05T23:40:14.5354735Z     ✓ reschedule moves the existing session (69 ms)
+2026-10-05T23:40:14.5355499Z     ✓ error copy: offline, payment, forbidden
+2026-10-05T23:40:14.5356647Z     ✓ unknown booking outcome prevents repeat submission and asks to verify Calendar (75 ms)
+2026-10-05T23:40:14.5357537Z   CalendarSessionScreen
+2026-10-05T23:40:14.5358601Z     ✓ an incomplete session link gives a working Calendar fallback instead of crashing (4 ms)
+2026-10-05T23:40:14.5359868Z     ✓ Join shows only with a real link inside the join window (3 ms)
+2026-10-05T23:40:14.5361077Z     ✓ opens the link on Join and shows the recap (53 ms)
+2026-10-05T23:40:14.5362532Z     ✓ cancels after confirmation and discloses manual calendar-copy removal (54 ms)
+2026-10-05T23:40:14.5363868Z     ✓ server flags: cancel allowed, reschedule not; pending link reads calm (53 ms)
+2026-10-05T23:40:14.5365128Z     ✓ a started session (server says not cancellable) explains why it is locked (53 ms)
+2026-10-05T23:40:14.5366319Z     ✓ a past or cancelled session offers no reschedule or cancel (54 ms)
+2026-10-05T23:40:14.5367221Z   S-SCHED-3 B-325-1: a phone-call link is usable end to end
+2026-10-05T23:40:14.5368477Z     ✓ a ready phone-call session offers Call, which opens the dialer with the number (54 ms)
+2026-10-05T23:40:14.5369736Z     ✓ a device that refuses the dialer gets the number and a next step (57 ms)
+2026-10-05T23:40:14.5371300Z     ✓ before the window the phone number is shown with when Call opens (57 ms)
+2026-10-05T23:40:14.5372721Z     ✓ other schemes never become a Join or Call action (1 ms)
+2026-10-05T23:40:14.5373665Z   S-SCHED-3 C-325-4: moving a confirmed approval-type session warns first
+2026-10-05T23:40:14.5374889Z     ✓ shows the warning for a confirmed session whose type needs approval (53 ms)
+2026-10-05T23:40:14.5376030Z     ✓ no warning for instant-confirm types or for a move of a request (53 ms)
+2026-10-05T23:40:14.5377088Z     ✓ a moved request repeats the phone-calendar note too (1 ms)
+2026-10-05T23:40:14.5377837Z   AUD-SOL-SCH1-122 normal welcome-call fallback
+2026-10-05T23:40:14.5379050Z     ✕ a regular appointment selected from the welcome fallback is labelled as that appointment (106 ms)
+2026-10-05T23:40:14.5380916Z     ✕ booking a regular appointment from the welcome fallback does not report a welcome call booked (121 ms)
+2026-10-05T23:40:14.5381695Z 
+2026-10-05T23:40:14.5382906Z   ● AUD-SOL-SCH1-122 normal welcome-call fallback › a regular appointment selected from the welcome fallback is labelled as that appointment
+2026-10-05T23:40:14.5383953Z 
+2026-10-05T23:40:14.5384201Z     expect(received).toBeNull()
+2026-10-05T23:40:14.5384512Z 
+2026-10-05T23:40:14.5386137Z     Received: <Text accessibilityRole="header" style={[{"fontFamily": "CormorantGaramond_400Regular", "fontSize": 24, "fontWeight": "400", "letterSpacing": 0.5, "lineHeight": 29, "marginBottom": 8}, {"color": "#1A1A18"}]}>Book your welcome call with Bradley</Text>
+2026-10-05T23:40:14.5387071Z 
+2026-10-05T23:40:14.5387710Z     [0m [90m 634 |[39m     [36mawait[39m fireEvent[33m.[39mpress(r[33m.[39mgetByText([32m'Quick Q/A Call, 20 minutes'[39m))[33m;[39m
+2026-10-05T23:40:14.5388887Z      [90m 635 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(r[33m.[39mgetByTestId([32m`calendar-slot-${SLOT_A.start_at}`[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-05T23:40:14.5390318Z     [31m[1m>[22m[39m[90m 636 |[39m     expect(r[33m.[39mqueryByText([32m'Book your welcome call with Bradley'[39m))[33m.[39mtoBeNull()[33m;[39m
+2026-10-05T23:40:14.5391236Z      [90m     |[39m                                                                  [31m[1m^[22m[39m
+2026-10-05T23:40:14.5391968Z      [90m 637 |[39m     expect(r[33m.[39mgetByText([32m'Quick Q/A Call'[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-05T23:40:14.5392508Z      [90m 638 |[39m   })[33m;[39m
+2026-10-05T23:40:14.5392994Z      [90m 639 |[39m[0m
+2026-10-05T23:40:14.5393267Z 
+2026-10-05T23:40:14.5393922Z       at Object.toBeNull (src/screens/client/calendar/__tests__/calendarScreens.test.tsx:636:66)
+2026-10-05T23:40:14.5395224Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:40:14.5396368Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:40:14.5396934Z 
+2026-10-05T23:40:14.5398211Z   ● AUD-SOL-SCH1-122 normal welcome-call fallback › booking a regular appointment from the welcome fallback does not report a welcome call booked
+2026-10-05T23:40:14.5399269Z 
+2026-10-05T23:40:14.5399621Z     expect(jest.fn()).not.toHaveBeenCalledWith(...expected)
+2026-10-05T23:40:14.5400354Z 
+2026-10-05T23:40:14.5400870Z     Expected: not "welcome_call_booked"
+2026-10-05T23:40:14.5401298Z 
+2026-10-05T23:40:14.5401462Z     Number of calls: 1
+2026-10-05T23:40:14.5401705Z 
+2026-10-05T23:40:14.5402951Z     [0m [90m 655 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(r[33m.[39mgetByTestId([32m'calendar-book-done'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-05T23:40:14.5405385Z      [90m 656 |[39m     expect(api[33m.[39mrequestSession)[33m.[39mtoHaveBeenCalledWith(expect[33m.[39mobjectContaining({ session_type_id[33m:[39m [32m'st-1'[39m }))[33m;[39m
+2026-10-05T23:40:14.5407740Z     [31m[1m>[22m[39m[90m 657 |[39m     expect(emitTutorialSignal)[33m.[39mnot[33m.[39mtoHaveBeenCalledWith([32m'welcome_call_booked'[39m)[33m;[39m
+2026-10-05T23:40:14.5409243Z      [90m     |[39m                                    [31m[1m^[22m[39m
+2026-10-05T23:40:14.5410484Z      [90m 658 |[39m   })[33m;[39m
+2026-10-05T23:40:14.5411150Z      [90m 659 |[39m })[33m;[39m
+2026-10-05T23:40:14.5411718Z      [90m 660 |[39m[0m
+2026-10-05T23:40:14.5412003Z 
+2026-10-05T23:40:14.5412761Z       at Object.toHaveBeenCalledWith (src/screens/client/calendar/__tests__/calendarScreens.test.tsx:657:36)
+2026-10-05T23:40:14.5413883Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:40:14.5414500Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:40:14.5414790Z 
+2026-10-05T23:40:14.5414959Z Test Suites: 1 failed, 1 total
+2026-10-05T23:40:14.5415283Z Tests:       2 failed, 40 passed, 42 total
+2026-10-05T23:40:14.5415569Z Snapshots:   0 total
+2026-10-05T23:40:14.5416127Z Time:        9.532 s
+2026-10-05T23:40:14.5417119Z Ran all test suites matching /src\/screens\/client\/calendar\/__tests__\/calendarScreens.test.tsx/i.
+2026-10-05T23:40:15.5377786Z Jest did not exit one second after the test run has completed.
+2026-10-05T23:40:15.5378118Z 
+2026-10-05T23:40:15.5378971Z 'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+2026-10-05T23:45:14.4812823Z ##[error]Process completed with exit code 1.
+2026-10-05T23:45:14.4958788Z Post job cleanup.
+2026-10-05T23:45:14.5979324Z [command]/usr/bin/git version
+2026-10-05T23:45:14.6019532Z git version 2.55.0
+2026-10-05T23:45:14.6058827Z Temporarily overriding HOME='/home/runner/work/_temp/085c0455-8c25-40da-aa1b-a98bde2789ba' before making global git config changes
+2026-10-05T23:45:14.6060820Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T23:45:14.6064937Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T23:45:14.6094959Z Removing SSH command configuration
+2026-10-05T23:45:14.6101721Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T23:45:14.6138043Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T23:45:14.6406771Z Removing HTTP extra header
+2026-10-05T23:45:14.6412729Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T23:45:14.6446648Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T23:45:14.6664344Z Removing includeIf entries pointing to credentials config files
+2026-10-05T23:45:14.6670508Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T23:45:14.6698181Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T23:45:14.6699108Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T23:45:14.6699709Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T23:45:14.6700479Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T23:45:14.6706847Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T23:45:14.6727977Z /home/runner/work/_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:45:14.6739308Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:45:14.6774945Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T23:45:14.6796228Z /home/runner/work/_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:45:14.6806691Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:45:14.6842961Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T23:45:14.6866036Z /github/runner_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:45:14.6877507Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:45:14.6912645Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T23:45:14.6935547Z /github/runner_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:45:14.6946644Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config
+2026-10-05T23:45:14.6984399Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T23:45:14.7217872Z Removing credentials config '/home/runner/work/_temp/git-credentials-34b8e580-c6e7-48f5-9d54-2f131becc8f7.config'
+2026-10-05T23:45:14.7374293Z Cleaning up orphan processes

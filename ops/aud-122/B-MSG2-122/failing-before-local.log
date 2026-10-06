@@ -1,0 +1,30 @@
+  ● reconcilePending › keeps a keyed unsent row when only an older equal-text row returns; drops it on its own key
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Array [
+    -   "pending_k2",
+    - ]
+    + Array []
+
+      74 |   it('keeps a keyed unsent row when only an older equal-text row returns; drops it on its own key', () => {
+      75 |     const row = (id: string, key: string, pending?: boolean) => ({ id, sender_role: 'client' as const, body: 'Done', created_at: '2026-05-21T10:00:00Z', pending, v2: { reply_to: null, deleted: false, edited_at: null, pinned_at: null, client_message_id: key } });
+    > 76 |     expect(reconcilePending([row('pending_k2', 'k2', true)], [row('srv-1', 'k1')]).map((m) => m.id)).toEqual(['pending_k2']);
+         |                                                                                                      ^
+      77 |     expect(reconcilePending([row('pending_k2', 'k2', true)], [row('srv-2', 'k2')])).toEqual([]);
+      78 |   });
+      79 |
+
+      at Object.toEqual (src/screens/client/__tests__/MessagesScreenCache.test.ts:76:102)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 6 passed, 7 total
+Snapshots:   0 total
+Time:        11.729 s
+Ran all test suites matching /src\/screens\/client\/__tests__\/MessagesScreenCache.test.ts/i.
+Jest did not exit one second after the test run has completed.
+
+'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.

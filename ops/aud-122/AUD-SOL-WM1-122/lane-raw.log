@@ -1,0 +1,581 @@
+﻿2026-10-05T23:41:35.0720310Z Current runner version: '2.337.0'
+2026-10-05T23:41:35.0757014Z ##[group]Runner Image Provisioner
+2026-10-05T23:41:35.0758638Z Hosted Compute Agent
+2026-10-05T23:41:35.0759790Z Version: 20260901.588
+2026-10-05T23:41:35.0760982Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T23:41:35.0762377Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T23:41:35.0764034Z Worker ID: {228046ff-790e-49a4-b2c8-c2882f447fe1}
+2026-10-05T23:41:35.0765521Z Azure Region: eastus2
+2026-10-05T23:41:35.0766575Z ##[endgroup]
+2026-10-05T23:41:35.0769564Z ##[group]Operating System
+2026-10-05T23:41:35.0770831Z Ubuntu
+2026-10-05T23:41:35.0771885Z 24.04.5
+2026-10-05T23:41:35.0772887Z LTS
+2026-10-05T23:41:35.0774250Z ##[endgroup]
+2026-10-05T23:41:35.0775246Z ##[group]Runner Image
+2026-10-05T23:41:35.0776447Z Image: ubuntu-24.04
+2026-10-05T23:41:35.0777477Z Version: 20260927.320.1
+2026-10-05T23:41:35.0779688Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T23:41:35.0782422Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T23:41:35.0784563Z ##[endgroup]
+2026-10-05T23:41:35.0786607Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T23:41:35.0790020Z Contents: read
+2026-10-05T23:41:35.0791064Z Metadata: read
+2026-10-05T23:41:35.0792172Z Packages: read
+2026-10-05T23:41:35.0793253Z ##[endgroup]
+2026-10-05T23:41:35.0796422Z Secret source: Actions
+2026-10-05T23:41:35.0798153Z Cache mode: write
+2026-10-05T23:41:35.0800128Z Prepare workflow directory
+2026-10-05T23:41:35.1269256Z Prepare all required actions
+2026-10-05T23:41:35.1339375Z Getting action download info
+2026-10-05T23:41:35.4276298Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T23:41:35.5315063Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T23:41:35.7214661Z Complete job name: targeted
+2026-10-05T23:41:35.7979481Z ##[group]Run actions/checkout@v6
+2026-10-05T23:41:35.7980404Z with:
+2026-10-05T23:41:35.7980973Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T23:41:35.7985124Z   token: ***
+2026-10-05T23:41:35.7985577Z   ssh-strict: true
+2026-10-05T23:41:35.7986016Z   ssh-user: git
+2026-10-05T23:41:35.7986460Z   persist-credentials: true
+2026-10-05T23:41:35.7986958Z   clean: true
+2026-10-05T23:41:35.7987409Z   sparse-checkout-cone-mode: true
+2026-10-05T23:41:35.7987937Z   fetch-depth: 1
+2026-10-05T23:41:35.7988362Z   fetch-tags: false
+2026-10-05T23:41:35.7988803Z   show-progress: true
+2026-10-05T23:41:35.7989248Z   lfs: false
+2026-10-05T23:41:35.7989656Z   submodules: false
+2026-10-05T23:41:35.7990110Z   set-safe-directory: true
+2026-10-05T23:41:35.7990627Z   allow-unsafe-pr-checkout: false
+2026-10-05T23:41:35.7991400Z ##[endgroup]
+2026-10-05T23:41:35.8981572Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T23:41:35.8983897Z ##[group]Getting Git version info
+2026-10-05T23:41:35.8984824Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T23:41:35.8986024Z [command]/usr/bin/git version
+2026-10-05T23:41:35.9064235Z git version 2.55.0
+2026-10-05T23:41:35.9086879Z ##[endgroup]
+2026-10-05T23:41:35.9100776Z Temporarily overriding HOME='/home/runner/work/_temp/0012c83b-6ff6-4532-858f-f88fd9daa232' before making global git config changes
+2026-10-05T23:41:35.9102210Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T23:41:35.9106639Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T23:41:35.9159961Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T23:41:35.9165097Z ##[group]Determining repository object format
+2026-10-05T23:41:35.9167615Z ##[endgroup]
+2026-10-05T23:41:35.9168459Z ##[group]Initializing the repository
+2026-10-05T23:41:35.9172247Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T23:41:35.9297494Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T23:41:35.9299156Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T23:41:35.9300459Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T23:41:35.9302095Z hint: call:
+2026-10-05T23:41:35.9303099Z hint:
+2026-10-05T23:41:35.9304095Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T23:41:35.9304833Z hint:
+2026-10-05T23:41:35.9305505Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T23:41:35.9306586Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T23:41:35.9307459Z hint:
+2026-10-05T23:41:35.9307933Z hint: 	git branch -m <name>
+2026-10-05T23:41:35.9308666Z hint:
+2026-10-05T23:41:35.9309680Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T23:41:35.9311078Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T23:41:35.9314242Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T23:41:35.9364286Z ##[endgroup]
+2026-10-05T23:41:35.9365087Z ##[group]Disabling automatic garbage collection
+2026-10-05T23:41:35.9367762Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T23:41:35.9397030Z ##[endgroup]
+2026-10-05T23:41:35.9398218Z ##[group]Setting up auth
+2026-10-05T23:41:35.9398818Z Removing SSH command configuration
+2026-10-05T23:41:35.9404933Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T23:41:35.9434728Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T23:41:35.9779618Z Removing HTTP extra header
+2026-10-05T23:41:35.9785150Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T23:41:35.9814858Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T23:41:36.0058117Z Removing includeIf entries pointing to credentials config files
+2026-10-05T23:41:36.0064938Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T23:41:36.0097090Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T23:41:36.0344165Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T23:41:36.0359428Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:41:36.0394353Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:41:36.0427117Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:41:36.0457722Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:41:36.0491694Z ##[endgroup]
+2026-10-05T23:41:36.0492438Z ##[group]Fetching the repository
+2026-10-05T23:41:36.0500152Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b0c1d7b1a8a178a00bcec13fdd3d58b87ed499d7:refs/remotes/origin/ci/B-WIZ4-122-351
+2026-10-05T23:41:36.8575026Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T23:41:36.8577533Z  * [new ref]         b0c1d7b1a8a178a00bcec13fdd3d58b87ed499d7 -> origin/ci/B-WIZ4-122-351
+2026-10-05T23:41:36.8600574Z [command]/usr/bin/git branch --list --remote origin/ci/B-WIZ4-122-351
+2026-10-05T23:41:36.8628752Z   origin/ci/B-WIZ4-122-351
+2026-10-05T23:41:36.8651329Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-WIZ4-122-351
+2026-10-05T23:41:36.8665335Z b0c1d7b1a8a178a00bcec13fdd3d58b87ed499d7
+2026-10-05T23:41:36.8675429Z ##[endgroup]
+2026-10-05T23:41:36.8676244Z ##[group]Determining the checkout info
+2026-10-05T23:41:36.8677100Z ##[endgroup]
+2026-10-05T23:41:36.8679459Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T23:41:36.8730355Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T23:41:36.8762487Z ##[group]Checking out the ref
+2026-10-05T23:41:36.8765689Z [command]/usr/bin/git checkout --progress --force -B ci/B-WIZ4-122-351 refs/remotes/origin/ci/B-WIZ4-122-351
+2026-10-05T23:41:36.9863323Z Switched to a new branch 'ci/B-WIZ4-122-351'
+2026-10-05T23:41:36.9868714Z branch 'ci/B-WIZ4-122-351' set up to track 'origin/ci/B-WIZ4-122-351'.
+2026-10-05T23:41:36.9878558Z ##[endgroup]
+2026-10-05T23:41:36.9923164Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T23:41:36.9947461Z b0c1d7b1a8a178a00bcec13fdd3d58b87ed499d7
+2026-10-05T23:41:37.0316004Z ##[group]Run actions/setup-node@v6
+2026-10-05T23:41:37.0317230Z with:
+2026-10-05T23:41:37.0318179Z   node-version: 22.13
+2026-10-05T23:41:37.0319255Z   cache: npm
+2026-10-05T23:41:37.0320231Z   check-latest: false
+2026-10-05T23:41:37.0329337Z   token: ***
+2026-10-05T23:41:37.0330379Z   package-manager-cache: true
+2026-10-05T23:41:37.0331523Z ##[endgroup]
+2026-10-05T23:41:37.1724448Z Attempting to download 22.13...
+2026-10-05T23:41:37.6685009Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T23:41:38.1595625Z Extracting ...
+2026-10-05T23:41:38.1728346Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/e5c0c15e-89f9-4a47-8431-cc2764325b86 -f /home/runner/work/_temp/9b098136-2a75-46ce-b9ab-edcaff5edcf2
+2026-10-05T23:41:39.3619117Z Adding to the cache ...
+2026-10-05T23:41:41.4330006Z ##[group]Environment details
+2026-10-05T23:41:41.6527273Z node: v22.13.1
+2026-10-05T23:41:41.6527610Z npm: 10.9.2
+2026-10-05T23:41:41.6527904Z yarn: 1.22.22
+2026-10-05T23:41:41.6528364Z ##[endgroup]
+2026-10-05T23:41:41.6550728Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T23:41:41.7476945Z /home/runner/.npm
+2026-10-05T23:41:41.8438289Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T23:41:42.8913608Z Received 220055639 of 241027159 (91.3%), 208.2 MBs/sec
+2026-10-05T23:41:42.9381585Z Received 241027159 of 241027159 (100.0%), 218.1 MBs/sec
+2026-10-05T23:41:42.9384414Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T23:41:42.9539726Z [command]/usr/bin/tar -xf /home/runner/work/_temp/ba2cd357-54cb-4d50-a1e0-d8255d184d19/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T23:41:43.7672601Z Cache restored successfully
+2026-10-05T23:41:43.7816137Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T23:41:43.8021881Z ##[group]Run npm ci
+2026-10-05T23:41:43.8022202Z [36;1mnpm ci[0m
+2026-10-05T23:41:43.8331480Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:41:43.8331821Z ##[endgroup]
+2026-10-05T23:41:49.6651340Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T23:41:49.8891099Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T23:41:49.9032823Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T23:41:49.9086257Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T23:41:49.9351930Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T23:41:50.0784679Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T23:41:50.0797679Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:41:50.0809232Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:41:50.0826008Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:41:50.0832002Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:41:50.0858060Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:41:50.1227684Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T23:41:50.1747361Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T23:41:50.6428633Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T23:41:51.2096205Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T23:41:54.8810175Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T23:42:47.7964584Z 
+2026-10-05T23:42:47.7967792Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-05T23:42:47.7968329Z 
+2026-10-05T23:42:47.7968713Z 187 packages are looking for funding
+2026-10-05T23:42:47.7969375Z   run `npm fund` for details
+2026-10-05T23:42:48.1789304Z 
+2026-10-05T23:42:48.1790758Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T23:42:48.1791174Z 
+2026-10-05T23:42:48.1791514Z To address issues that do not require attention, run:
+2026-10-05T23:42:48.1792548Z   npm audit fix
+2026-10-05T23:42:48.1792760Z 
+2026-10-05T23:42:48.1793610Z To address all issues (including breaking changes), run:
+2026-10-05T23:42:48.1794416Z   npm audit fix --force
+2026-10-05T23:42:48.1794803Z 
+2026-10-05T23:42:48.1795061Z Run `npm audit` for details.
+2026-10-05T23:42:48.3799990Z ##[group]Run npx tsc --noEmit
+2026-10-05T23:42:48.3800313Z [36;1mnpx tsc --noEmit[0m
+2026-10-05T23:42:48.3864798Z shell: /usr/bin/bash -e {0}
+2026-10-05T23:42:48.3865269Z ##[endgroup]
+2026-10-05T23:43:16.1912316Z ##[group]Run set -euo pipefail
+2026-10-05T23:43:16.1912649Z [36;1mset -euo pipefail[0m
+2026-10-05T23:43:16.1913030Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T23:43:16.1914861Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T23:43:16.1915244Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T23:43:16.1915520Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-05T23:43:16.1979402Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T23:43:16.1979761Z ##[endgroup]
+2026-10-05T23:43:16.2078278Z specs: src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx src/__tests__/CoachPackageEditScreen.idempotency.test.tsx src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx src/screens/coach/money/__tests__/money.test.tsx src/screens/coach/money/__tests__/moneyChargeTruth.test.tsx src/screens/coach/money/__tests__/moneyNavigation.test.tsx src/lib/money/__tests__/moneyCopyMon2.test.ts src/__tests__/paymentsConnectPackages.test.ts src/__tests__/coachSaasBlockers.test.ts src/navigation/__tests__/coachSettingsMoneyRow.test.tsx src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
+2026-10-05T23:43:21.6999042Z PASS src/__tests__/paymentsConnectPackages.test.ts
+2026-10-05T23:43:21.9982692Z PASS src/__tests__/coachSaasBlockers.test.ts
+2026-10-05T23:43:30.1665445Z PASS src/__tests__/CoachPackageEditScreen.idempotency.test.tsx (8.162 s)
+2026-10-05T23:43:30.2694966Z   ● Console
+2026-10-05T23:43:30.2771944Z 
+2026-10-05T23:43:30.2794538Z     console.warn
+2026-10-05T23:43:30.2824901Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T23:43:30.2838466Z 
+2026-10-05T23:43:30.2855255Z     [0m [90m 304 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+2026-10-05T23:43:30.2884673Z      [90m 305 |[39m         navigation[33m.[39mdispatch(
+2026-10-05T23:43:30.2886004Z     [31m[1m>[22m[39m[90m 306 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+2026-10-05T23:43:30.2887211Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-05T23:43:30.2895760Z      [90m 307 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+2026-10-05T23:43:30.2897627Z      [90m 308 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+2026-10-05T23:43:30.2899055Z      [90m 309 |[39m           })[33m,[39m[0m
+2026-10-05T23:43:30.2899582Z 
+2026-10-05T23:43:30.2900413Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T23:43:30.2901765Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:306:25)
+2026-10-05T23:43:30.2903042Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:30.2904650Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:30.2905427Z 
+2026-10-05T23:43:30.2910494Z     console.warn
+2026-10-05T23:43:30.2911618Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T23:43:30.2912572Z 
+2026-10-05T23:43:30.2913837Z     [0m [90m 304 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+2026-10-05T23:43:30.2915123Z      [90m 305 |[39m         navigation[33m.[39mdispatch(
+2026-10-05T23:43:30.2916310Z     [31m[1m>[22m[39m[90m 306 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+2026-10-05T23:43:30.2917415Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-05T23:43:30.2918531Z      [90m 307 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+2026-10-05T23:43:30.2920808Z      [90m 308 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+2026-10-05T23:43:30.2922476Z      [90m 309 |[39m           })[33m,[39m[0m
+2026-10-05T23:43:30.2923014Z 
+2026-10-05T23:43:30.2924044Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T23:43:30.2925419Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:306:25)
+2026-10-05T23:43:30.2926733Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:30.2928006Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:30.2928766Z 
+2026-10-05T23:43:30.2929239Z     console.warn
+2026-10-05T23:43:30.2930446Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T23:43:30.2948945Z 
+2026-10-05T23:43:30.2950058Z     [0m [90m 304 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+2026-10-05T23:43:30.2951400Z      [90m 305 |[39m         navigation[33m.[39mdispatch(
+2026-10-05T23:43:30.2952595Z     [31m[1m>[22m[39m[90m 306 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+2026-10-05T23:43:30.2954003Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-05T23:43:30.2955186Z      [90m 307 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+2026-10-05T23:43:30.2957076Z      [90m 308 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+2026-10-05T23:43:30.2958581Z      [90m 309 |[39m           })[33m,[39m[0m
+2026-10-05T23:43:30.2959131Z 
+2026-10-05T23:43:30.2960083Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T23:43:30.2961548Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:306:25)
+2026-10-05T23:43:30.2984556Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:30.2987528Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:30.2988325Z 
+2026-10-05T23:43:30.2988686Z     console.warn
+2026-10-05T23:43:30.2989809Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T23:43:30.2990771Z 
+2026-10-05T23:43:30.2991792Z     [0m [90m 304 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+2026-10-05T23:43:30.2993050Z      [90m 305 |[39m         navigation[33m.[39mdispatch(
+2026-10-05T23:43:30.2994783Z     [31m[1m>[22m[39m[90m 306 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+2026-10-05T23:43:30.2997635Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-05T23:43:30.2998878Z      [90m 307 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+2026-10-05T23:43:30.3000944Z      [90m 308 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+2026-10-05T23:43:30.3002474Z      [90m 309 |[39m           })[33m,[39m[0m
+2026-10-05T23:43:30.3003052Z 
+2026-10-05T23:43:30.3004164Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T23:43:30.3005590Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:306:25)
+2026-10-05T23:43:30.3006946Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:30.3008257Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:30.3009019Z 
+2026-10-05T23:43:30.3009380Z     console.warn
+2026-10-05T23:43:30.3010524Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T23:43:30.3012002Z 
+2026-10-05T23:43:30.3013054Z     [0m [90m 304 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+2026-10-05T23:43:30.3014650Z      [90m 305 |[39m         navigation[33m.[39mdispatch(
+2026-10-05T23:43:30.3015882Z     [31m[1m>[22m[39m[90m 306 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+2026-10-05T23:43:30.3017047Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-05T23:43:30.3018317Z      [90m 307 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+2026-10-05T23:43:30.3020212Z      [90m 308 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+2026-10-05T23:43:30.3021723Z      [90m 309 |[39m           })[33m,[39m[0m
+2026-10-05T23:43:30.3022265Z 
+2026-10-05T23:43:30.3023083Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T23:43:30.3024763Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:306:25)
+2026-10-05T23:43:30.3026107Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:30.3027446Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:30.3028237Z 
+2026-10-05T23:43:30.3028568Z     console.warn
+2026-10-05T23:43:30.3029687Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T23:43:30.3030623Z 
+2026-10-05T23:43:30.3031558Z     [0m [90m 304 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+2026-10-05T23:43:30.3032780Z      [90m 305 |[39m         navigation[33m.[39mdispatch(
+2026-10-05T23:43:30.3034244Z     [31m[1m>[22m[39m[90m 306 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+2026-10-05T23:43:30.3035379Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-05T23:43:30.3036520Z      [90m 307 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+2026-10-05T23:43:30.3038402Z      [90m 308 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+2026-10-05T23:43:30.3039817Z      [90m 309 |[39m           })[33m,[39m[0m
+2026-10-05T23:43:30.3040338Z 
+2026-10-05T23:43:30.3041123Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T23:43:30.3042445Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:306:25)
+2026-10-05T23:43:30.3043923Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:30.3045183Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:30.3052276Z 
+2026-10-05T23:43:30.7725835Z PASS src/screens/coach/money/__tests__/moneyChargeTruth.test.tsx
+2026-10-05T23:43:31.5708104Z PASS src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+2026-10-05T23:43:31.5794680Z   ● Console
+2026-10-05T23:43:31.5841696Z 
+2026-10-05T23:43:31.5843204Z     console.warn
+2026-10-05T23:43:31.5844544Z       Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+2026-10-05T23:43:31.5845361Z 
+2026-10-05T23:43:31.5846355Z     [0m [90m 304 |[39m         [90m// CommonActions.reset equivalent via dispatch with a single route.[39m
+2026-10-05T23:43:31.5847674Z      [90m 305 |[39m         navigation[33m.[39mdispatch(
+2026-10-05T23:43:31.5848882Z     [31m[1m>[22m[39m[90m 306 |[39m           [33mCommonActions[39m[33m.[39mnavigate({
+2026-10-05T23:43:31.5849978Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-05T23:43:31.5851189Z      [90m 307 |[39m             name[33m:[39m [32m"CoachPackageEdit"[39m[33m,[39m
+2026-10-05T23:43:31.5853281Z      [90m 308 |[39m             params[33m:[39m { packageId[33m:[39m res[33m.[39mdata[33m.[39mid[33m,[39m initialPackage[33m:[39m res[33m.[39mdata }[33m,[39m
+2026-10-05T23:43:31.5855431Z      [90m 309 |[39m           })[33m,[39m[0m
+2026-10-05T23:43:31.5856027Z 
+2026-10-05T23:43:31.5856866Z       at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+2026-10-05T23:43:31.5858188Z       at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:306:25)
+2026-10-05T23:43:31.5859541Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:31.5860847Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:31.5861580Z 
+2026-10-05T23:43:32.3185291Z PASS src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+2026-10-05T23:43:32.8014653Z PASS src/screens/coach/money/__tests__/money.test.tsx (14.643 s)
+2026-10-05T23:43:33.0665191Z PASS src/components/coach/setup/__tests__/coachSetupRound2.test.tsx (14.933 s)
+2026-10-05T23:43:33.0759601Z   ● Console
+2026-10-05T23:43:33.0763302Z 
+2026-10-05T23:43:33.0763933Z     console.warn
+2026-10-05T23:43:33.0765876Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-05T23:43:33.0767532Z 
+2026-10-05T23:43:33.0768033Z     [0m [90m 175 |[39m
+2026-10-05T23:43:33.0768907Z      [90m 176 |[39m   [36mreturn[39m (
+2026-10-05T23:43:33.0770442Z     [31m[1m>[22m[39m[90m 177 |[39m     [33m<[39m[33mSafeAreaView[39m style[33m=[39m{styles[33m.[39mcontainer}[33m>[39m
+2026-10-05T23:43:33.0771903Z      [90m     |[39m      [31m[1m^[22m[39m
+2026-10-05T23:43:33.0772963Z      [90m 178 |[39m       [33m<[39m[33mScrollView[39m
+2026-10-05T23:43:33.0774510Z      [90m 179 |[39m         contentContainerStyle[33m=[39m{styles[33m.[39minner}
+2026-10-05T23:43:33.0776060Z      [90m 180 |[39m         keyboardShouldPersistTaps[33m=[39m[32m"handled"[39m[0m
+2026-10-05T23:43:33.0776936Z 
+2026-10-05T23:43:33.0777693Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-05T23:43:33.0779052Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-05T23:43:33.0780290Z       at SafeAreaView (src/navigation/CoachWizardNavigator.tsx:177:6)
+2026-10-05T23:43:33.0781846Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-05T23:43:33.0783941Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-05T23:43:33.0785733Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-05T23:43:33.0787432Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-05T23:43:33.0789098Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T23:43:33.0790772Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-05T23:43:33.0792407Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-05T23:43:33.0794354Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-05T23:43:33.0796129Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-05T23:43:33.0798006Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-05T23:43:33.0799728Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-05T23:43:33.0801100Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+2026-10-05T23:43:33.0802896Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+2026-10-05T23:43:33.0804298Z 
+2026-10-05T23:43:33.2125838Z PASS src/lib/money/__tests__/moneyCopyMon2.test.ts
+2026-10-05T23:43:33.7796190Z PASS src/navigation/__tests__/coachSettingsMoneyRow.test.tsx
+2026-10-05T23:43:33.8207664Z   ● Console
+2026-10-05T23:43:33.8208198Z 
+2026-10-05T23:43:33.8208528Z     console.error
+2026-10-05T23:43:33.8209529Z       An update to SettingsScreen inside a test was not wrapped in act(...).
+2026-10-05T23:43:33.8210275Z       
+2026-10-05T23:43:33.8211031Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T23:43:33.8211809Z       
+2026-10-05T23:43:33.8212156Z       act(() => {
+2026-10-05T23:43:33.8212625Z         /* fire events that update state */
+2026-10-05T23:43:33.8213143Z       });
+2026-10-05T23:43:33.8213843Z       /* assert on the output */
+2026-10-05T23:43:33.8214299Z       
+2026-10-05T23:43:33.8215478Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T23:43:33.8216473Z 
+2026-10-05T23:43:33.8216755Z     [0m [90m 16 |[39m
+2026-10-05T23:43:33.8217534Z      [90m 17 |[39m [36mfunction[39m emit()[33m:[39m [36mvoid[39m {
+2026-10-05T23:43:33.8218796Z     [31m[1m>[22m[39m[90m 18 |[39m   [36mfor[39m ([36mconst[39m l [36mof[39m listeners) l()[33m;[39m
+2026-10-05T23:43:33.8219919Z      [90m    |[39m                              [31m[1m^[22m[39m
+2026-10-05T23:43:33.8220578Z      [90m 19 |[39m }
+2026-10-05T23:43:33.8221055Z      [90m 20 |[39m
+2026-10-05T23:43:33.8221942Z      [90m 21 |[39m [90m/** Record what the server said for the signed-in coach. */[39m[0m
+2026-10-05T23:43:33.8222540Z 
+2026-10-05T23:43:33.8223076Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T23:43:33.8224663Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T23:43:33.8226321Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T23:43:33.8227972Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T23:43:33.8229484Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+2026-10-05T23:43:33.8230796Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+2026-10-05T23:43:33.8231700Z       at l (src/lib/money/headCoachRole.ts:18:30)
+2026-10-05T23:43:33.8232639Z       at Object.emit [as noteHeadCoachHandlesMoney] (src/lib/money/headCoachRole.ts:26:3)
+2026-10-05T23:43:33.8234233Z       at noteHeadCoachHandlesMoney (src/navigation/__tests__/coachSettingsMoneyRow.test.tsx:16:5)
+2026-10-05T23:43:33.8235723Z       at Object.noteHeadCoachHandlesMoney (src/navigation/__tests__/coachSettingsMoneyRow.test.tsx:167:5)
+2026-10-05T23:43:33.8237180Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:33.8238304Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:33.8238870Z 
+2026-10-05T23:43:33.8239048Z     console.error
+2026-10-05T23:43:33.8239742Z       An update to SettingsScreen inside a test was not wrapped in act(...).
+2026-10-05T23:43:33.8240437Z       
+2026-10-05T23:43:33.8241176Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T23:43:33.8241937Z       
+2026-10-05T23:43:33.8242270Z       act(() => {
+2026-10-05T23:43:33.8242742Z         /* fire events that update state */
+2026-10-05T23:43:33.8243246Z       });
+2026-10-05T23:43:33.8243925Z       /* assert on the output */
+2026-10-05T23:43:33.8244386Z       
+2026-10-05T23:43:33.8245494Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T23:43:33.8246854Z 
+2026-10-05T23:43:33.8247318Z     [0m [90m 130 |[39m
+2026-10-05T23:43:33.8248396Z      [90m 131 |[39m   [36mconst[39m loadAccountStatus [33m=[39m useCallback([36masync[39m () [33m=>[39m {
+2026-10-05T23:43:33.8249735Z     [31m[1m>[22m[39m[90m 132 |[39m     setAccountStatusLoading([36mtrue[39m)[33m;[39m
+2026-10-05T23:43:33.8250638Z      [90m     |[39m     [31m[1m^[22m[39m
+2026-10-05T23:43:33.8251321Z      [90m 133 |[39m     [36mtry[39m {
+2026-10-05T23:43:33.8252408Z      [90m 134 |[39m       [90m// Canonical in-app deletion status (POST /me/delete-account flow). The[39m
+2026-10-05T23:43:33.8254189Z      [90m 135 |[39m       [90m// legacy /users/me/account status reflects a different, unused path.[39m[0m
+2026-10-05T23:43:33.8254891Z 
+2026-10-05T23:43:33.8255419Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T23:43:33.8256696Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T23:43:33.8258354Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T23:43:33.8260017Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T23:43:33.8261617Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T23:43:33.8263149Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T23:43:33.8264682Z       at setAccountStatusLoading (src/screens/coach/SettingsScreen.tsx:132:5)
+2026-10-05T23:43:33.8265850Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:33.8267009Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:33.8267966Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T23:43:33.8268900Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T23:43:33.8269842Z       at loadAccountStatus (src/screens/coach/SettingsScreen.tsx:161:5)
+2026-10-05T23:43:33.8271102Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17681:20)
+2026-10-05T23:43:33.8272537Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T23:43:33.8274268Z       at commitHookEffectListMount (node_modules/react-reconciler/cjs/react-reconciler.development.js:10861:29)
+2026-10-05T23:43:33.8275907Z       at commitHookPassiveMountEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:10948:11)
+2026-10-05T23:43:33.8277555Z       at commitPassiveMountOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:12979:13)
+2026-10-05T23:43:33.8279268Z       at recursivelyTraversePassiveMountEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:12934:11)
+2026-10-05T23:43:33.8281045Z       at commitPassiveMountOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:13014:11)
+2026-10-05T23:43:33.8282691Z       at flushPassiveEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:15982:9)
+2026-10-05T23:43:33.8284461Z       at flushPendingEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:15892:14)
+2026-10-05T23:43:33.8285935Z       at flushSpawnedWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15856:44)
+2026-10-05T23:43:33.8287319Z       at commitRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:15587:9)
+2026-10-05T23:43:33.8288760Z       at commitRootWhenReady (node_modules/react-reconciler/cjs/react-reconciler.development.js:14467:7)
+2026-10-05T23:43:33.8290269Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14384:15)
+2026-10-05T23:43:33.8292034Z       at performSyncWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:3350:7)
+2026-10-05T23:43:33.8294051Z       at flushSyncWorkAcrossRoots_impl (node_modules/react-reconciler/cjs/react-reconciler.development.js:3192:21)
+2026-10-05T23:43:33.8295672Z       at processRootScheduleInMicrotask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3231:9)
+2026-10-05T23:43:33.8297044Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:3370:17
+2026-10-05T23:43:33.8297997Z       at node_modules/test-renderer/src/reconciler.ts:479:7
+2026-10-05T23:43:33.8298442Z 
+2026-10-05T23:43:33.8298612Z     console.error
+2026-10-05T23:43:33.8299299Z       An update to SettingsScreen inside a test was not wrapped in act(...).
+2026-10-05T23:43:33.8300132Z       
+2026-10-05T23:43:33.8327780Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T23:43:33.8328574Z       
+2026-10-05T23:43:33.8328929Z       act(() => {
+2026-10-05T23:43:33.8329425Z         /* fire events that update state */
+2026-10-05T23:43:33.8329972Z       });
+2026-10-05T23:43:33.8330394Z       /* assert on the output */
+2026-10-05T23:43:33.8330854Z       
+2026-10-05T23:43:33.8331983Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T23:43:33.8332968Z 
+2026-10-05T23:43:33.8334098Z     [0m [90m 151 |[39m         [90m// On other errors, hide the section entirely rather than render a[39m
+2026-10-05T23:43:33.8335239Z      [90m 152 |[39m         [90m// misleading state.[39m
+2026-10-05T23:43:33.8336254Z     [31m[1m>[22m[39m[90m 153 |[39m         setAccountStatus([36mnull[39m)[33m;[39m
+2026-10-05T23:43:33.8337153Z      [90m     |[39m         [31m[1m^[22m[39m
+2026-10-05T23:43:33.8337744Z      [90m 154 |[39m       }
+2026-10-05T23:43:33.8338359Z      [90m 155 |[39m     } [36mfinally[39m {
+2026-10-05T23:43:33.8339269Z      [90m 156 |[39m       setAccountStatusLoading([36mfalse[39m)[33m;[39m[0m
+2026-10-05T23:43:33.8339844Z 
+2026-10-05T23:43:33.8340364Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T23:43:33.8341714Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T23:43:33.8343331Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T23:43:33.8375409Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T23:43:33.8376998Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T23:43:33.8378492Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T23:43:33.8379663Z       at setAccountStatus (src/screens/coach/SettingsScreen.tsx:153:9)
+2026-10-05T23:43:33.8380780Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:33.8382011Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:33.8382975Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T23:43:33.8384223Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T23:43:33.8385167Z       at loadAccountStatus (src/screens/coach/SettingsScreen.tsx:161:5)
+2026-10-05T23:43:33.8386472Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17681:20)
+2026-10-05T23:43:33.8387985Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T23:43:33.8389498Z       at commitHookEffectListMount (node_modules/react-reconciler/cjs/react-reconciler.development.js:10861:29)
+2026-10-05T23:43:33.8391123Z       at commitHookPassiveMountEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:10948:11)
+2026-10-05T23:43:33.8393260Z       at commitPassiveMountOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:12979:13)
+2026-10-05T23:43:33.8395264Z       at recursivelyTraversePassiveMountEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:12934:11)
+2026-10-05T23:43:33.8396994Z       at commitPassiveMountOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:13014:11)
+2026-10-05T23:43:33.8398517Z       at flushPassiveEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:15982:9)
+2026-10-05T23:43:33.8400003Z       at flushPendingEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:15892:14)
+2026-10-05T23:43:33.8401474Z       at flushSpawnedWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15856:44)
+2026-10-05T23:43:33.8402826Z       at commitRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:15587:9)
+2026-10-05T23:43:33.8420497Z       at commitRootWhenReady (node_modules/react-reconciler/cjs/react-reconciler.development.js:14467:7)
+2026-10-05T23:43:33.8422030Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14384:15)
+2026-10-05T23:43:33.8423749Z       at performSyncWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:3350:7)
+2026-10-05T23:43:33.8425276Z       at flushSyncWorkAcrossRoots_impl (node_modules/react-reconciler/cjs/react-reconciler.development.js:3192:21)
+2026-10-05T23:43:33.8426826Z       at processRootScheduleInMicrotask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3231:9)
+2026-10-05T23:43:33.8428119Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:3370:17
+2026-10-05T23:43:33.8429018Z       at node_modules/test-renderer/src/reconciler.ts:479:7
+2026-10-05T23:43:33.8429431Z 
+2026-10-05T23:43:33.8429590Z     console.error
+2026-10-05T23:43:33.8430275Z       An update to SettingsScreen inside a test was not wrapped in act(...).
+2026-10-05T23:43:33.8430958Z       
+2026-10-05T23:43:33.8431655Z       When testing, code that causes React state updates should be wrapped into act(...):
+2026-10-05T23:43:33.8432384Z       
+2026-10-05T23:43:33.8432697Z       act(() => {
+2026-10-05T23:43:33.8433132Z         /* fire events that update state */
+2026-10-05T23:43:33.8433813Z       });
+2026-10-05T23:43:33.8434199Z       /* assert on the output */
+2026-10-05T23:43:33.8434615Z       
+2026-10-05T23:43:33.8435704Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+2026-10-05T23:43:33.8436638Z 
+2026-10-05T23:43:33.8436962Z     [0m [90m 154 |[39m       }
+2026-10-05T23:43:33.8437554Z      [90m 155 |[39m     } [36mfinally[39m {
+2026-10-05T23:43:33.8438521Z     [31m[1m>[22m[39m[90m 156 |[39m       setAccountStatusLoading([36mfalse[39m)[33m;[39m
+2026-10-05T23:43:33.8439419Z      [90m     |[39m       [31m[1m^[22m[39m
+2026-10-05T23:43:33.8439970Z      [90m 157 |[39m     }
+2026-10-05T23:43:33.8440566Z      [90m 158 |[39m   }[33m,[39m [])[33m;[39m
+2026-10-05T23:43:33.8441119Z      [90m 159 |[39m[0m
+2026-10-05T23:43:33.8441367Z 
+2026-10-05T23:43:33.8441879Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+2026-10-05T23:43:33.8443156Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T23:43:33.8444936Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+2026-10-05T23:43:33.8446528Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-05T23:43:33.8448029Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-05T23:43:33.8449442Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-05T23:43:33.8450958Z       at setAccountStatusLoading (src/screens/coach/SettingsScreen.tsx:156:7)
+2026-10-05T23:43:33.8452240Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T23:43:33.8453304Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T23:43:33.8454413Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T23:43:33.8455276Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T23:43:33.8456172Z       at loadAccountStatus (src/screens/coach/SettingsScreen.tsx:161:5)
+2026-10-05T23:43:33.8457411Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17681:20)
+2026-10-05T23:43:33.8458846Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-05T23:43:33.8460285Z       at commitHookEffectListMount (node_modules/react-reconciler/cjs/react-reconciler.development.js:10861:29)
+2026-10-05T23:43:33.8461883Z       at commitHookPassiveMountEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:10948:11)
+2026-10-05T23:43:33.8463667Z       at commitPassiveMountOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:12979:13)
+2026-10-05T23:43:33.8465025Z       at recursivelyTraversePassiveMountEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:12934:11)
+2026-10-05T23:43:33.8465929Z       at commitPassiveMountOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:13014:11)
+2026-10-05T23:43:33.8466714Z       at flushPassiveEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:15982:9)
+2026-10-05T23:43:33.8467472Z       at flushPendingEffects (node_modules/react-reconciler/cjs/react-reconciler.development.js:15892:14)
+2026-10-05T23:43:33.8468219Z       at flushSpawnedWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15856:44)
+2026-10-05T23:43:33.8468934Z       at commitRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:15587:9)
+2026-10-05T23:43:33.8469664Z       at commitRootWhenReady (node_modules/react-reconciler/cjs/react-reconciler.development.js:14467:7)
+2026-10-05T23:43:33.8470409Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14384:15)
+2026-10-05T23:43:33.8471165Z       at performSyncWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:3350:7)
+2026-10-05T23:43:33.8471957Z       at flushSyncWorkAcrossRoots_impl (node_modules/react-reconciler/cjs/react-reconciler.development.js:3192:21)
+2026-10-05T23:43:33.8472783Z       at processRootScheduleInMicrotask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3231:9)
+2026-10-05T23:43:33.8473771Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:3370:17
+2026-10-05T23:43:33.8474309Z       at node_modules/test-renderer/src/reconciler.ts:479:7
+2026-10-05T23:43:33.8474559Z 
+2026-10-05T23:43:34.0314296Z PASS src/screens/coach/money/__tests__/moneyNavigation.test.tsx
+2026-10-05T23:43:34.5713925Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+2026-10-05T23:43:34.5734544Z 
+2026-10-05T23:43:34.5739821Z Test Suites: 11 passed, 11 total
+2026-10-05T23:43:34.5740484Z Tests:       182 passed, 182 total
+2026-10-05T23:43:34.5741046Z Snapshots:   0 total
+2026-10-05T23:43:34.5741365Z Time:        17.205 s
+2026-10-05T23:43:34.5746477Z Ran all test suites matching /src\/__tests__\/CoachPackageEditScreen.w3FixRound4.test.tsx|src\/__tests__\/CoachPackageEditScreen.idempotency.test.tsx|src\/__tests__\/CoachPackageEditScreen.lockPreview.test.tsx|src\/screens\/coach\/money\/__tests__\/money.test.tsx|src\/screens\/coach\/money\/__tests__\/moneyChargeTruth.test.tsx|src\/screens\/coach\/money\/__tests__\/moneyNavigation.test.tsx|src\/lib\/money\/__tests__\/moneyCopyMon2.test.ts|src\/__tests__\/paymentsConnectPackages.test.ts|src\/__tests__\/coachSaasBlockers.test.ts|src\/navigation\/__tests__\/coachSettingsMoneyRow.test.tsx|src\/components\/coach\/setup\/__tests__\/coachSetupRound2.test.tsx/i.
+2026-10-05T23:43:34.6084162Z Post job cleanup.
+2026-10-05T23:43:34.7256262Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06, not saving cache.
+2026-10-05T23:43:34.7403888Z Post job cleanup.
+2026-10-05T23:43:34.8239286Z [command]/usr/bin/git version
+2026-10-05T23:43:34.8276777Z git version 2.55.0
+2026-10-05T23:43:34.8316791Z Temporarily overriding HOME='/home/runner/work/_temp/f6cfb985-5c3b-4877-bd5c-b702d818e071' before making global git config changes
+2026-10-05T23:43:34.8318505Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T23:43:34.8321841Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T23:43:34.8351738Z Removing SSH command configuration
+2026-10-05T23:43:34.8359112Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T23:43:34.8393068Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T23:43:34.8616767Z Removing HTTP extra header
+2026-10-05T23:43:34.8622081Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T23:43:34.8657092Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T23:43:34.8886337Z Removing includeIf entries pointing to credentials config files
+2026-10-05T23:43:34.8895826Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T23:43:34.8927823Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T23:43:34.8929282Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T23:43:34.8930464Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T23:43:34.8931373Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T23:43:34.8940300Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T23:43:34.8964970Z /home/runner/work/_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:43:34.8980181Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:43:34.9017933Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T23:43:34.9042145Z /home/runner/work/_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:43:34.9054687Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:43:34.9092082Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T23:43:34.9115470Z /github/runner_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:43:34.9126546Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:43:34.9165949Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T23:43:34.9187861Z /github/runner_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:43:34.9197738Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config
+2026-10-05T23:43:34.9234018Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T23:43:34.9474029Z Removing credentials config '/home/runner/work/_temp/git-credentials-85e061ef-4315-49ea-a4fb-4af7f3ead9ac.config'
+2026-10-05T23:43:34.9626618Z Cleaning up orphan processes

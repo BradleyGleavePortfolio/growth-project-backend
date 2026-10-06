@@ -9,3 +9,6 @@ No conflict hunks. Each restack old->new delta has the #347 fix patch-id 05116cc
 lane at #351 7bf7d696 (tsc + 11 specs): https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37389877466 (result appended below)
 Re-review: #347 delta only (commit ee8a7777 on 08c7416e: CoachPackageEditScreen.tsx, packagesApi.ts publish(), new test); #348-#351 merge-only check.
 Sol probe case 2 (trial_days on the wire) fails by design: operator-preferred hide fix; cases 1 and 3 pass.
+16:45 lane 37389877466: GREEN (tsc + 11 suites / 182 tests). PR CI: #347 green (464/6,416), #348 green, #351 green (469/6,498);
+#349 and #350 red by design (same 3 Earnings-route tests in paymentsConnectPackages + coachSaasBlockers, retired in #351).
+Lock ops/lanes122/locks/wizard released 16:45. Worktrees removed; ci/B-WIZ4-122-351 deleted.

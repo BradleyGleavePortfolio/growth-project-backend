@@ -1,0 +1,31 @@
+[heavy] waiting for a slot: npx jest test/roman/roman.controller.spec.ts
+PASS test/roman/roman.controller.spec.ts (19.528 s)
+  RomanFeatureGuard — flag gates the whole surface
+    ✓ throws 404 (NotFoundException) on every route while the flag is OFF (26 ms)
+    ✓ hides the feature existence — the 404 message is a generic not-found (1 ms)
+    ✓ passes through (returns true) once the flag is ON
+    ✓ treats any non-exactly-"true" value as OFF (default-OFF invariant) (6 ms)
+  RomanController — auth + feature guards mounted
+    ✓ mounts JwtAuthGuard AND RomanFeatureGuard on the controller (4 ms)
+    ✓ applies the guards at class scope (1 ms)
+  RomanController — POST /roman/sessions (open or resume)
+    ✓ opens/resumes for the authenticated caller and shapes the view (15 ms)
+    ✓ resolves the pro tier when a CoachSubscription row exists
+  RomanController — GET /roman/sessions/:id/messages
+    ✓ lists messages newest-first and forwards the cursor + limit (3 ms)
+  RomanController — chat routes only (B-635-2)
+    ✓ no longer mounts the delete route (RomanChatsController owns list + delete, outside the flag) (3 ms)
+    ✓ GET /roman/sessions/:id/messages is no-store (a deleted transcript never lingers in a device cache)
+  RomanController — POST /roman/sessions/:id/messages (SSE)
+    ✓ rate-limits, persists the user turn, then streams the assistant reply (27 ms)
+    ✓ emits a structured SSE error frame (never a raw stack) when streaming throws (1 ms)
+    ✓ does not persist the user turn when the rate-limit gate rejects (1 ms)
+    ✓ B-668-1: a used-up coach pool (402) refuses before the user turn is stored or streamed (1 ms)
+    ✓ B-668-1: a crisis turn skips the coach pool check and is stored and answered (1 ms)
+    ✓ sets a Retry-After header (RFC 6585) when the rate-limit gate returns 429 (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       17 passed, 17 total
+Snapshots:   0 total
+Time:        19.898 s
+Ran all test suites matching test/roman/roman.controller.spec.ts.

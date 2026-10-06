@@ -1,0 +1,106 @@
+[heavy] waiting for a slot: npx jest --ci test/ai-consent/ai-consent-wiring.spec.ts
+FAIL test/ai-consent/ai-consent-wiring.spec.ts (26.455 s, 413 MB heap size)
+  R2a wiring
+    ✓ migration ships a down.sql that drops the table and the trigger function (4 ms)
+    ✓ enables and forces RLS, binds the append-only trigger and revokes anon
+    ✓ has no owner / coach read branch and no non-service write policy (2 ms)
+    ✓ the rls-live-tests CI job runs the live ledger suite (1 ms)
+    ✓ the flag is registered default OFF and documented default false (1 ms)
+    ✓ AppModule mounts AiConsentModule (1 ms)
+    ✕ only the AI egress gate (src/ai-egress) and app.module import the ledger (73 ms)
+
+  ● R2a wiring › only the AI egress gate (src/ai-egress) and app.module import the ledger
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 2
+
+      Array [
+        "src/ai-egress/ai-egress.module.ts",
+        "src/ai-egress/ai-egress.service.ts",
+        "src/app.module.ts",
+    +   "src/roman-adjust/roman-adjust.module.ts",
+    +   "src/roman-adjust/roman-adjust.service.ts",
+      ]
+
+    [0m [90m 93 |[39m     [90m// R2b — every AI call site reaches the ledger only through AiEgressService[39m
+     [90m 94 |[39m     [90m// (src/ai-egress); none imports it directly.[39m
+    [31m[1m>[22m[39m[90m 95 |[39m     expect(outside[33m.[39msort())[33m.[39mtoEqual([
+     [90m    |[39m                            [31m[1m^[22m[39m
+     [90m 96 |[39m       [32m'src/ai-egress/ai-egress.module.ts'[39m[33m,[39m
+     [90m 97 |[39m       [32m'src/ai-egress/ai-egress.service.ts'[39m[33m,[39m
+     [90m 98 |[39m       [32m'src/app.module.ts'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/ai-consent/ai-consent-wiring.spec.ts:95:28)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 6 passed, 7 total
+Snapshots:   0 total
+Time:        27.209 s
+Ran all test suites matching test/ai-consent/ai-consent-wiring.spec.ts.
+[heavy] waiting for a slot: npx jest --ci test/account-deletion/erasure-manifest-coverage.spec.ts
+FAIL test/account-deletion/erasure-manifest-coverage.spec.ts (57 MB heap size)
+  erasure manifest: schema coverage
+    ✓ finds the expected scale of user references (parser sanity) (9 ms)
+    ✕ every User relation, user-id-like column and email column has a manifest decision (6 ms)
+    ✓ every manifest entry names a real model, field path, data key and filter (3 ms)
+    ✓ dependent scrubs run before the rows they depend on are removed (2 ms)
+  erasure manifest: seeded execution
+    ✕ removes or detaches the deleted user from every column, except documented retention (2 ms)
+    ✓ every non-retained entry acted on at least one seeded row (2 ms)
+    ✓ leaves every row that belongs to someone else byte-identical (2 ms)
+
+  ● erasure manifest: schema coverage › every User relation, user-id-like column and email column has a manifest decision
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 5
+
+    - Array []
+    + Array [
+    +   "WorkoutAdjustmentProposal.coach_id",
+    +   "WorkoutAdjustmentProposal.client_id",
+    +   "WorkoutAdjustmentEvent.actor_id",
+    + ]
+
+    [0m [90m 119 |[39m       })
+     [90m 120 |[39m       [33m.[39mmap((r) [33m=>[39m [32m`${r.model}.${r.field}`[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 121 |[39m     expect(missing)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 122 |[39m   })[33m;[39m
+     [90m 123 |[39m
+     [90m 124 |[39m   it([32m'every manifest entry names a real model, field path, data key and filter'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/account-deletion/erasure-manifest-coverage.spec.ts:121:21)
+
+  ● erasure manifest: seeded execution › removes or detaches the deleted user from every column, except documented retention
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 5
+
+    - Array []
+    + Array [
+    +   "WorkoutAdjustmentProposal.coach_id",
+    +   "WorkoutAdjustmentProposal.client_id",
+    +   "WorkoutAdjustmentEvent.actor_id",
+    + ]
+
+    [0m [90m 417 |[39m       }
+     [90m 418 |[39m     }
+    [31m[1m>[22m[39m[90m 419 |[39m     expect(leftovers)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 420 |[39m   })[33m;[39m
+     [90m 421 |[39m
+     [90m 422 |[39m   it([32m'every non-retained entry acted on at least one seeded row'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/account-deletion/erasure-manifest-coverage.spec.ts:419:23)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 5 passed, 7 total
+Snapshots:   0 total
+Time:        1.257 s
+Ran all test suites matching test/account-deletion/erasure-manifest-coverage.spec.ts.

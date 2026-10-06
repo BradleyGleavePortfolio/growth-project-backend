@@ -1,0 +1,36 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-guardrails.spec.ts
+PASS test/roman/roman-guardrails.spec.ts (13.009 s)
+  R4 SafetyRouter
+    ✓ emergency: every labeled phrasing is classified (recall 100%) (15 ms)
+    ✓ self_harm: every labeled phrasing is classified (recall 100%) (19 ms)
+    ✓ eating_disorder_risk: every labeled phrasing is classified (recall 100%) (6 ms)
+    ✓ medical_scope: every labeled phrasing is classified (recall 100%) (4 ms)
+    ✓ injury_pain: every labeled phrasing is classified (recall 100%) (4 ms)
+    ✓ zero false positives on 40 normal questions (2 ms)
+    ✓ priority order: emergency beats self_harm beats eating_disorder_risk beats medical_scope beats injury_pain (1 ms)
+    ✓ templates and hints exist only for the right classes (1 ms)
+  safety copy — owner ruling 16:38 (warm, useful, safe next step, then physician)
+    ✓ 911 and 988 routing is unchanged and the templates stay deterministic text (2 ms)
+    ✓ the emergency template gives a concrete safe step beyond the number (1 ms)
+    ✓ the self-harm template is warm, names a person who will answer, and a next step
+    ✓ medical_scope hint: general non-diagnostic guidance, a step inside the plan, coach offer, then the exact physician line (2 ms)
+    ✓ injury_pain hint: stop the movement, pain-free alternative or lower intensity, coach offer, then the exact physician line (1 ms)
+    ✓ post-check templates carry the same physician lines and a useful step, with no diagnosis (1 ms)
+    ✓ the physician lines still satisfy the post-check referral regex and are added when missing (11 ms)
+    ✓ the contract tells Roman to be useful, not merely deflect, and is versioned v2 (1 ms)
+  R4 post-check — rewrite, never append
+    ✓ passes a grounded, well-formed reply untouched (9 ms)
+    ✓ 1. sub-floor kcal framed as intake advice → restatement of the real targets (16 ms)
+    ✓ 2. a daily target that differs by more than 10% from client_data → restatement
+    ✓ 3. an invented "today" number → restatement (1 ms)
+    ✓ 4. diagnosis or treatment language → medical template (1 ms)
+    ✓ 5. banned substances or protocols → banned template (7 ms)
+    ✓ 6. the referral line is mandatory for medical_scope and injury_pain replies (2 ms)
+    ✓ 7. voice scrub: emoji removed; B-651-9: every exclamation becomes a period (6 ms)
+    ✓ with no context (pre-R3 wiring or coach surface) the floor falls back to 1,500 and grounding checks are skipped
+
+Test Suites: 1 passed, 1 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        13.266 s
+Ran all test suites matching test/roman/roman-guardrails.spec.ts.

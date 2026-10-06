@@ -1,0 +1,16 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-rmn2-fixes.spec.ts
+PASS test/roman/roman-rmn2-fixes.spec.ts (12.875 s)
+  B-668-1 (Sol) a pool remainder smaller than one reply is never answered for free
+    ✓ control: an affordable turn is answered and debits its 3-cent cost (27 ms)
+    ✓ one cent left: every turn gets the capacity message before the provider (9 ms)
+    ✓ a reply costing more than the remainder consumes it, and the next turn is refused (7 ms)
+  B-668-3 (Sol) a lunch entry cannot validate a whole-day logged total
+    ✓ rejected: You have logged 450 kcal today. (8 ms)
+    ✓ accepted: You have logged 780 kcal today. (3 ms)
+    ✓ accepted: You logged 450 kcal at lunch today. (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        13.128 s
+Ran all test suites matching test/roman/roman-rmn2-fixes.spec.ts.

@@ -1,0 +1,78 @@
+diff --git a/src/checkout/client-billing.service.ts b/src/checkout/client-billing.service.ts
+index 7fd896a7..bd3b273e 100644
+--- a/src/checkout/client-billing.service.ts
++++ b/src/checkout/client-billing.service.ts
+@@ -1442,7 +1442,7 @@ export class ClientBillingService {
+       const known = disputes.map((p) => reversed.get(p.purchase_id) ?? null);
+       const amounts = known.every((r) => r !== null) ? totalsByCurrency(known as ReversedAmount[]) : [];
+       parts.push(
+-        `Your bank reversed an earlier payment${amounts.length ? ` of ${formatTotals(amounts)}` : ''}. Saving a card does not settle that; contact support at ${SUPPORT_EMAIL} to sort it out.`,
++        `A payment dispute or inquiry is open with the bank${amounts.length ? ` for ${formatTotals(amounts)}` : ''}. Saving a card does not settle it; contact support at ${SUPPORT_EMAIL} to sort it out.`,
+       );
+     }
+     return parts.join(' ');
+@@ -1660,7 +1660,7 @@ export class ClientBillingService {
+       }
+       const ended = await this.endAccessNow(purchase, lease, opId, lines, voidedCount, voidedCents);
+       if (dispute) {
+-        ended.message += ` Ending the plan does not settle the payment your bank reversed; contact support at ${SUPPORT_EMAIL} to sort it out.`;
++        ended.message += ` Ending the plan does not settle the open payment dispute or inquiry with the bank; contact support at ${SUPPORT_EMAIL} to sort it out.`;
+       }
+       return ended;
+     } finally {
+diff --git a/src/connect/stripe-connect-api.service.ts b/src/connect/stripe-connect-api.service.ts
+index f8e3f285..26b6535a 100644
+--- a/src/connect/stripe-connect-api.service.ts
++++ b/src/connect/stripe-connect-api.service.ts
+@@ -1023,7 +1023,8 @@ export class StripeConnectApiService {
+     const form: Record<string, string> = {
+       customer: args.customer,
+       usage: 'off_session',
+-      on_behalf_of: args.onBehalfOf,
++      // Stripe refuses an empty on_behalf_of: a client with no destination account omits it.
++      ...(args.onBehalfOf ? { on_behalf_of: args.onBehalfOf } : {}),
+     };
+     for (const [k, v] of Object.entries(args.metadata)) form[`metadata[${k}]`] = v;
+     return this.post('/setup_intents', form, args.idempotencyKey);
+diff --git a/test/b-recur-subscription-wire.spec.ts b/test/b-recur-subscription-wire.spec.ts
+index dd0c6a65..180b735d 100644
+--- a/test/b-recur-subscription-wire.spec.ts
++++ b/test/b-recur-subscription-wire.spec.ts
+@@ -77,4 +77,13 @@ describe('StripeConnectApiService.createSubscription wire format (Stripe-Version
+     expect(api.calls[1].form.get('default_payment_method')).toBe('pm_1');
+     expect(api.calls[1].headers['Idempotency-Key']).toBe('tgp-trial-card-1');
+   });
++
++  it('SetupIntent omits on_behalf_of when no plan has a destination account', async () => {
++    const api = new Recording();
++    const base = { customer: 'cus_1', metadata: {}, idempotencyKey: 'tgp-si' };
++    await api.createSetupIntent({ ...base, onBehalfOf: '' });
++    await api.createSetupIntent({ ...base, onBehalfOf: 'acct_coach' });
++    expect(api.calls[0].form.has('on_behalf_of')).toBe(false);
++    expect(api.calls[1].form.get('on_behalf_of')).toBe('acct_coach');
++  });
+ });
+diff --git a/test/dunning-d3-fix-round.spec.ts b/test/dunning-d3-fix-round.spec.ts
+index cd3847a9..9953a920 100644
+--- a/test/dunning-d3-fix-round.spec.ts
++++ b/test/dunning-d3-fix-round.spec.ts
+@@ -149,7 +149,8 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
+       dispute_open: true,
+       access: 'unchanged',
+     });
+-    expect(res.message).toMatch(/reversed an earlier payment/);
++    expect(res.message).toMatch(/payment dispute or inquiry is open/);
++    expect(res.message).not.toMatch(/reversed/);
+     expect(res.message).not.toMatch(/still updating/);
+     expect(w.state()).toMatchObject({
+       status: 'active',
+@@ -266,7 +267,8 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
+     w.stripe.subs.get('sub_client')!.status = 'active';
+     const res = await w.billing.cancelPlan('client', 'purchase');
+     expect(res).toMatchObject({ outcome: 'ended', paid_period_kept: false });
+-    expect(res.message).toMatch(/does not settle the payment your bank reversed/);
++    expect(res.message).toMatch(/does not settle the open payment dispute or inquiry/);
++    expect(res.message).not.toMatch(/reversed/);
+     expect(w.stripe.subs.get('sub_client')?.status).toBe('canceled');
+     expect(w.fake.find('clientPurchase', { id: 'purchase' })).toMatchObject({
+       status: 'canceled',

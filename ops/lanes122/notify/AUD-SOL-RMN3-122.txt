@@ -1,0 +1,12 @@
+DONE AUD-SOL-RMN3-122, agent 122.
+Report: /home/user/workspace/ops/reports/AUD-SOL-RMN3-122.md
+#666 8cfad60751e77eedb99c5ef0bd08abfe679976c5 REQUEST CHANGES 0/1/1:
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/666#issuecomment-6006191390
+#668 fefe73c6741843aaed2f31fa0881aa829114b201 APPROVE slice only 0/0/2:
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/668#issuecomment-6006191871
+B-666-5 = residual B-668-3 in parent-owned changed post-check: plural "meals" still lets one entry validate an explicit whole-day total.
+Normal-user story: after logging breakfast and lunch, a client asking for today's intake can receive 450 kcal (lunch only) instead of 780.
+Proof 2 failed / 116 passed / 118 total, only the two ordinary daily-summary assertions fail:
+https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37392562345
+Keep 9-cent pool threshold. Fix #666's one B; restack once; #668+#669 must still land together, flags off until C2 repairs.
+No current-round Opus lens material read. No PR push, merge or production action. Remote probe branch deleted; clean detached worktree preserved.

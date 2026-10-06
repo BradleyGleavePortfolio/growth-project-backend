@@ -1,0 +1,287 @@
+diff --git a/src/checkout/client-billing.service.ts b/src/checkout/client-billing.service.ts
+index 7fd896a7..bd3b273e 100644
+--- a/src/checkout/client-billing.service.ts
++++ b/src/checkout/client-billing.service.ts
+@@ -1442,7 +1442,7 @@ export class ClientBillingService {
+       const known = disputes.map((p) => reversed.get(p.purchase_id) ?? null);
+       const amounts = known.every((r) => r !== null) ? totalsByCurrency(known as ReversedAmount[]) : [];
+       parts.push(
+-        `Your bank reversed an earlier payment${amounts.length ? ` of ${formatTotals(amounts)}` : ''}. Saving a card does not settle that; contact support at ${SUPPORT_EMAIL} to sort it out.`,
++        `A payment dispute or inquiry is open with the bank${amounts.length ? ` for ${formatTotals(amounts)}` : ''}. Saving a card does not settle it; contact support at ${SUPPORT_EMAIL} to sort it out.`,
+       );
+     }
+     return parts.join(' ');
+@@ -1660,7 +1660,7 @@ export class ClientBillingService {
+       }
+       const ended = await this.endAccessNow(purchase, lease, opId, lines, voidedCount, voidedCents);
+       if (dispute) {
+-        ended.message += ` Ending the plan does not settle the payment your bank reversed; contact support at ${SUPPORT_EMAIL} to sort it out.`;
++        ended.message += ` Ending the plan does not settle the open payment dispute or inquiry with the bank; contact support at ${SUPPORT_EMAIL} to sort it out.`;
+       }
+       return ended;
+     } finally {
+diff --git a/src/checkout/dunning-v2/dunning-restart.controller.ts b/src/checkout/dunning-v2/dunning-restart.controller.ts
+new file mode 100644
+index 00000000..075b7183
+--- /dev/null
++++ b/src/checkout/dunning-v2/dunning-restart.controller.ts
+@@ -0,0 +1,94 @@
++import {
++  ConflictException,
++  Controller,
++  HttpCode,
++  HttpException,
++  NotFoundException,
++  Param,
++  Post,
++  Request,
++  ServiceUnavailableException,
++  UseGuards,
++} from '@nestjs/common';
++import { ApiTags } from '@nestjs/swagger';
++import type { AuthedRequest } from '../../auth/auth-request';
++import { JwtAuthGuard } from '../../auth/auth.guard';
++import { Roles } from '../../common/decorators/roles.decorator';
++import { CoachOrOwnerGuard } from '../../common/guards/coach-or-owner.guard';
++import { DunningV2Service } from './dunning-v2.service';
++
++const NOT_PAUSED =
++  'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.';
++const UNAVAILABLE =
++  'Billing could not be reached, so the plan stays paused and nothing was charged. Try again in a few minutes.';
++
++/** Each coded refusal of restartAfterDisputePause, with the coach's next step. */
++const REFUSALS: Record<string, [new (body: object) => HttpException, string, string]> = {
++  not_found: [
++    NotFoundException,
++    'PURCHASE_NOT_FOUND',
++    'That plan is not on your roster, so nothing was changed. Pull down to refresh your clients, then try again.',
++  ],
++  flag_off: [ConflictException, 'PLAN_NOT_DISPUTE_PAUSED', NOT_PAUSED],
++  not_paused: [ConflictException, 'PLAN_NOT_DISPUTE_PAUSED', NOT_PAUSED],
++  plan_ended: [
++    ConflictException,
++    'PLAN_ENDED',
++    'This plan has ended, so it cannot be restarted. The client can buy the package again.',
++  ],
++  other_live_plan: [
++    ConflictException,
++    'OTHER_LIVE_PLAN',
++    'The client already has another active plan for this package, so restarting this one would bill them twice. Nothing was changed.',
++  ],
++  new_dispute: [
++    ConflictException,
++    'NEW_DISPUTE',
++    'The bank opened another payment dispute or inquiry on this plan, so it stays paused and nothing was charged.',
++  ],
++  billing_busy: [
++    ConflictException,
++    'BILLING_BUSY',
++    'Billing for this plan is being updated right now, so nothing was changed. Try again in a minute.',
++  ],
++  billing_unavailable: [ServiceUnavailableException, 'BILLING_UNAVAILABLE', UNAVAILABLE],
++  billing_resume_failed: [ServiceUnavailableException, 'BILLING_UNAVAILABLE', UNAVAILABLE],
++};
++
++/**
++ * R-DISPUTE-PAUSE (B-690-8): the coach restarts a plan that a bank dispute or
++ * inquiry paused.
++ *
++ *   POST /v1/coach/purchases/:id/dispute-restart   200 { restarted: true }
++ *
++ * Coach console route (CoachOrOwnerGuard: a client gets 403). Own roster only:
++ * restartAfterDisputePause refuses a purchase whose coach_user_id is not the
++ * caller with `not_found` (404) before any Stripe call. Every other refusal is
++ * a coded 409/503 with a specific next step.
++ */
++@ApiTags('checkout')
++@Controller('v1/coach/purchases')
++@UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
++export class DunningRestartController {
++  constructor(private readonly dunningV2: DunningV2Service) {}
++
++  @Roles('coach', 'owner')
++  @Post(':id/dispute-restart')
++  @HttpCode(200)
++  async restart(
++    @Request() req: AuthedRequest,
++    @Param('id') id: string,
++  ): Promise<{ restarted: true }> {
++    const out = await this.dunningV2.restartAfterDisputePause({
++      coachUserId: req.user.id,
++      purchaseId: id,
++    });
++    if (out.restarted) return { restarted: true };
++    const [Refusal, code, message] = REFUSALS[out.reason] ?? [
++      ConflictException,
++      'RESTART_REFUSED',
++      'The plan could not be restarted, so it stays paused and nothing was charged. Pull down to refresh, then try again.',
++    ];
++    throw new Refusal({ code, error: code, message });
++  }
++}
+diff --git a/src/checkout/dunning-v2/dunning-v2.module.ts b/src/checkout/dunning-v2/dunning-v2.module.ts
+index 02f97601..c2f52799 100644
+--- a/src/checkout/dunning-v2/dunning-v2.module.ts
++++ b/src/checkout/dunning-v2/dunning-v2.module.ts
+@@ -8,6 +8,7 @@ import { VoiceModule } from '../../roman/voice/voice.module';
+ import { DunningEscalationClassifier } from './dunning-escalation.classifier';
+ import { DunningLockoutGuard } from './dunning-lockout.guard';
+ import { DunningLockoutScheduler } from './dunning-lockout.scheduler';
++import { DunningRestartController } from './dunning-restart.controller';
+ import { DunningStatusController } from './dunning-status.controller';
+ import { DunningV2Dispatcher } from './dunning-v2.dispatcher';
+ import { DunningV2Renderer } from './dunning-v2.renderer';
+@@ -34,7 +35,7 @@ import { DunningV2Telemetry } from './dunning-v2.telemetry';
+   // ConnectModule supplies StripeConnectApiService for the pre-lock Stripe
+   // subscription check (never a charge call).
+   imports: [AnalyticsModule, ConnectModule, EmailModule, NotificationsModule, VoiceModule],
+-  controllers: [DunningStatusController],
++  controllers: [DunningStatusController, DunningRestartController],
+   providers: [
+     PrismaService,
+     DunningEscalationClassifier,
+diff --git a/src/connect/stripe-connect-api.service.ts b/src/connect/stripe-connect-api.service.ts
+index f8e3f285..26b6535a 100644
+--- a/src/connect/stripe-connect-api.service.ts
++++ b/src/connect/stripe-connect-api.service.ts
+@@ -1023,7 +1023,8 @@ export class StripeConnectApiService {
+     const form: Record<string, string> = {
+       customer: args.customer,
+       usage: 'off_session',
+-      on_behalf_of: args.onBehalfOf,
++      // Stripe refuses an empty on_behalf_of: a client with no destination account omits it.
++      ...(args.onBehalfOf ? { on_behalf_of: args.onBehalfOf } : {}),
+     };
+     for (const [k, v] of Object.entries(args.metadata)) form[`metadata[${k}]`] = v;
+     return this.post('/setup_intents', form, args.idempotencyKey);
+diff --git a/test/b-recur-subscription-wire.spec.ts b/test/b-recur-subscription-wire.spec.ts
+index dd0c6a65..180b735d 100644
+--- a/test/b-recur-subscription-wire.spec.ts
++++ b/test/b-recur-subscription-wire.spec.ts
+@@ -77,4 +77,13 @@ describe('StripeConnectApiService.createSubscription wire format (Stripe-Version
+     expect(api.calls[1].form.get('default_payment_method')).toBe('pm_1');
+     expect(api.calls[1].headers['Idempotency-Key']).toBe('tgp-trial-card-1');
+   });
++
++  it('SetupIntent omits on_behalf_of when no plan has a destination account', async () => {
++    const api = new Recording();
++    const base = { customer: 'cus_1', metadata: {}, idempotencyKey: 'tgp-si' };
++    await api.createSetupIntent({ ...base, onBehalfOf: '' });
++    await api.createSetupIntent({ ...base, onBehalfOf: 'acct_coach' });
++    expect(api.calls[0].form.has('on_behalf_of')).toBe(false);
++    expect(api.calls[1].form.get('on_behalf_of')).toBe('acct_coach');
++  });
+ });
+diff --git a/test/dunning-d3-fix-round.spec.ts b/test/dunning-d3-fix-round.spec.ts
+index cd3847a9..9953a920 100644
+--- a/test/dunning-d3-fix-round.spec.ts
++++ b/test/dunning-d3-fix-round.spec.ts
+@@ -149,7 +149,8 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
+       dispute_open: true,
+       access: 'unchanged',
+     });
+-    expect(res.message).toMatch(/reversed an earlier payment/);
++    expect(res.message).toMatch(/payment dispute or inquiry is open/);
++    expect(res.message).not.toMatch(/reversed/);
+     expect(res.message).not.toMatch(/still updating/);
+     expect(w.state()).toMatchObject({
+       status: 'active',
+@@ -266,7 +267,8 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
+     w.stripe.subs.get('sub_client')!.status = 'active';
+     const res = await w.billing.cancelPlan('client', 'purchase');
+     expect(res).toMatchObject({ outcome: 'ended', paid_period_kept: false });
+-    expect(res.message).toMatch(/does not settle the payment your bank reversed/);
++    expect(res.message).toMatch(/does not settle the open payment dispute or inquiry/);
++    expect(res.message).not.toMatch(/reversed/);
+     expect(w.stripe.subs.get('sub_client')?.status).toBe('canceled');
+     expect(w.fake.find('clientPurchase', { id: 'purchase' })).toMatchObject({
+       status: 'canceled',
+diff --git a/test/dunning-v2-coach-restart-route.spec.ts b/test/dunning-v2-coach-restart-route.spec.ts
+new file mode 100644
+index 00000000..76cd56d6
+--- /dev/null
++++ b/test/dunning-v2-coach-restart-route.spec.ts
+@@ -0,0 +1,82 @@
++// B-690-8 / Sol B-690-S1: the coach restart of a dispute-paused plan has an
++// HTTP route. The app is built from DunningV2Module's own controller list, so
++// the route is proven mounted by the module, behind the real CoachOrOwnerGuard.
++import 'reflect-metadata';
++import type { AddressInfo } from 'node:net';
++import { CanActivate, ExecutionContext, INestApplication } from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import { JwtAuthGuard } from '../src/auth/auth.guard';
++import { DunningV2Module } from '../src/checkout/dunning-v2/dunning-v2.module';
++import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
++import { HttpExceptionFilter } from '../src/filters/http-exception.filter';
++
++/** `x-test-user: <id>:<role>` becomes req.user. */
++class HeaderAuthGuard implements CanActivate {
++  canActivate(ctx: ExecutionContext): boolean {
++    const req = ctx.switchToHttp().getRequest();
++    const [id, role] = String(req.headers['x-test-user']).split(':');
++    req.user = { id, role };
++    return true;
++  }
++}
++
++describe('POST /v1/coach/purchases/:id/dispute-restart', () => {
++  let app: INestApplication;
++  let base: string;
++  // The service's tenant rule (spec: dunning-v2-dispute-pause): only the
++  // purchase's own coach gets past `not_found`.
++  const restart = jest.fn(async (input: { coachUserId: string; purchaseId: string }) =>
++    input.coachUserId === 'coach-1' && input.purchaseId === 'p1'
++      ? { restarted: true, reason: 'restarted' }
++      : { restarted: false, reason: 'not_found' },
++  );
++
++  beforeAll(async () => {
++    const controllers = Reflect.getMetadata('controllers', DunningV2Module);
++    const ref = await Test.createTestingModule({
++      controllers,
++      providers: [{ provide: DunningV2Service, useValue: { restartAfterDisputePause: restart } }],
++    })
++      .overrideGuard(JwtAuthGuard)
++      .useClass(HeaderAuthGuard)
++      .compile();
++    app = ref.createNestApplication({ logger: false });
++    app.useGlobalFilters(new HttpExceptionFilter());
++    await app.listen(0, '127.0.0.1');
++    base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
++  });
++  afterAll(() => app.close());
++  beforeEach(() => restart.mockClear());
++
++  const post = async (user: string, id = 'p1') => {
++    const r = await fetch(`${base}/v1/coach/purchases/${id}/dispute-restart`, {
++      method: 'POST',
++      headers: { 'x-test-user': user },
++    });
++    return { status: r.status, body: (await r.json()) as Record<string, unknown> };
++  };
++
++  it('the plan’s own coach restarts it', async () => {
++    expect(await post('coach-1:coach')).toEqual({ status: 200, body: { restarted: true } });
++    expect(restart).toHaveBeenCalledWith({ coachUserId: 'coach-1', purchaseId: 'p1' });
++  });
++
++  it('another coach is refused with a coded 404 and nothing restarts', async () => {
++    const r = await post('coach-2:coach');
++    expect(r.status).toBe(404);
++    expect(r.body.message).toMatch(/not on your roster, so nothing was changed/);
++    expect(restart).toHaveBeenCalledWith({ coachUserId: 'coach-2', purchaseId: 'p1' });
++  });
++
++  it('a client cannot call it: 403 before the service runs', async () => {
++    expect((await post('client-1:student')).status).toBe(403);
++    expect(restart).not.toHaveBeenCalled();
++  });
++
++  it('a refusal carries its code and next step', async () => {
++    restart.mockResolvedValueOnce({ restarted: false, reason: 'other_live_plan' });
++    const r = await post('coach-1:coach');
++    expect(r.status).toBe(409);
++    expect(r.body.message).toMatch(/would bill them twice\. Nothing was changed\./);
++  });
++});

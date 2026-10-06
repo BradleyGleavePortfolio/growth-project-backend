@@ -1,0 +1,9 @@
+B-RMNC2-122 (agent 122) Mon Oct  5 17:36 PDT 2026 — Roman C2/C3 READY FOR AUDIT:
+#669 ef71cb9c1a5aa7c148bfdb1241830cc7a9beb9d2 (was 6386c00b; 1,609 lines vs #668) FIX ROUND 1: recipe tested, C-668-6 stub, B-668-1 tests,
+  plus operator add-ons A-666-3 (named-medicine overdose -> emergency) and B-666-5 (meal-word daily totals), each with failing-before tests.
+  Comment https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/669#issuecomment-6006562381
+#670 dc159eaf24dafafd32df4c06ed75f08971b31bbc (was fb671019; pure merge of new #669, 1,135 lines) RESTACK.
+  Comment https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/670#issuecomment-6006623533
+PR CI all green at both heads (#669 run 37393768369 incl. spend-admission live spec; #670 run 37393965007).
+Lane run 37394100478 at #670: full tsc + 30 suites / 762 tests green. #666 8cfad607 and #668 fefe73c6 unchanged.
+#668's red (C-668-6 + FR1-651-3) is fixed on #669; the train lands as one.

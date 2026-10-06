@@ -1,0 +1,10 @@
+[heavy] waiting for a slot: npx jest test/roman/eval/roman-golden.eval.spec.ts
+No tests found, exiting with code 1
+Run with `--passWithNoTests` to exit with code 0
+In /home/user/workspace/wt/B-RMNC2-122-669
+  1083 files checked.
+  roots: /home/user/workspace/wt/B-RMNC2-122-669/test, /home/user/workspace/wt/B-RMNC2-122-669/src/roman/voice, /home/user/workspace/wt/B-RMNC2-122-669/src/community/ack, /home/user/workspace/wt/B-RMNC2-122-669/src/community/challenges, /home/user/workspace/wt/B-RMNC2-122-669/src/notifications/__tests__, /home/user/workspace/wt/B-RMNC2-122-669/src/community/voice, /home/user/workspace/wt/B-RMNC2-122-669/src/community/search, /home/user/workspace/wt/B-RMNC2-122-669/src/community/wearable-prompts, /home/user/workspace/wt/B-RMNC2-122-669/src/regimes, /home/user/workspace/wt/B-RMNC2-122-669/src/feature-flags, /home/user/workspace/wt/B-RMNC2-122-669/src/talent-marketplace, /home/user/workspace/wt/B-RMNC2-122-669/src/extension-pair, /home/user/workspace/wt/B-RMNC2-122-669/src/scout - 1083 matches
+  testMatch:  - 0 matches
+  testPathIgnorePatterns: /node_modules/, /dist/, /home/user/workspace/wt/B-RMNC2-122-669/test/rls/, /home/user/workspace/wt/B-RMNC2-122-669/test/rls-.*\.spec\.ts$ - 1042 matches
+  testRegex: \.spec\.ts$ - 790 matches
+Pattern: test/roman/eval/roman-golden.eval.spec.ts - 0 matches

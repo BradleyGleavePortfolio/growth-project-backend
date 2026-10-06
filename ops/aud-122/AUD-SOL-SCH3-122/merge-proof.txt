@@ -1,0 +1,50 @@
+Patch IDs (old/new piece patches)
+367e6c48 -> cceeb33a: 6ea486bf5883ca84813f0b420103476dcdbd4c47 0000000000000000000000000000000000000000
+2c88eae5 -> cd546a43: 6ea486bf5883ca84813f0b420103476dcdbd4c47 0000000000000000000000000000000000000000
+cceeb33a -> fa7744cc: 86dd9df3989d3648c286538d528210fb23c9e64b 0000000000000000000000000000000000000000
+cd546a43 -> 4936257b: 86dd9df3989d3648c286538d528210fb23c9e64b 0000000000000000000000000000000000000000
+fa7744cc -> 6418e759: 9ab2bcda8efd02655b75403f6e8edf6eaa9ef2d6 0000000000000000000000000000000000000000
+4936257b -> 8f35d777: 9ab2bcda8efd02655b75403f6e8edf6eaa9ef2d6 0000000000000000000000000000000000000000
+
+Merge parent and combined diff checks
+commit cd546a43d0d90f1e032fdf1d8520dfc9ccdc2821
+Merge: cceeb33 2c88eae
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Mon Oct 5 23:51:15 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Mon Oct 5 23:51:15 2026 +0000
+
+    Merge origin/main (2c88eae5) into scheduling K1 (#365)
+
+commit 4936257bded6034fe9bda6eebd1783b9ecf1f526
+Merge: fa7744c cd546a4
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Mon Oct 5 23:51:58 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Mon Oct 5 23:51:58 2026 +0000
+
+    Merge scheduling K1 (#365, main 2c88eae5 refresh) into K2 (#366)
+
+commit 8f35d777606210efd3e843f3022a41154cd38266
+Merge: 6418e75 4936257
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Mon Oct 5 23:52:19 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Mon Oct 5 23:52:19 2026 +0000
+
+    Merge scheduling K2 (#366, main 2c88eae5 refresh) into K3 (#367)
+
+
+Fix diff statistics
+ src/api/schedulingApi.ts                           |  9 ++-
+ src/screens/client/calendar/CalendarBookScreen.tsx | 11 ++--
+ .../client/calendar/CalendarSessionScreen.tsx      |  9 +++
+ .../calendar/__tests__/calendarScreens.test.tsx    | 68 +++++++++++++++++++++-
+ src/screens/client/calendar/calendarUi.tsx         |  2 +
+ 5 files changed, 90 insertions(+), 9 deletions(-)
+
+CI wrapper-only diff
+ .ci-lane-specs                |  2 ++
+ .ci-lane-tsc                  |  0
+ .github/workflows/ci-lane.yml | 31 +++++++++++++++++++++++++++++++
+ 3 files changed, 33 insertions(+)

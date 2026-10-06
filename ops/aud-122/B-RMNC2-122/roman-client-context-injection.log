@@ -1,0 +1,20 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-client-context-injection.spec.ts
+[32m[Nest] 16994  - [39m10/01/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2[39m
+[32m[Nest] 16994  - [39m10/01/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=none[39m
+[32m[Nest] 16994  - [39m10/01/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=none[39m
+[31m[Nest] 16994  - [39m10/01/2026, 12:30:00 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 16994  - [39m10/01/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable[39m
+[31m[Nest] 16994  - [39m10/01/2026, 12:30:00 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_failed: Error[39m
+[32m[Nest] 16994  - [39m10/01/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable[39m
+PASS test/roman/roman-client-context-injection.spec.ts (11.874 s)
+  R3 injection — client_data block, provenance in the spend ledger, coach JWT
+    ✓ student on the client surface: one <client_data> block, content stays clean, context hash in the content-free ledger (48 ms)
+    ✓ a coach JWT on the client surface gets NO client data; the coach surface gets none either (14 ms)
+    ✓ without the context service wired the client turn says the data is unavailable and still answers (4 ms)
+    ✓ a builder failure degrades to an honest ungrounded turn, never a blank reply (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        12.155 s
+Ran all test suites matching test/roman/roman-client-context-injection.spec.ts.

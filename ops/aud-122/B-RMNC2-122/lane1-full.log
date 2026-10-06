@@ -1,0 +1,488 @@
+targeted	Set up job	﻿2026-10-06T00:27:30.2437145Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-06T00:27:30.2453682Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-06T00:27:30.2454341Z Hosted Compute Agent
+targeted	Set up job	2026-10-06T00:27:30.2454737Z Version: 20260901.588
+targeted	Set up job	2026-10-06T00:27:30.2455190Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-06T00:27:30.2455726Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-06T00:27:30.2456188Z Worker ID: {ae6d975f-50f5-478e-bad6-88944b43c1ac}
+targeted	Set up job	2026-10-06T00:27:30.2456678Z Azure Region: centralus
+targeted	Set up job	2026-10-06T00:27:30.2457072Z ##[endgroup]
+targeted	Set up job	2026-10-06T00:27:30.2457884Z ##[group]Operating System
+targeted	Set up job	2026-10-06T00:27:30.2458353Z Ubuntu
+targeted	Set up job	2026-10-06T00:27:30.2458691Z 24.04.5
+targeted	Set up job	2026-10-06T00:27:30.2459309Z LTS
+targeted	Set up job	2026-10-06T00:27:30.2459686Z ##[endgroup]
+targeted	Set up job	2026-10-06T00:27:30.2460098Z ##[group]Runner Image
+targeted	Set up job	2026-10-06T00:27:30.2460593Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-06T00:27:30.2460945Z Version: 20260927.320.1
+targeted	Set up job	2026-10-06T00:27:30.2461973Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-06T00:27:30.2463172Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-06T00:27:30.2463825Z ##[endgroup]
+targeted	Set up job	2026-10-06T00:27:30.2464616Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-06T00:27:30.2466337Z Contents: read
+targeted	Set up job	2026-10-06T00:27:30.2466726Z Metadata: read
+targeted	Set up job	2026-10-06T00:27:30.2467154Z Packages: read
+targeted	Set up job	2026-10-06T00:27:30.2467523Z ##[endgroup]
+targeted	Set up job	2026-10-06T00:27:30.2469308Z Secret source: Actions
+targeted	Set up job	2026-10-06T00:27:30.2469994Z Cache mode: write
+targeted	Set up job	2026-10-06T00:27:30.2470640Z Prepare workflow directory
+targeted	Set up job	2026-10-06T00:27:30.2756567Z Prepare all required actions
+targeted	Set up job	2026-10-06T00:27:30.2804273Z Getting action download info
+targeted	Set up job	2026-10-06T00:27:30.5041419Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-06T00:27:30.5918821Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-06T00:27:30.7461855Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-06T00:27:30.7784965Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-06T00:27:30.7794314Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-06T00:27:30.8587762Z '1.48'
+targeted	Initialize containers	2026-10-06T00:27:30.8598129Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-06T00:27:30.8598823Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-06T00:27:30.8732658Z '1.48'
+targeted	Initialize containers	2026-10-06T00:27:30.8739236Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-06T00:27:30.8742661Z ##[endgroup]
+targeted	Initialize containers	2026-10-06T00:27:30.8744179Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-06T00:27:30.8747444Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=34c5d5"
+targeted	Initialize containers	2026-10-06T00:27:30.8949616Z ##[command]/usr/bin/docker network prune --force --filter "label=34c5d5"
+targeted	Initialize containers	2026-10-06T00:27:30.9044669Z ##[endgroup]
+targeted	Initialize containers	2026-10-06T00:27:30.9045130Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-06T00:27:30.9052012Z ##[command]/usr/bin/docker network create --label 34c5d5 github_network_808ec2af5da44036b7a41223d8b6c441
+targeted	Initialize containers	2026-10-06T00:27:30.9400079Z 30156a4856bc62d07a69f780ec4c0e8ccdaa6ffa2daaf103e99e835a3da2d595
+targeted	Initialize containers	2026-10-06T00:27:30.9410721Z ##[endgroup]
+targeted	Initialize containers	2026-10-06T00:27:30.9430766Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-06T00:27:30.9445964Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-06T00:27:31.5332174Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-06T00:27:31.6979279Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-06T00:27:31.6980230Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-06T00:27:31.6980956Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-06T00:27:31.6981699Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-06T00:27:31.6982314Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-06T00:27:31.6982802Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-06T00:27:31.6983292Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-06T00:27:31.6983770Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-06T00:27:31.6984187Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-06T00:27:31.6984616Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-06T00:27:31.6985030Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-06T00:27:31.8771086Z 83234986c742: Verifying Checksum
+targeted	Initialize containers	2026-10-06T00:27:31.8773096Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-06T00:27:31.8915610Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-06T00:27:31.8916761Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-06T00:27:31.9556126Z 16333ee0c00f: Verifying Checksum
+targeted	Initialize containers	2026-10-06T00:27:31.9558898Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-06T00:27:32.0331076Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-06T00:27:32.0420989Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-06T00:27:32.0422415Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-06T00:27:32.0840754Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-06T00:27:32.0841731Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-06T00:27:32.1460287Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-06T00:27:32.1580785Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-06T00:27:32.1582047Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-06T00:27:32.1901430Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-06T00:27:32.1902672Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-06T00:27:32.2783585Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-06T00:27:32.5734094Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-06T00:27:32.5819513Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-06T00:27:32.5911792Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-06T00:27:32.6195807Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-06T00:27:32.6236793Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-06T00:27:32.6256312Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-06T00:27:32.6264541Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-06T00:27:32.6287373Z ##[command]/usr/bin/docker create --name f82b5fc5421d4c628e71ab8ac62218a1_redis7alpine_a5a332 --label 34c5d5 --network github_network_808ec2af5da44036b7a41223d8b6c441 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-06T00:27:32.6506482Z 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Initialize containers	2026-10-06T00:27:32.6518625Z ##[command]/usr/bin/docker start 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Initialize containers	2026-10-06T00:27:32.8234646Z 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Initialize containers	2026-10-06T00:27:32.8244643Z ##[command]/usr/bin/docker ps --all --filter id=98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-06T00:27:32.8345102Z 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070 Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-06T00:27:32.8356370Z ##[command]/usr/bin/docker port 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Initialize containers	2026-10-06T00:27:32.8457101Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-06T00:27:32.8457655Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-06T00:27:32.8487690Z ##[endgroup]
+targeted	Initialize containers	2026-10-06T00:27:32.8494391Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-06T00:27:32.8504285Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Initialize containers	2026-10-06T00:27:32.8592897Z starting
+targeted	Initialize containers	2026-10-06T00:27:32.8604252Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-06T00:27:34.8610390Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Initialize containers	2026-10-06T00:27:34.8721975Z starting
+targeted	Initialize containers	2026-10-06T00:27:34.8730147Z redis service is starting, waiting 4 seconds before checking again.
+targeted	Initialize containers	2026-10-06T00:27:39.1882172Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Initialize containers	2026-10-06T00:27:39.2009239Z healthy
+targeted	Initialize containers	2026-10-06T00:27:39.2025084Z redis service is healthy.
+targeted	Initialize containers	2026-10-06T00:27:39.2025820Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-06T00:27:39.2268684Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2269483Z with:
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2269829Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2272158Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2272407Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2272808Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2273070Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2273387Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2273631Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2273917Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2274151Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2274397Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2274655Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2274865Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2275130Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2275397Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.2275778Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3084069Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3085338Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3085890Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3086484Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3137060Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3154287Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3165493Z Temporarily overriding HOME='/home/runner/work/_temp/047a92e7-93dd-405b-8d91-cab3456b32bc' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3166581Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3170421Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3207952Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3211764Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3213658Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3214129Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3217256Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3310913Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3311568Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3312282Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3312774Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3313100Z hint:
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3313522Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3314107Z hint:
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3314482Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3314939Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3315565Z hint:
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3316005Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3316273Z hint:
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3316597Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3317246Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3321913Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3361766Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3362394Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3365227Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3388276Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3389243Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3389757Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3394570Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3416396Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3688650Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3693131Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3714541Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3866134Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3871312Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.3894133Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.4052440Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.4079559Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.4103821Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.4129893Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.4155281Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.4179747Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.4180370Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-06T00:27:39.4186477Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +d6c29bb9526564f023bdf2ffa4efdb839f32f656:refs/remotes/origin/ci/B-RMNC2-122-1
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7351640Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7352440Z  * [new ref]         d6c29bb9526564f023bdf2ffa4efdb839f32f656 -> origin/ci/B-RMNC2-122-1
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7361200Z [command]/usr/bin/git branch --list --remote origin/ci/B-RMNC2-122-1
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7382133Z   origin/ci/B-RMNC2-122-1
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7388776Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-RMNC2-122-1
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7406212Z d6c29bb9526564f023bdf2ffa4efdb839f32f656
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7407796Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7408361Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7409141Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7413182Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7454154Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7477231Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.7480123Z [command]/usr/bin/git checkout --progress --force -B ci/B-RMNC2-122-1 refs/remotes/origin/ci/B-RMNC2-122-1
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.8937852Z Switched to a new branch 'ci/B-RMNC2-122-1'
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.8941705Z branch 'ci/B-RMNC2-122-1' set up to track 'origin/ci/B-RMNC2-122-1'.
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.8947909Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.8980795Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-06T00:27:40.8998285Z d6c29bb9526564f023bdf2ffa4efdb839f32f656
+targeted	Run actions/setup-node@v6	﻿2026-10-06T00:27:40.9215959Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:40.9216258Z with:
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:40.9216502Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:40.9216784Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:40.9217004Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:40.9219293Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:40.9219546Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:40.9219826Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:41.0275928Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:41.7480863Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:42.2717216Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:42.2796685Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/8f830aa0-3aad-46dd-96e8-a3c077706d7b -f /home/runner/work/_temp/38b1f13b-fbc0-4eb2-acad-11d52713d1d2
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:43.0770888Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:44.6577060Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:44.8207540Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:44.8208174Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:44.8208522Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:44.8209344Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:44.8223995Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:44.8931734Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:45.0570981Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:46.2146068Z Received 86861520 of 86861520 (100.0%), 81.8 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:46.2146612Z Cache Size: ~83 MB (86861520 B)
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:46.2250947Z [command]/usr/bin/tar -xf /home/runner/work/_temp/a2ecc9d2-5362-43d3-90d6-0080e2042187/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:46.3215609Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-06T00:27:46.3250364Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	Run npm ci	﻿2026-10-06T00:27:46.3385362Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-06T00:27:46.3385728Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-06T00:27:46.3711239Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-06T00:27:46.3711669Z ##[endgroup]
+targeted	Run npm ci	2026-10-06T00:27:50.4121427Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-06T00:27:50.6004191Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-06T00:27:52.1843765Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:27:53.0357748Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:27:53.0439910Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:27:53.1042693Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-06T00:28:02.6100249Z 
+targeted	Run npm ci	2026-10-06T00:28:02.6101674Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-06T00:28:02.6102215Z > prisma generate
+targeted	Run npm ci	2026-10-06T00:28:02.6102407Z 
+targeted	Run npm ci	2026-10-06T00:28:03.2198236Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-06T00:28:05.8843869Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-06T00:28:05.8844841Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+targeted	Run npm ci	2026-10-06T00:28:05.8845687Z │                                                         │
+targeted	Run npm ci	2026-10-06T00:28:05.8846517Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-06T00:28:05.8847276Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-06T00:28:05.8847924Z │                                                         │
+targeted	Run npm ci	2026-10-06T00:28:05.8848626Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-06T00:28:05.8849455Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-06T00:28:05.8850114Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-06T00:28:05.8851297Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-06T00:28:05.8851635Z 
+targeted	Run npm ci	2026-10-06T00:28:05.8871015Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.49s
+targeted	Run npm ci	2026-10-06T00:28:05.8883201Z 
+targeted	Run npm ci	2026-10-06T00:28:05.8883760Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-06T00:28:05.8884235Z 
+targeted	Run npm ci	2026-10-06T00:28:05.8884814Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	Run npm ci	2026-10-06T00:28:05.8885246Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9218534Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9220204Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-06T00:28:05.9221077Z > lefthook install
+targeted	Run npm ci	2026-10-06T00:28:05.9221447Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9623832Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-06T00:28:05.9757631Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9758329Z added 1117 packages, and audited 1118 packages in 20s
+targeted	Run npm ci	2026-10-06T00:28:05.9758683Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9759062Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-06T00:28:05.9759595Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-06T00:28:05.9788741Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9789216Z 4 vulnerabilities (1 moderate, 3 high)
+targeted	Run npm ci	2026-10-06T00:28:05.9789514Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9790216Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-06T00:28:05.9790737Z   npm audit fix
+targeted	Run npm ci	2026-10-06T00:28:05.9790930Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9791244Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-06T00:28:05.9792080Z   npm audit fix --force
+targeted	Run npm ci	2026-10-06T00:28:05.9792277Z 
+targeted	Run npm ci	2026-10-06T00:28:05.9792423Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-06T00:28:06.0085864Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-06T00:28:06.0086210Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-06T00:28:06.0126065Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-06T00:28:06.0126432Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-06T00:28:06.9053049Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-06T00:28:09.8206940Z 
+targeted	Run npx prisma generate	2026-10-06T00:28:09.8208505Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.56s
+targeted	Run npx prisma generate	2026-10-06T00:28:09.8208949Z 
+targeted	Run npx prisma generate	2026-10-06T00:28:09.8209544Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-06T00:28:09.8209916Z 
+targeted	Run npx prisma generate	2026-10-06T00:28:09.8210264Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npx prisma generate	2026-10-06T00:28:09.8210545Z 
+targeted	Type-check (only when .ci-lane-tsc exists)	﻿2026-10-06T00:28:09.9005228Z ##[group]Run npx tsc --noEmit
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-06T00:28:09.9005597Z ^[[36;1mnpx tsc --noEmit^[[0m
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-06T00:28:09.9038452Z shell: /usr/bin/bash -e {0}
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-06T00:28:09.9038725Z env:
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-06T00:28:09.9039414Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-06T00:28:09.9039756Z ##[endgroup]
+targeted	Targeted jest	﻿2026-10-06T00:28:46.2837020Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-06T00:28:46.2837334Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-06T00:28:46.2837669Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-06T00:28:46.2838094Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-06T00:28:46.2838406Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-06T00:28:46.2838683Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-06T00:28:46.2876608Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-06T00:28:46.2877010Z env:
+targeted	Targeted jest	2026-10-06T00:28:46.2877243Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-06T00:28:46.2877541Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-06T00:28:46.2877863Z ##[endgroup]
+targeted	Targeted jest	2026-10-06T00:28:46.2939879Z specs: test/roman test/ai-consent test/dunning-v2-lockout-allowlist-route-table.spec.ts test/dunning-v2-lockout-guard.spec.ts
+targeted	Targeted jest	2026-10-06T00:28:54.3948050Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:54 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.erase_deleted_session_failed session=legacy_u_a_2026-09-27: Error: db hiccup^[[39m
+targeted	Targeted jest	2026-10-06T00:28:54.4048719Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:54 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_bound_hit erased=2 left=1^[[39m
+targeted	Targeted jest	2026-10-06T00:28:54.4303022Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:54 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:54.4421695Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:54 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:54.4538413Z PASS test/roman/roman.service.spec.ts (7.468 s)
+targeted	Targeted jest	2026-10-06T00:28:54.4540200Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:54 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:54.4541569Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:54 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=partial context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:55.7219555Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:55 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:55.7227499Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:55 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:55.7228566Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:55 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.spend_ledger_failed: Error^[[39m
+targeted	Targeted jest	2026-10-06T00:28:55.7243577Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:55 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:55.7333315Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:28:55 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:28:58.3078222Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:58 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:58.3087441Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:58 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:58.3134834Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:58 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:58.3169903Z PASS test/roman/roman-launch-hardening.spec.ts
+targeted	Targeted jest	2026-10-06T00:28:58.9740414Z PASS test/roman/roman-client-context.spec.ts
+targeted	Targeted jest	2026-10-06T00:28:59.4233506Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.4360571Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.4369747Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.4384651Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.4398480Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.4411319Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.4449108Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.4661315Z PASS test/roman/roman-streaming.spec.ts
+targeted	Targeted jest	2026-10-06T00:28:59.7647478Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7649096Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7651035Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=partial context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7652740Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=partial context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7654425Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7656119Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=partial context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7657769Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7659293Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7660299Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7661266Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7662131Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[33mai_egress.consent_read_failed (treated as no grant)^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7662985Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7663955Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7665138Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7666113Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7667037Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7667987Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7668927Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:28:59.7670085Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:28:59 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:29:01.2347161Z PASS test/roman/roman-round2.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:01.6430997Z PASS test/ai-consent/ai-consent.service.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:01.7483809Z PASS test/roman/roman-guardrails.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:02.2787275Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2788588Z PASS test/roman/eval/roman-golden.eval.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:02.2790061Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-dan prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=caccd76ab30a^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2791833Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2793185Z ^[[33m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_user-dan prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2794194Z ^[[33m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2795348Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-dan prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=caccd76ab30a^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2796624Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-dan prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=caccd76ab30a^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2797889Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2799252Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2800877Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2802140Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2803402Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2804643Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2806204Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2808322Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-dan prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=caccd76ab30a^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2810491Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2812500Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2814519Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-dan prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=caccd76ab30a^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2816040Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2817293Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2818604Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2820027Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2821144Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2822062Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2823106Z ^[[33m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[33mai_egress.consent_read_failed (treated as no grant)^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2823961Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[AiEgressService] ^[[39m^[[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2825035Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_coach-A prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=none^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2826336Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2827593Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2828868Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2830291Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2831571Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2832836Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-zelda prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=f6ffd4edc60e^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2834120Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-dan prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=caccd76ab30a^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2835369Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.2836609Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_user-maya prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:02.6468444Z PASS test/roman/roman.controller.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:03.2181500Z PASS test/dunning-v2-lockout-allowlist-route-table.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:03.6373219Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:03 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_failed session=s_today stage=read: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-06T00:29:03.6392493Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:03 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_failed session=s_today stage=erase: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-06T00:29:03.6438577Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:03 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_failed stage=read erased_before=0: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-06T00:29:03.6456581Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:03 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_failed stage=read erased_before=1: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-06T00:29:03.6472844Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:03 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_failed session=s_today erased_before=0: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-06T00:29:03.6492117Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:03 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.delete_all_failed stage=count erased_before=50: DatabaseRequestError: Database request failed (P2024)^[[39m
+targeted	Targeted jest	2026-10-06T00:29:03.6570786Z PASS test/roman/roman-chats.controller.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:04.6664241Z PASS test/roman/roman-context-core.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:04.8917867Z PASS test/roman/roman-context-a2-fixes.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:05.4642094Z PASS test/ai-consent/ai-consent.controller.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:05.5869668Z PASS test/roman/roman-guardrails-rb121.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:05.8961136Z PASS test/roman/roman-erasure.sweep.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:06.1484496Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.1513877Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.1534832Z ^[[31m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.1564859Z PASS test/roman/roman-guardrails-wiring.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:06.2213480Z PASS test/roman-coach-reviewed-migration.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:06.5419471Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.5421359Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.5422874Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.5424728Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.5426691Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.5428465Z ^[[32m[Nest] 2978  - ^[[39m10/06/2026, 12:29:06 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:29:06.6401322Z PASS test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:06.9401966Z PASS test/roman/roman-c2-pool.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:07.1899677Z PASS test/roman/roman-rmn2-fixes.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:07.3646509Z PASS test/roman/roman-guardrails-round2.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:07.7192819Z PASS test/roman/roman-sse-error-contract.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:08.0130699Z PASS test/dunning-v2-lockout-guard.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:08.6663409Z ^[[31m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_builder_missing^[[39m
+targeted	Targeted jest	2026-10-06T00:29:08.6688343Z ^[[31m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.context_failed: Error^[[39m
+targeted	Targeted jest	2026-10-06T00:29:08.6726747Z ^[[33m[Nest] 2978  - ^[[39m10/06/2026, 12:29:08 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningLockoutGuard] ^[[39m^[[33mDunningLockoutGuard lookup failed for user=u1: db down^[[39m
+targeted	Targeted jest	2026-10-06T00:29:08.6729843Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=d9bf9e715ea2^[[39m
+targeted	Targeted jest	2026-10-06T00:29:08.6732994Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=none^[[39m
+targeted	Targeted jest	2026-10-06T00:29:08.6735848Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=none^[[39m
+targeted	Targeted jest	2026-10-06T00:29:08.6738773Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:29:08.6741873Z ^[[32m[Nest] 2978  - ^[[39m10/01/2026, 12:30:00 AM ^[[32m    LOG^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable^[[39m
+targeted	Targeted jest	2026-10-06T00:29:08.6776457Z PASS test/roman/roman-client-context-injection.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:08.9299720Z PASS test/roman/roman-context-round2.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:09.0041809Z PASS test/roman/roman.prompts.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:24.3861870Z PASS test/ai-consent/ai-consent-wiring.spec.ts (15.118 s)
+targeted	Targeted jest	2026-10-06T00:29:24.4536825Z PASS test/roman/roman-c2-rmn3-fixes.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:24.5135462Z PASS test/roman-coach-reviewed-feature.spec.ts
+targeted	Targeted jest	2026-10-06T00:29:24.5151226Z 
+targeted	Targeted jest	2026-10-06T00:29:24.5156733Z Test Suites: 2 skipped, 30 passed, 30 of 32 total
+targeted	Targeted jest	2026-10-06T00:29:24.5157238Z Tests:       13 skipped, 762 passed, 775 total
+targeted	Targeted jest	2026-10-06T00:29:24.5157539Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-06T00:29:24.5157813Z Time:        37.695 s
+targeted	Targeted jest	2026-10-06T00:29:24.5158413Z Ran all test suites matching test/roman|test/ai-consent|test/dunning-v2-lockout-allowlist-route-table.spec.ts|test/dunning-v2-lockout-guard.spec.ts.
+targeted	Post Run actions/setup-node@v6	﻿2026-10-06T00:29:24.8130470Z Post job cleanup.
+targeted	Post Run actions/setup-node@v6	2026-10-06T00:29:24.8960900Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba, not saving cache.
+targeted	Post Run actions/checkout@v6	﻿2026-10-06T00:29:24.9057156Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9635899Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9662558Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9688086Z Temporarily overriding HOME='/home/runner/work/_temp/62c81279-cc2a-4f97-b65f-09e3391af902' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9689214Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9692492Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9714410Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9719543Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9744772Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9892227Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9895430Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:24.9916473Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0055603Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0059945Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0085912Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0086735Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0087442Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0087890Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0089124Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0104278Z /home/runner/work/_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0111862Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0136676Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0150018Z /home/runner/work/_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0156378Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0177680Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0190727Z /github/runner_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0207802Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0258756Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0271448Z /github/runner_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0275933Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0299996Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-06T00:29:25.0442232Z Removing credentials config '/home/runner/work/_temp/git-credentials-547c2923-eb82-46eb-8d5c-46ffa98500a5.config'
+targeted	Stop containers	﻿2026-10-06T00:29:25.0533514Z Print service container logs: f82b5fc5421d4c628e71ab8ac62218a1_redis7alpine_a5a332
+targeted	Stop containers	2026-10-06T00:29:25.0536676Z ##[command]/usr/bin/docker logs --details 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Stop containers	2026-10-06T00:29:25.0648082Z  1:C 06 Oct 2026 00:27:32.814 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-06T00:29:25.0650475Z  1:C 06 Oct 2026 00:27:32.814 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-06T00:29:25.0651197Z  1:C 06 Oct 2026 00:27:32.814 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-06T00:29:25.0652166Z  1:C 06 Oct 2026 00:27:32.814 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-06T00:29:25.0653413Z  1:M 06 Oct 2026 00:27:32.815 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-06T00:29:25.0653979Z  1:M 06 Oct 2026 00:27:32.815 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-06T00:29:25.0654281Z  1:M 06 Oct 2026 00:27:32.815 * Server initialized
+targeted	Stop containers	2026-10-06T00:29:25.0654566Z  1:M 06 Oct 2026 00:27:32.815 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-06T00:29:25.0658471Z Stop and remove container: f82b5fc5421d4c628e71ab8ac62218a1_redis7alpine_a5a332
+targeted	Stop containers	2026-10-06T00:29:25.0661751Z ##[command]/usr/bin/docker rm --force 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Stop containers	2026-10-06T00:29:25.5410341Z 98216e5ce4fbc42743a3ae188d7c589c1ce2879fc2946fa354fa4e5df4443070
+targeted	Stop containers	2026-10-06T00:29:25.5427288Z Remove container network: github_network_808ec2af5da44036b7a41223d8b6c441
+targeted	Stop containers	2026-10-06T00:29:25.5430578Z ##[command]/usr/bin/docker network rm github_network_808ec2af5da44036b7a41223d8b6c441
+targeted	Stop containers	2026-10-06T00:29:25.6346232Z github_network_808ec2af5da44036b7a41223d8b6c441
+targeted	Complete job	﻿2026-10-06T00:29:25.6406684Z Cleaning up orphan processes

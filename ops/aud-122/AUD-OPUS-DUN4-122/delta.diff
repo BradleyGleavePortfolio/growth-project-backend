@@ -1,0 +1,28 @@
+diff --git a/src/checkout/client-billing.service.ts b/src/checkout/client-billing.service.ts
+index bd3b273e..27c9268b 100644
+--- a/src/checkout/client-billing.service.ts
++++ b/src/checkout/client-billing.service.ts
+@@ -1952,7 +1952,11 @@ export class ClientBillingService {
+           );
+           await this.prisma.dunningState
+             .updateMany({ where: { id: row.id, status: 'active' }, data: { updated_at: now } })
+-            .catch(() => undefined);
++            .catch((e: unknown) => {
++              this.logger.warn(
++                `reconcile: 2A requeue failed purchase=${row.purchase_id}: ${dunningErrorCode(e)}`,
++              );
++            });
+         }
+       }
+     }
+@@ -1967,7 +1971,9 @@ export class ClientBillingService {
+   private async deferOperation(opId: string, now: Date): Promise<void> {
+     await this.prisma.clientBillingOperation
+       .updateMany({ where: { id: opId, completed_at: null }, data: { updated_at: now } })
+-      .catch(() => undefined);
++      .catch((e: unknown) => {
++        this.logger.warn(`deferOperation failed op=${opId}: ${dunningErrorCode(e)}`);
++      });
+   }
+ 
+   /**

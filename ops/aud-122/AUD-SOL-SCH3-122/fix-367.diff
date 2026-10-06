@@ -1,0 +1,225 @@
+commit 2699b4b10f4a5370a8d44121f7b8c18331a712b0
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Tue Oct 6 00:01:21 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Tue Oct 6 00:01:21 2026 +0000
+
+    fix(calendar): name expired requests and keep welcome copy to welcome bookings
+    
+    - Opus B-367-1: add the backend 'expired' status to SchedulingSessionStatus
+      and label it 'Request closed, your coach did not answer in time' in
+      Calendar and the session view (the push tap target), with a Pick another
+      time action, instead of 'Status unavailable'.
+    - Sol B-367-1: the welcome heading and the welcome_call_booked tutorial
+      signal follow the type actually booked, so a regular type picked from the
+      welcome fallback reads as that type and does not complete the welcome step.
+    - Opus C-367-2: booking confirmation says the coach sees it in the booking
+      inbox, where coaches actually see new bookings.
+
+diff --git a/src/api/schedulingApi.ts b/src/api/schedulingApi.ts
+index 154097f..5d1ab69 100644
+--- a/src/api/schedulingApi.ts
++++ b/src/api/schedulingApi.ts
+@@ -39,8 +39,10 @@ import api from '../services/api';
+ // ─── Shared enums (mirror backend) ────────────────────────────────────────────
+ 
+ /**
+- * Status the backend persists on a CoachingSession. 7 values; matches
+- * `SessionStatus` Prisma enum in growth-project-backend.
++ * Status the backend persists on a CoachingSession. 8 values; matches
++ * `SessionStatus` Prisma enum in growth-project-backend. `expired` is a
++ * request the coach did not answer before its clear time (S-SCHED-5); the
++ * server also reads a lapsed request as `expired` before the sweep writes it.
+  *
+  * The mobile shell's `SessionStatus` in `src/types/sessions.ts` uses a
+  * different, 9-value union from the pre-backend scaffold. The mapper
+@@ -54,7 +56,8 @@ export type SchedulingSessionStatus =
+   | 'canceled'
+   | 'no_show'
+   | 'completed'
+-  | 'pending_provider';
++  | 'pending_provider'
++  | 'expired';
+ 
+ /**
+  * Video provider as the backend models it. The mobile shell uses
+diff --git a/src/screens/client/calendar/CalendarBookScreen.tsx b/src/screens/client/calendar/CalendarBookScreen.tsx
+index 36729c8..98a2b92 100644
+--- a/src/screens/client/calendar/CalendarBookScreen.tsx
++++ b/src/screens/client/calendar/CalendarBookScreen.tsx
+@@ -63,7 +63,7 @@ export function bookedMessage(session: CoachingSession, coachName: string, moved
+     return `Requested, waiting for your coach. Check Calendar to see when ${coachName} confirms.${copyNote}`;
+   }
+   if (session.status === 'pending_provider') return `Your time is reserved. The call link is being prepared. Open Calendar to check its status.${copyNote}`;
+-  const base = moved ? `Moved. ${coachName} has the new time.` : `Booked. ${coachName} will see it in Calendar.`;
++  const base = moved ? `Moved. ${coachName} has the new time.` : `Booked. ${coachName} will see it in the booking inbox.`;
+   const linkNote = session.meeting_link_status === 'pending' ? ` ${coachName} will add the call link before it starts.` : '';
+   return `${base}${linkNote}${copyNote}`;
+ }
+@@ -120,6 +120,9 @@ export default function CalendarBookScreen({ route, navigation }: Props) {
+     const id = selectedTypeId ?? params.sessionTypeId ?? moving.data?.session_type_id ?? undefined;
+     return list.find((t) => t.id === id) ?? null;
+   }, [types.data, params.welcome, params.sessionTypeId, moving.data?.session_type_id, selectedTypeId, welcomeInfo?.session_type_id]);
++  // Welcome heading and tutorial signal follow the type actually booked: a
++  // regular type picked from the welcome fallback is not a welcome call.
++  const bookingWelcome = !!params.welcome && !!type && pickWelcomeType([type], welcomeInfo?.session_type_id) !== null;
+ 
+   // Persistent marker: the welcome call is already booked (upcoming) or done.
+   const welcomeDone =
+@@ -165,7 +168,7 @@ export default function CalendarBookScreen({ route, navigation }: Props) {
+     setError(null);
+     const onSuccess = (s: CoachingSession) => {
+       setDone(s);
+-      if (params.welcome) emitTutorialSignal('welcome_call_booked');
++      if (bookingWelcome) emitTutorialSignal('welcome_call_booked');
+     };
+     const onError = (err: unknown) => {
+       setError(bookingErrorMessage(err));
+@@ -278,7 +281,7 @@ export default function CalendarBookScreen({ route, navigation }: Props) {
+   if (noTimes) {
+     return screen(
+       <View testID="calendar-book-fallback">
+-        <Title>{params.welcome ? `Welcome call with ${coachName}` : type?.name ?? 'Book a time'}</Title>
++        <Title>{(params.welcome && !type) || bookingWelcome ? `Welcome call with ${coachName}` : type?.name ?? 'Book a time'}</Title>
+         <Body muted>
+           {!type
+             ? params.welcome
+@@ -298,7 +301,7 @@ export default function CalendarBookScreen({ route, navigation }: Props) {
+ 
+   return screen(
+     <View>
+-      <Title>{params.welcome ? `Book your welcome call with ${coachName}` : type.name}</Title>
++      <Title>{bookingWelcome ? `Book your welcome call with ${coachName}` : type.name}</Title>
+       <Note
+         text={`${type.duration_minutes} minutes. ${type.auto_approve ? 'Confirmed right away.' : `${coachName} confirms each request.`} Times are in your time zone.`}
+       />
+diff --git a/src/screens/client/calendar/CalendarSessionScreen.tsx b/src/screens/client/calendar/CalendarSessionScreen.tsx
+index 41ee2d8..cc2ef6d 100644
+--- a/src/screens/client/calendar/CalendarSessionScreen.tsx
++++ b/src/screens/client/calendar/CalendarSessionScreen.tsx
+@@ -223,6 +223,15 @@ export default function CalendarSessionScreen({ route, navigation }: Props) {
+           <SecondaryButton label="Cancel session" onPress={onCancel} disabled={cancel.isPending} testID="calendar-cancel" />
+         </>
+       ) : null}
++      {s.status === 'expired' ? (
++        <SecondaryButton
++          label="Pick another time"
++          onPress={() =>
++            navigation.navigate('CalendarBook', { coachId: s.coach_id, sessionTypeId: s.session_type_id ?? undefined })
++          }
++          testID="calendar-expired-rebook"
++        />
++      ) : null}
+       {msg ? <Note text={msg} testID="calendar-session-msg" /> : null}
+ 
+       {s.client_recap_md ? (
+diff --git a/src/screens/client/calendar/__tests__/calendarScreens.test.tsx b/src/screens/client/calendar/__tests__/calendarScreens.test.tsx
+index d44a139..6144d89 100644
+--- a/src/screens/client/calendar/__tests__/calendarScreens.test.tsx
++++ b/src/screens/client/calendar/__tests__/calendarScreens.test.tsx
+@@ -63,6 +63,7 @@ import CalendarHomeScreen from '../CalendarHomeScreen';
+ import CalendarBookScreen, { bookedMessage, bookingErrorMessage, moveNeedsApprovalWarning } from '../CalendarBookScreen';
+ import CalendarSessionScreen, { canJoin } from '../CalendarSessionScreen';
+ import { pickWelcomeType } from '../CalendarBookScreen';
++import { statusLabel } from '../calendarUi';
+ 
+ describe('pickWelcomeType', () => {
+   const list = [
+@@ -312,7 +313,7 @@ describe('CalendarBookScreen', () => {
+     });
+     await act(async () => resolve(sess()));
+     await waitFor(() => expect(r.getByTestId('calendar-book-done')).toBeTruthy());
+-    expect(r.getByText('Booked. Bradley will see it in Calendar.')).toBeTruthy();
++    expect(r.getByText('Booked. Bradley will see it in the booking inbox.')).toBeTruthy();
+     await fireEvent.press(r.getByTestId('calendar-add-phone'));
+     await waitFor(() => expect(addSessionToPhoneCalendar).toHaveBeenCalled());
+     expect(emitTutorialSignal).not.toHaveBeenCalled();
+@@ -405,7 +406,7 @@ describe('CalendarBookScreen', () => {
+     await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
+     await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
+     await fireEvent.press(r.getByTestId('calendar-submit'));
+-    await waitFor(() => expect(r.getByText('Booked. Bradley will see it in Calendar. Bradley will add the call link before it starts.')).toBeTruthy());
++    await waitFor(() => expect(r.getByText('Booked. Bradley will see it in the booking inbox. Bradley will add the call link before it starts.')).toBeTruthy());
+   });
+ 
+   it('welcome mode without a welcome type falls back to Calendar and Message your coach', async () => {
+@@ -624,3 +625,66 @@ describe('S-SCHED-3 C-325-4: moving a confirmed approval-type session warns firs
+     expect(bookedMessage(sess({ status: 'scheduled' }), 'Bradley', false)).not.toMatch(/phone calendar/);
+   });
+ });
++
++// ─── B-SCH2-122 fix round (m#367 @ 6418e759 lens repros) ───────────────────
++
++describe('Sol B-367-1: a regular type picked from the welcome fallback is not a welcome call', () => {
++  it('a regular appointment selected from the welcome fallback is labelled as that appointment', async () => {
++    api.listMyCoaches.mockResolvedValue([{ ...COACH, welcome: null }]);
++    api.listSessionTypes.mockResolvedValue([type({ is_welcome: false })]);
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true })} />);
++    await waitFor(() => expect(r.getByTestId('calendar-book-fallback')).toBeTruthy());
++    expect(r.getByText('Welcome call with Bradley')).toBeTruthy();
++    await fireEvent.press(r.getByText('Quick Q/A Call, 20 minutes'));
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    expect(r.queryByText('Book your welcome call with Bradley')).toBeNull();
++    expect(r.getByText('Quick Q/A Call')).toBeTruthy();
++  });
++
++  it('booking a regular appointment from the welcome fallback does not report a welcome call booked', async () => {
++    api.listMyCoaches.mockResolvedValue([{ ...COACH, welcome: null }]);
++    api.listSessionTypes.mockResolvedValue([type({ is_welcome: false })]);
++    api.requestSession.mockResolvedValue(sess({
++      session_type: {
++        id: 'st-1', name: 'Quick Q/A Call', duration_minutes: 20,
++        auto_approve: true, is_welcome: false, archived: false,
++      },
++    }));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true })} />);
++    await waitFor(() => expect(r.getByTestId('calendar-book-fallback')).toBeTruthy());
++    await fireEvent.press(r.getByText('Quick Q/A Call, 20 minutes'));
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(r.getByTestId('calendar-book-done')).toBeTruthy());
++    expect(api.requestSession).toHaveBeenCalledWith(expect.objectContaining({ session_type_id: 'st-1' }));
++    expect(emitTutorialSignal).not.toHaveBeenCalledWith('welcome_call_booked');
++  });
++});
++
++describe('Opus B-367-1: a request the coach did not answer in time reads as closed', () => {
++  it('statusLabel names the expired status instead of the unknown-status default', () => {
++    expect(statusLabel('expired')).toBe('Request closed, your coach did not answer in time');
++    expect(statusLabel('expired')).not.toMatch(/Status unavailable/);
++  });
++
++  it('Calendar lists an expired request as closed', async () => {
++    api.listMySessions.mockResolvedValue([sess({ status: 'expired' })]);
++    const r = await renderQ(<CalendarHomeScreen {...homeProps()} />);
++    await waitFor(() => expect(r.getAllByText(/Request closed, your coach did not answer in time/).length).toBeGreaterThan(0));
++    expect(r.queryByText(/Status unavailable/)).toBeNull();
++  });
++
++  it('the session view (push tap target) says the request closed and offers another time', async () => {
++    api.getSession.mockResolvedValue(sess({ status: 'expired' }));
++    const n = nav();
++    const r = await renderQ(<CalendarSessionScreen {...sessionProps(n)} />);
++    await waitFor(() => expect(r.getByTestId('calendar-session-status')).toBeTruthy());
++    expect(r.getByText('Request closed, your coach did not answer in time')).toBeTruthy();
++    expect(r.queryByText(/Status unavailable/)).toBeNull();
++    expect(r.queryByTestId('calendar-cancel')).toBeNull();
++    expect(r.queryByTestId('calendar-reschedule')).toBeNull();
++    await fireEvent.press(r.getByTestId('calendar-expired-rebook'));
++    expect(n.navigate).toHaveBeenCalledWith('CalendarBook', { coachId: 'coach-1', sessionTypeId: 'st-1' });
++  });
++});
+diff --git a/src/screens/client/calendar/calendarUi.tsx b/src/screens/client/calendar/calendarUi.tsx
+index 0b3e9d6..c17c95b 100644
+--- a/src/screens/client/calendar/calendarUi.tsx
++++ b/src/screens/client/calendar/calendarUi.tsx
+@@ -24,6 +24,8 @@ export function statusLabel(status: SchedulingSessionStatus): string {
+       return 'Completed';
+     case 'no_show':
+       return 'Missed';
++    case 'expired':
++      return 'Request closed, your coach did not answer in time';
+     default:
+       return 'Status unavailable. Refresh Calendar or message your coach.';
+   }

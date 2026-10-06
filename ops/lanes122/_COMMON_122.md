@@ -63,3 +63,7 @@ repos are PUBLIC). Spend no money. Product copy: no first person, no emojis, no 
     you pushed it, a lens may run that single spec through heavy.sh (never a full suite) and say so in the verdict.
 12. Stop order: when the operator sends "WRAP UP" (or your time box ends), within 10 minutes push complete work, post status comments,
     finish your report with ## HANDOFF, remove worktrees, release locks, and give your final answer.
+
+## 17:38 note: `gh run view` / `gh run watch` / `gh pr checks` fetch job lists from api.github.com without the token and hit the shared
+## 60/hour IP limit (HTTP 403 "rate limit exceeded for <ip>"). Use `gh api repos/<owner>/<repo>/actions/runs/<id>/jobs` and
+## `gh pr view N --json statusCheckRollup` instead (these go through the authenticated proxy).

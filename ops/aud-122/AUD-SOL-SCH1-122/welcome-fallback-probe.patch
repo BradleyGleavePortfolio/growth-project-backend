@@ -1,0 +1,54 @@
+From 0c009c1ae22f1571e954c63bb542e52653db7806 Mon Sep 17 00:00:00 2001
+From: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date: Mon, 5 Oct 2026 23:38:26 +0000
+Subject: [PATCH] test(audit): ordinary welcome fallback must not claim a
+ welcome booking
+
+---
+ .../__tests__/calendarScreens.test.tsx        | 33 +++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+
+diff --git a/src/screens/client/calendar/__tests__/calendarScreens.test.tsx b/src/screens/client/calendar/__tests__/calendarScreens.test.tsx
+index d44a139..b8a8aa1 100644
+--- a/src/screens/client/calendar/__tests__/calendarScreens.test.tsx
++++ b/src/screens/client/calendar/__tests__/calendarScreens.test.tsx
+@@ -624,3 +624,36 @@ describe('S-SCHED-3 C-325-4: moving a confirmed approval-type session warns firs
+     expect(bookedMessage(sess({ status: 'scheduled' }), 'Bradley', false)).not.toMatch(/phone calendar/);
+   });
+ });
++
++describe('AUD-SOL-SCH1-122 normal welcome-call fallback', () => {
++  it('a regular appointment selected from the welcome fallback is labelled as that appointment', async () => {
++    api.listMyCoaches.mockResolvedValue([{ ...COACH, welcome: null }]);
++    api.listSessionTypes.mockResolvedValue([type({ is_welcome: false })]);
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true })} />);
++    await waitFor(() => expect(r.getByTestId('calendar-book-fallback')).toBeTruthy());
++    await fireEvent.press(r.getByText('Quick Q/A Call, 20 minutes'));
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    expect(r.queryByText('Book your welcome call with Bradley')).toBeNull();
++    expect(r.getByText('Quick Q/A Call')).toBeTruthy();
++  });
++
++  it('booking a regular appointment from the welcome fallback does not report a welcome call booked', async () => {
++    api.listMyCoaches.mockResolvedValue([{ ...COACH, welcome: null }]);
++    api.listSessionTypes.mockResolvedValue([type({ is_welcome: false })]);
++    api.requestSession.mockResolvedValue(sess({
++      session_type: {
++        id: 'st-1', name: 'Quick Q/A Call', duration_minutes: 20,
++        auto_approve: true, is_welcome: false, archived: false,
++      },
++    }));
++    const r = await renderQ(<CalendarBookScreen {...bookProps({ welcome: true })} />);
++    await waitFor(() => expect(r.getByTestId('calendar-book-fallback')).toBeTruthy());
++    await fireEvent.press(r.getByText('Quick Q/A Call, 20 minutes'));
++    await waitFor(() => expect(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`)).toBeTruthy());
++    await fireEvent.press(r.getByTestId(`calendar-slot-${SLOT_A.start_at}`));
++    await fireEvent.press(r.getByTestId('calendar-submit'));
++    await waitFor(() => expect(r.getByTestId('calendar-book-done')).toBeTruthy());
++    expect(api.requestSession).toHaveBeenCalledWith(expect.objectContaining({ session_type_id: 'st-1' }));
++    expect(emitTutorialSignal).not.toHaveBeenCalledWith('welcome_call_booked');
++  });
++});
+-- 
+2.53.0
+

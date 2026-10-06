@@ -1,0 +1,191 @@
+[heavy] waiting for a slot: npx jest --ci test/roman-adjust/roman-adjust.service.spec.ts
+[31m[Nest] 24643  - [39m10/06/2026, 12:00:17 AM [31m  ERROR[39m [38;5;3m[RomanAdjustService] [39m[31madjust list failed: Error[39m
+FAIL test/roman-adjust/roman-adjust.service.spec.ts (116 MB heap size)
+  kill switch
+    ✓ undefined -> every route 404s (21 ms)
+    ✓  -> every route 404s (1 ms)
+    ✓ false -> every route 404s (6 ms)
+    ✓ 1 -> every route 404s
+    ✓ yes -> every route 404s (1 ms)
+    ✓ 'true' -> on (1 ms)
+  scan
+    ✕ proposes for the consented client only; box 2 missing means no proposal (17 ms)
+    ✓ re-scanning is idempotent: one proposal per workout and rule (10 ms)
+    ✓ a client who withdraws box 2 after the scan drops out of the list (withdrawn + audit row) (6 ms)
+    ✓ a started workout expires its pending proposal (6 ms)
+  approve / edit / dismiss / undo
+    ✓ approve writes the new set counts to that one assignment only, with an audit row (7 ms)
+    ✓ undo inside the window restores the previous counts; after the window it is refused (13 ms)
+    ✓ undo never overwrites a newer edit (7 ms)
+    ✓ edit with explicit set counts applies the coach numbers (7 ms)
+    ✓ edit with a percentage applies that percentage (7 ms)
+    ✓ invalid edit {} is refused with specific copy and changes nothing (6 ms)
+    ✓ invalid edit {"volume_pct":3} is refused with specific copy and changes nothing (5 ms)
+    ✓ invalid edit {"volume_pct":20,"sets":[{"order":0,"sets":2}]} is refused with specific copy and changes nothing (6 ms)
+    ✓ invalid edit {"sets":[{"order":9,"sets":2}]} is refused with specific copy and changes nothing (6 ms)
+    ✓ invalid edit {"sets":[{"order":0,"sets":0}]} is refused with specific copy and changes nothing (6 ms)
+    ✓ the client started the workout: refused, unchanged, audit rows apply_refused + expired (6 ms)
+    ✓ the workout was edited after the suggestion: refused with WORKOUT_CHANGED (6 ms)
+    ✓ box 2 withdrawn before approve: refused, unchanged, proposal withdrawn (11 ms)
+    ✓ another coach's proposal is a 404, never a 403 (5 ms)
+    ✓ a second decision is ALREADY_DECIDED (6 ms)
+    ✓ dismiss leaves the workout as it is and the rule never re-raises it (11 ms)
+    ✓ an unexpected database failure on list is the specific unavailable copy (1 ms)
+  fix round 1 (B-ADJB-122): what the coach reads is true when it is read
+    ✕ B-655-3: a suggestion made Friday still names the right day when the coach opens it on Saturday (13 ms)
+    ✕ B-655-9: the suggestion has no first person (6 ms)
+    ✕ B-655-6: the percentage shown is the change the client gets (6 ms)
+    ✕ B-655-2: the edited-workout refusal promises nothing that never comes (7 ms)
+    ✕ A-655-1: a client moved to another coach drops out of the old coach's list, and the old coach cannot act (9 ms)
+    ✕ A-655-1: an applied change cannot be undone by the old coach after the client moved (7 ms)
+  copy rules
+    ✓ NOT_FOUND says what happened and what to do, in the house voice
+    ✓ ALREADY_DECIDED says what happened and what to do, in the house voice (1 ms)
+    ✓ WORKOUT_STARTED says what happened and what to do, in the house voice
+    ✓ WORKOUT_CHANGED says what happened and what to do, in the house voice
+    ✓ CONSENT_WITHDRAWN says what happened and what to do, in the house voice
+    ✓ UNDO_EXPIRED says what happened and what to do, in the house voice
+    ✓ UNDO_BLOCKED says what happened and what to do, in the house voice (1 ms)
+    ✓ EDIT_INVALID says what happened and what to do, in the house voice
+    ✓ UNAVAILABLE says what happened and what to do, in the house voice
+
+  ● scan › proposes for the consented client only; box 2 missing means no proposal
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+    @@ -7,11 +7,11 @@
+          "ex-0": "Back squat",
+        },
+        "proposed_change": Object {
+          "sets_after": 15,
+          "sets_before": 18,
+    -     "volume_pct": 17,
+    +     "volume_pct": 15,
+        },
+        "severity": "moderate",
+        "status": "pending",
+        "workout": Object {
+          "assignment_id": "asg-maya",
+
+    [0m [90m 190 |[39m     [36mconst[39m { proposals } [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mlistForCoach([33mCOACH[39m[33m,[39m [33mNOW[39m)[33m;[39m
+     [90m 191 |[39m     expect(proposals)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 192 |[39m     expect(proposals[[35m0[39m])[33m.[39mtoMatchObject({
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 193 |[39m       status[33m:[39m [32m'pending'[39m[33m,[39m
+     [90m 194 |[39m       severity[33m:[39m [32m'moderate'[39m[33m,[39m
+     [90m 195 |[39m       client[33m:[39m { id[33m:[39m [33mMAYA[39m[33m,[39m first_name[33m:[39m [32m'Maya'[39m }[33m,[39m[0m
+
+      at Object.<anonymous> (test/roman-adjust/roman-adjust.service.spec.ts:192:26)
+
+  ● fix round 1 (B-ADJB-122): what the coach reads is true when it is read › B-655-3: a suggestion made Friday still names the right day when the coach opens it on Saturday
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "trimming Saturday's Lower Body A"
+    Received string:    "Maya's recovery has dipped. Heart-rate variability is 23% below the usual and resting heart rate is up 6 bpm. I suggest trimming tomorrow's Lower Body A by 15%, from 18 to 15 sets. Reps and loads stay as you set them. Shall I apply it?"
+
+    [0m [90m 361 |[39m     [36mconst[39m { proposals } [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mlistForCoach([33mCOACH[39m[33m,[39m saturdayMorning)[33m;[39m
+     [90m 362 |[39m     expect(proposals)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 363 |[39m     expect(proposals[[35m0[39m][33m.[39mroman_text)[33m.[39mtoContain([32m"trimming Saturday's Lower Body A"[39m)[33m;[39m
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 364 |[39m     expect(proposals[[35m0[39m][33m.[39mroman_text)[33m.[39mnot[33m.[39mtoMatch([35m/tomorrow|today/i[39m)[33m;[39m
+     [90m 365 |[39m   })[33m;[39m
+     [90m 366 |[39m[0m
+
+      at Object.<anonymous> (test/roman-adjust/roman-adjust.service.spec.ts:363:37)
+
+  ● fix round 1 (B-ADJB-122): what the coach reads is true when it is read › B-655-9: the suggestion has no first person
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /\bI\b|\bI'|\bme\b|\bmy\b|\bwe\b|\bus\b/i
+    Received string:      "Maya's recovery has dipped. Heart-rate variability is 23% below the usual and resting heart rate is up 6 bpm. I suggest trimming tomorrow's Lower Body A by 15%, from 18 to 15 sets. Reps and loads stay as you set them. Shall I apply it?"
+
+    [0m [90m 368 |[39m     [36mconst[39m w [33m=[39m world()[33m;[39m
+     [90m 369 |[39m     [36mconst[39m { proposals } [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mlistForCoach([33mCOACH[39m[33m,[39m [33mNOW[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 370 |[39m     expect(proposals[[35m0[39m][33m.[39mroman_text)[33m.[39mnot[33m.[39mtoMatch([35m/\bI\b|\bI'|\bme\b|\bmy\b|\bwe\b|\bus\b/i[39m)[33m;[39m
+     [90m     |[39m                                         [31m[1m^[22m[39m
+     [90m 371 |[39m   })[33m;[39m
+     [90m 372 |[39m
+     [90m 373 |[39m   it([32m'B-655-6: the percentage shown is the change the client gets'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/roman-adjust/roman-adjust.service.spec.ts:370:41)
+
+  ● fix round 1 (B-ADJB-122): what the coach reads is true when it is read › B-655-6: the percentage shown is the change the client gets
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 17
+    Received: 15
+
+    [0m [90m 375 |[39m     [36mconst[39m { proposals } [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mlistForCoach([33mCOACH[39m[33m,[39m [33mNOW[39m)[33m;[39m
+     [90m 376 |[39m     [36mconst[39m c [33m=[39m proposals[[35m0[39m][33m.[39mproposed_change[33m;[39m
+    [31m[1m>[22m[39m[90m 377 |[39m     expect(c[33m.[39mvolume_pct)[33m.[39mtoBe([33mMath[39m[33m.[39mround(((c[33m.[39msets_before [33m-[39m c[33m.[39msets_after) [33m/[39m c[33m.[39msets_before) [33m*[39m [35m100[39m))[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 378 |[39m     expect(proposals[[35m0[39m][33m.[39mroman_text)[33m.[39mtoContain([32m`by ${c.volume_pct}%, from ${c.sets_before} to ${c.sets_after} sets`[39m)[33m;[39m
+     [90m 379 |[39m     [36mconst[39m v [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mapprove([33mCOACH[39m[33m,[39m proposals[[35m0[39m][33m.[39mid[33m,[39m [33mNOW[39m)[33m;[39m
+     [90m 380 |[39m     expect(w[33m.[39msetsOf([32m'asg-maya'[39m)[33m.[39mreduce((a[33m,[39m b) [33m=>[39m a [33m+[39m b[33m,[39m [35m0[39m))[33m.[39mtoBe(v[33m.[39mapplied_change[33m?[39m[33m.[39msets_after)[33m;[39m[0m
+
+      at Object.<anonymous> (test/roman-adjust/roman-adjust.service.spec.ts:377:26)
+
+  ● fix round 1 (B-ADJB-122): what the coach reads is true when it is read › B-655-2: the edited-workout refusal promises nothing that never comes
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /new suggestion|refresh/i
+    Received string:      "This workout was edited after Roman made the suggestion, so it was not applied. Open the workout to review it, then refresh for a new suggestion."
+
+    [0m [90m 386 |[39m     w[33m.[39msnapshots[[35m0[39m][33m.[39mexercises_json [33m=[39m exercises([[35m6[39m[33m,[39m [35m4[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m])[33m;[39m
+     [90m 387 |[39m     [36mawait[39m expect(w[33m.[39msvc[33m.[39mapprove([33mCOACH[39m[33m,[39m proposals[[35m0[39m][33m.[39mid[33m,[39m [33mNOW[39m))[33m.[39mrejects[33m.[39mtoMatchObject(codeOf([32m'WORKOUT_CHANGED'[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 388 |[39m     expect([33mADJUST_ERRORS[39m[33m.[39m[33mWORKOUT_CHANGED[39m[33m.[39mmessage)[33m.[39mnot[33m.[39mtoMatch([35m/new suggestion|refresh/i[39m)[33m;[39m
+     [90m     |[39m                                                       [31m[1m^[22m[39m
+     [90m 389 |[39m     [90m// No new suggestion is made for that workout, so the copy must not offer one.[39m
+     [90m 390 |[39m     [36mawait[39m w[33m.[39msvc[33m.[39mrefreshForCoach([33mCOACH[39m[33m,[39m [33mNOW[39m[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 391 |[39m     expect(w[33m.[39mproposals[33m.[39mfilter((p) [33m=>[39m p[33m.[39mstatus [33m===[39m [32m'pending'[39m))[33m.[39mtoHaveLength([35m0[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/roman-adjust/roman-adjust.service.spec.ts:388:55)
+
+  ● fix round 1 (B-ADJB-122): what the coach reads is true when it is read › A-655-1: a client moved to another coach drops out of the old coach's list, and the old coach cannot act
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"applied_change": {"exercises": [{"exercise_external_id": "ex-0", "order": 0, "sets_after": 3, "sets_before": 5}, {"exercise_external_id": "ex-1", "order": 1, "sets_after": 3, "sets_before": 4}, {"exercise_external_id": "ex-2", "order": 2, "sets_after": 3, "sets_before": 3}, {"exercise_external_id": "ex-3", "order": 3, "sets_after": 3, "sets_before": 3}, {"exercise_external_id": "ex-4", "order": 4, "sets_after": 3, "sets_before": 3}], "sets_after": 15, "sets_before": 18, "volume_pct": 15}, "client": {"first_name": "Maya", "id": "client-maya"}, "created_at": "2026-10-02T16:00:00.000Z", "decided_at": "2026-10-02T16:00:00.000Z", "exercise_names": {"ex-0": "Back squat"}, "id": "prop-0001-0000-0000-000000000000", "proposed_change": {"exercises": [{"exercise_external_id": "ex-0", "order": 0, "sets_after": 3, "sets_before": 5}, {"exercise_external_id": "ex-1", "order": 1, "sets_after": 3, "sets_before": 4}, {"exercise_external_id": "ex-2", "order": 2, "sets_after": 3, "sets_before": 3}, {"exercise_external_id": "ex-3", "order": 3, "sets_after": 3, "sets_before": 3}, {"exercise_external_id": "ex-4", "order": 4, "sets_after": 3, "sets_before": 3}], "sets_after": 15, "sets_before": 18, "volume_pct": 15}, "roman_text": "Maya's recovery has dipped. Heart-rate variability is 23% below the usual and resting heart rate is up 6 bpm. I suggest trimming tomorrow's Lower Body A by 15%, from 18 to 15 sets. Reps and loads stay as you set them. Shall I apply it?", "severity": "moderate", "signals": [{"baseline": 60, "key": "hrv_drop", "marked": false, "value": 23}, {"baseline": 55, "key": "rhr_rise", "marked": false, "value": 6}], "status": "approved", "undo_until": "2026-10-02T16:10:00.000Z", "workout": {"assignment_id": "asg-maya", "plan_name": "Lower Body A", "scheduled_for": "2026-10-03T16:00:00.000Z"}}
+
+    [0m [90m 397 |[39m     [36mconst[39m id [33m=[39m proposals[[35m0[39m][33m.[39mid[33m;[39m
+     [90m 398 |[39m     (w[33m.[39musers[33m.[39mfind((u) [33m=>[39m u[33m.[39mid [33m===[39m [33mMAYA[39m) [36mas[39m [33mRow[39m)[33m.[39mcoach_id [33m=[39m [32m'coach-2'[39m[33m;[39m
+    [31m[1m>[22m[39m[90m 399 |[39m     [36mawait[39m expect(w[33m.[39msvc[33m.[39mapprove([33mCOACH[39m[33m,[39m id[33m,[39m [33mNOW[39m))[33m.[39mrejects[33m.[39mtoMatchObject(codeOf([32m'NOT_FOUND'[39m))[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 400 |[39m     [36mawait[39m expect(w[33m.[39msvc[33m.[39mdismiss([33mCOACH[39m[33m,[39m id[33m,[39m [36mnull[39m))[33m.[39mrejects[33m.[39mtoMatchObject(codeOf([32m'NOT_FOUND'[39m))[33m;[39m
+     [90m 401 |[39m     expect(w[33m.[39msetsOf([32m'asg-maya'[39m))[33m.[39mtoEqual([[35m5[39m[33m,[39m [35m4[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m])[33m;[39m
+     [90m 402 |[39m     [36mconst[39m later [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mlistForCoach([33mCOACH[39m[33m,[39m [36mnew[39m [33mDate[39m([33mNOW[39m[33m.[39mgetTime() [33m+[39m [35m1000[39m))[33m;[39m[0m
+
+      at expect (../../deps/backend/node_modules/expect/build/index.js:2116:15)
+      at Object.<anonymous> (test/roman-adjust/roman-adjust.service.spec.ts:399:11)
+
+  ● fix round 1 (B-ADJB-122): what the coach reads is true when it is read › A-655-1: an applied change cannot be undone by the old coach after the client moved
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"applied_change": {"exercises": [{"exercise_external_id": "ex-0", "order": 0, "sets_after": 3, "sets_before": 5}, {"exercise_external_id": "ex-1", "order": 1, "sets_after": 3, "sets_before": 4}, {"exercise_external_id": "ex-2", "order": 2, "sets_after": 3, "sets_before": 3}, {"exercise_external_id": "ex-3", "order": 3, "sets_after": 3, "sets_before": 3}, {"exercise_external_id": "ex-4", "order": 4, "sets_after": 3, "sets_before": 3}], "sets_after": 15, "sets_before": 18, "volume_pct": 15}, "client": {"first_name": "Maya", "id": "client-maya"}, "created_at": "2026-10-02T16:00:00.000Z", "decided_at": "2026-10-02T16:00:00.000Z", "exercise_names": {"ex-0": "Back squat"}, "id": "prop-0001-0000-0000-000000000000", "proposed_change": {"exercises": [{"exercise_external_id": "ex-0", "order": 0, "sets_after": 3, "sets_before": 5}, {"exercise_external_id": "ex-1", "order": 1, "sets_after": 3, "sets_before": 4}, {"exercise_external_id": "ex-2", "order": 2, "sets_after": 3, "sets_before": 3}, {"exercise_external_id": "ex-3", "order": 3, "sets_after": 3, "sets_before": 3}, {"exercise_external_id": "ex-4", "order": 4, "sets_after": 3, "sets_before": 3}], "sets_after": 15, "sets_before": 18, "volume_pct": 15}, "roman_text": "Maya's recovery has dipped. Heart-rate variability is 23% below the usual and resting heart rate is up 6 bpm. I suggest trimming tomorrow's Lower Body A by 15%, from 18 to 15 sets. Reps and loads stay as you set them. Shall I apply it?", "severity": "moderate", "signals": [{"baseline": 60, "key": "hrv_drop", "marked": false, "value": 23}, {"baseline": 55, "key": "rhr_rise", "marked": false, "value": 6}], "status": "undone", "undo_until": null, "workout": {"assignment_id": "asg-maya", "plan_name": "Lower Body A", "scheduled_for": "2026-10-03T16:00:00.000Z"}}
+
+    [0m [90m 410 |[39m     [36mawait[39m w[33m.[39msvc[33m.[39mapprove([33mCOACH[39m[33m,[39m proposals[[35m0[39m][33m.[39mid[33m,[39m [33mNOW[39m)[33m;[39m
+     [90m 411 |[39m     (w[33m.[39musers[33m.[39mfind((u) [33m=>[39m u[33m.[39mid [33m===[39m [33mMAYA[39m) [36mas[39m [33mRow[39m)[33m.[39mcoach_id [33m=[39m [32m'coach-2'[39m[33m;[39m
+    [31m[1m>[22m[39m[90m 412 |[39m     [36mawait[39m expect(w[33m.[39msvc[33m.[39mundo([33mCOACH[39m[33m,[39m proposals[[35m0[39m][33m.[39mid[33m,[39m [33mNOW[39m))[33m.[39mrejects[33m.[39mtoMatchObject(codeOf([32m'NOT_FOUND'[39m))[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 413 |[39m     expect(w[33m.[39msetsOf([32m'asg-maya'[39m))[33m.[39mtoEqual([[35m3[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m])[33m;[39m
+     [90m 414 |[39m   })[33m;[39m
+     [90m 415 |[39m })[33m;[39m[0m
+
+      at expect (../../deps/backend/node_modules/expect/build/index.js:2116:15)
+      at Object.<anonymous> (test/roman-adjust/roman-adjust.service.spec.ts:412:11)
+
+Test Suites: 1 failed, 1 total
+Tests:       7 failed, 35 passed, 42 total
+Snapshots:   0 total
+Time:        3.061 s
+Ran all test suites matching test/roman-adjust/roman-adjust.service.spec.ts.

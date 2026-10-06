@@ -1,0 +1,44 @@
+S-AVAIL-122 (agent 122) — coach booking options: backend endpoint contract (FIXED 2026-10-05 17:05 PDT)
+Backend PR: growth-project-backend#735 head 32d8120712cc106eb87a4a3457661dc2cf427a1e (base main). Not merged yet.
+
+Scope: per coach (one set of options per coach, applies to every appointment type). Additive columns on CoachProfile; defaults reproduce
+today's fixed rules exactly (5 min notice, 120 days ahead, no buffers, no daily cap).
+
+1) GET /scheduling/coach/booking-options            (JWT; role coach only, own data; anyone else 403)
+   200 {
+     "coach_id": "<uuid>",
+     "min_notice_minutes": 5,          // int 5..43200 (30 days). Clients cannot book a start earlier than now + this.
+     "booking_window_days": 120,       // int 1..365. Clients cannot book a start later than now + this many days.
+     "buffer_before_minutes": 0,       // int 0..240. Free time kept before each session (other sessions only, not open-hours edges).
+     "buffer_after_minutes": 0,        // int 0..240. Free time kept after each session.
+     "daily_max_sessions": null,       // int 1..50 or null (= no limit). Max occupying sessions (requested/scheduled/pending_provider)
+                                       // starting on one day in the coach's time zone.
+     "defaults": { "min_notice_minutes": 5, "booking_window_days": 120, "buffer_before_minutes": 0,
+                   "buffer_after_minutes": 0, "daily_max_sessions": null },
+     "limits": { "min_notice_minutes": {"min":5,"max":43200}, "booking_window_days": {"min":1,"max":365},
+                 "buffer_before_minutes": {"min":0,"max":240}, "buffer_after_minutes": {"min":0,"max":240},
+                 "daily_max_sessions": {"min":1,"max":50} }
+   }
+   A coach without a coach profile row gets the defaults (GET never 404s for a coach).
+
+2) PATCH /scheduling/coach/booking-options          (JWT; role coach only, own data)
+   Body: any subset of the five fields above. Omitted field = unchanged. "daily_max_sessions": null = remove the cap.
+   200: same shape as GET (the saved values).
+   400 { code: "INVALID_BOOKING_OPTIONS", error: same, message: "<plain sentence naming the field and its allowed range>" }
+       (a non-integer value fails class-validator first: 400 with message array, e.g. "Minimum notice must be a whole number of minutes.")
+   403 plain message for a non-coach (client or owner).
+       when a value is not a whole number, out of range, or min notice is not shorter than the booking window.
+   404 { code: "COACH_NOT_FOUND" } only if the coach has no coach profile (finish coach setup first).
+   Effect is immediate: open slots for this coach are recomputed on the next read.
+
+3) GET /scheduling/coaches/:coachId/open-slots      (unchanged request; response gains two additive fields)
+   + "min_notice_minutes": <coach value>, "booking_window_days": <coach value>   (for client copy such as "Book at least 1 day ahead")
+   Slots honour all five options (notice, window, buffers around existing sessions, daily max per coach-local day).
+
+4) Booking / client move refusals (POST /scheduling/sessions, client POST /scheduling/sessions/:id/reschedule); existing codes reused:
+   400 SESSION_IN_PAST          "That time is too soon. Pick a time at least <5 minutes | 2 hours | 1 day> from now."
+   400 BEYOND_BOOKING_HORIZON   "Sessions can be booked up to <N> days ahead. Pick an earlier date."
+   409 SLOT_UNAVAILABLE         "That time is too close to another session on your coach's calendar. Pick one of the times shown." (buffer)
+   409 SLOT_UNAVAILABLE         "Your coach's day is fully booked. Pick a time on another day." (daily max)
+   Coach moves of their own sessions: 5-minute floor and max(120, coach window) days ceiling; buffers and daily max do not apply
+   (the coach decides).

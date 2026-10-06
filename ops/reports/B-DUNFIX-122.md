@@ -38,8 +38,19 @@ Read: _COMMON_122 (all), JOBS122 entry B-DUNFIX-122, SoT A1, A2 overrides 1-11, 
 - Note: Opus's fix rule suggested 409 for billing_unavailable / billing_resume_failed; built as 503 BILLING_UNAVAILABLE (temporary
   outage). Default keep.
 
+## Re-review (DUN2, 17:0x PDT)
+- #689 68796f67: Sol APPROVE 0/0/4 (6006102425), Opus APPROVE 0/0/1 (6006108561; C-689-6 closed).
+- #690 5d41f767: Sol APPROVE 0/0/6 (6006102827), Opus APPROVE 0/0/1 (6006109041; C-690-9 edge: after a flag rollback a still-paused
+  plan answers flag_off with "not paused" copy, deferred to 10k clients).
+- #691 3dc0e947: Sol APPROVE 0/0/0 (6006103220), Opus APPROVE 0/0/0 (6006109468).
+- PR CI: all checks green on all three heads.
+
 ## HANDOFF
-READY FOR AUDIT posted on #689/#690/#691 (heads above). Lock `dunning` held by B-DUNFIX-122 while standing by for the re-review
-verdicts (release at verdicts or 18:15 PDT). Worktrees wt/B-DUNFIX-122-{689,690,691} kept until then (no unsaved work). Next: poll
-PR CI on 5d41f767 / 3dc0e947 and the lens re-review verdicts; a regression B -> fix in the owning piece, restack, one lane; otherwise
-release the lock, remove worktrees, final answer.
+DONE 17:10 PDT (operator WRAP UP 17:1x). Dunning train is dual-APPROVE at every exact head with green CI: #687 c140575c, #688 610c5254,
+#704 524c4025, #705 346b7757, #724 410fb1b3, #689 68796f675df9c67c0618145efff58caf32a26b04,
+#690 5d41f7678438c11865762a7925ad53520948fe75, #691 3dc0e9472954bdd8381d3394aeb79ab0d5712514; #725 1dbc59b6 (base main) separate.
+Operator lands the train (A5 rule 11). Lock `dunning` released 17:09. Worktrees wt/B-DUNFIX-122-{689,690,691} removed, local branches
+deleted, lane branch ci/B-DUNFIX-122-1 deleted. Nothing left open for this job.
+Operator notes: (1) pushes were 72 s and 71 s apart, not 2 minutes (my error; content unaffected). (2) 503 vs 409 for
+billing_unavailable kept (default keep). (3) Follow-up Cs: C-690-9 (edge), D4 skipping v1 resolution for a dispute-paused plan
+(operator ruling: follow-up C).

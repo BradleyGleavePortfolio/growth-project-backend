@@ -1,0 +1,15 @@
+diff --git a/src/coachless/coach-code-redemption.service.ts b/src/coachless/coach-code-redemption.service.ts
+index 4ce36b17..e793c5dc 100644
+--- a/src/coachless/coach-code-redemption.service.ts
++++ b/src/coachless/coach-code-redemption.service.ts
+@@ -50,6 +50,10 @@ const ATTACH_TO_COACHLESS: Record<string, CoachlessErrorCode> = {
+   [INVITE_ATTACH_ERROR.OWNER_CANNOT_REDEEM]: COACHLESS_ERROR.ROLE_CANNOT_REDEEM,
+   [INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM]: COACHLESS_ERROR.ROLE_CANNOT_REDEEM,
+   [INVITE_ATTACH_ERROR.USER_NOT_FOUND]: COACHLESS_ERROR.ACCOUNT_NOT_FOUND,
++  // b#658 (invite codes A2): the writer now names the lifecycle refusal itself.
++  [INVITE_ATTACH_ERROR.CODE_REVOKED]: COACHLESS_ERROR.CODE_REVOKED,
++  [INVITE_ATTACH_ERROR.CODE_EXPIRED]: COACHLESS_ERROR.CODE_EXPIRED,
++  [INVITE_ATTACH_ERROR.CODE_EXHAUSTED]: COACHLESS_ERROR.CODE_EXHAUSTED,
+ };
+ 
+ /**

@@ -1,0 +1,14 @@
+AUD-SOL-WM1-122, agent 122 — COMPLETE.
+Report: /home/user/workspace/ops/reports/AUD-SOL-WM1-122.md
+#347 ee8a7777f8411283304d17a319b2e474970da593 REQUEST CHANGES, A/B/C 0/1/2.
+New B-347-4: edit a saved draft's price from $99 to $199, tap Make Coaching live; the new action publishes the old $99 offer without saving or blocking.
+Proof: https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37390679683/job/112034747773
+Verdict: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/347#issuecomment-6005829500
+#348 dca7e527bd6d8480c8d93b3591eca13429c6b7a0 APPROVE, 0/0/0: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/348#issuecomment-6005851554
+#349 8603080a1c01581c04af0f01c63c23d9fad44e1f APPROVE, 0/0/0: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/349#issuecomment-6005851443
+#350 3dbd4b1d81f624bc09cd2b1f75554220de522c54 APPROVE (merge-only), 0/0/0: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/350#issuecomment-6005851608
+#351 7bf7d6961df3e9586a1797452b524eed227a3fb2 APPROVE (merge-only), 0/0/0: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/351#issuecomment-6005851581
+All six prior Sol Bs closed. #349/#350 red only for the three known retired-route assertions; #347/#348/#351 PR check green.
+Recommended default: block dirty publish with Save changes first guidance, or save/confirm current terms before publishing; replay preserved probe, restack, delta re-audit. Slice approvals do not clear inherited B-347-4 for landing.
+Probe saved: ops/aud-122/AUD-SOL-WM1-122/audit122WM1DraftPublish.test.tsx
+Audit lane completed; own worktree and local/remote audit branch removed; no held lock or work in flight.

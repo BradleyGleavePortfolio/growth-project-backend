@@ -1,0 +1,798 @@
+diff --git a/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx b/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+new file mode 100644
+index 0000000..06b4f2c
+--- /dev/null
++++ b/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+@@ -0,0 +1,143 @@
++// FIX ROUND 4 (B-WIZ4-122): Sol's W3 full-review Bs on the package editor.
++//   B-347-1 the free first package saves a name change at its unchanged $0.
++//   B-347-2 no trial input while trial_days never reaches the server; the
++//           buyer preview shows only the trial the saved package carries.
++//   B-347-3 a draft made in the editor has a reachable "Make ... live" action
++//           (the wizard's publish route); the server row decides the state.
++import AsyncStorage from "@react-native-async-storage/async-storage";
++import React from "react";
++import { Alert } from "react-native";
++import { fireEvent, render, waitFor } from "@testing-library/react-native";
++
++jest.mock("../theme/ThemeProvider", () => {
++  const tokens = jest.requireActual("../theme/tokens").default;
++  return {
++    useTheme: () => ({
++      tokens,
++      semanticColors: tokens.lightTokens,
++      colors: jest.requireActual("../constants/colors").default,
++    }),
++  };
++});
++jest.mock("expo-font", () => ({ isLoaded: () => true }));
++jest.mock("../lib/analytics", () => ({ track: jest.fn() }));
++jest.mock("../utils/haptics", () => ({
++  mediumTap: jest.fn(),
++  successTap: jest.fn(),
++  warningTap: jest.fn(),
++}));
++jest.mock("../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "coach_w4", name: "Coach Lee" }),
++}));
++jest.mock("../screens/client/packageDetail/PackageDetailSurface", () => {
++  const R = require("react");
++  const { Text } = require("react-native");
++  return ({ package: pkg }: { package: { trialDays: number | null } }) =>
++    R.createElement(Text, { testID: "w4-preview-trial" }, String(pkg.trialDays));
++});
++
++const mockPost = jest.fn();
++const mockPatch = jest.fn();
++jest.mock("../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: jest.fn(),
++    post: (...a: unknown[]) => mockPost(...a),
++    patch: (...a: unknown[]) => mockPatch(...a),
++  },
++}));
++
++import CoachPackageEditScreen from "../screens/coach/payments/CoachPackageEditScreen";
++import type { CoachPackage } from "../api/packagesApi";
++
++const T = "2026-10-01T12:00:00Z";
++const row = (o: Partial<CoachPackage> = {}): CoachPackage => ({
++  id: "pkg_w4", coachUserId: "coach_w4", title: "Coaching", description: "Weekly coaching",
++  priceCents: 9900, currency: "usd", billingInterval: "monthly", intervalCount: 1, trialDays: null,
++  features: [], status: "active", shareToken: null, subscriberCount: 0, monthlyRevenueCents: 0,
++  createdAt: T, updatedAt: T, archivedAt: null, publishedAt: T, ...o,
++});
++const serverRow = (o: Record<string, unknown> = {}) => ({
++  id: "pkg_w4", name: "Coaching", description: "Weekly coaching", amount_cents: 9900, currency: "usd",
++  billing_type: "recurring", billing_interval: "month", billing_interval_count: 1, is_active: true,
++  published_at: T, ...o,
++});
++const nav = () => ({ navigate: jest.fn(), goBack: jest.fn(), dispatch: jest.fn() });
++const edit = (pkg: CoachPackage) =>
++  ({ key: "w4", name: "CoachPackageEdit", params: { packageId: pkg.id, initialPackage: pkg } }) as never;
++const alerts = () => (Alert.alert as jest.Mock).mock.calls.map((c) => c[0]);
++
++beforeEach(async () => {
++  jest.clearAllMocks();
++  jest.spyOn(Alert, "alert").mockImplementation(() => {});
++  await AsyncStorage.clear();
++});
++
++describe("B-347-1 free first package", () => {
++  it("saves a new name at the unchanged $0 one-time price", async () => {
++    mockPatch.mockResolvedValue({
++      data: serverRow({ name: "Free intro", amount_cents: 0, billing_type: "one_time", billing_interval: null }),
++    });
++    const free = row({ priceCents: 0, billingInterval: "one_time" });
++    const s = await render(<CoachPackageEditScreen navigation={nav() as never} route={edit(free)} />);
++    await fireEvent.changeText(s.getByPlaceholderText("e.g. 12-week transformation"), "Free intro");
++    await fireEvent.press(s.getByLabelText("Save changes"));
++    await waitFor(() => expect(alerts()).toContain("Package updated"));
++    expect(mockPatch).toHaveBeenCalledTimes(1);
++    expect(mockPatch.mock.calls[0][1]).toEqual(
++      expect.objectContaining({ name: "Free intro", amount_cents: 0, billing_type: "one_time" }),
++    );
++  });
++});
++
++describe("B-347-2 trial terms", () => {
++  it("offers no trial input and previews only the saved trial", async () => {
++    const s = await render(<CoachPackageEditScreen navigation={nav() as never} route={edit(row())} />);
++    expect(s.queryByText(/Trial days/i)).toBeNull();
++    expect(s.queryByPlaceholderText("0")).toBeNull();
++    await fireEvent.press(s.getByLabelText("Preview as buyer"));
++    expect(s.getByTestId("w4-preview-trial").props.children).toBe("null");
++  });
++});
++
++describe("B-347-3 draft made in the editor", () => {
++  it("creates a draft, then makes it live with the wizard's publish route", async () => {
++    mockPost.mockImplementation(async (url: string) =>
++      url === "/v1/coach/packages/pkg_w4/publish"
++        ? { data: serverRow() }
++        : { data: serverRow({ published_at: null }) },
++    );
++    const n = nav();
++    const s = await render(
++      <CoachPackageEditScreen
++        navigation={n as never}
++        route={{ key: "w4c", name: "CoachPackageEdit", params: { packageId: null } } as never}
++      />,
++    );
++    await fireEvent.changeText(s.getByPlaceholderText("e.g. 12-week transformation"), "Coaching");
++    await fireEvent.changeText(s.getByPlaceholderText("199.00"), "99");
++    await fireEvent.press(s.getByLabelText("Create package"));
++    await waitFor(() => expect(n.dispatch).toHaveBeenCalledTimes(1));
++    const created = n.dispatch.mock.calls[0][0].payload.params.initialPackage;
++    expect(created.publishedAt).toBeNull();
++    await s.rerender(<CoachPackageEditScreen navigation={n as never} route={edit(created)} />);
++    expect(s.getByText(/Coaching is saved as a draft/)).toBeTruthy();
++    await fireEvent.press(s.getByLabelText("Make Coaching live"));
++    await waitFor(() => expect(alerts()).toContain("Package is live"));
++    expect(mockPost).toHaveBeenCalledWith("/v1/coach/packages/pkg_w4/publish");
++    expect(s.queryByLabelText("Make Coaching live")).toBeNull();
++  });
++
++  it("keeps the draft and the action when publishing fails", async () => {
++    mockPost.mockRejectedValue(
++      Object.assign(new Error("x"), { response: { status: 400, data: { code: "PACKAGE_INVALID" } } }),
++    );
++    const s = await render(
++      <CoachPackageEditScreen navigation={nav() as never} route={edit(row({ publishedAt: null }))} />,
++    );
++    await fireEvent.press(s.getByLabelText("Make Coaching live"));
++    await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
++    expect(alerts()).not.toContain("Package is live");
++    expect(s.getByLabelText("Make Coaching live")).toBeTruthy();
++  });
++});
+diff --git a/src/api/packagesApi.ts b/src/api/packagesApi.ts
+index e7d6984..da36b4e 100644
+--- a/src/api/packagesApi.ts
++++ b/src/api/packagesApi.ts
+@@ -506,6 +506,17 @@ export const coachPackagesApi = {
+     return { ...res, data: fromBackend(row) };
+   },
+ 
++  /**
++   * B-347-3: make a draft live from the editor. Same route the setup wizard
++   * calls (coachSetupApi.publishPackage); answers the row as now stored.
++   */
++  publish: async (id: string) => {
++    const res = await api.post<BackendPackageRow>(
++      `/v1/coach/packages/${encodeURIComponent(id)}/publish`,
++    );
++    return { ...res, data: fromBackend(res.data) };
++  },
++
+   // TODO(backend): `GET /v1/coach/packages/:id/subscribers` not yet deployed.
+   // 404 is surfaced to the caller — we do NOT convert to an empty list so
+   // a missing endpoint doesn't masquerade as "0 subscribers".
+diff --git a/src/lib/money/__tests__/moneyCopyMon2.test.ts b/src/lib/money/__tests__/moneyCopyMon2.test.ts
+new file mode 100644
+index 0000000..56e7024
+--- /dev/null
++++ b/src/lib/money/__tests__/moneyCopyMon2.test.ts
+@@ -0,0 +1,34 @@
++/**
++ * FIX ROUND (B-MON2-122, agent 122): Sol B-348-1. A pending charge is one no
++ * payment has gone through for yet (for example a card-upfront free trial
++ * that has not billed). Its label never claims a payment is processing.
++ */
++import { chargeStateLabel } from "../moneyCopy";
++import type { MoneyCharge } from "../../../api/coachMoneyApi";
++
++const charge = (state: MoneyCharge["state"]): MoneyCharge => ({
++  id: "ch_trial",
++  client: { id: "u_sam", name: "Sam" },
++  packageName: "North coaching",
++  amountCents: 4900,
++  currency: "usd",
++  billingType: "recurring",
++  billingInterval: "month",
++  billingIntervalCount: 1,
++  state,
++  rawState: state ?? "odd",
++  refundedCents: 0,
++  chargedBackCents: 0,
++  createdAt: "2026-10-01T00:00:00Z",
++});
++
++describe("B-348-1: an unpaid free trial is not labelled as a processing payment", () => {
++  it("pending reads Not paid yet, never Processing", () => {
++    expect(chargeStateLabel(charge("pending"))).toBe("Not paid yet");
++    expect(chargeStateLabel(charge("pending"))).not.toMatch(/process/i);
++  });
++
++  it("a real paid charge still reads Paid", () => {
++    expect(chargeStateLabel(charge("paid"))).toBe("Paid");
++  });
++});
+diff --git a/src/lib/money/moneyCopy.ts b/src/lib/money/moneyCopy.ts
+index 8197923..b07a12b 100644
+--- a/src/lib/money/moneyCopy.ts
++++ b/src/lib/money/moneyCopy.ts
+@@ -117,7 +117,9 @@ export function chargeStateLabel(c: MoneyCharge): string {
+         ? `Charged back (${money(c.chargedBackCents, c.currency)})`
+         : "Charged back";
+     case "pending":
+-      return "Processing";
++      // B-348-1 (Sol): pending means no payment has gone through yet (for
++      // example a free trial that has not billed), never a payment in flight.
++      return "Not paid yet";
+     case "canceled":
+       return "Checkout not finished";
+     default:
+diff --git a/src/screens/coach/money/MoneyChargeScreen.tsx b/src/screens/coach/money/MoneyChargeScreen.tsx
+index e02226a..92fdfd0 100644
+--- a/src/screens/coach/money/MoneyChargeScreen.tsx
++++ b/src/screens/coach/money/MoneyChargeScreen.tsx
+@@ -15,7 +15,11 @@ import {
+ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+ import { useTheme } from "../../../theme/ThemeProvider";
+-import { coachMoneyApi, type ChargeState } from "../../../api/coachMoneyApi";
++import {
++  coachMoneyApi,
++  type ChargeState,
++  type MoneyCharge,
++} from "../../../api/coachMoneyApi";
+ import {
+   breakdownRows,
+   cadenceLabel,
+@@ -51,6 +55,20 @@ export function noMoneyMovedCopy(state: ChargeState | null): string | null {
+   }
+ }
+ 
++/**
++ * Opus B-349-1: the header is one payment. A plan's price carries its
++ * cadence ("$100.00 monthly"), because the breakdown below is the plan's
++ * totals so far (the backend sums every payment on the plan).
++ */
++export function chargeHeadline(c: MoneyCharge): string {
++  const price = money(c.amountCents, c.currency);
++  if (c.billingType !== "recurring") return price;
++  const cadence = cadenceLabel(c);
++  return cadence === "Recurring"
++    ? `${price} each payment`
++    : `${price} ${cadence.toLowerCase()}`;
++}
++
+ export default function MoneyChargeScreen({ navigation, route }: Props) {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+@@ -92,6 +110,7 @@ export default function MoneyChargeScreen({ navigation, route }: Props) {
+   }
+ 
+   const c = d.charge;
++  const plan = c.billingType === "recurring";
+   const rows = breakdownRows({
+     priceCents: d.priceCents,
+     processingCents: d.processingCents,
+@@ -100,13 +119,22 @@ export default function MoneyChargeScreen({ navigation, route }: Props) {
+     refundedCents: d.refundedCents,
+     netCents: d.netCents,
+     processingPaidBy: d.processingPaidBy,
+-  });
++  }).map((r) =>
++    // Opus B-349-1: on a plan the first row is every payment so far.
++    plan && r.key === "price" ? { ...r, label: "Clients paid so far" } : r,
++  );
+   const tabNav =
+     navigation.getParent<NativeStackNavigationProp<CoachTabParamList>>();
+   // B-332-8 (Opus): a failed payment or an unfinished checkout moved no
+   // money, so it never shows "Clients paid" or "check back once it clears".
+-  const noMoney = noMoneyMovedCopy(c.state);
++  // Opus B-349-1: a failed renewal on a plan that has been paid before
++  // keeps the earlier payments; only the latest payment failed.
++  const latestFailed = plan && c.state === "failed" && d.settled;
++  const noMoney = latestFailed ? null : noMoneyMovedCopy(c.state);
++  // Sol B-349-1: pending means no payment has gone through yet (for example
++  // a free trial that has not billed), so there is no paid-money equation.
+   const pending = c.state === "pending";
++  const scheduled = `Price, not paid yet: ${money(d.priceCents, c.currency)}`;
+ 
+   return (
+     <SafeAreaView ph-no-capture style={styles.page} edges={["top"]}>
+@@ -117,7 +145,7 @@ export default function MoneyChargeScreen({ navigation, route }: Props) {
+       >
+         <MoneyBack />
+         <Text style={styles.h1} accessibilityRole="header">
+-          {money(c.amountCents, c.currency)}
++          {chargeHeadline(c)}
+         </Text>
+         <Text style={[styles.rowSub, chargeIsProblem(c) && styles.problem]}>
+           {chargeStateLabel(c)}
+@@ -136,20 +164,45 @@ export default function MoneyChargeScreen({ navigation, route }: Props) {
+             <Text style={styles.body}>{noMoney}</Text>
+           </View>
+         ) : null}
+-        {noMoney ? null : (
++        {latestFailed ? (
++          <View style={styles.card} testID="money-charge-latest-failed">
++            <Text style={styles.rowTitle}>Latest payment failed</Text>
++            <Text style={styles.body}>
++              The latest payment on this plan did not go through. Earlier
++              payments are counted below. Needs attention on Money shows whether
++              TGP tries the card again.
++            </Text>
++          </View>
++        ) : null}
++        {pending ? (
++          <View style={styles.card} testID="money-charge-breakdown">
++            <Text style={styles.body} testID="money-charge-unsettled">
++              No payment has gone through for this yet, so nothing has reached
++              your payouts. A free trial is billed when it ends. The fee
++              breakdown appears here after the first payment.
++            </Text>
++            <View style={styles.bRow} accessible accessibilityLabel={scheduled}>
++              <Text style={styles.bLabel}>Price, not paid yet</Text>
++              <Text style={styles.bLabel}>
++                {money(d.priceCents, c.currency)}
++              </Text>
++            </View>
++          </View>
++        ) : null}
++        {noMoney || pending ? null : (
+           <Text style={styles.h2} accessibilityRole="header">
+-            How this adds up to your net
++            {plan ? "This plan so far" : "How this adds up to your net"}
+           </Text>
+         )}
+-        {noMoney ? null : (
++        {noMoney || pending ? null : (
+           <View style={styles.card} testID="money-charge-breakdown">
+-            {!d.settled && pending ? (
+-              <Text style={styles.body} testID="money-charge-unsettled">
+-                This charge has not settled yet, so the fees are not final.
+-                Check back once the payment clears.
++            {plan ? (
++              <Text style={styles.body} testID="money-charge-plan-totals">
++                Totals for every payment on this plan so far, not only the one
++                above.
+               </Text>
+             ) : null}
+-            {!d.settled && !pending ? (
++            {!d.settled ? (
+               <Text style={styles.body} testID="money-charge-fees-pending">
+                 Stripe has not posted the fees for this charge yet, so the
+                 amounts below are not final.
+diff --git a/src/screens/coach/money/MoneyScreen.tsx b/src/screens/coach/money/MoneyScreen.tsx
+index 11144f2..a5e8e4c 100644
+--- a/src/screens/coach/money/MoneyScreen.tsx
++++ b/src/screens/coach/money/MoneyScreen.tsx
+@@ -889,15 +889,18 @@ function NetBlock({
+         </View>
+       ) : null}
+       {s.heldFromNextSaleCents !== null && s.heldFromNextSaleCents > 0 ? (
++        // Sol B-349-2: the hold is everything still owed back on refunds and
++        // chargebacks, not fees only.
+         <View style={styles.held} testID="money-held">
+           <Text style={styles.bLabel}>
+-            Held from your next sale:{" "}
++            Held from your next sales:{" "}
+             {money(s.heldFromNextSaleCents, s.currency)}
+           </Text>
+           <Text style={styles.bNote}>
+-            After a refund or chargeback, TGP keeps its 2% and the Stripe fees
+-            on that charge from your next sale, on top of that sale's usual
+-            fees.
++            Still owed back on refunds and chargebacks. It can include money
++            from those sales that was already paid out to your bank, plus the
++            TGP 2% and Stripe fees on them. TGP takes it from your next sales,
++            on top of their usual fees.
+           </Text>
+         </View>
+       ) : null}
+diff --git a/src/screens/coach/money/__tests__/moneyChargeTruth.test.tsx b/src/screens/coach/money/__tests__/moneyChargeTruth.test.tsx
+new file mode 100644
+index 0000000..24a2677
+--- /dev/null
++++ b/src/screens/coach/money/__tests__/moneyChargeTruth.test.tsx
+@@ -0,0 +1,238 @@
++/**
++ * FIX ROUND (B-MON2-122, agent 122): the charge page and the held balance say
++ * only what is true.
++ * - Opus B-349-1: a recurring plan's breakdown is the plan's totals so far,
++ *   not one payment; a failed renewal keeps the earlier payments.
++ * - Sol B-349-1: a free trial that has not billed shows no paid-money
++ *   equation and no payment-clearing claim.
++ * - Sol B-349-2: the held balance is explained as money being recovered on
++ *   refunds and chargebacks, not as fees only.
++ */
++import React from "react";
++import { render } from "@testing-library/react-native";
++
++const mockGet = jest.fn();
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: jest.fn() },
++}));
++jest.mock("../../../../services/sentry", () => ({ captureError: jest.fn() }));
++jest.mock("expo-web-browser", () => ({
++  __esModule: true,
++  openBrowserAsync: jest.fn(),
++}));
++jest.mock("../../../../hooks/useNetworkStatus", () => ({
++  useNetworkStatus: () => ({ isOnline: true, isInternetReachable: true }),
++}));
++jest.mock("@react-navigation/native", () => {
++  const actual = jest.requireActual("@react-navigation/native");
++  return {
++    ...actual,
++    useNavigation: () => ({
++      navigate: jest.fn(),
++      replace: jest.fn(),
++      goBack: jest.fn(),
++      canGoBack: () => true,
++      getParent: () => ({ navigate: jest.fn() }),
++    }),
++    useFocusEffect: (cb: () => void) => {
++      const R = jest.requireActual("react");
++      R.useEffect(() => {
++        cb();
++      }, [cb]);
++    },
++  };
++});
++
++import MoneyChargeScreen from "../MoneyChargeScreen";
++import MoneyScreen from "../MoneyScreen";
++
++function detail(
++  charge: Record<string, unknown>,
++  breakdown: Record<string, unknown>,
++) {
++  return {
++    data: {
++      charge: {
++        id: "ch_1",
++        client: { id: "u_sam", name: "Sam" },
++        package: { id: "pk", name: "North coaching" },
++        amount_cents: 10000,
++        currency: "usd",
++        billing_type: "recurring",
++        billing_interval: "month",
++        billing_interval_count: 1,
++        state: "paid",
++        refunded_cents: 0,
++        created_at: "2026-10-01T00:00:00Z",
++        ...charge,
++      },
++      breakdown: {
++        price_cents: 30000,
++        processing_cents: 900,
++        platform_fee_cents: 600,
++        head_coach_split_cents: 0,
++        refunded_cents: 0,
++        net_cents: 28500,
++        processing_paid_by: "coach",
++        settled: true,
++        ...breakdown,
++      },
++    },
++  };
++}
++
++async function renderCharge() {
++  const nav = {
++    navigate: jest.fn(),
++    goBack: jest.fn(),
++    canGoBack: () => true,
++    getParent: () => ({ navigate: jest.fn() }),
++  } as never;
++  const route = {
++    key: "k",
++    name: "CoachMoneyCharge",
++    params: { chargeId: "ch_1" },
++  } as never;
++  return render(<MoneyChargeScreen navigation={nav} route={route} />);
++}
++
++beforeEach(() => mockGet.mockReset());
++
++describe("Opus B-349-1: a recurring plan's breakdown is the plan so far", () => {
++  it("one $100 monthly charge paid three times: the header is one payment, the breakdown is labelled as the plan so far", async () => {
++    mockGet.mockResolvedValueOnce(detail({}, {}));
++    const r = await renderCharge();
++    await r.findByText("$100.00 monthly");
++    expect(r.getByText("This plan so far")).toBeTruthy();
++    expect(r.getByLabelText("Clients paid so far: $300.00")).toBeTruthy();
++    expect(r.queryByText("How this adds up to your net")).toBeNull();
++    expect(r.queryByText("Clients paid")).toBeNull();
++  });
++
++  it("the latest renewal failed: says so and keeps the earlier payments, never that the client was not charged", async () => {
++    mockGet.mockResolvedValueOnce(detail({ state: "failed" }, {}));
++    const r = await renderCharge();
++    await r.findByTestId("money-charge-latest-failed");
++    expect(
++      r.getByText(/latest payment on this plan did not go through/),
++    ).toBeTruthy();
++    expect(r.getByTestId("money-charge-breakdown")).toBeTruthy();
++    expect(r.getByLabelText("Clients paid so far: $300.00")).toBeTruthy();
++    expect(r.queryByText(/client was not charged/)).toBeNull();
++    expect(r.queryByTestId("money-charge-no-money")).toBeNull();
++  });
++
++  it("a one-time charge keeps the single-charge wording", async () => {
++    mockGet.mockResolvedValueOnce(
++      detail(
++        {
++          billing_type: "one_time",
++          billing_interval: null,
++          billing_interval_count: null,
++        },
++        {
++          price_cents: 10000,
++          processing_cents: 320,
++          platform_fee_cents: 200,
++          net_cents: 9480,
++        },
++      ),
++    );
++    const r = await renderCharge();
++    await r.findByText("How this adds up to your net");
++    expect(r.getByLabelText("Clients paid: $100.00")).toBeTruthy();
++    expect(r.queryByText(/so far|monthly/)).toBeNull();
++  });
++});
++
++describe("Sol B-349-1: an unpaid free trial shows no paid-money equation", () => {
++  it("a $49 trial that has not billed: Not paid yet, the scheduled price, no Clients paid, no net, no clearing claim", async () => {
++    mockGet.mockResolvedValueOnce(
++      detail(
++        { amount_cents: 4900, state: "pending" },
++        {
++          price_cents: 4900,
++          processing_cents: 0,
++          platform_fee_cents: 0,
++          net_cents: 0,
++          processing_paid_by: "none",
++          settled: false,
++        },
++      ),
++    );
++    const r = await renderCharge();
++    await r.findByTestId("money-charge-unsettled");
++    expect(r.getByText("Not paid yet")).toBeTruthy();
++    expect(r.getByLabelText("Price, not paid yet: $49.00")).toBeTruthy();
++    expect(r.queryByText(/Clients paid/)).toBeNull();
++    expect(r.queryByText(/Net to you/)).toBeNull();
++    expect(r.queryByText(/TGP fee/)).toBeNull();
++    expect(r.queryByText(/clears/)).toBeNull();
++  });
++});
++
++describe("Sol B-349-2: the held balance is not described as fees only", () => {
++  it("a $100 hold after refunding a sale already paid out names the paid-out money being recovered", async () => {
++    const totals = {
++      gross_cents: 0,
++      processing_cents: 0,
++      platform_fee_cents: 0,
++      head_coach_split_cents: 0,
++      refunded_cents: 0,
++      head_coach_income_cents: 0,
++      net_cents: 0,
++      charge_count: 0,
++      processing_paid_by: "none",
++    };
++    const summary = {
++      currency: "usd",
++      window: { from: "2026-09-02T00:00:00Z", to: "2026-10-02T00:00:00Z" },
++      totals,
++      compare_totals: totals,
++      change_cents: 0,
++      change_pct: null,
++      recurring: {
++        mrr_cents: 0,
++        paying_clients: 0,
++        churned_30d: 0,
++        new_clients_30d: 0,
++      },
++      attention_count: 0,
++      held_from_next_sale_cents: 10000,
++      generated_at: "2026-10-02T19:00:00Z",
++    };
++    mockGet.mockImplementation(
++      async (url: string, cfg?: { params?: Record<string, string> }) => {
++        if (url === "/v1/coach/money/summary")
++          return {
++            data: {
++              ...summary,
++              window: { from: cfg?.params?.from, to: cfg?.params?.to },
++            },
++          };
++        if (url === "/coach/connect/status")
++          return {
++            data: {
++              account_id: "acct_1",
++              state: "active",
++              charges_enabled: true,
++              payouts_enabled: true,
++            },
++          };
++        throw Object.assign(new Error("HTTP 404"), {
++          response: { status: 404, data: {}, headers: {} },
++        });
++      },
++    );
++    const r = await render(<MoneyScreen />);
++    const held = await r.findByTestId("money-held");
++    expect(r.getByText(/already paid out to your bank/)).toBeTruthy();
++    expect(held).toBeTruthy();
++    expect(
++      r.queryByText(
++        /TGP keeps its 2% and the Stripe fees on that charge from your next sale, on top/,
++      ),
++    ).toBeNull();
++  });
++});
+diff --git a/src/screens/coach/payments/CoachPackageEditScreen.tsx b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+index 6203a06..e336b35 100644
+--- a/src/screens/coach/payments/CoachPackageEditScreen.tsx
++++ b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+@@ -39,6 +39,7 @@ import {
+ import {
+   coachPackagesApi,
+   CoachPackage,
++  isLivePackage,
+   PackageBillingInterval,
+   PackageCreateInput,
+   PackageUpdateInput,
+@@ -184,11 +185,17 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     if (cents == null) {
+       return { payload: null, message: "Enter a valid price." };
+     }
+-    if (cents === 0) {
++    // B-347-1: the free one-time package from setup keeps its $0 price when
++    // the coach edits its name or details. A new $0 price is still refused.
++    const freeKept =
++      isEdit && original?.priceCents === 0 && billingInterval === "one_time";
++    if (cents === 0 && !freeKept) {
+       return {
+         payload: null,
+         message:
+-          "Price must be greater than zero. Use a free invite code for comps.",
++          original?.priceCents === 0
++            ? "Free packages are one-time. Choose One-time, or enter a price."
++            : "Price must be greater than zero. Use a free invite code for comps.",
+       };
+     }
+     const features = featuresText
+@@ -218,7 +225,8 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       },
+       message: null,
+     };
+-  }, [title, description, priceText, billingInterval, trialText, featuresText]);
++  }, [title, description, priceText, billingInterval, trialText, featuresText,
++    isEdit, original]);
+ 
+   // OR-112-16 + B-329-1: one create attempt = one Idempotency-Key and one
+   // body, stored on the device before the request leaves (see
+@@ -334,6 +342,34 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     }
+   }, [validate, isEdit, original, navigation, coachId]);
+ 
++  // B-347-3: a draft made here (or skipped in setup) can go live from the
++  // editor with the wizard's publish call; the row the server answers decides
++  // what the screen shows next.
++  const [publishing, setPublishing] = useState(false);
++  const handlePublish = useCallback(async () => {
++    if (!original || publishing) return;
++    setPublishing(true);
++    try {
++      const res = await coachPackagesApi.publish(original.id);
++      setOriginal(res.data);
++      if (isLivePackage(res.data)) {
++        successTap();
++        track("coach_package_published", { package_id: original.id });
++        Alert.alert("Package is live", `${res.data.title} is live.`);
++      } else {
++        Alert.alert(
++          "Still a draft",
++          `TGP did not confirm ${res.data.title} as live, so clients cannot see it yet. Try again.`,
++        );
++      }
++    } catch (err) {
++      const f = describeError(err, "make your package live");
++      Alert.alert(f.title, f.body);
++    } finally {
++      setPublishing(false);
++    }
++  }, [original, publishing]);
++
+   const handleArchive = useCallback(() => {
+     if (!original) return;
+     warningTap();
+@@ -409,13 +445,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       .split("\n")
+       .map((f) => f.trim())
+       .filter(Boolean);
+-    const trimmedTrial = trialText.trim();
++    // B-347-2: only a trial the server returned on the saved package; this
++    // build never sends trial_days, so a typed trial is never previewed.
++    const savedTrial = original?.trialDays ?? null;
+     const trialDays =
+-      billingInterval !== "one_time" &&
+-      trimmedTrial &&
+-      Number.isInteger(Number(trimmedTrial))
+-        ? Number(trimmedTrial)
+-        : null;
++      billingInterval !== "one_time" && savedTrial ? savedTrial : null;
+     return {
+       id: original?.id ?? "preview",
+       title: title.trim() || "Untitled package",
+@@ -431,7 +465,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   }, [
+     priceText,
+     featuresText,
+-    trialText,
+     billingInterval,
+     title,
+     description,
+@@ -448,6 +481,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   }
+ 
+   const archived = original?.status === "archived";
++  const draft = isEdit && !!original && !archived && !isLivePackage(original);
+   // Pricing is immutable once a package has active subscribers — surface that
+   // up-front (helper copy) and again if the backend rejects a price change.
+   const pricingLocked = isEdit && (original?.subscriberCount ?? 0) > 0;
+@@ -573,22 +607,8 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           </View>
+         ) : null}
+ 
+-        {billingInterval !== "one_time" ? (
+-          <>
+-            <Label semanticColors={semanticColors} tokens={tokens}>
+-              Trial days (optional)
+-            </Label>
+-            <TextInput
+-              value={trialText}
+-              onChangeText={setTrialText}
+-              placeholder="0"
+-              style={styles.input}
+-              placeholderTextColor={semanticColors.textMuted}
+-              keyboardType="number-pad"
+-              maxLength={3}
+-            />
+-          </>
+-        ) : null}
++        {/* B-347-2: no trial input until trial_days reaches the server
++            (backend trials + m#338 bring it back together). */}
+ 
+         <Label semanticColors={semanticColors} tokens={tokens}>
+           Features (one per line)
+@@ -628,6 +648,30 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+ 
+         {isEdit && original ? (
+           <>
++            {draft ? (
++              <View testID="package-edit-draft">
++                <Text style={styles.resumedText}>
++                  {original.title} is saved as a draft. Clients cannot see it
++                  until it is live.
++                </Text>
++                <TouchableOpacity
++                  style={[
++                    styles.secondaryBtn,
++                    publishing && styles.primaryBtnDisabled,
++                  ]}
++                  onPress={() => void handlePublish()}
++                  disabled={publishing}
++                  accessibilityRole="button"
++                  accessibilityLabel={`Make ${original.title} live`}
++                  accessibilityState={{ busy: publishing, disabled: publishing }}
++                  testID="package-edit-publish"
++                >
++                  <Text style={styles.secondaryBtnText}>
++                    {publishing ? "Making it live" : `Make ${original.title} live`}
++                  </Text>
++                </TouchableOpacity>
++              </View>
++            ) : null}
+             <TouchableOpacity
+               style={styles.secondaryBtn}
+               onPress={() => {
