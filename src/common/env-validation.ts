@@ -2138,6 +2138,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_ROMAN_ADJUST_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason:
@@ -2153,6 +2155,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_ROMAN_CHAT_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason:
