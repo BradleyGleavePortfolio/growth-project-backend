@@ -125,6 +125,11 @@ export class ConnectService {
     return { url: link.url };
   }
 
+  // GET /v1/connect/accounts/me (Settings > Payouts). While the saved status
+  // is not ready, re-read the account from Stripe through syncFromStripe,
+  // the same write the account.updated webhook makes, so the coach's screen
+  // and the checkout payout gate agree even if that webhook never arrives
+  // (B-COND-1). A failed Stripe read keeps the saved status.
   async getStatusForCoach(
     coachUserId: string,
   ): Promise<ConnectAccountView | null> {
@@ -132,7 +137,18 @@ export class ConnectService {
       where: { coach_user_id: coachUserId },
     });
     if (!row) return null;
-    return this.withDerived(row);
+    const saved = this.withDerived(row);
+    if (saved.is_fully_onboarded || row.deauthorized_at) return saved;
+    try {
+      const synced = await this.syncFromStripe(row.stripe_account_id);
+      return synced ? this.withDerived(synced) : saved;
+    } catch (err) {
+      const cls = err instanceof StripeConnectApiError ? 'stripe' : 'other';
+      this.logger.warn(
+        `getStatusForCoach: sync failed for coach=${coachUserId} code=CONNECT_STATUS_SYNC_FAILED class=${cls}`,
+      );
+      return saved;
+    }
   }
 
   // Webhook side. Re-read from Stripe (single source of truth) and update

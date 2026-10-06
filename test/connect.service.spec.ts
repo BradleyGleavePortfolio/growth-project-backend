@@ -1,3 +1,6 @@
+import type { AuthedRequest } from '../src/auth/auth-request';
+import { ConnectController } from '../src/connect/connect.controller';
+import { ConnectModuleState } from '../src/connect/connect.module-state';
 import { ConnectService } from '../src/connect/connect.service';
 import {
   StripeConnectApiError,
@@ -65,6 +68,13 @@ function makePrismaStub() {
       }),
     },
   };
+}
+
+function makeService(
+  prisma: ReturnType<typeof makePrismaStub>,
+  stripe: StripeConnectApiService,
+): ConnectService {
+  return new ConnectService(prisma as any, stripe);
 }
 
 describe('ConnectService', () => {
@@ -288,7 +298,7 @@ describe('ConnectService', () => {
         requirements: { currently_due: [], disabled_reason: null },
       }),
     );
-    const svc = new ConnectService(prisma as any, stripe);
+    const svc = makeService(prisma, stripe);
     const updated = await svc.syncFromStripe('acct_abc');
     expect(updated?.charges_enabled).toBe(true);
     expect(updated?.payouts_enabled).toBe(true);
@@ -344,6 +354,126 @@ describe('ConnectService', () => {
     await expect(svc.createAccountForCoach('coach-1')).rejects.toBeInstanceOf(
       StripeConnectApiError,
     );
+  });
+
+  // B-COND-1: Settings > Payouts (GET /v1/connect/accounts/me) re-reads
+  // Stripe while the saved status is not ready, so a coach who finished
+  // onboarding is not stuck on "not ready" when no webhook arrives.
+  describe('GET /v1/connect/accounts/me payout status sync', () => {
+    function seedRow(
+      prisma: ReturnType<typeof makePrismaStub>,
+      overrides: Record<string, unknown> = {},
+    ) {
+      const updatedAt = new Date('2026-10-01T00:00:00Z');
+      prisma._accounts.push({
+        id: 'ca-1',
+        coach_user_id: 'coach-1',
+        stripe_account_id: 'acct_abc',
+        country: 'US',
+        default_currency: 'usd',
+        charges_enabled: false,
+        payouts_enabled: false,
+        details_submitted: false,
+        requirements_due: null,
+        disabled_reason: null,
+        deauthorized_at: null,
+        created_at: updatedAt,
+        updated_at: updatedAt,
+        ...overrides,
+      });
+    }
+
+    function makeController(
+      prisma: ReturnType<typeof makePrismaStub>,
+      stripe: FakeStripeConnect,
+    ) {
+      const state = new ConnectModuleState();
+      state.ready = true;
+      return new ConnectController(state, makeService(prisma, stripe));
+    }
+
+    const req = { user: { id: 'coach-1', role: 'coach' } } as AuthedRequest;
+
+    it('saved not ready + Stripe enabled -> me() returns ready and the saved row is updated', async () => {
+      const prisma = makePrismaStub();
+      seedRow(prisma);
+      const stripe = new FakeStripeConnect();
+      stripe.fetchImpl.mockResolvedValueOnce(
+        jsonResponse(200, {
+          id: 'acct_abc',
+          country: 'US',
+          default_currency: 'usd',
+          charges_enabled: true,
+          payouts_enabled: true,
+          details_submitted: true,
+          requirements: { currently_due: [], disabled_reason: null },
+        }),
+      );
+      const out = await makeController(prisma, stripe).me(req);
+      expect(out).toMatchObject({
+        connected: true,
+        charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: true,
+        is_fully_onboarded: true,
+      });
+      expect(stripe.fetchImpl).toHaveBeenCalledTimes(1);
+      expect(String(stripe.fetchImpl.mock.calls[0][0])).toContain(
+        '/accounts/acct_abc',
+      );
+      expect(prisma._accounts[0]).toMatchObject({
+        charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: true,
+      });
+    });
+
+    it('Stripe rejects the read -> me() returns the saved status unchanged', async () => {
+      const prisma = makePrismaStub();
+      seedRow(prisma);
+      const stripe = new FakeStripeConnect();
+      stripe.fetchImpl.mockResolvedValueOnce(
+        jsonResponse(500, {
+          error: { message: 'internal', type: 'api_error' },
+        }),
+      );
+      const out = await makeController(prisma, stripe).me(req);
+      expect(out).toMatchObject({
+        connected: true,
+        charges_enabled: false,
+        payouts_enabled: false,
+        is_fully_onboarded: false,
+      });
+      expect(prisma.connectAccount.update).not.toHaveBeenCalled();
+      expect(prisma._accounts[0].charges_enabled).toBe(false);
+    });
+
+    it('Stripe unreachable -> me() returns the saved status unchanged', async () => {
+      const prisma = makePrismaStub();
+      seedRow(prisma);
+      const stripe = new FakeStripeConnect();
+      stripe.fetchImpl.mockRejectedValueOnce(new TypeError('fetch failed'));
+      const out = await makeController(prisma, stripe).me(req);
+      expect(out).toMatchObject({
+        connected: true,
+        charges_enabled: false,
+        is_fully_onboarded: false,
+      });
+      expect(prisma.connectAccount.update).not.toHaveBeenCalled();
+    });
+
+    it('saved status already ready -> me() does not call Stripe', async () => {
+      const prisma = makePrismaStub();
+      seedRow(prisma, {
+        charges_enabled: true,
+        payouts_enabled: true,
+        details_submitted: true,
+      });
+      const stripe = new FakeStripeConnect();
+      const out = await makeController(prisma, stripe).me(req);
+      expect(out).toMatchObject({ connected: true, is_fully_onboarded: true });
+      expect(stripe.fetchImpl).not.toHaveBeenCalled();
+    });
   });
 });
 
