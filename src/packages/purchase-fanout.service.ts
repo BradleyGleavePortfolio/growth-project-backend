@@ -399,8 +399,8 @@ export class PurchaseFanoutService {
   //
   // Idempotency: DripResolverMarker (purpose='coach_new_purchase',
   // purchase_id, content_id='-') is unique per purchase. The first
-  // commit wins; every Stripe webhook replay's create() raises a P2002
-  // unique-constraint violation which we swallow → the staging is
+  // commit wins; a replay or a repeat grant inserts nothing (ON CONFLICT
+  // DO NOTHING, never a raised violation inside the tx) → the staging is
   // skipped → exactly one COACH_NEW_PURCHASE per purchase.
   //
   // Rollback semantics: marker INSERT rides the outer tx; a rollback
@@ -419,27 +419,20 @@ export class PurchaseFanoutService {
   ): Promise<void> {
     if (!tx.dripResolverMarker) return;
 
-    let claimedFirst = false;
-    try {
-      await tx.dripResolverMarker.create({
-        data: {
-          purpose: 'coach_new_purchase',
-          purchase_id: purchaseId,
-          content_id: '-',
-        },
-      });
-      claimedFirst = true;
-    } catch (err) {
-      const msg = (err as Error).message ?? '';
-      const code = (err as { code?: string }).code ?? '';
-      if (!/unique|UNIQUE|P2002/i.test(msg) && code !== 'P2002') {
-        throw err;
-      }
+    // MONEY-WEBHOOK-124 (B-WH-1): claim with INSERT ... ON CONFLICT DO NOTHING.
+    // A raised unique violation aborts the caller's PostgreSQL transaction, so
+    // a purchase granted a second time (a client locked out for an unpaid
+    // renewal who then pays) failed every Stripe delivery and stayed locked.
+    const claimed = await tx.dripResolverMarker.createMany({
+      data: [{ purpose: 'coach_new_purchase', purchase_id: purchaseId, content_id: '-' }],
+      skipDuplicates: true,
+    });
+    if (claimed.count === 0) {
       this.logger.debug(
-        `coach_new_purchase: marker already claimed for purchase=${purchaseId} (webhook replay)`,
+        `coach_new_purchase: marker already claimed for purchase=${purchaseId} (repeat grant)`,
       );
+      return;
     }
-    if (!claimedFirst) return;
 
     const coachId = purchaseRow.coach_user_id;
     const amountCents = purchaseRow.amount_cents ?? 0;

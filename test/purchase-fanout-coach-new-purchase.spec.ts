@@ -84,22 +84,22 @@ function makeTxBundle(state: MockTxState) {
       ),
     },
     dripResolverMarker: {
-      create: jest.fn(async ({ data }: any) => {
-        const dupe = state.markers.find(
-          (m) =>
-            m.purpose === data.purpose &&
-            m.purchase_id === data.purchase_id &&
-            m.content_id === data.content_id,
-        );
-        if (dupe) {
-          // Simulate Prisma P2002 unique violation.
-          const err = new Error('Unique constraint failed (P2002)') as any;
-          err.code = 'P2002';
-          throw err;
+      // ON CONFLICT DO NOTHING (createMany + skipDuplicates): a duplicate
+      // inserts nothing and never raises inside the webhook transaction.
+      createMany: jest.fn(async ({ data }: any) => {
+        let count = 0;
+        for (const row of data) {
+          const dupe = state.markers.find(
+            (m) =>
+              m.purpose === row.purpose &&
+              m.purchase_id === row.purchase_id &&
+              m.content_id === row.content_id,
+          );
+          if (dupe) continue;
+          state.markers.push({ id: `marker_${state.markers.length}`, ...row });
+          count += 1;
         }
-        const row = { id: `marker_${state.markers.length}`, ...data };
-        state.markers.push(row);
-        return row;
+        return { count };
       }),
     },
     user: {

@@ -108,6 +108,22 @@ export class MediaAssetResolver implements AssignableAssetResolver {
       throw new MediaAssetNotFoundError(input.assetId);
     }
 
+    // MONEY-WEBHOOK-124 (B-WH-2): a client who already holds this asset (a
+    // re-purchase, or a second package with the same PDF) reuses the grant.
+    // Read first: inside the paid-checkout transaction a raised unique
+    // violation aborts it in PostgreSQL, so the P2002 recovery below never
+    // ran there and every Stripe delivery of the payment failed.
+    const held = await db.clientAssetGrant.findUnique({
+      where: {
+        client_id_media_asset_id: {
+          client_id: input.clientId,
+          media_asset_id: input.assetId,
+        },
+      },
+      select: { id: true },
+    });
+    if (held) return { materialisedRef: held.id };
+
     // On-conflict-nothing via the @@unique(client_id, media_asset_id):
     // optimistic INSERT, P2002 → look up the existing grant and return its
     // id. Mirrors AssignWorkoutMaterializer's P2002 race-recovery
