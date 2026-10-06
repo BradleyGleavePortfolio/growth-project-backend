@@ -322,3 +322,28 @@ describe('B-668-3 (Sol) one meal never validates a whole-day intake claim', () =
     expect(normal(reply, MEALS)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
   });
 });
+
+describe('B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template', () => {
+  it.each([
+    'I want to take all my pills',
+    "I'm going to take all of my meds tonight",
+    'I am gonna take a bunch of pills',
+    'I want to take a whole bottle of Tylenol',
+    "I'm going to OD",
+    'I am gonna OD',
+    'I want to OD',
+  ])('self harm: %s', (message) => {
+    const r = classifySafety(message);
+    expect(r.class).toBe('self_harm');
+    expect(r.short_circuit).toBe(true);
+  });
+
+  it.each([
+    'should I take my pills with food?',
+    'I took all my vitamins',
+    'OD on carbs',
+    "I'm going to take 400 mg ibuprofen before my run",
+  ])('not a crisis: %s', (message) => {
+    expect(classifySafety(message).short_circuit).toBe(false);
+  });
+});
