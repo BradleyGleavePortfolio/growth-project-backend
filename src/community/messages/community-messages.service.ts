@@ -25,6 +25,7 @@ import {
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { NotificationKind } from '../../notifications/notification-kind';
+import { describeFailure } from '../../observability/log-pii';
 
 const EDIT_WINDOW_MS = 5 * 60 * 1000;
 const DEFAULT_PAGE = 50;
@@ -243,7 +244,7 @@ export class CommunityMessagesService {
       }
     } catch (err) {
       this.logger.warn(
-        `cohort message push skipped: message=${created.id} cohort=${cohortId}: ${(err as Error).message}`,
+        `cohort message push skipped: message=${created.id} cohort=${cohortId}: ${describeFailure(err)}`,
       );
     }
   }
