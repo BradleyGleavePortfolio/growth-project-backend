@@ -1,9 +1,9 @@
-import { Controller, Get, HttpStatus, Param, Res } from '@nestjs/common';
+import { Controller, Get, Headers, HttpStatus, Param, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
-import { InviteLandingService } from './invite-landing.service';
+import { InviteLandingService, landingPlatformFromUserAgent } from './invite-landing.service';
 
 // Public, server-rendered landing for `/join/:code` and `/invite/:code`.
 //
@@ -29,8 +29,12 @@ export class InviteLandingController {
   @Public()
   @Get('join/:code')
   @Throttle({ default: { ttl: 60000, limit: 60 } })
-  async joinHtml(@Param('code') code: string, @Res() res: Response) {
-    return this.renderLanding(code, res);
+  async joinHtml(
+    @Param('code') code: string,
+    @Res() res: Response,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return this.renderLanding(code, res, userAgent);
   }
 
   // /invite/:code is the alternate canonical landing — same renderer,
@@ -39,13 +43,17 @@ export class InviteLandingController {
   @Public()
   @Get('invite/:code')
   @Throttle({ default: { ttl: 60000, limit: 60 } })
-  async inviteHtml(@Param('code') code: string, @Res() res: Response) {
-    return this.renderLanding(code, res);
+  async inviteHtml(
+    @Param('code') code: string,
+    @Res() res: Response,
+    @Headers('user-agent') userAgent?: string,
+  ) {
+    return this.renderLanding(code, res, userAgent);
   }
 
   // ----- shared renderer --------------------------------------------
 
-  private async renderLanding(code: string, res: Response) {
+  private async renderLanding(code: string, res: Response, userAgent?: string) {
     // Length-bound the param before going to the database. The DTO layer
     // doesn't run on path params, so guard here to make brute-force
     // enumeration of garbage strings cheap to reject.
@@ -61,21 +69,21 @@ export class InviteLandingController {
 
     const base =
       process.env.PUBLIC_INVITE_BASE_URL || 'https://app.trygrowthproject.com/join';
-    const webSignup = process.env.PUBLIC_WEB_SIGNUP_URL || `${base}/${code}`;
-    // tgp:// is the custom scheme registered by the mobile app for cold-start
-    // deep linking; the universal link works when the app is installed AND
-    // when it isn't (the OS hands it to Safari/Chrome which lands here, on
-    // this same page — recursion is fine because the user can then use the
-    // store buttons). Keep both: tgp:// is the immediate-open path; the
-    // https URL is the share-friendly canonical form.
-    const universalLink = `${base}/${code}`;
+    // tgp:// is the custom scheme the app registers; it opens the installed
+    // app on CreateAccount with the code filled in (or stores the code for a
+    // signed-in user). The universal link (base/<code>) is the URL coaches
+    // share; when a visitor sees this page the OS already declined to open
+    // the app for it, so it is not offered again as a button (B-LINKS-123).
     const deepLink = `tgp://join/${code}`;
-    const appStore =
-      process.env.APP_STORE_URL ||
-      'https://apps.apple.com/app/the-growth-project/id0';
+    // Until the App Store listing exists, APP_STORE_URL points at the durable
+    // /download/ios status page. The old unset fallback (`.../id0`) was a
+    // dead App Store link; fall back to the status page on the same host.
+    const appStore = process.env.APP_STORE_URL || `${publicOrigin(base)}/download/ios`;
     const playStore =
       process.env.PLAY_STORE_URL ||
       'https://play.google.com/store/apps/details?id=com.growthproject.app';
+    const androidPackage =
+      (process.env.ANDROID_PACKAGE_NAME ?? '').trim() || 'com.growthproject.app';
 
     const html = this.landing.renderValid({
       code,
@@ -84,10 +92,10 @@ export class InviteLandingController {
       accent_color: preview.branding.accent_color,
       logo_url: preview.branding.logo_url,
       deep_link_url: deepLink,
-      universal_link_url: universalLink,
-      web_signup_url: webSignup,
       app_store_url: appStore,
       play_store_url: playStore,
+      android_package: androidPackage,
+      platform: landingPlatformFromUserAgent(userAgent),
     });
 
     // No-cache: the underlying CoachProfile (paused / canceled / branding)
@@ -95,6 +103,7 @@ export class InviteLandingController {
     // button to point a brand-new client at a paused coach. The page is
     // small (<3 KB gz), so paying the round-trip per visit is fine.
     res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('Vary', 'User-Agent');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.status(HttpStatus.OK).send(html);
   }
@@ -111,5 +120,14 @@ export class InviteLandingController {
     // to you" — it covers not-found, revoked, expired, and paused/canceled
     // coaches without leaking which of those it was.
     res.status(HttpStatus.NOT_FOUND).send(html);
+  }
+}
+
+// Origin of the public invite host (PUBLIC_INVITE_BASE_URL without /join).
+function publicOrigin(base: string): string {
+  try {
+    return new URL(base).origin;
+  } catch {
+    return 'https://app.trygrowthproject.com';
   }
 }

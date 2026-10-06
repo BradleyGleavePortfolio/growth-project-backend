@@ -24,8 +24,20 @@ export class InviteLandingService {
 
   // Render the success/landing HTML for a valid code. Quiet-luxury aesthetic:
   // serif headline, warm neutral palette, generous whitespace, no marketing
-  // chrome. Inline CSS so the page renders instantly without a second hop and
-  // is trivially cache-able at the CDN.
+  // chrome. Inline CSS so the page renders instantly without a second hop.
+  //
+  // B-LINKS-123: a visitor only sees this page when the OS did NOT hand the
+  // link to the app (app not installed, link opened inside another app's
+  // browser, or typed into the address bar). So the main button must never
+  // be the universal link itself: iOS keeps same-domain taps in Safari, so
+  // that button only reloaded this page. There is also no web signup (the
+  // old "Continue on web" target asked the visitor to open the invite on a
+  // phone, which looped). The buttons are now chosen per platform:
+  //   - iPhone:  Get the app (App Store), then "Open the app" (tgp://).
+  //   - Android: Open the app through an intent:// link whose fallback is
+  //              the Play Store, so one tap works with or without the app.
+  //   - Other:   ask the visitor to open the invite on a phone, with both
+  //              store links and the code to enter.
   renderValid(params: {
     code: string;
     coach_name: string;
@@ -33,10 +45,10 @@ export class InviteLandingService {
     accent_color: string | null;
     logo_url: string | null;
     deep_link_url: string;
-    universal_link_url: string;
-    web_signup_url: string;
     app_store_url: string;
     play_store_url: string;
+    android_package: string;
+    platform: LandingPlatform;
   }): string {
     const accent = sanitizeColor(params.accent_color) || '#1F1B16';
     const businessLine = params.business_name
@@ -46,15 +58,43 @@ export class InviteLandingService {
       ? `<img class="logo" src="${escapeAttr(params.logo_url)}" alt="" />`
       : '';
     const codeDisplay = escapeHtml(params.code);
+    const appStore = escapeAttr(params.app_store_url);
+    const playStore = escapeAttr(params.play_store_url);
+    const openApp = escapeAttr(params.deep_link_url);
+
+    let actions: string;
+    if (params.platform === 'ios') {
+      actions = `
+    <a class="primary" href="${appStore}" rel="noopener">Get the app on the App Store</a>
+    <p class="lead">After installing, open this invite link again, or enter code ${codeDisplay} when you create your account.</p>
+    <div class="alt">
+      <a href="${openApp}">Already have the app? Open it</a>
+    </div>`;
+    } else if (params.platform === 'android') {
+      const intentUrl = buildAndroidIntentUrl(
+        params.code,
+        params.android_package,
+        params.play_store_url,
+      );
+      actions = `
+    <a class="primary" href="${escapeHtml(intentUrl)}">Open in The Growth Project</a>
+    <p class="lead">Without the app, this opens Google Play. After installing, open this invite link again, or enter code ${codeDisplay} when you create your account.</p>
+    <div class="stores">
+      <a href="${playStore}" rel="noopener">Google Play</a>
+    </div>`;
+    } else {
+      actions = `
+    <p class="lead">Open this invite on your phone to join. Install The Growth Project, then enter code ${codeDisplay} when you create your account.</p>
+    <div class="stores">
+      <a href="${appStore}" rel="noopener">App Store</a>
+      <a href="${playStore}" rel="noopener">Google Play</a>
+    </div>`;
+    }
 
     return baseDocument({
       title: `Coach invite — ${escapeHtml(params.coach_name)}`,
       accent,
       bodyClass: 'state-valid',
-      // The deep link lives in a real anchor (not just a button) so iOS Smart
-      // App Banners and Android intent handlers can pick it up. The fallback
-      // links sit below — if the universal link fails to open the app the user
-      // taps the store link manually rather than getting stuck.
       body: `
   <main class="card">
     ${logo}
@@ -62,21 +102,7 @@ export class InviteLandingService {
     <h1>${escapeHtml(params.coach_name)}'s coaching</h1>
     ${businessLine}
     <p class="code"><span>code</span> ${codeDisplay}</p>
-
-    <a class="primary" href="${escapeAttr(params.universal_link_url)}">
-      Open in The Growth Project
-    </a>
-
-    <div class="alt">
-      <a href="${escapeAttr(params.deep_link_url)}">Already have the app?</a>
-      <span class="dot">·</span>
-      <a href="${escapeAttr(params.web_signup_url)}">Continue on web</a>
-    </div>
-
-    <div class="stores">
-      <a href="${escapeAttr(params.app_store_url)}" rel="noopener">App Store</a>
-      <a href="${escapeAttr(params.play_store_url)}" rel="noopener">Google Play</a>
-    </div>
+${actions}
   </main>
       `,
     });
@@ -110,6 +136,36 @@ export class InviteLandingService {
 }
 
 // ---- helpers ---------------------------------------------------------------
+
+export type LandingPlatform = 'ios' | 'android' | 'other';
+
+// Coarse platform from the User-Agent, used only to order the buttons. iPadOS
+// in desktop mode reports a Mac UA and gets the "other" layout (both stores),
+// which still works.
+export function landingPlatformFromUserAgent(ua: string | undefined): LandingPlatform {
+  const s = ua ?? '';
+  if (/iPhone|iPad|iPod/i.test(s)) return 'ios';
+  if (/Android/i.test(s)) return 'android';
+  return 'other';
+}
+
+// Android intent link: opens the installed app on tgp://join/<code>, and
+// when the app is missing the browser follows S.browser_fallback_url (the
+// Play Store listing). The code was already validated by previewCode
+// (letters, digits, dashes) and is URI-encoded again here.
+export function buildAndroidIntentUrl(
+  code: string,
+  androidPackage: string,
+  playStoreUrl: string,
+): string {
+  const fallback = /^https?:\/\//i.test(playStoreUrl.trim())
+    ? `S.browser_fallback_url=${encodeURIComponent(playStoreUrl.trim())};`
+    : '';
+  const pkg = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/.test(androidPackage.trim())
+    ? androidPackage.trim()
+    : 'com.growthproject.app';
+  return `intent://join/${encodeURIComponent(code)}#Intent;scheme=tgp;package=${pkg};${fallback}end`;
+}
 
 // Strict allowlist for inline color values. We accept #RGB / #RRGGBB only —
 // anything else is dropped to the default. This keeps a malicious or
