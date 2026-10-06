@@ -1,0 +1,454 @@
+# AUD-SOL-MO1-122 merge composition evidence
+2026-10-05 17:41:09 PDT
+
+#735 clean automatic merge diff
+082d4653aa88ab1e4b05817a3a305fc138805026 e07d6e13d2a5a775aee113e172081b9c29052239 eb2e9e038a4cc6e2b8b20fb0d37d251a91162350
+
+#655 only hand-resolution
+a0ccfcdd542022ce4e654709790aa50074c4b861 2902add5bb9f96c2ea488282ee1e6d727d203044 eb2e9e038a4cc6e2b8b20fb0d37d251a91162350
+
+diff --git a/.env.example b/.env.example
+remerge CONFLICT (content): Merge conflict in .env.example
+index cb6958ce..39b90ee8 100644
+--- a/.env.example
++++ b/.env.example
+@@ -991,15 +991,13 @@ MWB_AUTOSAVE_LOCK_TOKEN_SECRET=
+ # verifiable token. Generate with: openssl rand -hex 32
+ PUBLIC_LISTING_CURSOR_SECRET=
+ 
+-<<<<<<< 2902add5 (Merge remote-tracking branch 'origin/main' into fix/B-ADJB-122-655)
+ # Roman approve-to-adjust kill switch. DEFAULT OFF: every /coach/adjustments
+ # route returns 404. Only the exact value `true` turns it on.
+ FEATURE_ROMAN_ADJUST_ENABLED=false
+-=======
++
+ # Smart Dunning v2 — feature flag (DEFAULT OFF everywhere). Exactly "true"
+ # enables the 10-day non-payment sequence: Day 0/1/3/7 client notices (Stripe's
+ # retry schedule does every charge), Day-7 coach alert, Day-10 lockout
+ # (403 LOCKED_DUNNING outside billing / export / deletion / coach thread), and
+ # immediate unlock on payment. Unset or any other value = v1 dunning.
+ FEATURE_DUNNING_V2=false
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
+
+#735 patch ids
+0dd2c4e4f111882b45d0dfa3142e60522f44e806 0000000000000000000000000000000000000000
+0dd2c4e4f111882b45d0dfa3142e60522f44e806 0000000000000000000000000000000000000000
+
+#655 patch ids except .env.example
+1e3365aebc13b508feb621b28b7805d84251bf5f 0000000000000000000000000000000000000000
+1e3365aebc13b508feb621b28b7805d84251bf5f 0000000000000000000000000000000000000000
+
+#655 shared schemas and env validation compose only main
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index d319d54b..12940122 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -4137,6 +4137,11 @@ model ClientPurchase {
+   // S-FEE — one settlement per Stripe charge (first charge + every renewal).
+   settlements            ChargeSettlement[]
+   dunning                DunningState?
++  // S-DUNNING-R3: per-purchase billing-action lease (fenced) and the durable
++  // journal of the client's own billing operations (1A pay, 2A cancel).
++  billing_lease          ClientBillingLease?
++  billing_operations     ClientBillingOperation[]
++  dispute_obligations    DunningDisputeObligation[]
+   reminders              PaymentReminder[]
+   refunds                ChargeRefund[]
+   disputes               ChargeDispute[]
+@@ -4666,14 +4671,138 @@ model DunningState {
+   // charge is later reversed. Drives regular-vs-"again" copy selection.
+   // Defaulted: existing rows read back 0 (zero-mutation-elsewhere).
+   reversal_count           Int            @default(0)
+-
+-  attempts DunningAttempt[]
++  // S-DUNNING-R2/R3 (owner 2A) — the client ended their plan during this
++  // dunning cycle. Written together with the durable ClientBillingOperation
++  // intent BEFORE the first void; status 'abandoned' follows once the
++  // subscription is canceled. Cleared again when the cancel falls back to
++  // option A because the period turned out to be paid. While set, the
++  // cycle sends no notices, never Day-10 locks, and a live
++  // customer.subscription.updated cannot hand access back.
++  client_canceled_at       DateTime?
++  // B-688-2: when the v2 sweep last looked at this due cycle without
++  // advancing or locking it. The sweep serves never and least recently
++  // looked at cycles first, so rows that keep skipping cannot starve a due
++  // cycle behind them.
++  sweep_checked_at         DateTime?
++  // D2d (Sol B-705-4): when Stripe confirmed the dispute pause of this cycle
++  // (pause_collection set and open invoices stopped). Null while the pause
++  // is only recorded here: the client is never told billing is paused until
++  // it is, and the v2 sweep re-asserts an unconfirmed pause. Cleared by the
++  // coach restart before Stripe resumes.
++  billing_paused_at        DateTime?
++
++  attempts         DunningAttempt[]
++  // S-DUNNING-R3 (B-628-6): durable per-channel notice outbox.
++  notice_deliveries DunningNoticeDelivery[]
+ 
+   @@index([status])
+   @@index([status, cancel_scheduled_at])
+   @@index([status, next_attempt_at])
+ }
+ 
++/// S-DUNNING-R3 (B-628-9) — per-purchase billing-action lease with a
++/// monotonic fence. A client card update that pays open invoices and a
++/// client cancel that voids them claim it by CAS (free when holder is null
++/// or holder_until has passed; every claim increments fence). The holder
++/// re-checks it (CAS on holder) before every Stripe money call and inside
++/// every money-write transaction, so a stalled holder whose lease expired
++/// can never write after a newer holder took over. One row per purchase,
++/// created on first use, so it works when no DunningState exists.
++model ClientBillingLease {
++  purchase_id  String         @id
++  purchase     ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  holder       String?
++  holder_until DateTime?
++  fence        Int            @default(0)
++  created_at   DateTime       @default(now())
++  updated_at   DateTime       @updatedAt
++}
++
++/// S-DUNNING-R3 (B-628-2/5) — durable journal of one client billing
++/// operation on one purchase. kind 'card_pay' (owner 1A: pay the approved
++/// open invoices with the card just saved; one row per purchase and
++/// SetupIntent) or 'cancel' (owner 2A: written BEFORE the first void).
++/// phase records how far it got; completed_at null + stale updated_at is
++/// resumed by the hourly reconciler. lines holds per-invoice integer-cent
++/// results ([{invoice_id, currency, amount_due_cents, amount_paid_cents,
++/// result}]); never summed across currencies.
++model ClientBillingOperation {
++  id              String         @id @default(uuid())
++  purchase_id     String
++  purchase        ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  kind            String
++  phase           String
++  fence           Int
++  setup_intent_id String?
++  lines           Json?
++  error_code      String?
++  created_at      DateTime       @default(now())
++  updated_at      DateTime       @updatedAt
++  completed_at    DateTime?
++
++  @@index([purchase_id, kind, completed_at])
++  @@index([kind, completed_at, updated_at])
++  @@index([setup_intent_id])
++}
++
++/// S-DUNNING-R3 (B-628-6) — durable per-channel delivery record for one
++/// dunning v2 notice step of one cycle. id is deterministic
++/// "<dunning_state_id>:<cycle_key>:<step_index>:<channel>" so a step is
++/// recorded once per cycle; cycle_key is the cycle's entered_at instant, so
++/// a later renewal cycle on the same DunningState never reuses a key.
++/// status pending | sent | failed | skipped | dead. A pending or failed row
++/// whose next_attempt_at has passed is retried by the hourly sweep.
++model DunningNoticeDelivery {
++  id               String       @id
++  dunning_state_id String
++  dunning_state    DunningState @relation(fields: [dunning_state_id], references: [id], onDelete: Cascade)
++  cycle_key        String
++  step_index       Int
++  channel          String
++  status           String       @default("pending")
++  attempts         Int          @default(0)
++  last_error       String?
++  next_attempt_at  DateTime?
++  sent_at          DateTime?
++  /// S-DUNNING-R4 (B-628-6): the worker that claimed this delivery
++  /// ('sending'; next_attempt_at is then the claim's expiry). Only that
++  /// holder may write the receipt.
++  claim_token      String?
++  /// Transport idempotency attempt of the current claim; a takeover of an
++  /// expired claim reuses it so an email that did go out is not sent again.
++  key_attempt      Int?
++  created_at       DateTime     @default(now())
++  updated_at       DateTime     @updatedAt
++
++  @@index([status, next_attempt_at])
++  @@index([dunning_state_id, cycle_key])
++}
++
++/// S-DUNNING-R5 (B-628-8) — one Stripe dispute obligation on one purchase,
++/// as the dunning v2 path saw it. Written under the purchase's DunningState
++/// row lock by BOTH charge.dispute.created (status 'open') and
++/// charge.dispute.closed (the closing status), so a won dispute can never
++/// lift a purchase-wide reversal lock while another dispute on that purchase
++/// is open or lost, whichever webhook lands first. ChargeDispute (refund /
++/// dispute ledger) is read alongside it; a terminal status on either wins.
++model DunningDisputeObligation {
++  stripe_dispute_id String         @id
++  purchase_id       String
++  purchase          ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  stripe_charge_id  String?
++  /// open | won | warning_closed | lost | <other Stripe dispute status>
++  status            String
++  closed_at         DateTime?
++  /// D2d (Opus B-705-3): the coach restarted the plan with this dispute on
++  /// record. A later closure (lost included) or a redelivered opening of
++  /// this dispute never changes that plan's access again; money still moves.
++  restarted_at      DateTime?
++  created_at        DateTime       @default(now())
++  updated_at        DateTime       @updatedAt
++
++  @@index([purchase_id])
++}
++
+ // DUNNING-V2 (B3 §2.1) — branded JWT recovery links. NEW TABLE ONLY; no FK
+ // alter on any existing table. `dunning_attempt_id` is a bare unique string
+ // (no Prisma @relation) so DunningAttempt is not mutated. The row exists for
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index 1d4f079f..b9e6127f 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -1031,8 +1031,8 @@ export const ENV_RULES: EnvRule[] = [
+   {
+     name: 'BILLING_PORTAL_URL',
+     tier: 'optional',
+-    default: "'https://thegrowthproject.app/billing'",
+-    reason: 'Billing portal link in dunning emails.',
++    default: 'DUNNING_UPDATE_CARD_URL (the in-app card update link)',
++    reason: 'Card update link in v1 dunning emails.',
+   },
+   {
+     name: 'IOS_BUNDLE_ID',
+
+#735 booking migration
+-- S-AVAIL-122: coach booking options (minimum notice, booking window,
+-- buffers, optional daily maximum). Additive. The defaults reproduce the fixed
+-- rules every coach had before (5 minutes notice, 120 days ahead, no buffers,
+-- no daily cap), so existing coaches see no change until they edit them.
+ALTER TABLE "CoachProfile" ADD COLUMN IF NOT EXISTS "booking_min_notice_minutes" INTEGER NOT NULL DEFAULT 5;
+ALTER TABLE "CoachProfile" ADD COLUMN IF NOT EXISTS "booking_window_days" INTEGER NOT NULL DEFAULT 120;
+ALTER TABLE "CoachProfile" ADD COLUMN IF NOT EXISTS "booking_buffer_before_min" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "CoachProfile" ADD COLUMN IF NOT EXISTS "booking_buffer_after_min" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "CoachProfile" ADD COLUMN IF NOT EXISTS "booking_daily_max" INTEGER;
+
+#735 dunning migrations
+-- S-DUNNING-R2/R3 (owner rulings 1A / 2A, 2026-10-01 16:30 PDT; fix round 3).
+-- Additive only: two nullable columns on "DunningState" and four new
+-- server-only tables. No backfill, no shipped migration altered. Reverse:
+-- down.sql (drops only what this file creates).
+--   "DunningState"."client_canceled_at": the client ended the plan during the
+--     dunning cycle (2A); written with the durable intent before any void.
+--   "DunningState"."sweep_checked_at": when the v2 sweep last looked at a due
+--     cycle without acting on it; the sweep serves the least recently looked
+--     at first, so rows that keep skipping cannot starve a due one (B-688-2).
+--   "ClientBillingLease": per-purchase billing-action lease with a monotonic
+--     fence (CAS on holder before every Stripe money call and inside every
+--     money-write transaction). Works when no DunningState row exists.
+--   "ClientBillingOperation": durable journal of one 1A pay / 2A cancel
+--     (phase, per-invoice integer-cent lines); the reconciler resumes it.
+--   "DunningNoticeDelivery": durable per-channel notice outbox, keyed per
+--     cycle, retried by the hourly sweep. Each delivery is claimed (CAS to
+--     'sending' with a claim_token; next_attempt_at is then the claim's
+--     expiry) before its transport is called; receipts are written only by
+--     the holder of that claim (R4).
+--   "DunningDisputeObligation": one Stripe dispute per purchase as the
+--     dunning path saw it (created -> 'open', closed -> its status), written
+--     under the DunningState row lock, so one won dispute never lifts a
+--     reversal lock while another dispute is open or lost (R5).
+-- RLS: the four tables are server-only (service_role full access; anon and
+-- authenticated get nothing). No client ever reads them directly.
+
+SET lock_timeout = '5s';
+
+-- AlterTable
+ALTER TABLE "DunningState" ADD COLUMN IF NOT EXISTS "client_canceled_at" TIMESTAMP(3);
+ALTER TABLE "DunningState" ADD COLUMN IF NOT EXISTS "sweep_checked_at" TIMESTAMP(3);
+
+-- CreateTable
+CREATE TABLE "ClientBillingLease" (
+    "purchase_id" TEXT NOT NULL,
+    "holder" TEXT,
+    "holder_until" TIMESTAMP(3),
+    "fence" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ClientBillingLease_pkey" PRIMARY KEY ("purchase_id")
+);
+
+-- CreateTable
+CREATE TABLE "ClientBillingOperation" (
+    "id" TEXT NOT NULL,
+    "purchase_id" TEXT NOT NULL,
+    "kind" TEXT NOT NULL,
+    "phase" TEXT NOT NULL,
+    "fence" INTEGER NOT NULL,
+    "setup_intent_id" TEXT,
+    "lines" JSONB,
+    "error_code" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    "completed_at" TIMESTAMP(3),
+
+    CONSTRAINT "ClientBillingOperation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DunningNoticeDelivery" (
+    "id" TEXT NOT NULL,
+    "dunning_state_id" TEXT NOT NULL,
+    "cycle_key" TEXT NOT NULL,
+    "step_index" INTEGER NOT NULL,
+    "channel" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "last_error" TEXT,
+    "next_attempt_at" TIMESTAMP(3),
+    "sent_at" TIMESTAMP(3),
+    "claim_token" TEXT,
+    "key_attempt" INTEGER,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DunningNoticeDelivery_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DunningDisputeObligation" (
+    "stripe_dispute_id" TEXT NOT NULL,
+    "purchase_id" TEXT NOT NULL,
+    "stripe_charge_id" TEXT,
+    "status" TEXT NOT NULL,
+    "closed_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DunningDisputeObligation_pkey" PRIMARY KEY ("stripe_dispute_id")
+);
+
+-- CreateIndex
+CREATE INDEX "ClientBillingOperation_purchase_id_kind_completed_at_idx" ON "ClientBillingOperation"("purchase_id", "kind", "completed_at");
+
+-- CreateIndex
+CREATE INDEX "ClientBillingOperation_kind_completed_at_updated_at_idx" ON "ClientBillingOperation"("kind", "completed_at", "updated_at");
+
+-- CreateIndex
+CREATE INDEX "ClientBillingOperation_setup_intent_id_idx" ON "ClientBillingOperation"("setup_intent_id");
+
+-- CreateIndex
+CREATE INDEX "DunningNoticeDelivery_status_next_attempt_at_idx" ON "DunningNoticeDelivery"("status", "next_attempt_at");
+
+-- CreateIndex
+CREATE INDEX "DunningNoticeDelivery_dunning_state_id_cycle_key_idx" ON "DunningNoticeDelivery"("dunning_state_id", "cycle_key");
+
+-- CreateIndex
+CREATE INDEX "DunningDisputeObligation_purchase_id_idx" ON "DunningDisputeObligation"("purchase_id");
+
+-- AddForeignKey
+ALTER TABLE "ClientBillingLease" ADD CONSTRAINT "ClientBillingLease_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ClientBillingOperation" ADD CONSTRAINT "ClientBillingOperation_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DunningNoticeDelivery" ADD CONSTRAINT "DunningNoticeDelivery_dunning_state_id_fkey" FOREIGN KEY ("dunning_state_id") REFERENCES "DunningState"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DunningDisputeObligation" ADD CONSTRAINT "DunningDisputeObligation_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+
+-- RLS: server-only tables.
+ALTER TABLE "ClientBillingLease" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ClientBillingLease" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "ClientBillingOperation" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ClientBillingOperation" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "DunningNoticeDelivery" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "DunningNoticeDelivery" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "DunningDisputeObligation" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "DunningDisputeObligation" FORCE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "ClientBillingLease" FROM anon;
+REVOKE ALL ON TABLE "ClientBillingOperation" FROM anon;
+REVOKE ALL ON TABLE "DunningNoticeDelivery" FROM anon;
+REVOKE ALL ON TABLE "DunningDisputeObligation" FROM anon;
+
+CREATE POLICY "p_clientbillinglease_service_role_all" ON "ClientBillingLease"
+    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "deny_all_anon_clientbillinglease" ON "ClientBillingLease"
+    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
+
+CREATE POLICY "p_clientbillingoperation_service_role_all" ON "ClientBillingOperation"
+    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "deny_all_anon_clientbillingoperation" ON "ClientBillingOperation"
+    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
+
+CREATE POLICY "p_dunningnoticedelivery_service_role_all" ON "DunningNoticeDelivery"
+    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "deny_all_anon_dunningnoticedelivery" ON "DunningNoticeDelivery"
+    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
+
+CREATE POLICY "p_dunningdisputeobligation_service_role_all" ON "DunningDisputeObligation"
+    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "deny_all_anon_dunningdisputeobligation" ON "DunningDisputeObligation"
+    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
+
+RESET lock_timeout;
+-- D2d (B-DUND2D-121, agent 121) — R-DISPUTE-PAUSE effects the dunning v2
+-- dispute pause and the coach restart record.
+--
+-- Additive only: two nullable timestamp columns, no backfill, no index, no
+-- RLS change (both tables are server-only; their policies cover every
+-- column). Existing rows keep NULL, which every reader treats as "not
+-- confirmed" / "not restarted". No user id, email, token or secret is added,
+-- so nothing is owed to the account-deletion manifest.
+--   "DunningState"."billing_paused_at": when Stripe confirmed the dispute
+--     pause of the cycle (pause_collection set, open invoices stopped). The
+--     client read model reports billing as paused only once this is set; the
+--     v2 sweep re-asserts a pause recorded without it. The coach restart
+--     clears it before Stripe resumes.
+--   "DunningDisputeObligation"."restarted_at": the coach restarted the plan
+--     with this dispute on record. A later closure of the same dispute (lost
+--     included) or a redelivered opening never changes the plan's access
+--     again; the money reversal still runs.
+--
+-- Rollback: down.sql drops both columns.
+
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+
+ALTER TABLE "DunningState" ADD COLUMN IF NOT EXISTS "billing_paused_at" TIMESTAMP(3);
+ALTER TABLE "DunningDisputeObligation" ADD COLUMN IF NOT EXISTS "restarted_at" TIMESTAMP(3);
+
+COMMIT;
+
+#735 schema duplicate model/field scan (empty means none)
+
+Both flag blocks on #655
+# TM-3 — HMAC-SHA256 secret for the public listing keyset cursor. The next_cursor
+# returned by GET /talent-marketplace/public/listings is a signed, opaque base64url
+# blob of (created_at, id); a tampered/forged cursor fails signature verification
+# and degrades to page 1. This is a non-security pagination integrity check (a
+# forged cursor can only reposition the window over already-public, published
+# rows — it can never widen visibility), so it is OPTIONAL: when unset, a
+# deterministic dev fallback is used. Set 32+ random bytes in production for a
+# verifiable token. Generate with: openssl rand -hex 32
+PUBLIC_LISTING_CURSOR_SECRET=
+
+# Roman approve-to-adjust kill switch. DEFAULT OFF: every /coach/adjustments
+# route returns 404. Only the exact value `true` turns it on.
+FEATURE_ROMAN_ADJUST_ENABLED=false
+
+# Smart Dunning v2 — feature flag (DEFAULT OFF everywhere). Exactly "true"
+# enables the 10-day non-payment sequence: Day 0/1/3/7 client notices (Stripe's
+# retry schedule does every charge), Day-7 coach alert, Day-10 lockout
+# (403 LOCKED_DUNNING outside billing / export / deletion / coach thread), and
+# immediate unlock on payment. Unset or any other value = v1 dunning.
+FEATURE_DUNNING_V2=false
+
+No conflict markers in either head
+
+Both migration sets present with source blobs unchanged
+a0ccfcdd prisma/migrations/20270215000000_dunning_billing_actions/down.sql main=f2aae6f6151a42b7aa6ab73bd7dc089fe19b4b00 merged=f2aae6f6151a42b7aa6ab73bd7dc089fe19b4b00
+a0ccfcdd prisma/migrations/20270215000000_dunning_billing_actions/migration.sql main=a1f41e19fea63245724fed6d6882ecf10a893fb2 merged=a1f41e19fea63245724fed6d6882ecf10a893fb2
+a0ccfcdd prisma/migrations/20270318000000_dunning_dispute_pause_effects/down.sql main=18dd419a69b90e46d7bb1269979a668ae037b74d merged=18dd419a69b90e46d7bb1269979a668ae037b74d
+a0ccfcdd prisma/migrations/20270318000000_dunning_dispute_pause_effects/migration.sql main=4bec62deddf5978e01343ce833e159f0e0030f33 merged=4bec62deddf5978e01343ce833e159f0e0030f33
+082d4653 prisma/migrations/20270215000000_dunning_billing_actions/down.sql main=f2aae6f6151a42b7aa6ab73bd7dc089fe19b4b00 merged=f2aae6f6151a42b7aa6ab73bd7dc089fe19b4b00
+082d4653 prisma/migrations/20270215000000_dunning_billing_actions/migration.sql main=a1f41e19fea63245724fed6d6882ecf10a893fb2 merged=a1f41e19fea63245724fed6d6882ecf10a893fb2
+082d4653 prisma/migrations/20270318000000_dunning_dispute_pause_effects/down.sql main=18dd419a69b90e46d7bb1269979a668ae037b74d merged=18dd419a69b90e46d7bb1269979a668ae037b74d
+082d4653 prisma/migrations/20270318000000_dunning_dispute_pause_effects/migration.sql main=4bec62deddf5978e01343ce833e159f0e0030f33 merged=4bec62deddf5978e01343ce833e159f0e0030f33
+#735 prisma/migrations/20270318122000_coach_booking_options/down.sql old=b2ad8353bdd530c596e0399eead5a408ba2c4ab4 merged=b2ad8353bdd530c596e0399eead5a408ba2c4ab4
+#735 prisma/migrations/20270318122000_coach_booking_options/migration.sql old=3f6b874335f8fc8bbe6cadf9cf44d1cfeec868e4 merged=3f6b874335f8fc8bbe6cadf9cf44d1cfeec868e4
+
+No non-main commits arrived

@@ -14,7 +14,7 @@ Base: `agent115/sched-split-1-scheduling-data` @ a4ca533dd8f0cdaa36c88a33abe2efc
 
 **CI**
 - Mobile CI lane run [37394728273](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37394728273): `tsc --noEmit` clean; 13 suites / 326 tests pass (new spec + coachSchedulingSettings, coachSchedulingFixRound, imessageDmRoutes, schedulingErrors, coachSaasBlockers, CrossPillarSurface, paymentsConnectPackages, romanConversationsReachable, romanA11yR3, importDataFlagOff, calendarScreens, schedulingApi). Lane branch deleted.
-- PR CI: CI_STATUS_LINE
+- PR CI: "Typecheck, lint, test" green at feab0c3b ([run 37394781589](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37394781589/job/112048036429), 3m51s). It is the only check that runs on a non-main base.
 
 **Decisions (recommended defaults)**
 1. Entry hides on 404 and 403, shows while loading and on network errors (the screen then offers Refresh). Recommended: keep.

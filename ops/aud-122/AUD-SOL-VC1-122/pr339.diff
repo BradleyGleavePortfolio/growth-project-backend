@@ -1,0 +1,2621 @@
+diff --git a/src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx b/src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+index 41ff3cf..de8fa4d 100644
+--- a/src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
++++ b/src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+@@ -313,7 +313,7 @@ describe('CoachPackageEditScreen — save failures (B-321-1)', () => {
+     const a = lastAlert();
+     expect(a.title).toBe('Could not save the package');
+     expect(a.message).toBe(
+-      'Your changes were not saved. There was a problem on our side. Your changes are still here. Tap Try again, or contact support and quote reference SOL321RE.',
++      'Your changes were not saved. There was a problem on the server. Your changes are still here. Tap Try again, or contact support and quote reference SOL321RE.',
+     );
+     expect(a.buttons.map((b) => b.text)).toEqual(['Try again', 'Contact support', 'Close']);
+     // the reference stays on screen after the dialog closes
+@@ -344,7 +344,7 @@ describe('CoachPackageEditScreen — save failures (B-321-1)', () => {
+     const a = lastAlert();
+     expect(a.title).toBe('No connection');
+     expect(a.message).toBe(
+-      'We could not reach the server. Your changes were not saved. Your changes are still here. Check your connection, then tap Try again.',
++      'The server could not be reached. Your changes were not saved. Your changes are still here. Check your connection, then tap Try again.',
+     );
+     expect(a.buttons.map((b) => b.text)).toEqual(['Try again', 'Close']);
+     expect(mockCaptureError).not.toHaveBeenCalled();
+diff --git a/src/__tests__/copyVoice.guard.test.ts b/src/__tests__/copyVoice.guard.test.ts
+new file mode 100644
+index 0000000..52c9f3a
+--- /dev/null
++++ b/src/__tests__/copyVoice.guard.test.ts
+@@ -0,0 +1,238 @@
++/**
++ * Repo-wide voice guard (OR-115-4, owner copy rules): shipped words in this
++ * app never speak as an institutional "we" (no we/us/our in user-facing
++ * strings), never shout (no exclamation marks), and never promise a
++ * retention period that is not true (AI chats are kept until the person
++ * deletes them or the account, never "180 days").
++ *
++ * Every string literal, template-literal segment and JSX text node in every
++ * non-test source file under src/ is read with the TypeScript parser, so
++ * comments are never flagged and multi-line JSX text is read as one string.
++ * Strings that cannot reach a person are skipped by position (module
++ * specifiers, literal types, console / Sentry / log arguments). The few
++ * deliberate exceptions are listed in ALLOWED with the reason; an exception
++ * that no longer matches anything fails the guard, so the list only shrinks.
++ */
++import * as fs from 'fs';
++import * as path from 'path';
++import ts from 'typescript';
++
++const SRC = path.resolve(__dirname, '..');
++
++/** we / we're / we've / we'll / we'd / us / our / ours / ourselves (straight or curly apostrophe). */
++const FIRST_PERSON =
++  /(^|[^A-Za-z0-9_'’./@:-])(?:[Ww]e(?:['’](?:re|ve|ll|d))?|[Uu]s|[Oo]urs?|[Oo]urselves)(?![A-Za-z0-9_-])(?!['’][a-z])(?!\.[A-Za-z0-9])/;
++/** "!" closing a word or sentence (not "!=", not a markdown image "![", not an inline negation). */
++const EXCLAMATION = /[A-Za-z0-9)’'"]!+(?=$|[\s"'’”)\]*_.,:;])/;
++/** The retired retention period (OR-110-1: kept until the person deletes them or the account). */
++const RETIRED_PERIOD = /\b180[\s-]+days?\b|\b180-day\b/i;
++
++type Rule = 'first_person' | 'exclamation' | 'retired_period';
++
++const RULES: ReadonlyArray<[Rule, RegExp]> = [
++  ['first_person', FIRST_PERSON],
++  ['exclamation', EXCLAMATION],
++  ['retired_period', RETIRED_PERIOD],
++];
++
++/**
++ * Deliberate exceptions: file (relative to src/), a substring of the flagged
++ * string, the rule, and why it is not institutional or shipped copy.
++ */
++const ALLOWED: ReadonlyArray<{ file: string; includes: string; rule: Rule; why: string }> = [
++  {
++    file: 'components/roman/romanVoice.ts',
++    includes: 'Where shall we begin?',
++    rule: 'first_person',
++    why: 'Roman (the named concierge persona) speaking an inclusive "we" with the person, not the company.',
++  },
++  {
++    file: 'constants/bloodworkCopy.ts',
++    includes: 'we diagnose',
++    rule: 'first_person',
++    why: 'Entry of BLOODWORK_FORBIDDEN_PHRASES, the detector list that keeps diagnosis claims out of copy.',
++  },
++  {
++    file: 'constants/bloodworkCopy.ts',
++    includes: 'we recommend taking',
++    rule: 'first_person',
++    why: 'Entry of BLOODWORK_FORBIDDEN_PHRASES, the detector list that keeps diagnosis claims out of copy.',
++  },
++  {
++    file: 'lib/consultation/consentVersion.ts',
++    includes: 'Before we start',
++    rule: 'first_person',
++    why: 'P0 consent title: hashed into consult-consent-v3 (CONSENT_COPY_SHA256, backend #607 accepts only listed versions); rewording needs a new consent version on both sides.',
++  },
++  {
++    file: 'lib/consultation/copy.ts',
++    includes: 'We do not diagnose, treat, or give medical advice.',
++    rule: 'first_person',
++    why: 'P0 consent paragraph 1: hashed into consult-consent-v3 (CONSENT_COPY_SHA256); rewording needs a new consent version on both sides.',
++  },
++  {
++    file: 'lib/consultation/copy.ts',
++    includes: 'We use it only to provide your training. We never sell it.',
++    rule: 'first_person',
++    why: 'P0 consent paragraph 3 (collection and use, box 1): hashed into consult-consent-v3 (CONSENT_COPY_SHA256); rewording needs a new consent version on both sides.',
++  },
++  {
++    file: 'screenshots/fixtures.ts',
++    includes: 'Let us hold the deficit',
++    rule: 'first_person',
++    why: 'Demo message written by a coach (a named human) to the client in a screenshot fixture.',
++  },
++];
++
++/** Call targets whose string arguments never reach a person. */
++const NON_UI_CALLEES = /^(console\.\w+|logger\.\w+|log\.\w+|Sentry\.\w+|captureError|captureErrorWithoutPii|addBreadcrumb|require|jest\.\w+|import)$/;
++
++type VoiceHit = { file: string; line: number; rule: Rule; text: string };
++
++function sourceFiles(dir: string, out: string[] = []): string[] {
++  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
++    const full = path.join(dir, entry.name);
++    if (entry.isDirectory()) {
++      if (entry.name === '__tests__' || entry.name === '__mocks__' || entry.name === 'node_modules') continue;
++      sourceFiles(full, out);
++    } else if (/\.tsx?$/.test(entry.name) && !/\.(test|spec)\.tsx?$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
++      out.push(full);
++    }
++  }
++  return out;
++}
++
++function skippedByPosition(node: ts.Node): boolean {
++  const parent = node.parent;
++  if (!parent) return false;
++  if (ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent) || ts.isImportTypeNode(parent)) return true;
++  if (ts.isLiteralTypeNode(parent) || ts.isExternalModuleReference(parent)) return true;
++  if (ts.isModuleDeclaration(parent)) return true;
++  // String literals used as property names / element access keys are identifiers, not words.
++  if ((ts.isPropertyAssignment(parent) || ts.isPropertySignature(parent)) && parent.name === node) return true;
++  if (ts.isElementAccessExpression(parent) && parent.argumentExpression === node) return true;
++  // Arguments of logging / telemetry / module calls (a template segment sits one level deeper).
++  let up: ts.Node | undefined = parent;
++  for (let i = 0; i < 3 && up; i++, up = up.parent) {
++    if (ts.isCallExpression(up) || ts.isNewExpression(up)) {
++      const callee = up.expression.getText();
++      return NON_UI_CALLEES.test(callee) || callee === 'RegExp';
++    }
++  }
++  return false;
++}
++
++/** Every flagged user-facing string in one source text (also driven by the self-test below). */
++function scanSource(file: string, text: string): VoiceHit[] {
++  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
++  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
++  const hits: VoiceHit[] = [];
++  const visit = (node: ts.Node): void => {
++    let value: string | null = null;
++    if (
++      ts.isStringLiteral(node) ||
++      ts.isNoSubstitutionTemplateLiteral(node) ||
++      ts.isTemplateHead(node) ||
++      ts.isTemplateMiddle(node) ||
++      ts.isTemplateTail(node) ||
++      ts.isJsxText(node)
++    ) {
++      value = node.text;
++    }
++    if (value !== null && /[A-Za-z]/.test(value) && !skippedByPosition(node)) {
++      const words = value.replace(/\s+/g, ' ').trim();
++      for (const [rule, re] of RULES) {
++        if (re.test(words)) {
++          hits.push({ file, line: sf.getLineAndCharacterOfPosition(node.getStart()).line + 1, rule, text: words });
++        }
++      }
++    }
++    ts.forEachChild(node, visit);
++  };
++  visit(sf);
++  return hits;
++}
++
++function isAllowed(hit: VoiceHit): number {
++  return ALLOWED.findIndex((a) => a.file === hit.file && a.rule === hit.rule && hit.text.includes(a.includes));
++}
++
++describe('repo-wide voice guard (OR-115-4)', () => {
++  const files = sourceFiles(SRC);
++  const all: VoiceHit[] = [];
++  for (const full of files) {
++    all.push(...scanSource(path.relative(SRC, full).split(path.sep).join('/'), fs.readFileSync(full, 'utf8')));
++  }
++
++  it('reads the whole source tree', () => {
++    expect(files.length).toBeGreaterThan(300);
++  });
++
++  it('no user-facing string speaks as we/us/our, uses "!", or names a 180-day period', () => {
++    const offending = all.filter((h) => isAllowed(h) < 0).map((h) => `${h.file}:${h.line} [${h.rule}] ${h.text}`);
++    expect(offending).toEqual([]);
++  });
++
++  it('every allowed exception still matches a string (the list only shrinks)', () => {
++    const used = new Set(all.map(isAllowed).filter((i) => i >= 0));
++    const stale = ALLOWED.filter((_, i) => !used.has(i)).map((a) => `${a.file}: ${a.includes}`);
++    expect(stale).toEqual([]);
++  });
++});
++
++describe('the retired retention period appears nowhere (OR-110-1)', () => {
++  it('no file under src/ or docs/ names a 180-day period, in code, comments or tests', () => {
++    const roots = [SRC, path.resolve(SRC, '..', 'docs')].filter((d) => fs.existsSync(d));
++    const files: string[] = [];
++    const walk = (dir: string): void => {
++      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
++        const full = path.join(dir, entry.name);
++        if (entry.isDirectory()) {
++          if (entry.name !== 'node_modules') walk(full);
++        } else if (/\.(tsx?|jsx?|md|json)$/.test(entry.name) && full !== __filename) {
++          files.push(full);
++        }
++      }
++    };
++    roots.forEach(walk);
++    const named = files.filter((f) => RETIRED_PERIOD.test(fs.readFileSync(f, 'utf8')));
++    expect(named.map((f) => path.relative(SRC, f))).toEqual([]);
++  });
++});
++
++describe('voice guard scanner self-test', () => {
++  const rules = (src: string, file = 'x.tsx') => scanSource(file, src).map((h) => h.rule);
++
++  it('flags first person in literals, templates and JSX text, in any position', () => {
++    expect(rules(`const a = 'We could not load this.';`)).toEqual(['first_person']);
++    expect(rules('const b = `Copy it and write to us at ${email}.`;')).toEqual(['first_person']);
++    expect(rules(`const c = <Text>Reviewed by our{'\\n'}team.</Text>;`)).toEqual(['first_person']);
++    expect(rules(`const d = <Text>On\n  our side.</Text>;`)).toEqual(['first_person']);
++    expect(rules(`const e = "We’ll keep it safe.";`)).toEqual(['first_person']);
++    expect(rules(`const f = 'Tell us more';`)).toEqual(['first_person']);
++    expect(rules(`const g = <Btn label="Ours to fix" />;`)).toEqual(['first_person']);
++  });
++
++  it('does not flag look-alikes', () => {
++    expect(rules(`const a = 'Use en-US dates. User status. Ourselves-free. Sweet. Wellness.';`)).toEqual([]);
++    expect(rules(`const b = 'Show the US units and the USB cable';`)).toEqual([]);
++    expect(rules(`const h = 'https://us.i.posthog.com and zoom.us and a@us.example';`)).toEqual([]);
++    expect(rules(`// we could not\nconst c = 1; /* our side */`)).toEqual([]);
++    expect(rules(`import x from './we are/our';`)).toEqual([]);
++    expect(rules(`console.warn('we failed here');`)).toEqual([]);
++    expect(rules(`type T = 'we';`)).toEqual([]);
++  });
++
++  it('flags exclamation marks in copy but not in code-like strings', () => {
++    expect(rules(`const a = 'Congratulations!';`)).toEqual(['exclamation']);
++    expect(rules(`const b = <Text>Great work! Keep going.</Text>;`)).toEqual(['exclamation']);
++    expect(rules(`const c = '— exceptional retention!';`)).toEqual(['exclamation']);
++    expect(rules(`const d = 'a != b and ![alt](x)';`)).toEqual([]);
++  });
++
++  it('flags the retired 180-day period', () => {
++    expect(rules(`const a = 'Chats are deleted after 180 days.';`)).toEqual(['retired_period']);
++    expect(rules(`const b = 'A 180-day window';`)).toEqual(['retired_period']);
++    expect(rules(`const c = 'Weight 180 lbs';`)).toEqual([]);
++  });
++});
+diff --git a/src/api/__tests__/communityEventsApi.mutationError.test.ts b/src/api/__tests__/communityEventsApi.mutationError.test.ts
+index 0bf375c..fd9b43e 100644
+--- a/src/api/__tests__/communityEventsApi.mutationError.test.ts
++++ b/src/api/__tests__/communityEventsApi.mutationError.test.ts
+@@ -39,7 +39,9 @@ describe('describeMutationError (F4)', () => {
+       new CommunityApiError('server', 500, 'server'),
+     );
+     expect(info.conflict).toBe(false);
+-    expect(info.message).toMatch(/our end|went wrong/i);
++    expect(info.message).toMatch(/event service had a problem, so the change could not be confirmed/);
++    // Sol B-339-1: a 500 never claims that nothing was changed.
++    expect(info.message).not.toMatch(/nothing was changed|not saved|not changed/i);
+   });
+ 
+   it('falls back to a calm generic message for an unknown error', () => {
+diff --git a/src/api/communityErrors.ts b/src/api/communityErrors.ts
+index f2df434..bd8e594 100644
+--- a/src/api/communityErrors.ts
++++ b/src/api/communityErrors.ts
+@@ -189,7 +189,7 @@ const BY_CODE: Record<string, string> = {
+   'community.voice.not_entitled':
+     'Voice notes are not included in your current plan. You can post a text message instead, or ask your coach about your plan.',
+   'community.voice.upload_missing':
+-    'We could not find the uploaded recording. Check your connection, record the voice note again, then send it.',
++    'The uploaded recording could not be found. Check your connection, record the voice note again, then send it.',
+   'community.voice.upload_mismatch':
+     'The uploaded recording does not match what was recorded. Record the voice note again in the app, then send it.',
+   'community.voice.already_posted':
+@@ -326,7 +326,7 @@ export function describeCommunityFailure(
+   });
+   return {
+     title,
+-    message: `We could not ${VERBS[action]} because of a problem on our side. Try again in a few minutes. If it keeps happening, email ${supportEmail} and quote reference ${reference}.`,
++    message: `The app could not ${VERBS[action]} because of a server problem. Try again in a few minutes. If it keeps happening, email ${supportEmail} and quote reference ${reference}.`,
+     reference,
+     code,
+     status,
+diff --git a/src/api/communityEventsApi.ts b/src/api/communityEventsApi.ts
+index 4bbaf67..6bc8894 100644
+--- a/src/api/communityEventsApi.ts
++++ b/src/api/communityEventsApi.ts
+@@ -212,7 +212,7 @@ export function describeMutationError(err: unknown): MutationErrorInfo {
+     switch (err.kind) {
+       case 'conflict':
+         return {
+-          message: 'This event just changed. We refreshed it for you.',
++          message: 'This event just changed. It has been refreshed with the latest details.',
+           conflict: true,
+         };
+       case 'unauthorized':
+@@ -234,7 +234,9 @@ export function describeMutationError(err: unknown): MutationErrorInfo {
+         };
+       case 'server':
+         return {
+-          message: 'Something went wrong on our end. Please try again.',
++          // Sol B-339-1: a 5xx is not a rollback receipt, so the copy does not
++          // claim the change was or was not made.
++          message: 'The event service had a problem, so the change could not be confirmed. Check the event, then try again if needed.',
+           conflict: false,
+         };
+       default:
+diff --git a/src/api/wearablesConnectionsApi.ts b/src/api/wearablesConnectionsApi.ts
+index c60cd6a..a2a5b10 100644
+--- a/src/api/wearablesConnectionsApi.ts
++++ b/src/api/wearablesConnectionsApi.ts
+@@ -143,7 +143,7 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Apple Health',
+     icon: '',
+     dataDescription:
+-      "We'll read your activity, heart rate, workouts and sleep from Apple Health on this device.",
++      "Reads your activity, heart rate, workouts and sleep from Apple Health on this device.",
+     buckets: ['HEALTH_FITNESS', 'SLEEP_RECOVERY'],
+   },
+   HEALTH_CONNECT: {
+@@ -151,7 +151,7 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Health Connect',
+     icon: '',
+     dataDescription:
+-      "We'll read your steps, heart rate, workouts and sleep from Health Connect on this device.",
++      "Reads your steps, heart rate, workouts and sleep from Health Connect on this device.",
+     buckets: ['HEALTH_FITNESS', 'SLEEP_RECOVERY'],
+   },
+   SAMSUNG_HEALTH: {
+@@ -167,7 +167,7 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Garmin',
+     icon: '',
+     dataDescription:
+-      "We'll read your activities, daily stats, sleep, HRV and Body Battery from Garmin Connect.",
++      "Reads your activities, daily stats, sleep, HRV and Body Battery from Garmin Connect.",
+     buckets: ['HEALTH_FITNESS', 'SLEEP_RECOVERY'],
+   },
+   FITBIT: {
+@@ -175,14 +175,14 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Fitbit',
+     icon: '',
+     dataDescription:
+-      "We'll read your activity, heart rate, sleep, weight and SpO2 from Fitbit.",
++      "Reads your activity, heart rate, sleep, weight and SpO2 from Fitbit.",
+     buckets: ['HEALTH_FITNESS', 'SLEEP_RECOVERY'],
+   },
+   STRAVA: {
+     provider: 'STRAVA',
+     displayName: 'Strava',
+     icon: '',
+-    dataDescription: "We'll read your activities and workouts from Strava.",
++    dataDescription: "Reads your activities and workouts from Strava.",
+     buckets: ['HEALTH_FITNESS'],
+   },
+   POLAR: {
+@@ -190,14 +190,14 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Polar',
+     icon: '',
+     dataDescription:
+-      "We'll read your exercises, sleep and nightly recharge from Polar Flow.",
++      "Reads your exercises, sleep and nightly recharge from Polar Flow.",
+     buckets: ['HEALTH_FITNESS', 'SLEEP_RECOVERY'],
+   },
+   WAHOO: {
+     provider: 'WAHOO',
+     displayName: 'Wahoo',
+     icon: '',
+-    dataDescription: "We'll read your workouts and heart rate from Wahoo.",
++    dataDescription: "Reads your workouts and heart rate from Wahoo.",
+     buckets: ['HEALTH_FITNESS'],
+   },
+   WITHINGS: {
+@@ -205,21 +205,21 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Withings',
+     icon: '',
+     dataDescription:
+-      "We'll read your weight, body composition, blood pressure and sleep from Withings.",
++      "Reads your weight, body composition, blood pressure and sleep from Withings.",
+     buckets: ['HEALTH_FITNESS', 'SLEEP_RECOVERY'],
+   },
+   PELOTON: {
+     provider: 'PELOTON',
+     displayName: 'Peloton',
+     icon: '',
+-    dataDescription: "We'll read your workouts and heart rate from Peloton.",
++    dataDescription: "Reads your workouts and heart rate from Peloton.",
+     buckets: ['HEALTH_FITNESS'],
+   },
+   MYFITNESSPAL: {
+     provider: 'MYFITNESSPAL',
+     displayName: 'MyFitnessPal',
+     icon: '',
+-    dataDescription: "We'll read your nutrition diary from MyFitnessPal.",
++    dataDescription: "Reads your nutrition diary from MyFitnessPal.",
+     buckets: ['HEALTH_FITNESS'],
+   },
+   OURA: {
+@@ -227,7 +227,7 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Oura',
+     icon: '',
+     dataDescription:
+-      "We'll read your sleep, readiness, HRV and SpO2 from your Oura ring.",
++      "Reads your sleep, readiness, HRV and SpO2 from your Oura ring.",
+     buckets: ['SLEEP_RECOVERY', 'HEALTH_FITNESS'],
+   },
+   WHOOP: {
+@@ -235,7 +235,7 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'WHOOP',
+     icon: '',
+     dataDescription:
+-      "We'll read your recovery, strain, sleep and HRV from WHOOP.",
++      "Reads your recovery, strain, sleep and HRV from WHOOP.",
+     buckets: ['SLEEP_RECOVERY', 'HEALTH_FITNESS'],
+   },
+   EIGHT_SLEEP: {
+@@ -243,14 +243,14 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Eight Sleep',
+     icon: '',
+     dataDescription:
+-      "We'll read your sleep, HRV and respiratory rate from Eight Sleep.",
++      "Reads your sleep, HRV and respiratory rate from Eight Sleep.",
+     buckets: ['SLEEP_RECOVERY'],
+   },
+   BEDDIT: {
+     provider: 'BEDDIT',
+     displayName: 'Beddit',
+     icon: '',
+-    dataDescription: "We'll read your sleep from Beddit (via Apple Health).",
++    dataDescription: "Reads your sleep from Beddit (via Apple Health).",
+     buckets: ['SLEEP_RECOVERY'],
+   },
+ };
+diff --git a/src/components/AllergySafetyPrompt.tsx b/src/components/AllergySafetyPrompt.tsx
+index 3eb9452..a53813f 100644
+--- a/src/components/AllergySafetyPrompt.tsx
++++ b/src/components/AllergySafetyPrompt.tsx
+@@ -104,7 +104,7 @@ export default function AllergySafetyPrompt({
+       <View style={styles.backdrop}>
+         <View style={styles.sheet} accessibilityViewIsModal>
+           <Text style={styles.eyebrow}>BEFORE WE BEGIN</Text>
+-          <Text style={styles.headline}>Anything we should avoid?</Text>
++          <Text style={styles.headline}>Anything to avoid?</Text>
+           <Text style={styles.lede}>
+             Your recipe library will hide anything that conflicts. Choose
+             None if you have no restrictions.
+diff --git a/src/components/BiometricUnlockSetting.tsx b/src/components/BiometricUnlockSetting.tsx
+index 4d580d0..e29375d 100644
+--- a/src/components/BiometricUnlockSetting.tsx
++++ b/src/components/BiometricUnlockSetting.tsx
+@@ -49,7 +49,7 @@ export default function BiometricUnlockSetting() {
+         if (!result.success) {
+           Alert.alert(
+             'Biometric unlock',
+-            'We couldn’t verify your biometrics. Try again.',
++            'Your biometrics could not be verified. Try again, or sign in with your password.',
+           );
+           return;
+         }
+diff --git a/src/components/coach/ExtensionPairingPanel.tsx b/src/components/coach/ExtensionPairingPanel.tsx
+index a1b564d..9826a01 100644
+--- a/src/components/coach/ExtensionPairingPanel.tsx
++++ b/src/components/coach/ExtensionPairingPanel.tsx
+@@ -203,7 +203,7 @@ export default function ExtensionPairingPanel({ platformId }: Props): React.Reac
+         ) : null}
+         <Text style={styles.body}>
+           Open the Growth Project extension on the page you just logged into and enter this
+-          code. It’s short-lived for your security, so enter it soon — we’ll let you know here
++          code. It’s short-lived for your security, so enter it soon — this screen confirms here
+           if it expires.
+         </Text>
+         <TouchableOpacity
+@@ -315,14 +315,14 @@ export default function ExtensionPairingPanel({ platformId }: Props): React.Reac
+       cta: 'Get a new code',
+     },
+     failed: {
+-      title: "We couldn't reach the pairing service",
++      title: "The pairing service did not answer",
+       message:
+-        'We could not check the pairing status from this device. If you already entered a ' +
++        'The pairing status could not be checked from this device. If you already entered a ' +
+         'code in the browser extension, check there. Otherwise check your connection and try again.',
+       cta: 'Try again',
+     },
+     identityUnavailable: {
+-      title: "We couldn't confirm your account",
++      title: "Your account could not be confirmed",
+       message:
+         'Your signed-in account did not load on this device, so no pairing code was created. ' +
+         'Try again, or sign out and back in if this keeps happening.',
+diff --git a/src/components/coach/ImportRunStatusJourney.tsx b/src/components/coach/ImportRunStatusJourney.tsx
+index 12ae52d..508e89e 100644
+--- a/src/components/coach/ImportRunStatusJourney.tsx
++++ b/src/components/coach/ImportRunStatusJourney.tsx
+@@ -182,7 +182,7 @@ export default function ImportRunStatusJourney({ importIntentId }: { importInten
+     title = 'Checking import status…';
+   } else if (run.view === 'error') {
+     title = `Import status: ${NOT_KNOWN_YET.toLowerCase()}`;
+-    body = 'We couldn’t reach the server to check this import. Check your connection and try again.';
++    body = 'The server could not be reached to check this import. Check your connection and try again.';
+   } else if (run.view === 'notFound') {
+     title = `Import status: ${NOT_KNOWN_YET.toLowerCase()}`;
+     body = 'The server didn’t return a status for this import. Check again later.';
+diff --git a/src/components/coach/ImportRunVerdictCard.tsx b/src/components/coach/ImportRunVerdictCard.tsx
+index 972f3fc..8240f97 100644
+--- a/src/components/coach/ImportRunVerdictCard.tsx
++++ b/src/components/coach/ImportRunVerdictCard.tsx
+@@ -92,7 +92,7 @@ export default function ImportRunVerdictCard({ importIntentId }: { importIntentI
+     content = (
+       <>
+         <Text style={styles.title} testID="verdict-error">Import status: {NOT_KNOWN_YET.toLowerCase()}</Text>
+-        <Text style={styles.body}>We couldn’t reach the server to check this import. Check your connection and try again.</Text>
++        <Text style={styles.body}>The server could not be reached to check this import. Check your connection and try again.</Text>
+       </>
+     );
+   } else if (run.view === 'notFound') {
+diff --git a/src/components/coach/__tests__/ExtensionPairingPanel.copy.test.tsx b/src/components/coach/__tests__/ExtensionPairingPanel.copy.test.tsx
+index 5a86f17..8204c26 100644
+--- a/src/components/coach/__tests__/ExtensionPairingPanel.copy.test.tsx
++++ b/src/components/coach/__tests__/ExtensionPairingPanel.copy.test.tsx
+@@ -82,7 +82,7 @@ describe('ExtensionPairingPanel — copy never asserts what the extension did',
+   it('failed: says the STATUS could not be checked and points to the extension if a code was already entered', async () => {
+     mockHookState = { status: 'failed', code: null, supportReference: null };
+     const { getByText } = await render(<ExtensionPairingPanel platformId="truecoach" />);
+-    expect(getByText(/could not check the pairing status/i)).toBeTruthy();
++    expect(getByText(/pairing status could not be checked/i)).toBeTruthy();
+     expect(getByText(/already entered a code in the browser extension, check there/i)).toBeTruthy();
+     fireEvent.press(getByText('Try again'));
+     expect(mockRetry).toHaveBeenCalledTimes(1);
+@@ -102,7 +102,7 @@ describe('ExtensionPairingPanel — copy never asserts what the extension did',
+     const { getByText, getByTestId, queryByTestId } = await render(
+       <ExtensionPairingPanel platformId="truecoach" />,
+     );
+-    expect(getByText("We couldn't confirm your account")).toBeTruthy();
++    expect(getByText("Your account could not be confirmed")).toBeTruthy();
+     expect(getByText(/no pairing code was created/i)).toBeTruthy();
+     expect(queryByTestId('pairing-minting')).toBeNull(); // not the indefinite spinner
+     fireEvent.press(getByTestId('pairing-retry'));
+diff --git a/src/components/coach/__tests__/ExtensionPairingPanel.test.tsx b/src/components/coach/__tests__/ExtensionPairingPanel.test.tsx
+index d5b35fa..978a6c2 100644
+--- a/src/components/coach/__tests__/ExtensionPairingPanel.test.tsx
++++ b/src/components/coach/__tests__/ExtensionPairingPanel.test.tsx
+@@ -299,7 +299,7 @@ describe('ExtensionPairingPanel — contract-named reason copy (UX-03c)', () =>
+   it('keeps the existing generic failed copy when reason is null', async () => {
+     mockHookState = { status: 'failed', code: null, reason: null };
+     const { getByTestId } = await render(<ExtensionPairingPanel platformId="truecoach" />);
+-    expect(getByTestId('pairing-reason-message')).toHaveTextContent(/could not check the pairing status/i);
++    expect(getByTestId('pairing-reason-message')).toHaveTextContent(/pairing status could not be checked/i);
+     expect(getByTestId('pairing-failed')).toHaveTextContent(/Try again/);
+   });
+ 
+diff --git a/src/components/coach/__tests__/ImportRunStatusJourney.parity.test.tsx b/src/components/coach/__tests__/ImportRunStatusJourney.parity.test.tsx
+index e4ba1c6..0c1ed5c 100644
+--- a/src/components/coach/__tests__/ImportRunStatusJourney.parity.test.tsx
++++ b/src/components/coach/__tests__/ImportRunStatusJourney.parity.test.tsx
+@@ -189,7 +189,7 @@ describe('rendered parity — loading / error / notFound / unreadable: same fact
+   it('error shows the card\'s own network-failure copy', async () => {
+     mockRun = { view: 'error' };
+     const roman = await render(<ImportRunStatusJourney importIntentId="intent-1" />);
+-    expect(JSON.stringify(roman.toJSON())).toContain('We couldn\u2019t reach the server to check this import. Check your connection and try again.');
++    expect(JSON.stringify(roman.toJSON())).toContain('The server could not be reached to check this import. Check your connection and try again.');
+   });
+ 
+   it('notFound shows the card\'s own 404 copy', async () => {
+diff --git a/src/components/coach/ai-budget/AIBudgetTutorialModal.tsx b/src/components/coach/ai-budget/AIBudgetTutorialModal.tsx
+index 0d4bfc4..a00dc29 100644
+--- a/src/components/coach/ai-budget/AIBudgetTutorialModal.tsx
++++ b/src/components/coach/ai-budget/AIBudgetTutorialModal.tsx
+@@ -109,12 +109,12 @@ function getCards(budget: CoachAIBudgetResponse, purchasesHidden: boolean): Card
+   return [
+     {
+       title: 'How AI usage works',
+-      body: `Every AI draft — workouts, meal plans, briefs, client chat — runs on a real model and has a real cost. We bundle ${total} of AI value into your monthly plan so most coaches never think about it.`,
++      body: `Every AI draft — workouts, meal plans, briefs, client chat — runs on a real model and has a real cost. Your monthly plan bundles ${total} of AI value so most coaches never think about it.`,
+       icon: 'sparkles-outline',
+     },
+     {
+       title: 'Why a budget?',
+-      body: 'A per-coach budget protects you (a runaway client chat loop can\'t bankrupt your month) and protects us (so we can keep AI in your plan instead of bolting on a per-call surcharge).',
++      body: 'A per-coach budget protects you (a runaway client chat loop can\'t bankrupt your month) and keeps AI inside your plan instead of a per-call surcharge.',
+       icon: 'shield-checkmark-outline',
+     },
+     {
+@@ -124,7 +124,7 @@ function getCards(budget: CoachAIBudgetResponse, purchasesHidden: boolean): Card
+     },
+     {
+       title: 'Buy credits',
+-      body: 'Pick a pack to keep AI features uninterrupted. Or tap "I\'ll buy later" — we\'ll show this once per month, and you can always top up from the Coach Home meter.',
++      body: 'Pick a pack to keep AI features uninterrupted. Or tap "I\'ll buy later" — this appears once per month, and you can always top up from the Coach Home meter.',
+       icon: 'card-outline',
+     },
+   ];
+diff --git a/src/components/coach/importVerdictContent.ts b/src/components/coach/importVerdictContent.ts
+index 0a02250..72efcf9 100644
+--- a/src/components/coach/importVerdictContent.ts
++++ b/src/components/coach/importVerdictContent.ts
+@@ -59,7 +59,7 @@ export const REASON_COPY: Record<RunReasonCode, string> = {
+   revoked: 'Access for this import was withdrawn.',
+   unresolved_identities: 'Some people couldn’t be matched to TGP accounts yet.',
+   relationship_unverified: 'Links between records couldn’t be checked.',
+-  coverage_basis_unknown: 'We can’t tell yet whether everything was found.',
++  coverage_basis_unknown: 'It is not clear yet whether everything was found.',
+ };
+ 
+ export function formatTime(isoOrMs: string | number): string | null {
+diff --git a/src/components/command-center/CoachLtvDashboard.tsx b/src/components/command-center/CoachLtvDashboard.tsx
+index 9da9f6a..04582bf 100644
+--- a/src/components/command-center/CoachLtvDashboard.tsx
++++ b/src/components/command-center/CoachLtvDashboard.tsx
+@@ -599,7 +599,7 @@ function LtvContent({
+               ? '1 month of zero churn'
+               : `${metrics.zero_churn_streak_months} consecutive months of zero churn`}
+             {metrics.zero_churn_streak_months >= 6
+-              ? ' — exceptional retention!'
++              ? ' — exceptional retention.'
+               : metrics.zero_churn_streak_months >= 3
+               ? ' — keep it up'
+               : ''}
+diff --git a/src/components/community/ChallengeProgressSheet.tsx b/src/components/community/ChallengeProgressSheet.tsx
+index 3d363bc..36aca79 100644
+--- a/src/components/community/ChallengeProgressSheet.tsx
++++ b/src/components/community/ChallengeProgressSheet.tsx
+@@ -209,7 +209,7 @@ export default function ChallengeProgressSheet({
+       // Surface a calm, non-shaming error and KEEP the draft so the user can
+       // retry, never silently swallowing the failure or leaving state dangling.
+       setSubmitError(
+-        'We could not save your progress just now. Please try again.',
++        'Saving your progress could not be confirmed. Check your connection, then try again.',
+       );
+     } finally {
+       submittingRef.current = false;
+diff --git a/src/components/community/VoiceNoteComposer.tsx b/src/components/community/VoiceNoteComposer.tsx
+index 16eb295..c8398e4 100644
+--- a/src/components/community/VoiceNoteComposer.tsx
++++ b/src/components/community/VoiceNoteComposer.tsx
+@@ -168,7 +168,7 @@ export default function VoiceNoteComposer({
+   if (rec.status === 'error') {
+     const what =
+       rec.error?.kind === 'permission_check'
+-        ? 'We could not check microphone access on this phone.'
++        ? 'Microphone access could not be checked on this phone.'
+         : rec.error?.kind === 'stop'
+           ? 'The recording could not be finished and saved.'
+           : 'The microphone could not start recording.';
+diff --git a/src/components/community/__tests__/VoiceNoteComposer.test.tsx b/src/components/community/__tests__/VoiceNoteComposer.test.tsx
+index 55876aa..f393eb6 100644
+--- a/src/components/community/__tests__/VoiceNoteComposer.test.tsx
++++ b/src/components/community/__tests__/VoiceNoteComposer.test.tsx
+@@ -194,6 +194,6 @@ describe('VoiceNoteComposer — recorder failure (B-314-7)', () => {
+       <VoiceNoteComposer workspaceId={WS} target={target} recorder={port} />,
+     );
+     fireEvent.press(getByTestId('voice-record-button'));
+-    expect(await findByText(/We could not check microphone access on this phone\./)).toBeTruthy();
++    expect(await findByText(/Microphone access could not be checked on this phone\./)).toBeTruthy();
+   });
+ });
+diff --git a/src/components/invite/PasteInviteCodeButton.tsx b/src/components/invite/PasteInviteCodeButton.tsx
+index a5c04b7..1380fb5 100644
+--- a/src/components/invite/PasteInviteCodeButton.tsx
++++ b/src/components/invite/PasteInviteCodeButton.tsx
+@@ -18,7 +18,7 @@ import { useTheme } from '../../theme/ThemeProvider';
+ import { typography } from '../../theme/tokens';
+ 
+ export const PASTE_EMPTY_MESSAGE =
+-  'We could not find an invite code on your clipboard. Copy the code from your coach, then tap Paste again.';
++  'No invite code was found on your clipboard. Copy the code from your coach, then tap Paste again.';
+ 
+ interface Props {
+   onCode: (code: string) => void;
+diff --git a/src/components/messaging/ReportMessageSheet.tsx b/src/components/messaging/ReportMessageSheet.tsx
+index 9434582..17884dc 100644
+--- a/src/components/messaging/ReportMessageSheet.tsx
++++ b/src/components/messaging/ReportMessageSheet.tsx
+@@ -54,7 +54,7 @@ export function ReportMessageSheet({
+       await onSubmit({ reason, details: details.trim() ? details.trim() : undefined });
+       reset();
+     } catch {
+-      setError("We couldn't submit that report. Please try again.");
++      setError('Sending your report could not be confirmed. Check your connection, then try again.');
+       setSubmitting(false);
+     }
+   }, [reason, submitting, details, onSubmit, reset]);
+@@ -87,7 +87,7 @@ export function ReportMessageSheet({
+ 
+         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+           <Text style={styles.lede}>
+-            Reports are reviewed by our team within 24 hours. The user will not be told who
++            Reports are reviewed by the safety team within 24 hours. The user will not be told who
+             reported them.
+           </Text>
+ 
+@@ -135,7 +135,7 @@ export function ReportMessageSheet({
+             maxLength={DETAILS_MAX}
+             value={details}
+             onChangeText={setDetails}
+-            placeholder="Add anything our team should know."
++            placeholder="Add anything the safety team should know."
+             placeholderTextColor={colors.textMuted}
+             accessibilityLabel="Additional details"
+           />
+diff --git a/src/components/messaging/__tests__/ReportMessageSheet.test.tsx b/src/components/messaging/__tests__/ReportMessageSheet.test.tsx
+index e982972..a8e1ce3 100644
+--- a/src/components/messaging/__tests__/ReportMessageSheet.test.tsx
++++ b/src/components/messaging/__tests__/ReportMessageSheet.test.tsx
+@@ -112,7 +112,9 @@ describe('ReportMessageSheet', () => {
+     await act(async () => {
+       await fireEvent.press(getByLabelText('Submit report'));
+     });
+-    expect(await findByText(/couldn't submit that report/i)).toBeTruthy();
++    expect(await findByText(/Sending your report could not be confirmed/i)).toBeTruthy();
++    // Sol B-339-1: a failed submit never claims the report was not sent.
++    expect(queryByText(/was not sent/i)).toBeNull();
+     // The raw backend error code must never reach the UI (R9 / R17).
+     expect(queryByText(/MESSAGE_NOT_FOUND/)).toBeNull();
+     // The sheet must stay open — closing would falsely imply success.
+diff --git a/src/components/trust/TrustCueRow.tsx b/src/components/trust/TrustCueRow.tsx
+index 794adc6..765b1f9 100644
+--- a/src/components/trust/TrustCueRow.tsx
++++ b/src/components/trust/TrustCueRow.tsx
+@@ -32,7 +32,7 @@ const TRUST_CUES: TrustCue[] = [
+     explainer: {
+       title: 'End-to-end encrypted',
+       body:
+-        'All data between your phone and our servers travels over TLS 1.3 — the strongest transport encryption available. Your meals, workouts, and body stats are also encrypted at rest using AES-256, so even if our storage were ever accessed without authorisation, your data would be unreadable.',
++        'All data between your phone and The Growth Project servers travels over TLS 1.3 — the strongest transport encryption available. Your meals, workouts, and body stats are also encrypted at rest using AES-256, so even if that storage were ever accessed without authorisation, your data would be unreadable.',
+     },
+   },
+   {
+@@ -41,7 +41,7 @@ const TRUST_CUES: TrustCue[] = [
+     explainer: {
+       title: 'Your data is yours',
+       body:
+-        'You own everything you log in this app. You can request a full export of your data at any time from the Trust Center in Settings, and you can permanently delete your account with a 14-day grace period. We will never sell, license, or share your personal data with third parties for commercial purposes.',
++        'You own everything you log in this app. You can request a full export of your data at any time from the Trust Center in Settings, and you can permanently delete your account with a 14-day grace period. The Growth Project never sells, licenses, or shares your personal data with third parties for commercial purposes.',
+     },
+   },
+   {
+@@ -50,7 +50,7 @@ const TRUST_CUES: TrustCue[] = [
+     explainer: {
+       title: 'Zero ads · Zero data sales',
+       body:
+-        'The Growth Project runs on your subscription — not advertising revenue. We do not sell, rent, or trade your personal data to advertisers or data brokers. Analytics we collect are limited to anonymised, aggregate product-improvement signals and are never linked back to you individually.',
++        'The Growth Project runs on your subscription — not advertising revenue. The Growth Project does not sell, rent, or trade your personal data to advertisers or data brokers. Analytics are limited to anonymised, aggregate product-improvement signals and are never linked back to you individually.',
+     },
+   },
+ ];
+diff --git a/src/db/educationDb.ts b/src/db/educationDb.ts
+index 14ea1b6..44f621e 100644
+--- a/src/db/educationDb.ts
++++ b/src/db/educationDb.ts
+@@ -130,7 +130,7 @@ export async function seedLessonsIfNeeded(): Promise<void> {
+       subtitle: 'Why water matters',
+       category: 'Nutrition Basics',
+       durationMin: 4,
+-      content: `Water is involved in virtually every bodily function — digestion, temperature regulation, nutrient transport, and joint lubrication.\n\n**How much?** A good baseline is half your body weight in ounces (e.g., 180 lbs → 90 oz). Increase during exercise, hot weather, or if you drink caffeine.\n\n**Signs of dehydration:**\n• Dark yellow urine\n• Headaches and fatigue\n• Decreased performance\n• Hunger (often confused with thirst)\n\n**Tips for drinking more water:**\n• Keep a water bottle visible at all times\n• Drink a glass before each meal\n• Set hourly reminders\n• Add lemon, cucumber, or berries for flavor\n• Track intake in this app!\n\nHerbal teas and sparkling water count toward your goal. Coffee counts partially but is also a diuretic.`,
++      content: `Water is involved in virtually every bodily function — digestion, temperature regulation, nutrient transport, and joint lubrication.\n\n**How much?** A good baseline is half your body weight in ounces (e.g., 180 lbs → 90 oz). Increase during exercise, hot weather, or if you drink caffeine.\n\n**Signs of dehydration:**\n• Dark yellow urine\n• Headaches and fatigue\n• Decreased performance\n• Hunger (often confused with thirst)\n\n**Tips for drinking more water:**\n• Keep a water bottle visible at all times\n• Drink a glass before each meal\n• Set hourly reminders\n• Add lemon, cucumber, or berries for flavor\n• Track intake in this app\n\nHerbal teas and sparkling water count toward your goal. Coffee counts partially but is also a diuretic.`,
+     },
+     {
+       title: 'Meal Timing & Frequency',
+diff --git a/src/entitlements/PaywallSheet.tsx b/src/entitlements/PaywallSheet.tsx
+index 16f6044..11f728a 100644
+--- a/src/entitlements/PaywallSheet.tsx
++++ b/src/entitlements/PaywallSheet.tsx
+@@ -208,7 +208,7 @@ function PackagePaywallSheet({
+       const copy =
+         pkgState.reason === 'not_configured'
+           ? 'Your coach has not enabled plans yet. Please reach out to them.'
+-          : "We couldn't load plans right now. Tap Subscribe to keep trying.";
++          : "Plans did not load just now. Tap Subscribe to keep trying.";
+       return (
+         <Text
+           style={[
+diff --git a/src/lib/__tests__/inviteAttachOutcome.test.ts b/src/lib/__tests__/inviteAttachOutcome.test.ts
+index 246c970..d163f62 100644
+--- a/src/lib/__tests__/inviteAttachOutcome.test.ts
++++ b/src/lib/__tests__/inviteAttachOutcome.test.ts
+@@ -35,7 +35,7 @@ describe('inviteAttachErrorMessage', () => {
+     expect(inviteAttachErrorMessage('max_uses_reached')).toMatch(/used up/);
+     expect(inviteAttachErrorMessage('coach_inactive')).toMatch(/not accepting new clients/);
+     expect(inviteAttachErrorMessage('already_has_coach')).toMatch(/different coach/);
+-    expect(inviteAttachErrorMessage('invalid_code')).toMatch(/could not find/);
++    expect(inviteAttachErrorMessage('invalid_code')).toMatch(/was not found/);
+   });
+ 
+   it('never echoes an unknown raw server string', () => {
+diff --git a/src/lib/consultation/consentVersion.ts b/src/lib/consultation/consentVersion.ts
+index 40dfa21..1b289a3 100644
+--- a/src/lib/consultation/consentVersion.ts
++++ b/src/lib/consultation/consentVersion.ts
+@@ -33,7 +33,7 @@ export const CONSENT_TITLE = 'Before we start';
+  * Server copy version of the box 2 AI processing paragraph and label (R2a).
+  * v4 (backend #635): paragraph 4's retention sentence now says Roman chats
+  * are kept until the client deletes them or their account (owner 2026-10-01
+- * 20:32, OR-110-1); v3 said 180 days, which was never true. The P0 version
++ * 20:32, OR-110-1); v3 named a fixed retention period, which was never true. The P0 version
+  * moved to consult-consent-v3 with it, because the whole screen's text
+  * changed (backend #607 must accept consult-consent-v3).
+  */
+diff --git a/src/lib/consultation/copy.ts b/src/lib/consultation/copy.ts
+index fff540f..7fc4cc4 100644
+--- a/src/lib/consultation/copy.ts
++++ b/src/lib/consultation/copy.ts
+@@ -79,7 +79,7 @@ export const AI_CONSENT_COPY_SHA256 = 'fbf821401d4313c6a301a6cc08d3870bb117c293f
+ /** P8: general guidance and a safe next step, then the physician line. */
+ export const P8_COPY = {
+   intro:
+-    'One of your answers means we will start gently, and give your physician a say before anything demanding.',
++    'One of your answers means your plan starts gently, and your physician gets a say before anything demanding.',
+   guidanceTitle: 'Until then, a few good habits',
+   guidance: [
+     'Choose an effort where you can still hold a conversation. If you are breathless, ease off.',
+@@ -89,12 +89,12 @@ export const P8_COPY = {
+   nextTitle: "Here's what happens next",
+   next: [
+     'You can finish setting up today and explore the app.',
+-    'Your plan will start with our gentlest, lowest-impact program as a safe default.',
++    'Your plan will start with the gentlest, lowest-impact program as a safe default.',
+     '{Coach} will be told, so they can check in with you.',
+     'Your safest next step: book a visit with your physician and mention you are starting a training program. Once you have their OK, message {coach} and your plan can be adjusted.',
+   ],
+   physician:
+-    'Based on your answers, we recommend you check with your physician before starting a new exercise program. This is a standard precaution, not a diagnosis.',
++    'Based on your answers, check with your physician before starting a new exercise program. This is a standard precaution, not a diagnosis.',
+   emergency:
+     'If you ever have chest pain, trouble breathing or feel faint, call 911. If you are struggling emotionally, call or text 988.',
+   disclaimer:
+diff --git a/src/lib/consultation/definitions.ts b/src/lib/consultation/definitions.ts
+index 12cd521..f5d3889 100644
+--- a/src/lib/consultation/definitions.ts
++++ b/src/lib/consultation/definitions.ts
+@@ -287,7 +287,7 @@ export const SCREENS: readonly ScreenDef[] = [
+     question:
+       'Is any part of your body asking for extra care right now? An injury, a sore joint, or a recent surgery.',
+     longQuestion: true,
+-    why: "We'll start you with moves that respect it.",
++    why: "Your first moves will respect it.",
+     options: YES_NO,
+     autoAdvance: true,
+     cta: 'Continue',
+@@ -438,7 +438,7 @@ export const SCREENS: readonly ScreenDef[] = [
+     eyebrow: chapterEyebrow(6),
+     timeLeft: 'About 2 minutes left',
+     question: "Anything you can't or won't eat?",
+-    why: 'So nothing we suggest is something you avoid.',
++    why: 'So nothing suggested is something you avoid.',
+     options: [
+       { value: 'nothing', label: 'Nothing' },
+       { value: 'dairy', label: 'Dairy' },
+diff --git a/src/lib/intendedRole.ts b/src/lib/intendedRole.ts
+index f853c82..f59b055 100644
+--- a/src/lib/intendedRole.ts
++++ b/src/lib/intendedRole.ts
+@@ -135,11 +135,11 @@ export const COACH_SIGNUP_UNAVAILABLE_MESSAGE =
+  * account exists.
+  */
+ export const COACH_SIGNUP_UNCONFIRMED_MESSAGE =
+-  'We could not confirm your coach account, so you are not signed in. An account may or may not have been created. Try again with the same sign-in; if the account exists, you will be signed in to it.';
++  'Your coach account could not be confirmed, so you are not signed in. An account may or may not have been created. Try again with the same sign-in; if the account exists, you will be signed in to it.';
+ 
+ /**
+  * Email retry after an unconfirmed coach attempt answered "this email is
+  * already registered": the earlier attempt may have created that account.
+  */
+ export const COACH_SIGNUP_RETRY_EMAIL_EXISTS_MESSAGE =
+-  'An account with this email already exists. Your earlier coach sign-up may have created it. Sign in with this email to continue. If it is a client account, contact support and we will set up coach access.';
++  'An account with this email already exists. Your earlier coach sign-up may have created it. Sign in with this email to continue. If it is a client account, contact support to set up coach access.';
+diff --git a/src/lib/inviteAttachOutcome.ts b/src/lib/inviteAttachOutcome.ts
+index ade8b8b..4f6eb6a 100644
+--- a/src/lib/inviteAttachOutcome.ts
++++ b/src/lib/inviteAttachOutcome.ts
+@@ -61,12 +61,12 @@ const MESSAGES: Array<{ test: RegExp; message: string }> = [
+   },
+   {
+     test: /invalid|not_found|unknown|no_such|bad_code/i,
+-    message: 'We could not find that invite code. Check it with your coach and enter it below.',
++    message: 'That invite code was not found. Check it with your coach and enter it below.',
+   },
+ ];
+ 
+ export const DEFAULT_INVITE_ATTACH_MESSAGE =
+-  'Your account is ready, but we could not connect you to your coach yet. Enter your invite code to try again.';
++  'Your account is ready, but it is not connected to your coach yet. Enter your invite code to try again.';
+ 
+ export function inviteAttachErrorMessage(reason: string | null | undefined): string {
+   if (!reason) return DEFAULT_INVITE_ATTACH_MESSAGE;
+diff --git a/src/lib/roman/__tests__/copy.test.ts b/src/lib/roman/__tests__/copy.test.ts
+index 9356182..dc1eed6 100644
+--- a/src/lib/roman/__tests__/copy.test.ts
++++ b/src/lib/roman/__tests__/copy.test.ts
+@@ -406,7 +406,7 @@ describe('romanFirstPayment — §2.6 exact spec strings', () => {
+     expect(
+       romanFirstPayment({ coachName: COACH, amount: AMOUNT, clientName: CLIENT, mode: 'celebration' }),
+     ).toBe(
+-      'Marcus — your first payment has arrived. $240.00, from Dana. I have seen a great many first payments, and they never stop meaning something. Congratulations!',
++      'Marcus — your first payment has arrived. $240.00, from Dana. I have seen a great many first payments, and they never stop meaning something. Congratulations.',
+     );
+   });
+ 
+@@ -466,15 +466,17 @@ describe('voice contract (§1.1-§1.4)', () => {
+     });
+   });
+ 
+-  it('spends exactly ONE exclamation, and only on the §2.6 celebration variant', () => {
++  // OR-115-4 (owner voice rule, 2026-10-03): no exclamation marks in shipped copy,
++  // so the §2.6 celebration variant no longer spends one; it is still distinct.
++  it('spends no exclamation, not even on the §2.6 celebration variant', () => {
+     const celebration = romanFirstPayment({ coachName: COACH, amount: AMOUNT, clientName: CLIENT, mode: 'celebration' });
+     const others = [
+       romanFirstPayment({ coachName: COACH, amount: AMOUNT, clientName: CLIENT, mode: 'default' }),
+       romanFirstPayment({ coachName: COACH, amount: AMOUNT, clientName: CLIENT, mode: 'error' }),
+       romanPRDetected({ liftName: 'Back Squat', weight: 315 }),
+     ];
+-    // Celebration carries exactly one exclamation.
+-    expect((celebration.match(/!/g) ?? []).length).toBe(1);
++    expect(celebration).not.toContain('!');
++    expect(celebration).toMatch(/Congratulations\.$/);
+     // No other P4 string spends one.
+     others.forEach((s) => expect(s).not.toContain('!'));
+   });
+diff --git a/src/lib/roman/copy.ts b/src/lib/roman/copy.ts
+index 2a04bd9..0bd5817 100644
+--- a/src/lib/roman/copy.ts
++++ b/src/lib/roman/copy.ts
+@@ -465,7 +465,7 @@ export interface RomanFirstPaymentArgs {
+  *                   a living. Well earned."`
+  *   - celebration: `"{coachName} — your first payment has arrived. {amount},
+  *                   from {clientName}. I have seen a great many first payments,
+- *                   and they never stop meaning something. Congratulations!"`
++ *                   and they never stop meaning something. Congratulations."`
+  *                   (full warmth; carries the one permitted exclamation.)
+  *   - error:       `"{coachName}, your first payment from {clientName} has
+  *                   cleared — {amount}. My own records lagged a moment behind
+@@ -480,7 +480,7 @@ export function romanFirstPayment(args: RomanFirstPaymentArgs): string {
+   switch (mode) {
+     case 'celebration':
+       // identity spec §2.6 milestone-celebration (the one exclamation lives here).
+-      return `${coachName} — your first payment has arrived. ${amount}, from ${clientName}. I have seen a great many first payments, and they never stop meaning something. Congratulations!`;
++      return `${coachName} — your first payment has arrived. ${amount}, from ${clientName}. I have seen a great many first payments, and they never stop meaning something. Congratulations.`;
+     case 'error':
+       // identity spec §2.6 error variant (processor cleared, ledger lagged).
+       return `${coachName}, your first payment from ${clientName} has cleared — ${amount}. My own records lagged a moment behind the good news. It is reconciled now.`;
+diff --git a/src/lib/signupRoleNotice.ts b/src/lib/signupRoleNotice.ts
+index 1ffcae0..812da82 100644
+--- a/src/lib/signupRoleNotice.ts
++++ b/src/lib/signupRoleNotice.ts
+@@ -48,11 +48,11 @@ export function signupRoleNoticeNeedsSupport(kind: SignupRoleNoticeKind): boolea
+ export function signupRoleNoticeMessage(kind: SignupRoleNoticeKind): string {
+   switch (kind) {
+     case 'coach_request_not_applied':
+-      return 'Coach sign-up was not applied to this account, so it was created as a client account. You can continue as a client. To run your practice here, contact support and we will set up coach access. Use Contact support below, or Support in Settings at any time.';
++      return 'Coach sign-up was not applied to this account, so it was created as a client account. You can continue as a client. To run your practice here, contact support to set up coach access. Use Contact support below, or Support in Settings at any time.';
+     case 'existing_account':
+       return 'This Apple Account or Google account already had an account, so you were signed in to it. The role choice applies only to new accounts.';
+     case 'coach_retry_not_applied':
+-      return 'Coach sign-up was not applied to this account, so you are signed in to a client account. Your earlier attempt may have created it. To run your practice here, contact support and we will set up coach access. Use Contact support below, or Support in Settings at any time.';
++      return 'Coach sign-up was not applied to this account, so you are signed in to a client account. Your earlier attempt may have created it. To run your practice here, contact support to set up coach access. Use Contact support below, or Support in Settings at any time.';
+     case 'new_account_from_sign_in':
+       return 'There was no account for this sign-in, so a new client account was created. If you meant to sign in to an existing account, sign out and use the email you registered with.';
+   }
+diff --git a/src/screens/TrustCenterScreen.tsx b/src/screens/TrustCenterScreen.tsx
+index fe89729..4d49e92 100644
+--- a/src/screens/TrustCenterScreen.tsx
++++ b/src/screens/TrustCenterScreen.tsx
+@@ -436,7 +436,7 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+           <Ionicons name="shield-checkmark" size={32} color={colors.primary} />
+         </View>
+         <Text style={styles.heroSubtitle}>
+-          Your health data is sensitive. Here is exactly how we protect it.
++          Your health data is sensitive. Here is exactly how it is protected.
+         </Text>
+       </View>
+ 
+diff --git a/src/screens/applicant/ApplicationStatusScreen.tsx b/src/screens/applicant/ApplicationStatusScreen.tsx
+index 55c24eb..fb2dc4b 100644
+--- a/src/screens/applicant/ApplicationStatusScreen.tsx
++++ b/src/screens/applicant/ApplicationStatusScreen.tsx
+@@ -49,9 +49,9 @@ const STATUS_LABEL: Record<CoachApplicationStatus, string> = {
+ 
+ const STATUS_DESCRIPTION: Record<CoachApplicationStatus, string> = {
+   pending:
+-    'Your application has been received and is being reviewed by our team. We aim to respond within 5 business days.',
++    'Your application has been received and is being reviewed by The Growth Project team. Expect an answer within 5 business days.',
+   reviewed:
+-    'Our team has reviewed your application. A decision is being finalised.',
++    'The Growth Project team has reviewed your application. A decision is being finalised.',
+   approved:
+     'Your application has been approved. You will be added to the talent pool shortly.',
+   pool:
+@@ -167,7 +167,7 @@ export default function ApplicationStatusScreen() {
+         </Text>
+         <Text style={styles.emptyBody}>
+           You have not yet submitted a coach application. The application form
+-          is available on our website.
++          is available on The Growth Project website.
+         </Text>
+       </ScrollView>
+     );
+diff --git a/src/screens/auth/CreateAccountScreen.tsx b/src/screens/auth/CreateAccountScreen.tsx
+index 1f526fb..0b0bcd3 100644
+--- a/src/screens/auth/CreateAccountScreen.tsx
++++ b/src/screens/auth/CreateAccountScreen.tsx
+@@ -889,7 +889,7 @@ export default function CreateAccountScreen({ navigation, route }: Props) {
+         <View style={styles.verifyContent}>
+           <Text style={styles.verifyTitle}>Check your inbox</Text>
+           <Text style={styles.verifyBody}>
+-            We sent a verification link to{'\n'}
++            A verification link was sent to{'\n'}
+             <Text style={styles.emailHighlight}>{email}</Text>
+           </Text>
+           <Text style={styles.verifySubBody}>
+@@ -899,8 +899,8 @@ export default function CreateAccountScreen({ navigation, route }: Props) {
+           {inviteAttachError !== null ? (
+             <View style={styles.noticeBox} testID="invite-attach-pending-notice">
+               <Text style={styles.noticeText}>
+-                Your account was created, but we could not connect you to your coach yet. After
+-                you verify, we will ask for your invite code again.
++                Your account was created, but it is not connected to your coach yet. After
++                you verify, the app asks for your invite code again.
+               </Text>
+             </View>
+           ) : null}
+diff --git a/src/screens/auth/ForgotPasswordScreen.tsx b/src/screens/auth/ForgotPasswordScreen.tsx
+index 3f0b331..00a682b 100644
+--- a/src/screens/auth/ForgotPasswordScreen.tsx
++++ b/src/screens/auth/ForgotPasswordScreen.tsx
+@@ -78,7 +78,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
+         <Text style={styles.subtitle}>
+           {sent
+             ? 'Check your email for a reset link'
+-            : "Enter your email and we'll send you a reset link"}
++            : "Enter your email to get a reset link"}
+         </Text>
+       </View>
+ 
+diff --git a/src/screens/auth/RoleSelectionScreen.tsx b/src/screens/auth/RoleSelectionScreen.tsx
+index aae844f..6a381b1 100644
+--- a/src/screens/auth/RoleSelectionScreen.tsx
++++ b/src/screens/auth/RoleSelectionScreen.tsx
+@@ -231,7 +231,7 @@ export default function RoleSelectionScreen({ navigation, route }: Props) {
+         await finishAfterAttach(confirmed);
+       } catch (err) {
+         logRedacted('finish sign-up after attach failed', err);
+-        const msg = 'You are connected to your coach. We could not finish saving sign-up on this device. Tap Finish sign-up to try again.';
++        const msg = 'You are connected to your coach. Sign-up did not finish saving on this device. Tap Finish sign-up to try again.';
+         setError(msg);
+         Alert.alert('Connected, finishing sign-up', msg);
+       } finally {
+@@ -279,7 +279,7 @@ export default function RoleSelectionScreen({ navigation, route }: Props) {
+     } catch (err) {
+       if (stage === 'finish') {
+         logRedacted('finish sign-up after attach failed', err);
+-        const msg = 'You are connected to your coach. We could not finish saving sign-up on this device. Tap Finish sign-up to try again.';
++        const msg = 'You are connected to your coach. Sign-up did not finish saving on this device. Tap Finish sign-up to try again.';
+         setError(msg);
+         Alert.alert('Connected, finishing sign-up', msg);
+         return;
+@@ -301,7 +301,7 @@ export default function RoleSelectionScreen({ navigation, route }: Props) {
+           r.response?.data?.reason ?? r.response?.data?.code ?? r.response?.data?.message ?? 'invalid',
+         );
+       } else if (isNetworkFailure(err)) {
+-        msg = 'We couldn’t reach the server. Check your connection, then tap Continue again.';
++        msg = 'The server could not be reached. Check your connection, then tap Continue again.';
+       } else {
+         msg = unknownAuthFailure(err, 'role_selection').message;
+         unknownFailure = true;
+diff --git a/src/screens/auth/__tests__/CreateAccountFixRound5.test.tsx b/src/screens/auth/__tests__/CreateAccountFixRound5.test.tsx
+index ff8238e..95befa1 100644
+--- a/src/screens/auth/__tests__/CreateAccountFixRound5.test.tsx
++++ b/src/screens/auth/__tests__/CreateAccountFixRound5.test.tsx
+@@ -127,7 +127,7 @@ const PROVIDERS = ['email', 'apple', 'google'];
+ const COACH_POLICY = { ...ROLE_CHOICE_POLICY, providers: PROVIDERS };
+ const NO_ACCOUNT = /No account was created/;
+ const MAYBE_CREATED = /An account may or may not have been created/;
+-const UNCONFIRMED = /We could not confirm your coach account/;
++const UNCONFIRMED = /Your coach account could not be confirmed/;
+ 
+ async function fillAndSubmit(utils: Awaited<ReturnType<typeof renderScreen>>, email = 'pat@example.com') {
+   await fireEvent.changeText(utils.getByLabelText('Full name'), 'Pat Example');
+@@ -442,7 +442,7 @@ describe('CreateAccountScreen, #306 fix round 5', () => {
+       mockRegister.mockRejectedValueOnce(new Error('Cannot reach server. Please check your connection and try again.'));
+       const utils = await renderScreen();
+       await fillAndSubmit(utils);
+-      expect(await utils.findByText(/reach the server/i)).toBeTruthy();
++      expect(await utils.findByText(/server could not be reached/i)).toBeTruthy();
+       expect(mockCaptureError).not.toHaveBeenCalled();
+     });
+ 
+diff --git a/src/screens/auth/__tests__/CreateAccountScreen.test.tsx b/src/screens/auth/__tests__/CreateAccountScreen.test.tsx
+index 846e424..8ab023c 100644
+--- a/src/screens/auth/__tests__/CreateAccountScreen.test.tsx
++++ b/src/screens/auth/__tests__/CreateAccountScreen.test.tsx
+@@ -207,7 +207,7 @@ describe('CreateAccountScreen', () => {
+     mockGetString.mockResolvedValue('see you at the clinic!');
+     const { getByTestId, findByText } = await renderScreen();
+     await fireEvent.press(getByTestId('paste-invite-code'));
+-    expect(await findByText(/could not find an invite code on your clipboard/i)).toBeTruthy();
++    expect(await findByText(/No invite code was found on your clipboard/i)).toBeTruthy();
+     expect(getByTestId('invite-code-input').props.value).toBe('');
+   });
+ 
+@@ -570,7 +570,7 @@ describe('CreateAccountScreen', () => {
+       mockSignInWithGoogle.mockResolvedValue({ success: false, error: 'x', error_code: 'coach_signup_unconfirmed' });
+       const utils = await renderScreen(undefined, 'coach');
+       await fireEvent.press(await utils.findByText('Continue with Google'));
+-      expect(await utils.findByText(/We could not confirm your coach account/)).toBeTruthy();
++      expect(await utils.findByText(/Your coach account could not be confirmed/)).toBeTruthy();
+       expect(utils.queryByText(CREATED_AS_CLIENT)).toBeNull();
+       expect(utils.queryByText(/No account was created/)).toBeNull();
+       expect(utils.nav.replace).not.toHaveBeenCalled();
+@@ -586,7 +586,7 @@ describe('CreateAccountScreen', () => {
+       });
+       const utils = await renderScreen(undefined, 'coach');
+       await fireEvent.press(await utils.findByText('Continue with Google'));
+-      expect(await utils.findByText(/We could not confirm your coach account/)).toBeTruthy();
++      expect(await utils.findByText(/Your coach account could not be confirmed/)).toBeTruthy();
+       expect(utils.nav.replace).not.toHaveBeenCalled();
+       expect(mockEmit).not.toHaveBeenCalled();
+       expect(await AsyncStorage.getItem(SIGNUP_ROLE_NOTICE_KEY)).toBeNull();
+@@ -598,7 +598,7 @@ describe('CreateAccountScreen', () => {
+       mockSignInWithApple.mockResolvedValue({ success: true, is_new_user: true, user: { id: 'u1' } });
+       const utils = await renderScreen(undefined, 'coach');
+       await fireEvent.press(utils.getByTestId('apple-button'));
+-      expect(await utils.findByText(/We could not confirm your coach account/)).toBeTruthy();
++      expect(await utils.findByText(/Your coach account could not be confirmed/)).toBeTruthy();
+       expect(utils.nav.replace).not.toHaveBeenCalled();
+       expect(await AsyncStorage.getItem(SIGNUP_ROLE_NOTICE_KEY)).toBeNull();
+     });
+@@ -869,7 +869,7 @@ describe('CreateAccountScreen', () => {
+       mockRegister.mockRejectedValueOnce(new Error('Cannot reach server. Please check your connection and try again.'));
+       const utils = await renderScreen(undefined, 'coach');
+       await fillAndSubmit(utils);
+-      expect(await utils.findByText(/We could not confirm your coach account/)).toBeTruthy();
++      expect(await utils.findByText(/Your coach account could not be confirmed/)).toBeTruthy();
+       expect(utils.queryByText(/No account was created/)).toBeNull();
+     });
+ 
+@@ -880,7 +880,7 @@ describe('CreateAccountScreen', () => {
+         .mockResolvedValueOnce({ success: true, is_new_user: false, user: { id: 'u1', role: 'student' } });
+       const utils = await renderScreen(undefined, 'coach');
+       await fireEvent.press(await utils.findByText('Continue with Google'));
+-      expect(await utils.findByText(/We could not confirm your coach account/)).toBeTruthy();
++      expect(await utils.findByText(/Your coach account could not be confirmed/)).toBeTruthy();
+       await fireEvent.press(utils.getByText('Continue with Google'));
+       await waitFor(() =>
+         expect(utils.nav.replace).toHaveBeenCalledWith('RoleSelection', { signupNotice: 'coach_retry_not_applied' }),
+@@ -896,7 +896,7 @@ describe('CreateAccountScreen', () => {
+         .mockResolvedValueOnce({ success: true, is_new_user: false, user: { id: 'u1', role: 'student' } });
+       const utils = await renderScreen(undefined, 'coach');
+       await fireEvent.press(utils.getByTestId('apple-button'));
+-      expect(await utils.findByText(/We could not confirm your coach account/)).toBeTruthy();
++      expect(await utils.findByText(/Your coach account could not be confirmed/)).toBeTruthy();
+       await fireEvent.press(utils.getByTestId('apple-button'));
+       await waitFor(() =>
+         expect(utils.nav.replace).toHaveBeenCalledWith('RoleSelection', { signupNotice: 'coach_retry_not_applied' }),
+@@ -926,7 +926,7 @@ describe('CreateAccountScreen', () => {
+   describe('#306 fix round 4 (Sol B1-R3: an unresolved attempt outlives its request)', () => {
+     const PROVIDERS = ['email', 'apple', 'google'];
+     const NO_ACCOUNT = /No account has been created/;
+-    const UNCONFIRMED = /We could not confirm your coach account/;
++    const UNCONFIRMED = /Your coach account could not be confirmed/;
+ 
+     async function renderCoachWithHeldLive() {
+       await loadSignupPolicy(async () => ({ data: { ...ROLE_CHOICE_POLICY, providers: PROVIDERS } }));
+diff --git a/src/screens/auth/__tests__/ProviderFailuresFixRound7.test.tsx b/src/screens/auth/__tests__/ProviderFailuresFixRound7.test.tsx
+index 975f6da..59d32b5 100644
+--- a/src/screens/auth/__tests__/ProviderFailuresFixRound7.test.tsx
++++ b/src/screens/auth/__tests__/ProviderFailuresFixRound7.test.tsx
+@@ -187,7 +187,7 @@ describe('#306 r7 provider failures through the real helpers and screens', () =>
+       mockGoogleBackend.mockRejectedValue(Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' }));
+       const ui = await renderLogin();
+       await fireEvent.press(ui.getByLabelText('Continue with Google'));
+-      expect(await ui.findByText(/couldn’t reach the server/)).toBeTruthy();
++      expect(await ui.findByText(/server could not be reached/)).toBeTruthy();
+       expect(mockCaptureError).not.toHaveBeenCalled();
+       expect(ui.nav.replace).not.toHaveBeenCalled();
+     });
+diff --git a/src/screens/auth/__tests__/RoleSelectionRetry.test.tsx b/src/screens/auth/__tests__/RoleSelectionRetry.test.tsx
+index e1109df..83907f3 100644
+--- a/src/screens/auth/__tests__/RoleSelectionRetry.test.tsx
++++ b/src/screens/auth/__tests__/RoleSelectionRetry.test.tsx
+@@ -256,7 +256,7 @@ describe('RoleSelection retry step', () => {
+       );
+       await waitFor(() => expect(mockGetSignupPolicy).toHaveBeenCalled());
+       await fireEvent.press(await findByText('Continue'));
+-      expect(await findByText(/couldn’t reach the server/)).toBeTruthy();
++      expect(await findByText(/server could not be reached/)).toBeTruthy();
+       expect(queryByTestId('role-error-support')).toBeNull();
+     });
+   });
+diff --git a/src/screens/client/BrandedCheckoutWebViewScreen.tsx b/src/screens/client/BrandedCheckoutWebViewScreen.tsx
+index 7066f25..01cc8d5 100644
+--- a/src/screens/client/BrandedCheckoutWebViewScreen.tsx
++++ b/src/screens/client/BrandedCheckoutWebViewScreen.tsx
+@@ -212,7 +212,7 @@ export default function BrandedCheckoutWebViewScreen() {
+       : {
+           title: 'Checkout temporarily unavailable',
+           body:
+-            'We could not start a secure checkout session. Please go back and try again — if it keeps happening, message your coach.',
++            'A secure checkout session did not start. Go back and try again — if it keeps happening, message your coach.',
+           code: 'TGPError: checkout_url_missing',
+         },
+   );
+@@ -273,7 +273,7 @@ export default function BrandedCheckoutWebViewScreen() {
+         setError({
+           title: 'Checkout link not allowed',
+           body:
+-            'For your security, this checkout tried to send you to a site we do not recognise. We blocked it. Please go back and try again.',
++            'For your security, this checkout tried to send you to an unrecognised site, so it was blocked. Go back and try again.',
+           code: `TGPError: blocked_origin (${safeHostFor(request.url)})`,
+         });
+         return false;
+@@ -312,7 +312,7 @@ export default function BrandedCheckoutWebViewScreen() {
+       setError({
+         title: 'Checkout could not connect',
+         body:
+-          'We could not reach the secure checkout server. Check your internet connection and tap “Try again”.',
++          'The secure checkout server could not be reached. Check your internet connection and tap “Try again”.',
+         code: `TGPError: net_${nativeEvent.code ?? 'unknown'}`,
+       });
+     },
+diff --git a/src/screens/client/CheckoutReturnScreen.tsx b/src/screens/client/CheckoutReturnScreen.tsx
+index 89f4179..ab4b2ba 100644
+--- a/src/screens/client/CheckoutReturnScreen.tsx
++++ b/src/screens/client/CheckoutReturnScreen.tsx
+@@ -305,7 +305,7 @@ export default function CheckoutReturnScreen() {
+         <ActivityIndicator color={semanticColors.accent} size="large" />
+         <Text style={styles.title}>Confirming payment…</Text>
+         <Text style={styles.body}>
+-          We're verifying your subscription with Stripe. This usually takes a
++          Your subscription is being verified with Stripe. This usually takes a
+           few seconds.
+         </Text>
+       </View>
+@@ -392,7 +392,7 @@ export default function CheckoutReturnScreen() {
+       <Text style={styles.title}>Payment received</Text>
+       <Text style={styles.body}>
+         {status?.package_name
+-          ? `We're confirming ${status.package_name} now. Your coach has been notified and will be in touch shortly.`
++          ? `${status.package_name} is being confirmed now. Your coach has been notified and will be in touch shortly.`
+           : 'Your coach has been notified and will be in touch shortly.'}
+       </Text>
+       <TouchableOpacity style={styles.cta} onPress={goHome} accessibilityRole="button">
+diff --git a/src/screens/client/ClientPackagesScreen.tsx b/src/screens/client/ClientPackagesScreen.tsx
+index 4ddfd2b..2e76631 100644
+--- a/src/screens/client/ClientPackagesScreen.tsx
++++ b/src/screens/client/ClientPackagesScreen.tsx
+@@ -302,7 +302,7 @@ export default function ClientPackagesScreen() {
+       <Text style={styles.subheader}>
+         Each plan is personal coaching delivered one to one by your coach.
+         Payment is handled by Stripe's secure checkout. Your card never
+-        touches our servers.
++        touches The Growth Project servers.
+       </Text>
+ 
+       {/* Past-due / dunning banner */}
+diff --git a/src/screens/client/DeliverablesScreen.tsx b/src/screens/client/DeliverablesScreen.tsx
+index 3c903a7..b922f1d 100644
+--- a/src/screens/client/DeliverablesScreen.tsx
++++ b/src/screens/client/DeliverablesScreen.tsx
+@@ -152,7 +152,7 @@ function DeliverablesContent({
+         <Text style={styles.header}>{headerTitle}</Text>
+         <View style={styles.empty}>
+           <Ionicons name="alert-circle-outline" size={36} color={tokens.colors.error} />
+-          <Text style={styles.emptyTitle}>We couldn&apos;t load deliverables</Text>
++          <Text style={styles.emptyTitle}>Deliverables did not load</Text>
+           <Text style={styles.emptyBody}>
+             Check your connection and try again. If this keeps happening,
+             message your coach.
+diff --git a/src/screens/client/MessagesScreen.tsx b/src/screens/client/MessagesScreen.tsx
+index f206603..ba814be 100644
+--- a/src/screens/client/MessagesScreen.tsx
++++ b/src/screens/client/MessagesScreen.tsx
+@@ -420,7 +420,7 @@ export default function MessagesScreen() {
+       setReportTarget(null);
+       Alert.alert(
+         'Reported',
+-        'Our team will review within 24 hours. Thanks for keeping the community safe.',
++        'The safety team reviews reports within 24 hours. Thank you for keeping the community safe.',
+       );
+     },
+     [reportTarget],
+@@ -498,7 +498,7 @@ export default function MessagesScreen() {
+               next step instead of a sign-up-time instruction. */}
+           <Text style={styles.noCoachText}>
+             You are not connected to a coach yet, so there is no one to message here. If you have a
+-            code from a coach, contact support and we will connect you.
++            code from a coach, contact support to get connected.
+           </Text>
+           <TouchableOpacity
+             onPress={() => navigation.getParent()?.navigate('MoreTab', { screen: 'SupportInbox' })}
+diff --git a/src/screens/client/PurchaseUnpackScreen.tsx b/src/screens/client/PurchaseUnpackScreen.tsx
+index 1365171..c6e3bf0 100644
+--- a/src/screens/client/PurchaseUnpackScreen.tsx
++++ b/src/screens/client/PurchaseUnpackScreen.tsx
+@@ -271,7 +271,7 @@ function PurchaseUnpackContent({
+         {ReceiptHeader}
+         <View style={styles.empty}>
+           <Ionicons name="alert-circle-outline" size={36} color={tokens.colors.error} />
+-          <Text style={styles.emptyTitle}>We couldn&apos;t load what&apos;s included</Text>
++          <Text style={styles.emptyTitle}>What is included did not load</Text>
+           <Text style={styles.emptyBody}>
+             Your purchase went through. Check your connection and try again,
+             or open Deliverables from your packages screen later.
+diff --git a/src/screens/client/wearables/ClientWearableInsightPanel.tsx b/src/screens/client/wearables/ClientWearableInsightPanel.tsx
+index 9f5915d..1a2cb1a 100644
+--- a/src/screens/client/wearables/ClientWearableInsightPanel.tsx
++++ b/src/screens/client/wearables/ClientWearableInsightPanel.tsx
+@@ -109,7 +109,7 @@ export interface ClientWearableInsightPanelProps {
+  */
+ function sanitizeWearableError(error: unknown): string {
+   if (error instanceof ZodError) {
+-    return "This insight came back in an unexpected shape. We're looking into it.";
++    return "This insight came back in an unexpected shape, so it is not shown. It has been reported.";
+   }
+   if (axios.isAxiosError(error)) {
+     const status = error.response?.status ?? 0;
+@@ -120,7 +120,7 @@ function sanitizeWearableError(error: unknown): string {
+     if (status >= 500) return 'The server is temporarily unavailable.';
+     if (status === 0) return 'Check your connection and try again.';
+   }
+-  return "We couldn't load this insight.";
++  return "This insight did not load.";
+ }
+ 
+ export function ClientWearableInsightPanel({
+@@ -321,7 +321,7 @@ function EmptyPanel({
+         </Text>
+       </View>
+       <Text style={styles.secondary} accessibilityRole="text">
+-        We&apos;ll add insights here as your devices report more.
++        Insights appear here as your devices report more.
+       </Text>
+     </View>
+   );
+diff --git a/src/screens/client/wearables/ConnectionsScreen.tsx b/src/screens/client/wearables/ConnectionsScreen.tsx
+index 189cddc..96d02e4 100644
+--- a/src/screens/client/wearables/ConnectionsScreen.tsx
++++ b/src/screens/client/wearables/ConnectionsScreen.tsx
+@@ -392,7 +392,7 @@ export default function ConnectionsScreen() {
+         <Header />
+         <View style={styles.center}>
+           <Text style={styles.errorTitle} accessibilityRole="alert">
+-            We couldn&apos;t load your connections
++            Your connections did not load
+           </Text>
+           <Pressable
+             style={styles.retry}
+diff --git a/src/screens/client/wearables/HealthFitnessScreen.tsx b/src/screens/client/wearables/HealthFitnessScreen.tsx
+index 606b142..8170df9 100644
+--- a/src/screens/client/wearables/HealthFitnessScreen.tsx
++++ b/src/screens/client/wearables/HealthFitnessScreen.tsx
+@@ -246,7 +246,7 @@ export default function HealthFitnessScreen({
+           Couldn&apos;t reach health server
+         </Text>
+         <Text style={styles.errorBody}>
+-          We&apos;ll keep your data safe — try again.
++          Your data is safe — try again.
+         </Text>
+         <Pressable
+           onPress={() => void refetch()}
+diff --git a/src/screens/client/wearables/MetricDetailScreen.tsx b/src/screens/client/wearables/MetricDetailScreen.tsx
+index 872c2d1..490fce9 100644
+--- a/src/screens/client/wearables/MetricDetailScreen.tsx
++++ b/src/screens/client/wearables/MetricDetailScreen.tsx
+@@ -206,7 +206,7 @@ export default function MetricDetailScreen() {
+             Couldn&apos;t load {meta.label.toLowerCase()}
+           </Text>
+           <Text style={styles.errorBody}>
+-            We&apos;ll keep your data safe — try again.
++            Your data is safe — try again.
+           </Text>
+           <Pressable
+             onPress={() => void refetch()}
+diff --git a/src/screens/client/wearables/__tests__/ClientWearableInsightPanel.test.tsx b/src/screens/client/wearables/__tests__/ClientWearableInsightPanel.test.tsx
+index 095569b..03b22e7 100644
+--- a/src/screens/client/wearables/__tests__/ClientWearableInsightPanel.test.tsx
++++ b/src/screens/client/wearables/__tests__/ClientWearableInsightPanel.test.tsx
+@@ -201,7 +201,7 @@ describe('loading / empty / error states', () => {
+     expect(getByTestId('client-insight-empty')).toBeTruthy();
+     expect(getByText('Not enough data yet — keep syncing.')).toBeTruthy();
+     expect(
+-      getByText("We'll add insights here as your devices report more."),
++      getByText('Insights appear here as your devices report more.'),
+     ).toBeTruthy();
+     expect(queryByTestId('client-insight-confidence')).toBeNull();
+     expect(queryByTestId('client-insight-cta')).toBeNull();
+@@ -218,7 +218,7 @@ describe('loading / empty / error states', () => {
+     expect(getByTestId('client-insight-error')).toBeTruthy();
+     // Raw error text must never reach the surface (#12).
+     expect(queryByText('internal db path leak')).toBeNull();
+-    expect(getByText("We couldn't load this insight.")).toBeTruthy();
++    expect(getByText("This insight did not load.")).toBeTruthy();
+     await fireEvent.press(getByLabelText('Retry'));
+     expect(refetch).toHaveBeenCalledTimes(1);
+   });
+diff --git a/src/screens/client/wearables/cards/HrvTrendCard.tsx b/src/screens/client/wearables/cards/HrvTrendCard.tsx
+index ce9e54c..555cbd6 100644
+--- a/src/screens/client/wearables/cards/HrvTrendCard.tsx
++++ b/src/screens/client/wearables/cards/HrvTrendCard.tsx
+@@ -31,7 +31,7 @@ export interface HrvTrendCardProps {
+  */
+ function hrvCopy(trend: TrendPoint[], latestMs: number | null): string {
+   if (latestMs === null || trend.length === 0) {
+-    return "We'll chart your HRV as your mornings sync in";
++    return "Your HRV chart fills in as your mornings sync";
+   }
+   if (trend.length < 3) {
+     return 'Your HRV is settling in — a few more mornings will round out the picture';
+diff --git a/src/screens/client/wearables/cards/RespirationCard.tsx b/src/screens/client/wearables/cards/RespirationCard.tsx
+index 6cb8d3d..e454f3a 100644
+--- a/src/screens/client/wearables/cards/RespirationCard.tsx
++++ b/src/screens/client/wearables/cards/RespirationCard.tsx
+@@ -31,7 +31,7 @@ export function RespirationCard({ respiration, colors, revealDelay = 0 }: Respir
+   // Reassurance-first copy. Soft clinician-referral suffix ONLY when SpO2 is
+   // sustained below threshold — phrased as a gentle suggestion, not a verdict.
+   const copy = !hasAny
+-    ? "We'll show your breathing and blood-oxygen once your tracker syncs overnight"
++    ? "Breathing and blood-oxygen appear once your tracker syncs overnight"
+     : spo2NeedsAttention
+       ? `Your overnight readings are in. Blood oxygen has been dipping a little lower than usual — it may be worth mentioning to your clinician next time you chat.`
+       : 'Your breathing and blood oxygen look settled through the night';
+diff --git a/src/screens/client/wearables/cards/SleepConsistencyCard.tsx b/src/screens/client/wearables/cards/SleepConsistencyCard.tsx
+index 72b5c6e..d6326d4 100644
+--- a/src/screens/client/wearables/cards/SleepConsistencyCard.tsx
++++ b/src/screens/client/wearables/cards/SleepConsistencyCard.tsx
+@@ -22,7 +22,7 @@ export interface SleepConsistencyCardProps {
+ /** Reassurance-first copy keyed off the bedtime spread. Tighter = more settled. */
+ function consistencyCopy(c: ConsistencyView): string {
+   if (c.nights === 0 || c.bedtimeSpreadMin === null) {
+-    return "We'll track how steady your sleep schedule is once a few nights sync";
++    return "Sleep schedule steadiness appears once a few nights sync";
+   }
+   if (c.bedtimeSpreadMin <= 45) {
+     return 'Your sleep schedule is beautifully steady — your body knows what to expect';
+diff --git a/src/screens/client/wearables/cards/SleepStagesCard.tsx b/src/screens/client/wearables/cards/SleepStagesCard.tsx
+index 50879d0..b81f26c 100644
+--- a/src/screens/client/wearables/cards/SleepStagesCard.tsx
++++ b/src/screens/client/wearables/cards/SleepStagesCard.tsx
+@@ -39,7 +39,7 @@ export function SleepStagesCard({ stages, colors, revealDelay = 0 }: SleepStages
+   const headline =
+     stages && asleepMin > 0
+       ? `Solid restorative night — ${formatMinutes(asleepMin)} asleep`
+-      : "We'll map your sleep stages once your tracker syncs a night";
++      : "Sleep stages appear once your tracker syncs a night";
+ 
+   return (
+     <SrCard title="Sleep stages" icon="bed-outline" colors={colors} revealDelay={revealDelay} testID="sleep-stages-card">
+diff --git a/src/screens/client/wearables/empty/SleepRecoveryEmptyState.tsx b/src/screens/client/wearables/empty/SleepRecoveryEmptyState.tsx
+index da45c81..9acc065 100644
+--- a/src/screens/client/wearables/empty/SleepRecoveryEmptyState.tsx
++++ b/src/screens/client/wearables/empty/SleepRecoveryEmptyState.tsx
+@@ -49,7 +49,7 @@ export function SleepRecoveryEmptyState({ colors, onConnect, testID }: SleepReco
+         </View>
+       </View>
+ 
+-      <Text style={styles.title}>Connect a tracker and we&apos;ll show your recovery story.</Text>
++      <Text style={styles.title}>Connect a tracker to see your recovery story.</Text>
+       <Text style={styles.subtitle}>
+         Sleep stages, heart-rate variability and overnight breathing — all in one calm view.
+       </Text>
+diff --git a/src/screens/client/wearables/empty/SleepRecoveryErrorState.tsx b/src/screens/client/wearables/empty/SleepRecoveryErrorState.tsx
+index 45a6bfa..45f4675 100644
+--- a/src/screens/client/wearables/empty/SleepRecoveryErrorState.tsx
++++ b/src/screens/client/wearables/empty/SleepRecoveryErrorState.tsx
+@@ -32,7 +32,7 @@ export function SleepRecoveryErrorState({
+ 
+   const message = lastSyncedLabel
+     ? `Showing your last synced data from ${lastSyncedLabel}.`
+-    : "We couldn't reach the health server just now. Your data is safe — let's try again.";
++    : "The health server did not answer just now. Your data is safe — try again.";
+ 
+   return (
+     <View style={styles.wrap} testID={testID ?? 'sleep-recovery-error'}>
+diff --git a/src/screens/coach/AIMealPlanDraftScreen.tsx b/src/screens/coach/AIMealPlanDraftScreen.tsx
+index fa00494..91ad8fd 100644
+--- a/src/screens/coach/AIMealPlanDraftScreen.tsx
++++ b/src/screens/coach/AIMealPlanDraftScreen.tsx
+@@ -442,7 +442,7 @@ export default function AIMealPlanDraftScreen() {
+           <View style={styles.rejectCard}>
+             <Text style={styles.rejectTitle}>Reject draft</Text>
+             <Text style={styles.rejectDesc}>
+-              Tell the system what was wrong so we can improve.
++              Say what was wrong so future drafts improve.
+             </Text>
+             <TextInput
+               style={styles.rejectInput}
+diff --git a/src/screens/coach/AIWorkoutDraftScreen.tsx b/src/screens/coach/AIWorkoutDraftScreen.tsx
+index 792c90b..f679321 100644
+--- a/src/screens/coach/AIWorkoutDraftScreen.tsx
++++ b/src/screens/coach/AIWorkoutDraftScreen.tsx
+@@ -485,7 +485,7 @@ export default function AIWorkoutDraftScreen() {
+           <View style={styles.rejectCard}>
+             <Text style={styles.rejectTitle}>Reject draft</Text>
+             <Text style={styles.rejectDesc}>
+-              Tell the system what was wrong so we can improve.
++              Say what was wrong so future drafts improve.
+             </Text>
+             <TextInput
+               style={styles.rejectInput}
+diff --git a/src/screens/coach/BulkInviteScreen.tsx b/src/screens/coach/BulkInviteScreen.tsx
+index 799b033..cadbf72 100644
+--- a/src/screens/coach/BulkInviteScreen.tsx
++++ b/src/screens/coach/BulkInviteScreen.tsx
+@@ -136,7 +136,7 @@ export default function BulkInviteScreen() {
+       console.error('BulkInviteScreen: CSV import failed', errorMessage(err));
+       Alert.alert(
+         'Could not read CSV',
+-        'We could not read that file. Please pick a .csv file and try again.',
++        'That file could not be read. Pick a .csv file and try again.',
+       );
+     } finally {
+       setPickingCsv(false);
+@@ -218,7 +218,7 @@ export default function BulkInviteScreen() {
+       <ScrollView contentContainerStyle={styles.content}>
+         <Text style={styles.title}>Invite clients by email</Text>
+         <Text style={styles.lede}>
+-          Paste a list of emails or upload a CSV. We email each invitee a
++          Paste a list of emails or upload a CSV. Each invitee gets an email with a
+           unique link that opens this app and links them to you.
+         </Text>
+ 
+diff --git a/src/screens/coach/ClientMessagesScreen.tsx b/src/screens/coach/ClientMessagesScreen.tsx
+index c7ae994..ae6de31 100644
+--- a/src/screens/coach/ClientMessagesScreen.tsx
++++ b/src/screens/coach/ClientMessagesScreen.tsx
+@@ -298,7 +298,7 @@ export default function ClientMessagesScreen() {
+       setReportTarget(null);
+       Alert.alert(
+         'Reported',
+-        'Our team will review within 24 hours. Thanks for keeping the community safe.',
++        'The safety team reviews reports within 24 hours. Thank you for keeping the community safe.',
+       );
+     },
+     [reportTarget],
+diff --git a/src/screens/coach/CoachBillingScreen.tsx b/src/screens/coach/CoachBillingScreen.tsx
+index fe9fe0d..c94e7fd 100644
+--- a/src/screens/coach/CoachBillingScreen.tsx
++++ b/src/screens/coach/CoachBillingScreen.tsx
+@@ -320,7 +320,7 @@ export default function CoachBillingScreen({ navigation }: Props) {
+             </TouchableOpacity>
+ 
+             <Text style={styles.fineprint}>
+-              Billing is handled by our payment provider in a secure browser session. Card
++              Billing is handled by the payment provider in a secure browser session. Card
+               details never touch the app.
+             </Text>
+           </>
+diff --git a/src/screens/coach/CoachBriefScreen.tsx b/src/screens/coach/CoachBriefScreen.tsx
+index 2ea9895..e8aef53 100644
+--- a/src/screens/coach/CoachBriefScreen.tsx
++++ b/src/screens/coach/CoachBriefScreen.tsx
+@@ -145,7 +145,7 @@ export default function CoachBriefScreen() {
+         <EmptyState
+           icon="lock-closed-outline"
+           title="Coach Brief is preview-only"
+-          subtitle="The morning brief is in development. We'll enable it for your account once the live data feed ships."
++          subtitle="The morning brief is in development. It turns on for your account once the live data feed ships."
+         />
+       </View>
+     );
+diff --git a/src/screens/coach/CoachEarningsScreen.tsx b/src/screens/coach/CoachEarningsScreen.tsx
+index 4507bf3..88cda62 100644
+--- a/src/screens/coach/CoachEarningsScreen.tsx
++++ b/src/screens/coach/CoachEarningsScreen.tsx
+@@ -201,7 +201,7 @@ export default function CoachEarningsScreen() {
+           <Text style={styles.gateBody}>
+             Connect Stripe and publish a package — your gross revenue, net
+             after fees, payout history, and reconciliation health will live
+-            here. We never fabricate numbers.
++            here. Numbers are never estimated or invented.
+           </Text>
+           <TouchableOpacity
+             style={[styles.cta, onboardBusy && styles.ctaDisabled]}
+diff --git a/src/screens/coach/CoachInvitesScreen.tsx b/src/screens/coach/CoachInvitesScreen.tsx
+index 410200a..e0ce5a0 100644
+--- a/src/screens/coach/CoachInvitesScreen.tsx
++++ b/src/screens/coach/CoachInvitesScreen.tsx
+@@ -144,7 +144,7 @@ export default function CoachInvitesScreen({
+       setLoadError(
+         errorMessage(
+           err,
+-          'We couldn\'t load your invites. Check your connection and try again.',
++          'Your invites did not load. Check your connection and try again.',
+         ),
+       );
+     } finally {
+diff --git a/src/screens/coach/ImportDataScreen.tsx b/src/screens/coach/ImportDataScreen.tsx
+index 59d355f..741d622 100644
+--- a/src/screens/coach/ImportDataScreen.tsx
++++ b/src/screens/coach/ImportDataScreen.tsx
+@@ -109,7 +109,7 @@ export default function ImportDataScreen(): React.ReactElement {
+       setState({ phase: 'awaitingExtension', platformId });
+     } catch {
+       track(AnalyticsEvents.IMPORT_LOGIN_OPEN_FAILED, { platform: platformId, reason: 'open_failed' });
+-      setState({ phase: 'failed', message: "We couldn't open that site in your browser. Please try again." });
++      setState({ phase: 'failed', message: "That site did not open in your browser. Check your connection, then try again." });
+     }
+   }, []);
+ 
+@@ -214,7 +214,7 @@ export default function ImportDataScreen(): React.ReactElement {
+       <Ionicons name="information-circle-outline" size={18} color={colors.info} />
+       <Text style={styles.prereqText}>
+         You'll log in with your own account. The Growth Project browser extension then
+-        asks to start the import — we never see or store your other platform's password.
++        asks to start the import — The Growth Project never sees or stores your other platform's password.
+       </Text>
+     </View>
+   );
+@@ -275,7 +275,7 @@ export default function ImportDataScreen(): React.ReactElement {
+         <Ionicons name="information-circle-outline" size={18} color={colors.info} />
+         <Text style={styles.prereqText}>
+           You'll log in with your own account. The Growth Project browser extension then
+-          asks to start the import — we never see or store your other platform's password.
++          asks to start the import — The Growth Project never sees or stores your other platform's password.
+         </Text>
+       </View>
+ 
+diff --git a/src/screens/coach/SubCoachInviteModal.tsx b/src/screens/coach/SubCoachInviteModal.tsx
+index 52572f9..a8f7290 100644
+--- a/src/screens/coach/SubCoachInviteModal.tsx
++++ b/src/screens/coach/SubCoachInviteModal.tsx
+@@ -203,7 +203,7 @@ export default function SubCoachInviteModal({
+           {result ? (
+             <>
+               <Text style={styles.body}>
+-                We emailed an invite link to{' '}
++                An invite link was emailed to{' '}
+                 <Text style={{ fontWeight: '600' }}>{result.email}</Text>. If they
+                 don't see it, share the link directly:
+               </Text>
+diff --git a/src/screens/coach/__tests__/ImportDataScreen.test.tsx b/src/screens/coach/__tests__/ImportDataScreen.test.tsx
+index a1f65a6..fc78baa 100644
+--- a/src/screens/coach/__tests__/ImportDataScreen.test.tsx
++++ b/src/screens/coach/__tests__/ImportDataScreen.test.tsx
+@@ -104,13 +104,13 @@ describe('ImportDataScreen — J3 source-selection presentation', () => {
+   // only after a platform is already opened.
+   it('shows the credential-handling prerequisite reassurance before any platform is chosen', async () => {
+     const { getByText } = await render(<ImportDataScreen />);
+-    expect(getByText(/never see or store your other platform's password/i)).toBeTruthy();
++    expect(getByText(/never sees or stores your other platform's password/i)).toBeTruthy();
+   });
+ 
+   it('still shows the prerequisite reassurance on the Custom/Other step, before Continue', async () => {
+     const { getByLabelText, getByText } = await render(<ImportDataScreen />);
+     await fireEvent.press(getByLabelText('Custom / Other'));
+-    expect(getByText(/never see or store your other platform's password/i)).toBeTruthy();
++    expect(getByText(/never sees or stores your other platform's password/i)).toBeTruthy();
+     // Still present pre-Continue, i.e. before openLogin has any chance to fire.
+     expect(openUrl).not.toHaveBeenCalled();
+   });
+@@ -206,7 +206,7 @@ describe('ImportDataScreen — J3 source-selection presentation', () => {
+     openUrl.mockClear();
+     await choosePlatform(getByLabelText, 'TrueCoach');
+     const status = await waitFor(() => getByTestId('import-status'));
+-    expect(status).toHaveTextContent(/couldn't open that site/i);
++    expect(status).toHaveTextContent(/That site did not open/i);
+     expect(openUrl).not.toHaveBeenCalled();
+     expect(mockTrack).toHaveBeenCalledWith(
+       AnalyticsEvents.IMPORT_LOGIN_OPEN_FAILED, { platform: 'truecoach', reason: 'open_failed' },
+@@ -218,7 +218,7 @@ describe('ImportDataScreen — J3 source-selection presentation', () => {
+     const { getByLabelText, getByTestId } = await render(<ImportDataScreen />);
+     await choosePlatform(getByLabelText, 'Everfit');
+     const status = await waitFor(() => getByTestId('import-status'));
+-    expect(status).toHaveTextContent(/couldn't open that site/i);
++    expect(status).toHaveTextContent(/That site did not open/i);
+     expect(mockTrack).toHaveBeenCalledWith(
+       AnalyticsEvents.IMPORT_LOGIN_OPEN_FAILED, { platform: 'everfit', reason: 'open_failed' },
+     );
+@@ -231,7 +231,7 @@ describe('ImportDataScreen — J3 source-selection presentation', () => {
+     // The failed phase renders the screen's original (unmodified) shell, not
+     // ImportSetupView — this slice only restyles the source-selection step.
+     const status = await waitFor(() => getByTestId('import-status'));
+-    expect(status).toHaveTextContent(/couldn't open that site/i);
++    expect(status).toHaveTextContent(/That site did not open/i);
+     expect(getByTestId('import-data-screen')).toBeTruthy();
+   });
+ 
+@@ -242,7 +242,7 @@ describe('ImportDataScreen — J3 source-selection presentation', () => {
+     canOpen.mockResolvedValueOnce(false).mockResolvedValue(true);
+     const { getByLabelText, getByTestId, getByText } = await render(<ImportDataScreen />);
+     await choosePlatform(getByLabelText, 'TrueCoach');
+-    await waitFor(() => expect(getByTestId('import-status')).toHaveTextContent(/couldn't open/i));
++    await waitFor(() => expect(getByTestId('import-status')).toHaveTextContent(/did not open/i));
+ 
+     const retry = getByLabelText('Choose a different platform');
+     expect(retry.props.accessibilityRole).toBe('button');
+diff --git a/src/screens/coach/client-detail/SleepRecoveryTab.tsx b/src/screens/coach/client-detail/SleepRecoveryTab.tsx
+index 5bee8b7..3f53a76 100644
+--- a/src/screens/coach/client-detail/SleepRecoveryTab.tsx
++++ b/src/screens/coach/client-detail/SleepRecoveryTab.tsx
+@@ -99,7 +99,7 @@ export function SleepRecoveryTab({ clientId, colors, styles }: SleepRecoveryTabP
+       <View style={localStyles.centered} testID="coach-recovery-error">
+         <Ionicons name="cloud-offline-outline" size={32} color={colors.textMuted} />
+         <Text style={[styles.sectionTitle, { textAlign: 'center', marginTop: 12 }]}>
+-          We couldn&apos;t load this client&apos;s recovery data.
++          This client&apos;s recovery data did not load.
+         </Text>
+         <TouchableOpacity
+           onPress={onRetry}
+diff --git a/src/screens/coach/client-detail/WearableInsightPanel.tsx b/src/screens/coach/client-detail/WearableInsightPanel.tsx
+index 3ae4bf5..bc8100e 100644
+--- a/src/screens/coach/client-detail/WearableInsightPanel.tsx
++++ b/src/screens/coach/client-detail/WearableInsightPanel.tsx
+@@ -87,7 +87,7 @@ export interface WearableInsightPanelProps {
+  */
+ function sanitizeError(error: unknown): string {
+   if (error instanceof ZodError) {
+-    return "This insight came back in an unexpected shape. We're looking into it.";
++    return "This insight came back in an unexpected shape, so it is not shown. It has been reported.";
+   }
+   if (axios.isAxiosError(error)) {
+     const status = error.response?.status ?? 0;
+@@ -96,7 +96,7 @@ function sanitizeError(error: unknown): string {
+     if (status >= 500) return 'The server is temporarily unavailable.';
+     if (status === 0) return 'Check your connection and try again.';
+   }
+-  return "We couldn't load this insight.";
++  return "This insight did not load.";
+ }
+ 
+ /**
+@@ -196,7 +196,7 @@ export function WearableInsightPanel({
+           </Text>
+         </View>
+         <Text style={styles.secondary}>
+-          We&apos;ll fold their reply into the next insight.
++          Their reply is folded into the next insight.
+         </Text>
+       </View>
+     );
+@@ -250,7 +250,7 @@ export function WearableInsightPanel({
+         <View style={styles.row}>
+           <Ionicons name="cloud-offline-outline" size={18} color={colors.stone} />
+           <Text style={styles.primary} accessibilityRole="alert">
+-            We couldn&apos;t load this insight.
++            This insight did not load.
+           </Text>
+         </View>
+         <Text style={styles.secondary} numberOfLines={1}>
+@@ -368,7 +368,7 @@ function EmptyPanel({ tone }: { tone: ReturnType<typeof toneTokens> }) {
+         <Text style={styles.primary}>Not enough data yet — keep syncing.</Text>
+       </View>
+       <Text style={styles.secondary}>
+-        Once we have ~3 days of data, your AI will flag patterns.
++        Once there are about 3 days of data, your AI will flag patterns.
+       </Text>
+     </View>
+   );
+diff --git a/src/screens/coach/client-detail/__tests__/WearableInsightPanel.test.tsx b/src/screens/coach/client-detail/__tests__/WearableInsightPanel.test.tsx
+index 5d3bed4..e038ac3 100644
+--- a/src/screens/coach/client-detail/__tests__/WearableInsightPanel.test.tsx
++++ b/src/screens/coach/client-detail/__tests__/WearableInsightPanel.test.tsx
+@@ -106,7 +106,7 @@ describe('loading / empty / error states', () => {
+     expect(getByTestId('coach-insight-empty')).toBeTruthy();
+     expect(getByText('Not enough data yet — keep syncing.')).toBeTruthy();
+     expect(
+-      getByText('Once we have ~3 days of data, your AI will flag patterns.'),
++      getByText('Once there are about 3 days of data, your AI will flag patterns.'),
+     ).toBeTruthy();
+     expect(queryByTestId('coach-insight-confidence')).toBeNull();
+   });
+diff --git a/src/screens/coach/cross-pillar/PracticeSelectionScreen.tsx b/src/screens/coach/cross-pillar/PracticeSelectionScreen.tsx
+index d0825a1..fd86b08 100644
+--- a/src/screens/coach/cross-pillar/PracticeSelectionScreen.tsx
++++ b/src/screens/coach/cross-pillar/PracticeSelectionScreen.tsx
+@@ -127,7 +127,7 @@ export default function PracticeSelectionScreen() {
+       <Text style={styles.eyebrow}>SET YOUR PRACTICE</Text>
+       <Text style={styles.headline}>What does your work cover?</Text>
+       <Text style={styles.lede}>
+-        We use this to decide which surfaces appear. You can change it anytime
++        This decides which surfaces appear. You can change it anytime
+         in Settings.
+       </Text>
+ 
+@@ -188,7 +188,7 @@ function toMessage(err: unknown): string {
+   const code = (err as { response?: { data?: { code?: string } } } | undefined)?.response?.data
+     ?.code;
+   if (status === 503 || code === 'PRACTICE_FEDERATION_FAILED') {
+-    return "We couldn't sync your practice across both products. Try again in a moment.";
++    return "Your practice did not sync across both products. Try again in a moment.";
+   }
+   if (!err) return "Couldn't save practice. Try again.";
+   if (err && typeof err === 'object' && 'message' in err) {
+diff --git a/src/screens/coach/cross-pillar/__tests__/PracticeSelectionFederation.test.ts b/src/screens/coach/cross-pillar/__tests__/PracticeSelectionFederation.test.ts
+index 505f180..6d9570e 100644
+--- a/src/screens/coach/cross-pillar/__tests__/PracticeSelectionFederation.test.ts
++++ b/src/screens/coach/cross-pillar/__tests__/PracticeSelectionFederation.test.ts
+@@ -27,7 +27,7 @@ const SRC = fs.readFileSync(
+ describe('PracticeSelectionScreen federation handling', () => {
+   it('special-cases PRACTICE_FEDERATION_FAILED with a retry message', () => {
+     expect(SRC).toMatch(/PRACTICE_FEDERATION_FAILED/);
+-    expect(SRC).toMatch(/sync your practice across both products/i);
++    expect(SRC).toMatch(/did not sync across both products/i);
+   });
+ 
+   it('checks the response status for 503', () => {
+diff --git a/src/screens/coach/ed/__tests__/FirstPaymentWowScreen.test.tsx b/src/screens/coach/ed/__tests__/FirstPaymentWowScreen.test.tsx
+index 8ddf625..7b27c72 100644
+--- a/src/screens/coach/ed/__tests__/FirstPaymentWowScreen.test.tsx
++++ b/src/screens/coach/ed/__tests__/FirstPaymentWowScreen.test.tsx
+@@ -37,7 +37,7 @@ describe('FirstPaymentWowScreen — ED.3', () => {
+ 
+     // VOICE — exact §2.6 celebration string.
+     expect(getByTestId('first-payment-message').props.children).toBe(
+-      'Marcus — your first payment has arrived. $240.00, from Dana. I have seen a great many first payments, and they never stop meaning something. Congratulations!',
++      'Marcus — your first payment has arrived. $240.00, from Dana. I have seen a great many first payments, and they never stop meaning something. Congratulations.',
+     );
+ 
+     // FACE — the milestone avatar is present in the same tree, announced in
+diff --git a/src/screens/coach/payments/CoachPackageEditScreen.tsx b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+index cace2d3..2eaacb7 100644
+--- a/src/screens/coach/payments/CoachPackageEditScreen.tsx
++++ b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+@@ -327,7 +327,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+                 'Could not archive',
+                 errorMessage(
+                   err,
+-                  'We could not archive the package. Check your connection, then tap Archive again.',
++                  'The package could not be archived. Check your connection, then tap Archive again.',
+                 ),
+               );
+             } finally {
+diff --git a/src/screens/community/CommunityChallengeDetailScreen.tsx b/src/screens/community/CommunityChallengeDetailScreen.tsx
+index 7a0f643..d1c7fb8 100644
+--- a/src/screens/community/CommunityChallengeDetailScreen.tsx
++++ b/src/screens/community/CommunityChallengeDetailScreen.tsx
+@@ -85,9 +85,9 @@ function describeError(err: unknown, action: CommunityAction = 'challenge_action
+       case 'gone':
+         return 'This challenge is no longer available.';
+       case 'conflict':
+-        return 'Your progress was updated elsewhere. We have refreshed it for you.';
++        return 'Your progress was updated elsewhere. It has been refreshed.';
+       case 'network':
+-        return 'We could not reach the server. Check your connection and try again.';
++        return 'The server could not be reached. Check your connection and try again.';
+       default:
+         break;
+     }
+@@ -474,7 +474,7 @@ export default function CommunityChallengeDetailScreen(): React.ReactElement {
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.errorTitle, { color: semanticColors.textPrimary }]}>
+-            We could not load this challenge
++            This challenge did not load
+           </Text>
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+             {detailErrorMessage}
+@@ -699,7 +699,7 @@ export default function CommunityChallengeDetailScreen(): React.ReactElement {
+             </View>
+           ) : leaderboard.isError ? (
+             <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-              We could not load the leaderboard right now.
++              The leaderboard did not load just now.
+             </Text>
+           ) : leaderboardRows.length === 0 ? (
+             <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+@@ -783,7 +783,7 @@ export default function CommunityChallengeDetailScreen(): React.ReactElement {
+         color={semanticColors.textMuted}
+       />
+       <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-        We could not load the encouragement notes. Your message will still send.
++        Encouragement notes did not load. Your message will still send.
+       </Text>
+       <HapticPressable
+         intent="light"
+diff --git a/src/screens/community/CommunityChallengesScreen.tsx b/src/screens/community/CommunityChallengesScreen.tsx
+index 6b5b13b..a262024 100644
+--- a/src/screens/community/CommunityChallengesScreen.tsx
++++ b/src/screens/community/CommunityChallengesScreen.tsx
+@@ -218,7 +218,7 @@ export default function CommunityChallengesScreen({
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load challenges. Please try again.
++            Challenges did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+@@ -270,7 +270,7 @@ export default function CommunityChallengesScreen({
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load challenges. Please try again.
++            Challenges did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+diff --git a/src/screens/community/CommunityClassroomScreen.tsx b/src/screens/community/CommunityClassroomScreen.tsx
+index 7105c9d..996d234 100644
+--- a/src/screens/community/CommunityClassroomScreen.tsx
++++ b/src/screens/community/CommunityClassroomScreen.tsx
+@@ -193,7 +193,7 @@ export default function CommunityClassroomScreen({
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load the classroom. Please try again.
++            The classroom did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+@@ -245,7 +245,7 @@ export default function CommunityClassroomScreen({
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load the classroom. Please try again.
++            The classroom did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+diff --git a/src/screens/community/CommunityDmListScreen.tsx b/src/screens/community/CommunityDmListScreen.tsx
+index ac80a8c..2b49cb0 100644
+--- a/src/screens/community/CommunityDmListScreen.tsx
++++ b/src/screens/community/CommunityDmListScreen.tsx
+@@ -146,7 +146,7 @@ export default function CommunityDmListScreen({
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load your messages. Please try again.
++            Your messages did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+@@ -177,7 +177,7 @@ export default function CommunityDmListScreen({
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load your conversations. Please try again.
++            Your conversations did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+diff --git a/src/screens/community/CommunityEventDetailScreen.tsx b/src/screens/community/CommunityEventDetailScreen.tsx
+index 561f300..177620e 100644
+--- a/src/screens/community/CommunityEventDetailScreen.tsx
++++ b/src/screens/community/CommunityEventDetailScreen.tsx
+@@ -87,7 +87,7 @@ export default function CommunityEventDetailScreen(): React.ReactElement {
+       return;
+     }
+     void Linking.openURL(safe).catch(() => {
+-      setLinkError('We couldn’t open that link. Please try again.');
++      setLinkError('That link did not open on this phone. Try again, or open it from your browser.');
+     });
+   }, [event?.external_url]);
+ 
+@@ -144,7 +144,7 @@ export default function CommunityEventDetailScreen(): React.ReactElement {
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.errorCopy, { color: semanticColors.textPrimary }]}>
+-            We could not load this event. Check your connection and try again.
++            This event did not load. Check your connection and try again.
+           </Text>
+           <HapticPressable
+             intent="medium"
+diff --git a/src/screens/community/CommunityFindScreen.tsx b/src/screens/community/CommunityFindScreen.tsx
+index 994883c..2f305aa 100644
+--- a/src/screens/community/CommunityFindScreen.tsx
++++ b/src/screens/community/CommunityFindScreen.tsx
+@@ -234,7 +234,7 @@ export default function CommunityFindScreen(): React.ReactElement {
+           color={semanticColors.textMuted}
+         />
+         <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-          We could not open search. Please try again.
++          Search did not open. Check your connection, then try again.
+         </Text>
+         <HapticPressable
+           intent="light"
+diff --git a/src/screens/community/CommunityLessonDetailScreen.tsx b/src/screens/community/CommunityLessonDetailScreen.tsx
+index 2f3245f..3fe89f4 100644
+--- a/src/screens/community/CommunityLessonDetailScreen.tsx
++++ b/src/screens/community/CommunityLessonDetailScreen.tsx
+@@ -213,7 +213,7 @@ export default function CommunityLessonDetailScreen(): React.ReactElement {
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load this lesson. Please try again.
++            This lesson did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+diff --git a/src/screens/community/CommunitySafetyScreen.tsx b/src/screens/community/CommunitySafetyScreen.tsx
+index fe0b6d3..a10da39 100644
+--- a/src/screens/community/CommunitySafetyScreen.tsx
++++ b/src/screens/community/CommunitySafetyScreen.tsx
+@@ -218,7 +218,7 @@ export default function CommunitySafetyScreen(): React.ReactElement {
+         <Text style={heading}>Contact the team</Text>
+         <View style={card}>
+           <Text style={body}>
+-            To report a safety concern, including about a coach, email us. If someone is in
++            To report a safety concern, including about a coach, email the safety team. If someone is in
+             immediate danger, contact local emergency services.
+           </Text>
+           <HapticPressable
+diff --git a/src/screens/community/CommunitySpaceScreen.tsx b/src/screens/community/CommunitySpaceScreen.tsx
+index 6808f81..ed55545 100644
+--- a/src/screens/community/CommunitySpaceScreen.tsx
++++ b/src/screens/community/CommunitySpaceScreen.tsx
+@@ -161,7 +161,7 @@ export default function CommunitySpaceScreen({
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            {`We could not load this space. Check your connection, then tap Try again. If it keeps happening, email ${COMMUNITY_SUPPORT_EMAIL}.`}
++            {`This space did not load. Check your connection, then tap Try again. If it keeps happening, email ${COMMUNITY_SUPPORT_EMAIL}.`}
+           </Text>
+           <HapticPressable
+             intent="light"
+diff --git a/src/screens/community/CommunityTodayScreen.tsx b/src/screens/community/CommunityTodayScreen.tsx
+index c9f0166..edd8b45 100644
+--- a/src/screens/community/CommunityTodayScreen.tsx
++++ b/src/screens/community/CommunityTodayScreen.tsx
+@@ -92,7 +92,7 @@ export default function CommunityTodayScreen(_props: Props): React.ReactElement
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load today. Please try again.
++            Today did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+diff --git a/src/screens/community/CommunityWearablePromptsScreen.tsx b/src/screens/community/CommunityWearablePromptsScreen.tsx
+index 1dfa202..837d034 100644
+--- a/src/screens/community/CommunityWearablePromptsScreen.tsx
++++ b/src/screens/community/CommunityWearablePromptsScreen.tsx
+@@ -259,7 +259,7 @@ export default function CommunityWearablePromptsScreen(): React.ReactElement {
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load prompts. Please try again.
++            Prompts did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+@@ -355,7 +355,7 @@ export default function CommunityWearablePromptsScreen(): React.ReactElement {
+             color={semanticColors.textMuted}
+           />
+           <Text style={[styles.muted, { color: semanticColors.textMuted }]}>
+-            We could not load prompts. Please try again.
++            Prompts did not load. Check your connection, then try again.
+           </Text>
+           <HapticPressable
+             intent="light"
+diff --git a/src/screens/consultation/RevealScreens.tsx b/src/screens/consultation/RevealScreens.tsx
+index ff40112..9ce8c15 100644
+--- a/src/screens/consultation/RevealScreens.tsx
++++ b/src/screens/consultation/RevealScreens.tsx
+@@ -164,7 +164,7 @@ const PROBLEM_COPY: Record<CompleteProblem, { head: string; body: string; cta: s
+   },
+   unknown: {
+     head: 'I could not prepare your plan just now.',
+-    body: `The server ran into a problem on our side. Your answers are kept on this phone, so nothing is lost. Tap Try again. If it happens again, write to ${SUPPORT_EMAIL}.`,
++    body: `The server ran into a problem. Your answers are kept on this phone, so nothing is lost. Tap Try again. If it happens again, write to ${SUPPORT_EMAIL}.`,
+     cta: 'Try again',
+   },
+ };
+@@ -174,7 +174,7 @@ const PROBLEM_COPY: Record<CompleteProblem, { head: string; body: string; cta: s
+  * the short reference of the failed request, to quote to support.
+  */
+ export function referenceLine(reference: string | null | undefined): string | null {
+-  return reference ? `Reference: ${reference}. Please mention it if you write to us.` : null;
++  return reference ? `Reference: ${reference}. Mention it if you write to support.` : null;
+ }
+ 
+ /**
+@@ -259,7 +259,7 @@ export function PausedScreen({ ctx, onResume, onSignOut }: { ctx: CopyContext; o
+   return (
+     <Frame testID="consult-paused" footer={<PrimaryButton label="Continue my consultation" onPress={onResume} testID="consult-resume" />}>
+       <Text style={[s.h1, { marginTop: 48 }]} accessibilityRole="header">Your place is kept.</Text>
+-      <RomanLine text={fillCopy("Whenever you're ready, we'll pick up exactly where you left off. {Coach} will see your answers once you finish.", ctx)} />
++      <RomanLine text={fillCopy("Whenever you're ready, you can pick up exactly where you left off. {Coach} will see your answers once you finish.", ctx)} />
+       <EscapeRow onSignOut={onSignOut} />
+     </Frame>
+   );
+diff --git a/src/screens/consultation/__tests__/ConsultationFlow.test.tsx b/src/screens/consultation/__tests__/ConsultationFlow.test.tsx
+index a053332..02f8234 100644
+--- a/src/screens/consultation/__tests__/ConsultationFlow.test.tsx
++++ b/src/screens/consultation/__tests__/ConsultationFlow.test.tsx
+@@ -356,8 +356,8 @@ describe('ConsultationFlow', () => {
+     await fireEvent.press(r.getByTestId('consult-prepare'));
+     await waitFor(() => r.getByTestId('consult-problem-unknown'));
+     expect(r.queryByText(/went wrong/i)).toBeNull();
+-    expect(r.getByText(/The server ran into a problem on our side\..*Bradleyapple1031@gmail\.com/)).toBeTruthy();
+-    expect(r.getByTestId('consult-problem-reference').props.children).toBe('Reference: 7d1e44b0. Please mention it if you write to us.');
++    expect(r.getByText(/The server ran into a problem\..*Bradleyapple1031@gmail\.com/)).toBeTruthy();
++    expect(r.getByTestId('consult-problem-reference').props.children).toBe('Reference: 7d1e44b0. Mention it if you write to support.');
+     expect(r.getByTestId('consult-support')).toBeTruthy();
+     expect(captureError).toHaveBeenCalledTimes(1);
+     expect(captureError.mock.calls[0][1]).toMatchObject({ where: 'POST /me/onboarding/complete', status: 500, request_id: '7d1e44b0-1111-4222-8333-444455556666' });
+diff --git a/src/screens/onboarding/LeanQ1GoalScreen.tsx b/src/screens/onboarding/LeanQ1GoalScreen.tsx
+index 2b59f25..bdb2923 100644
+--- a/src/screens/onboarding/LeanQ1GoalScreen.tsx
++++ b/src/screens/onboarding/LeanQ1GoalScreen.tsx
+@@ -59,7 +59,7 @@ export default function LeanQ1GoalScreen({ navigation }: Props) {
+     // can change their mind without re-running signup.
+     Alert.alert(
+       'Skip personalisation?',
+-      "We won't know your goal, body metrics, or any allergies — meal and workout suggestions will use generic defaults until you finish your profile from Settings.",
++      "Without your goal, body metrics, or any allergies, meal and workout suggestions will use generic defaults until you finish your profile from Settings.",
+       [
+         { text: 'Back', style: 'cancel' },
+         {
+diff --git a/src/screens/onboarding/LeanQ2ExperienceScreen.tsx b/src/screens/onboarding/LeanQ2ExperienceScreen.tsx
+index 4becaa9..7e363b4 100644
+--- a/src/screens/onboarding/LeanQ2ExperienceScreen.tsx
++++ b/src/screens/onboarding/LeanQ2ExperienceScreen.tsx
+@@ -74,7 +74,7 @@ export default function LeanQ2ExperienceScreen({ navigation }: Props) {
+             <View style={styles.dot} />
+           </View>
+           <Text style={styles.headline}>How long have you been at this?</Text>
+-          <Text style={styles.subtext}>We shape the first steps to fit.</Text>
++          <Text style={styles.subtext}>The first steps are shaped to fit.</Text>
+         </View>
+ 
+         {/* Options */}
+diff --git a/src/screens/onboarding/LeanQ3IntentScreen.tsx b/src/screens/onboarding/LeanQ3IntentScreen.tsx
+index ccae240..062c68c 100644
+--- a/src/screens/onboarding/LeanQ3IntentScreen.tsx
++++ b/src/screens/onboarding/LeanQ3IntentScreen.tsx
+@@ -103,7 +103,7 @@ export default function LeanQ3IntentScreen({ navigation }: Props) {
+           </View>
+           <Text style={styles.headline}>Where does it begin?</Text>
+           <Text style={styles.subtext}>
+-            We'll set up your home screen to make it instant.
++            Your home screen is set up to make it instant.
+           </Text>
+         </View>
+ 
+diff --git a/src/screens/onboarding/OnboardingStep1.tsx b/src/screens/onboarding/OnboardingStep1.tsx
+index 500674b..f73579b 100644
+--- a/src/screens/onboarding/OnboardingStep1.tsx
++++ b/src/screens/onboarding/OnboardingStep1.tsx
+@@ -42,7 +42,7 @@ export default function OnboardingStep1({ navigation }: Props) {
+       step={1}
+       totalSteps={10}
+       title="Let's get to know you"
+-      subtitle="Tell us about yourself"
++      subtitle="A little about yourself"
+       onContinue={handleContinue}
+       continueEnabled={canContinue}
+     >
+diff --git a/src/screens/onboarding/OnboardingStep2.tsx b/src/screens/onboarding/OnboardingStep2.tsx
+index c149ef4..ffe2b8d 100644
+--- a/src/screens/onboarding/OnboardingStep2.tsx
++++ b/src/screens/onboarding/OnboardingStep2.tsx
+@@ -71,7 +71,7 @@ export default function OnboardingStep2({ navigation }: Props) {
+       step={2}
+       totalSteps={10}
+       title="Body Metrics"
+-      subtitle="We'll use this to calculate your targets"
++      subtitle="This sets your targets"
+       onBack={() => navigation.goBack()}
+       onContinue={handleContinue}
+       continueEnabled={canContinue}
+diff --git a/src/screens/onboarding/OnboardingStep6.tsx b/src/screens/onboarding/OnboardingStep6.tsx
+index f879067..8e938b2 100644
+--- a/src/screens/onboarding/OnboardingStep6.tsx
++++ b/src/screens/onboarding/OnboardingStep6.tsx
+@@ -64,7 +64,7 @@ export default function OnboardingStep6({ navigation }: Props) {
+       step={6}
+       totalSteps={10}
+       title="Eating Habits"
+-      subtitle="Help us understand your current eating patterns"
++      subtitle="Your current eating patterns"
+       onBack={() => navigation.goBack()}
+       onContinue={handleContinue}
+       continueEnabled={eatHabits !== null}
+diff --git a/src/screens/settings/DataExportScreen.tsx b/src/screens/settings/DataExportScreen.tsx
+index ce1d84c..62f1af4 100644
+--- a/src/screens/settings/DataExportScreen.tsx
++++ b/src/screens/settings/DataExportScreen.tsx
+@@ -182,7 +182,7 @@ function describeError(err: unknown, step: Step): Notice {
+   if (isNetworkError(err)) {
+     return {
+       title: "You appear to be offline",
+-      message: `We could not reach The Growth Project. Check your connection, then ${NEXT_STEP[step]}.`,
++      message: `The Growth Project could not be reached. Check your connection, then ${NEXT_STEP[step]}.`,
+       reference: null,
+     };
+   }
+@@ -221,11 +221,11 @@ function describeError(err: unknown, step: Step): Notice {
+         : "prepare your download";
+   const what =
+     err instanceof DataExportResponseError || code === DATA_EXPORT_BAD_RESPONSE
+-      ? "The answer from our server was incomplete, so nothing was opened. "
++      ? "The server's answer was incomplete, so nothing was opened. "
+       : "";
+   const nextStep = NEXT_STEP[step];
+   return {
+-    title: `We could not ${verb}`,
++    title: `Could not ${verb}`,
+     message: `${what}${nextStep.charAt(0).toUpperCase()}${nextStep.slice(1)}. If it keeps happening, email ${SUPPORT_EMAIL} and quote reference ${reference}.`,
+     reference,
+   };
+@@ -258,7 +258,7 @@ function stateFor(
+ 
+ /** No export on record (any more): start state with a plain note. */
+ const GONE_NOTICE: Notice = {
+-  title: "We could not find your export",
++  title: "Your export was not found",
+   message:
+     "There is no export on record for your account now. Tap Request my data to start a new one.",
+   reference: null,
+@@ -553,7 +553,7 @@ export default function DataExportScreen() {
+                 reference,
+               }
+             : {
+-                title: "We could not open your download",
++                title: "Your download did not open",
+                 message: `Tap Download file again. If it keeps happening, email ${SUPPORT_EMAIL} and quote reference ${reference}.`,
+                 reference,
+               },
+@@ -665,7 +665,7 @@ export default function DataExportScreen() {
+ 
+       <Text style={styles.caption}>
+         The file is in JSON format and can be opened in any text editor or
+-        imported into compatible tools. We keep it for {KEEP_DAYS} days after it
++        imported into compatible tools. It is kept for {KEEP_DAYS} days after it
+         is ready. Each tap on Download file makes a private link that works for{" "}
+         {LINK_MINUTES} minutes and only for you.
+       </Text>
+@@ -700,7 +700,7 @@ export default function DataExportScreen() {
+           <ActivityIndicator color={colors.primary} />
+           <Text style={styles.statusHeading}>Export in progress</Text>
+           <Text style={styles.statusBody}>
+-            We are assembling your file. This usually takes under 60 seconds.
++            Your file is being assembled. This usually takes under 60 seconds.
+             Your export will be available to download from this screen when it
+             is ready. This screen updates automatically, and you can leave it
+             and come back.
+diff --git a/src/screens/settings/RomanAiConsentScreen.tsx b/src/screens/settings/RomanAiConsentScreen.tsx
+index 945b3bd..2d11fe9 100644
+--- a/src/screens/settings/RomanAiConsentScreen.tsx
++++ b/src/screens/settings/RomanAiConsentScreen.tsx
+@@ -61,7 +61,7 @@ export const ROMAN_AI_COPY = {
+   reconsentBody: 'The wording of this choice has changed since you last chose, so it is off for now. You can allow it again below.',
+   updateApp: 'This choice has been updated since this version of the app. Please update the app to change it.',
+   notSent: 'You were signed out before this choice was saved, so nothing changed. Sign in and choose again.',
+-  unavailable: `The Roman and AI setting is switched off on our side at the moment, so it cannot be changed here yet. Nothing is recorded. You can check back later, or write to support at ${SUPPORT_EMAIL}.`,
++  unavailable: `The Roman and AI setting is switched off by The Growth Project at the moment, so it cannot be changed here yet. Nothing is recorded. You can check back later, or write to support at ${SUPPORT_EMAIL}.`,
+   loadOffline: 'I could not reach the server to load your choice. Check your connection, then tap Try again.',
+   loadServer: (ref: string | null) =>
+     `The server could not load your choice. Tap Try again. If it keeps happening, write to support at ${SUPPORT_EMAIL}${ref ? ` and mention reference ${ref}` : ''}.`,
+diff --git a/src/screens/settings/__tests__/DataExportScreen.test.tsx b/src/screens/settings/__tests__/DataExportScreen.test.tsx
+index fb8ee2f..00ef7b0 100644
+--- a/src/screens/settings/__tests__/DataExportScreen.test.tsx
++++ b/src/screens/settings/__tests__/DataExportScreen.test.tsx
+@@ -247,7 +247,7 @@ describe("DataExportScreen", () => {
+       await findByRole("button", { name: /Request my data/i }),
+     );
+ 
+-    await findByText("We could not start your export");
++    await findByText("Could not start your export");
+     await findByText(
+       /Tap Request my data again\. If it keeps happening, email Bradleyapple1031@gmail\.com and quote reference req-42\./,
+     );
+@@ -299,7 +299,7 @@ describe("DataExportScreen", () => {
+ 
+     const { findByRole, findByText } = await render(<DataExportScreen />);
+ 
+-    await findByText("We could not load your export");
++    await findByText("Could not load your export");
+     await fireEvent.press(
+       await findByRole("button", { name: /Check your export status again/i }),
+     );
+@@ -451,7 +451,7 @@ describe("DataExportScreen", () => {
+       await findByRole("button", { name: /Download your data file/i }),
+     );
+ 
+-    await findByText("We could not open your download");
++    await findByText("Your download did not open");
+     await findByText(/email Bradleyapple1031@gmail\.com and quote reference/);
+     expect(mockCaptureError.mock.calls[0][1]).toMatchObject({
+       step: "open_browser",
+@@ -530,7 +530,7 @@ describe("DataExportScreen", () => {
+       await findByRole("button", { name: /Download your data file/i }),
+     );
+ 
+-    await findByText("We could not prepare your download");
++    await findByText("Could not prepare your download");
+     await findByText("Reference: req-77");
+     expect(mockCaptureError).toHaveBeenCalledWith(
+       expect.anything(),
+@@ -583,7 +583,7 @@ describe("DataExportScreen", () => {
+     const { findByText } = await render(<DataExportScreen />);
+ 
+     await findByText("Previous export expired");
+-    await findByText(/kept for 7 days/i);
++    await findByText(/files are kept for 7 days/i);
+   });
+ 
+   it("shows Request new export button in expired state", async () => {
+@@ -810,9 +810,9 @@ describe("DataExportScreen fix round 1", () => {
+       await findByRole("button", { name: /Download your data file/i }),
+     );
+ 
+-    await findByText("We could not prepare your download");
++    await findByText("Could not prepare your download");
+     await findByText(
+-      /The answer from our server was incomplete, so nothing was opened/,
++      /The server's answer was incomplete, so nothing was opened/,
+     );
+     await findByText("Reference: ref-bad-1");
+     expect(openURL).not.toHaveBeenCalled();
+@@ -842,7 +842,7 @@ describe("DataExportScreen fix round 1", () => {
+         jest.advanceTimersByTime(5500);
+       });
+     }
+-    await findByText("We could not load your export");
++    await findByText("Could not load your export");
+     await findByText("Reference: ref-st-1");
+     expect(queryByText("Export in progress")).toBeNull();
+   });
+@@ -931,7 +931,7 @@ describe("DataExportScreen fix round 1", () => {
+     await act(async () => {
+       jest.advanceTimersByTime(5500);
+     });
+-    await findByText("We could not find your export");
++    await findByText("Your export was not found");
+     expect(
+       await findByRole("button", { name: /Request my data export/i }),
+     ).toBeTruthy();
+diff --git a/src/screens/settings/__tests__/deletionErrors.test.ts b/src/screens/settings/__tests__/deletionErrors.test.ts
+index 67b2c3c..81525db 100644
+--- a/src/screens/settings/__tests__/deletionErrors.test.ts
++++ b/src/screens/settings/__tests__/deletionErrors.test.ts
+@@ -26,7 +26,7 @@ describe("deletionErrorCopy", () => {
+   it("network: says the server was not reached and to check the connection", () => {
+     const copy = deletionErrorCopy(new Error("Network Error"), "schedule", "t");
+     expect(copy).toBe(
+-      "We could not reach the server to schedule your account deletion. Check your connection, then try again.",
++      "The server could not be reached to schedule your account deletion. Check your connection, then try again.",
+     );
+     expect(captureError).not.toHaveBeenCalled();
+   });
+@@ -77,7 +77,7 @@ describe("deletionErrorCopy", () => {
+       "trust_center.export",
+     );
+     expect(copy).toBe(
+-      `We could not start your data export because of a problem on our side. Reference: 3f0c7a52. Try again in a few minutes, or write to ${DELETION_SUPPORT_EMAIL} and mention the reference.`,
++      `The app could not start your data export because of a server problem. Reference: 3f0c7a52. Try again in a few minutes, or write to ${DELETION_SUPPORT_EMAIL} and mention the reference.`,
+     );
+     expect(captureError).toHaveBeenCalledWith(
+       expect.anything(),
+diff --git a/src/screens/settings/deletionErrors.ts b/src/screens/settings/deletionErrors.ts
+index fb610f2..e2b0ca3 100644
+--- a/src/screens/settings/deletionErrors.ts
++++ b/src/screens/settings/deletionErrors.ts
+@@ -98,7 +98,7 @@ export function deletionErrorCopy(
+ ): string {
+   const res = responseOf(err);
+   if (!res || res.status === undefined) {
+-    return `We could not reach the server to ${WHAT[action]}. Check your connection, then try again.`;
++    return `The server could not be reached to ${WHAT[action]}. Check your connection, then try again.`;
+   }
+   if (res.status === 429)
+     return "Too many attempts in a short time. Wait a minute, then try again.";
+@@ -123,7 +123,7 @@ export function deletionErrorCopy(
+     reference,
+   });
+   const ref = reference ? ` Reference: ${reference}.` : "";
+-  return `We could not ${WHAT[action]} because of a problem on our side.${ref} Try again in a few minutes, or write to ${DELETION_SUPPORT_EMAIL}${reference ? " and mention the reference" : ""}.`;
++  return `The app could not ${WHAT[action]} because of a server problem.${ref} Try again in a few minutes, or write to ${DELETION_SUPPORT_EMAIL}${reference ? " and mention the reference" : ""}.`;
+ }
+ 
+-export const HELP_UNAVAILABLE_COPY = `The help centre did not open on this phone. Write to ${DELETION_SUPPORT_EMAIL} and we will help.`;
++export const HELP_UNAVAILABLE_COPY = `The help centre did not open on this phone. Write to ${DELETION_SUPPORT_EMAIL} and a person will help.`;
+diff --git a/src/screens/support/SupportInboxScreen.tsx b/src/screens/support/SupportInboxScreen.tsx
+index bb24833..ed31f79 100644
+--- a/src/screens/support/SupportInboxScreen.tsx
++++ b/src/screens/support/SupportInboxScreen.tsx
+@@ -104,8 +104,8 @@ export default function SupportInboxScreen({ navigation, preSignIn = false }: Pr
+         <Text style={styles.heading}>Live Support</Text>
+         {unavailable ? (
+           <Text style={styles.body_text} accessibilityRole="alert" testID="support-chat-unavailable">
+-            Live chat is not available in this version of the app. Email us at {SUPPORT_EMAIL} and
+-            a person from our team will reply.
++            Live chat is not available in this version of the app. Email {SUPPORT_EMAIL} and
++            a person from the support team will reply.
+           </Text>
+         ) : blocked ? (
+           <Text style={styles.body_text} accessibilityRole="alert" testID="support-chat-blocked">
+@@ -114,7 +114,7 @@ export default function SupportInboxScreen({ navigation, preSignIn = false }: Pr
+           </Text>
+         ) : (
+           <Text style={styles.body_text}>
+-            Connect with our support team via the chat overlay. The window
++            Connect with the support team via the chat overlay. The window
+             should open automatically. If it did not appear, tap the button
+             below.
+           </Text>
+diff --git a/src/tutorial/__tests__/tutorialCopy.test.ts b/src/tutorial/__tests__/tutorialCopy.test.ts
+index 1200504..56a302f 100644
+--- a/src/tutorial/__tests__/tutorialCopy.test.ts
++++ b/src/tutorial/__tests__/tutorialCopy.test.ts
+@@ -140,7 +140,7 @@ describe('lighter start: the macro step in the simple view', () => {
+ 
+   it('Roman keeps it to two numbers and explains why', () => {
+     const line = step.gates[1].line(SIMPLE);
+-    expect(line).toMatch(/^This first week, we keep it to two numbers: 1,789 calories and 150 grams of protein\./);
++    expect(line).toMatch(/^This first week keeps it to two numbers: 1,789 calories and 150 grams of protein\./);
+     expect(line).toContain('Carbohydrate and fat are already worked out');
+     expect(line).not.toMatch(/185|\b50 grams/);
+     expect(line).toMatch(/Tap How to use these numbers\.$/);
+diff --git a/src/tutorial/tutorialSteps.ts b/src/tutorial/tutorialSteps.ts
+index b115264..ca6e708 100644
+--- a/src/tutorial/tutorialSteps.ts
++++ b/src/tutorial/tutorialSteps.ts
+@@ -130,7 +130,7 @@ function macroLine(c: CopyContext): string {
+   const m = c.macros;
+   if (!m) return 'Tap How to use these numbers.';
+   if (c.macroMode === 'simple') {
+-    return `This first week, we keep it to two numbers: ${n(m.calories)} calories and ${n(m.protein_g)} grams of protein. Carbohydrate and fat are already worked out for you, and they will join these on Home when the week is done. Tap How to use these numbers.`;
++    return `This first week keeps it to two numbers: ${n(m.calories)} calories and ${n(m.protein_g)} grams of protein. Carbohydrate and fat are already worked out for you, and they will join these on Home when the week is done. Tap How to use these numbers.`;
+   }
+   return `Each day: ${n(m.calories)} calories, ${n(m.protein_g)} grams of protein, ${n(m.carbs_g)} grams of carbohydrate and ${n(m.fat_g)} grams of fat. Tap How to use these numbers.`;
+ }
+@@ -180,7 +180,7 @@ const ALL_STEPS: readonly TutorialStepDef[] = [
+     ],
+     doneLine: () => 'Your plan stays pinned here on Train.',
+     pendingLine: (c) =>
+-      `${c.coachName} is still setting up your first plan. It will appear on Train once it is ready. For now, we will carry on.`,
++      `${c.coachName} is still setting up your first plan. It will appear on Train once it is ready. For now, the tour carries on.`,
+   },
+   {
+     id: 'macros',
+diff --git a/src/utils/__tests__/authFailure.test.ts b/src/utils/__tests__/authFailure.test.ts
+index 24a59d3..4b1e55a 100644
+--- a/src/utils/__tests__/authFailure.test.ts
++++ b/src/utils/__tests__/authFailure.test.ts
+@@ -159,6 +159,21 @@ describe('describeSignInFailure / describeSignupFailure', () => {
+     const unknown = describeSignupFailure(httpError(500, { request_id: 'deadbeef-1' }));
+     expect(unknown).toMatchObject({ kind: 'unknown', support: true, reference: 'DEADBEEF' });
+   });
++
++  it('Sol B-339-1: an unknown signup outcome never claims the account was not created', () => {
++    const notCreated = /was not created|not been created|could not create/i;
++    const fromMapper = toFriendlySignupError(httpError(500, { message: 'Internal server error' }));
++    expect(fromMapper.kind).toBe('unknown');
++    expect(fromMapper.message).toMatch(/could not be confirmed/);
++    expect(fromMapper.message).not.toMatch(notCreated);
++    const withRef = unknownAuthFailure(httpError(503, { request_id: 'cafebabe-0000' }), 'sign_up');
++    expect(withRef.message).toMatch(/^Account creation could not be confirmed/);
++    expect(withRef.message).not.toMatch(notCreated);
++    // Known refusals keep their definite copy (positive control).
++    expect(toFriendlySignupError(httpError(409, { message: 'Email already registered' })).message).toBe(
++      SIGNUP_EMAIL_EXISTS_MESSAGE,
++    );
++  });
+ });
+ 
+ describe('isNetworkFailure', () => {
+diff --git a/src/utils/__tests__/authFailureFixRound7.test.ts b/src/utils/__tests__/authFailureFixRound7.test.ts
+index d01bead..2dd393f 100644
+--- a/src/utils/__tests__/authFailureFixRound7.test.ts
++++ b/src/utils/__tests__/authFailureFixRound7.test.ts
+@@ -42,7 +42,7 @@ describe('Opus C-306-8', () => {
+ 
+   it('Apple: names Apple; email sign-in keeps the link copy', () => {
+     expect(describeSignInFailure(httpError(401, 'Email not verified'), { provider: 'apple' }).message).toMatch(/Verify it with Apple/);
+-    expect(describeSignInFailure(httpError(401, 'Email not confirmed.')).message).toMatch(/Open the link we sent/);
++    expect(describeSignInFailure(httpError(401, 'Email not confirmed.')).message).toMatch(/Open the link in that email/);
+   });
+ });
+ 
+diff --git a/src/utils/__tests__/packageSaveFailure.test.ts b/src/utils/__tests__/packageSaveFailure.test.ts
+index ef3a875..2b0bcb4 100644
+--- a/src/utils/__tests__/packageSaveFailure.test.ts
++++ b/src/utils/__tests__/packageSaveFailure.test.ts
+@@ -60,7 +60,7 @@ describe('describePackageSaveFailure', () => {
+     expect(a.reference).toBe('SOL321RE');
+     expect(a.support).toBe(true);
+     expect(a.message).toBe(
+-      'The package was not created. There was a problem on our side. Your changes are still here. Tap Try again, or contact support and quote reference SOL321RE.',
++      'The package was not created. There was a problem on the server. Your changes are still here. Tap Try again, or contact support and quote reference SOL321RE.',
+     );
+     expect(mockCaptureError).toHaveBeenLastCalledWith(expect.any(Error), {
+       flow: 'package_save',
+@@ -141,7 +141,7 @@ describe('describePackageSaveFailure', () => {
+       [
+         'currency must be a 3-letter ISO code',
+         'create',
+-        'This package uses a currency the app cannot sell in. The package was not created. Contact support and we will fix the package.',
++        'This package uses a currency the app cannot sell in. The package was not created. Contact support to have the package fixed.',
+       ],
+       [
+         'interval_count must be an integer ≥ 1',
+diff --git a/src/utils/authErrorMessage.ts b/src/utils/authErrorMessage.ts
+index 444498e..9c81886 100644
+--- a/src/utils/authErrorMessage.ts
++++ b/src/utils/authErrorMessage.ts
+@@ -60,7 +60,7 @@ const PATTERNS: Array<{
+   {
+     test: /network|timeout|fetch failed|enotfound|econnreset|offline/i,
+     category: 'network',
+-    message: 'We couldn’t reach the server. Check your connection and try again.',
++    message: 'The server could not be reached. Check your connection and try again.',
+   },
+   {
+     test: /redirect[_ ]?uri|invalid[_ ]?client|invalid[_ ]?request|misconfigured|client[_ ]?not[_ ]?found/i,
+@@ -153,7 +153,9 @@ export const SIGNUP_INVITE_INVALID_MESSAGE =
+ export const SIGNUP_INVALID_EMAIL_MESSAGE = 'Enter a valid email address.';
+ export const SIGNUP_PASSWORD_RULE_FALLBACK =
+   'Password must be at least 8 characters with one uppercase letter, one number, and one special character.';
+-export const SIGNUP_UNKNOWN_MESSAGE = 'We could not create your account. Please try again.';
++// Sol B-339-1: an unrecognized result is not proof that no account exists.
++export const SIGNUP_UNKNOWN_MESSAGE =
++  'Account creation could not be confirmed. Sign in with the same email first; if the account exists, you will be signed in. If not, try again, or contact support if it keeps happening.';
+ 
+ function signupErrorParts(err: unknown): { status?: number; code?: string; messages: string[] } {
+   // #306 r7: a provider helper's sanitised detail (utils/authErrorDetail).
+@@ -218,7 +220,7 @@ export function toFriendlySignupError(err: unknown): FriendlySignupError {
+   // No response at all (the API client rewrites the message to "Cannot reach
+   // server ...") is a connection problem, not a refusal.
+   if (base.category === 'network' || (status === undefined && /cannot reach server/i.test(raw))) {
+-    return { kind: 'network', message: 'We couldn’t reach the server. Check your connection and try again.' };
++    return { kind: 'network', message: 'The server could not be reached. Check your connection and try again.' };
+   }
+   if (base.category === 'rate_limited') return { kind: 'rate_limited', message: base.message };
+   return { kind: 'unknown', message: SIGNUP_UNKNOWN_MESSAGE };
+diff --git a/src/utils/authFailure.ts b/src/utils/authFailure.ts
+index 478475e..6217a4e 100644
+--- a/src/utils/authFailure.ts
++++ b/src/utils/authFailure.ts
+@@ -96,10 +96,10 @@ export function reportAuthFailure(
+ }
+ 
+ const UNKNOWN_LEAD: Record<AuthFlow, string> = {
+-  sign_in: 'Sign-in did not complete because of a problem on our side.',
+-  sign_up: 'We could not create your account because of a problem on our side.',
+-  verify: 'We could not sign you in after verification because of a problem on our side.',
+-  role_selection: 'We could not finish setting up your account because of a problem on our side.',
++  sign_in: 'Sign-in did not complete because of a server problem.',
++  sign_up: 'Account creation could not be confirmed because of a server problem.',
++  verify: 'Sign-in after verification did not complete because of a server problem.',
++  role_selection: 'Account setup did not finish because of a server problem.',
+ };
+ 
+ /** Unknown failure: reference, support path, Sentry event (sanitised). */
+@@ -159,7 +159,7 @@ export function describeSignInFailure(
+   if (base.category === 'network' || (status === null && /cannot reach server/i.test(raw))) {
+     return {
+       kind: 'network',
+-      message: 'We couldn’t reach the server. Check your connection, then sign in again.',
++      message: 'The server could not be reached. Check your connection, then sign in again.',
+       support: false,
+       reference: null,
+       cancelled: false,
+@@ -182,8 +182,8 @@ export function describeSignInFailure(
+           : provider === 'apple'
+             ? 'The email on your Apple Account is not verified. Verify it with Apple, or sign up with email.'
+             : flow === 'verify'
+-              ? 'Your email is not verified yet. Open the link we sent to this address, then tap I verified my email.'
+-              : 'Your email is not confirmed yet. Open the link we sent, then sign in.',
++              ? 'Your email is not verified yet. Open the link sent to this address, then tap I verified my email.'
++              : 'Your email is not confirmed yet. Open the link in that email, then sign in.',
+       support: false,
+       reference: null,
+       cancelled: false,
+diff --git a/src/utils/packageSaveFailure.ts b/src/utils/packageSaveFailure.ts
+index b61a2b5..8608436 100644
+--- a/src/utils/packageSaveFailure.ts
++++ b/src/utils/packageSaveFailure.ts
+@@ -134,7 +134,7 @@ export function plainPackageInvalidMessage(
+     return `Choose how clients pay: One-time, Monthly, Quarterly or Yearly, ${then}.`;
+   }
+   if (/currency/i.test(m)) {
+-    return `This package uses a currency the app cannot sell in. ${savedWhat(mode)} Contact support and we will fix the package.`;
++    return `This package uses a currency the app cannot sell in. ${savedWhat(mode)} Contact support to have the package fixed.`;
+   }
+   if (/description/i.test(m)) {
+     return `Shorten the description, ${then}.`;
+@@ -209,7 +209,7 @@ export function describePackageSaveFailure(
+       return {
+         kind: 'network',
+         title: 'No connection',
+-        message: `We could not reach the server. ${savedWhat(mode)} ${KEPT} Check your connection, then tap Try again.`,
++        message: `The server could not be reached. ${savedWhat(mode)} ${KEPT} Check your connection, then tap Try again.`,
+         action: 'retry',
+         support: false,
+         reference: null,
+@@ -279,7 +279,7 @@ export function describePackageSaveFailure(
+     return {
+       kind: 'not_configured',
+       title: 'Packages are not available yet',
+-      message: `Packages are not switched on for this server yet. ${savedWhat(mode)} Contact support and we will turn them on.`,
++      message: `Packages are not switched on for this server yet. ${savedWhat(mode)} Contact support to have them turned on.`,
+       action: 'back_to_packages',
+       support: true,
+       reference: null,
+@@ -347,12 +347,12 @@ export function describePackageSaveFailure(
+     };
+   }
+ 
+-  // 5xx, an unexpected status, or a failure we cannot classify.
++  // 5xx, an unexpected status, or a failure that cannot be classified.
+   const ref = reportPackageSaveFailure(err, mode);
+   return {
+     kind: 'server',
+     title: failedTitle(mode),
+-    message: `${savedWhat(mode)} There was a problem on our side. ${KEPT} Tap Try again, or contact support and quote reference ${ref.short}.`,
++    message: `${savedWhat(mode)} There was a problem on the server. ${KEPT} Tap Try again, or contact support and quote reference ${ref.short}.`,
+     action: 'retry',
+     support: true,
+     reference: ref.short,

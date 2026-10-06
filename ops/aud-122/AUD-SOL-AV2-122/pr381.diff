@@ -1,0 +1,776 @@
+diff --git a/src/api/schedulingApi.ts b/src/api/schedulingApi.ts
+index 5d1ab69..ec36e24 100644
+--- a/src/api/schedulingApi.ts
++++ b/src/api/schedulingApi.ts
+@@ -399,6 +399,35 @@ export interface SessionListOptions {
+   status?: readonly SchedulingSessionStatus[];
+ }
+ 
++/**
++ * S-AVAIL-122 coach booking options (backend #735,
++ * `GET|PATCH /scheduling/coach/booking-options`, coach only, own data). One
++ * set per coach for every appointment type. Defaults reproduce the old fixed
++ * rules: 5 minutes notice, 120 days ahead, no buffers, no daily maximum.
++ */
++export interface BookingOptions {
++  /** 5..43200. Clients cannot book a start earlier than now + this. */
++  min_notice_minutes: number;
++  /** 1..365. Clients cannot book a start later than now + this many days. */
++  booking_window_days: number;
++  /** 0..240. Free time kept before each session. */
++  buffer_before_minutes: number;
++  /** 0..240. Free time kept after each session. */
++  buffer_after_minutes: number;
++  /** 1..50, or null for no daily maximum. */
++  daily_max_sessions: number | null;
++}
++
++export type BookingOptionKey = keyof BookingOptions;
++
++export type BookingOptionLimits = Record<BookingOptionKey, { min: number; max: number }>;
++
++export interface BookingOptionsView extends BookingOptions {
++  coach_id: string;
++  defaults?: BookingOptions;
++  limits?: BookingOptionLimits;
++}
++
+ export interface CompleteSessionInput {
+   reason?: string;
+   coach_notes_md?: string;
+@@ -494,6 +523,20 @@ export const schedulingApi = {
+     await api.delete(`/scheduling/coach/availability-overrides/${encodeURIComponent(id)}`);
+   },
+ 
++  // Coach booking options (S-AVAIL-122). PATCH takes any subset; null
++  // daily_max_sessions removes the daily maximum. Both return the saved set.
++  getMyBookingOptions: async (): Promise<BookingOptionsView> => {
++    const res = await api.get<BookingOptionsView>('/scheduling/coach/booking-options');
++    return res.data;
++  },
++
++  updateMyBookingOptions: async (
++    input: Partial<BookingOptions>,
++  ): Promise<BookingOptionsView> => {
++    const res = await api.patch<BookingOptionsView>('/scheduling/coach/booking-options', input);
++    return res.data;
++  },
++
+   createSessionType: async (
+     input: CreateSessionTypeInput,
+   ): Promise<SessionType> => {
+diff --git a/src/calendar/schedulingErrors.ts b/src/calendar/schedulingErrors.ts
+index 8513c12..205912e 100644
+--- a/src/calendar/schedulingErrors.ts
++++ b/src/calendar/schedulingErrors.ts
+@@ -31,7 +31,7 @@ export const SCHEDULING_CODE_MESSAGES: Readonly<Record<string, string>> = {
+   SLOT_TAKEN: 'Someone just booked that time. Refresh open times and pick another time.',
+   SLOT_UNAVAILABLE: 'That time is no longer open. Refresh open times and pick another time.',
+   SESSION_IN_PAST: 'That time is too close or has passed. Refresh open times and choose a later time.',
+-  BEYOND_BOOKING_HORIZON: 'That time is too far ahead to book yet. Choose a time within the next four months.',
++  BEYOND_BOOKING_HORIZON: "That time is further ahead than your coach takes bookings. Refresh open times and pick a time from the list.",
+   INVALID_TIME: 'That time could not be read. Refresh open times and pick a time from the list.',
+   DURATION_MISMATCH: 'That time does not match the length of this appointment type. Refresh open times and pick a time from the list.',
+   SESSION_TYPE_REQUIRED: 'Choose an appointment type first, then pick a time.',
+@@ -69,6 +69,8 @@ export const COACH_CODE_MESSAGES: Readonly<Record<string, string>> = {
+   SLOT_TAKEN: 'Another session already uses that time. Refresh and choose a different time.',
+   CALENDAR_BUSY: 'Your calendar is busy saving other changes right now. Wait a few seconds, then try again.',
+   INVALID_LIST_QUERY: 'The inbox could not load more sessions from where you were. Refresh the inbox to start the list again.',
++  BEYOND_BOOKING_HORIZON: 'That time is too far ahead to schedule. Pick an earlier date.',
++  INVALID_BOOKING_OPTIONS: 'One of the booking options is outside its allowed range. Check the values shown under each option, then save again.',
+ };
+ 
+ /**
+diff --git a/src/hooks/useCalendar.ts b/src/hooks/useCalendar.ts
+index 5d4b7bc..2e681a8 100644
+--- a/src/hooks/useCalendar.ts
++++ b/src/hooks/useCalendar.ts
+@@ -10,6 +10,7 @@
+  *   ['scheduling', 'sessionTypes', coachId]            (bookable, active only)
+  *   ['scheduling', 'sessionTypes', coachId, 'all']     (owning coach, with archived)
+  *   ['scheduling', 'overrides']
++ *   ['scheduling', 'bookingOptions']                  (signed-in coach, S-AVAIL-122)
+  */
+ import {
+   useInfiniteQuery,
+@@ -23,10 +24,13 @@ import {
+   type SchedulingSessionStatus,
+   type AvailabilityOverride,
+   type BookableCoach,
++  type BookingOptions,
++  type BookingOptionsView,
+   type CoachingSession,
+   type CreateAvailabilityOverrideInput,
+   type OpenSlotsPayload,
+   type SessionType,
++  schedulingErrorStatus,
+ } from '../api/schedulingApi';
+ 
+ const THIRTY_S_MS = 30 * 1000;
+@@ -216,3 +220,35 @@ export function useDeleteAvailabilityOverride() {
+     },
+   });
+ }
++
++/**
++ * True when the booking options endpoint is not offered to this account: a
++ * backend without the route (bare 404, feature not deployed) or a non-coach
++ * (403). The Settings entry is hidden in both cases.
++ */
++export function bookingOptionsUnavailable(err: unknown): boolean {
++  const status = schedulingErrorStatus(err);
++  return status === 404 || status === 403;
++}
++
++/** The signed-in coach's booking options (S-AVAIL-122). */
++export function useBookingOptions(enabled = true) {
++  return useQuery<BookingOptionsView>({
++    queryKey: ['scheduling', 'bookingOptions'],
++    queryFn: () => schedulingApi.getMyBookingOptions(),
++    enabled,
++    staleTime: FIVE_MIN_MS,
++    retry: (count, err) => !bookingOptionsUnavailable(err) && count < 2,
++  });
++}
++
++export function useUpdateBookingOptions() {
++  const qc = useQueryClient();
++  return useMutation<BookingOptionsView, Error, Partial<BookingOptions>>({
++    mutationFn: (input) => schedulingApi.updateMyBookingOptions(input),
++    onSuccess: (saved) => {
++      qc.setQueryData(['scheduling', 'bookingOptions'], saved);
++      qc.invalidateQueries({ queryKey: ['scheduling', 'openSlots'] });
++    },
++  });
++}
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index 5e01fb3..4c10271 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -76,6 +76,8 @@ import CoachBookingInboxScreen from '../screens/coach/CoachBookingInboxScreen';
+ // S-SCHED — appointment types manager + time off, next to Availability.
+ import CoachAppointmentTypesScreen from '../screens/coach/CoachAppointmentTypesScreen';
+ import CoachTimeOffScreen from '../screens/coach/CoachTimeOffScreen';
++// S-AVAIL-122 — booking options (notice, window, buffers, daily maximum).
++import CoachBookingOptionsScreen from '../screens/coach/CoachBookingOptionsScreen';
+ // Coach AI v1 — generate/edit/approve workout, meal, insight drafts per client.
+ import AIWorkoutDraftScreen from '../screens/coach/AIWorkoutDraftScreen';
+ import AIMealPlanDraftScreen from '../screens/coach/AIMealPlanDraftScreen';
+@@ -189,6 +191,8 @@ export type ClientsStackParamList = {
+   /** S-SCHED — appointment types (create / edit / archive) and time off. */
+   CoachAppointmentTypes:    { coachId?: string } | undefined;
+   CoachTimeOff:             undefined;
++  /** S-AVAIL-122 — the coach's booking options. */
++  CoachBookingOptions:      undefined;
+   /** Coach AI v1 — review/edit/approve AI-generated workout program draft. */
+   AIWorkoutDraft:  { draftId: string; clientId: string; clientName: string };
+   /** Coach AI v1 — review/edit/approve AI-generated meal plan draft. */
+@@ -402,6 +406,10 @@ function ClientsStackNavigator() {
+         name="CoachTimeOff"
+         component={CoachTimeOffScreen}
+       />
++      <ClientsStack.Screen
++        name="CoachBookingOptions"
++        component={CoachBookingOptionsScreen}
++      />
+       {/* Coach AI v1 — companion routes for the per-client generate/edit/approve flow. */}
+       <ClientsStack.Screen
+         name="AIWorkoutDraft"
+diff --git a/src/navigation/__tests__/imessageDmRoutes.test.tsx b/src/navigation/__tests__/imessageDmRoutes.test.tsx
+index 94153c3..1ca2335 100644
+--- a/src/navigation/__tests__/imessageDmRoutes.test.tsx
++++ b/src/navigation/__tests__/imessageDmRoutes.test.tsx
+@@ -32,6 +32,12 @@ jest.mock('../../services/api', () => ({
+   AccountStatus: {},
+ }));
+ 
++// S-AVAIL-122: the Booking Options row reads a react-query hook; this test
++// renders Settings without a QueryClientProvider and is about Blocked Users.
++jest.mock('../../screens/coach/settings/BookingOptionsEntry', () => ({
++  BookingOptionsEntry: () => null,
++}));
++
+ jest.mock('../../services/authActions', () => ({
+   signOut: jest.fn(async () => undefined),
+   refreshProfile: jest.fn(async () => undefined),
+diff --git a/src/screens/coach/CoachBookingOptionsScreen.tsx b/src/screens/coach/CoachBookingOptionsScreen.tsx
+new file mode 100644
+index 0000000..b43fe6a
+--- /dev/null
++++ b/src/screens/coach/CoachBookingOptionsScreen.tsx
+@@ -0,0 +1,335 @@
++/**
++ * CoachBookingOptionsScreen — S-AVAIL-122 coach booking options.
++ *
++ * Backend #735: GET/PATCH /scheduling/coach/booking-options (coach only, own
++ * data). One set of rules for every appointment type: minimum notice, how far
++ * ahead clients can book, buffers before and after each session, and an
++ * optional daily maximum. Validation mirrors the backend ranges so a refusal
++ * is rare; a 400 INVALID_BOOKING_OPTIONS names the field and is shown under it.
++ */
++import React, { useEffect, useRef, useState } from 'react';
++import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
++import type {
++  BookingOptionKey,
++  BookingOptionLimits,
++  BookingOptions,
++} from '../../api/schedulingApi';
++import { schedulingErrorCode, schedulingErrorStatus } from '../../api/schedulingApi';
++import {
++  bookingOptionsUnavailable,
++  useBookingOptions,
++  useUpdateBookingOptions,
++} from '../../hooks/useCalendar';
++import { calendarErrorMessage } from '../../calendar/schedulingErrors';
++import { spacing, typography } from '../../theme/tokens';
++import { useTheme } from '../../theme/ThemeProvider';
++
++/** Mirrors backend BOOKING_OPTION_LIMITS; the server's own limits win when sent. */
++export const BOOKING_OPTION_LIMITS: BookingOptionLimits = {
++  min_notice_minutes: { min: 5, max: 43_200 },
++  booking_window_days: { min: 1, max: 365 },
++  buffer_before_minutes: { min: 0, max: 240 },
++  buffer_after_minutes: { min: 0, max: 240 },
++  daily_max_sessions: { min: 1, max: 50 },
++};
++
++export const DEFAULT_BOOKING_OPTIONS: BookingOptions = {
++  min_notice_minutes: 5,
++  booking_window_days: 120,
++  buffer_before_minutes: 0,
++  buffer_after_minutes: 0,
++  daily_max_sessions: null,
++};
++
++export type NoticeUnit = 'minutes' | 'hours' | 'days';
++const UNIT_MINUTES: Record<NoticeUnit, number> = { minutes: 1, hours: 60, days: 1440 };
++const UNITS: NoticeUnit[] = ['minutes', 'hours', 'days'];
++const UNIT_LABELS: Record<NoticeUnit, string> = { minutes: 'Minutes', hours: 'Hours', days: 'Days' };
++
++export interface BookingDraft {
++  noticeValue: string;
++  noticeUnit: NoticeUnit;
++  windowDays: string;
++  bufferBefore: string;
++  bufferAfter: string;
++  dailyMaxOn: boolean;
++  dailyMax: string;
++}
++
++export type BookingFieldErrors = Partial<Record<BookingOptionKey, string>>;
++
++/** "5 minutes", "2 hours", "1 day", "90 minutes" (same wording as the backend). */
++export function formatDuration(minutes: number): string {
++  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`;
++  if (minutes >= 1440 && minutes % 1440 === 0) return plural(minutes / 1440, 'day');
++  if (minutes >= 60 && minutes % 60 === 0) return plural(minutes / 60, 'hour');
++  return plural(minutes, 'minute');
++}
++
++export function draftFromOptions(o: BookingOptions): BookingDraft {
++  const n = o.min_notice_minutes;
++  const noticeUnit: NoticeUnit = n % 1440 === 0 ? 'days' : n % 60 === 0 ? 'hours' : 'minutes';
++  return {
++    noticeValue: String(n / UNIT_MINUTES[noticeUnit]),
++    noticeUnit,
++    windowDays: String(o.booking_window_days),
++    bufferBefore: String(o.buffer_before_minutes),
++    bufferAfter: String(o.buffer_after_minutes),
++    dailyMaxOn: o.daily_max_sessions !== null,
++    dailyMax: o.daily_max_sessions === null ? '' : String(o.daily_max_sessions),
++  };
++}
++
++function wholeNumber(text: string): number | null {
++  const t = text.trim();
++  return /^\d{1,6}$/.test(t) ? Number(t) : null;
++}
++
++/** Checks a draft against the backend ranges; options is set only when there are no errors. */
++export function validateBookingDraft(
++  d: BookingDraft,
++  limits: BookingOptionLimits = BOOKING_OPTION_LIMITS,
++): { options: BookingOptions | null; errors: BookingFieldErrors } {
++  const errors: BookingFieldErrors = {};
++  const L = limits;
++  const noticeCount = wholeNumber(d.noticeValue);
++  const notice = noticeCount === null ? null : noticeCount * UNIT_MINUTES[d.noticeUnit];
++  if (notice === null || notice < L.min_notice_minutes.min || notice > L.min_notice_minutes.max) {
++    errors.min_notice_minutes = `Enter a whole number for a minimum notice from ${formatDuration(L.min_notice_minutes.min)} to ${formatDuration(L.min_notice_minutes.max)}.`;
++  }
++  const windowDays = wholeNumber(d.windowDays);
++  if (windowDays === null || windowDays < L.booking_window_days.min || windowDays > L.booking_window_days.max) {
++    errors.booking_window_days = `Enter a whole number of days from ${L.booking_window_days.min} to ${L.booking_window_days.max}.`;
++  }
++  const before = wholeNumber(d.bufferBefore);
++  if (before === null || before < L.buffer_before_minutes.min || before > L.buffer_before_minutes.max) {
++    errors.buffer_before_minutes = `Enter a whole number of minutes from ${L.buffer_before_minutes.min} to ${L.buffer_before_minutes.max}.`;
++  }
++  const after = wholeNumber(d.bufferAfter);
++  if (after === null || after < L.buffer_after_minutes.min || after > L.buffer_after_minutes.max) {
++    errors.buffer_after_minutes = `Enter a whole number of minutes from ${L.buffer_after_minutes.min} to ${L.buffer_after_minutes.max}.`;
++  }
++  let dailyMax: number | null = null;
++  if (d.dailyMaxOn) {
++    dailyMax = wholeNumber(d.dailyMax);
++    if (dailyMax === null || dailyMax < L.daily_max_sessions.min || dailyMax > L.daily_max_sessions.max) {
++      errors.daily_max_sessions = `Enter a whole number of sessions from ${L.daily_max_sessions.min} to ${L.daily_max_sessions.max}, or turn off the daily maximum.`;
++    }
++  }
++  if (!errors.min_notice_minutes && !errors.booking_window_days && notice !== null && windowDays !== null && notice >= windowDays * 1440) {
++    errors.min_notice_minutes = `Minimum notice must be shorter than how far ahead clients can book (${formatDuration(windowDays * 1440)}).`;
++  }
++  if (Object.keys(errors).length > 0) return { options: null, errors };
++  return {
++    options: {
++      min_notice_minutes: notice as number,
++      booking_window_days: windowDays as number,
++      buffer_before_minutes: before as number,
++      buffer_after_minutes: after as number,
++      daily_max_sessions: dailyMax,
++    },
++    errors,
++  };
++}
++
++const SERVER_FIELD_PREFIXES: [RegExp, BookingOptionKey][] = [
++  [/^minimum notice/i, 'min_notice_minutes'],
++  [/^how far ahead/i, 'booking_window_days'],
++  [/^buffer before/i, 'buffer_before_minutes'],
++  [/^buffer after/i, 'buffer_after_minutes'],
++  [/^daily maximum/i, 'daily_max_sessions'],
++];
++
++/** A 400 refusal whose sentence names a field: { field, message } for that field. */
++export function serverFieldError(err: unknown): { field: BookingOptionKey; message: string } | null {
++  if (schedulingErrorStatus(err) !== 400) return null;
++  const raw = (err as { response?: { data?: { message?: unknown } } }).response?.data?.message;
++  const messages = (Array.isArray(raw) ? raw : [raw]).filter((m): m is string => typeof m === 'string');
++  for (const message of messages) {
++    const hit = SERVER_FIELD_PREFIXES.find(([re]) => re.test(message.trim()));
++    if (hit) return { field: hit[1], message: message.trim().slice(0, 240) };
++  }
++  return null;
++}
++
++export default function CoachBookingOptionsScreen() {
++  const { colors } = useTheme();
++  const q = useBookingOptions();
++  const save = useUpdateBookingOptions();
++  const [draft, setDraft] = useState<BookingDraft | null>(null);
++  const [errors, setErrors] = useState<BookingFieldErrors>({});
++  const [formError, setFormError] = useState<string | null>(null);
++  const [savedNote, setSavedNote] = useState<string | null>(null);
++  const saving = useRef(false);
++
++  useEffect(() => {
++    if (q.data) setDraft((current) => current ?? draftFromOptions(q.data));
++  }, [q.data]);
++
++  const limits = q.data?.limits ?? BOOKING_OPTION_LIMITS;
++  const defaults = q.data?.defaults ?? DEFAULT_BOOKING_OPTIONS;
++
++  const edit = (patch: Partial<BookingDraft>) => {
++    setDraft((current) => (current ? { ...current, ...patch } : current));
++    setSavedNote(null);
++    setFormError(null);
++  };
++
++  const onSave = () => {
++    if (!draft || saving.current) return;
++    const result = validateBookingDraft(draft, limits);
++    setErrors(result.errors);
++    setSavedNote(null);
++    if (!result.options) {
++      setFormError('Fix the options marked below, then save again.');
++      return;
++    }
++    setFormError(null);
++    saving.current = true;
++    save.mutate(result.options, {
++      onSuccess: (saved) => {
++        setDraft(draftFromOptions(saved));
++        setSavedNote('Booking options saved. New bookings and client moves follow them from now on.');
++      },
++      onError: (err) => {
++        const field = serverFieldError(err);
++        if (field) {
++          const next: BookingFieldErrors = {};
++          next[field.field] = field.message;
++          setErrors(next);
++          setFormError('Booking options were not saved. Fix the option marked below, then save again.');
++        } else if (schedulingErrorStatus(err) === 404 && schedulingErrorCode(err) === 'COACH_NOT_FOUND') {
++          setFormError('Booking options were not saved. Finish coach profile setup first, then save again.');
++        } else {
++          setFormError(`Booking options were not saved. ${calendarErrorMessage(err, 'save booking options', 'coach')}`);
++        }
++      },
++      onSettled: () => {
++        saving.current = false;
++      },
++    });
++  };
++
++  const muted = { color: colors.textMuted };
++  const inputStyle = [styles.input, { color: colors.textPrimary, borderColor: colors.border }];
++  const fieldError = (key: BookingOptionKey) =>
++    errors[key] ? (
++      <Text style={[typography.bodySmall, styles.fieldError, { color: colors.error }]} testID={`booking-options-error-${key}`} accessibilityLiveRegion="polite">
++        {errors[key]}
++      </Text>
++    ) : null;
++
++  return (
++    <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" testID="coach-booking-options">
++      <Text style={[typography.h2, { color: colors.textPrimary }]} accessibilityRole="header">
++        Booking options
++      </Text>
++      <Text style={[typography.bodySmall, muted, { marginTop: spacing.sm }]}>
++        These rules apply to every appointment type, for new bookings and client moves. Sessions already booked stay as they are.
++      </Text>
++
++      {q.isLoading ? <Text style={[typography.body, muted, { marginTop: spacing.lg }]}>Loading booking options.</Text> : null}
++      {q.isError ? (
++        <View style={{ marginTop: spacing.lg }}>
++          <Text style={[typography.body, muted]} testID="booking-options-load-error">
++            {bookingOptionsUnavailable(q.error)
++              ? 'Booking options are not available for this account yet. Open hours and time off still control open times.'
++              : calendarErrorMessage(q.error, 'load booking options', 'coach')}
++          </Text>
++          {!bookingOptionsUnavailable(q.error) ? (
++            <Pressable onPress={() => void q.refetch()} accessibilityRole="button" accessibilityLabel="Refresh booking options" style={[styles.secondary, { borderColor: colors.border }]}>
++              <Text style={[typography.body, { color: colors.textPrimary }]}>Refresh booking options</Text>
++            </Pressable>
++          ) : null}
++        </View>
++      ) : null}
++
++      {draft ? (
++        <View>
++          <Text style={[styles.label, muted]}>Minimum notice</Text>
++          <Text style={[typography.bodySmall, muted]}>Clients cannot book a time sooner than this from now.</Text>
++          <View style={styles.row}>
++            <TextInput value={draft.noticeValue} onChangeText={(t) => edit({ noticeValue: t })} keyboardType="number-pad" maxLength={6} accessibilityLabel="Minimum notice" style={[inputStyle, styles.flex]} testID="booking-options-notice" />
++            {UNITS.map((unit) => {
++              const selected = draft.noticeUnit === unit;
++              return (
++                <Pressable key={unit} onPress={() => edit({ noticeUnit: unit })} accessibilityRole="button" accessibilityLabel={`Minimum notice in ${unit}`} accessibilityState={{ selected }} style={[styles.unit, { borderColor: selected ? colors.textPrimary : colors.border, backgroundColor: selected ? colors.textPrimary : 'transparent' }]} testID={`booking-options-unit-${unit}`}>
++                  <Text style={[typography.bodySmall, { color: selected ? colors.background : colors.textPrimary }]}>{UNIT_LABELS[unit]}</Text>
++                </Pressable>
++              );
++            })}
++          </View>
++          {fieldError('min_notice_minutes')}
++
++          <Text style={[styles.label, muted]}>How far ahead clients can book (days)</Text>
++          <Text style={[typography.bodySmall, muted]}>Open times are offered up to this many days from today.</Text>
++          <TextInput value={draft.windowDays} onChangeText={(t) => edit({ windowDays: t })} keyboardType="number-pad" maxLength={3} accessibilityLabel="How far ahead clients can book, in days" style={inputStyle} testID="booking-options-window" />
++          {fieldError('booking_window_days')}
++
++          <Text style={[styles.label, muted]}>Buffer before each session (minutes)</Text>
++          <Text style={[typography.bodySmall, muted]}>Free time kept before a booked session, so clients cannot book right up to it.</Text>
++          <TextInput value={draft.bufferBefore} onChangeText={(t) => edit({ bufferBefore: t })} keyboardType="number-pad" maxLength={3} accessibilityLabel="Buffer before each session, in minutes" style={inputStyle} testID="booking-options-buffer-before" />
++          {fieldError('buffer_before_minutes')}
++
++          <Text style={[styles.label, muted]}>Buffer after each session (minutes)</Text>
++          <Text style={[typography.bodySmall, muted]}>Free time kept after a booked session before the next one can start.</Text>
++          <TextInput value={draft.bufferAfter} onChangeText={(t) => edit({ bufferAfter: t })} keyboardType="number-pad" maxLength={3} accessibilityLabel="Buffer after each session, in minutes" style={inputStyle} testID="booking-options-buffer-after" />
++          {fieldError('buffer_after_minutes')}
++
++          <View style={[styles.row, { marginTop: spacing.lg }]}>
++            <Text style={[typography.body, styles.flex, { color: colors.textPrimary }]}>Daily maximum</Text>
++            <Switch value={draft.dailyMaxOn} onValueChange={(on) => edit({ dailyMaxOn: on, dailyMax: on && !draft.dailyMax ? '4' : draft.dailyMax })} accessibilityLabel="Daily maximum" testID="booking-options-daily-max-on" />
++          </View>
++          <Text style={[typography.bodySmall, muted]}>
++            {draft.dailyMaxOn ? 'A day stops taking bookings once it has this many sessions, requests included.' : 'Off: no limit on sessions per day.'}
++          </Text>
++          {draft.dailyMaxOn ? (
++            <TextInput value={draft.dailyMax} onChangeText={(t) => edit({ dailyMax: t })} keyboardType="number-pad" maxLength={2} accessibilityLabel="Daily maximum sessions" style={[inputStyle, { marginTop: spacing.sm }]} testID="booking-options-daily-max" />
++          ) : null}
++          {fieldError('daily_max_sessions')}
++
++          {formError ? (
++            <Text style={[typography.bodySmall, { color: colors.error, marginTop: spacing.lg }]} testID="booking-options-form-error" accessibilityLiveRegion="polite">
++              {formError}
++            </Text>
++          ) : null}
++          {savedNote ? (
++            <Text style={[typography.bodySmall, { color: colors.textPrimary, marginTop: spacing.lg }]} testID="booking-options-saved" accessibilityLiveRegion="polite">
++              {savedNote}
++            </Text>
++          ) : null}
++          <Pressable onPress={onSave} disabled={save.isPending} accessibilityRole="button" accessibilityLabel="Save booking options" accessibilityState={{ disabled: save.isPending, busy: save.isPending }} style={[styles.primary, { backgroundColor: colors.textPrimary, opacity: save.isPending ? 0.6 : 1 }]} testID="booking-options-save">
++            <Text style={[typography.bodyMd, { color: colors.background }]}>{save.isPending ? 'Saving' : 'Save booking options'}</Text>
++          </Pressable>
++          <Pressable
++            onPress={() => {
++              setDraft(draftFromOptions(defaults));
++              setErrors({});
++              setFormError(null);
++              setSavedNote(`Standard options filled in: ${formatDuration(defaults.min_notice_minutes)} notice, ${defaults.booking_window_days} days ahead, no buffers, no daily maximum. Save to apply them.`);
++            }}
++            disabled={save.isPending}
++            accessibilityRole="button"
++            accessibilityLabel="Use the standard options"
++            style={[styles.secondary, { borderColor: colors.border }]}
++            testID="booking-options-defaults"
++          >
++            <Text style={[typography.body, { color: colors.textPrimary }]}>Use the standard options</Text>
++          </Pressable>
++        </View>
++      ) : null}
++    </ScrollView>
++  );
++}
++
++const styles = StyleSheet.create({
++  container: { padding: spacing.lg, paddingBottom: spacing['3xl'] },
++  label: { ...typography.caption, marginTop: spacing.xl, marginBottom: spacing.xs },
++  input: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 2, padding: spacing.md, marginTop: spacing.sm, ...typography.body },
++  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
++  flex: { flex: 1 },
++  unit: { minHeight: 44, borderWidth: 1, borderRadius: 2, paddingHorizontal: spacing.sm, alignItems: 'center', justifyContent: 'center', marginTop: spacing.sm },
++  fieldError: { marginTop: spacing.xs },
++  primary: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg },
++  secondary: { minHeight: 44, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginTop: spacing.sm },
++});
+diff --git a/src/screens/coach/SettingsScreen.tsx b/src/screens/coach/SettingsScreen.tsx
+index 6be0a6d..afe6109 100644
+--- a/src/screens/coach/SettingsScreen.tsx
++++ b/src/screens/coach/SettingsScreen.tsx
+@@ -44,6 +44,7 @@ import { ProfileSection } from './settings/ProfileSection';
+ import { SettingsToggles } from './settings/SettingsToggles';
+ import { BillingSection } from './settings/BillingSection';
+ import { DangerZone } from './settings/DangerZone';
++import { BookingOptionsEntry } from './settings/BookingOptionsEntry';
+ import { HELP_UNAVAILABLE_COPY, deletionErrorCopy } from '../settings/deletionErrors';
+ 
+ export default function SettingsScreen() {
+@@ -537,6 +538,15 @@ export default function SettingsScreen() {
+           <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+         </TouchableOpacity>
+         <View style={styles.divider} />
++        {/* S-AVAIL-122 — booking options; hidden when the backend does not offer them. */}
++        <BookingOptionsEntry
++          styles={styles}
++          colors={colors}
++          onOpen={() => {
++            mediumTap();
++            navigation.navigate('ClientsStack', { screen: 'CoachBookingOptions' });
++          }}
++        />
+         {/* S-SCHED — appointment types clients book from, and time off. */}
+         <TouchableOpacity
+           style={styles.row}
+diff --git a/src/screens/coach/__tests__/coachBookingOptions.test.tsx b/src/screens/coach/__tests__/coachBookingOptions.test.tsx
+new file mode 100644
+index 0000000..33828b3
+--- /dev/null
++++ b/src/screens/coach/__tests__/coachBookingOptions.test.tsx
+@@ -0,0 +1,160 @@
++/**
++ * S-AVAIL-122 coach booking options: load, save, field errors (local and the
++ * backend's INVALID_BOOKING_OPTIONS sentence), and the Settings entry hidden
++ * when the backend does not offer the endpoint.
++ */
++import React from 'react';
++import { cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++import type { BookingOptionsView } from '../../../api/schedulingApi';
++
++jest.mock('../../../services/sentry', () => ({ captureError: jest.fn() }));
++
++jest.mock('../../../api/schedulingApi', () => {
++  const actual = jest.requireActual('../../../api/schedulingApi');
++  return {
++    ...actual,
++    schedulingApi: {
++      getMyBookingOptions: jest.fn(),
++      updateMyBookingOptions: jest.fn(),
++    },
++  };
++});
++
++import { schedulingApi } from '../../../api/schedulingApi';
++import CoachBookingOptionsScreen, {
++  draftFromOptions,
++  serverFieldError,
++  validateBookingDraft,
++} from '../CoachBookingOptionsScreen';
++import { BookingOptionsEntry } from '../settings/BookingOptionsEntry';
++import { makeStyles } from '../settings/styles';
++
++const api = schedulingApi as jest.Mocked<typeof schedulingApi>;
++
++const VIEW: BookingOptionsView = {
++  coach_id: 'coach-1',
++  min_notice_minutes: 120,
++  booking_window_days: 30,
++  buffer_before_minutes: 10,
++  buffer_after_minutes: 15,
++  daily_max_sessions: 6,
++  defaults: { min_notice_minutes: 5, booking_window_days: 120, buffer_before_minutes: 0, buffer_after_minutes: 0, daily_max_sessions: null },
++};
++
++const clients: QueryClient[] = [];
++afterEach(async () => {
++  await cleanup();
++  for (const client of clients.splice(0)) client.clear();
++});
++
++function renderQ(node: React.ReactElement) {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } });
++  clients.push(qc);
++  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  api.getMyBookingOptions.mockResolvedValue(VIEW);
++  api.updateMyBookingOptions.mockImplementation(async (input) => ({ ...VIEW, ...input }));
++});
++
++describe('CoachBookingOptionsScreen', () => {
++  it('loads the saved options into the form', async () => {
++    const r = await renderQ(<CoachBookingOptionsScreen />);
++    await waitFor(() => expect(r.getByTestId('booking-options-notice').props.value).toBe('2'));
++    expect(r.getByTestId('booking-options-unit-hours').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
++    expect(r.getByTestId('booking-options-window').props.value).toBe('30');
++    expect(r.getByTestId('booking-options-buffer-before').props.value).toBe('10');
++    expect(r.getByTestId('booking-options-buffer-after').props.value).toBe('15');
++    expect(r.getByTestId('booking-options-daily-max').props.value).toBe('6');
++  });
++
++  it('saves the full set and confirms', async () => {
++    const r = await renderQ(<CoachBookingOptionsScreen />);
++    await waitFor(() => expect(r.getByTestId('booking-options-window')).toBeTruthy());
++    await fireEvent.changeText(r.getByTestId('booking-options-window'), '60');
++    await fireEvent.press(r.getByTestId('booking-options-unit-days'));
++    await fireEvent(r.getByTestId('booking-options-daily-max-on'), 'valueChange', false);
++    await fireEvent.press(r.getByTestId('booking-options-save'));
++    await waitFor(() =>
++      expect(api.updateMyBookingOptions).toHaveBeenCalledWith({
++        min_notice_minutes: 2880,
++        booking_window_days: 60,
++        buffer_before_minutes: 10,
++        buffer_after_minutes: 15,
++        daily_max_sessions: null,
++      }),
++    );
++    await waitFor(() => expect(r.getByTestId('booking-options-saved').props.children).toMatch(/^Booking options saved\./));
++  });
++
++  it('shows a field error and does not save an out-of-range value', async () => {
++    const r = await renderQ(<CoachBookingOptionsScreen />);
++    await waitFor(() => expect(r.getByTestId('booking-options-window')).toBeTruthy());
++    await fireEvent.changeText(r.getByTestId('booking-options-window'), '400');
++    await fireEvent.press(r.getByTestId('booking-options-save'));
++    expect(r.getByTestId('booking-options-error-booking_window_days').props.children).toBe('Enter a whole number of days from 1 to 365.');
++    expect(r.getByTestId('booking-options-form-error')).toBeTruthy();
++    expect(api.updateMyBookingOptions).not.toHaveBeenCalled();
++  });
++
++  it('puts the backend INVALID_BOOKING_OPTIONS sentence under the named field', async () => {
++    const message = 'Buffer after each session (minutes) must be a whole number from 0 to 240.';
++    api.updateMyBookingOptions.mockRejectedValue({
++      response: { status: 400, data: { code: 'INVALID_BOOKING_OPTIONS', error: 'INVALID_BOOKING_OPTIONS', message } },
++    });
++    const r = await renderQ(<CoachBookingOptionsScreen />);
++    await waitFor(() => expect(r.getByTestId('booking-options-save')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('booking-options-save'));
++    await waitFor(() => expect(r.getByTestId('booking-options-error-buffer_after_minutes').props.children).toBe(message));
++    expect(r.getByTestId('booking-options-form-error').props.children).toMatch(/^Booking options were not saved\./);
++    expect(r.queryByTestId('booking-options-saved')).toBeNull();
++  });
++});
++
++describe('booking options rules', () => {
++  const base = draftFromOptions(VIEW);
++
++  it('matches the backend ranges and the notice-shorter-than-window rule', () => {
++    expect(validateBookingDraft(base).options).toEqual({
++      min_notice_minutes: 120, booking_window_days: 30, buffer_before_minutes: 10, buffer_after_minutes: 15, daily_max_sessions: 6,
++    });
++    expect(validateBookingDraft({ ...base, noticeValue: '4', noticeUnit: 'minutes' }).errors.min_notice_minutes).toMatch(/from 5 minutes to 30 days/);
++    expect(validateBookingDraft({ ...base, noticeValue: '31', noticeUnit: 'days' }).errors.min_notice_minutes).toMatch(/from 5 minutes to 30 days/);
++    expect(validateBookingDraft({ ...base, noticeValue: '1.5' }).errors.min_notice_minutes).toBeTruthy();
++    expect(validateBookingDraft({ ...base, noticeValue: '2', noticeUnit: 'days', windowDays: '2' }).errors.min_notice_minutes).toBe(
++      'Minimum notice must be shorter than how far ahead clients can book (2 days).',
++    );
++    expect(validateBookingDraft({ ...base, bufferBefore: '241' }).errors.buffer_before_minutes).toMatch(/0 to 240/);
++    expect(validateBookingDraft({ ...base, dailyMax: '0' }).errors.daily_max_sessions).toMatch(/1 to 50, or turn off/);
++    expect(validateBookingDraft({ ...base, dailyMaxOn: false, dailyMax: '0' }).options?.daily_max_sessions).toBeNull();
++  });
++
++  it('maps class-validator and range sentences to their field', () => {
++    expect(serverFieldError({ response: { status: 400, data: { message: ['Daily maximum must be a whole number of sessions, or empty for no limit.'] } } })?.field).toBe('daily_max_sessions');
++    expect(serverFieldError({ response: { status: 400, data: { message: 'Minimum notice (2 days) must be shorter than how far ahead clients may book (1 day).' } } })?.field).toBe('min_notice_minutes');
++    expect(serverFieldError({ response: { status: 409, data: { message: 'Buffer before' } } })).toBeNull();
++  });
++});
++
++describe('Settings entry', () => {
++  const colors = { textSecondary: '#ccc', textMuted: '#888' } as never;
++  const styles = makeStyles({} as never);
++
++  it('shows the Booking Options row when the backend answers', async () => {
++    const onOpen = jest.fn();
++    const r = await renderQ(<BookingOptionsEntry styles={styles} colors={colors} onOpen={onOpen} />);
++    await waitFor(() => expect(api.getMyBookingOptions).toHaveBeenCalled());
++    await fireEvent.press(r.getByTestId('settings-booking-options'));
++    expect(onOpen).toHaveBeenCalled();
++  });
++
++  it('hides the row when the backend does not offer booking options (404)', async () => {
++    api.getMyBookingOptions.mockRejectedValue({ response: { status: 404, data: { message: 'Cannot GET /scheduling/coach/booking-options' } } });
++    const r = await renderQ(<BookingOptionsEntry styles={styles} colors={colors} onOpen={jest.fn()} />);
++    await waitFor(() => expect(r.queryByTestId('settings-booking-options')).toBeNull());
++    expect(api.getMyBookingOptions).toHaveBeenCalledTimes(1);
++  });
++});
+diff --git a/src/screens/coach/settings/BookingOptionsEntry.tsx b/src/screens/coach/settings/BookingOptionsEntry.tsx
+new file mode 100644
+index 0000000..58bd829
+--- /dev/null
++++ b/src/screens/coach/settings/BookingOptionsEntry.tsx
+@@ -0,0 +1,40 @@
++import React from 'react';
++import { Text, TouchableOpacity, View } from 'react-native';
++import { Ionicons } from '@expo/vector-icons';
++import { bookingOptionsUnavailable, useBookingOptions } from '../../../hooks/useCalendar';
++import type { ThemeColors } from '../../../theme/ThemeProvider';
++import type { makeStyles } from './styles';
++
++/**
++ * S-AVAIL-122 Settings row for coach booking options, next to Availability.
++ * Hidden when the backend does not offer the endpoint (bare 404 before
++ * backend #735 ships) or the account is not a coach (403).
++ */
++export function BookingOptionsEntry({
++  styles,
++  colors,
++  onOpen,
++}: {
++  styles: ReturnType<typeof makeStyles>;
++  colors: ThemeColors;
++  onOpen: () => void;
++}) {
++  const q = useBookingOptions();
++  if (q.isError && bookingOptionsUnavailable(q.error)) return null;
++  return (
++    <>
++      <TouchableOpacity
++        style={styles.row}
++        onPress={onOpen}
++        accessibilityRole="button"
++        accessibilityLabel="Open booking options"
++        testID="settings-booking-options"
++      >
++        <Ionicons name="options-outline" size={20} color={colors.textSecondary} />
++        <Text style={styles.rowLabel}>Booking Options</Text>
++        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
++      </TouchableOpacity>
++      <View style={styles.divider} />
++    </>
++  );
++}

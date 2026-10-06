@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('/home/user/workspace/deps/backend/node_modules/typescript');
 const nest = require('/home/user/workspace/deps/backend/node_modules/@nestjs/common');
+nest.Logger.overrideLogger(false);
 const root = process.argv[2];
 if (!root) throw new Error('Pass the exact-head read-only worktree');
 

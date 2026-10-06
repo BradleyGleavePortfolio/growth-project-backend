@@ -1,0 +1,16 @@
+02d59fd8f3a57ac3ee96c8c068c1c6ae8de93bf3
+100644 c696987357ab706cdf70d71977a20748d374d62e 1	src/navigation/README.md
+100644 84061c9f6f120cd9d205450600c3fe1c40a4859c 2	src/navigation/README.md
+100644 fef64ae245dec873fd98ba0cc570ab6e0f8f77f8 3	src/navigation/README.md
+100644 7959306cbd660cd9a1b0ea85c6f1f078ddb7f52d 1	src/services/api.ts
+100644 e9e7b72d2fafe3a9ad19ef5913d02b8bb6916050 2	src/services/api.ts
+100644 ba7a974cf6b2c39142dd0f960c36fcd966c41f9a 3	src/services/api.ts
+
+Auto-merging app.json
+Auto-merging src/navigation/ClientNavigator.tsx
+Auto-merging src/navigation/README.md
+CONFLICT (content): Merge conflict in src/navigation/README.md
+Auto-merging src/services/README.md
+Auto-merging src/services/api.ts
+CONFLICT (content): Merge conflict in src/services/api.ts
+Auto-merging src/services/authActions.ts

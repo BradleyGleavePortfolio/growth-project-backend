@@ -15,7 +15,7 @@ These files merged without conflict and were checked; each differs from main onl
 
 **CI**
 - Mobile CI lane [37394642708](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37394642708/job/112047595432): green. It ran `tsc --noEmit` plus 127 suites / 1,467 tests: dunning/lockout, every rootNavigator test, `src/services/__tests__` (api refresh, lockedDunning, accountBinding, sessionFence, signOut), `src/api/__tests__` (messaging v2, Roman chats, scheduling, programs, autosave), AI cap (`aiDailyCap`, `aiDailyCapSurfaces`), navigation reachability, Messages / ClientMessages / CoachInboxV2, Roman screens, the login role gate, the workout builder, and the More screen.
-- PR CI at fa2c14fb: PR_CI_STATE
+- PR CI at fa2c14fb: green ([CI run 37394649215](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37394649215): Typecheck, lint, test; CodeQL; Analyze javascript-typescript and actions). Mergeable state: clean.
 
 Merge-only tree check (A5 rule 12) does not apply: two hunks were resolved by hand. The operator decides whether this needs a merge-only delta review by both lenses (only the two hunks above).
 

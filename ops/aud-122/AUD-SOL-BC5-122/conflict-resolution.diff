@@ -1,0 +1,252 @@
+commit ff2594db6f506b47dc50510a5c7512119e4609bc
+Merge: cb5ef90a eb2e9e03
+Author: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date:   Tue Oct 6 00:32:07 2026 +0000
+
+    Merge origin/main into agent121/bcast-split-1-schema-flag
+    
+    Main refresh of #726 (broadcasts landing) onto main eb2e9e03 (dunning #687).
+    Conflicts resolved as unions: fly-env desired state, ci.yml community-live
+    spec list, launch-flags runbook, schema (CoachMessage fields + appended
+    models), account-deletion manifest. messaging.service listThread keeps
+    main's flag-gated reply_to include and broadcasts' card include; the card
+    include is read while FEATURE_COACH_BROADCASTS is on, so with both flags off
+    the thread query stays the legacy one.
+
+diff --git a/.github/fly-env-desired-state.json b/.github/fly-env-desired-state.json
+remerge CONFLICT (content): Merge conflict in .github/fly-env-desired-state.json
+index 8c91750b..17584951 100644
+--- a/.github/fly-env-desired-state.json
++++ b/.github/fly-env-desired-state.json
+@@ -39,11 +39,8 @@
+     "FEATURE_MWB_AUTOSAVE_UNDO": "unset",
+     "FEATURE_NAMED_REGIMES": "unset",
+     "FEATURE_DUNNING_V2": "unset",
+-<<<<<<< cb5ef90a (Merge pull request #727 from BradleyGleavePortfolio/agent121/bcast-split-2-segments-cards)
++    "FEATURE_COACH_CODE_TOOLS": "unset",
+     "FEATURE_COACH_BROADCASTS": "unset"
+-=======
+-    "FEATURE_COACH_CODE_TOOLS": "unset"
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
+   },
+   "secrets": {
+     "GOOGLE_CLIENT_IDS": "github-secret",
+@@ -105,11 +102,8 @@
+     "FEATURE_MWB_AUTOSAVE_UNDO": "Wave B (owner day-1 list): same gate as FEATURE_MWB_TEMPLATES. Precondition: MWB_AUTOSAVE_LOCK_TOKEN_SECRET must be github-secret (64+ hex characters) or present, because the autosave service throws without it. Mobile EXPO_PUBLIC_FF_MWB_AUTOSAVE flips with it.",
+     "FEATURE_NAMED_REGIMES": "Wave B (owner day-1 list): same gate as FEATURE_MWB_TEMPLATES. Unset = off (only 'true').",
+     "FEATURE_DUNNING_V2": "Wave B (owner day-1 list; folded in from #633): after backend #628 and mobile #322 are approved and the owner enables the Stripe customer portal in live mode. Roll back with 'unset'.",
+-<<<<<<< cb5ef90a (Merge pull request #727 from BradleyGleavePortfolio/agent121/bcast-split-2-segments-cards)
+-    "FEATURE_COACH_BROADCASTS": "A4 coach broadcasts, rich cards, saved replies and client tags (annex lane A4). Stays unset (off) until the backend PR and the mobile composer pass audit and a device pass; then the operator flips it to true. Unsetting it is the kill: routes answer 503 broadcasts.disabled and the dispatcher parks in-flight deliveries without re-sending delivered ones.",
+-=======
+     "FEATURE_COACH_CODE_TOOLS": "Annex lane A2 (coach code tools): after the backend PR and the mobile Codes screen pass both audit lenses and a device pass. Roll back with 'unset'.",
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
++    "FEATURE_COACH_BROADCASTS": "A4 coach broadcasts, rich cards, saved replies and client tags (annex lane A4). Stays unset (off) until the backend PR and the mobile composer pass audit and a device pass; then the operator flips it to true. Unsetting it is the kill: routes answer 503 broadcasts.disabled and the dispatcher parks in-flight deliveries without re-sending delivered ones.",
+     "GOOGLE_CLIENT_IDS": "Wave B: launch-required Google sign-in audiences. The GitHub secret GOOGLE_CLIENT_IDS exists; flip to github-secret to copy it to Fly. Must be a comma list of non-empty client ids.",
+     "MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "Precondition of FEATURE_MWB_AUTOSAVE_UNDO=true. Create the GitHub secret with 'openssl rand -hex 32 | gh secret set MWB_AUTOSAVE_LOCK_TOKEN_SECRET', then flip to github-secret in the same PR as (or before) the autosave flag.",
+     "GOOGLE_OAUTH_CLIENT_ID": "Present on Fly (set outside this manifest); asserted present, never written here.",
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+remerge CONFLICT (content): Merge conflict in .github/workflows/ci.yml
+index 9794daf4..567e4767 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -474,11 +474,8 @@ jobs:
+           test/community/community-posts.e2e.spec.ts
+           test/community/community-messages.e2e.spec.ts
+           test/community/events/community-events.e2e.spec.ts
+-<<<<<<< cb5ef90a (Merge pull request #727 from BradleyGleavePortfolio/agent121/bcast-split-2-segments-cards)
+-          test/broadcasts/broadcasts-dispatch.live.spec.ts
+-=======
+           test/invite-codes/coach-code-tools.live.spec.ts
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
++          test/broadcasts/broadcasts-dispatch.live.spec.ts
+           --runInBand --testTimeout=60000
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+diff --git a/docs/runbooks/launch-flags.md b/docs/runbooks/launch-flags.md
+remerge CONFLICT (content): Merge conflict in docs/runbooks/launch-flags.md
+index 855ac46e..c131928d 100644
+--- a/docs/runbooks/launch-flags.md
++++ b/docs/runbooks/launch-flags.md
+@@ -128,11 +128,8 @@ FEATURE_MWB_TEMPLATES | off | fly secrets unset -a backend-spring-lake-3890 FEAT
+ FEATURE_MWB_AUTOSAVE_UNDO | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_AUTOSAVE_UNDO | "FEATURE_MWB_AUTOSAVE_UNDO": "unset"
+ FEATURE_NAMED_REGIMES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_NAMED_REGIMES | "FEATURE_NAMED_REGIMES": "unset"
+ FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_DUNNING_V2 | "FEATURE_DUNNING_V2": "unset"
+-<<<<<<< cb5ef90a (Merge pull request #727 from BradleyGleavePortfolio/agent121/bcast-split-2-segments-cards)
+-FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_BROADCASTS | "FEATURE_COACH_BROADCASTS": "unset"
+-=======
+ FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_CODE_TOOLS | "FEATURE_COACH_CODE_TOOLS": "unset"
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
++FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_BROADCASTS | "FEATURE_COACH_BROADCASTS": "unset"
+ ```
+ 
+ ## Deploy-window sequences
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+remerge CONFLICT (content): Merge conflict in prisma/schema.prisma
+index 08724025..54c5da2c 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -1341,13 +1341,11 @@ model CoachMessage {
+   // NULL for every other message.
+   welcome_job_id String? @unique
+ 
+-<<<<<<< cb5ef90a (Merge pull request #727 from BradleyGleavePortfolio/agent121/bcast-split-2-segments-cards)
+   // A4 — rich card attached to this message (workout, meal plan, booking,
+   // package, check-in) and, for broadcast copies, the delivery that wrote it.
+   card               CoachMessageCard?
+   broadcast_delivery CoachBroadcastDelivery?
+ 
+-=======
+   // A3-MSG-CORE (20270303000000) — Telegram-grade message actions.
+   // Offline-queue idempotency key minted by the sender's device (UUID). A
+   // replayed send with the same (sender_id, client_message_id) returns the
+@@ -1369,7 +1367,6 @@ model CoachMessage {
+   pinned_by_id      String?
+ 
+   @@unique([sender_id, client_message_id], name: "CoachMessage_sender_client_message_key")
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
+   @@index([coach_id])
+   @@index([client_id])
+   @@index([created_at])
+@@ -8185,7 +8182,6 @@ model AiProcessingConsentEvent {
+   @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
+ }
+ 
+-<<<<<<< cb5ef90a (Merge pull request #727 from BradleyGleavePortfolio/agent121/bcast-split-2-segments-cards)
+ // ============================================================
+ // A4-MSG-BROADCAST — segmented, scheduled and recurring coach broadcasts,
+ // rich message cards, saved replies and coach-private client tags.
+@@ -8360,7 +8356,8 @@ model CoachClientTag {
+   @@index([coach_id, tag])
+   @@index([client_id])
+   @@map("coach_client_tags")
+-=======
++}
++
+ // ─── A1-COACHLESS: coachless Home, scripted Roman pitch, coach code ─────────
+ //
+ // FeaturedCoachConfig is a singleton (id = 'default', CHECK-enforced) holding
+@@ -8438,5 +8435,4 @@ model SchedulingJobLease {
+   lease_until DateTime
+   acquired_at DateTime
+   updated_at  DateTime @updatedAt
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
+ }
+diff --git a/src/account-deletion/account-deletion.manifest.ts b/src/account-deletion/account-deletion.manifest.ts
+remerge CONFLICT (content): Merge conflict in src/account-deletion/account-deletion.manifest.ts
+index 7b899d5f..852e146d 100644
+--- a/src/account-deletion/account-deletion.manifest.ts
++++ b/src/account-deletion/account-deletion.manifest.ts
+@@ -89,7 +89,16 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
+   // service_role policy allows this DELETE. No policy or trigger is changed.
+   { model: 'AiProcessingConsentEvent', field: 'user_id', action: del },
+   { model: 'CoachMessage', field: 'coach_id', action: detach('coach_id') },
+-<<<<<<< cb5ef90a (Merge pull request #727 from BradleyGleavePortfolio/agent121/bcast-split-2-segments-cards)
++  // A3-MSG-CORE (#660): who tombstoned or pinned a message in a surviving
++  // thread. The tombstone and the pin stay; the actor id is detached.
++  { model: 'CoachMessage', field: 'deleted_by_id', action: detach('deleted_by_id') },
++  { model: 'CoachMessage', field: 'pinned_by_id', action: detach('pinned_by_id') },
++  // A3-MSG-CORE (#660): per-user thread preferences (mute, inbox pin). The
++  // user's own rows go, and so do other people's rows for a thread with the
++  // deleted user (the thread is removed or detached above).
++  { model: 'CoachThreadState', field: 'user_id', action: del },
++  { model: 'CoachThreadState', field: 'coach_id', action: del },
++  { model: 'CoachThreadState', field: 'client_id', action: del },
+   // A4 broadcasts (#659). Copies already sent are ordinary CoachMessage rows
+   // (handled above; their cards cascade with the message). A broadcast the
+   // user owns as tenant or wrote as author is deleted with its runs and
+@@ -101,18 +110,6 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
+   { model: 'CoachSavedReply', field: 'owner_user_id', action: del },
+   { model: 'CoachClientTag', field: 'coach_id', action: del },
+   { model: 'CoachClientTag', field: 'client_id', action: del },
+-=======
+-  // A3-MSG-CORE (#660): who tombstoned or pinned a message in a surviving
+-  // thread. The tombstone and the pin stay; the actor id is detached.
+-  { model: 'CoachMessage', field: 'deleted_by_id', action: detach('deleted_by_id') },
+-  { model: 'CoachMessage', field: 'pinned_by_id', action: detach('pinned_by_id') },
+-  // A3-MSG-CORE (#660): per-user thread preferences (mute, inbox pin). The
+-  // user's own rows go, and so do other people's rows for a thread with the
+-  // deleted user (the thread is removed or detached above).
+-  { model: 'CoachThreadState', field: 'user_id', action: del },
+-  { model: 'CoachThreadState', field: 'coach_id', action: del },
+-  { model: 'CoachThreadState', field: 'client_id', action: del },
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
+   { model: 'Message', field: 'sender_id', action: del },
+   { model: 'Message', field: 'recipient_id', action: del },
+   { model: 'MessageDraft', field: 'coach_id', action: del },
+diff --git a/src/messaging/messaging.service.ts b/src/messaging/messaging.service.ts
+remerge CONFLICT (content): Merge conflict in src/messaging/messaging.service.ts
+index 18b51cb5..2c929f84 100644
+--- a/src/messaging/messaging.service.ts
++++ b/src/messaging/messaging.service.ts
+@@ -32,6 +32,7 @@ import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
+ import { holdWelcomeLease, WelcomeLeaseLostError } from '../engagement/welcome-lease-fence';
+ import { describeFailure } from '../observability/log-pii';
+ import { isMessagingCoreV2Enabled } from './messaging-core.feature';
++import { coachBroadcastsEnabled } from '../broadcasts/broadcasts.feature';
+ import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
+ import {
+   broadcastThreadUpdated,
+@@ -630,6 +631,8 @@ export class MessagingService {
+   private async listThread(coachId: string, clientId: string, opts: ListOpts) {
+     const limit = this.clampLimit(opts.limit);
+     const before = this.parseBefore(opts.before);
++    const v2 = isMessagingCoreV2Enabled();
++    const withCards = coachBroadcastsEnabled();
+     return this.prisma.coachMessage.findMany({
+       where: {
+         coach_id: coachId,
+@@ -638,18 +641,14 @@ export class MessagingService {
+       },
+       orderBy: { created_at: 'desc' },
+       take: limit,
+-<<<<<<< cb5ef90a (Merge pull request #727 from BradleyGleavePortfolio/agent121/bcast-split-2-segments-cards)
+-      // A4 — rich card (workout, meal plan, booking, package, check-in) as
+-      // a server-validated snapshot; null for plain messages.
+-      include: {
+-        card: { select: { card_type: true, ref_id: true, snapshot: true } },
+-      },
+-=======
+-      // A3-MSG-CORE: the quoted message for swipe-replies (v2 only, so the
+-      // flag-OFF query is byte-identical to the legacy one).
+-      ...(isMessagingCoreV2Enabled()
++      // A4 — rich card (workout, meal plan, booking, package, check-in) as a
++      // server-validated snapshot, read only while FEATURE_COACH_BROADCASTS is
++      // on. A3-MSG-CORE: the quoted message for swipe-replies (v2 only). With
++      // both flags off the query is byte-identical to the legacy one.
++      ...(withCards && v2
+         ? {
+             include: {
++              card: { select: { card_type: true, ref_id: true, snapshot: true } },
+               reply_to: {
+                 select: {
+                   id: true,
+@@ -661,8 +660,27 @@ export class MessagingService {
+               },
+             },
+           }
+-        : {}),
+->>>>>>> eb2e9e03 (Merge pull request #687 from BradleyGleavePortfolio/agent115/dunning-split-1-foundation)
++        : withCards
++          ? {
++              include: {
++                card: { select: { card_type: true, ref_id: true, snapshot: true } },
++              },
++            }
++          : v2
++            ? {
++                include: {
++                  reply_to: {
++                    select: {
++                      id: true,
++                      sender_id: true,
++                      body: true,
++                      voice_url: true,
++                      deleted_at: true,
++                    },
++                  },
++                },
++              }
++            : {}),
+     });
+   }
+ 

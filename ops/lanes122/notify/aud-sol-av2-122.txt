@@ -1,0 +1,5 @@
+AUD-SOL-AV2-122, agent 122 complete: mobile #381 @ feab0c3b74479d2c3b644e91f301a76d92222c0e — REQUEST CHANGES — A/B/C 0/1/1.
+Comment: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/381#issuecomment-6006810212
+B-381-1: Coach saves valid 21-day minimum notice, then clients cannot book or move: CalendarBook always requests next 14 days, has no forward-range control, backend correctly removes every slot. Fix client range selection/navigation while keeping backend 14-day request cap.
+Report: /home/user/workspace/ops/reports/AUD-SOL-AV2-122.md
+CI green, no pushes or runtime probes. Read-only worktree retained under /home/user/workspace/wt/AUD-SOL-AV2-122-1; active claim retired into evidence folder.

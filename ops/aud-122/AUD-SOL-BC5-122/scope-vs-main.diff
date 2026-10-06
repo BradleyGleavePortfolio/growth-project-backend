@@ -1,0 +1,177 @@
+diff --git a/.github/fly-env-desired-state.json b/.github/fly-env-desired-state.json
+index c79c4338..17584951 100644
+--- a/.github/fly-env-desired-state.json
++++ b/.github/fly-env-desired-state.json
+@@ -39,7 +39,8 @@
+     "FEATURE_MWB_AUTOSAVE_UNDO": "unset",
+     "FEATURE_NAMED_REGIMES": "unset",
+     "FEATURE_DUNNING_V2": "unset",
+-    "FEATURE_COACH_CODE_TOOLS": "unset"
++    "FEATURE_COACH_CODE_TOOLS": "unset",
++    "FEATURE_COACH_BROADCASTS": "unset"
+   },
+   "secrets": {
+     "GOOGLE_CLIENT_IDS": "github-secret",
+@@ -102,6 +103,7 @@
+     "FEATURE_NAMED_REGIMES": "Wave B (owner day-1 list): same gate as FEATURE_MWB_TEMPLATES. Unset = off (only 'true').",
+     "FEATURE_DUNNING_V2": "Wave B (owner day-1 list; folded in from #633): after backend #628 and mobile #322 are approved and the owner enables the Stripe customer portal in live mode. Roll back with 'unset'.",
+     "FEATURE_COACH_CODE_TOOLS": "Annex lane A2 (coach code tools): after the backend PR and the mobile Codes screen pass both audit lenses and a device pass. Roll back with 'unset'.",
++    "FEATURE_COACH_BROADCASTS": "A4 coach broadcasts, rich cards, saved replies and client tags (annex lane A4). Stays unset (off) until the backend PR and the mobile composer pass audit and a device pass; then the operator flips it to true. Unsetting it is the kill: routes answer 503 broadcasts.disabled and the dispatcher parks in-flight deliveries without re-sending delivered ones.",
+     "GOOGLE_CLIENT_IDS": "Wave B: launch-required Google sign-in audiences. The GitHub secret GOOGLE_CLIENT_IDS exists; flip to github-secret to copy it to Fly. Must be a comma list of non-empty client ids.",
+     "MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "Precondition of FEATURE_MWB_AUTOSAVE_UNDO=true. Create the GitHub secret with 'openssl rand -hex 32 | gh secret set MWB_AUTOSAVE_LOCK_TOKEN_SECRET', then flip to github-secret in the same PR as (or before) the autosave flag.",
+     "GOOGLE_OAUTH_CLIENT_ID": "Present on Fly (set outside this manifest); asserted present, never written here.",
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index db0c4984..567e4767 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -475,6 +475,7 @@ jobs:
+           test/community/community-messages.e2e.spec.ts
+           test/community/events/community-events.e2e.spec.ts
+           test/invite-codes/coach-code-tools.live.spec.ts
++          test/broadcasts/broadcasts-dispatch.live.spec.ts
+           --runInBand --testTimeout=60000
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+diff --git a/docs/runbooks/launch-flags.md b/docs/runbooks/launch-flags.md
+index ded98929..c131928d 100644
+--- a/docs/runbooks/launch-flags.md
++++ b/docs/runbooks/launch-flags.md
+@@ -129,6 +129,7 @@ FEATURE_MWB_AUTOSAVE_UNDO | off | fly secrets unset -a backend-spring-lake-3890
+ FEATURE_NAMED_REGIMES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_NAMED_REGIMES | "FEATURE_NAMED_REGIMES": "unset"
+ FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_DUNNING_V2 | "FEATURE_DUNNING_V2": "unset"
+ FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_CODE_TOOLS | "FEATURE_COACH_CODE_TOOLS": "unset"
++FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_BROADCASTS | "FEATURE_COACH_BROADCASTS": "unset"
+ ```
+ 
+ ## Deploy-window sequences
+diff --git a/src/account-deletion/account-deletion.manifest.ts b/src/account-deletion/account-deletion.manifest.ts
+index 4231b438..852e146d 100644
+--- a/src/account-deletion/account-deletion.manifest.ts
++++ b/src/account-deletion/account-deletion.manifest.ts
+@@ -99,6 +99,17 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
+   { model: 'CoachThreadState', field: 'user_id', action: del },
+   { model: 'CoachThreadState', field: 'coach_id', action: del },
+   { model: 'CoachThreadState', field: 'client_id', action: del },
++  // A4 broadcasts (#659). Copies already sent are ordinary CoachMessage rows
++  // (handled above; their cards cascade with the message). A broadcast the
++  // user owns as tenant or wrote as author is deleted with its runs and
++  // deliveries, so a removed author never keeps sending (A-659-7). Deliveries
++  // addressed to the user, their saved replies and client tags go too.
++  { model: 'CoachBroadcast', field: 'author_user_id', action: del },
++  { model: 'CoachBroadcast', field: 'coach_id', action: del },
++  { model: 'CoachBroadcastDelivery', field: 'recipient_id', action: del },
++  { model: 'CoachSavedReply', field: 'owner_user_id', action: del },
++  { model: 'CoachClientTag', field: 'coach_id', action: del },
++  { model: 'CoachClientTag', field: 'client_id', action: del },
+   { model: 'Message', field: 'sender_id', action: del },
+   { model: 'Message', field: 'recipient_id', action: del },
+   { model: 'MessageDraft', field: 'coach_id', action: del },
+diff --git a/src/app.module.ts b/src/app.module.ts
+index 4f352b5d..ae6c7fdf 100644
+--- a/src/app.module.ts
++++ b/src/app.module.ts
+@@ -39,6 +39,8 @@ import { InviteCodesModule } from './invite-codes/invite-codes.module';
+ import { CoachlessModule } from './coachless/coachless.module';
+ import { InviteGrantModule } from './invite-grant/invite-grant.module';
+ import { MessagingModule } from './messaging/messaging.module';
++// A4-MSG-BROADCAST — coach broadcasts, cards, saved replies (FEATURE_COACH_BROADCASTS, default off).
++import { BroadcastsModule } from './broadcasts/broadcasts.module';
+ import { MessagesSafetyModule } from './messages-safety/messages-safety.module';
+ import { NudgesModule } from './nudges/nudges.module';
+ import { MealPlansModule } from './meal-plans/meal-plans.module';
+@@ -235,6 +237,7 @@ import { WearablesModule } from './wearables/wearables.module';
+     // Clinic C01 — invite-code → package grants, free-package claims, revoke.
+     InviteGrantModule,
+     MessagingModule,
++    BroadcastsModule,
+     // Apple App Review 1.2 — abuse-report + per-user blocklist endpoints.
+     // Safety surface, NOT a paid feature. Reachable by every authenticated
+     // user; intentionally absent from PAID_ROUTES.
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index d8956a09..b0000a72 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -1945,6 +1945,15 @@ export const ENV_RULES: EnvRule[] = [
+     default: 'unset → off (only "true")',
+     reason: 'Dunning v2 flag.',
+   },
++  {
++    name: 'FEATURE_COACH_BROADCASTS',
++    values: ['true', 'false'],
++    unsetIs: 'off',
++    tier: 'optional',
++    default: 'unset → off (only "true")',
++    reason:
++      'A4 coach broadcasts (segmented, scheduled, recurring), rich message cards, saved replies and client tags, plus the per-minute broadcast dispatcher. Off: every A4 route answers 503 broadcasts.disabled and the dispatcher does nothing.',
++  },
+   {
+     name: 'FEATURE_COMMUNITY_SCHEMA',
+     values: ['true', 'false'],
+diff --git a/src/messaging/messaging.service.ts b/src/messaging/messaging.service.ts
+index 38f88509..2c929f84 100644
+--- a/src/messaging/messaging.service.ts
++++ b/src/messaging/messaging.service.ts
+@@ -32,6 +32,7 @@ import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
+ import { holdWelcomeLease, WelcomeLeaseLostError } from '../engagement/welcome-lease-fence';
+ import { describeFailure } from '../observability/log-pii';
+ import { isMessagingCoreV2Enabled } from './messaging-core.feature';
++import { coachBroadcastsEnabled } from '../broadcasts/broadcasts.feature';
+ import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
+ import {
+   broadcastThreadUpdated,
+@@ -630,6 +631,8 @@ export class MessagingService {
+   private async listThread(coachId: string, clientId: string, opts: ListOpts) {
+     const limit = this.clampLimit(opts.limit);
+     const before = this.parseBefore(opts.before);
++    const v2 = isMessagingCoreV2Enabled();
++    const withCards = coachBroadcastsEnabled();
+     return this.prisma.coachMessage.findMany({
+       where: {
+         coach_id: coachId,
+@@ -638,11 +641,14 @@ export class MessagingService {
+       },
+       orderBy: { created_at: 'desc' },
+       take: limit,
+-      // A3-MSG-CORE: the quoted message for swipe-replies (v2 only, so the
+-      // flag-OFF query is byte-identical to the legacy one).
+-      ...(isMessagingCoreV2Enabled()
++      // A4 — rich card (workout, meal plan, booking, package, check-in) as a
++      // server-validated snapshot, read only while FEATURE_COACH_BROADCASTS is
++      // on. A3-MSG-CORE: the quoted message for swipe-replies (v2 only). With
++      // both flags off the query is byte-identical to the legacy one.
++      ...(withCards && v2
+         ? {
+             include: {
++              card: { select: { card_type: true, ref_id: true, snapshot: true } },
+               reply_to: {
+                 select: {
+                   id: true,
+@@ -654,7 +660,27 @@ export class MessagingService {
+               },
+             },
+           }
+-        : {}),
++        : withCards
++          ? {
++              include: {
++                card: { select: { card_type: true, ref_id: true, snapshot: true } },
++              },
++            }
++          : v2
++            ? {
++                include: {
++                  reply_to: {
++                    select: {
++                      id: true,
++                      sender_id: true,
++                      body: true,
++                      voice_url: true,
++                      deleted_at: true,
++                    },
++                  },
++                },
++              }
++            : {}),
+     });
+   }
+ 

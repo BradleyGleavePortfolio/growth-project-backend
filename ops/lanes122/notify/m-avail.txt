@@ -1,0 +1,5 @@
+M-AVAIL-122 (agent 122) — mobile coach booking options editor, 17:42 PDT 2026-10-05
+m#381 head feab0c3b74479d2c3b644e91f301a76d92222c0e, base agent115/sched-split-1-scheduling-data @ a4ca533d (scheduling train #365).
+642 changed lines. Lane 37394728273 green (tsc + 13 suites / 326 tests). PR CI "Typecheck, lint, test" green (run 37394781589).
+Comment FIX ROUND 1 (OPENING) + READY FOR AUDIT: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/381#issuecomment-6006728984
+Next: both lenses, first review (T3 mobile). Merge after #365 lands; row stays hidden (404) until b#735 deploys.

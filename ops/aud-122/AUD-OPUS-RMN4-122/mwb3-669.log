@@ -1,0 +1,710 @@
+mwb-3-live-tests	Set up job	﻿2026-10-06T00:23:44.5876831Z Current runner version: '2.337.0'
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5904254Z ##[group]Runner Image Provisioner
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5905192Z Hosted Compute Agent
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5905904Z Version: 20260901.588
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5906583Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5907354Z Build Date: 2026-09-01T19:56:44Z
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5908175Z Worker ID: {6c9be33e-a6d6-4a6c-9c5d-6ec73c80f89f}
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5909362Z Azure Region: eastus
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5910024Z ##[endgroup]
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5911579Z ##[group]Operating System
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5912325Z Ubuntu
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5912971Z 24.04.5
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5913538Z LTS
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5914127Z ##[endgroup]
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5914695Z ##[group]Runner Image
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5915305Z Image: ubuntu-24.04
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5915957Z Version: 20260927.320.1
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5917090Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5919289Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5920343Z ##[endgroup]
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5921680Z ##[group]GITHUB_TOKEN Permissions
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5923894Z Contents: read
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5924723Z Metadata: read
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5925333Z Packages: read
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5926030Z ##[endgroup]
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5928242Z Secret source: Actions
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5929510Z Cache mode: write
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.5930581Z Prepare workflow directory
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.6384056Z Prepare all required actions
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.6432784Z Getting action download info
+mwb-3-live-tests	Set up job	2026-10-06T00:23:44.9464049Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+mwb-3-live-tests	Set up job	2026-10-06T00:23:45.0825895Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+mwb-3-live-tests	Set up job	2026-10-06T00:23:45.3183717Z Complete job name: mwb-3-live-tests
+mwb-3-live-tests	Initialize containers	﻿2026-10-06T00:23:45.3751977Z ##[group]Checking docker version
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.3765760Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.4992157Z '1.48'
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5005290Z Docker daemon API version: '1.48'
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5006226Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5215302Z '1.48'
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5228367Z Docker client API version: '1.48'
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5234805Z ##[endgroup]
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5238483Z ##[group]Clean up resources from previous jobs
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5244449Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=87dc44"
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5394102Z ##[command]/usr/bin/docker network prune --force --filter "label=87dc44"
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5540717Z ##[endgroup]
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5541848Z ##[group]Create local container network
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.5555209Z ##[command]/usr/bin/docker network create --label 87dc44 github_network_da2125347c1a43c3bf9a6b50de161b18
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.6117328Z 6d07c698b7cfdf9964010424fb2e9033dc6bd2bc57bcd174178ff47f249851e1
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.6138544Z ##[endgroup]
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.6164462Z ##[group]Starting postgres service container
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.6187177Z ##[command]/usr/bin/docker pull postgres:15
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.8809931Z 15: Pulling from library/postgres
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9600059Z 6b37362b3da7: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9601064Z 0d791b2b75ae: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9601969Z 0d39881c83f7: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9602740Z c95afe7c234f: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9603608Z bc176b99a33a: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9604676Z 08a5cd487deb: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9605726Z eb4d92aaee0a: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9606808Z 75a4dff090e8: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9607911Z afe9a40fb214: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9609239Z ca5e97c0cd7d: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9610152Z 53fa82bdba52: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9610867Z 7b9c6b8e5e6e: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9612483Z b65147f15943: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9613473Z 170d9ea1cd85: Pulling fs layer
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9614142Z c95afe7c234f: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9614787Z bc176b99a33a: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9615325Z 08a5cd487deb: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9616043Z ca5e97c0cd7d: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9616554Z eb4d92aaee0a: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9617130Z 53fa82bdba52: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9617739Z 75a4dff090e8: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9618348Z 7b9c6b8e5e6e: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9619215Z afe9a40fb214: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9619825Z b65147f15943: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9620419Z 170d9ea1cd85: Waiting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9911768Z 0d791b2b75ae: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:45.9913465Z 0d791b2b75ae: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.0229558Z 0d39881c83f7: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.0233195Z 0d39881c83f7: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.0472834Z c95afe7c234f: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.0941194Z 08a5cd487deb: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.0945222Z 08a5cd487deb: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.0949292Z bc176b99a33a: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.0951353Z bc176b99a33a: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1036263Z 6b37362b3da7: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1039635Z 6b37362b3da7: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1243256Z eb4d92aaee0a: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1245259Z eb4d92aaee0a: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1253230Z 75a4dff090e8: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1254582Z 75a4dff090e8: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1484755Z ca5e97c0cd7d: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1490947Z ca5e97c0cd7d: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1562262Z 53fa82bdba52: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1563988Z 53fa82bdba52: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1799291Z 7b9c6b8e5e6e: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1801337Z 7b9c6b8e5e6e: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1895011Z b65147f15943: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.1896547Z b65147f15943: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.2063749Z 170d9ea1cd85: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:46.9997557Z afe9a40fb214: Verifying Checksum
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:47.0000401Z afe9a40fb214: Download complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:47.2898001Z 6b37362b3da7: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:49.7863331Z 0d791b2b75ae: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:49.9591634Z 0d39881c83f7: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:49.9969447Z c95afe7c234f: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:50.3031701Z bc176b99a33a: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:50.3834452Z 08a5cd487deb: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:50.3918390Z eb4d92aaee0a: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:50.4015421Z 75a4dff090e8: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3358337Z afe9a40fb214: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3515420Z ca5e97c0cd7d: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3617546Z 53fa82bdba52: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3696731Z 7b9c6b8e5e6e: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3795227Z b65147f15943: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3876356Z 170d9ea1cd85: Pull complete
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3914192Z Digest: sha256:724292da1f2e50bdccfc3302ce75bbba7f4a6076701b588cc795fcac65683550
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3926082Z Status: Downloaded newer image for postgres:15
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.3939556Z docker.io/library/postgres:15
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.4042313Z ##[command]/usr/bin/docker create --name b6db1853baf74d7c84a340b0ae136609_postgres15_2bad8f --label 87dc44 --network github_network_da2125347c1a43c3bf9a6b50de161b18 --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=postgres" -e GITHUB_ACTIONS=true -e CI=true postgres:15
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.4313859Z a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.4337992Z ##[command]/usr/bin/docker start a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.6692706Z a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.6725725Z ##[command]/usr/bin/docker ps --all --filter id=a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.6857127Z a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc Up Less than a second (health: starting)
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.6891954Z ##[command]/usr/bin/docker port a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.7032411Z 5432/tcp -> 0.0.0.0:5432
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.7033424Z 5432/tcp -> [::]:5432
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.7083233Z ##[endgroup]
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.7092182Z ##[group]Waiting for all services to be ready
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.7105578Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.7250764Z starting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:53.7272135Z postgres service is starting, waiting 2 seconds before checking again.
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:55.7279427Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:55.7402839Z starting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:55.7416948Z postgres service is starting, waiting 4 seconds before checking again.
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:59.8024075Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:59.8150914Z starting
+mwb-3-live-tests	Initialize containers	2026-10-06T00:23:59.8165120Z postgres service is starting, waiting 9 seconds before checking again.
+mwb-3-live-tests	Initialize containers	2026-10-06T00:24:08.9057901Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Initialize containers	2026-10-06T00:24:08.9181351Z healthy
+mwb-3-live-tests	Initialize containers	2026-10-06T00:24:08.9197189Z postgres service is healthy.
+mwb-3-live-tests	Initialize containers	2026-10-06T00:24:08.9198253Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	﻿2026-10-06T00:24:08.9567687Z ##[group]Run actions/checkout@v6
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9568267Z with:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9568785Z   repository: BradleyGleavePortfolio/growth-project-backend
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9571356Z   token: ***
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9571581Z   ssh-strict: true
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9571801Z   ssh-user: git
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9572026Z   persist-credentials: true
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9572271Z   clean: true
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9572497Z   sparse-checkout-cone-mode: true
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9572761Z   fetch-depth: 1
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9572973Z   fetch-tags: false
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9573194Z   show-progress: true
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9573421Z   lfs: false
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9573621Z   submodules: false
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9573839Z   set-safe-directory: true
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9574095Z   allow-unsafe-pr-checkout: false
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9574589Z env:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9575032Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9575460Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9575924Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:08.9576269Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0566099Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0567604Z ##[group]Getting Git version info
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0568122Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0569095Z [command]/usr/bin/git version
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0651271Z git version 2.55.0
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0674305Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0689357Z Temporarily overriding HOME='/home/runner/work/_temp/14399b23-0e89-4f08-8121-b7fdcd2d3d6d' before making global git config changes
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0690830Z Adding repository directory to the temporary git global config as a safe directory
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0695404Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0750209Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0754171Z ##[group]Determining repository object format
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0756830Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0757543Z ##[group]Initializing the repository
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0762603Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0887697Z hint: Using 'master' as the name for the initial branch. This default branch name
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0889235Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0890002Z hint: to use in all of your new repositories, which will suppress this warning,
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0890533Z hint: call:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0890986Z hint:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0891634Z hint: 	git config --global init.defaultBranch <name>
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0892340Z hint:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0892976Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0894202Z hint: 'development'. The just-created branch can be renamed via this command:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0895143Z hint:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0895659Z hint: 	git branch -m <name>
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0896298Z hint:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0896994Z hint: Disable this message with "git config set advice.defaultBranchName false"
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0898275Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0905357Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0958292Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0959373Z ##[group]Disabling automatic garbage collection
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0963698Z [command]/usr/bin/git config --local gc.auto 0
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0994585Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0995251Z ##[group]Setting up auth
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.0996217Z Removing SSH command configuration
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1003325Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1035717Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1431399Z Removing HTTP extra header
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1437190Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1468022Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1680620Z Removing includeIf entries pointing to credentials config files
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1687596Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1719073Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1944452Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.1982824Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.2015998Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.2050805Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.2089382Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.2116102Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.2116861Z ##[group]Fetching the repository
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:09.2126024Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +66769dbe139ac21ea772e68453ef595574da675c:refs/remotes/pull/669/merge
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3215073Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3216139Z  * [new ref]         66769dbe139ac21ea772e68453ef595574da675c -> pull/669/merge
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3222430Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3223160Z ##[group]Determining the checkout info
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3224051Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3230980Z [command]/usr/bin/git sparse-checkout disable
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3282863Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3310932Z ##[group]Checking out the ref
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.3314572Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/669/merge
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5469037Z Note: switching to 'refs/remotes/pull/669/merge'.
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5469605Z 
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5469993Z You are in 'detached HEAD' state. You can look around, make experimental
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5470882Z changes and commit them, and you can discard any commits you make in this
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5471763Z state without impacting any branches by switching back to a branch.
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5472407Z 
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5472769Z If you want to create a new branch to retain commits you create, you may
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5473536Z do so (now or later) by using -c with the switch command. Example:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5473970Z 
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5474152Z   git switch -c <new-branch-name>
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5474445Z 
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5474611Z Or undo this operation with:
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5474882Z 
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5475035Z   git switch -
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5475250Z 
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5475647Z Turn off this advice by setting config variable advice.detachedHead to false
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5476457Z 
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5477078Z HEAD is now at 66769db Merge ef71cb9c1a5aa7c148bfdb1241830cc7a9beb9d2 into fefe73c6741843aaed2f31fa0881aa829114b201
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5485726Z ##[endgroup]
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5530233Z [command]/usr/bin/git log -1 --format=%H
+mwb-3-live-tests	Run actions/checkout@v6	2026-10-06T00:24:10.5553134Z 66769dbe139ac21ea772e68453ef595574da675c
+mwb-3-live-tests	Run actions/setup-node@v6	﻿2026-10-06T00:24:10.5801505Z ##[group]Run actions/setup-node@v6
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5801824Z with:
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5802037Z   node-version: 20
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5802261Z   cache: npm
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5802475Z   check-latest: false
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5805182Z   token: ***
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5805427Z   package-manager-cache: true
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5805685Z env:
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5806121Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5806573Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5807031Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.5807361Z ##[endgroup]
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:10.7220720Z Attempting to download 20...
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:11.1996492Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:11.4885122Z Extracting ...
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:11.4997099Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/9c2856cd-47a2-4924-b36c-4a0c4d76f48a -f /home/runner/work/_temp/2feea4aa-c120-4433-9162-ad29cdfef835
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:12.4825990Z Adding to the cache ...
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:14.3231919Z ##[group]Environment details
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:14.5518974Z node: v20.20.2
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:14.5519405Z npm: 10.8.2
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:14.5519634Z yarn: 1.22.22
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:14.5520118Z ##[endgroup]
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:14.5537810Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:14.6582280Z /home/runner/.npm
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:14.7341013Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:15.2415223Z Received 86861520 of 86861520 (100.0%), 184.5 MBs/sec
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:15.2475566Z Cache Size: ~83 MB (86861520 B)
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:15.2517329Z [command]/usr/bin/tar -xf /home/runner/work/_temp/056b747d-6a71-45ba-bc2f-aacc9fce3f87/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:15.4369227Z Cache restored successfully
+mwb-3-live-tests	Run actions/setup-node@v6	2026-10-06T00:24:15.4416319Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+mwb-3-live-tests	Install dependencies	﻿2026-10-06T00:24:15.4640877Z ##[group]Run npm ci
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:15.4641370Z ^[[36;1mnpm ci^[[0m
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:15.4916304Z shell: /usr/bin/bash -e {0}
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:15.4916631Z env:
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:15.4917463Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:15.4917973Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:15.4918486Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:15.4919054Z ##[endgroup]
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:21.6760146Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:22.7537775Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:23.8382512Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:25.2572402Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:25.2770935Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:25.3330109Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:38.5992571Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:38.5993308Z > growth-project-backend@1.0.0 postinstall
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:38.5993730Z > prisma generate
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:38.5995454Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:39.5385057Z Prisma schema loaded from prisma/schema.prisma
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3383596Z ┌─────────────────────────────────────────────────────────┐
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3384983Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3385334Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3389677Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.10s
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3390053Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3390457Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3390816Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3391158Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3391484Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3407695Z │                                                         │
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3408836Z │  This is a major update - please follow the guide at    │
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3409923Z │  https://pris.ly/d/major-version-upgrade                │
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3410819Z │                                                         │
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3411675Z │  Run the following to update                            │
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3413145Z │    npm i --save-dev prisma@latest                       │
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3414089Z │    npm i @prisma/client@latest                          │
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3414987Z └─────────────────────────────────────────────────────────┘
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3940833Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3941577Z > growth-project-backend@1.0.0 prepare
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3942224Z > lefthook install
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.3942480Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4456587Z sync hooks: ✔️(pre-commit, commit-msg)
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4709362Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4729773Z added 1117 packages, and audited 1118 packages in 28s
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4730313Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4730625Z 202 packages are looking for funding
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4731867Z   run `npm fund` for details
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4788898Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4793170Z 4 vulnerabilities (1 moderate, 3 high)
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4793798Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4794319Z To address issues that do not require attention, run:
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4795153Z   npm audit fix
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4795526Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4796003Z To address all issues (including breaking changes), run:
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4796746Z   npm audit fix --force
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4797115Z 
+mwb-3-live-tests	Install dependencies	2026-10-06T00:24:43.4797433Z Run `npm audit` for details.
+mwb-3-live-tests	Generate Prisma client	﻿2026-10-06T00:24:43.5569843Z ##[group]Run npx prisma generate
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:43.5570372Z ^[[36;1mnpx prisma generate^[[0m
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:43.5631651Z shell: /usr/bin/bash -e {0}
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:43.5631927Z env:
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:43.5632384Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:43.5632834Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:43.5633300Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:43.5633617Z ##[endgroup]
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:44.8099509Z Prisma schema loaded from prisma/schema.prisma
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:48.6175172Z 
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:48.6176318Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.09s
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:48.6176751Z 
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:48.6177204Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:48.6177607Z 
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:48.6177942Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+mwb-3-live-tests	Generate Prisma client	2026-10-06T00:24:48.6178285Z 
+mwb-3-live-tests	Install postgresql-client	﻿2026-10-06T00:24:48.6830061Z ##[group]Run sudo apt-get update && sudo apt-get install -y postgresql-client
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.6830705Z ^[[36;1msudo apt-get update && sudo apt-get install -y postgresql-client^[[0m
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.6892005Z shell: /usr/bin/bash -e {0}
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.6892290Z env:
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.6892774Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.6893226Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.6893686Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.6894009Z ##[endgroup]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.7880489Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.8186572Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.8189908Z Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.8203787Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.8282269Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.8283498Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.9370229Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [458 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.9531405Z Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [515 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.9577784Z Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.6 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.9921403Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1370 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:48.9988310Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [305 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.0021823Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.0040633Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1701 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.0177209Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [341 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.0192950Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.0241142Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1728 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.0309805Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [395 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.0335907Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [13.3 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.0345575Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1066494Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5764 B]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1081405Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1250568Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1071 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1306917Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [222 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1323783Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1334553Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1216 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1401332Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [244 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1423775Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1431225Z Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1566 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:49.1511885Z Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [361 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:53.6359366Z Fetched 12.6 MB in 1s (9315 kB/s)
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.5087406Z Reading package lists...
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.5403817Z Reading package lists...
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.7483264Z Building dependency tree...
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.7490850Z Reading state information...
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.9142272Z The following NEW packages will be installed:
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.9142775Z   postgresql-client
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.9311970Z 0 upgraded, 1 newly installed, 0 to remove and 25 not upgraded.
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.9312816Z Need to get 11.6 kB of archives.
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.9313630Z After this operation, 17.4 kB of additional disk space will be used.
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:54.9314573Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.0235030Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 postgresql-client all 16+257build1.1 [11.6 kB]
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.2751362Z Fetched 11.6 kB in 0s (113 kB/s)
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.2970002Z Selecting previously unselected package postgresql-client.
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3297762Z (Reading database ... 
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3298368Z (Reading database ... 5%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3299096Z (Reading database ... 10%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3299457Z (Reading database ... 15%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3299804Z (Reading database ... 20%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3300146Z (Reading database ... 25%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3300477Z (Reading database ... 30%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3300803Z (Reading database ... 35%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3301271Z (Reading database ... 40%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3301598Z (Reading database ... 45%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3301925Z (Reading database ... 50%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.3353352Z (Reading database ... 55%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.4662006Z (Reading database ... 60%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.6765304Z (Reading database ... 65%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:55.8776234Z (Reading database ... 70%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.0301632Z (Reading database ... 75%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.2233567Z (Reading database ... 80%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.3749241Z (Reading database ... 85%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.5840238Z (Reading database ... 90%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.7457048Z (Reading database ... 95%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.7457645Z (Reading database ... 100%
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.7458479Z (Reading database ... 202296 files and directories currently installed.)
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.7501534Z Preparing to unpack .../postgresql-client_16+257build1.1_all.deb ...
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.7526469Z Unpacking postgresql-client (16+257build1.1) ...
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:56.7887855Z Setting up postgresql-client (16+257build1.1) ...
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4441470Z 
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4442265Z Running kernel seems to be up-to-date.
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4442621Z 
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4442836Z No services need to be restarted.
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4443088Z 
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4443312Z No containers need to be restarted.
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4443564Z 
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4443804Z No user sessions are running outdated binaries.
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4444129Z 
+mwb-3-live-tests	Install postgresql-client	2026-10-06T00:24:57.4444520Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	﻿2026-10-06T00:24:58.3734213Z ##[group]Run psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.3734690Z ^[[36;1mpsql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \^[[0m
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.3735537Z ^[[36;1m  "DO \$do\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_authenticated') THEN CREATE ROLE app_authenticated NOLOGIN NOINHERIT NOBYPASSRLS; END IF; END \$do\$;"^[[0m
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.3797385Z shell: /usr/bin/bash -e {0}
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.3797665Z env:
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.3798131Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.3798865Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.3799362Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.3799682Z ##[endgroup]
+mwb-3-live-tests	Provision the RLS-bound app_authenticated role	2026-10-06T00:24:58.5010082Z DO
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	﻿2026-10-06T00:24:58.5059512Z ##[group]Run npx jest \
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5059843Z ^[[36;1mnpx jest \^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5060129Z ^[[36;1m  test/mwb-3-lock-token.spec.ts \^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5060558Z ^[[36;1m  test/mwb-3-autosave.controller.spec.ts \^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5060939Z ^[[36;1m  test/mwb-3-autosave.service.spec.ts \^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5061277Z ^[[36;1m  test/mwb-3-undo.spec.ts \^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5061610Z ^[[36;1m  test/mwb-3-revision-prune.cron.spec.ts \^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5062000Z ^[[36;1m  test/profile-put-concurrency.live.spec.ts \^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5062390Z ^[[36;1m  test/onboarding-tenancy-fence.live.spec.ts \^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5062756Z ^[[36;1m  --runInBand --testTimeout=120000^[[0m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5122566Z shell: /usr/bin/bash -e {0}
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5122851Z env:
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5123293Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5123756Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5124217Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5124596Z   NODE_OPTIONS: --max-old-space-size=4096
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:24:58.5124896Z ##[endgroup]
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:19.9386308Z ^[[33m[Nest] 3541  - ^[[39m10/06/2026, 12:25:18 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:19.9388449Z ^[[33m[Nest] 3541  - ^[[39m10/06/2026, 12:25:18 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:19.9392066Z ^[[33m[Nest] 3541  - ^[[39m10/06/2026, 12:25:18 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:21.8325076Z ^[[33m[Nest] 3541  - ^[[39m10/06/2026, 12:25:21 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:22.1207526Z PASS test/mwb-3-lock-token.spec.ts (22.507 s)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:26.9450649Z ^[[33m[Nest] 3541  - ^[[39m10/06/2026, 12:25:26 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:27.0384003Z PASS test/mwb-3-autosave.controller.spec.ts
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:31.4042909Z ^[[33m[Nest] 3541  - ^[[39m10/06/2026, 12:25:31 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:31.6210162Z PASS test/mwb-3-autosave.service.spec.ts
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5037886Z ^[[31m[Nest] 3541  - ^[[39m10/06/2026, 12:25:32 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[WorkoutBuilderRevisionPruneCron] ^[[39m^[[31mRevision prune failed for plan B: boom^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5039598Z Error: boom
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5040878Z     at Object.<anonymous> (/home/runner/work/growth-project-backend/growth-project-backend/test/mwb-3-revision-prune.cron.spec.ts:81:30)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5043026Z     at Promise.finally.completed (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1561:28)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5044495Z     at new Promise (<anonymous>)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5045896Z     at callAsyncCircusFn (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1501:10)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5048153Z     at _callCircusTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1011:40)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5050539Z     at _runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:951:3)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5052479Z     at /home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:853:7
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5054411Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:866:11)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5056169Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:861:11)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5058279Z     at run (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:765:3)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5060197Z     at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1993:21)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5061807Z     at jestAdapter (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/runner.js:111:19)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5063249Z     at runTestInternal (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:276:16)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5064625Z     at runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:344:7)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5157887Z ^[[31m[Nest] 3541  - ^[[39m10/06/2026, 12:25:32 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[WorkoutBuilderRevisionPruneCron] ^[[39m^[[31mRevision prune sweep failed to enumerate plans: db down^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5159605Z Error: db down
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5160809Z     at Object.<anonymous> (/home/runner/work/growth-project-backend/growth-project-backend/test/mwb-3-revision-prune.cron.spec.ts:103:28)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5162924Z     at Promise.finally.completed (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1561:28)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5164298Z     at new Promise (<anonymous>)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5165523Z     at callAsyncCircusFn (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1501:10)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5167597Z     at _callCircusTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1011:40)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5170072Z     at _runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:951:3)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5172423Z     at /home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:853:7
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5174471Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:866:11)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5176688Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:861:11)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5178945Z     at run (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:765:3)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5181134Z     at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1993:21)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5183324Z     at jestAdapter (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/runner.js:111:19)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5185270Z     at runTestInternal (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:276:16)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5187109Z     at runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:344:7)
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5877602Z ^[[95m[Nest] 3541  - ^[[39m10/06/2026, 12:25:32 AM ^[[95m  DEBUG^[[39m ^[[38;5;3m[WorkoutBuilderRevisionPruneCron] ^[[39m^[[95mFEATURE_MWB_AUTOSAVE_UNDO off — revision prune skipped^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5879962Z ^[[32m[Nest] 3541  - ^[[39m10/06/2026, 12:25:32 AM ^[[32m    LOG^[[39m ^[[38;5;3m[WorkoutBuilderRevisionPruneCron] ^[[39m^[[32mStarting MWB-3 revision prune sweep^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5881995Z ^[[32m[Nest] 3541  - ^[[39m10/06/2026, 12:25:32 AM ^[[32m    LOG^[[39m ^[[38;5;3m[WorkoutBuilderRevisionPruneCron] ^[[39m^[[32mMWB-3 revision prune sweep complete: 2 plan(s) pruned, 8 revision(s) deleted^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:32.5884448Z ^[[32m[Nest] 3541  - ^[[39m10/06/2026, 12:25:32 AM ^[[32m    LOG^[[39m ^[[38;5;3m[WorkoutBuilderRevisionPruneCron] ^[[39m^[[32mStarting MWB-3 revision prune sweep^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:36.0322899Z ^[[33m[Nest] 3541  - ^[[39m10/06/2026, 12:25:35 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:36.1528749Z ^[[32m[Nest] 3541  - ^[[39m10/06/2026, 12:25:36 AM ^[[32m    LOG^[[39m ^[[38;5;3m[WorkoutBuilderRevisionPruneCron] ^[[39m^[[32mStarting MWB-3 revision prune sweep^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:36.1530786Z ^[[32m[Nest] 3541  - ^[[39m10/06/2026, 12:25:36 AM ^[[32m    LOG^[[39m ^[[38;5;3m[WorkoutBuilderRevisionPruneCron] ^[[39m^[[32mMWB-3 revision prune sweep complete: 1 plan(s) pruned, 10 revision(s) deleted^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:36.2673781Z PASS test/mwb-3-revision-prune.cron.spec.ts
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:40.5445537Z ^[[33m[Nest] 3541  - ^[[39m10/06/2026, 12:25:40 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:40.7622720Z PASS test/mwb-3-undo.spec.ts
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:45.2885057Z PASS test/onboarding-tenancy-fence.live.spec.ts
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:49.1337963Z PASS test/profile-put-concurrency.live.spec.ts
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:49.1376707Z 
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:49.1388171Z Test Suites: 7 passed, 7 total
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:49.1389155Z Tests:       62 passed, 62 total
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:49.1389583Z Snapshots:   0 total
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:49.1390075Z Time:        49.765 s
+mwb-3-live-tests	Run MWB-3 autosave/undo live suite (default-lane specs)	2026-10-06T00:25:49.1391685Z Ran all test suites matching test/mwb-3-lock-token.spec.ts|test/mwb-3-autosave.controller.spec.ts|test/mwb-3-autosave.service.spec.ts|test/mwb-3-undo.spec.ts|test/mwb-3-revision-prune.cron.spec.ts|test/profile-put-concurrency.live.spec.ts|test/onboarding-tenancy-fence.live.spec.ts.
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	﻿2026-10-06T00:25:49.5722364Z ##[group]Run npx jest --config jest.rls.config.js test/rls-mwb3-autosave-undo.spec.ts --runInBand --testTimeout=120000
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:25:49.5723279Z ^[[36;1mnpx jest --config jest.rls.config.js test/rls-mwb3-autosave-undo.spec.ts --runInBand --testTimeout=120000^[[0m
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:25:49.5784690Z shell: /usr/bin/bash -e {0}
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:25:49.5784974Z env:
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:25:49.5785455Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:25:49.5785915Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:25:49.5786412Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:25:49.5786768Z   NODE_OPTIONS: --max-old-space-size=4096
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:25:49.5787076Z ##[endgroup]
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.6586379Z ^[[33m[Nest] 3988  - ^[[39m10/06/2026, 12:26:21 AM ^[[33m   WARN^[[39m ^[[38;5;3m[AnalyticsService] ^[[39m^[[33mPOSTHOG_KEY not set — analytics are disabled (no-op mode).^[[39m
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8132143Z PASS rls-live test/rls-mwb3-autosave-undo.spec.ts (31.167 s)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8134483Z   MWB-3 #13 — WorkoutPlanRevision RLS (sub-coach cross-tenant)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8136761Z     ✓ a sub-coach on the team CAN read its head coach plan revision (19 ms)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8138057Z     ✓ a sub-coach CANNOT read another tenant (foreign coach) revision (13 ms)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8139566Z     ✓ the head coach cannot read the foreign tenant revision either (12 ms)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8141127Z     ✓ the foreign coach cannot read the head coach revision (19 ms)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8142225Z     ✓ service_role bypasses RLS and sees both revisions (10 ms)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8143225Z     ✓ the head coach CAN read its own plan revision (10 ms)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8144188Z   MWB-3 #1/#8 — autosave concurrency (real service, live DB)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8145502Z     ✓ #1/#8 two parallel autosaves at base 0: exactly one commits, the other gets a typed 409 (148 ms)
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8146210Z 
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8167856Z Test Suites: 1 passed, 1 total
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8168483Z Tests:       7 passed, 7 total
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8169312Z Snapshots:   0 total
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8169778Z Time:        31.409 s
+mwb-3-live-tests	Run MWB-3 RLS + concurrency live spec (rls-lane spec)	2026-10-06T00:26:21.8170494Z Ran all test suites matching test/rls-mwb3-autosave-undo.spec.ts.
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	﻿2026-10-06T00:26:22.3225227Z ##[group]Run npx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:22.3226002Z ^[[36;1mnpx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000^[[0m
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:22.3287434Z shell: /usr/bin/bash -e {0}
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:22.3287721Z env:
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:22.3288169Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:22.3288898Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:22.3289379Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:22.3289784Z   NODE_OPTIONS: --max-old-space-size=4096
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:22.3290284Z ##[endgroup]
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8589794Z ^[[31m[Nest] 4136  - ^[[39m10/06/2026, 12:26:37 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[31mroman.erase_incomplete session=cmuvxuu8o005l1o6wmj7u3cr1 messages_left=1^[[39m
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8821324Z PASS test/roman/roman-session-erase.live.spec.ts (14.591 s)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8823190Z   B-635-1 / C-635-1 live: Roman delete erases and frees the day key (Postgres)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8825353Z     ✓ negative control: Postgres rejects a second row on a day key a deleted row still holds (105 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8826799Z     ✓ open -> append -> delete -> open the same day gives a fresh empty session that takes turns (31 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8827990Z     ✓ concurrent opens after a delete converge on one fresh session (36 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8829854Z     ✓ the old deleted session stays deleted: a late append to it is a 404 and stores nothing (18 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8830983Z     ✓ a delete racing an append leaves no transcript behind (73 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8831826Z     ✓ delete + reopen never resets the daily cap (20 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8832810Z     ✓ C-635-1: a legacy tombstone holding today's key is erased on open and a fresh session opens (27 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8833668Z     ✓ C-635-1: the sweep erases every legacy tombstone, is idempotent, and leaves live chats alone (26 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8835067Z     ✓ B-635-2: the list pages every live chat newest first; delete-all erases prior days and today on both surfaces, nobody else, cap kept (65 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8836127Z     ✓ B-635-2 / C-635-2: a prior-day chat is erased by id; a repeat delete is a 204; a foreign id is the coded 404 (14 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8837020Z     ✓ C-635-3: under a role that RLS stops from deleting, delete is a coded 503 and the chat is left whole (108 ms)
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8837455Z 
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8856759Z Test Suites: 1 passed, 1 total
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8857375Z Tests:       11 passed, 11 total
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8858034Z Snapshots:   0 total
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8858903Z Time:        14.836 s
+mwb-3-live-tests	Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)	2026-10-06T00:26:37.8859817Z Ran all test suites matching test/roman/roman-session-erase.live.spec.ts.
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	﻿2026-10-06T00:26:38.1781893Z ##[group]Run npx jest test/roman/roman-spend-admission.live.spec.ts --runInBand --testTimeout=120000
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:38.1782697Z ^[[36;1mnpx jest test/roman/roman-spend-admission.live.spec.ts --runInBand --testTimeout=120000^[[0m
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:38.1843074Z shell: /usr/bin/bash -e {0}
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:38.1843349Z env:
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:38.1843789Z   DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:38.1844233Z   DIRECT_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:38.1844687Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:38.1845032Z   NODE_OPTIONS: --max-old-space-size=4096
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:38.1845324Z ##[endgroup]
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.2620223Z ^[[33m[Nest] 4267  - ^[[39m10/06/2026, 12:26:52 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.capacity_reached cap_usd=0.1^[[39m
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3013899Z ^[[33m[Nest] 4267  - ^[[39m10/06/2026, 12:26:52 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.capacity_reached cap_usd=0.2^[[39m
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3036483Z ^[[33m[Nest] 4267  - ^[[39m10/06/2026, 12:26:52 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.capacity_reached cap_usd=0.2^[[39m
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3059540Z ^[[33m[Nest] 4267  - ^[[39m10/06/2026, 12:26:52 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.capacity_reached cap_usd=0.2^[[39m
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3080995Z ^[[33m[Nest] 4267  - ^[[39m10/06/2026, 12:26:52 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.capacity_reached cap_usd=0.2^[[39m
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3101771Z ^[[33m[Nest] 4267  - ^[[39m10/06/2026, 12:26:52 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RomanService] ^[[39m^[[33mroman.capacity_reached cap_usd=0.2^[[39m
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3252862Z PASS test/roman/roman-spend-admission.live.spec.ts (13.186 s)
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3253868Z   B-651-5 live: Roman spend admission is atomic per UTC day (Postgres)
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3255291Z     ✓ two concurrent turns where exactly one fits: exactly one is admitted, one row is reserved (20 ms)
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3256924Z     ✓ eight concurrent turns: admitted reservations never sum above the cap, and every fitting turn is admitted (47 ms)
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3257771Z 
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3295193Z Test Suites: 1 passed, 1 total
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3296023Z Tests:       2 passed, 2 total
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3296896Z Snapshots:   0 total
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3297555Z Time:        13.436 s
+mwb-3-live-tests	Run Roman spend admission live spec (#651 B-651-5)	2026-10-06T00:26:52.3298535Z Ran all test suites matching test/roman/roman-spend-admission.live.spec.ts.
+mwb-3-live-tests	Post Run actions/setup-node@v6	﻿2026-10-06T00:26:52.6179200Z Post job cleanup.
+mwb-3-live-tests	Post Run actions/setup-node@v6	2026-10-06T00:26:52.7363100Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba, not saving cache.
+mwb-3-live-tests	Post Run actions/checkout@v6	﻿2026-10-06T00:26:52.7492567Z Post job cleanup.
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8319935Z [command]/usr/bin/git version
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8358146Z git version 2.55.0
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8400034Z Temporarily overriding HOME='/home/runner/work/_temp/d983c63f-51a9-464f-b85c-8dcef3d10761' before making global git config changes
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8401637Z Adding repository directory to the temporary git global config as a safe directory
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8407242Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8437587Z Removing SSH command configuration
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8444529Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8479942Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8707571Z Removing HTTP extra header
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8713080Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8747308Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8968492Z Removing includeIf entries pointing to credentials config files
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.8976538Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9006751Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9008396Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9009836Z includeif.gitdir:/github/workspace/.git.path
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9010698Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9017057Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9038334Z /home/runner/work/_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9050961Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9085941Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9107911Z /home/runner/work/_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9117525Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9148982Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9169377Z /github/runner_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9177035Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9226830Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9246714Z /github/runner_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9255713Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9291311Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+mwb-3-live-tests	Post Run actions/checkout@v6	2026-10-06T00:26:52.9507461Z Removing credentials config '/home/runner/work/_temp/git-credentials-7551a589-ac46-4199-a276-d04993f68093.config'
+mwb-3-live-tests	Stop containers	﻿2026-10-06T00:26:52.9631357Z Print service container logs: b6db1853baf74d7c84a340b0ae136609_postgres15_2bad8f
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9635834Z ##[command]/usr/bin/docker logs --details a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9763803Z  The files belonging to this database system will be owned by user "postgres".
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9766511Z  initdb: warning: enabling "trust" authentication for local connections
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9767786Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9769318Z  2026-10-06 00:23:54.542 UTC [1] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9770126Z  2026-10-06 00:23:54.542 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9770646Z  2026-10-06 00:23:54.542 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9771252Z  2026-10-06 00:23:54.543 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9771845Z  2026-10-06 00:23:54.545 UTC [62] LOG:  database system was shut down at 2026-10-06 00:23:54 UTC
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9772389Z  2026-10-06 00:23:54.549 UTC [1] LOG:  database system is ready to accept connections
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9773004Z  2026-10-06 00:25:49.006 UTC [167] ERROR:  duplicate key value violates unique constraint "UserProfile_user_id_key"
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9773656Z  2026-10-06 00:25:49.006 UTC [167] DETAIL:  Key (user_id)=(b606-3-live-new-client) already exists.
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9774117Z  This user must also own the server process.
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9774407Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9774697Z  The database cluster will be initialized with locale "en_US.utf8".
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9775151Z  The default database encoding has accordingly been set to "UTF8".
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9775624Z  The default text search configuration will be set to "english".
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9775971Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9776178Z  Data page checksums are disabled.
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9776441Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9776753Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9777170Z  creating subdirectories ... ok
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9777500Z  selecting dynamic shared memory implementation ... posix
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9777865Z  selecting default max_connections ... 100
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9778388Z  selecting default shared_buffers ... 128MB
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9779321Z  selecting default time zone ... Etc/UTC
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9779821Z  creating configuration files ... ok
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9780335Z  running bootstrap script ... ok
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9780852Z  performing post-bootstrap initialization ... ok
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9781190Z  syncing data to disk ... ok
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9781430Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9781610Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9781850Z  Success. You can now start the database server using:
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9782204Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9782463Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9782781Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9783446Z  waiting for server to start....2026-10-06 00:23:54.305 UTC [48] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9784361Z  2026-10-06 00:23:54.305 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9784955Z  2026-10-06 00:23:54.308 UTC [51] LOG:  database system was shut down at 2026-10-06 00:23:54 UTC
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9785488Z  2026-10-06 00:23:54.311 UTC [48] LOG:  database system is ready to accept connections
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9785886Z   done
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9786092Z  server started
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9786312Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9786640Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9787049Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9787318Z  2026-10-06 00:23:54.423 UTC [48] LOG:  received fast shutdown request
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9788198Z  waiting for server to shut down....2026-10-06 00:23:54.424 UTC [48] LOG:  aborting any active transactions
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9789210Z  2026-10-06 00:23:54.426 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9789939Z  2026-10-06 00:23:54.426 UTC [49] LOG:  shutting down
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9790345Z  2026-10-06 00:23:54.426 UTC [49] LOG:  checkpoint starting: shutdown immediate
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9791322Z  2026-10-06 00:23:54.428 UTC [49] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9792274Z  2026-10-06 00:23:54.432 UTC [48] LOG:  database system is shut down
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9792616Z   done
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9792815Z  server stopped
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9793051Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9793306Z  PostgreSQL init process complete; ready for start up.
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9793638Z  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9800053Z  2026-10-06 00:25:49.006 UTC [167] STATEMENT:  INSERT INTO "public"."UserProfile" ("id","user_id","height_cm","current_weight_lbs","target_weight_lbs","date_of_birth","sex","activity_level","goal_type","workout_experience","has_gym_membership","macro_target_calories","macro_target_protein_g","macro_target_carbs_g","macro_target_fat_g","weight_unit","calorie_display","onboardingCompleted","injuries","updated_at") VALUES ($1,$2,$3,$4,$5,$6,CAST($7::text AS "public"."Sex"),CAST($8::text AS "public"."ActivityLevel"),CAST($9::text AS "public"."GoalType"),CAST($10::text AS "public"."WorkoutExperience"),$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING "public"."UserProfile"."id", "public"."UserProfile"."user_id", "public"."UserProfile"."height_cm", "public"."UserProfile"."current_weight_lbs", "public"."UserProfile"."target_weight_lbs", "public"."UserProfile"."date_of_birth", "public"."UserProfile"."sex"::text, "public"."UserProfile"."activity_level"::text, "public"."UserProfile"."goal_type"::text, "public"."UserProfile"."workout_experience"::text, "public"."UserProfile"."has_gym_membership", "public"."UserProfile"."preferred_snacks", "public"."UserProfile"."dietary_pattern", "public"."UserProfile"."dietary_restrictions", "public"."UserProfile"."workout_days_per_week", "public"."UserProfile"."equipment_access", "public"."UserProfile"."macro_target_calories", "public"."UserProfile"."macro_target_protein_g", "public"."UserProfile"."macro_target_carbs_g", "public"."UserProfile"."macro_target_fat_g", "public"."UserProfile"."avatar_url", "public"."UserProfile"."bio", "public"."UserProfile"."weight_unit", "public"."UserProfile"."meals_per_day", "public"."UserProfile"."water_goal_oz", "public"."UserProfile"."calorie_display", "public"."UserProfile"."onboardingCompleted", "public"."UserProfile"."injuries", "public"."UserProfile"."food_preferences", "public"."UserProfile"."preferred_training_time", "public"."UserProfile"."updated_at"
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9806645Z  2026-10-06 00:26:21.699 UTC [196] ERROR:  could not serialize access due to concurrent update
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9807106Z  2026-10-06 00:26:21.699 UTC [196] STATEMENT:  
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9807599Z  	      SELECT "head_revision_id", "version" FROM "WorkoutPlan" WHERE "id" = $1 FOR UPDATE
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9808028Z  	    
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9808511Z  2026-10-06 00:26:37.352 UTC [206] ERROR:  duplicate key value violates unique constraint "RomanSession_user_id_surface_day_key_key"
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9809541Z  2026-10-06 00:26:37.352 UTC [206] DETAIL:  Key (user_id, surface, day_key)=(b635-live-me, client, 2026-10-06) already exists.
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9812520Z  2026-10-06 00:26:37.352 UTC [206] STATEMENT:  INSERT INTO "public"."RomanSession" ("id","user_id","surface","day_key","message_count","started_at","last_activity_at","quips_in_session","exclamation_used","created_at","updated_at") VALUES ($1,$2,CAST($3::text AS "public"."RomanSurface"),$4,$5,$6,$7,$8,$9,$10,$11) RETURNING "public"."RomanSession"."id", "public"."RomanSession"."user_id", "public"."RomanSession"."surface"::text, "public"."RomanSession"."day_key", "public"."RomanSession"."message_count", "public"."RomanSession"."started_at", "public"."RomanSession"."last_activity_at", "public"."RomanSession"."quips_in_session", "public"."RomanSession"."exclamation_used", "public"."RomanSession"."subject_context_json", "public"."RomanSession"."created_at", "public"."RomanSession"."updated_at", "public"."RomanSession"."deleted_at"
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9815832Z  2026-10-06 00:26:37.636 UTC [219] ERROR:  duplicate key value violates unique constraint "RomanSession_user_id_surface_day_key_key"
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9816639Z  2026-10-06 00:26:37.636 UTC [219] DETAIL:  Key (user_id, surface, day_key)=(b635-live-me, client, 2026-10-06) already exists.
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9819833Z  2026-10-06 00:26:37.636 UTC [219] STATEMENT:  INSERT INTO "public"."RomanSession" ("id","user_id","surface","day_key","message_count","started_at","last_activity_at","quips_in_session","exclamation_used","created_at","updated_at") VALUES ($1,$2,CAST($3::text AS "public"."RomanSurface"),$4,$5,$6,$7,$8,$9,$10,$11) RETURNING "public"."RomanSession"."id", "public"."RomanSession"."user_id", "public"."RomanSession"."surface"::text, "public"."RomanSession"."day_key", "public"."RomanSession"."message_count", "public"."RomanSession"."started_at", "public"."RomanSession"."last_activity_at", "public"."RomanSession"."quips_in_session", "public"."RomanSession"."exclamation_used", "public"."RomanSession"."subject_context_json", "public"."RomanSession"."created_at", "public"."RomanSession"."updated_at", "public"."RomanSession"."deleted_at"
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9827659Z Stop and remove container: b6db1853baf74d7c84a340b0ae136609_postgres15_2bad8f
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:52.9832660Z ##[command]/usr/bin/docker rm --force a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:53.1051750Z a5cfea444940b7ef20b1099e396664a630f10432a2373451c66d03ac4a4e4adc
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:53.1080253Z Remove container network: github_network_da2125347c1a43c3bf9a6b50de161b18
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:53.1084820Z ##[command]/usr/bin/docker network rm github_network_da2125347c1a43c3bf9a6b50de161b18
+mwb-3-live-tests	Stop containers	2026-10-06T00:26:53.2167712Z github_network_da2125347c1a43c3bf9a6b50de161b18
+mwb-3-live-tests	Complete job	﻿2026-10-06T00:26:53.2254776Z Cleaning up orphan processes

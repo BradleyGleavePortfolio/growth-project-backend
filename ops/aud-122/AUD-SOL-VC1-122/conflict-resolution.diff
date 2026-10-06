@@ -1,0 +1,210 @@
+commit 26c974b0e98abc54e3ce013f460b89cf5b55a381
+parents 8165ca9560d2bcd35f92b1cd8468e6c998aa552a 3c315e40e83317a8ccf51431daa9ba98759df0bb
+Merge remote-tracking branch 'origin/main' into b339-122-work
+
+diff --git a/src/api/wearablesConnectionsApi.ts b/src/api/wearablesConnectionsApi.ts
+remerge CONFLICT (content): Merge conflict in src/api/wearablesConnectionsApi.ts
+index dc2d588..a2a5b10 100644
+--- a/src/api/wearablesConnectionsApi.ts
++++ b/src/api/wearablesConnectionsApi.ts
+@@ -159,11 +159,7 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Samsung Health',
+     icon: '',
+     dataDescription:
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-      "Reads your steps, heart rate, body composition and sleep from Samsung Health on this device.",
+-=======
+       'The Growth Project reads the Health Connect data on this phone, including what Samsung Health shares with Health Connect.',
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     buckets: ['HEALTH_FITNESS', 'SLEEP_RECOVERY'],
+   },
+   GARMIN: {
+diff --git a/src/lib/signupRoleNotice.ts b/src/lib/signupRoleNotice.ts
+remerge CONFLICT (content): Merge conflict in src/lib/signupRoleNotice.ts
+index 71f7a22..812da82 100644
+--- a/src/lib/signupRoleNotice.ts
++++ b/src/lib/signupRoleNotice.ts
+@@ -50,11 +50,7 @@ export function signupRoleNoticeMessage(kind: SignupRoleNoticeKind): string {
+     case 'coach_request_not_applied':
+       return 'Coach sign-up was not applied to this account, so it was created as a client account. You can continue as a client. To run your practice here, contact support to set up coach access. Use Contact support below, or Support in Settings at any time.';
+     case 'existing_account':
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-      return 'This Apple ID or Google account already had an account, so you are signed in to it. The role choice applies only to new accounts.';
+-=======
+       return 'This Apple Account or Google account already had an account, so you were signed in to it. The role choice applies only to new accounts.';
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     case 'coach_retry_not_applied':
+       return 'Coach sign-up was not applied to this account, so you are signed in to a client account. Your earlier attempt may have created it. To run your practice here, contact support to set up coach access. Use Contact support below, or Support in Settings at any time.';
+     case 'new_account_from_sign_in':
+diff --git a/src/screens/TrustCenterScreen.tsx b/src/screens/TrustCenterScreen.tsx
+remerge CONFLICT (content): Merge conflict in src/screens/TrustCenterScreen.tsx
+index 4465df4..4d49e92 100644
+--- a/src/screens/TrustCenterScreen.tsx
++++ b/src/screens/TrustCenterScreen.tsx
+@@ -535,28 +535,15 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+         <View style={styles.card}>
+           <Text style={styles.bulletGroupLabel}>Who can see your data</Text>
+           <BulletItem text="You — always" />
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-          <BulletItem text="Your assigned coach — only what you log (meals + workouts)" />
+-          <BulletItem text="No one else — your data is never sold, shared, or licensed" />
+-=======
+           <BulletItem text="Your coach — your consultation answers, logs, check-ins and connected health data" />
+           <BulletItem text="Not your coach — your Roman conversations, which are kept until you delete them or your account" />
+           <BulletItem text="Service providers that run the app for The Growth Project, such as Anthropic for Roman, only as described in the Privacy Policy" />
+           <BulletItem text="Your data is never sold, and your health data is never used for advertising" />
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+ 
+           <Text style={[styles.bulletGroupLabel, { marginTop: 16 }]}>What is encrypted</Text>
+           <BulletItem text="All data in transit uses TLS 1.3 (the strongest available)" />
+           <BulletItem text="All stored data is encrypted with AES-256 at rest" />
+           <BulletItem text="Authentication tokens are stored in your device's secure enclave (Keychain / Keystore)" />
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-
+-          <Text style={[styles.bulletGroupLabel, { marginTop: 16 }]}>Where your data lives</Text>
+-          <BulletItem text="Servers located in US East data centres" />
+-          <BulletItem text="Data is not transferred outside the US without your consent" />
+-          <BulletItem text="Backups are encrypted and stored in the same region" />
+-=======
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+         </View>
+       </View>
+ 
+diff --git a/src/screens/auth/CreateAccountScreen.tsx b/src/screens/auth/CreateAccountScreen.tsx
+remerge CONFLICT (content): Merge conflict in src/screens/auth/CreateAccountScreen.tsx
+index 75e2552..0b0bcd3 100644
+--- a/src/screens/auth/CreateAccountScreen.tsx
++++ b/src/screens/auth/CreateAccountScreen.tsx
+@@ -1012,11 +1012,7 @@ export default function CreateAccountScreen({ navigation, route }: Props) {
+         ? 'You chose to coach clients, but coach sign-up was switched off while you were signing up. No account has been created. You can create a client account instead, or check again later.'
+         : withdrawal === 'refused'
+           ? 'You chose to coach clients, but coach sign-up was switched off while your request was being sent, and your coach sign-up was not completed. You can create a client account instead, or check again later.'
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-          : 'You chose to coach clients, but coach sign-up has been switched off, and what happened to your coach sign-up request could not be confirmed. An account may or may not have been created. Sign in with the same email, Apple ID or Google account first; if the account exists, you will be signed in to it. You can also check again later or contact support.';
+-=======
+           : 'You chose to coach clients, but coach sign-up has been switched off, and the app could not confirm what happened to your coach sign-up request. An account may or may not have been created. Sign in with the same email, Apple Account or Google account first; if the account exists, you will be signed in to it. You can also check again later or contact support.';
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     return (
+       <View style={styles.container}>
+         <ScrollView contentContainerStyle={styles.scroll}>
+diff --git a/src/screens/client/wearables/ConnectProviderSheet.tsx b/src/screens/client/wearables/ConnectProviderSheet.tsx
+remerge CONFLICT (content): Merge conflict in src/screens/client/wearables/ConnectProviderSheet.tsx
+index a2fe509..566a9f9 100644
+--- a/src/screens/client/wearables/ConnectProviderSheet.tsx
++++ b/src/screens/client/wearables/ConnectProviderSheet.tsx
+@@ -423,27 +423,6 @@ export default function ConnectProviderSheet({
+         case 'disabled':
+           showMessage({ text: HEALTH_CONNECT_DISABLED_MESSAGE, action: 'none' });
+           return;
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-        case 'granted':
+-          // Permission granted on-device; re-read so the hub reflects it.
+-          invalidate();
+-          emitTutorialSignal('wearable_connected');
+-          onConnected?.();
+-          onClose();
+-          return;
+-        case 'denied':
+-          setError(
+-            `${name} access wasn't granted. Open ${name} permissions and allow access, then try again.`,
+-          );
+-          return;
+-        case 'unavailable':
+-          setError(
+-            `${name} isn't set up on this device yet. Its settings are now open — finish setup there, then try again.`,
+-          );
+-          return;
+-        case 'unsupported':
+-          setError(`${name} can't be connected on this device.`);
+-=======
+         case 'granted': {
+           // S14: permission granted on-device. Register the device source,
+           // record the tapping person's local authorization for this phone,
+@@ -455,7 +434,6 @@ export default function ConnectProviderSheet({
+             return;
+           }
+           await runImport(name, target, true, () => connectOnDevice(source, fence), epoch, fence);
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+           return;
+         }
+         default:
+@@ -547,13 +525,6 @@ export default function ConnectProviderSheet({
+       } else {
+         await handleCloudConnect(provider, epoch);
+       }
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-    } catch {
+-      // Generic, action-oriented error copy (Stripe-quality: says what to do).
+-      // No token/secret material is ever surfaced (#12).
+-      setError("The connection did not start. Check your internet connection, then try again.");
+-=======
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+     } finally {
+       // B-317-11: only this attempt's own sheet is un-busied; a close or
+       // provider change already reset it for the next one.
+diff --git a/src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx b/src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx
+remerge CONFLICT (content): Merge conflict in src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx
+index 14aa94e..880b971 100644
+--- a/src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx
++++ b/src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx
+@@ -174,13 +174,9 @@ describe('ConnectProviderSheet — cloud connect failures (Sol B-317-8)', () =>
+     await pressOura();
+     await waitFor(() =>
+       expect(
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-        screen.getByText("The connection did not start. Check your internet connection, then try again."),
+-=======
+         screen.getByText(
+           "The Growth Project couldn't be reached, so Oura isn't connected yet. Check your internet connection, then tap Continue.",
+         ),
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+       ).toBeTruthy(),
+     );
+     expect(screen.getByLabelText('Continue connecting Oura')).toBeTruthy();
+diff --git a/src/screens/settings/DeleteAccountScreen.tsx b/src/screens/settings/DeleteAccountScreen.tsx
+remerge CONFLICT (content): Merge conflict in src/screens/settings/DeleteAccountScreen.tsx
+index 74b9bb1..bb2ca33 100644
+--- a/src/screens/settings/DeleteAccountScreen.tsx
++++ b/src/screens/settings/DeleteAccountScreen.tsx
+@@ -77,11 +77,7 @@ export const PERMANENTLY_DELETED: readonly string[] = [
+ 
+ // Mirrors the manifest's retained rows (operator retention policy).
+ export const KEPT_RECORDS: readonly string[] = [
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-  'Payment and tax records that Stripe keeps for as long as the law requires. The Growth Project\'s own copies keep only amounts, dates and payment references, with no name or contact details.',
+-=======
+   'Payment and tax records that Stripe keeps for as long as the law requires. The app’s own copies keep only amounts, dates and payment references, with no name or contact details.',
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+   'One deletion record with a random reference, the date and the result. It holds no name, email or account details.',
+   'If you coach: your clients are not deleted. They keep their own data and the plans you assigned, unchanged and without your contact details, and are no longer linked to you.',
+ ];
+@@ -182,11 +178,7 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+ 
+   const [phase, setPhase] = useState<LoadPhase>('loading');
+   const [statusError, setStatusError] = useState(
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-    'Your account deletion status could not be checked. Check your connection, then try again.',
+-=======
+     'The account deletion status could not be checked. Check your connection, then try again.',
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+   );
+   const [status, setStatus] = useState<DeletionStatus | null>(null);
+   const [appleOutcome, setAppleOutcome] = useState<AppleRevocationOutcome | null>(null);
+@@ -642,17 +634,11 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+ 
+         <Text style={styles.sectionHeading}>Permanently deleted</Text>
+         {deletedList}
+-<<<<<<< 8165ca9 (test(copy): repin 20 assertions to the impersonal copy; Roman celebration spends no exclamation (OR-115-4))
+-        <Text style={[styles.bodyText, { marginTop: 8, fontSize: 13, color: colors.textMuted }]}>
+-          If you signed in with Apple, Apple is also asked to remove this app&apos;s access to your
+-          Apple ID. You will see whether that worked, and how to do it yourself if it did not.
+-=======
+         <Text
+           style={[styles.bodyText, { marginTop: 8, fontSize: 13, color: colors.textMuted }]}
+           testID="apple-note"
+         >
+           {APPLE_FORM_NOTE}
+->>>>>>> 3c315e4 (Merge pull request #379 from BradleyGleavePortfolio/agent122/roman-daily-cap-popup)
+         </Text>
+ 
+         <Text style={styles.sectionHeading}>What is kept</Text>

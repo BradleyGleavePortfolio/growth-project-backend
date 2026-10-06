@@ -20,8 +20,8 @@ Why hunk 8 is gated: main's spec `messaging-core-v2.spec.ts` "flag OFF: the thre
 
 **Checks**
 - Local (heavy.sh, one file each, at this tree): messaging-core-v2 38/38, messaging.service 26/26, erasure-manifest-coverage 7/7, manifest-fk-order 10/10, fly-env-manifest 67/67, prisma generate OK, eslint messaging.service OK. A 4-case probe of the flag matrix (not committed) passes.
-- CI lane `ci/B-BC4-122-1` (full `tsc --noEmit` + test/broadcasts, messaging, account-deletion, fly-env manifest, module-graph, openapi + the probe): LANE_RESULT
-- PR CI at this head: PR_CI_RESULT
+- CI lane `ci/B-BC4-122-1` (full `tsc --noEmit` + test/broadcasts, messaging, account-deletion, fly-env manifest, module-graph, openapi + the probe): GREEN (Type-check step success, targeted jest success) https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37394720313
+- PR CI at this head: all 11 required checks green (build-and-test, rls-floor-guard, rls-live-tests, mwb-3-live-tests, community-live-tests with both live specs, npm audit, CodeQL, Banned cast tokens, build-sbom, danger, Schema parity); 20 of 21 runs success, deploy-readiness-gate skipped as usual. community-live-tests: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37394583207/job/112047402184
 
 Remerge diff (how each conflict was resolved) and the resolver: ops/aud-122/B-BC4-122/ (operator workspace).
 

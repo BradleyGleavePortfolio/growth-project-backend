@@ -1,0 +1,7 @@
+B-BC4-122 (agent 122) broadcasts #726 main refresh — DONE 17:42 PDT 2026-10-05
+#726 new head ff2594db6f506b47dc50510a5c7512119e4609bc = merge of cb5ef90a (BC3 dual-APPROVE landing tree) + main eb2e9e03 (after dunning #687 merged 17:28).
+MAIN REFRESH comment: https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/726#issuecomment-6006730563 (ends READY FOR AUDIT)
+8 conflict hunks in 6 files, all unions; messaging.service listThread: card include gated on FEATURE_COACH_BROADCASTS (main's flag-off "no include" test kept), reply_to on v2.
+26/34 #726 files byte-identical to cb5ef90a; 8 changed (6 conflict files + clean app.module.ts, env-validation.ts). Not A5 rule 12 (conflicts): needs the merge-only delta by both lenses.
+CI: lane ci/B-BC4-122-1 run 37394720313 GREEN (full tsc + broadcasts/messaging/account-deletion/fly-env/module-graph/openapi); PR CI all 11 required green at ff2594db.
+Report: ops/reports/B-BC4-122.md. Lock bcast released.

@@ -1,0 +1,68 @@
+ok   new=emergency old=null      exp=emergency | I took a whole bottle of Tylenol
+ok   new=self_harm old=null      exp=self_harm | I am going to hang myself
+ok   new=null      old=emergency exp=null      | overdose on cardio
+ok   new=null      old=emergency exp=null      | can you overdose on creatine?
+ok   new=null      old=self_harm exp=null      | I hurt myself deadlifting, can I train?
+ok   new=null      old=null      exp=null      | kill this workout
+ok   new=null      old=null      exp=null      | I'm dying after leg day
+ok   new=null      old=null      exp=null      | took 2 Tylenol for my headache
+ok   new=emergency old=null      exp=emergency | I swallowed a whole bottle of ibuprofen
+ok   new=emergency old=null      exp=emergency | I took 20 Tylenol
+ok   new=null      old=emergency exp=null      | I think I overdose on cardio. How much should I do each week?
+ok   new=self_harm old=null      exp=self_harm | I want to hang myself
+ok   new=self_harm old=null      exp=self_harm | I am going to shoot myself
+ok   new=self_harm old=null      exp=self_harm | I want to jump off a bridge
+ok   new=self_harm old=null      exp=self_harm | I am going to jump off the roof
+ok   new=self_harm old=null      exp=self_harm | I want to slit my wrists
+ok   new=self_harm old=null      exp=self_harm | I just want it all to end
+ok   new=null      old=emergency exp=null      | I think I overdosed on cardio this week
+ok   new=null      old=emergency exp=null      | is it possible to overdose on caffeine from pre-workout
+ok   new=null      old=emergency exp=null      | how much protein is an overdose
+ok   new=null      old=emergency exp=null      | did I overdose on carbs last night
+ok   new=null      old=emergency exp=null      | is mercury poisoning a risk if I eat tuna every day
+ok   new=null      old=emergency exp=null      | I find it hard to breathe during heavy squats, how should I brace
+ok   new=null      old=emergency exp=null      | I can’t breathe through my nose when I run, any tips
+ok   new=null      old=emergency exp=null      | I have trouble breathing on long runs
+ok   new=null      old=emergency exp=null      | how do I stop unconscious snacking at night
+ok   new=null      old=self_harm exp=null      | hurt myself deadlifting last week, can I train
+ok   new=null      old=self_harm exp=null      | I need to cut myself some slack this week
+ok   new=null      old=self_harm exp=null      | I'm cutting myself off from sugar
+ok   new=null      old=null      exp=null      | I'll shoot myself a reminder to log meals
+ok   new=null      old=null      exp=null      | I keep hurting myself on deadlifts, what am I doing wrong?
+ok   new=self_harm old=self_harm exp=self_harm | I want to kill myself
+ok   new=emergency old=emergency exp=emergency | I took a whole bottle of pills
+ok   new=self_harm old=self_harm exp=self_harm | I don’t want to live anymore
+ok   new=self_harm old=self_harm exp=self_harm | I want to end my life
+ok   new=self_harm old=self_harm exp=self_harm | I want to hurt myself
+ok   new=emergency old=emergency exp=emergency | I took all my pills
+ok   new=emergency old=emergency exp=emergency | I overdosed
+ok   new=self_harm old=self_harm exp=self_harm | I want to die
+ok   new=emergency old=emergency exp=emergency | I took 20 of my sleeping pills
+ok   new=emergency old=emergency exp=emergency | I swallowed a bunch of tablets
+ok   new=emergency old=emergency exp=emergency | I think I am having a heart attack
+ok   new=emergency old=emergency exp=emergency | my chest hurts and my left arm is numb
+ok   new=emergency old=emergency exp=emergency | I can’t breathe
+ok   new=emergency old=emergency exp=emergency | my friend collapsed and is not breathing
+ok   new=self_harm old=self_harm exp=self_harm | I have been cutting myself
+ok   new=self_harm old=self_harm exp=self_harm | I keep thinking about ending it
+ok   new=emergency old=emergency exp=emergency | I took an overdose
+ok   new=emergency old=emergency exp=emergency | my friend overdosed
+ok   new=emergency old=emergency exp=emergency | I think I overdosed on pills
+ok   new=emergency old=emergency exp=emergency | I'm overdosing
+ok   new=emergency old=emergency exp=emergency | I was poisoned
+ok   new=emergency old=emergency exp=emergency | my friend is unconscious
+ok   new=emergency old=emergency exp=emergency | he's unresponsive
+ok   new=emergency old=null      exp=emergency | I drank bleach
+ok   new=emergency old=emergency exp=emergency | my friend has alcohol poisoning
+ok   new=emergency old=emergency exp=emergency | I can't breathe and my throat is closing
+ok   new=emergency old=emergency exp=emergency | I can't breathe after the bee sting
+ok   new=self_harm old=self_harm exp=self_harm | I hurt myself on purpose
+ok   new=self_harm old=self_harm exp=self_harm | I'm cutting myself again
+ok   new=self_harm old=self_harm exp=self_harm | I am thinking about suicide
+ok   new=self_harm old=null      exp=self_harm | I want to walk into traffic
+ok   new=emergency old=emergency exp=emergency | I took a whole bottle of my sleeping pills
+ok   new=self_harm old=self_harm exp=self_harm | I don’t want to live anymore. I want to kill myself
+ok   new=null      old=null      exp=null      | my legs are dying after squats
+ok   new=null      old=null      exp=null      | I want to end the set strong
+ok   new=null      old=null      exp=null      | I can’t go on the bike today
+failures 0

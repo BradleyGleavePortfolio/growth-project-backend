@@ -760,3 +760,122 @@ main merge that tree_check flags. Verify ONLY that each new head is the approved
 - b#655 a0ccfcdd542022ce4e654709790aa50074c4b861 = approved 2902add5 (ADJ2 dual APPROVE) + main eb2e9e03, one hand-resolved conflict in
   .env.example (both flag blocks kept). Comment 6006684890. Check the resolution and that nothing else changed; PR CI green at a0ccfcdd.
 Post "AUDIT <lens> — growth-project-backend#<n> @ <sha> — VERDICT: APPROVE (merge-only)" or REQUEST CHANGES per PR.
+
+### AUD-OPUS-LK6-122 / AUD-SOL-LK6-122 — lockout mobile m#352 main-refresh resolution (T4 access)
+Lens: Opus and Sol, independent. Time box 15 minutes. m#352 fa2c14fb62bdc75e0c6f4c39742111527c8876ae = ONE merge commit of the audited top
+e39a84de (tree 9f6b64af = dual-APPROVED #380/#354/#353/#352 train) and mobile main 300f898f. Comment 6006717924; report ops/reports/B-LOCK5-122.md.
+Review ONLY the two hand-resolved spots: (1) src/services/api.ts request interceptor order (lockout stamp first, then main's token read and
+account check): a locked client still lands on the lockout screen, an AI cap answer still shows the pop-up, MWB/messaging handlers from main
+still run, nothing dropped; (2) src/navigation/README.md both sections kept. Confirm nothing else differs from a clean union (PR diff vs main
+unchanged in size: 40 files +7,025/-50) and PR CI green at the head. One verdict ("APPROVE (merge resolution)" or REQUEST CHANGES).
+
+### AUD-OPUS-AV2-122 / AUD-SOL-AV2-122 — coach booking options mobile m#381 (T3/T4 scheduling)
+Lens: Opus and Sol, independent. Time box 25 minutes. m#381 feab0c3b74479d2c3b644e91f301a76d92222c0e "feat(scheduling): coach booking options
+editor" (642 lines; retargeted to main at 17:45 after m#365 merged; FIX ROUND 1 OPENING 6006728984; report ops/reports/M-AVAIL-122.md). Backend
+b#735 (dual APPROVE, merging now) adds GET/PUT coach booking options (minimum notice, booking window, buffers...). Story: a coach opens
+Settings > booking options, sets "at least 24 hours notice" and saves; clients then cannot book inside 24 hours and see a plain reason.
+Check: the editor reads and saves exactly the backend's fields and limits; the backend's refusal sentences show; the entry hides on 404/403;
+the changed client message (no more "four months" promise) matches the backend's window; nothing from the item list. One verdict.
+
+### B-AIG2-122 — b#736 fix round (AI guide crisis before the limit) (T4 safety)
+Builder Opus. Time box 30 minutes. b#736 f2dd87ad8cf57906e5693413a6a61f9ec88dd8d5; both lenses REQUEST CHANGES (Sol 6006699712, Opus
+6006734594; reports ops/reports/AUD-SOL-AIG1-122.md, AUD-OPUS-AIG1-122.md). Bs (all ordinary use):
+- misses: "I took a whole bottle of Tylenol" (named-medicine overdose -> 911); "I am going to hang myself" (-> 988).
+- false positives that replace a normal answer: "overdose on cardio", "can you overdose on creatine?", "I hurt myself deadlifting, can I train?".
+Fix: align with the Roman detector already reviewed on b#669 ef71cb9c (src/roman/... safety router: named-medicine overdose threshold 5+ or
+bottle/pack/handful/bunch; first-person intent for self-harm phrases); copy its patterns (do not import from the unmerged stack) or share
+them only if trivially possible. Questions about supplements/training/injury get a normal answer. Tests: each of the five sentences above
+plus "kill this workout", "I'm dying after leg day", "took 2 Tylenol for my headache" (no crisis) - each new test fails on f2dd87ad. One push.
+CI lane + PR CI green. Comment FIX ROUND 1 (B-AIG2-122, agent 122) ending READY FOR AUDIT.
+
+### AUD-OPUS-BC5-122 / AUD-SOL-BC5-122 — broadcasts b#726 main-refresh resolution (T4)
+Lens: Opus and Sol, independent. Time box 20 minutes. b#726 ff2594db6f506b47dc50510a5c7512119e4609bc = ONE merge commit of the audited top
+cb5ef90a (tree = BC3 dual-APPROVED #730 top 22166591) and main eb2e9e03 (dunning, coachless, invite codes, messaging core v2). Comment
+6006730563; report ops/reports/B-BC4-122.md. Review ONLY the 8 conflict hunks in 6 files: flags file, CI spec list, runbook, prisma schema,
+account-deletion manifest (both sides kept, nothing dropped, schema composes, deletion covers both sides' tables), and
+src/messaging/messaging.service.ts (broadcast card included only while FEATURE_COACH_BROADCASTS is on; main's reply preview only while
+FEATURE_MESSAGING_CORE_V2 is on). Story: with both flags off at launch, a client opening a thread sees exactly what main shows today; with
+broadcasts on, a coach's broadcast card shows in the thread. Required checks green at ff2594db. One verdict.
+
+### B-340-122 — tax CSV m#340 onto main (T3 money export)
+Builder Opus. Time box 30 minutes. m#340 2e77dcb6171478a8e4acf5e7937d96a346220549 "feat(money): export the tax CSV as a real .csv file attachment
+(OR-114-4)", 700 lines, base agent/clinic/s-coach-money-mob (old #332, retired: its content landed via the money train m#348-#351 -> #345, merged
+to mobile main 1fc46ff8 at 17:43). Sol RC 10-03 18:10, FIX ROUND 1 (B-COACH-5) at 2e77dcb6 never audited. Do: retarget the PR to main (gh pr
+edit --base main) and bring it onto main so its diff is ONLY the CSV-file change (merge origin/main into the branch, or rebuild the branch
+from main with the PR's own commits if the old base makes the diff huge; never force-push without saying so in the comment). Keep behaviour
+of main's money screens. Story: a coach taps "Export tax CSV" and gets a real .csv file in the share sheet they can save or email. Mobile CI
+lane + PR CI green. Comment MAIN REFRESH (B-340-122, agent 122) ending READY FOR AUDIT with the new diff size.
+
+### B-RMNC3-122 — b#669 tiny fix B-669-1 + restack #670 (T4 Roman)
+Builder Opus. Time box 25 minutes. #669 ef71cb9c (Opus APPROVE 6006753337; Sol RC 6006755911, report ops/reports/AUD-SOL-RMN4-122.md). B-669-1
+(residual of B-666-5): src/roman/guardrails/roman-post-check.ts ~359-363 adds individual-entry facts whenever DAY_TOTAL_CLAIM fails without
+consulting AGGREGATE_CLAIM, so after breakfast + lunch a reply like "your meals add up to 450 kcal" (no "today") passes with one meal's number
+instead of 780. Fix: aggregate wording (meals/total/altogether/so far, with or without "today") is checked against the whole day's total.
+Sol saved ordinary assertions + controls in its report/aud dir: use them; new tests fail on ef71cb9c; existing 19-case repair spec and
+correct single-meal replies still pass. Then restack #670 (merge #669 only). One push per PR, spaced 2+ minutes. CI lane + PR CI green.
+Comments FIX ROUND 2 (B-RMNC3-122) on #669 and RESTACK on #670, ending READY FOR AUDIT.
+
+### AUD-OPUS-RM1-122 / AUD-SOL-RM1-122 — booking reminders on at launch: b#643 + m#341 delta (T4)
+Lens: Opus and Sol, independent. Time box 25 minutes.
+- b#643 2234862be7f3058843ff3fd743e62d99436b7b69: one-line manifest flip BOOKING_REMINDERS_ENABLED -> on (main merged in, one manifest conflict).
+  Both lenses RC'd it on 10-02 for three Bs (UTC times, double inbox entries, no device push) that the builder says main already fixed.
+  FIX ROUND 1 6006805839; report ops/reports/B-643-122.md. Verify each of your old Bs is fixed in main with a pointer to the code/test.
+- m#341 ba886adccff3ea35cfafa2cfce8182fe4676572f (843 lines; main merged twice + one fix; booking-tap part removed as main #365 does it).
+  FIX ROUND 1 6006810677; report ops/reports/B-341-122.md. Check B-341-1 (settings save one change at a time), B-341-2 (failed save says what
+  went wrong), the "Mute all" copy (email stops too), device zone sent once on sign-in/zone change.
+Story: a client books a 9am session; the evening before at a normal hour she gets one reminder push showing 9:00 in her own time; tapping it
+opens the session. Builders' proposed Cs (quiet hours holding some 24h reminders, no clock time when zone unknown, blank settings screen on
+load failure, save finishing after the screen closes): C unless you give a normal-user story. One verdict per PR.
+
+### M-AVAIL2-122 — m#381 fix round B-381-1 (T3 scheduling)
+Builder Opus. Time box 20 minutes. m#381 feab0c3b (both lenses RC, same B: Opus 6006808729, Sol 6006810212; reports
+ops/reports/AUD-OPUS-AV2-122.md / AUD-SOL-AV2-122.md). B-381-1: a coach saves 14+ days of minimum notice (editor allows up to 30) and every
+client then sees "no open times in the next two weeks" because the client picker only shows the next 14 days. Operator ruling (Opus's
+recommended fix): the editor refuses minimum notice of 14 days or more with a plain sentence (e.g. "Minimum notice must be under 14 days so
+clients can see open times."), and the stepper/inputs stop at the largest value under 14 days. Test fails on feab0c3b. Also fix the note that
+the route is PATCH if the PR comment/body says PUT (code already correct per Opus). One push. Mobile CI lane + PR CI green. Comment FIX ROUND 2
+(M-AVAIL2-122, agent 122) ending READY FOR AUDIT.
+
+### AUD-OPUS-VC1-122 / AUD-SOL-VC1-122 — impersonal voice sweep m#339 delta (T3 copy)
+Lens: Opus and Sol, independent. Time box 20 minutes. m#339 0b0de03db5b4fc191e974d65a9113a69aa0597a3 (713 lines; two main merges incl.
+scheduling; conflicts took main's newer copy; 5 new "we/our" strings from main fixed; FIX ROUND 6006845819; report ops/reports/B-339-122.md).
+Sol RC 10-03 (5972066633) B-339-1 (unknown results claimed a definite outcome) fixed per builder. Check: the repo-wide voice check passes on the
+head and does not flag crisis/legal text; copy changes keep meaning (no screen now says something false, e.g. "saved" when not); conflicts
+did not revert main's newer copy; no logic change beyond copy and the check. Builder proposed Cs C-339-a/b/c and keeping the three hashed
+consent strings exempt for launch: C unless you give a normal-user story. One verdict.
+
+### B-SHEET7-122 — payment sheet m#342 main refresh (T4 money; lock: sheet-m)
+Builder Opus. Time box 35 minutes. m#344 (88659e21) -> #343 -> #342 all dual APPROVE (10-04) and LANDED into #342's branch
+(agent115/sheet-split-1-payment-core) at 17:30; #342 head 4c79b67cbd211146abd76bd03349a4dd6e6de7c6, tree d7afdb57 = audited top. Held until
+dunning D4 deployed: deployed 17:42. Mobile main now fb904a75 (lockout m#352 + restart button, coach setup/money m#345, scheduling,
+approve-to-adjust, AI cap pop-up, programs, messaging). Known conflicts: config/expected-env.json, src/screens/client/ClientPackagesScreen.tsx
+(with lockout), maybe packagesApi.ts (with #345). Merge origin/main into #342's branch; resolve as unions keeping BOTH behaviours: a locked
+client still sees lockout handling; the payment sheet purchase flow unchanged; main's package save/publish path (from #345/#321) unchanged.
+Both sides' tests pass. ONE merge commit (+ fix commit only if a test proves it). Mobile CI lane + PR CI green. Comment MAIN REFRESH
+(B-SHEET7-122, agent 122) listing each hunk's resolution, ending READY FOR AUDIT. Trials m#338 is NOT part of this (owner hold).
+
+### AUD-OPUS-LA1-122 / AUD-SOL-LA1-122 — lockout allow-list b#725 refresh delta (T4 access)
+Lens: Opus and Sol, independent. Time box 20 minutes. b#725 b3caa5b18baa20ecca125efa2d51326f37dc5ee2 = audited 1dbc59b6 (dual APPROVE) + main merge
+fbcfb74b (dunning #691 had its own looser message-path allow-list) + one test-only fix commit. MAIN REFRESH 6006932096; report
+ops/reports/B-725R-122.md. Review 1dbc59b6..b3caa5b1: one exact method+path table holding main's four message paths (with their mounted
+methods, incl. POST messages/report) and #725's own-coach-thread entries. Story: a client locked for non-payment opens the app, can still open
+and reply in her own coach's thread (and report a message), update her card, export or delete her data, and nothing else. Check no route
+main allowed for locked clients was dropped in a way that blocks billing/export/deletion/coach thread, the test-only commit changes only tests,
+required checks green. Builder decision (keep the strict table): C/agree unless you give a normal-user story. One verdict.
+
+### AUD-OPUS-MF2-122 / AUD-SOL-MF2-122 — programs on at launch: b#737 + m#382 (T4 flags)
+Lens: Opus and Sol, independent. Time box 20 minutes. b#737 f743dc73cf1571527b3059a448a576857e010d65 (FEATURE_MWB_TEMPLATES,
+FEATURE_MWB_AUTOSAVE_UNDO, FEATURE_NAMED_REGIMES -> on; MWB_AUTOSAVE_LOCK_TOKEN_SECRET -> github-secret; runbook rows; comment 6006941717) and m#382
+695460e76671afcc86a7827e2a0ed311269d83af (EXPO_PUBLIC_FF_MWB_AUTOSAVE / _PROGRAMS on in the production and clinic build profiles; comment
+6006806726). Report ops/reports/B-MWBFLAG-122.md. Story: on the 10-07 build a coach opens Programs, builds a program, and it autosaves; undo
+works. Check: the flags flipped are exactly the ones the merged programs code reads (backend and mobile names match); nothing else flips; the
+secret is referenced, never committed; the env-sync manifest/test conventions followed; the mobile profiles are the ones the 10-07 build uses
+and no dev/preview behaviour changes; backend #737's body says merge only after the owner confirms the secret exists. One verdict per PR.
+
+### B-339R-122 — m#339 second main refresh (T3 copy)
+Builder Opus. Time box 20 minutes. m#339 0b0de03db5b4fc191e974d65a9113a69aa0597a3 dual APPROVE (VC1: Sol 6006915074, Opus 6006950390). Main moved
+to 7083b7a1 (coach setup/money m#345, lockout m#352, notifications m#341). Conflicts: src/screens/coach/CoachEarningsScreen.tsx (deleted in
+main -> keep deleted), src/screens/coach/payments/CoachPackageEditScreen.tsx (take main's code; re-apply only #339's impersonal wording to
+strings that still exist). Then run the repo-wide voice check on the merged tree and fix any new first-person strings main brought (lockout,
+restart, notifications, package edit), same style as before. ONE merge commit (+ one copy-fix commit if the voice check needs it). Mobile CI
+lane + PR CI green. Comment MAIN REFRESH (B-339R-122, agent 122) listing each conflict and any new string fixed, ending READY FOR AUDIT.

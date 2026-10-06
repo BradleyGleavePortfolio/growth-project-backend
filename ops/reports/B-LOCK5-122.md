@@ -30,12 +30,23 @@ Started 17:30 PDT (date). Lock: ops/lanes122/locks/lockout-m (taken 17:30).
 ## CI
 - Lane run 37394642708 (branch ci/B-LOCK5-122-1; tsc + dunning, rootNavigator, services, api, AI cap, navigation, messaging, Roman,
   login gate, workout builder, More screen specs): https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37394642708
-- PR CI at fa2c14fb: pending.
+- Lane result: GREEN — tsc --noEmit + 127 suites / 1,467 tests passed (job .../job/112047595432). Lane branch deleted.
+- Local: api.lockedDunning.test.ts via heavy.sh on the merge: 7/7 pass.
+- PR CI at fa2c14fb: GREEN — CI 37394649215 (Typecheck, lint, test), CodeQL, Analyze (javascript-typescript, actions). mergeable_state clean.
+- Comment: MAIN REFRESH (B-LOCK5-122, agent 122) https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/352#issuecomment-6006717924 (ends READY FOR AUDIT).
+- Notify: ops/lanes122/notify/lockout-m.txt.
 
 ## Log
 - 17:30 read brief, took lock, worktree /home/user/workspace/wt/B-LOCK5-122-1.
 - 17:32 merged 3c315e40; 17:33 main had moved to 300f898f, redid the merge; pushed lane + PR head.
+- 17:36 lane green; 17:41 PR CI green; comment posted; notify written; worktree removed; lock released.
+
+## Decisions for the operator (recommended defaults)
+1. Review route: rule 12 merge-only tree check does not apply (2 hand-resolved hunks). Default: one short merge-only delta check by both
+   lenses on the two hunks only (api.ts request interceptor ordering, README), then land.
+2. Next: payment sheet m#342 (4c79b67c) refreshes onto #352 after #352 lands (config/expected-env.json, ClientPackagesScreen.tsx).
 
 ## HANDOFF
-- If CI is green: post MAIN REFRESH comment on #352 (hunks above, READY FOR AUDIT), write ops/lanes122/notify/lockout-m.txt,
-  delete ci/B-LOCK5-122-1, remove worktree, release lock.
+Done. #352 head fa2c14fb62bdc75e0c6f4c39742111527c8876ae, all checks green, READY FOR AUDIT (merge-only delta). Nothing left running;
+no worktree, no ci branch, lock lockout-m released. If the head moves before audit, verify with
+`gh api repos/BradleyGleavePortfolio/growth-project-mobile/pulls/352 --jq .head.sha`.

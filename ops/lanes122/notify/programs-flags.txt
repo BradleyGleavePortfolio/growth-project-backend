@@ -1,0 +1,1 @@
+programs flags: b#737 @ f743dc73cf1571527b3059a448a576857e010d65, m#382 @ 695460e76671afcc86a7827e2a0ed311269d83af (B-MWBFLAG-122, 17:54); merge b#737 only after the owner confirms MWB_AUTOSAVE_LOCK_TOKEN_SECRET exists

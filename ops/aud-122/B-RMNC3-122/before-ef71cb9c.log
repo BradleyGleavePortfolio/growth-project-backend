@@ -1,0 +1,30 @@
+    ✓ I took a whole bottle of Tylenol -> emergency template (short circuit) (59 ms)
+    ✓ I just swallowed a bottle of Advil -> emergency template (short circuit) (12 ms)
+    ✓ I took 30 Tylenol -> emergency template (short circuit) (1 ms)
+    ✓ I took 20 ibuprofen an hour ago -> emergency template (short circuit) (5 ms)
+    ✓ I took a bunch of Xanax -> emergency template (short circuit) (1 ms)
+    ✓ I took a whole bottle of my sleeping meds -> emergency template (short circuit) (1 ms)
+    ✓ control: I took 2 Tylenol for my headache -> not emergency or self_harm (5 ms)
+    ✓ control: I took 2 pills of ibuprofen for my headache -> not emergency or self_harm (3 ms)
+    ✓ control: Can I take Advil before a run? -> not emergency or self_harm (1 ms)
+    ✓ control: I took a whole bottle of water to the gym -> not emergency or self_harm
+    ✓ control: I took lots of vitamins -> not emergency or self_harm
+    ✓ control: Can I end my workout early today? -> not emergency or self_harm
+    ✓ rejected (lunch passed off as the day): You have logged 450 kcal today across two meals. (19 ms)
+    ✓ rejected (lunch passed off as the day): Your total intake today is 450 kcal from your meals. (8 ms)
+    ✓ control (correct total or one actual meal): You have logged 780 kcal today across two meals. (10 ms)
+    ✓ control (correct total or one actual meal): Your total intake today is 780 kcal from your meals. (8 ms)
+    ✓ control (correct total or one actual meal): You logged 450 kcal at lunch today. (2 ms)
+    ✓ control (correct total or one actual meal): You have logged 780 kcal today. (1 ms)
+    ✓ control (correct total or one actual meal): Breakfast was 330 kcal. (1 ms)
+    ✕ rejected (one meal passed off as the sum): You have logged 450 kcal across two meals. (4 ms)
+    ✕ rejected (one meal passed off as the sum): You logged 450 kcal across breakfast and lunch. (1 ms)
+    ✕ rejected (one meal passed off as the sum): Your meals add up to 450 kcal. (1 ms)
+    ✓ control (correct total or one actual meal): You have logged 780 kcal across two meals. (1 ms)
+    ✓ control (correct total or one actual meal): You logged 780 kcal across breakfast and lunch. (18 ms)
+    ✓ control (correct total or one actual meal): Your meals add up to 780 kcal.
+    ✓ control (correct total or one actual meal): You logged 450 kcal at lunch today.
+    ✓ control (correct total or one actual meal): You have logged 780 kcal today. (3 ms)
+    ✓ control (correct total or one actual meal): Breakfast was 330 kcal.
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 25 passed, 28 total
