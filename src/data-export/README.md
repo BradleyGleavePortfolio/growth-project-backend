@@ -44,7 +44,7 @@ Every export is a single JSON file. The top-level object has the following keys:
 | Key | Source model(s) | Redaction notes |
 |-----|----------------|-----------------|
 | `manifest` | synthetic | `export_id`, `user_id`, `schema_version`, `requested_at`, `completed_at`, `sha256` |
-| `user` | `User` | `id`, `email`, `name`, `phone`, `role`, `created_at`, `archived_at`, `deletion_scheduled_at`. Fields excluded: `supabase_id`, `coach_id`, `deleted_at` (internal). |
+| `user` | `User` | `id`, `email`, `name`, `phone`, `role`, `created_at`, `archived_at`, `deletion_scheduled_at`, and `push_token_registered` (true when a device push token is on file; the token itself is never exported). Fields excluded: `supabase_id`, `coach_id`, `deleted_at` (internal). |
 | `profile` | `UserProfile` | All fields. |
 | `preferences` | `UserPreferences` | All fields. |
 | `notification_preferences` | `NotificationPreferences` | All fields. |
@@ -76,6 +76,15 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `roman_sessions` | `RomanSession` | The user's own Roman/AI chat sessions that are not deleted (`deleted_at` null): id, surface, day, message count, dates. The internal `subject_context_json` blob and voice-budget counters are left out. A chat the user deleted is never exported. |
 | `roman_messages` | `RomanMessage` | Every turn (user and assistant) of those sessions, oldest first: role, content, the model id of an assistant reply, interrupted flag, date. Scoped by both `user_id` and the session's owner. |
 | `ai_processing_consent_events` | `AiProcessingConsentEvent` | The full AI-processing consent ledger: every grant and withdrawal with processor, purpose, copy version and copy digest. |
+| `community_posts` | `CommunityPost` | Posts the user wrote that they have not deleted: workspace, scope, type, title, body, visibility, dates. |
+| `community_messages` | `CommunityMessage` | Messages and comments the user sent that they have not deleted: scope, kind, body, voice length, parent message, visibility, dates. The recipient's id and the voice file URL are left out. |
+| `community_reactions` | `CommunityResponse` | Reactions the user left: target type and id, kind, date. |
+| `broadcasts_received` | `CoachBroadcastDelivery` | Coach broadcasts delivered to the user: broadcast id, message id, status, dates. The text is the coach's message and follows the `coach_messages` redaction. |
+| `coach_code_redemptions` | `CoachCodeRedemption` | Coach-code redemption attempts: status, outcome, coach id, date. The stored response is left out. |
+| `invite_redemptions` | `InviteRedemption` | Invite and QR codes the user redeemed: coach id, code, source, package id, date. |
+| `workout_adjustments` | `WorkoutAdjustmentProposal` | Roman workout adjustments proposed for the user: status, severity, the recovery signals used, the proposed and applied change, Roman's text, dates. The coach's dismiss note and the internal rule key are left out. |
+| `wearable_connections` | `WearableConnection` | Provider, status, scopes and sync dates. Tokens, secret refs and errors are never exported. |
+| `wearable_samples` | `WearableSample` | Every wearable sample, oldest first: provider, metric, bucket, value, unit, start/end, source time zone, recorded date. |
 
 ---
 

@@ -227,7 +227,7 @@ function store(extra: Record<string, Row[]> = {}, opts: StoreOptions = {}) {
     {
       get(_target, prop) {
         if (prop === 'user')
-          return { findUnique: async () => ({ id: U, email: 'u@example.test' }) };
+          return { findUnique: async () => extra.user?.[0] ?? { id: U, email: 'u@example.test' } };
         if (typeof prop !== 'string' || prop.startsWith('$') || prop === 'then') return undefined;
         return delegate(prop);
       },
@@ -374,5 +374,197 @@ describe('data export paging (F-EXPORT-TIE)', () => {
     await expect(build({ weightLog: weightLogs }, { ignoreKeyset: true })).rejects.toThrow(
       'Data export paging stopped on weightLog: a page did not end on a newer row id.',
     );
+  });
+});
+
+// W3-13 (B-DELETE-123): the export left out the data that went live on day 1
+// (community, broadcasts, coach codes, Roman adjustments, wearables), although
+// the privacy pages point people at the in-app export for a copy of it.
+describe('data export day-1 sections (W3-13)', () => {
+  const day1: Record<string, Row[]> = {
+    user: [{ id: U, email: 'u@example.test', expo_push_token: 'ExponentPushToken[secret]' }],
+    communityPost: [
+      {
+        id: 'p1',
+        author_id: U,
+        title: 'Week one',
+        body: 'Squats felt good',
+        deleted_at: null,
+        created_at: t(2),
+      },
+      { id: 'p-del', author_id: U, body: 'a post I deleted', deleted_at: t(3), created_at: t(1) },
+      {
+        id: 'p-other',
+        author_id: OTHER,
+        body: 'post by someone else',
+        deleted_at: null,
+        created_at: t(1),
+      },
+    ],
+    communityMessage: [
+      {
+        id: 'cm1',
+        sender_id: U,
+        recipient_user_id: OTHER,
+        body: 'Nice work on the deadlift',
+        voice_url: 'https://storage.example/voice/cm1.m4a',
+        deleted_at: null,
+        created_at: t(4),
+      },
+      {
+        id: 'cm-other',
+        sender_id: OTHER,
+        body: 'reply by someone else',
+        deleted_at: null,
+        created_at: t(5),
+      },
+    ],
+    communityResponse: [
+      {
+        id: 'cr1',
+        user_id: U,
+        target_type: 'post',
+        target_id: 'p-other',
+        response_kind: 'clap',
+        created_at: t(6),
+      },
+      {
+        id: 'cr-other',
+        user_id: OTHER,
+        target_type: 'post',
+        target_id: 'p1',
+        response_kind: 'clap',
+        created_at: t(6),
+      },
+    ],
+    coachBroadcastDelivery: [
+      {
+        id: 'bd1',
+        recipient_id: U,
+        broadcast_id: 'b1',
+        status: 'delivered',
+        lease_holder: 'machine-1',
+        created_at: t(7),
+      },
+      {
+        id: 'bd-other',
+        recipient_id: OTHER,
+        broadcast_id: 'b1',
+        status: 'delivered',
+        created_at: t(7),
+      },
+    ],
+    coachCodeRedemption: [
+      {
+        id: 'ccr1',
+        user_id: U,
+        status: 'completed',
+        outcome: 'linked',
+        coach_id: 'coach-1',
+        response: { internal: true },
+        created_at: t(8),
+      },
+    ],
+    inviteRedemption: [
+      {
+        id: 'ir1',
+        client_user_id: U,
+        coach_id: 'coach-1',
+        code: 'BRAD10',
+        source: 'qr',
+        redeemed_at: t(9),
+      },
+      {
+        id: 'ir-other',
+        client_user_id: OTHER,
+        coach_id: 'coach-1',
+        code: 'OTHER1',
+        redeemed_at: t(9),
+      },
+    ],
+    workoutAdjustmentProposal: [
+      {
+        id: 'wa1',
+        client_id: U,
+        coach_id: 'coach-1',
+        status: 'applied',
+        signals: { sleep_hours: 5.1 },
+        proposed_change: { volume: -0.2 },
+        rule_key: 'internal.rule',
+        dismiss_reason: 'coach note',
+        created_at: t(10),
+      },
+    ],
+    wearableConnection: [
+      {
+        id: 'wc1',
+        user_id: U,
+        provider: 'oura',
+        status: 'active',
+        encrypted_refresh_token: 'enc-secret',
+        created_at: t(11),
+      },
+    ],
+    wearableSample: [
+      {
+        id: 'ws2',
+        user_id: U,
+        metric: 'resting_hr',
+        value: 52,
+        unit: 'bpm',
+        raw_ref: 'raw/2',
+        start_at: t(13),
+      },
+      { id: 'ws1', user_id: U, metric: 'sleep_duration', value: 7.5, unit: 'h', start_at: t(12) },
+      {
+        id: 'ws-other',
+        user_id: OTHER,
+        metric: 'resting_hr',
+        value: 70,
+        unit: 'bpm',
+        start_at: t(12),
+      },
+    ],
+  };
+  const ids = (rows: unknown): string[] => stub<Row[]>(rows).map((r) => String(r.id));
+
+  it('exports the user own community posts, messages and reactions, never deleted or other people rows', async () => {
+    const archive = await build(day1);
+    expect(ids(archive.community_posts)).toEqual(['p1']);
+    expect(stub<Row[]>(archive.community_posts)[0]).toMatchObject({ body: 'Squats felt good' });
+    expect(ids(archive.community_messages)).toEqual(['cm1']);
+    expect(stub<Row[]>(archive.community_messages)[0]).not.toHaveProperty('recipient_user_id');
+    expect(stub<Row[]>(archive.community_messages)[0]).not.toHaveProperty('voice_url');
+    expect(ids(archive.community_reactions)).toEqual(['cr1']);
+    const text = JSON.stringify(archive);
+    expect(text).not.toContain('a post I deleted');
+    expect(text).not.toContain('someone else');
+  });
+
+  it('exports broadcasts received, code redemptions and Roman adjustments without internal fields', async () => {
+    const archive = await build(day1);
+    expect(ids(archive.broadcasts_received)).toEqual(['bd1']);
+    expect(stub<Row[]>(archive.broadcasts_received)[0]).not.toHaveProperty('lease_holder');
+    expect(ids(archive.coach_code_redemptions)).toEqual(['ccr1']);
+    expect(stub<Row[]>(archive.coach_code_redemptions)[0]).not.toHaveProperty('response');
+    expect(ids(archive.invite_redemptions)).toEqual(['ir1']);
+    const [adjustment] = stub<Row[]>(archive.workout_adjustments);
+    expect(adjustment).toMatchObject({ id: 'wa1', signals: { sleep_hours: 5.1 } });
+    expect(adjustment).not.toHaveProperty('rule_key');
+    expect(adjustment).not.toHaveProperty('dismiss_reason');
+  });
+
+  it('exports wearable samples oldest first and connections without tokens', async () => {
+    const archive = await build(day1);
+    expect(ids(archive.wearable_samples)).toEqual(['ws1', 'ws2']);
+    expect(stub<Row[]>(archive.wearable_samples)[1]).not.toHaveProperty('raw_ref');
+    expect(ids(archive.wearable_connections)).toEqual(['wc1']);
+    expect(JSON.stringify(archive)).not.toContain('enc-secret');
+  });
+
+  it('says a push token is registered without exporting the token', async () => {
+    const archive = await build(day1);
+    expect(archive.user).toMatchObject({ id: U, push_token_registered: true });
+    expect(JSON.stringify(archive)).not.toContain('ExponentPushToken');
   });
 });
