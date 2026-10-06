@@ -336,6 +336,7 @@ describe('A607-1: a client cannot change coach by code entry (nothing to retire)
       },
       subCoachAssignment: { updateMany: assignmentUpdate },
       inviteCode: { findUnique: jest.fn(), updateMany: jest.fn() },
+      inviteRedemption: { create: jest.fn(async ({ data }: any) => ({ id: 'red-1', ...data })) }, // A2 signup ledger
     };
     const prisma = {
       coachProfile: {

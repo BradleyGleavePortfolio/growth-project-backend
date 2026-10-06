@@ -154,6 +154,9 @@ async function bootstrap() {
       'download/android',
       'signup',
       'signup/:code',
+      // S-DUNNING-R2 — dunning email link; universal link to the in-app
+      // card update, calm "open the app" page otherwise.
+      'billing/update-card',
       // Universal Links / App Links require these documents at the apex
       // domain (not under /api). See WellKnownController.
       '.well-known/apple-app-site-association',

@@ -71,6 +71,7 @@ function fakeClientAttach() {
     },
     $transaction: jest.fn(async (fn: any) => fn({
       inviteCode: { findUnique: jest.fn(), updateMany: jest.fn() },
+      inviteRedemption: { create: jest.fn(async ({ data }: any) => ({ id: 'red-1', ...data })) }, // A2 signup ledger
       user: {
         findUnique: jest.fn(async ({ where }: any) => users[where.id] ?? null),
         update: jest.fn(async ({ where, data }: any) => {
