@@ -17,14 +17,14 @@ current coach for coach-owned rows; `author_id = caller` for posts).
 | `targets`, `macro_method` | `MacroTarget` (current coach) → onboarding fallback | – |
 | `today` | `LoggedFoodEntry` | totals + remaining + ≤16 entries (meal, name, kcal, protein) |
 | `last_7_days` | `LoggedFoodEntry` | per-day totals + averages |
-| `plan` | `ClientWorkoutAssignment` (current coach) | today / next session, completions ±14 d |
+| `plan` | `ClientWorkoutAssignment` (current coach or its open delegated sub-coach, `SubCoachAssignment`) | today / next session and completions in the client's local dates; two reads (last 14 local days, newest first, ≤40; today + 14 local days, ascending, ≤30), each cap+1: a hit cap records `plan.history` / `plan.upcoming` in `data_quality.truncated` and the unprovable fields are null |
 | `logged_workouts` | `WorkoutSession` | last 8 |
 | `weight` | `WeightLog` | 30-day trend |
 | `check_ins` | `CheckIn` | last 7 |
-| `wearables` | `WearableConnection` (provider, status, last sync ONLY) + `WearableSample` | 7 local days, daily aggregates of STEPS, ACTIVE_ENERGY_KCAL, RESTING_HEART_RATE_BPM, HRV_MS, SLEEP_TOTAL_MIN/SLEEP_DURATION_MIN, SLEEP_EFFICIENCY_PCT, RECOVERY_SCORE, READINESS_SCORE; 7-day averages; last night's sleep. Never tokens, raw streams or device ids |
-| `coach` | `CoachGuideline`, `CoachMessage` (coach_id = current coach, client_id = caller, sender ∈ {coach, client}) | guidelines ≤1,500 chars; last 8 messages BOTH directions, oldest first |
+| `wearables` | `WearableConnection` (provider, status, last sync ONLY) + `WearableSample` | 7 local days, daily aggregates of STEPS, ACTIVE_ENERGY_KCAL, RESTING_HEART_RATE_BPM, HRV_MS, SLEEP_TOTAL_MIN/SLEEP_DURATION_MIN, SLEEP_EFFICIENCY_PCT, RECOVERY_SCORE, READINESS_SCORE; 7-day averages; last night's sleep. One provider per metric (the client's preference, else the most recently recorded provider: the `resolveBest` policy), never summed across providers. ≤3,000 samples read (cap+1); over that, no totals or averages and `wearables.samples` in `data_quality.truncated`. Never tokens, raw streams or device ids |
+| `coach` | `CoachGuideline`, `CoachMessage` (coach_id = current coach, client_id = caller, sender ∈ {coach, open delegated sub-coach, client}) | guidelines ≤1,500 chars; last 8 messages BOTH directions, oldest first |
 | `community_posts` | `CommunityPost` (author_id = caller, `deleted_at IS NULL`, `visibility='active'`) | last 5: date, scope, title ≤80, body ≤200 |
-| `meal_plan` | `DailyMealPlanAssignment` (current coach) | title + items |
+| `meal_plan` | `DailyMealPlanAssignment` (current coach or its open delegated sub-coach) | title + items |
 
 Never read: `CoachingSession` (coach private notes), `CommunityWin`,
 `BloodworkPanel`, purchases/invoices, any other user's rows. The persona double
@@ -32,7 +32,7 @@ proxies those delegates and the suite fails if the builder touches them.
 
 ## Budget
 
-- Queries: ≤ `ROMAN_CONTEXT_MAX_QUERIES` (16) per build; 15 s memo per
+- Queries: ≤ `ROMAN_CONTEXT_MAX_QUERIES` (17) per build; 15 s memo per
   (user, local date), invalidated by the write hooks.
 - Renderer: target 2,000 tokens, hard cap 3,500 (`estimateTokens` ≈ 4 chars).
   Drop order under the cap, recorded in `data_quality.truncated`:
