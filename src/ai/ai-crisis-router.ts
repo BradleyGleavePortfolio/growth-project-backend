@@ -53,14 +53,21 @@ const NOT_A_FIGURE = '(?! (some |a little |any |a bit of )?(slack|off|a break|sh
 
 const EMERGENCY: RegExp[] = [
   /\bchest (pain|pressure|tightness)\b/i,
-  /^(?=.*\bchest (hurts|is hurting|aches|is aching|feels (tight|heavy))\b)(?=.*\b(numb(ness)?|tingl(e|es|ed|ing|y)|short(ness)? of breath|out of breath|jaw|left arm|cold sweat)\b)/i,
+  /^(?=.*\bchest (hurts|is hurting|aches|is aching|feels (tight|heavy))\b)(?=.*\b(numb(ness)?|tingl(e|es|ed|ing|y)|short(ness)? of breath|out of breath|jaw|left arm|cold sweat|can'?t breathe|cannot breathe|can not breathe|hard to breathe|trouble breathing|struggling to breathe)\b)/i,
   /\b(crushing|squeezing) (pain|feeling) in my chest\b/i,
-  // "I can't breathe" is an emergency; "I can't breathe through my nose when
-  // I run" or "trouble breathing on long runs" is a training question.
+  // B-AIG3-123: "I can't breathe" is an emergency wherever it happens ("I
+  // cannot breathe after my workout"). Only the airway is a technique
+  // question ("I can't breathe through my nose when I run").
+  /\b(can(?:'|no)?t|can not|cannot|unable to) breath(e|ing)?\b(?! (properly |well |right )?(through|out of|in through|with) (my |the |one )?(nose|mouth|nostrils?)\b)/i,
+  // Breathing trouble is an emergency; "hard to breathe during heavy squats"
+  // or "trouble breathing on long runs" is a training question.
   new RegExp(
-    `\\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\\b(?! (during|when|while|on|through|after|in|at|with|before) (my |the |a |an |long |heavy |hard |fast |big |hot |cold |intense |every )*${ACTIVITY}\\b)`,
+    `\\b(could(?:'|n)?t|couldn't|hard to|trouble|struggling to) breath(e|ing)?\\b(?! (during|when|while|on|through|after|in|at|with|before) (my |the |a |an |long |heavy |hard |fast |big |hot |cold |intense |every )*${ACTIVITY}\\b)`,
     'i',
   ),
+  // B-AIG3-123: any breathing trouble with a call for help now ("hard to
+  // breathe after my run, I need help now").
+  /^(?=.*\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b)(?=.*\b(help (me )?(right )?now|need help (right )?now|call (911|an ambulance)|ambulance)\b)/i,
   /\b(i'?m|i am) not breathing\b/i,
   /\b(i'?m|i am|i feel like i'?m|i think i'?m|feels like i'?m) (fainting|passing out|blacking out|losing consciousness)\b/i,
   /\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
@@ -127,6 +134,13 @@ const SELF_HARM: RegExp[] = [
   ),
   new RegExp(
     `\\b(hurt|hurting|cut|cutting|harm|harming|burn|burning) myself (on purpose|deliberately|intentionally)\\b`,
+    'i',
+  ),
+  // B-AIG3-123: a stated plan or wish to overdose ("I want to overdose
+  // tonight", "I am going to overdose"). "going to overdose on carbs" stays
+  // an ordinary question.
+  new RegExp(
+    `\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to) (overdose|overdosing|od)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
     'i',
   ),
   // Common suicide-method phrasings ("I am going to hang myself").

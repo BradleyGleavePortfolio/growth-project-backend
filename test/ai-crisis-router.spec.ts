@@ -54,3 +54,17 @@ describe('classifyAiGuideCrisis (B-AIG2-122)', () => {
     expect(classifyAiGuideCrisis(message)).toBeNull();
   });
 });
+
+// B-AIG3-123 — a stated plan to overdose (988) and an explicit inability to
+// breathe after training (911) still get the crisis reply.
+describe('classifyAiGuideCrisis (B-AIG3-123)', () => {
+  it.each([
+    ['I want to overdose tonight', 'self_harm'],
+    ['I am going to overdose', 'self_harm'],
+    ['I cannot breathe after my workout. I need help now.', 'emergency'],
+    ['I can’t breathe during my workout. Please help me.', 'emergency'],
+    ['my chest hurts and I can’t breathe after my run', 'emergency'],
+  ])('"%s" is %s', (message, expected) => {
+    expect(classifyAiGuideCrisis(message)).toBe(expected);
+  });
+});

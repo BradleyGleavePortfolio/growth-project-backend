@@ -959,6 +959,25 @@ describe('AiService.chat — crisis phrasing a client actually types (B-AIG2-122
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['I want to overdose tonight', 'self_harm', '988'],
+    ['I am going to overdose', 'self_harm', '988'],
+    ['I cannot breathe after my workout. I need help now.', 'emergency', '911'],
+    ['I can’t breathe during my workout. Please help me.', 'emergency', '911'],
+    ['my chest hurts and I can’t breathe after my run', 'emergency', '911'],
+  ])('client at the daily limit: "%s" gets the crisis reply, not the limit (B-AIG3-123)', async (message, classification, line) => {
+    const quota = makeQuotaStub();
+    const { svc } = makeService(quota);
+    seedAtCap(svc, quota);
+    const result = await svc.chat('u1', message, []);
+    expect(result.reply).toContain(line);
+    expect(result.guardrails_applied).toEqual([`crisis:${classification}`]);
+    expect(result.model_used).toBe('safety');
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(quota.userAIQuota.upsert).not.toHaveBeenCalled();
+    expect(quota.userAIQuota.updateMany).not.toHaveBeenCalled();
+  });
+
   it.each(['overdose on cardio', 'can you overdose on creatine?', 'I hurt myself deadlifting, can I train?'])(
     'ordinary question "%s" at the daily limit gets the 429 limit reply, not a crisis reply',
     async (message) => {
