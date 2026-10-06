@@ -1123,6 +1123,21 @@ export class GuestCheckoutService {
       // defence-in-depth so a degenerate event payload can't claim
       // a full refund of nothing).
       const fullyRefunded = chargeAmount > 0 && amountRefunded >= chargeAmount;
+      // A guest can be refunded while account conversion is still pending.
+      // The local refunded mirror must not leave that subscription billing.
+      if (fullyRefunded && row?.stripe_subscription_id) {
+        await this.stripe.pauseSubscriptionCollection({
+          subscriptionId: row.stripe_subscription_id,
+          idempotencyKey: `tgp-guest-full-refund-pause-${row.id}`,
+        });
+        const open = await this.stripe.listOpenInvoices(row.stripe_subscription_id);
+        for (const invoice of open) {
+          await this.stripe.markInvoiceUncollectible({
+            invoiceId: invoice.id,
+            idempotencyKey: `tgp-guest-full-refund-invoice-${invoice.id}`,
+          });
+        }
+      }
       // A276 P0-1: 'refunded' is admitted by GuestCheckout_status_check
       // as of migration 20260921000000_add_refunded_disputed_to_guest_checkout_status.
       // Partial refunds keep the existing row.status (typically 'paid' or

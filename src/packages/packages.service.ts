@@ -614,14 +614,33 @@ export class PackagesService {
     // bypass, so the safer no-override behaviour is kept. Cancelling the
     // Stripe subscriptions automatically is intentionally out of scope here
     // (that is BUG-R5's territory).
+    // Access off is not proof billing ended (unpaid and dispute/refund
+    // pauses keep a live Stripe subscription). Guests may not have a
+    // ClientPurchase yet while account conversion is being retried.
     const activeCount = await this.prisma.clientPurchase.count({
-      where: { package_id: packageId, entitlement_active: true },
+      where: {
+        package_id: packageId,
+        OR: [
+          { entitlement_active: true },
+          {
+            stripe_subscription_id: { not: null },
+            status: { notIn: ['canceled', 'expired', 'incomplete_expired'] },
+          },
+        ],
+      },
+    }) + await this.prisma.guestCheckout.count({
+      where: {
+        package_id: packageId,
+        created_user_id: null,
+        stripe_subscription_id: { not: null },
+        status: { not: 'failed' },
+      },
     });
     if (activeCount > 0) {
       throw new ConflictException({
         error: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',
         code: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',
-        message: `This package has ${activeCount} active subscriber(s). Cancel their subscriptions before archiving.`,
+        message: `This package has ${activeCount} active subscriber(s) or access grant(s). End their access and cancel any subscriptions before archiving.`,
         active_subscriber_count: activeCount,
       });
     }

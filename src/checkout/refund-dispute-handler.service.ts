@@ -47,6 +47,8 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PartialRefundDecisionService } from '../regimes/partial-refund-decision.service';
 import { PrismaService } from '../prisma.service';
+import { DunningV2Service } from './dunning-v2/dunning-v2.service';
+import { formatMinor } from './client-billing.money';
 
 // PR-16 — outer tx forwarded by BillingService.handleEvent through
 // CheckoutWebhookHandlerService.handle. Used to keep cancelPendingForPurchase
@@ -241,6 +243,7 @@ export class RefundDisputeHandlerService {
     // settlement writes for each refund / chargeback / dispute outcome
     // (push + in-app + email). @Optional() for legacy hand-built wiring.
     @Optional() private payoutNotices?: PayoutNoticeService,
+    @Optional() private dunningV2?: DunningV2Service,
   ) {}
 
   // Webhook entry point — returns claimed=true iff we matched to a
@@ -409,8 +412,7 @@ export class RefundDisputeHandlerService {
     // entitlement_active true; the client keeps the access they paid
     // net-of-credit for.
     const totalAmount = typeof charge.amount === 'number' ? charge.amount : purchase.amount_cents;
-    const refundedCents = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
-    const fullyRefunded = totalAmount > 0 && refundedCents >= totalAmount;
+    const fullyRefunded = totalAmount > 0 && succeededCents >= totalAmount;
     // R81 (PR-395 follow-up, F5) — refund/chargeback behaviour for the Roman P4
     // first-payment celebration is RETAIN-BY-DESIGN: a refund (even a full one)
     // or a chargeback does NOT un-record the CoachFirstPaymentNotification
@@ -483,6 +485,17 @@ export class RefundDisputeHandlerService {
    * Stripe calls stay outside this transaction (P1-3). Partial refunds keep access.
    */
   private async revokeFullyRefunded(purchase: ClientPurchase): Promise<void> {
+    // Owner decision 7: full recurring refund ends access and PAUSES
+    // billing; only the owning coach restarts it. Never cancel the plan.
+    if (purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {
+      if (!this.dunningV2) {
+        throw new ServiceUnavailableException({
+          code: 'REFUND_PAUSE_UNAVAILABLE',
+          message: 'The refund was recorded, but the plan pause could not be completed. Refresh the plan before restarting it.',
+        });
+      }
+      await this.dunningV2.pauseAfterFullRefund(purchase.id);
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.clientPurchase.updateMany({
         where: { id: purchase.id, status: { not: 'refunded' } },
@@ -501,6 +514,15 @@ export class RefundDisputeHandlerService {
         await this.fanout.cancelPendingForPurchase(purchase.id, 'refund', tx);
       }
     });
+    if (purchase.billing_type === 'recurring' && purchase.status !== 'refunded') {
+      await this.notifications.createNotification({
+        user_id: purchase.client_user_id,
+        kind: NotificationKind.DUNNING_BLOCKER,
+        body: 'A full refund was completed for this plan. Access to the plan has ended and billing is paused. The coach decides whether to restart it.',
+        payload: { event: 'full_refund_paused', purchase_id: purchase.id },
+        channel: 'inapp',
+      }).catch(() => this.logger.warn(`refund pause notice deferred purchase=${purchase.id}`));
+    }
   }
 
   /**
@@ -1632,10 +1654,10 @@ export class RefundDisputeHandlerService {
         where: { id: args.purchase.id },
       });
       const isFullRefund = !!fresh && fresh.status === 'refunded' && !fresh.entitlement_active;
-      const dollars = (args.amount_cents / 100).toFixed(2);
+      const amount = formatMinor(args.amount_cents, args.purchase.currency);
       const body = isFullRefund
-        ? `Refund processed: $${dollars} returned to client.`
-        : `Partial refund: $${dollars} returned to client.`;
+        ? `Refund processed: ${amount} returned to client.${fresh?.billing_type === 'recurring' ? ' Access to this plan has ended and billing is paused. Restarting it is your decision.' : ''}`
+        : `Partial refund: ${amount} returned to client.`;
       await this.notifications.createNotification({
         user_id: args.purchase.coach_user_id,
         kind: NotificationKind.COACH_ALERT,
@@ -2177,7 +2199,7 @@ export class RefundDisputeHandlerService {
         await this.notifications.createNotification({
           user_id: purchase.coach_user_id,
           kind: NotificationKind.COACH_ALERT,
-          body: 'Chargeback opened on a client purchase. Submit evidence in Stripe within 7 days.',
+          body: 'A payment dispute or inquiry opened on a client purchase. Review the evidence deadline in Stripe and respond before it closes.',
           payload: {
             event: 'dispute_opened',
             purchase_id: purchase.id,
@@ -2429,7 +2451,7 @@ export class RefundDisputeHandlerService {
     if (!chargeId) {
       throw new Error(`createAdminRefund: no charge id for purchase ${purchase.id}`);
     }
-    const idempotencyKey = `tgp-refund-${purchase.id}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;
+    const idempotencyKey = `tgp-refund-${purchase.id}-${chargeId}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;
     // S-FEE: reverse_transfer / refund_application_fee only exist for
     // destination charges. A separate-charge-and-transfer charge is
     // recovered by ChargeSettlementService when the refund is applied.
@@ -2480,6 +2502,12 @@ export class RefundDisputeHandlerService {
       if (!recorded) throw err;
       return recorded;
     }
+    // Judge cumulative successful refunds against THIS charge, not the
+    // purchase's first-period price. Both entry points use the same
+    // entitlement/guest/drop transaction and recurring billing pause.
+    if (outcome.row.status === 'succeeded' && await this.coversCharge(chargeId)) {
+      await this.revokeFullyRefunded(purchase);
+    }
     // A276 P0-2 (refix) — admin-initiated refund: re-read the purchase
     // (admin path doesn't go through the webhook's purchase.update
     // branch, so we use the row state at call time) and emit the same
@@ -2491,15 +2519,6 @@ export class RefundDisputeHandlerService {
         typeof stripe.amount === 'number'
           ? stripe.amount
           : (args.amount_cents ?? purchase.amount_cents);
-      // Admin refund implicitly fully refunds when amount matches the
-      // purchase amount. Mirror the webhook's purchase-state update so
-      // emitRefundCoachAlert observes the correct status.
-      if (amount_cents >= purchase.amount_cents) {
-        await this.prisma.clientPurchase.update({
-          where: { id: purchase.id },
-          data: { status: 'refunded', entitlement_active: false },
-        });
-      }
       await this.emitRefundCoachAlert({
         purchase,
         amount_cents,
@@ -2512,6 +2531,17 @@ export class RefundDisputeHandlerService {
   }
 
   private async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
+    // Recurring purchases retain their first PaymentIntent. A refund is
+    // against the most recent renewal, whose settlement/ledger owns the charge.
+    if (purchase.billing_type === 'recurring') {
+      const latest = await this.settlements?.latestChargeIdForPurchase(purchase.id);
+      if (latest) return latest;
+      const entry = await this.prisma.splitLedgerEntry.findFirst({
+        where: { purchase_id: purchase.id, kind: 'destination' },
+        orderBy: { posted_at: 'desc' },
+      });
+      if (entry?.stripe_charge_id) return entry.stripe_charge_id;
+    }
     if (purchase.stripe_payment_intent_id) {
       try {
         const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);

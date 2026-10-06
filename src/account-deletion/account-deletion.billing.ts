@@ -63,7 +63,10 @@ export class AccountDeletionBillingService {
       select: { stripe_subscription_id: true },
     });
     const guest = await tx.guestCheckout.findMany({
-      where: { created_user_id: userId, stripe_subscription_id: { not: null } },
+      where: {
+        OR: [{ created_user_id: userId }, { package: { coach_id: userId } }],
+        stripe_subscription_id: { not: null },
+      },
       select: { stripe_subscription_id: true },
     });
     for (const row of [...coachSubs, ...purchases, ...guest]) {

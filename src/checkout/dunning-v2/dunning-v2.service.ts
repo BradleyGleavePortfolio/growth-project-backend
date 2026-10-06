@@ -253,7 +253,7 @@ export interface ClientDunningStatus {
    * payment already made (no invoice is open, a card update does not end
    * it); 'payment' = a renewal charge failed. Null with state 'none'.
    */
-  kind: 'payment' | 'dispute' | null;
+  kind: 'payment' | 'dispute' | 'refund' | null;
   /**
    * B-628-7: true when the cycle is locked but the client keeps access
    * through another live entitlement (the request guard lets them in), so
@@ -293,7 +293,7 @@ export interface ClientDunningStatus {
    * cancel_route / amount_cents all null: no lock date, no retry or card
    * path). 'payment_failed': a renewal charge failed.
    */
-  reason: 'dispute_paused' | 'payment_failed' | null;
+  reason: 'dispute_paused' | 'refund_paused' | 'payment_failed' | null;
   access_ended: boolean;
   /**
    * Sol B-705-4: true only once Stripe confirmed the dispute pause; while the
@@ -308,6 +308,11 @@ const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);
 
 /** `last_failure_reason` marker of a compressed late-reversal (dispute) cycle. */
 export const DUNNING_V2_REVERSAL_REASON = 'charge_disputed';
+export const FULL_REFUND_PAUSE_REASON = 'charge_refunded';
+const BILLING_PAUSE_REASONS = [DUNNING_V2_REVERSAL_REASON, FULL_REFUND_PAUSE_REASON];
+export function isBillingPauseReason(reason: string | null | undefined): boolean {
+  return reason != null && BILLING_PAUSE_REASONS.includes(reason);
+}
 
 /** The cycle is paused by a dispute: the marker on an active, locked cycle. */
 function isDisputePausedRow(
@@ -315,7 +320,7 @@ function isDisputePausedRow(
 ): boolean {
   return (
     state.status === 'active' &&
-    state.last_failure_reason === DUNNING_V2_REVERSAL_REASON &&
+    isBillingPauseReason(state.last_failure_reason) &&
     state.locked_out_at != null &&
     state.entered_at != null
   );
@@ -905,7 +910,7 @@ export class DunningV2Service {
     if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
       return 'skipped';
     }
-    const dispute = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
+    const dispute = isBillingPauseReason(row.last_failure_reason);
     if (dispute) {
       // B-628-8: a dispute cycle's evidence is the dispute itself, not the
       // subscription (which stays active and keeps renewing). A won dispute
@@ -1009,7 +1014,7 @@ export class DunningV2Service {
     if (!state) return { liftedLockout: false };
     // R-DISPUTE-PAUSE: no payment, card update or manual clear ends a
     // dispute pause; only the coach restart does.
-    if (state.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) {
+    if (state.status === 'active' && isBillingPauseReason(state.last_failure_reason)) {
       return { liftedLockout: false };
     }
     const wasLocked = state.locked_out_at != null;
@@ -1175,12 +1180,56 @@ export class DunningV2Service {
       where: { purchase_id: purchaseId },
       select: { status: true, last_failure_reason: true },
     });
-    return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
+    return state?.status === 'active' && isBillingPauseReason(state.last_failure_reason);
   }
 
   /** Alias read by the webhook entitlement writers (R-DISPUTE-PAUSE). */
   async isDisputePaused(purchaseId: string, db?: DunningV2Db): Promise<boolean> {
     return this.isDisputeCycleOpen(purchaseId, db);
+  }
+
+  /**
+   * Owner decision 7: a full refund is not non-payment. Record a distinct
+   * pause reason, reuse the existing Stripe pause and coach restart, and
+   * never create a fictitious bank dispute or dispatch dispute notices.
+   * Money safety is independent of the rollout flag.
+   */
+  async pauseAfterFullRefund(purchaseId: string): Promise<void> {
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await this.lockDunningState(tx, purchaseId);
+      const purchase = await tx.clientPurchase.findUnique({ where: { id: purchaseId } });
+      if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) return;
+      if (PLAN_ENDED_STATUSES.has(purchase.status)) return;
+      const state = await tx.dunningState.findUnique({ where: { purchase_id: purchaseId } });
+      if (state && isDisputePausedRow(state)) return;
+      const data = {
+        status: 'active',
+        step_index: DUNNING_V2_PAUSE_STEP,
+        last_failure_reason: FULL_REFUND_PAUSE_REASON,
+        last_failure_at: now,
+        entered_at: now,
+        locked_out_at: now,
+        next_attempt_at: null,
+        resolved_at: null,
+        recovered_at: null,
+        client_canceled_at: null,
+        billing_paused_at: null,
+      };
+      const paused = state
+        ? await tx.dunningState.update({ where: { id: state.id }, data })
+        : await tx.dunningState.create({
+            data: { purchase_id: purchaseId, failure_count: 0, reversal_count: 0, ...data },
+          });
+      await tx.dunningNoticeDelivery.updateMany({
+        where: { dunning_state_id: paused.id, status: { in: ['pending', 'failed'] } },
+        data: { status: 'canceled', next_attempt_at: null },
+      });
+      await tx.clientPurchase.update({
+        where: { id: purchaseId }, data: { entitlement_active: false },
+      });
+    });
+    await this.confirmDisputePause(purchaseId, now);
   }
 
   /**
@@ -1361,6 +1410,8 @@ export class DunningV2Service {
       await this.releaseDisputeLease(lease);
     }
     if (!state) return { result: 'not_paused' };
+    // Refund notices are emitted by the refund handler, not the bank-dispute renderer.
+    if (state.last_failure_reason === FULL_REFUND_PAUSE_REASON) return { result: 'confirmed' };
     const enteredAt = state.entered_at as Date;
     const claim: DunningV2StepClaim = {
       dunningStateId: state.id,
@@ -1412,7 +1463,7 @@ export class DunningV2Service {
         where: {
           id: state.id,
           status: 'active',
-          last_failure_reason: DUNNING_V2_REVERSAL_REASON,
+          last_failure_reason: state.last_failure_reason,
           entered_at: enteredAt,
         },
         data: { billing_paused_at: new Date() },
@@ -1446,7 +1497,7 @@ export class DunningV2Service {
     const rows = await this.prisma.dunningState.findMany({
       where: {
         status: 'active',
-        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
+        last_failure_reason: { in: BILLING_PAUSE_REASONS },
         locked_out_at: { not: null },
         entered_at: { not: null },
         billing_paused_at: null,
@@ -1555,7 +1606,7 @@ export class DunningV2Service {
     if (
       !state?.entered_at ||
       state.status !== 'active' ||
-      state.last_failure_reason !== DUNNING_V2_REVERSAL_REASON
+      !isBillingPauseReason(state.last_failure_reason)
     ) {
       return 'not_paused';
     }
@@ -1635,7 +1686,7 @@ export class DunningV2Service {
         where: {
           id: state.id,
           status: 'active',
-          last_failure_reason: DUNNING_V2_REVERSAL_REASON,
+          last_failure_reason: state.last_failure_reason,
           entered_at: enteredAt,
         },
         data: {
@@ -1898,9 +1949,11 @@ export class DunningV2Service {
       }),
     ]);
     const enteredAt = row.entered_at as Date;
-    const kind = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';
+    const kind = row.last_failure_reason === FULL_REFUND_PAUSE_REASON
+      ? 'refund'
+      : row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';
     const state = row.locked_out_at && !lockWaived ? 'locked' : 'past_due';
-    if (kind === 'dispute') {
+    if (kind === 'dispute' || kind === 'refund') {
       // R-DISPUTE-PAUSE: access ended at once, billing is paused, the coach
       // restarts it. No lock date, no retry, no card update, no cancel path.
       return {
@@ -1915,7 +1968,7 @@ export class DunningV2Service {
         coach_name: coach?.name ?? null,
         update_payment_route: null,
         update_card_url: null,
-        reason: 'dispute_paused',
+        reason: kind === 'refund' ? 'refund_paused' : 'dispute_paused',
         access_ended: true,
         // Sol B-705-4: only once Stripe confirmed the pause.
         billing_paused: row.billing_paused_at != null,

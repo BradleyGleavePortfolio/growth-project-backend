@@ -26,6 +26,7 @@ function makePrismaStub() {
   const stub: any = {
     _rows: rows,
     _purchases: purchases,
+    guestCheckout: { count: jest.fn(async () => 0) },
     coachPackage: {
       findFirst: jest.fn(async ({ where }: any) =>
         rows.find((r) =>
@@ -57,6 +58,10 @@ function makePrismaStub() {
       //   { package_id, entitlement_active: true }
       count: jest.fn(async ({ where }: any) =>
         purchases.filter((p) => {
+          if (where.OR && !where.OR.some((branch: any) =>
+            branch.entitlement_active === true ? p.entitlement_active === true :
+              p.stripe_subscription_id != null && !branch.status.notIn.includes(p.status),
+          )) return false;
           if (
             where.package_id !== undefined &&
             p.package_id !== where.package_id

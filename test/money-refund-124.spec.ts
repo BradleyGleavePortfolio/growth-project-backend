@@ -68,6 +68,7 @@ function world() {
   const notifications = { createNotification: jest.fn(async () => undefined) };
   const v2 = new DunningV2Service(prisma, new DunningV2Telemetry(), undefined, stub(stripe));
   const settlements = {
+    purchaseIdForCharge: jest.fn(async () => row.id),
     latestChargeIdForPurchase: jest.fn(async () => latestCharge),
     applyAdjustments: jest.fn(async () => undefined),
   };
