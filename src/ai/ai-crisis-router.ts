@@ -14,8 +14,9 @@
  * overdose pattern. B-AIG2-122 then narrows the overdose, poisoning,
  * breathing, unconscious and hurt-myself patterns so ordinary training and
  * nutrition questions keep their normal answer, and adds the common
- * suicide-method phrasings. Once the Roman stack is on main, both surfaces
- * should share one list.
+ * suicide-method phrasings. B-ROMAN911-123: the Roman SafetyRouter uses
+ * these two lists for its `emergency` and `self_harm` classes, so both
+ * surfaces share one list.
  */
 
 export type AiGuideCrisisClass = 'emergency' | 'self_harm';
@@ -105,6 +106,20 @@ const EMERGENCY: RegExp[] = [
     'i',
   ),
   /\b(took|taken|take|taking|having|i'?ve had|just had) an overdose\b/i,
+  // B-744-1: an overdose reported with no listed person or lead-in ("a guy at
+  // my gym is overdosing", "my teammate overdosed", "she might be
+  // overdosing"). A plan or thought ("thinking about overdosing") is the 988
+  // line below; "overdosing on cardio" stays an ordinary question.
+  new RegExp(
+    `\\b(?<!\\b(about|of|considering|contemplating|planning on|into|like|never|almost|nearly) )(overdosed|overdosing|od'd|od'ing)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
+    'i',
+  ),
+  // B-744-1: the noun on its own ("possible overdose, what do I do?", "is this
+  // an overdose?", "help, overdose"). "can you overdose on creatine?" and
+  // "how much caffeine is an overdose" stay ordinary questions.
+  /\b(possible|suspected|accidental|likely|probable) (overdose|od)\b/i,
+  acute('(an? )?overdose'),
+  /^\W*((please|help|help me|urgent|emergency)\W+)*(an )?(overdose|od)(\W+(help|help me|please|now|what do i do))*\W*$/i,
   new RegExp(
     `\\b${PERSON} (just |has |have |had |was |were |got |has been |have been |think (i|he|she|they) (was |were |got |have been |has been )?|)(been )?poisoned\\b`,
     'i',
@@ -124,8 +139,14 @@ const EMERGENCY: RegExp[] = [
 ];
 
 const SELF_HARM: RegExp[] = [
-  /\bsuicid(e|al)\b/i,
-  /\bkill(ing)? myself\b/i,
+  // B-ROMAN911-123: drill and grip names ("suicide sprints", "suicide
+  // runs", "suicide squeeze", "suicide grip") are training vocabulary.
+  // "suicide runs in my family" still routes.
+  /\bsuicid(e|al)\b(?! (sprints?|drills?|shuttles?|squeeze|squeezes|grips?)\b| runs?\b(?! (in|through)\b))/i,
+  // B-ROMAN911-123: "I have been killing myself in the gym" and "I keep
+  // killing myself on cardio" describe effort. "kill myself", "thinking about
+  // killing myself" and "I am killing myself" on its own still route.
+  /\bkill myself\b|\bkilling myself\b(?<!\b(i'?m|i am|i'?ve been|i have been|been|keep|kept) killing myself)|\bkilling myself\b(?! (in|at|on|with|during) (the |my |this |these |every |each )?(gym|workouts?|training|sessions?|leg day|cardio|reps|sets|runs?|treadmill|class|classes)\b)/i,
   /\bend (my|it) (life|all)\b/i,
   /\b(don'?t|do not|dont|no longer) want to (live|be alive|be here|wake up|exist|go on)( anymore)?\b/i,
   /\b(i'?m|i am) going to (kill myself|end it)\b/i,
@@ -136,7 +157,7 @@ const SELF_HARM: RegExp[] = [
   // injury report ("I hurt myself deadlifting, can I train?") is a training
   // question for the model.
   new RegExp(
-    `\\b(want to|wanna|going to|gonna|urge to|urges to|need to|plan(ning)? to|thinking (about|of)|thought (about|of)|feel like|tempted to|try(ing)? to) (hurting|cutting|hurt|cut|harming|harm|burning|burn) myself\\b${NOT_A_FIGURE}`,
+    `\\b(want to|wanting to|wanna|going to|gonna|urge to|urges to|need to|plan(ning)? to|thinking (about|of)|thought (about|of)|feel like|tempted to|try(ing)? to) (hurting|cutting|hurt|cut|harming|harm|burning|burn) myself\\b${NOT_A_FIGURE}`,
     'i',
   ),
   new RegExp(
@@ -147,6 +168,14 @@ const SELF_HARM: RegExp[] = [
     `\\b(hurt|hurting|cut|cutting|harm|harming|burn|burning) myself (on purpose|deliberately|intentionally)\\b`,
     'i',
   ),
+  // B-744-2: a relapse disclosure ("I cut myself again", "I hurt myself
+  // again last night"). "I hurt myself again deadlifting" and "I cut myself
+  // again shaving" are training or everyday injuries.
+  new RegExp(
+    `\\b(hurt|hurting|cut|cutting|harmed|harming|burned|burnt|burning) myself again\\b(?! (on|in|at|during|when|while|with|doing|from|lifting|deadlifting|squatting|benching|running|training|playing|working|shaving|cooking)\\b)`,
+    'i',
+  ),
+  /^(?=.*\brelaps(e|ed|ing)\b)(?=.*\b(hurt|hurting|cut|cutting|harmed|harming|burned|burning) myself\b)/i,
   // B-AIG3-123: a stated plan or wish to overdose ("I want to overdose
   // tonight", "I am going to overdose"). "going to overdose on carbs" stays
   // an ordinary question.
@@ -190,6 +219,10 @@ export function normalizeForCrisis(message: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/** B-ROMAN911-123: the same lists drive the Roman SafetyRouter's 911 and 988 classes. */
+export const CRISIS_EMERGENCY_PATTERNS: readonly RegExp[] = EMERGENCY;
+export const CRISIS_SELF_HARM_PATTERNS: readonly RegExp[] = SELF_HARM;
 
 /** The crisis class of one message, or null for every other message. Emergency wins. */
 export function classifyAiGuideCrisis(message: string): AiGuideCrisisClass | null {
