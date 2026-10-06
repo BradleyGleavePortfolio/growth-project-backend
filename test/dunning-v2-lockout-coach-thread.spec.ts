@@ -20,7 +20,11 @@ describe('DunningLockoutGuard: a locked client reaches their own coach thread on
 
   const lockedGuard = () =>
     new DunningLockoutGuard(
-      stub({ dunningState: { findFirst: jest.fn(async () => ({ id: 'ds_1' })) } }),
+      stub({
+        dunningState: { findFirst: jest.fn(async () => ({ id: 'ds_1', purchase_id: 'cp_1' })) },
+        // The guard also checks for another live grant before locking; none here.
+        clientPurchase: { findMany: jest.fn(async () => []) },
+      }),
     );
   const ctx = (method: string, path: string): ExecutionContext =>
     stub({
@@ -32,6 +36,7 @@ describe('DunningLockoutGuard: a locked client reaches their own coach thread on
     ['POST', '/api/messages'],
     ['POST', '/api/messages/read'],
     ['GET', '/api/messages/unread-count'],
+    ['POST', '/api/messages/report'], // MessagesSafetyController — safety report
     ['get', '/api/messages?before=2026-10-01T00:00:00.000Z'],
   ])('admits %s %s for a locked client', async (method, path) => {
     await expect(lockedGuard().canActivate(ctx(method, path))).resolves.toBe(true);
@@ -43,6 +48,7 @@ describe('DunningLockoutGuard: a locked client reaches their own coach thread on
     ['DELETE', '/api/messages'],
     ['PUT', '/api/messages/read'],
     ['GET', '/api/messages/read'],
+    ['GET', '/api/messages/report'],
     ['GET', '/api/messages/other-thread'],
     ['GET', '/api/coach/clients/client-2/messages'],
     ['GET', '/api/coach/messages/unread-count'],
