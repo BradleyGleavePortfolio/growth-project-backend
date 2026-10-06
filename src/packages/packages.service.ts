@@ -176,6 +176,45 @@ export const PAID_PACKAGE_MIN_CENTS = 1999;
 // (price unchanged since) are checked against this instead.
 const STRIPE_MIN_CHARGE_CENTS = 50;
 
+/** A $0 one-time package with no paid second price: nothing to charge. */
+export function isFreeOffer(
+  row: Pick<CoachPackage, 'amount_cents' | 'billing_type' | 'recurring_amount_cents'>,
+): boolean {
+  return (
+    row.amount_cents === 0 &&
+    row.billing_type !== 'recurring' &&
+    !((row.recurring_amount_cents ?? 0) > 0)
+  );
+}
+
+/**
+ * AUDIT-02-125: setup binds a FREE first package to the coach's invite link
+ * (grant_mode 'free'), so every client who joins gets it at $0. When the
+ * coach later puts a price on that package, the link must stop handing it
+ * out for $0: 'free' bindings made for this package are cleared in the same
+ * transaction as the price change. Clients who already joined keep their
+ * grant; 'prepaid' bindings (paid outside the app) are left alone.
+ */
+async function releaseFreeInviteBindings(
+  tx: Prisma.TransactionClient,
+  before: CoachPackage,
+  after: CoachPackage,
+): Promise<void> {
+  if (!isFreeOffer(before) || isFreeOffer(after)) return;
+  await tx.coachProfile.updateMany({
+    where: {
+      user_id: before.coach_id,
+      invite_code_package_id: before.id,
+      invite_code_grant_mode: 'free',
+    },
+    data: { invite_code_package_id: null, invite_code_grant_mode: 'none' },
+  });
+  await tx.inviteCode.updateMany({
+    where: { coach_id: before.coach_id, package_id: before.id, grant_mode: 'free' },
+    data: { package_id: null, grant_mode: 'none' },
+  });
+}
+
 /** True once the package has been put on sale (durable; B-629-2). */
 export function hasBeenOnSale(
   row: Pick<CoachPackage, 'published_at' | 'first_published_at'>,
@@ -578,10 +617,12 @@ export class PackagesService {
         });
       }
 
-      return tx.coachPackage.update({
+      const updated = await tx.coachPackage.update({
         where: { id: packageId },
         data,
       });
+      await releaseFreeInviteBindings(tx, row, updated);
+      return updated;
     });
   }
 
