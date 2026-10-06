@@ -223,4 +223,14 @@ describe('PublicPagesController help pages', () => {
     expect(html).toContain('Are messages real-time');
     expect(html).toContain('Where do I get an invoice');
   });
+
+  it('faq says coach tools are in the mobile app, never that coaching is web-only', () => {
+    const html = renderHelpPage('faq');
+    expect(html).toContain('Is there a coach app?');
+    expect(html).toContain(
+      'Coach tools are available in The Growth Project mobile app. Sign in with a coach account ' +
+        'to manage clients, messages, training programs, coaching packages and availability.',
+    );
+    expect(html).not.toMatch(/web-only/i);
+  });
 });

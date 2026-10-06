@@ -48,11 +48,19 @@ describe('PublicPagesController', () => {
     expect(res.body).toContain('Google Play');
   });
 
-  it('serves a 200 HTML page for /signup that explains invite-only access', () => {
+  it('serves a 200 HTML page for /signup that explains open signup (no code needed)', () => {
     const res = makeRes();
     controller.signup(undefined, res);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('invite');
+    expect(res.body).toContain('Create an account');
+    expect(res.body).toContain(
+      'Open The Growth Project app to create a client or coach account. If a coach shared an ' +
+        'invite code, enter it during setup to connect with them. No invite code is needed to ' +
+        'create an account. For help with setup, contact support.',
+    );
+    expect(res.body).toContain('Contact support');
+    expect(res.body).toContain('subject=Signup%20help');
+    expect(res.body).not.toMatch(/invite-only|Sign up by invite|Request%20an%20invite/i);
   });
 
   it('does not embed unresolved Apple/Google placeholder IDs', () => {
@@ -106,7 +114,7 @@ describe('PublicPagesController', () => {
       controller.signup(bad, res);
       expect(res.statusCode).toBe(200);
       // Generic copy is shown when the code doesn't validate.
-      expect(res.body).toContain('Sign up by invite');
+      expect(res.body).toContain('Create an account');
       expect(res.body).not.toContain('Your invite code');
       // No reflection of the bad input back into the markup.
       expect(res.body).not.toContain(bad);
@@ -117,7 +125,7 @@ describe('PublicPagesController', () => {
     const res = makeRes();
     controller.signupWithCode('not valid', res);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('Sign up by invite');
+    expect(res.body).toContain('Create an account');
     expect(res.body).not.toContain('Your invite code');
   });
 });
