@@ -17,8 +17,25 @@ export interface SafetyRouteResult {
   short_circuit: boolean;
 }
 
+/**
+ * B-666-1 / B-666-2: `<condition>` framed as happening now ("I am having",
+ * "she is in", "going into"), or asked about as happening ("is this",
+ * "could this be", "signs of"). A past or hypothetical mention ("my dad had
+ * a heart attack", "lower my risk of a heart attack") does not match.
+ */
+function acute(condition: string): RegExp {
+  return new RegExp(
+    `\\b(having|experiencing|going into|go into|just went into|in the middle of|signs of|symptoms of|(i'?m|i am|am|is|are|he'?s|she'?s|they'?re|we'?re) (now |currently )?in|(is|could|might) (this|it|that)( be)?|(i )?think (it'?s|this is|that'?s|i'?m in)) ${condition}\\b`,
+    'i',
+  );
+}
+
 const EMERGENCY: RegExp[] = [
   /\bchest (pain|pressure|tightness)\b/i,
+  // A-666-2 (Opus): chest pain in plain words with a warning sign in the
+  // same message ("my chest hurts and my left arm is numb"). A sore chest
+  // after bench press on its own is not an emergency.
+  /^(?=.*\bchest (hurts|is hurting|aches|is aching|feels (tight|heavy))\b)(?=.*\b(numb(ness)?|tingl(e|es|ed|ing|y)|short(ness)? of breath|out of breath|jaw|left arm|cold sweat)\b)/i,
   /\b(crushing|squeezing) (pain|feeling) in my chest\b/i,
   /\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b/i,
   /\b(i'?m|i am) not breathing\b/i,
@@ -37,10 +54,29 @@ const EMERGENCY: RegExp[] = [
   /\b(face (is )?droop(ing)?|slurr(ed|ing) (my |his |her )?speech|one side of (my|his|her) (body|face) (is |went |feels )?(numb|weak|drooping))\b/i,
   // B-651-2: a past allergic reaction is history, not an emergency; an acute
   // one (or its airway signs) is.
-  /\b(anaphyla|throat (is )?(closing|swelling)|epi ?pen|lips (are )?swelling|tongue (is )?swelling)\b/i,
+  /\b(throat (is )?(closing|swelling)|lips (are )?swelling|tongue (is )?swelling)\b/i,
   /\b((i'?m|i am|think i'?m|might be|he'?s|she'?s) having|having) an allergic reaction\b|\ballergic reaction (right )?now\b/i,
-  /\b(overdos(e|ed|ing)|poison(ed|ing))\b/i,
-  /\b(heart attack|cardiac arrest)\b/i,
+  // B-666-1 (Sol) / B-666-2 (Opus): anaphylaxis, an EpiPen, a heart attack or
+  // cardiac arrest is an emergency when it is happening now, about to, or
+  // asked about as happening ("is this ..."). History, risk and family
+  // mentions go to the model with the medical hint (MEDICAL_SCOPE below).
+  acute('(an? )?(anaphyla(xis|ctic)( shock| reaction)?)'),
+  /\banaphyla(xis|ctic)( shock| reaction)?,? (right )?now\b/i,
+  /\b(used|use|using|grab|give (me|him|her|them)) (my |an |the |his |her |their )?epi ?-?pens?\b|\bneed(s|ed)? (my|his|her|their) epi ?-?pens?\b|\bepi ?-?pens? (now|is not working|isn'?t working|did not work|didn'?t work)\b/i,
+  acute('(a )?(heart attack|cardiac arrest)'),
+  /\b(heart attack|cardiac arrest),? (right )?now\b|\b(is|are|gone|going) into cardiac arrest\b/i,
+  // "food poisoning" last week is history (medical scope); a poisoning or an
+  // overdose happening now is not.
+  /\b(overdos(e|ed|ing)|(?<!food )poison(ed|ing))\b/i,
+  // A-666-1 (Opus): an overdose described without the word.
+  /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of)( of)?( my| the)? (\w+ )?(pills|tablets|meds|medication|medicine|capsules|painkillers|sleeping pills)\b/i,
+  // A-666-2 (Opus): an overdose given as a count ("I took 20 of my sleeping
+  // pills", "a bunch of pills"). Five or more; "took 2 pills" is a dose.
+  /\b(took|taken|swallowed|have taken|i'?ve taken) ([5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the)? (\w+ )?(pills|tablets|meds|capsules|painkillers)\b/i,
+  // A-666-3 (Opus): the same overdose with the medicine named instead of
+  // "pills" ("a whole bottle of Tylenol", "30 ibuprofen", "a bunch of Xanax").
+  // Five or more, or a bottle/pack/handful; "took 2 Tylenol" is a dose.
+  /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of|[5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the| his| her| their)? (\w+ )?(tylenol|acetaminophen|paracetamol|advil|motrin|ibuprofen|aleve|naproxen|aspirin|excedrin|nyquil|benadryl|diphenhydramine|xanax|valium|ativan|klonopin|ambien|zolpidem|oxy|oxys|oxycodone|oxycontin|percocet|vicodin|hydrocodone|codeine|tramadol|morphine|fentanyl|adderall|lithium|seroquel|antidepressants|sleeping meds|sleep meds)s?\b/i,
   /\b(coughing|throwing|vomiting) up blood\b/i,
 ];
 
@@ -57,6 +93,16 @@ const SELF_HARM: RegExp[] = [
   /\bbetter off dead\b/i,
   /\b(want|wish) (to die|i was dead|i were dead)\b/i,
   /\bnot worth living\b/i,
+  // A-666-1 (Opus): "I cannot go on anymore" (but not "I can't go on the bike").
+  /\b(can'?t|cannot|can not) go on( (anymore|any more|any longer|like this|living))\b|\b(can'?t|cannot|can not) go on[.!?]*\s*$/i,
+  // A-666-2 (Opus): ordinary suicidal phrasings ("ending my life", "take my
+  // own life", "ending it all", "no point in living", "better off without
+  // me"). "End the set" and "ending my workout early" do not match.
+  /\b(end|ends|ending|ended|take|taking|took)( my| his| her| their) (own )?life\b(?! (back|savings|insurance|story|goals?|to the next level)\b)/i,
+  /\b(end|ending|ended) it all\b/i,
+  /\b(want to|going to|gonna|thinking (about|of)|thought (about|of)|plan(ning)? to|ready to) end(ing)? it( now| tonight| today)?[.!?]*\s*$/i,
+  /\b(no|don'?t see (the|any)|do not see (the|any)|what'?s the|there'?s no) point (in|of|to) (living|life|being alive|going on|being here|existing)\b/i,
+  /\bbetter off without me\b/i,
 ];
 
 const EATING_DISORDER: RegExp[] = [
@@ -94,6 +140,9 @@ const MEDICAL_SCOPE: RegExp[] = [
   /\b(fainted|passed out|blacked out|fainting|passing out|blacking out|faint|dizzy|dizziness|light-?headed)\b/i,
   /\b(had|have had|history of|after|since) (a |my )?stroke\b/i,
   /\ballergic reaction\b|\ballerg(y|ies|ic) to\b/i,
+  // B-666-1 / B-666-2: history, risk and family mentions of the acute
+  // emergencies above (the acute forms are caught first by EMERGENCY).
+  /\banaphyla(xis|ctic)\b|\bepi ?-?pens?\b|\bheart attacks?\b|\bcardiac arrest\b|\bfood poisoning\b/i,
 ];
 
 const INJURY_PAIN: RegExp[] = [

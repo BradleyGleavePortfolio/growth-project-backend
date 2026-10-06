@@ -459,6 +459,47 @@ describe('B-R8-2 / A-R4-4 one immutable bundle; only checked text is stored and 
     expect(pc.targets.calories).toBe(2000);
     expect(pc.today.remaining_kcal).toBe(1100);
   });
+
+  it('B-668-3 (Sol): kcal facts keep their family, day and source', () => {
+    const base = fakeBundle().context;
+    const day = (date: string, active_kcal: number | null) => ({
+      date,
+      steps: null,
+      active_kcal,
+      resting_hr_bpm: null,
+      hrv_ms: null,
+      sleep_hours: null,
+      sleep_efficiency_pct: null,
+      recovery_score: null,
+      readiness_score: null,
+    });
+    const pc = postCheckContextOf({
+      ...base,
+      today: {
+        ...base.today,
+        entries: [{ meal: 'lunch', name: 'Bowl', kcal: 450, protein_g: 30, logged_at: '12:10' }],
+      },
+      last_7_days: {
+        ...base.last_7_days,
+        days: [
+          { date: '2026-10-01', kcal: 1850, protein_g: 90, carbs_g: 200, fat_g: 60, meals_logged: 3 },
+        ],
+      },
+      wearables: {
+        ...base.wearables,
+        avg_7d: { ...base.wearables.avg_7d, active_kcal: 380 },
+        days: [day('2026-10-01', 400), day('2026-10-02', 2500)],
+      },
+      meal_plan: { title: 'Plan', items: ['Breakfast oats 200 kcal'] },
+    });
+    expect(pc.kcal_facts).toEqual({
+      intake_entries_today: [450],
+      intake_past_days: [1850],
+      burned_today: [2500],
+      burned_past: [400, 380],
+      meal_plan: [200],
+    });
+  });
 });
 
 // ─── A-R3-1: context failure logs no raw text and runs degraded ─────────────
@@ -521,8 +562,8 @@ describe('OR-113-2 launch hardening', () => {
 
   it('an invalid cap value never means "no cap"', () => {
     const svc = new RomanService(fakeOf(makePrisma().prisma), grantAllEgress(), null);
-    expect(svc.dailyCostCapUsd({ ROMAN_DAILY_COST_CAP_USD: 'lots' })).toBe(25);
-    expect(svc.dailyCostCapUsd({})).toBe(25);
+    expect(svc.dailyCostCapUsd({ ROMAN_DAILY_COST_CAP_USD: 'lots' })).toBe(100);
+    expect(svc.dailyCostCapUsd({})).toBe(100);
     expect(svc.dailyCostCapUsd({ ROMAN_DAILY_COST_CAP_USD: '40' })).toBe(40);
   });
 

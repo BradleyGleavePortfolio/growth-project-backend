@@ -64,6 +64,11 @@ import {
   ROMAN_ERASE_SWEEP_MAX_BATCHES,
 } from './roman.constants';
 import { isRomanChatEnabled } from './roman.feature';
+import {
+  ROMAN_LOGGABLE_ERROR_NAMES,
+  romanErrorTag,
+  romanSanitizedError,
+} from './roman-error-tag';
 import { randomUUID } from 'node:crypto';
 import {
   ROMAN_DAILY_COST_CAP_USD_DEFAULT,
@@ -71,19 +76,26 @@ import {
   ROMAN_ERROR_MODEL_UNAVAILABLE,
   ROMAN_LEDGER_CAPABILITY,
   ROMAN_PRICE_PER_MTOK,
+  ROMAN_COACH_POOL_EMPTY_MESSAGE,
+  ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH,
+  romanAudienceOf,
   romanFailureMessage,
   romanRateLimitMessage,
 } from './roman.constants';
+import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
+import { CoachAiBudgetExhaustedException } from '../ai-credits/budget-exhausted.exception';
+import { COACH_AI_BUDGET_EXHAUSTED_CODE } from '../ai-credits/ai-credits.constants';
 import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
 import {
   classifySafety,
   routerHintFor,
+  ROMAN_SAFETY_ROUTE_REASON,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
   ROMAN_SAFETY_TEMPLATES,
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
 import { RomanClientContextService } from './context/roman-client-context.service';
-import { AuditService } from '../audit/audit.service';
+import { AuditAction, AuditService } from '../audit/audit.service';
 import type {
   RomanClientContext,
   RomanClientContextBundle,
@@ -199,6 +211,11 @@ export class RomanService {
     // (ids and the route class only, never the message text).
     @Optional()
     private readonly audit: AuditService | null = null,
+    // B-668-1: the coach's monthly AI credit pool (src/ai-credits, @Global
+    // AiCreditsModule, so Nest always provides it). Every paid turn is
+    // checked against it before the provider call and debited after it.
+    @Optional()
+    private readonly budget: CoachAIBudgetService | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -736,8 +753,6 @@ export class RomanService {
       modelId?: string | null;
       interrupted?: boolean;
       parentMessageId?: string | null;
-      /** This Roman turn spends the session's single exclamation mark. */
-      spendsExclamation?: boolean;
     },
   ): Promise<RomanMessage> {
     return this.prisma.$transaction(async (tx) => {
@@ -746,7 +761,6 @@ export class RomanService {
         data: {
           message_count: { increment: 1 },
           last_activity_at: new Date(),
-          ...(data.spendsExclamation ? { exclamation_used: true } : {}),
         },
       });
       if (live.count === 0) {
@@ -943,15 +957,20 @@ export class RomanService {
         modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
         interrupted: false,
       });
+      // OR-115-1 (C-651-5): one neutral action name and no class in the log
+      // line. The closed reason code lives only in AuditLog.metadata, which
+      // the owner audit list never returns and #608's erasure manifest nulls
+      // for this actor.
       this.logger.warn(
-        `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=false`,
+        `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=false template=fixed`,
       );
       await this.audit?.write({
-        action: route.class === 'emergency' ? 'roman.safety_emergency' : 'roman.safety_self_harm',
+        action: AuditAction.ROMAN_SAFETY_ROUTE,
         actorId: caller.id,
         actorRole: caller.role,
         targetType: 'RomanSession',
         targetId: session.id,
+        metadata: { route_reason: ROMAN_SAFETY_ROUTE_REASON[route.class] },
       });
       yield { type: 'delta', text };
       yield { type: 'done', text, messageId: persisted.id, interrupted: false };
@@ -975,7 +994,9 @@ export class RomanService {
     await this.egress.assertMaySend(subject, 'anthropic', 'roman.chat');
 
     const grounded = session.surface === 'client' && caller.role === 'student';
-    const reservation = await this.reserveDailySpend(caller);
+    // B-668-1: the coach pool is re-checked here (the controller checked it
+    // before storing the turn) and refuses before any spend is reserved.
+    const poolCoachId = await this.assertCoachPoolOpen(caller);
 
     let bundle: RomanClientContextBundle | null = null;
     let contextUnavailable = false;
@@ -993,13 +1014,35 @@ export class RomanService {
       clientData: bundle?.rendered ?? null,
       clientDataUnavailable: contextUnavailable,
     });
-    const messages = await this.buildContextTurns(session.id);
+    // B-651-4: the reservation is an upper bound of THIS payload, built from
+    // the exact system prompt and history that will be sent (trimmed to the
+    // enforceable input budget, oldest turns first), never a fixed estimate.
+    const payload = boundRomanPayload(system, await this.buildContextTurns(session.id));
+    const messages = payload.messages;
+    const reservation = await this.reserveDailySpend(caller, payload.inputTokenBound);
+    // Every settle path that spent tokens also debits the coach pool (B-668-1).
+    const settle = async (
+      inputTokens: number,
+      outputTokens: number,
+      metadata: Record<string, string | number | boolean | string[] | null>,
+    ): Promise<void> => {
+      await this.settleSpend(reservation, inputTokens, outputTokens, metadata);
+      await this.debitCoachPool(poolCoachId, inputTokens, outputTokens, reservation);
+    };
 
     let acc = '';
     let interrupted = false;
     let failed = false;
     let promptTokens: number | null = null;
     let completionTokens: number | null = null;
+    // B-651-1: what is known about provider usage. `dispatched` turns true the
+    // moment the request is handed to the SDK; `usageFinal` only when the final
+    // message_delta carried the output count. A provider HTTP error before any
+    // event (it answered with an error status) generated nothing.
+    let dispatched = false;
+    let sawEvent = false;
+    let usageFinal = false;
+    let providerRejected = false;
 
     // Own AbortController forwarded to the SDK so a client disconnect actively
     // cancels the upstream request (no orphan generation).
@@ -1011,6 +1054,7 @@ export class RomanService {
     }
 
     try {
+      dispatched = true;
       const stream = await this.egress.anthropicMessagesStream(
         this.anthropic,
         subject,
@@ -1024,6 +1068,7 @@ export class RomanService {
         { signal: upstream.signal },
       );
       for await (const event of stream) {
+        sawEvent = true;
         if (opts.signal?.aborted) {
           interrupted = true;
           break;
@@ -1031,21 +1076,25 @@ export class RomanService {
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           acc += event.delta.text;
         } else if (event.type === 'message_delta') {
-          completionTokens = event.usage?.output_tokens ?? completionTokens;
+          const out = event.usage?.output_tokens;
+          if (typeof out === 'number') {
+            completionTokens = out;
+            usageFinal = true;
+          }
         } else if (event.type === 'message_start') {
           promptTokens = event.message?.usage?.input_tokens ?? promptTokens;
         }
       }
     } catch (err) {
       if (isAiEgressRefusal(err)) {
-        await this.settleSpend(reservation, 0, 0, { outcome: 'refused' });
+        // Refused by the consent gate before anything was sent: known zero.
+        await settle(0, 0, { outcome: 'refused', usage: 'none_sent' });
         throw err;
       }
       interrupted = true;
       failed = !opts.signal?.aborted;
-      this.logger.warn(
-        `roman.stream_error session=${session.id}: ${romanErrorTag(err)}`,
-      );
+      providerRejected = !sawEvent && isProviderHttpError(err);
+      this.logger.warn(`roman.stream_error session=${session.id}: ${romanErrorTag(err)}`);
     } finally {
       opts.signal?.removeEventListener('abort', forwardAbort);
       upstream.abort();
@@ -1053,9 +1102,25 @@ export class RomanService {
 
     // Model failure before any text: honest, specific, coded. The user turn
     // stays stored; nothing is invented for Roman.
+    if (promptTokens !== null && promptTokens > payload.inputTokenBound) {
+      // Should be impossible (tokens never exceed bytes); surfaced so the
+      // bound can be corrected if a provider ever counts differently.
+      this.logger.warn(
+        `roman.input_bound_exceeded session=${session.id} reported=${promptTokens} bound=${payload.inputTokenBound}`,
+      );
+    }
+    const usage = settledUsage({
+      dispatched,
+      providerRejected,
+      usageFinal,
+      promptTokens,
+      completionTokens,
+      inputTokenBound: payload.inputTokenBound,
+    });
     if (failed && acc.trim().length === 0) {
-      await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
+      await settle(usage.input, usage.output, {
         outcome: 'model_error',
+        usage: usage.kind,
       });
       Sentry.captureMessage('roman.model_unavailable', {
         level: 'warning',
@@ -1071,7 +1136,7 @@ export class RomanService {
       routerClass: route.class,
       context: bundle ? postCheckContextOf(bundle.context) : null,
       contextUnavailable: grounded && contextUnavailable,
-      exclamationAllowed: !session.exclamation_used,
+      exclamationAllowed: false,
     });
 
     // Persisted ONCE, already checked: what is stored is what the client sees.
@@ -1084,32 +1149,32 @@ export class RomanService {
         completionTokens,
         modelId: ROMAN_MODEL_PHASE_1,
         interrupted,
-        // The voice contract allows ONE exclamation per session: once a stored
-        // reply carries it, the session records it so the next turn's prompt
-        // and post-check allow none.
-        spendsExclamation: !session.exclamation_used && checked.text.includes('!'),
       });
     } catch (err) {
       // The chat was deleted (or the write failed) while the model answered:
       // nothing is stored, but the tokens were spent, so the ledger settles
       // with the real usage instead of keeping the reservation estimate.
-      await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
+      await settle(usage.input, usage.output, {
         outcome: err instanceof NotFoundException ? 'session_gone' : 'persist_failed',
-        router_class: route.class,
+        usage: usage.kind,
       });
       throw err;
     }
-    await this.settleSpend(reservation, promptTokens ?? 0, completionTokens ?? 0, {
+    // OR-115-1: no router class and no guardrail names in the ledger (they
+    // are health inferences); only whether the reply was rewritten and how
+    // many checks fired.
+    await settle(usage.input, usage.output, {
       outcome: interrupted ? 'interrupted' : 'ok',
-      router_class: route.class,
-      guardrails_applied: checked.guardrails_applied,
+      usage: usage.kind,
+      rewritten: checked.rewritten,
+      guardrail_count: checked.guardrails_applied.length,
       prompt_version: PROMPT_VERSION,
       context_version: bundle?.context.version ?? null,
       context_hash: bundle?.hash ?? null,
       context_unavailable: grounded && contextUnavailable,
     });
     this.logger.log(
-      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} router=${route.class} model_call=true rewritten=${checked.rewritten} guardrails_applied=${JSON.stringify(checked.guardrails_applied)} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
+      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
     );
 
     if (checked.text.length > 0) yield { type: 'delta', text: checked.text };
@@ -1175,6 +1240,20 @@ export class RomanService {
     );
   }
 
+  /** Worst-case prompt tokens of one turn (the daily reservation holds this much). */
+  static readonly PROMPT_RESERVE_TOKENS = ROMAN_MAX_CONTEXT_TURNS * 600 + 6000;
+
+  /**
+   * B-668-1 (Sol): the most one turn can cost, in whole cents. The coach pool
+   * admits a paid turn only when this much credit is left, so a remainder
+   * smaller than a reply is never answered for free.
+   */
+  static worstCaseTurnCents(): number {
+    return Math.ceil(
+      RomanService.costUsd(RomanService.PROMPT_RESERVE_TOKENS, ROMAN_MAX_OUTPUT_TOKENS) * 100,
+    );
+  }
+
   /**
    * Read-only capacity check the controller runs BEFORE storing the user
    * turn, so a client who hits the daily cap is told so without leaving an
@@ -1216,44 +1295,53 @@ export class RomanService {
   }
 
   /**
-   * Reserve this turn's worst-case cost in the content-free ledger, then
-   * check today's total INCLUDING the reservation. Over the cap: the
-   * reservation is released and the turn is a coded 503 with a specific
-   * message. Any ledger failure: coded 503, no provider call (fail closed).
+   * B-651-4 / B-651-5: admit this turn only if today's total PLUS this turn's
+   * upper-bound cost (exact payload bound + max output) stays within the cap,
+   * and do the compare and the reservation insert atomically. A transaction-
+   * scoped advisory lock keyed on the UTC day serialises every admission
+   * across replicas, so two concurrent affordable turns can never both be
+   * rejected, and admitted reservations never sum above the cap. Over the
+   * cap: nothing is inserted and the turn is a coded 503 with specific copy.
+   * Any ledger failure: coded 503, no provider call (fail closed).
    */
-  async reserveDailySpend(caller: RomanCaller): Promise<string> {
+  async reserveDailySpend(caller: RomanCaller, inputTokenBound: number): Promise<string> {
     const requestId = `roman:${randomUUID()}`;
     const cap = this.dailyCostCapUsd();
     const now = new Date();
-    const dayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
-    const promptReserve = ROMAN_MAX_CONTEXT_TURNS * 600 + 6000;
-    let used: number;
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const dayKey = Math.floor(dayStart.getTime() / 86_400_000);
+    const promptReserve = Math.max(0, Math.ceil(inputTokenBound));
+    const reserveUsd = RomanService.costUsd(promptReserve, ROMAN_MAX_OUTPUT_TOKENS);
+    let admitted: boolean;
     try {
-      await this.prisma.aiRequestAudit.create({
-        data: {
-          request_id: requestId,
-          capability: ROMAN_LEDGER_CAPABILITY,
-          requester_id: caller.id,
-          requester_role: caller.role,
-          subject_user_id: caller.role === 'student' ? caller.id : null,
-          provider: 'anthropic',
-          model: ROMAN_MODEL_PHASE_1,
-          enabled: true,
-          prompt_token_estimate: promptReserve,
-          response_token_estimate: ROMAN_MAX_OUTPUT_TOKENS,
-          metadata: { state: 'reserved' },
-        },
+      admitted = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ROMAN_SPEND_LOCK_NAMESPACE}::int4, ${dayKey}::int4)`;
+        const agg = await tx.aiRequestAudit.aggregate({
+          where: { capability: ROMAN_LEDGER_CAPABILITY, created_at: { gte: dayStart } },
+          _sum: { prompt_token_estimate: true, response_token_estimate: true },
+        });
+        const used = RomanService.costUsd(
+          agg._sum.prompt_token_estimate ?? 0,
+          agg._sum.response_token_estimate ?? 0,
+        );
+        if (used + reserveUsd > cap) return false;
+        await tx.aiRequestAudit.create({
+          data: {
+            request_id: requestId,
+            capability: ROMAN_LEDGER_CAPABILITY,
+            requester_id: caller.id,
+            requester_role: caller.role,
+            subject_user_id: caller.role === 'student' ? caller.id : null,
+            provider: 'anthropic',
+            model: ROMAN_MODEL_PHASE_1,
+            enabled: true,
+            prompt_token_estimate: promptReserve,
+            response_token_estimate: ROMAN_MAX_OUTPUT_TOKENS,
+            metadata: { state: 'reserved' },
+          },
+        });
+        return true;
       });
-      const agg = await this.prisma.aiRequestAudit.aggregate({
-        where: { capability: ROMAN_LEDGER_CAPABILITY, created_at: { gte: dayStart } },
-        _sum: { prompt_token_estimate: true, response_token_estimate: true },
-      });
-      used = RomanService.costUsd(
-        agg._sum.prompt_token_estimate ?? 0,
-        agg._sum.response_token_estimate ?? 0,
-      );
     } catch (err) {
       this.logger.error(`roman.spend_ledger_failed: ${romanErrorTag(err)}`);
       Sentry.captureException(romanSanitizedError('roman.spend_ledger_failed', err), {
@@ -1264,8 +1352,7 @@ export class RomanService {
         message: romanFailureMessage('capacity_unknown', caller?.role),
       });
     }
-    if (used > cap) {
-      await this.settleSpend(requestId, 0, 0, { outcome: 'over_cap' });
+    if (!admitted) {
       this.logger.warn(`roman.capacity_reached cap_usd=${cap}`);
       Sentry.captureMessage('roman.capacity_reached', {
         level: 'warning',
@@ -1307,6 +1394,131 @@ export class RomanService {
     }
   }
 
+  // ─── Coach AI credit pool (B-668-1, owner 11:40-11:41) ──────────────────
+
+  /**
+   * Whose monthly pool pays for this caller's turns: a client's coach (a
+   * sub-coach's client draws on the head coach), a coach's own (a
+   * sub-coach's head coach). The owner and a client without a coach have no
+   * pool; the per-client turn limit and the daily spend ceiling still apply.
+   * Same attribution as the AI gateway (resolveBudgetCoachId).
+   */
+  private async poolCoachIdFor(
+    budget: CoachAIBudgetService,
+    caller: RomanCaller,
+  ): Promise<string | null> {
+    if (caller.role === 'owner') return null;
+    if (caller.role === 'coach') return budget.resolveHeadCoachId(caller.id);
+    const user = await this.prisma.user.findUnique({
+      where: { id: caller.id },
+      select: { coach_id: true },
+    });
+    return user?.coach_id ? budget.resolveHeadCoachId(user.coach_id) : null;
+  }
+
+  /**
+   * B-668-1: refuse a paid turn when the coach's monthly pool is used up:
+   * 402 COACH_AI_BUDGET_EXHAUSTED with copy written for the caller (a client
+   * never sees the coach's credit figures; a coach also gets the pack
+   * options). Runs in the controller before the user turn is stored and
+   * again in the turn before any spend is reserved. A pool that cannot be
+   * read fails closed (coded 503, no provider call). Returns the pool's
+   * coach id for the debit, or null when the caller has no pool.
+   */
+  async assertCoachPoolOpen(caller: RomanCaller): Promise<string | null> {
+    const budget = this.budget;
+    if (!budget) return null;
+    let coachId: string | null;
+    let exhausted = false;
+    try {
+      coachId = await this.poolCoachIdFor(budget, caller);
+      if (!coachId) return null;
+      // B-668-1 (Sol): refuse unless the pool can still pay for a whole turn;
+      // a remainder smaller than one reply gets the capacity message.
+      const pre = await budget.canCharge(coachId, 0);
+      exhausted =
+        pre.budget.actual_used_cents + RomanService.worstCaseTurnCents() >
+        pre.budget.total_actual_available_cents;
+    } catch (err) {
+      this.logger.error(`roman.coach_pool_failed: ${romanErrorTag(err)}`);
+      Sentry.captureException(romanSanitizedError('roman.coach_pool_failed', err), {
+        tags: { feature: 'roman', op: 'roman.pool' },
+      });
+      throw new ServiceUnavailableException({
+        code: ROMAN_ERROR_UNAVAILABLE,
+        message: romanFailureMessage('capacity_unknown', caller.role),
+      });
+    }
+    if (!exhausted) return coachId;
+    this.logger.warn(`roman.coach_pool_empty role=${caller.role}`);
+    if (romanAudienceOf(caller.role) === 'client') {
+      throw new HttpException(
+        { code: COACH_AI_BUDGET_EXHAUSTED_CODE, message: ROMAN_COACH_POOL_EMPTY_MESSAGE },
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
+    const dto = await budget.getBudgetDto(coachId);
+    throw new CoachAiBudgetExhaustedException({
+      code: COACH_AI_BUDGET_EXHAUSTED_CODE,
+      message: ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH,
+      pack_options_cents: dto.pack_options_cents,
+      custom_pack_bounds_cents: dto.custom_pack_bounds_cents,
+      budget: {
+        period_end: dto.period_end,
+        base_displayed_cents: dto.base_displayed_cents,
+        pack_displayed_cents: dto.pack_displayed_cents,
+        used_displayed_cents: dto.used_displayed_cents,
+        remaining_displayed_cents: dto.remaining_displayed_cents,
+      },
+    });
+  }
+
+  /**
+   * B-668-1: debit the turn's actual cost (the same tokens the ledger
+   * settles) from the coach pool, in whole cents rounded up; a cost larger
+   * than the remainder consumes the remainder. The provider
+   * call already happened, so a failed debit is logged and reported, never
+   * thrown at the client.
+   */
+  private async debitCoachPool(
+    coachId: string | null,
+    inputTokens: number,
+    outputTokens: number,
+    requestId: string,
+  ): Promise<void> {
+    if (!coachId || !this.budget) return;
+    const cents = Math.ceil(RomanService.costUsd(inputTokens, outputTokens) * 100);
+    if (cents <= 0) return;
+    try {
+      const debit = await this.budget.recordUsage({
+        coachId,
+        actualCostCents: cents,
+        capability: ROMAN_LEDGER_CAPABILITY,
+        contextId: requestId,
+      });
+      if (debit.recorded) return;
+      // B-668-1 (Sol): the pool could not absorb the whole cost. Consume
+      // what is left, so the pool reads used up and the next turn gets the
+      // capacity message instead of another reply on the same remainder.
+      const { budget } = await this.budget.canCharge(coachId, 0);
+      const rest = budget.total_actual_available_cents - budget.actual_used_cents;
+      this.logger.warn(`roman.coach_pool_short cents=${cents} rest=${rest}`);
+      if (rest > 0) {
+        await this.budget.recordUsage({
+          coachId,
+          actualCostCents: Math.min(rest, cents),
+          capability: ROMAN_LEDGER_CAPABILITY,
+          contextId: requestId,
+        });
+      }
+    } catch (err) {
+      this.logger.error(`roman.coach_pool_debit_failed: ${romanErrorTag(err)}`);
+      Sentry.captureException(romanSanitizedError('roman.coach_pool_debit_failed', err), {
+        tags: { feature: 'roman', op: 'roman.pool' },
+      });
+    }
+  }
+
   // ─── helpers ─────────────────────────────────────────────────────────────
 
   private isUniqueViolation(err: unknown): boolean {
@@ -1319,90 +1531,130 @@ export class RomanService {
   }
 }
 
+/** pg_advisory_xact_lock namespace for the Roman daily spend admission: ASCII 'rmsp'. */
+export const ROMAN_SPEND_LOCK_NAMESPACE = 0x72_6d_73_70;
+
+/**
+ * B-651-4: the enforceable input budget of one Roman request. History is
+ * trimmed (oldest turns first) only when a payload would exceed it; ordinary
+ * chats are far below it, so no turn of a normal conversation is dropped.
+ */
+export const ROMAN_MAX_INPUT_TOKEN_BOUND = 100_000;
+/** Fixed per-request and per-message framing allowance (roles, separators). */
+const ROMAN_REQUEST_OVERHEAD_TOKENS = 256;
+const ROMAN_MESSAGE_OVERHEAD_TOKENS = 16;
+
+/**
+ * An upper bound of the input tokens a payload can cost: the provider's
+ * tokenizer never emits more tokens than UTF-8 bytes, plus fixed framing.
+ */
+export function inputTokenUpperBound(
+  system: string,
+  messages: ReadonlyArray<{ content: string }>,
+): number {
+  let bytes = Buffer.byteLength(system, 'utf8') + ROMAN_REQUEST_OVERHEAD_TOKENS;
+  for (const m of messages)
+    bytes += Buffer.byteLength(m.content, 'utf8') + ROMAN_MESSAGE_OVERHEAD_TOKENS;
+  return bytes;
+}
+
+/**
+ * B-651-4: the exact payload that will be sent and its input-token upper
+ * bound. Drops the oldest turns while the bound exceeds the budget, always
+ * keeps the newest turn, and never starts the history with a Roman turn.
+ */
+export function boundRomanPayload(
+  system: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  budget: number = ROMAN_MAX_INPUT_TOKEN_BOUND,
+): {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  inputTokenBound: number;
+  trimmed: number;
+} {
+  const messages = [...history];
+  let trimmed = 0;
+  while (messages.length > 1 && inputTokenUpperBound(system, messages) > budget) {
+    messages.shift();
+    trimmed += 1;
+  }
+  while (messages.length > 1 && messages[0].role !== 'user') {
+    messages.shift();
+    trimmed += 1;
+  }
+  return { messages, inputTokenBound: inputTokenUpperBound(system, messages), trimmed };
+}
+
+/** The provider answered with an HTTP error status (it generated nothing). */
+function isProviderHttpError(err: unknown): boolean {
+  const status = err instanceof Error ? (err as { status?: unknown }).status : undefined;
+  return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599;
+}
+
+/**
+ * B-651-1: what the ledger settles to. Known usage replaces the reservation;
+ * unknown usage after a dispatched request keeps the conservative reserved
+ * value for the unknown side (over-counting is the safe side of a hard cap):
+ *   - not dispatched, or the provider answered with an HTTP error before any
+ *     event: nothing was generated, known zero;
+ *   - input unknown (no message_start): the payload's input bound;
+ *   - output unknown (no final message_delta): the max output reservation.
+ */
+export function settledUsage(u: {
+  dispatched: boolean;
+  providerRejected: boolean;
+  usageFinal: boolean;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  inputTokenBound: number;
+}): {
+  input: number;
+  output: number;
+  kind: 'none_sent' | 'provider_rejected' | 'final' | 'partial';
+} {
+  if (!u.dispatched) return { input: 0, output: 0, kind: 'none_sent' };
+  if (u.providerRejected) return { input: 0, output: 0, kind: 'provider_rejected' };
+  const input = u.promptTokens ?? u.inputTokenBound;
+  if (u.usageFinal && u.completionTokens !== null && u.promptTokens !== null) {
+    return { input, output: u.completionTokens, kind: 'final' };
+  }
+  const output =
+    u.usageFinal && u.completionTokens !== null ? u.completionTokens : ROMAN_MAX_OUTPUT_TOKENS;
+  return { input, output, kind: 'partial' };
+}
+
 /**
  * The typed facts the post-check may compare against, from the SAME bundle
- * the model saw (B-R8-2). Extra kcal facts: today's food entries, wearable
- * active energy and the meal-plan slot numbers.
+ * the model saw (B-R8-2). B-668-3: the extra kcal facts keep their family,
+ * day and source (today's entries, earlier days' intake, burned today,
+ * burned on earlier days and the 7-day average, meal-plan slots), so one kind
+ * of number never validates a claim about another.
  */
 export function postCheckContextOf(ctx: RomanClientContext): PostCheckContext {
-  const extra: number[] = [
-    ...ctx.today.entries.map((e) => e.kcal),
-    ...ctx.wearables.days.map((d) => d.active_kcal).filter((n): n is number => n !== null),
-    ...(ctx.wearables.avg_7d.active_kcal !== null ? [ctx.wearables.avg_7d.active_kcal] : []),
-    ...(ctx.meal_plan?.items ?? []).flatMap((item) =>
-      [...item.matchAll(/(\d{2,5}) kcal/g)].map((m) => Number(m[1])),
-    ),
-    ...ctx.last_7_days.days.map((d) => d.kcal),
-  ];
+  const today = ctx.today.date;
+  const burned = (days: RomanClientContext['wearables']['days']) =>
+    days.map((d) => d.active_kcal).filter((n): n is number => n !== null);
   return {
     targets: ctx.targets,
     today: ctx.today,
     last_7_days: ctx.last_7_days,
     macro_method: { floor_kcal: ctx.macro_method.floor_kcal },
     coach: { has_coach: ctx.coach.has_coach, coach_first_name: ctx.coach.coach_first_name },
-    extra_kcal_facts: extra,
+    kcal_facts: {
+      intake_entries_today: ctx.today.entries.map((e) => e.kcal),
+      intake_past_days: ctx.last_7_days.days.filter((d) => d.date !== today).map((d) => d.kcal),
+      burned_today: burned(ctx.wearables.days.filter((d) => d.date === today)),
+      burned_past: [
+        ...burned(ctx.wearables.days.filter((d) => d.date !== today)),
+        ...(ctx.wearables.avg_7d.active_kcal !== null ? [ctx.wearables.avg_7d.active_kcal] : []),
+      ],
+      meal_plan: (ctx.meal_plan?.items ?? []).flatMap((item) =>
+        [...item.matchAll(/(\d{2,5}) kcal/g)].map((m) => Number(m[1])),
+      ),
+    },
   };
 }
 
-/**
- * Content-free error tag for Roman's logs and Sentry events: the error class
- * plus, when present, a Prisma code or an HTTP status. Never `err.message`:
- * a context read, a provider error or a ledger write can carry query
- * arguments, client facts or transcript text, and `safeDiagnostic` only
- * redacts ORM errors.
- */
-/** Error class names that may appear in Roman logs and Sentry; anything else is `OtherError`. */
-export const ROMAN_LOGGABLE_ERROR_NAMES: ReadonlySet<string> = new Set([
-  'Error',
-  'TypeError',
-  'RangeError',
-  'SyntaxError',
-  'ReferenceError',
-  'AbortError',
-  'TimeoutError',
-  'DatabaseRequestError',
-  'PrismaClientKnownRequestError',
-  'PrismaClientUnknownRequestError',
-  'PrismaClientInitializationError',
-  'PrismaClientValidationError',
-  'PrismaClientRustPanicError',
-  'APIError',
-  'APIConnectionError',
-  'APIConnectionTimeoutError',
-  'APIUserAbortError',
-  'BadRequestError',
-  'AuthenticationError',
-  'PermissionDeniedError',
-  'NotFoundError',
-  'ConflictError',
-  'UnprocessableEntityError',
-  'RateLimitError',
-  'InternalServerError',
-  'OverloadedError',
-  'HttpException',
-  'ServiceUnavailableException',
-  'NotFoundException',
-  'ForbiddenException',
-]);
-
-export function romanErrorTag(err: unknown): string {
-  const d = safeDiagnostic(err);
-  if (!(d instanceof Error)) return 'NonError';
-  // Closed allowlist (pre-push checklist (a)): an error's `name` is set by
-  // code, but a thrown object can carry any string there.
-  const name = ROMAN_LOGGABLE_ERROR_NAMES.has(d.name) ? d.name : 'OtherError';
-  const prismaCode = name === 'DatabaseRequestError' ? /\((P\d{4})\)/.exec(d.message)?.[1] : undefined;
-  const status = (err as { status?: unknown } | null)?.status;
-  return [
-    name,
-    ...(prismaCode ? [`code=${prismaCode}`] : []),
-    ...(typeof status === 'number' && Number.isInteger(status) ? [`status=${status}`] : []),
-  ].join(' ');
-}
-
-/** A Sentry-safe stand-in for a Roman failure: the op and the content-free tag only. */
-export function romanSanitizedError(op: string, err: unknown): Error {
-  const e = new Error(`${op}: ${romanErrorTag(err)}`);
-  e.name = 'RomanSanitizedError';
-  return e;
-}
+// C-668-4: one copy of the content-free error tag helpers (A's
+// roman-error-tag.ts), re-exported for existing importers.
+export { ROMAN_LOGGABLE_ERROR_NAMES, romanErrorTag, romanSanitizedError };
