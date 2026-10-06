@@ -21,6 +21,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { PtmService } from '../ptm/ptm.service';
 import { MessageReceivedEmitter } from '../notifications/emitters/message-received.emitter';
+import { NotificationKind } from '../notifications/notification-kind';
 import { AuditService } from '../audit/audit.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
 // Apple 1.2 — server-side defence-in-depth for the mobile blocklist. Used
@@ -1028,6 +1029,7 @@ export class MessagingService {
       },
       data: { read_at: new Date() },
     });
+    await this.markMessageNotificationsRead(coachId, clientId);
     // A3-MSG-CORE: live read receipt for the client (v2, ID-only ping).
     if (result.count > 0 && isMessagingCoreV2Enabled()) {
       this.notifyThreadUpdated(
@@ -1062,6 +1064,28 @@ export class MessagingService {
       }
     }
     return { updated: result.count };
+  }
+
+  /**
+   * AUDIT-03-125 U4: opening a thread also reads the reader's "New message"
+   * inbox rows for that thread (MessageReceivedEmitter deep link
+   * tgp://messages/<clientId>), so the notification bell stops counting
+   * messages the reader has just read. Best effort: never fails the read.
+   */
+  private async markMessageNotificationsRead(readerId: string, clientId: string): Promise<void> {
+    try {
+      await this.prisma.notification.updateMany({
+        where: {
+          user_id: readerId,
+          kind: NotificationKind.MESSAGE_RECEIVED,
+          deep_link: `tgp://messages/${clientId}`,
+          read_at: null,
+        },
+        data: { read_at: new Date() },
+      });
+    } catch (err) {
+      this.logger.warn(`message notification read failed: ${describeFailure(err)}`);
+    }
   }
 
   // ED.6 — upsert the (coach, client) thread review marker to now(). Idempotent
@@ -1151,6 +1175,7 @@ export class MessagingService {
       },
       data: { read_at: new Date() },
     });
+    await this.markMessageNotificationsRead(clientId, clientId);
     // A3-MSG-CORE: live read receipt for the coach (v2, ID-only ping).
     if (result.count > 0 && isMessagingCoreV2Enabled()) {
       this.notifyThreadUpdated(
