@@ -177,6 +177,12 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'WorkoutAdjustmentProposal', field: 'coach_id', action: del },
   { model: 'WorkoutAdjustmentProposal', field: 'decided_by_id', action: del },
   { model: 'WorkoutAdjustmentEvent', field: 'actor_id', action: del },
+  // Roman v1.1 coach twin (R11-P1). Source rows are ids only; a client's
+  // rows go with the client (the builder sees the drift and rebuilds without
+  // them), and a coach's playbooks go with the coach, sources first.
+  { model: 'CoachPlaybookSource', field: 'client_id', action: del },
+  { model: 'CoachPlaybookSource', field: 'coach_id', action: del },
+  { model: 'CoachPlaybook', field: 'coach_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'client_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'assigned_by_coach_id', action: retain(FROZEN_PLAN) },
   // S-MWB Programs (#640, B-640-3): the client's own program copies (bulk

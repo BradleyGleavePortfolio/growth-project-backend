@@ -205,6 +205,10 @@ model User {
   featured_coach_configs         FeaturedCoachConfig[]    @relation("FeaturedCoachConfigCoach")
   coach_code_redemptions         CoachCodeRedemption[]    @relation("CoachCodeRedemptionUser")
   coachless_prompt_state         CoachlessPromptState?    @relation("CoachlessPromptStateUser")
+  // Roman v1.1 coach twin (R11-P1): the head coach's playbook versions, and
+  // the playbook source rows that name this user as the client (ids only).
+  coach_playbooks                CoachPlaybook[]          @relation("CoachPlaybookCoach")
+  coach_playbook_sources         CoachPlaybookSource[]    @relation("CoachPlaybookSourceClient")
   logged_entries                 LoggedFoodEntry[]
   workouts                       WorkoutSession[]
   fasting_windows                FastingWindow[]
@@ -2735,6 +2739,52 @@ model WorkoutAdjustmentEvent {
   created_at  DateTime                  @default(now())
 
   @@index([proposal_id, created_at])
+}
+
+// Roman v1.1 coach twin (R11-P1, migration 20270402000000_coach_playbook).
+// One versioned, structured playbook per HEAD coach: how the coach trains,
+// feeds and recovers clients, learned by the playbook builder (R11-P3b) and
+// used by Roman in client turns (R11-P4). Coaches and clients never read it:
+// RLS is service_role only (owner 11:22). `sections` and `red_lines` are
+// validated by src/roman/playbook/coach-playbook.schema.ts before any write.
+// status: active | superseded; at most one active row per coach (partial
+// unique index in SQL). source_digest: sha256 over the source ledger rows.
+model CoachPlaybook {
+  id            String                @id @default(uuid())
+  coach_id      String
+  coach         User                  @relation("CoachPlaybookCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  version       Int
+  status        String                @default("active")
+  sections      Json
+  red_lines     Json
+  source_count  Int                   @default(0)
+  source_digest String
+  model_id      String
+  built_at      DateTime              @default(now())
+  sources       CoachPlaybookSource[]
+
+  @@unique([coach_id, version])
+}
+
+// Source ledger of a playbook version: WHICH rows it was learned from, as ids
+// only, never their content. client_id is set when the source belongs to one
+// client, so deleting that client's account removes exactly these rows and the
+// builder sees the drift and rebuilds without them.
+// source_kind: adjustment_decision | program | template | meal_plan |
+// guideline | coach_message | session_note
+model CoachPlaybookSource {
+  id          String        @id @default(uuid())
+  playbook_id String
+  playbook    CoachPlaybook @relation(fields: [playbook_id], references: [id], onDelete: Cascade)
+  coach_id    String
+  client_id   String?
+  client      User?         @relation("CoachPlaybookSourceClient", fields: [client_id], references: [id], onDelete: Cascade)
+  source_kind String
+  source_id   String
+
+  @@unique([playbook_id, source_kind, source_id])
+  @@index([coach_id])
+  @@index([client_id])
 }
 
 // Generic idempotency ledger for workout-builder coach-side mutations.

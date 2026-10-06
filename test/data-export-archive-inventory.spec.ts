@@ -554,6 +554,40 @@ describe('data export day-1 sections (W3-13)', () => {
     expect(adjustment).not.toHaveProperty('dismiss_reason');
   });
 
+  it('exports a coach own active Roman playbook, never a superseded one, another coach one or the source ledger', async () => {
+    const playbook = (id: string, coach_id: string, version: number, status: string) => ({
+      id,
+      coach_id,
+      version,
+      status,
+      sections: {
+        diet: { protein: [{ text: `method ${id}`, basis: 'stated', evidence_count: 2 }] },
+      },
+      red_lines: [],
+      source_count: 4,
+      source_digest: 'd'.repeat(64),
+      model_id: 'claude-x',
+      built_at: t(version),
+    });
+    const archive = await build({
+      coachPlaybook: [
+        playbook('pb-old', U, 1, 'superseded'),
+        playbook('pb-live', U, 2, 'active'),
+        playbook('pb-other', OTHER, 1, 'active'),
+      ],
+      coachPlaybookSource: [{ id: 'pbs1', playbook_id: 'pb-live', coach_id: U, client_id: OTHER }],
+    });
+    const rows = stub<Row[]>(archive.coach_playbook);
+    expect(ids(rows)).toEqual(['pb-live']);
+    expect(rows[0]).toMatchObject({ version: 2, status: 'active', red_lines: [] });
+    expect(rows[0]).not.toHaveProperty('source_digest');
+    expect(rows[0]).not.toHaveProperty('coach_id');
+    const text = JSON.stringify(archive);
+    expect(text).not.toContain('method pb-old');
+    expect(text).not.toContain('method pb-other');
+    expect(text).not.toContain('pbs1');
+  });
+
   it('exports wearable samples oldest first and connections without tokens', async () => {
     const archive = await build(day1);
     expect(ids(archive.wearable_samples)).toEqual(['ws1', 'ws2']);
