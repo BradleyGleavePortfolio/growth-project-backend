@@ -108,7 +108,8 @@ describe('USDA search-to-log detail import', () => {
     fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
-        fdcId: 123, description: 'Oats', servingSize: 40, servingSizeUnit: 'g',
+        fdcId: 168872, description: 'SR Legacy oats fixture', servingSize: 40, servingSizeUnit: 'g',
+        foodCategory: { id: 20, code: '2000', description: 'Cereal Grains and Pasta' },
         foodNutrients: [
           { amount: 379, nutrient: { name: 'Energy', unitName: 'kcal' } },
           { amount: 13, nutrient: { name: 'Protein', unitName: 'g' } },
@@ -117,9 +118,44 @@ describe('USDA search-to-log detail import', () => {
         ],
       }),
     } as Response);
-    await service.resolveOrImportId('usda_123');
+    await service.resolveOrImportId('usda_168872');
     expect(foodItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ calories: 379, protein_g: 13, carbs_g: 67.7, fat_g: 6.5 }),
+    });
+  });
+
+  it.each([
+    {
+      label: 'General Factors before Specific Factors',
+      nutrients: [
+        { amount: 389, nutrient: { name: 'Energy (Atwater General Factors)', unitName: 'kcal' } },
+        { amount: 387, nutrient: { name: 'Energy (Atwater Specific Factors)', unitName: 'kcal' } },
+      ],
+    },
+    {
+      label: 'Specific Factors when General Factors is absent',
+      nutrients: [
+        { amount: 389, nutrient: { name: 'Energy (Atwater Specific Factors)', unitName: 'kcal' } },
+      ],
+    },
+  ])('imports Foundation energy from $label when plain Energy is absent', async ({ nutrients }) => {
+    const { service, foodItem } = setup();
+    // Foundation 2261421-shaped nutrient fixture. A string category isolates
+    // energy fallback from the separately covered object-category regression.
+    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        fdcId: 2261421, description: 'Foundation oat flour fixture',
+        foodCategory: 'Cereal Grains and Pasta',
+        foodNutrients: [
+          ...nutrients,
+          { amount: 13, nutrient: { name: 'Protein', unitName: 'g' } },
+        ],
+      }),
+    } as Response);
+    await service.resolveOrImportId('usda_2261421');
+    expect(foodItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ calories: 389, protein_g: 13 }),
     });
   });
 
