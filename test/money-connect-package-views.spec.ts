@@ -85,7 +85,8 @@ function setup(
     },
   };
   prisma.$transaction.mockImplementation(async (fn) => fn(prisma));
-  return { prisma, svc: new PackagesService(prisma as never, {} as never) };
+  const svc: PackagesService = Reflect.construct(PackagesService, [prisma, {}]);
+  return { prisma, svc };
 }
 
 describe('MONEY-CONNECT-124 package management reads', () => {
