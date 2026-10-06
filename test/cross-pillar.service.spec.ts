@@ -138,7 +138,7 @@ describe('CrossPillarService.search', () => {
     federation.unifiedSearch.mockResolvedValue({ query: 'k', results: [] });
     const svc = new CrossPillarService(prisma, federation, fakeFinanceClient({}));
 
-    await svc.search('k', 25);
+    await svc.search('owner-1', 'owner', 'k', 25);
     expect(federation.unifiedSearch).toHaveBeenCalledWith('k', 25);
   });
 });

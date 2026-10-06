@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { FederationService } from '../../admin/federation/federation.service';
 import { FinanceAdminClient } from '../../admin/federation/finance-admin.client';
@@ -98,8 +98,22 @@ export class CrossPillarService {
    * surface and the coach surface ask the same question, and the
    * service is a pure read.
    */
-  async search(query: string, limit?: number) {
-    return this.federation.unifiedSearch(query, limit);
+  async search(
+    coachId: string,
+    callerRole: string | null,
+    query: string,
+    limit?: number,
+  ) {
+    // AUDIT-13-125: a coach searches only their own clients. Only the OWNER
+    // keeps the platform-wide search (same rule as getClients above).
+    if (callerRole === 'owner') {
+      return this.federation.unifiedSearch(query, limit);
+    }
+    return this.federation.unifiedSearch(
+      query,
+      limit,
+      await this.rosterIds(coachId),
+    );
   }
 
   /**
@@ -108,8 +122,35 @@ export class CrossPillarService {
    * the coach console see the same shape. The cross-pillar UI renders
    * three tabs (Fitness / Finance / Both) directly on this payload.
    */
-  async getClient(email: string) {
+  async getClient(coachId: string, callerRole: string | null, email: string) {
+    // AUDIT-13-125: a coach opens only their own clients; any other email is
+    // the same 404 as an unknown one (no probing).
+    if (callerRole !== 'owner') {
+      const lowered = email.trim().toLowerCase();
+      const own = lowered
+        ? await this.prisma.user.findFirst({
+            where: {
+              ...this.rosterWhere(coachId),
+              email: { equals: lowered, mode: 'insensitive' },
+            },
+            select: { id: true },
+          })
+        : null;
+      if (!own) throw new NotFoundException('Client not found');
+    }
     return this.federation.unifiedClient(email);
+  }
+
+  private rosterWhere(coachId: string) {
+    return { coach_id: coachId, role: 'student' as const, deleted_at: null };
+  }
+
+  private async rosterIds(coachId: string): Promise<string[]> {
+    const rows = await this.prisma.user.findMany({
+      where: this.rosterWhere(coachId),
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 
   /**

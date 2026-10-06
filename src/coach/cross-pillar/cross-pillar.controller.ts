@@ -68,8 +68,15 @@ export class CrossPillarController {
    * boundary.
    */
   @Get('clients/:identityKey')
-  client(@Param('identityKey') identityKey: string) {
-    return this.service.getClient(decodeURIComponent(identityKey));
+  client(
+    @Request() req: AuthedRequest,
+    @Param('identityKey') identityKey: string,
+  ) {
+    return this.service.getClient(
+      req.user.id,
+      req.user.role ?? null,
+      decodeURIComponent(identityKey),
+    );
   }
 
   /**
@@ -78,9 +85,15 @@ export class CrossPillarController {
    * `<UniversalClientSearch />` calls this with a 200ms debounce.
    */
   @Get('search')
-  search(@Query('q') q?: string, @Query('limit') limit?: string) {
+  search(
+    @Request() req: AuthedRequest,
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+  ) {
     const parsedLimit = limit ? Number.parseInt(limit, 10) : undefined;
     return this.service.search(
+      req.user.id,
+      req.user.role ?? null,
       q ?? '',
       Number.isFinite(parsedLimit) ? parsedLimit : undefined,
     );
