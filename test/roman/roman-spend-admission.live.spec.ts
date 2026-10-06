@@ -15,6 +15,7 @@ import {
   ROMAN_ERROR_CAPACITY_REACHED,
   ROMAN_LEDGER_CAPABILITY,
   ROMAN_MAX_OUTPUT_TOKENS,
+  ROMAN_PRICE_PER_MTOK,
 } from '../../src/roman/roman.constants';
 import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { bootstrapTestSchema } from '../utils/bootstrap-test-schema';
@@ -41,7 +42,7 @@ const CALLERS: RomanCaller[] = Array.from({ length: 8 }, (_, i) => ({
 /** Input bound whose reservation (bound + max output) costs exactly `usd`. */
 function boundFor(usd: number): number {
   const outputUsd = RomanService.costUsd(0, ROMAN_MAX_OUTPUT_TOKENS);
-  return Math.round(((usd - outputUsd) * 1_000_000) / 3);
+  return Math.round(((usd - outputUsd) * 1_000_000) / ROMAN_PRICE_PER_MTOK.input);
 }
 
 liveDescribe('B-651-5 live: Roman spend admission is atomic per UTC day (Postgres)', () => {

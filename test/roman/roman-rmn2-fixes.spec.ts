@@ -140,14 +140,14 @@ const MEALS_CTX = fakeOf<RomanClientContext>({
 const EXHAUSTED = { response: { code: 'COACH_AI_BUDGET_EXHAUSTED', message: ROMAN_COACH_POOL_EMPTY_MESSAGE } };
 
 describe('B-668-1 (Sol) a pool remainder smaller than one reply is never answered for free', () => {
-  it('control: an affordable turn is answered and debits its 3-cent cost', async () => {
+  it('control: an affordable turn is answered and debits its 2-cent cost', async () => {
     const { svc, row, client, usage } = setup(0);
     await turn(svc);
     expect(client.messages.stream).toHaveBeenCalledTimes(1);
     expect(usage).toHaveBeenCalledWith(expect.objectContaining({
-      coachId: 'rmn2-coach', actualCostCents: 3, capability: 'roman.chat',
+      coachId: 'rmn2-coach', actualCostCents: 2, capability: 'roman.chat',
     }));
-    expect(row.actual_used_cents).toBe(3);
+    expect(row.actual_used_cents).toBe(2);
   });
 
   it('one cent left: every turn gets the capacity message before the provider', async () => {
@@ -159,8 +159,9 @@ describe('B-668-1 (Sol) a pool remainder smaller than one reply is never answere
   });
 
   it('a reply costing more than the remainder consumes it, and the next turn is refused', async () => {
-    // 10 cents left admits a turn; 40,000 prompt tokens cost 13 cents.
-    const { svc, row, client } = setup(3990, 40000);
+    // 10 cents left admits a turn; 60,000 prompt tokens cost over 12 cents
+    // at Sonnet 5.5's $2 / MTok input.
+    const { svc, row, client } = setup(3990, 60000);
     await turn(svc);
     expect(client.messages.stream).toHaveBeenCalledTimes(1);
     expect(row.actual_used_cents).toBe(4000);
