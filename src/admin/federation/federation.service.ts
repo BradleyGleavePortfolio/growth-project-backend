@@ -121,7 +121,16 @@ export class FederationService {
     private entitlements: EntitlementsService,
   ) {}
 
-  async unifiedSearch(qRaw: string, limitRaw: number | undefined): Promise<UnifiedSearchResponse> {
+  /**
+   * `restrictToUserIds` (AUDIT-13-125): when given, only these fitness users
+   * can match and finance-only hits are dropped, so a coach-scoped caller
+   * never sees people outside their roster. Omitted = OWNER, platform-wide.
+   */
+  async unifiedSearch(
+    qRaw: string,
+    limitRaw: number | undefined,
+    restrictToUserIds?: string[],
+  ): Promise<UnifiedSearchResponse> {
     const q = qRaw.trim();
     const limit = Math.min(Math.max(limitRaw ?? 25, 1), 50);
     if (q.length === 0) {
@@ -135,6 +144,7 @@ export class FederationService {
     const [fitnessRows, financeOutcome] = await Promise.all([
       this.prisma.user.findMany({
         where: {
+          ...(restrictToUserIds ? { id: { in: restrictToUserIds } } : {}),
           OR: [
             { email: { contains: q, mode: 'insensitive' } },
             { name: { contains: q, mode: 'insensitive' } },
@@ -183,7 +193,7 @@ export class FederationService {
             role: fc.role,
             has_coach: fc.has_coach,
           };
-        } else {
+        } else if (!restrictToUserIds) {
           merged.set(key, {
             email: fc.email,
             name: fc.name,
