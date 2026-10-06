@@ -7,6 +7,10 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+import { PrismaService } from '../src/prisma.service';
+import { PtmService } from '../src/ptm/ptm.service';
+import { ClientAIContextService } from '../src/ai/client-ai-context.service';
 import { CreateRoutineDto, UpdateRoutineDto } from '../src/workout/workout.dto';
 import { WorkoutService } from '../src/workout/workout.service';
 import { ExerciseLibraryService } from '../src/exercise-library/exercise-library.service';
@@ -58,7 +62,7 @@ describe('routine DTOs accept the mobile routine body', () => {
   });
 });
 
-function makeService() {
+async function makeService() {
   const tx = {
     workoutRoutine: {
       update: jest.fn().mockResolvedValue({}),
@@ -78,21 +82,25 @@ function makeService() {
       deleteMany: jest.fn().mockReturnValue('DELETE_CHILDREN'),
     },
     $transaction: jest.fn(async (arg: unknown) => {
-      if (typeof arg === 'function') return (arg as (t: typeof tx) => unknown)(tx);
+      if (typeof arg === 'function') return arg(tx);
       return [{ count: 2 }, { id: 'r1' }];
     }),
   };
-  const service = new WorkoutService(
-    prisma as never,
-    { emit: jest.fn() } as never,
-    { invalidateForUser: jest.fn() } as never,
-  );
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      WorkoutService,
+      { provide: PrismaService, useValue: prisma },
+      { provide: PtmService, useValue: { emit: jest.fn() } },
+      { provide: ClientAIContextService, useValue: { invalidateForUser: jest.fn() } },
+    ],
+  }).compile();
+  const service = moduleRef.get(WorkoutService);
   return { service, prisma, tx };
 }
 
 describe('WorkoutService routines', () => {
   it('updateRoutine replaces the exercise list in one transaction', async () => {
-    const { service, tx } = makeService();
+    const { service, tx } = await makeService();
     await service.updateRoutine('u1', 'r1', plainToInstance(UpdateRoutineDto, MOBILE_ROUTINE_BODY));
     expect(tx.workoutRoutine.update).toHaveBeenCalledWith({
       where: { id: 'r1' },
@@ -105,20 +113,20 @@ describe('WorkoutService routines', () => {
   });
 
   it('updateRoutine without exercises leaves the list alone', async () => {
-    const { service, tx } = makeService();
+    const { service, tx } = await makeService();
     await service.updateRoutine('u1', 'r1', { name: 'Renamed' });
     expect(tx.routineExercise.deleteMany).not.toHaveBeenCalled();
     expect(tx.routineExercise.createMany).not.toHaveBeenCalled();
   });
 
   it('updateRoutine on someone else\'s routine is a 404', async () => {
-    const { service, prisma } = makeService();
+    const { service, prisma } = await makeService();
     prisma.workoutRoutine.findUnique.mockResolvedValue({ id: 'r1', creator_id: 'other' });
     await expect(service.updateRoutine('u1', 'r1', { name: 'x' })).rejects.toThrow(NotFoundException);
   });
 
   it('deleteRoutine removes the exercises before the routine (FK is RESTRICT)', async () => {
-    const { service, prisma } = makeService();
+    const { service, prisma } = await makeService();
     const out = await service.deleteRoutine('u1', 'r1');
     expect(prisma.routineExercise.deleteMany).toHaveBeenCalledWith({ where: { routine_id: 'r1' } });
     expect(prisma.$transaction).toHaveBeenCalledWith(['DELETE_CHILDREN', 'DELETE_ROUTINE']);
@@ -128,8 +136,10 @@ describe('WorkoutService routines', () => {
 
 describe('ExerciseLibraryService.getExerciseById seed ids', () => {
   it('answers a seed: id from the seed catalog without calling upstream', async () => {
-    const config = { get: () => undefined } as unknown as ConfigService;
-    const lib = new ExerciseLibraryService(config);
+    const moduleRef = await Test.createTestingModule({
+      providers: [ExerciseLibraryService, { provide: ConfigService, useValue: { get: () => undefined } }],
+    }).compile();
+    const lib = moduleRef.get(ExerciseLibraryService);
     const fetchSpy = jest.spyOn(global, 'fetch');
     const ex = await lib.getExerciseById('seed:push-001');
     expect(ex.name).toBe('Barbell Bench Press');
