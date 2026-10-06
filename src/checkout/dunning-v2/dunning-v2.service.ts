@@ -1558,10 +1558,15 @@ export class DunningV2Service {
     purchaseId: string;
     now?: Date;
   }): Promise<{ restarted: boolean; reason: string }> {
-    if (!this.enabled()) return { restarted: false, reason: 'flag_off' };
     const now = input.now ?? new Date();
     const first = await this.restartCandidate(input.coachUserId, input.purchaseId);
     if (typeof first === 'string') return { restarted: false, reason: first };
+    // B-776-1: a full-refund pause is recorded independently of the rollout
+    // flag (pauseAfterFullRefund), so its coach restart is too. Dispute
+    // pauses keep the flag gate.
+    if (!this.enabled() && first.state.last_failure_reason !== FULL_REFUND_PAUSE_REASON) {
+      return { restarted: false, reason: 'flag_off' };
+    }
     const stripe = this.stripe;
     if (!stripe) return { restarted: false, reason: 'billing_unavailable' };
     const lease = await this.claimDisputeLease(input.purchaseId, 'dispute_restart');
