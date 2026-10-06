@@ -141,11 +141,12 @@ type Draft = {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+const isDraft = (d: unknown): d is Draft =>
+  isRecord(d) && isRecord(d.exercises) && isRecord(d.diet) && Array.isArray(d.red_lines);
+
 // Stand-in for the R11-P1 validator: shape only.
 const schema: PlaybookSchemaCheck<Draft> = (d) =>
-  isRecord(d) && isRecord(d.exercises) && isRecord(d.diet) && Array.isArray(d.red_lines)
-    ? { ok: true, value: d as unknown as Draft }
-    : { ok: false, errors: ['shape'] };
+  isDraft(d) ? { ok: true, value: d } : { ok: false, errors: ['shape'] };
 
 const item = (text: string): Item => ({ text, basis: 'observed', evidence_count: 3 });
 
