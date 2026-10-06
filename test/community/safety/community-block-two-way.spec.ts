@@ -129,6 +129,10 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
       rt,
       stub<PlanContextService>({ validate: async () => null }),
       safety,
+      stub<CommunityNotificationsService>({
+        pushEnabled: () => false,
+        sendCommunityPush: async () => undefined,
+      }),
     );
     dms = new CommunityDmsService(access, new CommunityDmsRepository(prisma), rt, np, safety);
   });

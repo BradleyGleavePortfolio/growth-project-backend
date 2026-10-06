@@ -84,6 +84,7 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
       realtime as never,
       planContext as never,
       safetyWithBlocks(),
+      { pushEnabled: () => false, sendCommunityPush: jest.fn() } as never,
     );
   });
 

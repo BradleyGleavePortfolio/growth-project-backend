@@ -99,6 +99,7 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
         realtime as never,
         planContext as never,
         safetyWithBlocks(),
+        { pushEnabled: () => false, sendCommunityPush: jest.fn() } as never,
       );
     });
 

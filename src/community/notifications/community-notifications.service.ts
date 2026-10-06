@@ -71,8 +71,11 @@ export class CommunityNotificationsService {
     private readonly analytics: AnalyticsService,
   ) {}
 
-  /** Push flag — read per call, never cached. */
-  private pushEnabled(): boolean {
+  /**
+   * Push flag — read per call, never cached. Public so a fan-out caller (cohort
+   * chat) can skip its recipient lookup when community push is off.
+   */
+  pushEnabled(): boolean {
     return process.env.FEATURE_COMMUNITY_PUSH === 'true';
   }
 
