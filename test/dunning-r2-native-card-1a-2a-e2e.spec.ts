@@ -840,7 +840,9 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       });
       expect(res.message).toMatch(/keep access until 2026-10-25/);
       const [ape] = w.stripe.callsOf('setCancelAtPeriodEnd');
-      expect(ape.key).toBe('tgp-cancel-ape-sub_dv2_client');
+      // MONEY-REFUND-124 B1: each cancel is its own Stripe request (a cancel
+      // after Keep plan must not replay the first answer).
+      expect(ape.key).toMatch(/^tgp-cancel-ape-sub_dv2_client-[0-9a-f-]{36}$/);
       expect(w.stripe.callsOf('voidInvoice')).toHaveLength(0);
       expect(w.stripe.callsOf('cancelSubscription')).toHaveLength(0);
       expect(w.stripe.charges).toHaveLength(0);

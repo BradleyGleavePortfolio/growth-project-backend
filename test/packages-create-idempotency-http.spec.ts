@@ -91,6 +91,8 @@ function makeDb() {
     },
     // Live buyers the archive guard and the pricing lock count (none here).
     clientPurchase: { count: async () => 0 },
+    // MONEY-REFUND-124 B5: recurring guests not yet converted to an account.
+    guestCheckout: { count: async () => 0 },
     // The pricing lock's row lock (SELECT ... FOR UPDATE).
     $queryRaw: async () => [],
     workoutBuilderIdempotencyKey: {
