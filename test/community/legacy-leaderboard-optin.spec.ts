@@ -14,7 +14,9 @@ function asRepo(m: object): CommunityRepository {
 /**
  * GET /community/leaderboard (legacy) must only show clients who opted in to
  * leaderboard sharing (User.show_on_leaderboard, default false), plus the
- * caller's own row, and never deleted accounts (B-PRIVACY-1, agent 123).
+ * caller's own row, and never deleted accounts (B-PRIVACY-1, agent 123). A
+ * client removed or banned from the coach's community sees only their own
+ * row (B-AUTHZ-3).
  */
 type Row = {
   id: string;
@@ -38,7 +40,10 @@ function matches(row: Row, where: Where): boolean {
   if (where.coach_id !== undefined && row.coach_id !== where.coach_id) return false;
   if (where.role !== undefined && row.role !== where.role) return false;
   if (where.deleted_at === null && row.deleted_at !== null) return false;
-  if (where.show_on_leaderboard !== undefined && row.show_on_leaderboard !== where.show_on_leaderboard) {
+  if (
+    where.show_on_leaderboard !== undefined &&
+    row.show_on_leaderboard !== where.show_on_leaderboard
+  ) {
     return false;
   }
   if (where.id !== undefined && row.id !== where.id) return false;
@@ -48,9 +53,30 @@ function matches(row: Row, where: Where): boolean {
 
 const COACH = 'coach-1';
 const rows: Row[] = [
-  { id: 'me', name: 'Maya Lee', role: 'student', coach_id: COACH, show_on_leaderboard: false, deleted_at: null },
-  { id: 'opted-in', name: 'Omar Diaz', role: 'student', coach_id: COACH, show_on_leaderboard: true, deleted_at: null },
-  { id: 'private', name: 'Priya Shah', role: 'student', coach_id: COACH, show_on_leaderboard: false, deleted_at: null },
+  {
+    id: 'me',
+    name: 'Maya Lee',
+    role: 'student',
+    coach_id: COACH,
+    show_on_leaderboard: false,
+    deleted_at: null,
+  },
+  {
+    id: 'opted-in',
+    name: 'Omar Diaz',
+    role: 'student',
+    coach_id: COACH,
+    show_on_leaderboard: true,
+    deleted_at: null,
+  },
+  {
+    id: 'private',
+    name: 'Priya Shah',
+    role: 'student',
+    coach_id: COACH,
+    show_on_leaderboard: false,
+    deleted_at: null,
+  },
   {
     id: 'deleted',
     name: 'Dan Ross',
@@ -59,13 +85,35 @@ const rows: Row[] = [
     show_on_leaderboard: true,
     deleted_at: new Date('2026-10-01T00:00:00.000Z'),
   },
-  { id: 'other-coach', name: 'Olga Ivanova', role: 'student', coach_id: 'coach-2', show_on_leaderboard: true, deleted_at: null },
+  {
+    id: 'other-coach',
+    name: 'Olga Ivanova',
+    role: 'student',
+    coach_id: 'coach-2',
+    show_on_leaderboard: true,
+    deleted_at: null,
+  },
 ];
 
-function build(): CommunityService {
+function build(opts: { removed?: string[]; banned?: string[] } = {}): CommunityService {
+  const removed = opts.removed ?? [];
+  const banned = opts.banned ?? [];
   const prisma = {
+    communityWorkspace: { findFirst: async () => ({ id: 'ws-1' }) },
+    communityMembership: {
+      findMany: async (a: { where: { user_id: { in: string[] } } }) =>
+        a.where.user_id.in.map((id) => ({
+          user_id: id,
+          status: removed.includes(id) ? 'removed' : 'active',
+        })),
+    },
+    communityWorkspaceBan: {
+      findMany: async (a: { where: { user_id: { in: string[] } } }) =>
+        a.where.user_id.in.filter((id) => banned.includes(id)).map((id) => ({ user_id: id })),
+    },
     user: {
-      findUnique: async (a: { where: { id: string } }) => rows.find((r) => r.id === a.where.id) ?? null,
+      findUnique: async (a: { where: { id: string } }) =>
+        rows.find((r) => r.id === a.where.id) ?? null,
       findMany: async (a: { where: Where }) => rows.filter((r) => matches(r, a.where)),
     },
     workoutSession: {
@@ -78,6 +126,20 @@ function build(): CommunityService {
 }
 
 describe('legacy GET /community/leaderboard: opt-in only (B-PRIVACY-1)', () => {
+  it('a client removed from the community sees only their own row (B-AUTHZ-3)', async () => {
+    const ids = (await build({ removed: ['me'] }).getLeaderboard('me', 'week')).map(
+      (r) => r.user_id,
+    );
+    expect(ids).toEqual(['me']);
+  });
+
+  it('a client banned from the community sees only their own row (B-AUTHZ-3)', async () => {
+    const ids = (await build({ banned: ['me'] }).getLeaderboard('me', 'month')).map(
+      (r) => r.user_id,
+    );
+    expect(ids).toEqual(['me']);
+  });
+
   it('shows opted-in clients and the caller, never clients who did not opt in', async () => {
     const ids = (await build().getLeaderboard('me', 'week')).map((r) => r.user_id).sort();
     expect(ids).toEqual(['me', 'opted-in']);
