@@ -34,6 +34,7 @@ import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
 import {
   DUNNING_V2_REVERSAL_REASON,
   DunningV2Service,
+  isBillingPauseReason,
   outstandingDisputes,
 } from './dunning-v2/dunning-v2.service';
 import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
@@ -321,7 +322,7 @@ export class BillingLeaseLostError extends Error {
 }
 
 export function isDisputeCycle(state: DunningState | null | undefined): boolean {
-  return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
+  return state?.status === 'active' && isBillingPauseReason(state.last_failure_reason);
 }
 
 /** B-689-5: what the dispute ledger says was reversed on one plan. */
@@ -1496,7 +1497,9 @@ export class ClientBillingService {
       try {
         const sub = await this.stripe.setCancelAtPeriodEnd({
           subscriptionId: purchase.stripe_subscription_id as string,
-          idempotencyKey: `tgp-cancel-ape-${purchase.stripe_subscription_id}`,
+          // A later cancel after Keep plan is a new action, not Stripe's
+          // cached answer to the first cancel. Setting true remains safe to repeat.
+          idempotencyKey: `tgp-cancel-ape-${purchase.stripe_subscription_id}-${randomUUID()}`,
         });
         if (typeof sub.current_period_end === 'number') {
           periodEnd = new Date(sub.current_period_end * 1000);

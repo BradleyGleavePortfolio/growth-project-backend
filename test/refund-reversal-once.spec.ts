@@ -154,7 +154,13 @@ function harness(): Harness {
   const alerts = jest.fn(async () => undefined);
   const svc = Reflect.construct(RefundDisputeHandlerService, [
     db,
-    { retrieveCharge: jest.fn(async () => ({ payment_intent: null })) },
+    {
+      retrieveCharge: jest.fn(async () => ({ amount: 4900, payment_intent: null })),
+      listChargeRefunds: jest.fn(async () => ({
+        data: [{ id: 're_1', amount: 2450, currency: 'usd', status: 'succeeded' }],
+        has_more: false,
+      })),
+    },
     ledger,
     transfers,
     { recordPayoutEvent: jest.fn() },

@@ -263,6 +263,12 @@ function makeServices() {
       amount: 5_000,
       status: 'succeeded',
     })),
+    listChargeRefunds: jest.fn(async (chargeId: string) => ({
+      data: prisma._refunds.filter((r: any) => r.stripe_charge_id === chargeId).map((r: any) => ({
+        id: r.stripe_refund_id, amount: r.amount_cents, currency: 'usd', status: r.status,
+      })),
+      has_more: false,
+    })),
     reverseTransfer: jest.fn(async () => ({ id: 'trr_1' })),
   } as any;
   const ledger = {
@@ -901,7 +907,7 @@ describe('RefundDisputeHandlerService', () => {
       expect(call.user_id).toBe('coach-1');
       expect(call.kind).toBe('coach_alert');
       expect(call.deep_link).toBe('tgp://coach/billing/disputes');
-      expect(call.body).toMatch(/Chargeback opened/);
+      expect(call.body).toMatch(/payment dispute or inquiry opened/);
       expect(call.payload).toMatchObject({
         event: 'dispute_opened',
         purchase_id: 'p_alert',

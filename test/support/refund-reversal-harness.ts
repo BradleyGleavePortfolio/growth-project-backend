@@ -166,7 +166,11 @@ export function harness() {
     reverseTransfer,
     listTransferReversals,
     createRefund,
-    retrieveCharge: jest.fn(async () => ({ payment_intent: null })),
+    retrieveCharge: jest.fn(async () => ({ amount: 4900, payment_intent: null })),
+    listChargeRefunds: jest.fn(async () => ({
+      data: [{ id: 're_r-late', amount: 2450, currency: 'usd', status: 'succeeded' }],
+      has_more: false,
+    })),
     retrievePaymentIntent: jest.fn(async () => ({ latest_charge: 'ch_p-late' })),
   };
   const ledger = Reflect.construct(SplitLedgerService, [db]);

@@ -13,6 +13,7 @@ function makePrismaStub() {
     _rows: rows,
     _purchases: purchases,
     _contents: contents,
+    guestCheckout: { count: jest.fn(async () => 0) },
     // B1 — the pricing-lock path runs inside prisma.$transaction(cb). The
     // stub executes the callback synchronously with itself as the `tx`
     // client so tx.$queryRaw / tx.clientPurchase / tx.coachPackage all
@@ -88,6 +89,10 @@ function makePrismaStub() {
       // status { in: [...] }.
       count: jest.fn(async ({ where }: any) =>
         purchases.filter((p) => {
+          if (where.OR && !where.OR.some((branch: any) =>
+            branch.entitlement_active === true ? p.entitlement_active === true :
+              p.stripe_subscription_id != null && !branch.status.notIn.includes(p.status),
+          )) return false;
           if (where.package_id !== undefined && p.package_id !== where.package_id)
             return false;
           if (

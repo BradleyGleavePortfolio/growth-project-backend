@@ -18,7 +18,7 @@ import { CoachOrOwnerGuard } from '../../common/guards/coach-or-owner.guard';
 import { DunningV2Service } from './dunning-v2.service';
 
 const NOT_PAUSED =
-  'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.';
+  'This plan is not paused by a refund, payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.';
 const UNAVAILABLE =
   'Billing could not be reached, so the plan stays paused and nothing was charged. Try again in a few minutes.';
 
