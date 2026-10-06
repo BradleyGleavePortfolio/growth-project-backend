@@ -159,6 +159,25 @@ describe('USDA search-to-log detail import', () => {
     });
   });
 
+  it('imports a Foundation detail with both an object category and Atwater-only energy', async () => {
+    const { service, foodItem } = setup();
+    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        fdcId: 2261421, description: 'Foundation oat flour fixture',
+        foodCategory: { id: 20, code: '2000', description: 'Cereal Grains and Pasta' },
+        foodNutrients: [
+          { amount: 389, nutrient: { name: 'Energy (Atwater General Factors)', unitName: 'kcal' } },
+          { amount: 13, nutrient: { name: 'Protein', unitName: 'g' } },
+        ],
+      }),
+    } as Response);
+    await expect(service.resolveOrImportId('usda_2261421')).resolves.toBe('created-food');
+    expect(foodItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ calories: 389, protein_g: 13 }),
+    });
+  });
+
   it('continues to accept flat search-style nutrients and the prior plural carbohydrate label', async () => {
     const { service, foodItem } = setup();
     fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({

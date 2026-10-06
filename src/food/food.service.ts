@@ -29,7 +29,7 @@ interface UsdaFood {
   description: string;
   foodNutrients?: UsdaNutrient[];
   brandOwner?: string;
-  foodCategory?: string;
+  foodCategory?: string | { id?: number; code?: string; description?: string };
   householdServingFullText?: string;
   servingSize?: number;
   servingSizeUnit?: string;
@@ -459,7 +459,10 @@ export class FoodService implements OnModuleInit {
       return match ? Math.round((match.value ?? match.amount ?? 0) * 10) / 10 : 0;
     };
 
-    const calories = getNutrient('Energy', 'KCAL') || Math.round(getNutrient('Energy', 'kJ') / 4.184);
+    const calories = getNutrient('Energy', 'KCAL') ||
+      getNutrient('Energy (Atwater General Factors)', 'KCAL') ||
+      getNutrient('Energy (Atwater Specific Factors)', 'KCAL') ||
+      Math.round(getNutrient('Energy', 'kJ') / 4.184);
     const protein = getNutrient('Protein');
     const carbs = getNutrient('Carbohydrate, by difference');
     const fat = getNutrient('Total lipid (fat)');
@@ -476,7 +479,9 @@ export class FoodService implements OnModuleInit {
     // mobile can multiply (grams_consumed / 100) * macros. The previous bug was
     // that mobile assumed the macros were per-serving, which 3.5x'd almonds.
     // Do NOT scale macros here — that's mobile's job, based on nutrient_basis.
-    const category = food.foodCategory || 'generic';
+    const category = (typeof food.foodCategory === 'string'
+      ? food.foodCategory
+      : food.foodCategory?.description) || 'generic';
     return {
       id: `usda_${food.fdcId}`,
       name: food.description.trim(),
