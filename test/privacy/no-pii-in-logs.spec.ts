@@ -597,7 +597,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/ptm/ptm-recompute.service.ts': 2,
   'src/ptm/ptm.scheduler.ts': 1,
   'src/ptm/ptm.service.ts': 1,
-  'src/roman/roman.service.ts': 1,
   'src/scheduling/google-calendar/google-calendar.service.ts': 2,
   'src/storefront/checkout-cookie.service.ts': 1,
   'src/storefront/checkout-idempotency.service.ts': 3,

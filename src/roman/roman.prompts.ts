@@ -15,6 +15,7 @@
  */
 
 import { RomanSurface } from '@prisma/client';
+import { ROMAN_GUARDRAIL_CONTRACT } from './guardrails/roman-guardrail.contract';
 
 /**
  * The voice contract, verbatim per brief §2. Kept as a single exported
@@ -37,7 +38,7 @@ export const ROMAN_VOICE_CONTRACT = `You are Roman, the single AI persona of The
 - Precise, slightly elevated vocab. Banned: synergy/leverage/circle back/bandwidth.
 - Banned hype words: amazing/incredible/awesome/epic/insane/game-changer.
 - NO emoji. Ever.
-- NO exclamation points, with one exception: a single exclamation per session on a genuine milestone.
+- NO exclamation points. Ever. A milestone is marked in plain words, never with an exclamation point.
 - Banned fitness-bro: crushing it/let's go/beast mode/grind/let's get it.
 - Banned Gen-Z: slay/bet/no cap/rizz/lowkey/vibe/it's giving.
 
@@ -68,7 +69,28 @@ export interface BuildSystemPromptInput {
   voice: RomanSessionVoiceState;
   /** Optional subject context (e.g. a coach brief) the session was opened against. */
   subjectContext?: string | null;
+  /** Per-turn SafetyRouter hint (eating_disorder_risk / medical_scope / injury_pain). */
+  routerHint?: string | null;
+  /**
+   * The rendered `<client_data>` block for THIS turn (client surface, box-2
+   * grant checked first). Built once per turn; the post-check reads the same
+   * bundle (B-R8-2).
+   */
+  clientData?: string | null;
+  /** A-R3-1: the client's data could not be loaded for this turn. */
+  clientDataUnavailable?: boolean;
 }
+
+/**
+ * A-R3-1: the explicit degraded mode. Roman answers in general terms only,
+ * says plainly that the client's details are not available this moment, and
+ * never steps up intensity (the safety screen could not be read either).
+ */
+export const ROMAN_CLIENT_DATA_UNAVAILABLE_NOTICE =
+  '# CLIENT DATA UNAVAILABLE\n' +
+  "The client's plan, logs, targets and health-screen answers could not be loaded for this turn. " +
+  'Do not state or estimate any of their numbers, sessions or dates. Say briefly that you cannot see their details at this moment and that their plan and logs are on the Today tab. ' +
+  'Keep any training guidance general and conservative; never suggest increasing intensity, load or volume in this turn.';
 
 /** One line of surface-specific framing. The voice contract is identical on both. */
 function surfaceFraming(surface: RomanSurface): string {
@@ -87,21 +109,37 @@ function surfaceFraming(surface: RomanSurface): string {
  * and (optionally) the subject context.
  */
 export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
-  const { surface, voice, subjectContext } = input;
+  const { surface, voice, subjectContext, routerHint, clientData, clientDataUnavailable } = input;
 
-  const remainingExclamation = voice.exclamationUsed
-    ? 'The single per-session exclamation has already been spent. Do not use an exclamation point for the rest of this session.'
-    : 'You may spend the single per-session exclamation point ONLY on a genuine milestone, and only once.';
+  // B-651-9: shipped replies carry no exclamation marks at all, so the old
+  // one-per-session allowance is gone whatever the session recorded.
+  const remainingExclamation =
+    'Do not use an exclamation point in this reply. Mark a milestone in plain, warm words.';
 
   const quipGuidance = voice.lastTurnHadQuip
     ? `Your previous turn carried a dry quip, so this turn MUST NOT. (Quips used this session: ${voice.quipsInSession}.)`
     : `Quips used this session: ${voice.quipsInSession}. Keep dry humour rare — roughly one message in eight, most turns carry none.`;
 
+  // The client surface carries the static reply contract (scope, grounding,
+  // coach targets, calorie floor, injury, tone): no per-user data, so the
+  // block is byte-identical across users. Per-user data comes only in the
+  // delimited client_data block below.
   const sections: string[] = [
     ROMAN_VOICE_CONTRACT,
+    ...(surface === 'client' ? [ROMAN_GUARDRAIL_CONTRACT] : []),
     `# SURFACE\n${surfaceFraming(surface)}`,
-    `# SESSION STATE\n${remainingExclamation}\n${quipGuidance}`,
+    `# SESSION STATE\n${remainingExclamation}\n${quipGuidance}${
+      routerHint && routerHint.trim().length > 0 ? `\n${routerHint.trim()}` : ''
+    }`,
   ];
+
+  if (surface === 'client') {
+    if (clientData && clientData.trim().length > 0) {
+      sections.push(clientData.trim());
+    } else if (clientDataUnavailable) {
+      sections.push(ROMAN_CLIENT_DATA_UNAVAILABLE_NOTICE);
+    }
+  }
 
   if (subjectContext && subjectContext.trim().length > 0) {
     // The subject context is reference material, never to be recited verbatim.

@@ -152,9 +152,25 @@ export const AuditAction = {
   // actor_user_id, actor_role, and the subject sub-coach user_id.
   // Record is append-only; no PII in metadata.
   TEAM_REVENUE_SHARING_UPDATED: 'team.revenue_sharing.updated',
+
+  // --- Roman safety route (#651, operator ruling OR-115-1) ---
+  // A fixed safety template answered a client's turn (no model call). The
+  // action name is deliberately neutral; the closed reason code
+  // (metadata.route_reason: 'call_911' | 'call_988') is restricted-read:
+  // list() never returns this action's metadata, and the account-deletion
+  // manifest nulls AuditLog.metadata for the actor.
+  ROMAN_SAFETY_ROUTE: 'roman.safety_route',
 } as const;
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];
+
+/**
+ * Actions whose metadata is restricted-read: the owner audit list returns the
+ * row (who, when, which session) but never the metadata field.
+ */
+export const RESTRICTED_METADATA_ACTIONS: ReadonlySet<string> = new Set([
+  AuditAction.ROMAN_SAFETY_ROUTE,
+]);
 
 export interface AuditWriteInput {
   action: AuditActionValue | string;
@@ -253,10 +269,14 @@ export class AuditService {
     if (params.targetUserId) where.target_user_id = params.targetUserId;
     if (params.tenantCoachId) where.tenant_coach_id = params.tenantCoachId;
     if (params.before) where.created_at = { lt: params.before };
-    return this.prisma.auditLog.findMany({
+    const rows = await this.prisma.auditLog.findMany({
       where,
       orderBy: { created_at: 'desc' },
       take: limit,
     });
+    // OR-115-1: restricted-read metadata never leaves through the owner list.
+    return rows.map((row) =>
+      RESTRICTED_METADATA_ACTIONS.has(row.action) ? { ...row, metadata: null } : row,
+    );
   }
 }

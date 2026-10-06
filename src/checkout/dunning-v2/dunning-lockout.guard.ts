@@ -111,6 +111,14 @@ const ALLOWED_ROUTE_PREFIXES: readonly string[] = [
 const ROMAN_CHAT_PREFIXES: readonly string[] = ['roman'] as const;
 
 /**
+ * Roman routes that serve the client's coaching data, not the lockout
+ * explanation: GET /roman/context/me returns the coach's program, meal plan,
+ * guidelines and targets, so it stays locked (operator ruling 2026-10-05 13:37,
+ * Opus B-665-2).
+ */
+const ROMAN_LOCKED_PREFIXES: readonly string[] = ['roman/context'] as const;
+
+/**
  * Privacy operations a locked client must always reach (operator ruling on
  * #622): reading, granting and withdrawing AI processing consent cannot depend
  * on billing state. Exact METHOD + normalized PATH pairs, compared by equality
@@ -249,6 +257,7 @@ export function isAllowedWhileLocked(path: string): boolean {
     if (matchesRoutePrefix(path, prefix)) return true;
   }
   // Dedicated Roman chat surface (/roman/*) so Roman can explain the lockout.
+  if (ROMAN_LOCKED_PREFIXES.some((locked) => matchesRoutePrefix(path, locked))) return false;
   for (const chat of ROMAN_CHAT_PREFIXES) {
     if (matchesRoutePrefix(path, chat)) return true;
   }
