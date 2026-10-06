@@ -392,8 +392,16 @@ export class CommunityService {
     const coachId = user?.role === 'coach' ? user.id : user?.coach_id;
     if (!coachId) return [];
 
+    // Privacy: only clients who opted in to leaderboard sharing (default off)
+    // appear, plus the caller's own row; deleted accounts never appear. Same
+    // rule as /me/leaderboard (leaderboard.service.ts).
     const students = await this.prisma.user.findMany({
-      where: { coach_id: coachId, role: 'student' },
+      where: {
+        coach_id: coachId,
+        role: 'student',
+        deleted_at: null,
+        OR: [{ show_on_leaderboard: true }, { id: userId }],
+      },
     });
     if (students.length === 0) return [];
 
