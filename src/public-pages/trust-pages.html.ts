@@ -534,8 +534,7 @@ function termsContent(): TrustPageContent {
     headline: 'Terms of Service',
     intro:
       'These terms describe the agreement between you and The Growth Project ' +
-      '(“TGP”) when you use our software. They are written as a company policy ' +
-      'draft, and counsel review is recommended.',
+      '(“TGP”) when you use our software.',
     sections: [
       {
         heading: 'Eligibility and account',

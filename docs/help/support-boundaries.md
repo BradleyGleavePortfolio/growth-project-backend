@@ -27,8 +27,9 @@ We respond to, and own, the following:
 - A security or privacy concern of any kind. These get same-day
   attention.
 - Account merge requests (you signed up with the wrong provider) and
-  account-deletion reversals within the thirty-day soft-delete
-  window.
+  questions about a pending account deletion. A deletion can be
+  cancelled in the app during its 14-day grace period; once it is
+  complete it cannot be reversed.
 
 ## Out of scope
 

@@ -9,7 +9,7 @@ export type DownloadPlatform = 'ios' | 'android';
 // and trivially edge-cacheable.
 //
 // Copy is deliberately honest: when the App Store / Play Store listings
-// don't exist yet, we say so and offer the user a way to be notified.
+// don't exist yet, the page says so and offers a support contact.
 // We do NOT publish placeholder Apple/Google IDs that don't resolve —
 // that's the failure mode the operator asked us to avoid.
 
@@ -49,25 +49,25 @@ function pageFor(platform: DownloadPlatform): PageContent {
     return {
       title: 'The Growth Project for iPhone',
       headline: 'Coming to the App Store',
+      // F10 (C-2): the listing is not live yet and there is no notify list,
+      // so the page says only that, with a plain support contact.
       body:
-        'The iPhone app is in private review. If your coach has invited you, ' +
-        'they will share the App Store link as soon as it is live. In the ' +
-        'meantime, leave us your email and we will notify you the moment it ' +
-        'is available.',
-      cta_label: 'Email us',
-      cta_href: `mailto:${SUPPORT_EMAIL}?subject=Notify%20me%20when%20iOS%20is%20live`,
+        'The iPhone app is not on the App Store yet. It can be downloaded ' +
+        'there once the listing is live. For questions in the meantime, ' +
+        'contact support.',
+      cta_label: 'Contact support',
+      cta_href: `mailto:${SUPPORT_EMAIL}?subject=iPhone%20app`,
     };
   }
   return {
     title: 'The Growth Project for Android',
     headline: 'Coming to Google Play',
     body:
-      'The Android app is in private review. If your coach has invited you, ' +
-      'they will share the Play Store link as soon as it is live. In the ' +
-      'meantime, leave us your email and we will notify you the moment it ' +
-      'is available.',
-    cta_label: 'Email us',
-    cta_href: `mailto:${SUPPORT_EMAIL}?subject=Notify%20me%20when%20Android%20is%20live`,
+      'The Android app is not on Google Play yet. It can be downloaded there ' +
+      'once the listing is live. For questions in the meantime, contact ' +
+      'support.',
+    cta_label: 'Contact support',
+    cta_href: `mailto:${SUPPORT_EMAIL}?subject=Android%20app`,
   };
 }
 
@@ -120,12 +120,14 @@ export function renderSignupPage(inviteCode?: string | null): string {
     return baseDocument({
       title: 'The Growth Project — Sign up',
       headline: 'Your invite is ready',
+      // F10 (C-1): no first person and no promise of a manual setup step;
+      // the code is entered in the app, support is the fallback.
       body:
-        'Open this page on your phone to continue. If your coach has ' +
-        'already shared a link, tap it from your phone to launch the app. ' +
-        'If you run into trouble, email us with the code below and we will ' +
-        'help you finish setup.',
-      cta_label: 'Email us',
+        'Open The Growth Project app on your phone and enter the invite code ' +
+        'below during setup to connect with your coach. If your coach shared ' +
+        'a link, open it on your phone to launch the app. For help with ' +
+        'setup, contact support and include the code.',
+      cta_label: 'Contact support',
       cta_href: `mailto:${SUPPORT_EMAIL}` + `?subject=${encodeURIComponent('Invite ' + code)}`,
       invite_code: code,
     });

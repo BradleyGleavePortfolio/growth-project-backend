@@ -684,3 +684,13 @@ describe('status page signup endpoint label (B-STORECOPY-2)', () => {
     expect(text).not.toMatch(/invite-only/i);
   });
 });
+
+describe('Terms of Service intro (F10, S-IOSREV C-4)', () => {
+  it('does not call the live terms a draft', () => {
+    const text = visibleText(renderTrustPage('terms'));
+    expect(text).toContain(
+      'These terms describe the agreement between you and The Growth Project (“TGP”) when you use our software.',
+    );
+    expect(text).not.toMatch(/company policy draft|written as a company policy/i);
+  });
+});
