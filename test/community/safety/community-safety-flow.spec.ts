@@ -130,6 +130,10 @@ describe('community UGC safety flow (Apple 1.2)', () => {
       rt,
       stub<PlanContextService>({ validate: async () => null }),
       safety,
+      stub<CommunityNotificationsService>({
+        pushEnabled: () => false,
+        sendCommunityPush: async () => undefined,
+      }),
     );
     dms = new CommunityDmsService(access, new CommunityDmsRepository(prisma), rt, np, safety);
     moderation = new CommunityModerationService(

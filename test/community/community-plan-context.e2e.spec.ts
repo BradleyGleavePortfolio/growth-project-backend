@@ -37,6 +37,7 @@ import { Role } from '@prisma/client';
 
 import { CommunityMessagesController } from '../../src/community/messages/community-messages.controller';
 import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
+import { CommunityNotificationsService } from '../../src/community/notifications/community-notifications.service';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
 import { PlanContextController } from '../../src/community/plan-context/plan-context.controller';
 import { PlanContextService } from '../../src/community/plan-context/plan-context.service';
@@ -178,6 +179,11 @@ itLive('community v2-1 plan-context tags (live DB)', () => {
         SupabaseService,
         AnalyticsService,
         Reflector,
+        // C-S-PUSH-4: send() fans out a group chat push; push stays off here.
+        {
+          provide: CommunityNotificationsService,
+          useValue: { pushEnabled: () => false, sendCommunityPush: async () => undefined },
+        },
         { provide: PrismaService, useValue: prismaForStub },
         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },
         { provide: APP_GUARD, useClass: RolesGuard },

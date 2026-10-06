@@ -23,6 +23,9 @@ import {
   CommunityMessageView,
 } from '../dto/community-message.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
+import { CommunityNotificationsService } from '../notifications/community-notifications.service';
+import { NotificationKind } from '../../notifications/notification-kind';
+import { describeFailure } from '../../observability/log-pii';
 
 const EDIT_WINDOW_MS = 5 * 60 * 1000;
 const DEFAULT_PAGE = 50;
@@ -54,6 +57,7 @@ export class CommunityMessagesService {
     private readonly realtime: CommunityRealtimeService,
     private readonly planContext: PlanContextService,
     private readonly safety: CommunitySafetyService,
+    private readonly communityPush: CommunityNotificationsService,
   ) {}
 
   private view(m: CommunityMessage): CommunityMessageView {
@@ -199,7 +203,50 @@ export class CommunityMessagesService {
       },
       { distinctId: created.sender_id, channelKind: 'cohort' },
     );
+    // C-S-PUSH-4: tell the other members about the new group message. Fire-and-
+    // forget after the write; never blocks or fails the send.
+    void this.pushCohortMessage(created, cohort.workspace_id, created.cohort_id ?? cohort.id);
     return CommunityMessageResponseSchema.parse({ message: this.view(created) });
+  }
+
+  /**
+   * Group chat push (C-S-PUSH-4): one COMMUNITY_MESSAGE_RECEIVED push per
+   * other active, unbanned member of the cohort, through the existing
+   * sendCommunityPush (flag, "Mute all notifications", token and lock-screen
+   * privacy gates live there; the body is the fixed safe string, never the
+   * message text). Skips both sides of a block with the sender and members
+   * whose cohort notify level is "quiet". Recipients come from the write
+   * result's cohort, never request params.
+   */
+  private async pushCohortMessage(
+    created: CommunityMessage,
+    workspaceId: string,
+    cohortId: string,
+  ): Promise<void> {
+    try {
+      if (!this.communityPush.pushEnabled()) return;
+      const members = await this.repo.listCohortPushRecipients({
+        workspaceId,
+        cohortId,
+        senderId: created.sender_id,
+      });
+      if (members.length === 0) return;
+      const hidden = await this.safety.hiddenFromViewer(created.sender_id);
+      for (const m of members) {
+        if (hidden.has(m.user_id) || m.notify_level === 'quiet') continue;
+        void this.communityPush.sendCommunityPush({
+          recipientId: m.user_id,
+          kind: NotificationKind.COMMUNITY_MESSAGE_RECEIVED,
+          targetType: 'message',
+          targetId: created.id,
+          deepLink: `tgp://community/cohorts/${cohortId}`,
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `cohort message push skipped: message=${created.id} cohort=${cohortId}: ${describeFailure(err)}`,
+      );
+    }
   }
 
   async list(

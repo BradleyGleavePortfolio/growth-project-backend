@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { CommunityMessage } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import type { PlanContextTag } from '../plan-context/plan-context.dto';
+import { bannedAmong } from '../community-ban';
 
 /**
  * Data access for cohort messages and post-comments.
@@ -47,6 +48,33 @@ export class CommunityMessagesRepository {
             : (params.planContext as unknown as Prisma.InputJsonValue),
       },
     });
+  }
+
+  /**
+   * Group chat push recipients (C-S-PUSH-4): every ACTIVE member of the cohort
+   * other than the sender, minus anyone with an active ban in the workspace
+   * (a ban also marks memberships removed; the ban row is the authority).
+   * Block filtering and the notify level are applied by the caller.
+   */
+  async listCohortPushRecipients(params: {
+    workspaceId: string;
+    cohortId: string;
+    senderId: string;
+  }): Promise<Array<{ user_id: string; notify_level: string }>> {
+    const rows = await this.prisma.communityMembership.findMany({
+      where: {
+        cohort_id: params.cohortId,
+        status: 'active',
+        user_id: { not: params.senderId },
+      },
+      select: { user_id: true, notify_level: true },
+    });
+    const banned = await bannedAmong(
+      this.prisma,
+      params.workspaceId,
+      rows.map((r) => r.user_id),
+    );
+    return rows.filter((r) => !banned.has(r.user_id));
   }
 
   /**
