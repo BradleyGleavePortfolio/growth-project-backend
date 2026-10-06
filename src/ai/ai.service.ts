@@ -1,4 +1,11 @@
-import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { ClientAIContextService } from './client-ai-context.service';
@@ -9,7 +16,13 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AnthropicAdapter } from './adapters/anthropic.adapter';
 import { CoachAIStateService } from './coach/coach-ai-state.service';
-import { COACH_AI_CAPABILITIES } from './coach/coach-ai.constants';
+import {
+  COACH_AI_CAPABILITIES,
+  INPUT_USD_PER_MTOK,
+  OUTPUT_USD_PER_MTOK,
+} from './coach/coach-ai.constants';
+import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
+import { COACH_AI_BUDGET_EXHAUSTED_CODE } from '../ai-credits/ai-credits.constants';
 import { AiEgressService } from '../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../ai-egress/ai-consent-required.exception';
 import { clientDataSubject } from '../ai-egress/ai-egress.types';
@@ -157,13 +170,48 @@ export function clampPromptParts(
 // Machine code returned (HTTP 429) when a user is at/over their daily budget.
 export const AI_DAILY_QUOTA_EXCEEDED = 'AI_DAILY_QUOTA_EXCEEDED';
 
+// B-S-AICOST-123-1 — the coach's monthly AI credit pool pays for every paid
+// Guide answer, the same pool Roman and the coach AI tools draw from. When it
+// cannot pay for one more answer the Guide replies with this fixed text (no
+// provider call, no spend). Sent as the reply, not as an HTTP error, so every
+// shipped app shows these words instead of a generic service-problem message.
+export const AI_GUIDE_POOL_EMPTY_REPLY_CLIENT =
+  "Your coach's AI credits for this month are used up, so AI guidance cannot answer right now. Your coach is in Messages any time, and your plan and logs work as usual.";
+export const AI_GUIDE_POOL_EMPTY_REPLY_COACH =
+  'The AI credits on your coaching account are used up for this month, so AI guidance cannot answer right now. Add a credit pack to keep using AI guidance. Your clients, messages and the rest of the app work as usual.';
+/** Fixed framing allowance (roles, separators) added to the payload's UTF-8 bytes. */
+export const AI_GUIDE_REQUEST_OVERHEAD_TOKENS = 256;
+
+/** Provider cost of one call in whole cents, rounded up ($3 / $15 per million tokens). */
+export function aiGuideCostCents(inputTokens: number, outputTokens: number): number {
+  return Math.ceil(
+    ((inputTokens * INPUT_USD_PER_MTOK + outputTokens * OUTPUT_USD_PER_MTOK) / 1_000_000) * 100,
+  );
+}
+
+/**
+ * The most one Guide call can cost, in whole cents: the provider never emits
+ * more input tokens than the payload's UTF-8 bytes (plus framing), and output
+ * is capped at MAX_TOKENS_PER_CALL.
+ */
+export function aiGuideWorstCaseCents(system: string, user: string): number {
+  const inputBound =
+    Buffer.byteLength(system, 'utf8') +
+    Buffer.byteLength(user, 'utf8') +
+    AI_GUIDE_REQUEST_OVERHEAD_TOKENS;
+  return aiGuideCostCents(inputBound, MAX_TOKENS_PER_CALL);
+}
+
 export interface ChatResult {
   reply: string;
   guardrails_applied: string[];
   context_generated_at: string;
   // 'safety' = the fixed crisis reply (B-AIG-122); no model was called.
-  model_used: 'perplexity' | 'anthropic' | 'fallback' | 'safety';
+  // 'credits' = the fixed pool-empty reply (B-S-AICOST-123-1); no model was called.
+  model_used: 'perplexity' | 'anthropic' | 'fallback' | 'safety' | 'credits';
   degraded: boolean;
+  /** Machine code for a fixed non-model reply (COACH_AI_BUDGET_EXHAUSTED). */
+  code?: string;
 }
 
 @Injectable()
@@ -189,6 +237,10 @@ export class AiService {
     // tests that boot a stripped-down AiModule still construct.
     @Optional() private anthropic?: AnthropicAdapter,
     @Optional() private coachAIState?: CoachAIStateService,
+    // B-S-AICOST-123-1 — the coach's monthly AI credit pool (@Global
+    // AiCreditsModule, so Nest always provides it). A paid Guide answer is
+    // checked against it before the provider call and debited after it.
+    @Optional() private budget?: CoachAIBudgetService,
   ) {}
 
   // M3 — Intent-based word budget. Returns the word cap to embed in the
@@ -438,6 +490,44 @@ Now answer the user's next message using the rules above. Keep the answer under 
     );
     const clampedHistory = clamped.history;
     const clampedUserMessage = clamped.userMessage;
+    // A1 (P1) — the provider user turn is built from the CLAMPED history +
+    // user message so the provider input is the same bounded text the
+    // reservation (and the coach-pool pre-check below) was sized against.
+    const historyText = clampedHistory
+      .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
+      .join('\n');
+    const providerUser = historyText
+      ? `${historyText}\nUser: ${clampedUserMessage}`
+      : clampedUserMessage;
+
+    // B-S-AICOST-123-1 — a paid answer draws from the coach's monthly AI
+    // credit pool, checked BEFORE any quota is reserved or provider called.
+    // A pool that cannot pay for one whole worst-case answer gets the fixed
+    // pool-empty reply. The deterministic responder (no engine) spends
+    // nothing, so it never touches the pool.
+    let poolCoachId: string | null = null;
+    if (anthropicReady && this.budget) {
+      const pool = await this.checkCoachPool(
+        this.budget,
+        userId,
+        aiGuideWorstCaseCents(systemPrompt, providerUser),
+      );
+      if (pool.exhausted) {
+        this.logger.warn(`ai guide: coach pool empty audience=${pool.audience}`);
+        return {
+          reply:
+            pool.audience === 'coach'
+              ? AI_GUIDE_POOL_EMPTY_REPLY_COACH
+              : AI_GUIDE_POOL_EMPTY_REPLY_CLIENT,
+          guardrails_applied: [],
+          context_generated_at: ctx.generated_at,
+          model_used: 'credits',
+          degraded: false,
+          code: COACH_AI_BUDGET_EXHAUSTED_CODE,
+        };
+      }
+      poolCoachId = pool.coachId;
+    }
 
     // A1 — reserve the worst-case total estimate for this call: the enforced
     // input-char ceiling (mapped to tokens via APPROX_CHARS_PER_TOKEN) plus the
@@ -488,23 +578,20 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // (e.g. the deterministic fallback), in which case the reservation is
     // refunded in full (P1-b) since no billable tokens were spent.
     let actualTokens: number | null = null;
+    // B-S-AICOST-123-1 — the reported provider usage, debited from the pool.
+    let usageIn = 0;
+    let usageOut = 0;
     let rawReply = '';
     try {
     if (anthropicReady && this.anthropic) {
       // Coach AI v1 — Claude Sonnet for the client chat surface. Guardrails /
       // APP_PRESCRIBED defense apply through the shared system prompt.
       try {
-        // A1 (P1) — send the CLAMPED history + user message so the provider
-        // input is the same bounded text the reservation was sized against.
-        const historyText = clampedHistory
-          .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
-          .join('\n');
+        // A1 (P1) — send the CLAMPED history + user message (providerUser).
         const result = await this.anthropic.complete(
           {
             system: systemPrompt,
-            user: historyText
-              ? `${historyText}\nUser: ${clampedUserMessage}`
-              : clampedUserMessage,
+            user: providerUser,
           },
           {
             // P3 — use the shared MAX_TOKENS_PER_CALL constant so the provider
@@ -523,7 +610,9 @@ Now answer the user's next message using the rules above. Keep the answer under 
         // there was text so the reconcile charges the TRUE usage instead of
         // refunding a call that genuinely spent tokens. Only a response with no
         // usage at all leaves actualTokens null (full refund in the finally).
-        const reportedUsage = (result.tokensIn ?? 0) + (result.tokensOut ?? 0);
+        usageIn = result.tokensIn ?? 0;
+        usageOut = result.tokensOut ?? 0;
+        const reportedUsage = usageIn + usageOut;
         if (reportedUsage > 0) {
           actualTokens = reportedUsage;
         }
@@ -587,6 +676,12 @@ Now answer the user's next message using the rules above. Keep the answer under 
       }
     }
 
+    // B-S-AICOST-123-1 — debit the reported usage (including a usage-but-no-
+    // text answer, which the provider still billed) from the coach pool.
+    if (poolCoachId && usageIn + usageOut > 0) {
+      await this.debitCoachPool(this.budget, poolCoachId, usageIn, usageOut, userId);
+    }
+
     const isFallback = modelUsed === 'fallback';
     const result = this.guardrails.validate(userMessage, rawReply, ctx);
     this.analytics.capture(userId, Events.AI_CHAT_INVOKED, {
@@ -619,6 +714,84 @@ Now answer the user's next message using the rules above. Keep the answer under 
       model_used: modelUsed,
       degraded: isFallback,
     };
+  }
+
+  // B-S-AICOST-123-1 — whose monthly pool pays for this caller's Guide
+  // answers, and whether it can still pay for `worstCaseCents`. Same
+  // attribution as Roman (poolCoachIdFor) and the AI gateway: a client's coach
+  // (a sub-coach's client draws on the head coach); a coach's own pool (a
+  // sub-coach's head coach). The owner and a client without a coach have no
+  // pool; the per-person daily token quota still applies. A pool that cannot
+  // be read fails closed: coded 503, no provider call, nothing reserved.
+  private async checkCoachPool(
+    budget: CoachAIBudgetService,
+    userId: string,
+    worstCaseCents: number,
+  ): Promise<{ coachId: string | null; exhausted: boolean; audience: 'client' | 'coach' }> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, coach_id: true },
+      });
+      const role = user?.role ?? 'student';
+      const audience = role === 'coach' || role === 'sub_coach' ? 'coach' : 'client';
+      let coachId: string | null = null;
+      if (audience === 'coach') {
+        coachId = await budget.resolveHeadCoachId(userId);
+      } else if (role !== 'owner' && user?.coach_id) {
+        coachId = await budget.resolveHeadCoachId(user.coach_id);
+      }
+      if (!coachId) return { coachId: null, exhausted: false, audience };
+      const pre = await budget.canCharge(coachId, worstCaseCents);
+      return { coachId, exhausted: !pre.allowed, audience };
+    } catch (error) {
+      this.logger.error(
+        `ai guide: coach pool check failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new ServiceUnavailableException({
+        error: 'AI_GUIDE_CREDITS_UNAVAILABLE',
+        message:
+          'AI guidance cannot check AI credits right now, so nothing was sent. Send the message again in a minute; your coach is in Messages any time.',
+      });
+    }
+  }
+
+  // B-S-AICOST-123-1 — debit one answer's actual cost (the provider's
+  // reported tokens at $3 / $15 per million, whole cents rounded up) from the
+  // coach pool. A cost larger than the remainder consumes the remainder, so
+  // the next question gets the pool-empty reply. The provider call already
+  // happened, so a failed debit is logged, never thrown at the client.
+  private async debitCoachPool(
+    budget: CoachAIBudgetService | undefined,
+    coachId: string,
+    inputTokens: number,
+    outputTokens: number,
+    userId: string,
+  ): Promise<void> {
+    if (!budget) return;
+    const cents = aiGuideCostCents(inputTokens, outputTokens);
+    if (cents <= 0) return;
+    const capability = COACH_AI_CAPABILITIES.CLIENT_CHAT_FALLBACK;
+    const contextId = `ai-guide-${userId}-${Date.now()}`;
+    try {
+      const debit = await budget.recordUsage({ coachId, actualCostCents: cents, capability, contextId });
+      if (debit.recorded) return;
+      const { budget: snap } = await budget.canCharge(coachId, 0);
+      const rest = snap.total_actual_available_cents - snap.actual_used_cents;
+      this.logger.warn(`ai guide: coach pool short cents=${cents} rest=${rest}`);
+      if (rest > 0) {
+        await budget.recordUsage({
+          coachId,
+          actualCostCents: Math.min(rest, cents),
+          capability,
+          contextId,
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `ai guide: coach pool debit failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   // A1 — "today" as a UTC date bucket (midnight UTC), matching the

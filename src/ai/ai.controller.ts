@@ -36,6 +36,9 @@ export class AiController {
       // the buyer-facing `degraded` flag, but gate the provider name behind
       // the dev/debug block.
       degraded: isFallback,
+      // B-S-AICOST-123-1 — a fixed non-model reply (coach AI credits used up)
+      // carries its machine code so the app can recognise it.
+      ...(result.code ? { code: result.code } : {}),
       ...(includeDebug
         ? {
             model: result.model_used,
