@@ -340,8 +340,20 @@ export class SchedulingFakeDb {
       if (!user || user.role !== 'coach') return null;
       const id = args.where.user_id;
       return {
+        // S-AVAIL-122: booking options live on the user's coach_profile row.
+        ...(user.coach_profile as Row | null),
         timezone: this.coachZones.has(id) ? this.coachZones.get(id) : 'America/Los_Angeles',
       };
+    },
+    // S-AVAIL-122: booking-options edits write onto the same coach_profile
+    // object user.findUnique returns, so open slots see them at once.
+    update: async (args: { where: { user_id: string }; data: Row }) => {
+      await this.tick();
+      const user = this.users.find((u) => u.id === args.where.user_id);
+      const profile = user?.coach_profile as Row | null | undefined;
+      if (!profile) throw new Error('CoachProfile not found');
+      Object.assign(profile, args.data);
+      return { ...profile };
     },
   };
 

@@ -30,6 +30,7 @@ import {
   RescheduleSessionDto,
   SetAvailabilityDto,
   UpdateAvailabilityOverrideDto,
+  UpdateBookingOptionsDto,
   UpdateSessionTypeDto,
 } from './dto/scheduling.dto';
 import { SchedulingService } from './scheduling.service';
@@ -46,6 +47,8 @@ import { SchedulingErrorCode, schedulingError } from './scheduling.types';
 //   PATCH  /scheduling/session-types/:id               (coach)
 //   GET    /scheduling/coaches/:coachId/availability
 //   PUT    /scheduling/coaches/:coachId/availability   (coach)
+//   GET    /scheduling/coach/booking-options           (coach, own)
+//   PATCH  /scheduling/coach/booking-options           (coach, own)
 //   GET    /scheduling/sessions                        (upcoming for me)
 //   GET    /scheduling/sessions/:id
 //   POST   /scheduling/sessions                        (request)
@@ -162,6 +165,36 @@ export class SchedulingController {
     @Body() body: SetAvailabilityDto,
   ) {
     return this.scheduling.setAvailability(toActor(req), coachId, body.windows);
+  }
+
+  // ---------------- Booking options (S-AVAIL-122) ----------------
+
+  @ApiOperation({
+    summary: "Read the calling coach's booking options",
+    description:
+      'Coach only, own data. Minimum notice (minutes), how far ahead clients may book (days), buffer before/after each session (minutes) and an optional daily maximum (null = no limit), plus the defaults and allowed ranges. A coach who never edited them gets the defaults (5 minutes, 120 days, 0, 0, no limit).',
+  })
+  @ApiResponse({ status: 200, description: 'Booking options.' })
+  @ApiResponse({ status: 403, description: 'Not a coach.' })
+  @Get('coach/booking-options')
+  async getMyBookingOptions(@Request() req: AuthedRequest) {
+    return this.scheduling.getMyBookingOptions(toActor(req));
+  }
+
+  @ApiOperation({
+    summary: "Change the calling coach's booking options",
+    description:
+      'Coach only, own data. Any subset of min_notice_minutes, booking_window_days, buffer_before_minutes, buffer_after_minutes, daily_max_sessions (null removes the cap). Applies to new client bookings and client moves at once; open slots honour it.',
+  })
+  @ApiResponse({ status: 200, description: 'Saved booking options.' })
+  @ApiResponse({ status: 400, description: 'INVALID_BOOKING_OPTIONS' })
+  @ApiResponse({ status: 403, description: 'Not a coach.' })
+  @Patch('coach/booking-options')
+  async updateMyBookingOptions(
+    @Request() req: AuthedRequest,
+    @Body() body: UpdateBookingOptionsDto,
+  ) {
+    return this.scheduling.updateMyBookingOptions(toActor(req), body);
   }
 
   // ---------------- Sessions ----------------
