@@ -128,6 +128,34 @@ export const ROMAN_PRICE_PER_MTOK = { input: 3, output: 15 } as const;
 /** The content-free ledger capability for one Roman turn. */
 export const ROMAN_LEDGER_CAPABILITY = 'roman.chat';
 
+// ─── Roman v1.1 seams (R11-00) ───────────────────────────────────────────────
+
+/** Ledger + coach-pool capability for v1.1 memory work (day summaries, notes). */
+export const ROMAN_MEMORY_CAPABILITY = 'roman.memory';
+/** Ledger + coach-pool capability for v1.1 coach playbook builds. */
+export const ROMAN_PLAYBOOK_CAPABILITY = 'roman.playbook';
+/** The background capabilities, which share one daily ceiling. */
+export const ROMAN_BACKGROUND_CAPABILITIES = [
+  ROMAN_MEMORY_CAPABILITY,
+  ROMAN_PLAYBOOK_CAPABILITY,
+] as const;
+export type RomanBackgroundCapability = (typeof ROMAN_BACKGROUND_CAPABILITIES)[number];
+
+/**
+ * Platform-wide daily ceiling (UTC day, US dollars) for all background work
+ * together, separate from ROMAN_DAILY_COST_CAP_USD so background jobs can
+ * never use chat headroom (owner decision D4 default). Unset or invalid = 10,
+ * never no cap.
+ */
+export const ROMAN_BACKGROUND_DAILY_COST_CAP_USD_ENV = 'ROMAN_BACKGROUND_DAILY_COST_CAP_USD';
+export const ROMAN_BACKGROUND_DAILY_COST_CAP_USD_DEFAULT = 10;
+
+/**
+ * Upper bound of the time one turn augmenter may take before its block is
+ * left out of the turn (the turn itself always continues).
+ */
+export const ROMAN_TURN_AUGMENTER_TIMEOUT_MS = 1500;
+
 /**
  * Who a Roman failure message is written for. Roman serves clients
  * (`student`) AND coaches / the owner on the coach surface: a client is

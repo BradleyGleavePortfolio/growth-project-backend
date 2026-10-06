@@ -78,6 +78,9 @@ export function noClientDataSubject(reason: NoClientDataReason): AiDataSubject {
  */
 export type AiEgressSurface =
   | 'roman.chat'
+  // R11-00: Roman v1.1 background work (memory; coach playbook builds).
+  | 'roman.memory'
+  | 'roman.playbook'
   | 'ai.client_chat'
   | 'coach_ai.workout_program'
   | 'coach_ai.meal_plan'

@@ -37,6 +37,24 @@ export const ROMAN_MODEL_PHASE_1 = 'claude-sonnet-4-6';
 // ROMAN_PRICE_PER_MTOK in roman.constants.ts.
 
 /**
+ * R11-00: the cheaper model for v1.1 background work (day summaries and note
+ * extraction). Turns and playbook builds stay on ROMAN_MODEL_PHASE_1. Product
+ * runtime model, chosen by the v1.1 plan; the operator confirms the id.
+ */
+export const ROMAN_MODEL_BACKGROUND = 'claude-haiku-4-5-20251001';
+
+/**
+ * List price per million tokens (input / output, USD) of every model Roman
+ * calls. The background breaker prices each ledger row by its model; an
+ * unknown model is priced at the highest listed rate (over-counts, never
+ * under-counts).
+ */
+export const ROMAN_MODEL_PRICE_PER_MTOK: Readonly<Record<string, { input: number; output: number }>> = {
+  [ROMAN_MODEL_PHASE_1]: { input: 3, output: 15 },
+  [ROMAN_MODEL_BACKGROUND]: { input: 1, output: 5 },
+};
+
+/**
  * Factory provider. Returns `null` when no API key is configured so the
  * service can fail with a structured error (never a raw SDK crash) instead of
  * throwing at construction. Tests bind a fake client to the token directly,

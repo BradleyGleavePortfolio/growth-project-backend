@@ -104,6 +104,13 @@ import {
   buildRomanSystemPrompt,
   RomanSessionVoiceState,
 } from './roman.prompts';
+import {
+  ROMAN_TURN_AUGMENTERS,
+  runRomanTurnAugmenters,
+  type RomanAugmentRun,
+  type RomanTurnAugmenter,
+} from './augment/roman-turn-augmenter';
+import { ROMAN_TURN_AUGMENTER_TIMEOUT_MS } from './roman.constants';
 
 /** Minimal caller identity the service needs (from the authenticated User). */
 export interface RomanCaller {
@@ -216,6 +223,11 @@ export class RomanService {
     // checked against it before the provider call and debited after it.
     @Optional()
     private readonly budget: CoachAIBudgetService | null = null,
+    // R11-00: v1.1 turn augmenters (client memory, coach method). Empty on
+    // main, so every turn is exactly the pre-v1.1 turn.
+    @Optional()
+    @Inject(ROMAN_TURN_AUGMENTERS)
+    private readonly augmenters: readonly RomanTurnAugmenter[] | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -1004,6 +1016,10 @@ export class RomanService {
       bundle = await this.loadTurnBundle(caller);
       contextUnavailable = bundle === null;
     }
+    // R11-00: grounded turns with a bundle only; the coach surface never
+    // augments. A failing augmenter only drops its own block.
+    const augmentRun =
+      grounded && bundle ? await this.runAugmenters(caller, bundle, userMessage) : null;
 
     const system = buildRomanSystemPrompt({
       surface: session.surface,
@@ -1013,6 +1029,9 @@ export class RomanService {
       routerHint: routerHintFor(route.class),
       clientData: bundle?.rendered ?? null,
       clientDataUnavailable: contextUnavailable,
+      ...(augmentRun && augmentRun.applied.length > 0
+        ? { augments: augmentRun.applied.map((a) => a.block) }
+        : {}),
     });
     // B-651-4: the reservation is an upper bound of THIS payload, built from
     // the exact system prompt and history that will be sent (trimmed to the
@@ -1172,6 +1191,7 @@ export class RomanService {
       context_version: bundle?.context.version ?? null,
       context_hash: bundle?.hash ?? null,
       context_unavailable: grounded && contextUnavailable,
+      ...(augmentRun ? augmentLedgerOf(augmentRun) : {}),
     });
     this.logger.log(
       `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
@@ -1189,6 +1209,29 @@ export class RomanService {
   isSafetyShortCircuit(message: string): boolean {
     const route = classifySafety(message);
     return route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm');
+  }
+
+  /**
+   * R11-00: run the registered augmenters (none on main). Returns null when
+   * none are registered so the turn and its ledger row stay exactly as before.
+   */
+  private async runAugmenters(
+    caller: RomanCaller,
+    bundle: RomanClientContextBundle,
+    userMessage: string,
+  ): Promise<RomanAugmentRun | null> {
+    const list = this.augmenters ?? [];
+    if (list.length === 0) return null;
+    return runRomanTurnAugmenters(list, caller, bundle, userMessage, {
+      timeoutMs: ROMAN_TURN_AUGMENTER_TIMEOUT_MS,
+      onFailure: (f) => {
+        this.logger.warn(
+          `roman.augment_omitted kind=${f.kind} reason=${f.reason}${
+            f.err !== undefined ? ` ${romanErrorTag(f.err)}` : ''
+          }`,
+        );
+      },
+    });
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */
@@ -1529,6 +1572,17 @@ export class RomanService {
       (err as { code?: string }).code === 'P2002'
     );
   }
+}
+
+/**
+ * R11-00: content-free ledger fields for a turn that ran augmenters: the kind
+ * and hash of each applied block, and the kinds left out. Never block text.
+ */
+function augmentLedgerOf(run: RomanAugmentRun): { augments: string[]; augments_omitted: string[] } {
+  return {
+    augments: run.applied.map((a) => `${a.kind}:${a.hash}`),
+    augments_omitted: [...run.omitted],
+  };
 }
 
 /** pg_advisory_xact_lock namespace for the Roman daily spend admission: ASCII 'rmsp'. */

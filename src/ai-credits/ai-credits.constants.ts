@@ -61,6 +61,12 @@ export const COACH_AI_METERED_CAPABILITIES: ReadonlySet<string> = new Set([
   // other real LLM call; resolves to the requesting coach's budget via
   // tenantCoachId. No behavioural change to any existing capability.
   'community_ai_triage',
+  // R11-00 — Roman v1.1 background work (day summaries and notes; coach
+  // playbook builds). Debited from the head coach's pool by
+  // RomanBackgroundSpendService, never the client's turn limit. The gateway
+  // never invokes these, so no behavioural change to any existing path.
+  'roman.memory',
+  'roman.playbook',
 ]);
 
 /** Resolve the actual ceiling at call time so test env mutations stick. */
