@@ -79,3 +79,26 @@ describe('B-666-5 (Sol) a daily total that mentions meals is checked against the
     expect(check(text)).toEqual({ text, guardrails_applied: [], rewritten: false });
   });
 });
+
+describe('B-669-1 (Sol) aggregate wording is checked against the whole day, with or without "today"', () => {
+  it.each([
+    'You have logged 450 kcal across two meals.',
+    'You logged 450 kcal across breakfast and lunch.',
+    'Your meals add up to 450 kcal.',
+  ])('rejected (one meal passed off as the sum): %s', (text) => {
+    const result = check(text);
+    expect(result.rewritten).toBe(true);
+    expect(result.guardrails_applied).toContain('ungrounded_number');
+  });
+
+  it.each([
+    'You have logged 780 kcal across two meals.',
+    'You logged 780 kcal across breakfast and lunch.',
+    'Your meals add up to 780 kcal.',
+    'You logged 450 kcal at lunch today.',
+    'You have logged 780 kcal today.',
+    'Breakfast was 330 kcal.',
+  ])('control (correct total or one actual meal): %s', (text) => {
+    expect(check(text)).toEqual({ text, guardrails_applied: [], rewritten: false });
+  });
+});
