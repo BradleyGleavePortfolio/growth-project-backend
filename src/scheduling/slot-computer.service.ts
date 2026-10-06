@@ -42,7 +42,21 @@ export interface ComputeInput {
   windows: AvailabilityWindow[];
   overrides: AvailabilityOverride[];
   bookings: SessionInterval[];
+  // S-AVAIL-122 coach booking options (all optional; omitted = old rules).
+  // Each session keeps `bufferBeforeMinutes` free before it and
+  // `bufferAfterMinutes` free after it, so two sessions are at least
+  // before + after apart. Buffers separate sessions from sessions only; they
+  // may fall outside open hours.
+  bufferBeforeMinutes?: number;
+  bufferAfterMinutes?: number;
+  // At most this many `bookings` may start on one coach-local day; a full day
+  // offers no slots. null/undefined = no cap. `bookings` must then cover the
+  // whole local days touched by [from, to] (the loader widens by a day).
+  dailyMax?: number | null;
 }
+
+/** Why an interval is or is not bookable (isIntervalBookable's detail). */
+export type IntervalBookability = 'open' | 'outside_hours' | 'daily_max' | 'buffer';
 
 export interface ComputedSlot {
   start_at: string; // ISO UTC
@@ -230,10 +244,14 @@ export function computeOpenSlots(input: ComputeInput): ComputedSlot[] {
 
   // Sort + dedupe.
   sliced.sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+  const fullDays = fullLocalDays(input);
   const out: ComputedSlot[] = [];
   let prevStart = -1;
   for (const s of sliced) {
     if (s.startMin === prevStart) continue;
+    if (fullDays && fullDays.has(localDayKey(new Date(s.startMin * 60_000), input.coachTimezone))) {
+      continue;
+    }
     prevStart = s.startMin;
     out.push({
       start_at: new Date(s.startMin * 60_000).toISOString(),
@@ -254,12 +272,34 @@ export function isIntervalBookable(
   start: Date,
   end: Date,
 ): boolean {
+  return intervalBookability(input, start, end) === 'open';
+}
+
+// S-AVAIL-122: the same check with the reason, so a refusal can say why.
+// Order: outside open hours (or overlapping a session, ignoring buffers)
+// first, then the coach's daily maximum, then the buffers.
+export function intervalBookability(
+  input: Omit<ComputeInput, 'durationMinutes'>,
+  start: Date,
+  end: Date,
+): IntervalBookability {
   const startMin = start.getTime() / 60_000;
   const endMin = end.getTime() / 60_000;
   if (!Number.isFinite(startMin) || !Number.isFinite(endMin) || endMin <= startMin) {
-    return false;
+    return 'outside_hours';
   }
-  const free = computeFreeRanges({ ...input, durationMinutes: endMin - startMin });
+  const durationMinutes = endMin - startMin;
+  const unbuffered = { ...input, durationMinutes, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 };
+  if (!containsInterval(computeFreeRanges(unbuffered), startMin, endMin)) return 'outside_hours';
+  const fullDays = fullLocalDays(input);
+  if (fullDays && fullDays.has(localDayKey(start, input.coachTimezone))) return 'daily_max';
+  if (!containsInterval(computeFreeRanges({ ...input, durationMinutes }), startMin, endMin)) {
+    return 'buffer';
+  }
+  return 'open';
+}
+
+function containsInterval(free: MinuteRange[], startMin: number, endMin: number): boolean {
   // Free pieces can abut (a window that ends where an extra override
   // starts); merge touching pieces before testing containment.
   const merged: MinuteRange[] = [];
@@ -272,6 +312,27 @@ export function isIntervalBookable(
     }
   }
   return merged.some((r) => r.startMin <= startMin && r.endMin >= endMin);
+}
+
+/** YYYY-MM-DD of `instant` on the coach's local calendar. */
+export function localDayKey(instant: Date, tz: string): string {
+  const p = localPartsInTz(instant, tz);
+  return ymdString(p.year, p.month, p.day);
+}
+
+// Coach-local days that already hold `dailyMax` bookings (by start time), or
+// null when there is no cap.
+function fullLocalDays(input: Omit<ComputeInput, 'durationMinutes'>): Set<string> | null {
+  const cap = input.dailyMax;
+  if (cap === null || cap === undefined) return null;
+  const counts = new Map<string, number>();
+  for (const b of input.bookings) {
+    const key = localDayKey(b.start_at, input.coachTimezone);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const full = new Set<string>();
+  for (const [key, n] of counts) if (n >= cap) full.add(key);
+  return full;
 }
 
 // Free minute ranges (UTC minutes) over the local days touched by
@@ -351,10 +412,14 @@ function computeFreeRanges(input: ComputeInput): MinuteRange[] {
     solid.push(...dayResult);
   }
 
-  // Subtract bookings.
+  // Subtract bookings, widened by the buffers (S-AVAIL-122): a new session
+  // keeps `before` free ahead of it and every booked session keeps `after`
+  // free behind it (and the reverse), so each side needs before + after.
+  const gap =
+    Math.max(0, input.bufferBeforeMinutes ?? 0) + Math.max(0, input.bufferAfterMinutes ?? 0);
   const bookingHoles: MinuteRange[] = bookings.map((b) => ({
-    startMin: b.start_at.getTime() / 60_000,
-    endMin: b.end_at.getTime() / 60_000,
+    startMin: b.start_at.getTime() / 60_000 - gap,
+    endMin: b.end_at.getTime() / 60_000 + gap,
   }));
   return subtractRanges(solid, bookingHoles);
 }

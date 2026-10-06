@@ -20,7 +20,42 @@ export interface OpenSlotsPayload {
   // legacy duration-only query) and the slot length actually used.
   session_type_id: string | null;
   duration_minutes: number;
+  // S-AVAIL-122: the coach's booking rules the slots honour, for client copy
+  // ("Book at least 1 day ahead").
+  min_notice_minutes: number;
+  booking_window_days: number;
   slots: { start_at: string; end_at: string }[];
+}
+
+// ---------------------------------------------------------------------------
+// S-AVAIL-122 coach booking options. One set per coach (CoachProfile columns).
+// The defaults are the fixed rules every coach had before (5 minutes notice,
+// 120 days ahead, no buffers, no daily cap), so a coach who never edits them
+// sees exactly the old behaviour.
+// ---------------------------------------------------------------------------
+export interface BookingOptions {
+  min_notice_minutes: number;
+  booking_window_days: number;
+  buffer_before_minutes: number;
+  buffer_after_minutes: number;
+  /** null = no daily cap. */
+  daily_max_sessions: number | null;
+}
+
+export const BOOKING_OPTION_LIMITS = {
+  min_notice_minutes: { min: 5, max: 43_200 },
+  booking_window_days: { min: 1, max: 365 },
+  buffer_before_minutes: { min: 0, max: 240 },
+  buffer_after_minutes: { min: 0, max: 240 },
+  daily_max_sessions: { min: 1, max: 50 },
+} as const;
+
+/** Plain duration for copy: "5 minutes", "2 hours", "1 day", "90 minutes". */
+export function formatNoticeMinutes(minutes: number): string {
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`;
+  if (minutes >= 1440 && minutes % 1440 === 0) return plural(minutes / 1440, 'day');
+  if (minutes >= 60 && minutes % 60 === 0) return plural(minutes / 60, 'hour');
+  return plural(minutes, 'minute');
 }
 
 export function dateOnly(d: Date, dayDelta: number): Date {
@@ -48,11 +83,21 @@ export function minutesToHHMM(min: number | null): string | null {
 // CoachingSession_no_overlapping_active_booking exclusion constraint.
 export const OCCUPYING_SESSION_STATUSES = ['requested', 'scheduled', 'pending_provider'] as const;
 
-// Minimum lead time between now and a bookable start.
+// Default minimum lead time between now and a bookable start (S-AVAIL-122:
+// coaches can raise it; this is also the floor for coach moves).
 export const MIN_BOOKING_LEAD_MINUTES = 5;
 
-// How far ahead a client may book or move a session.
+// Default for how far ahead a client may book or move a session (S-AVAIL-122:
+// coaches can change it).
 export const MAX_BOOKING_HORIZON_DAYS = 120;
+
+export const DEFAULT_BOOKING_OPTIONS: Readonly<BookingOptions> = Object.freeze({
+  min_notice_minutes: MIN_BOOKING_LEAD_MINUTES,
+  booking_window_days: MAX_BOOKING_HORIZON_DAYS,
+  buffer_before_minutes: 0,
+  buffer_after_minutes: 0,
+  daily_max_sessions: null,
+});
 
 // At most this many coach-approval requests may wait on one coach per client.
 // Bounds slot holding by unapproved requests.
@@ -137,6 +182,8 @@ export const SchedulingErrorCode = {
   // S-SCHED-5: the request reached its clear time without an answer and is
   // closed (or is about to be closed by the sweep); the slot is free again.
   REQUEST_EXPIRED: 'REQUEST_EXPIRED',
+  // S-AVAIL-122: a booking-options edit with a value out of range.
+  INVALID_BOOKING_OPTIONS: 'INVALID_BOOKING_OPTIONS',
 } as const;
 export type SchedulingErrorCodeValue =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];

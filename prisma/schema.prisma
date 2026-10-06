@@ -581,6 +581,15 @@ model CoachProfile {
   current_period_end         DateTime?
   trial_end                  DateTime?
   ai_monthly_spend_cap_cents Int                 @default(5000)
+  // S-AVAIL-122: coach booking options. Defaults reproduce the fixed rules
+  // that applied before coaches could set them (5 minutes notice, 120 days
+  // ahead, no buffers, no daily cap). Ranges are enforced by the API.
+  booking_min_notice_minutes Int                 @default(5)
+  booking_window_days        Int                 @default(120)
+  booking_buffer_before_min  Int                 @default(0)
+  booking_buffer_after_min   Int                 @default(0)
+  // NULL = no daily cap.
+  booking_daily_max          Int?
   created_by_owner_id        String?
   created_by_owner           User?               @relation("CoachProfileCreatedBy", fields: [created_by_owner_id], references: [id])
   created_at                 DateTime            @default(now())
