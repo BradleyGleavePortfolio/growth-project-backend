@@ -17,6 +17,9 @@ import {
   EXPIRED_LINK,
   LOCKOUT_SCREEN,
   LOCKOUT_SCREEN_ERROR,
+  LR_COACH_EMAIL,
+  LR_COACH_INAPP,
+  LR_COACH_PUSH,
   LR_DAY3_BLOCKER,
   LR_DAY3_PUSH,
   LR_DAY7_ESCALATION,
@@ -49,6 +52,8 @@ export interface CopyTokens {
   lockoutDate?: string;
   reason?: string;
   dunningDetailDeeplink?: string;
+  /** Stripe's charge attempt count on the open invoice (coach history). */
+  attempts?: string;
 }
 
 /**
@@ -89,6 +94,24 @@ export function applyTokens(template: string, tokens: CopyTokens): string {
   });
 }
 
+/** B-688-7 (Opus): a sentence (or line) whose token has no value is left out. */
+export function applyTokensTruthfully(template: string, tokens: CopyTokens): string {
+  const missing = (text: string) =>
+    [...text.matchAll(/\{(\w+)\}/g)].some(([, key]) => {
+      const v = (tokens as Record<string, unknown>)[key];
+      return v === undefined || v === null || v === '';
+    });
+  const lines = template.split('\n').flatMap((line) => {
+    if (!missing(line)) return [line];
+    const kept = line
+      .split(/(?<=[.;])\s+/)
+      .filter((part) => !missing(part))
+      .join(' ');
+    return kept ? [kept] : [];
+  });
+  return applyTokens(lines.join('\n'), tokens);
+}
+
 @Injectable()
 export class DunningV2Renderer {
   /** Pick straight vs dry-Roman from a variant pair, then substitute tokens. */
@@ -97,7 +120,7 @@ export class DunningV2Renderer {
     tokens: CopyTokens,
     quip: boolean,
   ): string {
-    return applyTokens(quip ? pair.dryRoman : pair.straight, tokens);
+    return applyTokensTruthfully(quip ? pair.dryRoman : pair.straight, tokens);
   }
 
   /** Render a blocker (headline + body + CTAs) with token substitution. */
@@ -108,8 +131,8 @@ export class DunningV2Renderer {
   ): BlockerVariant {
     const v = quip ? copy.dryRoman : copy.straight;
     return {
-      headline: applyTokens(v.headline, tokens),
-      body: applyTokens(v.body, tokens),
+      headline: applyTokensTruthfully(v.headline, tokens),
+      body: applyTokensTruthfully(v.body, tokens),
       primaryCta: v.primaryCta,
       secondaryCta: v.secondaryCta,
     };
@@ -157,20 +180,22 @@ export class DunningV2Renderer {
     return this.renderPair(EXPIRED_LINK, tokens, quip);
   }
 
-  // ── Coach (all three channels) ───────────────────────────────────────────
-  coachInApp(tokens: CopyTokens, quip: boolean): string {
-    return this.renderPair(COACH_INAPP, tokens, quip);
+  // ── Coach (all three channels; `dispute` = a dispute cycle) ─────────────
+  coachInApp(tokens: CopyTokens, quip: boolean, dispute = false): string {
+    return this.renderPair(dispute ? LR_COACH_INAPP : COACH_INAPP, tokens, quip);
   }
 
-  coachPush(tokens: CopyTokens, quip: boolean): string {
-    return this.renderPair(COACH_PUSH, tokens, quip);
+  coachPush(tokens: CopyTokens, quip: boolean, dispute = false): string {
+    return this.renderPair(dispute ? LR_COACH_PUSH : COACH_PUSH, tokens, quip);
   }
 
-  coachEmail(tokens: CopyTokens, quip: boolean): string {
-    return this.renderPair(COACH_EMAIL, tokens, quip);
+  coachEmail(tokens: CopyTokens, quip: boolean, dispute = false): string {
+    return this.renderPair(dispute ? LR_COACH_EMAIL : COACH_EMAIL, tokens, quip);
   }
 
+  // Every dispute-cycle key (lr_*) renders dispute copy (B-687-5).
   private pushPair(copyKey: string): RomanVariantPair {
+    if (copyKey.startsWith('lr_')) return LR_DAY3_PUSH;
     switch (copyKey) {
       case 'day0':
         return DAY0_PUSH;
@@ -180,14 +205,13 @@ export class DunningV2Renderer {
         return DAY3_PUSH;
       case 'day7':
         return DAY7_PUSH;
-      case 'lr_day3':
-        return LR_DAY3_PUSH;
       default:
         return DAY1_PUSH;
     }
   }
 
   private emailPair(copyKey: string): RomanVariantPair {
+    if (copyKey.startsWith('lr_')) return LR_DAY7_ESCALATION;
     switch (copyKey) {
       case 'day1':
         return DAY1_EMAIL;
@@ -195,8 +219,6 @@ export class DunningV2Renderer {
         return DAY3_EMAIL;
       case 'day7':
         return DAY7_EMAIL;
-      case 'lr_day7':
-        return LR_DAY7_ESCALATION;
       default:
         return DAY1_EMAIL;
     }

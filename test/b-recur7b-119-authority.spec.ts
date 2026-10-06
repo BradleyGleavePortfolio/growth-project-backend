@@ -263,7 +263,8 @@ describe('B-680-2 (R119): no write after the decline read is exempt from the fen
     expect(h.row()).toMatchObject({
       status: 'past_due',
       entitlement_active: true,
-      last_error: 'Your card was declined.',
+      // D4 (C-690-1): last_error is a decline code, never Stripe's message.
+      last_error: 'invoice_payment_failed',
     });
     expect(h.dunning.recordFailure).toHaveBeenCalledTimes(1);
   });
