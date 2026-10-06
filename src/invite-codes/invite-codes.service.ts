@@ -103,6 +103,29 @@ export function isWellFormedInviteCode(value: unknown): value is string {
   );
 }
 
+/**
+ * HUNT-03-124 — the forms a typed code is looked up under, in order: exactly
+ * as typed (trimmed), then upper-case, then upper-case with the dash after
+ * "GP" restored. Codes are stored upper-case ("GP-XXXXXX" and owner vanity
+ * codes such as "GP-BRADLEY"), so "gp-bradley" and "GPBRADLEY" reach the
+ * stored code while an exact stored code always wins. Only well-formed forms
+ * are returned (a code with a space inside stays malformed), so nothing
+ * malformed reaches the DB.
+ */
+export function inviteCodeLookupCandidates(raw: unknown): string[] {
+  if (typeof raw !== 'string') return [];
+  const trimmed = raw.trim();
+  if (!isWellFormedInviteCode(trimmed)) return [];
+  const upper = trimmed.toUpperCase();
+  const out = [trimmed];
+  if (upper !== trimmed) out.push(upper);
+  if (/^GP[A-Z0-9]/.test(upper)) {
+    const dashed = `${CODE_PREFIX}${upper.slice(2)}`;
+    if (isWellFormedInviteCode(dashed)) out.push(dashed);
+  }
+  return out;
+}
+
 // Clinic launch C03 — machine-readable reasons for a failed invite attach.
 // Every exception thrown by attachUserToCoachByCode carries one of these in
 // its response body (`{ code, message }`, the ErrorEnvelope convention) so the
@@ -244,6 +267,11 @@ export type AttachGrant = Omit<GrantOutcome, 'purchase_id'> & {
   purchase_id: string | null;
   package_id: string | null;
 };
+
+/** A code resolved to its coach for an attach, with NO lifecycle checks applied. */
+type AttachTarget =
+  | { kind: 'profile'; coachId: string; coachRole: string | null; code: string; packageId: string | null }
+  | { kind: 'row'; coachId: string; rowId: string; code: string; packageId: string | null };
 
 /** Result of the canonical attach. `grant` is absent when the code carries no package. */
 export type AttachResult = {
@@ -741,6 +769,25 @@ export class InviteCodesService {
     // needing a logged-in user. The code is non-PII (random GP-XXXXXX).
     this.analytics.capture(`code:${code}`, Events.INVITE_PREVIEWED, {});
 
+    // HUNT-03-124: try the typed forms in order (exact first), so a code
+    // typed in lower case or without the dash previews like the stored code.
+    for (const candidate of inviteCodeLookupCandidates(code)) {
+      const res = await this.previewExactCode(candidate);
+      if (res.valid) return res;
+    }
+    return { valid: false };
+  }
+
+  private async previewExactCode(code: string): Promise<
+    | {
+        valid: true;
+        coach_id: string;
+        coach_name: string;
+        business_name: string | null;
+        branding: { accent_color: string | null; logo_url: string | null };
+      }
+    | { valid: false }
+  > {
     // Reject obviously-invalid input before going to the database. Path
     // params are not run through the DTO ValidationPipe, so anything could
     // arrive here — empty string, a NUL byte, kilobytes of garbage, etc.
@@ -839,14 +886,19 @@ export class InviteCodesService {
     userId: string,
     rawCode: string,
   ): Promise<AttachResult> {
-    // The throttler predicate and the mobile client both trim; do the same
-    // here so a pasted code with stray whitespace resolves (case is preserved).
-    const code = rawCode.trim();
-
     // 1. Resolve the code to its coach WITHOUT lifecycle checks, so the
     //    redeemer's own state can be classified first (Sol SOL-C03-B1).
-    const target = await this.resolveAttachTarget(code);
-    if (!target) throw invalidInviteCode();
+    //    HUNT-03-124: the typed forms are tried in order (exact first), and
+    //    everything below uses the STORED code, so "gp-bradley" validates,
+    //    consumes and grants exactly like "GP-BRADLEY".
+    let found: AttachTarget | null = null;
+    for (const candidate of inviteCodeLookupCandidates(rawCode)) {
+      found = await this.resolveAttachTarget(candidate);
+      if (found) break;
+    }
+    if (!found) throw invalidInviteCode();
+    const target: AttachTarget = found;
+    const code = target.code;
 
     const me = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!me) {
@@ -1014,13 +1066,7 @@ export class InviteCodesService {
    * checks (revoked / expired / exhausted are judged later, and only for a
    * new redemption). Permanent coach code first, then per-row InviteCode.
    */
-  private async resolveAttachTarget(
-    code: string,
-  ): Promise<
-    | { kind: 'profile'; coachId: string; coachRole: string | null; code: string; packageId: string | null }
-    | { kind: 'row'; coachId: string; rowId: string; code: string; packageId: string | null }
-    | null
-  > {
+  private async resolveAttachTarget(code: string): Promise<AttachTarget | null> {
     const profile = await this.prisma.coachProfile.findUnique({
       where: { invite_code: code },
       include: { user: { select: { id: true, role: true } } },

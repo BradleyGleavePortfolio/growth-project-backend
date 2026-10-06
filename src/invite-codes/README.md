@@ -96,7 +96,12 @@ Both refuse:
 `/auth/apple` all delegate to it.
 
 1. Trim and resolve the code to its coach (`CoachProfile` permanent code
-   first, then `InviteCode` row) with **no** lifecycle checks yet.
+   first, then `InviteCode` row) with **no** lifecycle checks yet. The typed
+   form is tried exactly first, then upper-case, then with the dash after
+   `GP` restored (`inviteCodeLookupCandidates`), so `gp-bradley` and
+   `GPBRADLEY` reach the stored `GP-BRADLEY`; everything after uses the stored
+   code. `previewCode` (signup-screen check and `/join/<code>` landing) uses
+   the same forms.
 2. Refuse `owner` (`owner_cannot_redeem`) and `coach` / `sub_coach`
    (`coach_cannot_redeem`) — never demoted, never re-parented.
 3. Redeemer already attached:
