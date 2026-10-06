@@ -602,7 +602,36 @@ export class OnboardingService {
       completed: Boolean(intake?.completed_at),
       completed_at: intake?.completed_at?.toISOString() ?? null,
       result: intake?.completed_at && intake.completion_result ? intake.completion_result : null,
+      // S-REVENUE-124 (B-REV-1): whether POST /complete can finish for this
+      // client today. The clinic build shows the consultation to every new
+      // client, but only a coach with a seeded clinic program set can finish
+      // it; a client with no coach (coachless Home) or with any other coach
+      // would wait on "not_attached" / "clinic_not_configured" forever. The
+      // app reads false as "use the standard onboarding instead".
+      consultation_available:
+        Boolean(intake?.completed_at) || (await this.clinicConfiguredFor(clientId)),
     };
+  }
+
+  /** Same coach and program-set checks complete() applies before it can finish. */
+  private async clinicConfiguredFor(clientId: string): Promise<boolean> {
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientId },
+      select: { coach_id: true },
+    });
+    if (!client?.coach_id) return false;
+    const coach = await this.prisma.user.findUnique({
+      where: { id: client.coach_id },
+      select: { role: true, deleted_at: true },
+    });
+    if (!coach || coach.deleted_at || (coach.role !== 'coach' && coach.role !== 'owner')) {
+      return false;
+    }
+    const set = await this.prisma.clinicProgramSet.findFirst({
+      where: { coach_id: client.coach_id, active: true },
+      orderBy: { created_at: 'desc' },
+    });
+    return !!set && readMaterialisation(set.materialisation) !== null;
   }
 
   // ─── POST /me/onboarding/complete ──────────────────────────────────────

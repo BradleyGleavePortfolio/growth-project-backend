@@ -156,11 +156,17 @@ assigned from cannot change underneath it.
   "saved_at": "ISO | null",
   "completed": false,
   "completed_at": "ISO | null",
-  "result": null
+  "result": null,
+  "consultation_available": true
 }
 ```
 
 `result` is the frozen completion payload once completed.
+`consultation_available` is true when `POST /complete` can finish for this
+client (attached to a live coach with an active clinic program set), or once
+the consultation is completed. False means the client has no coach or a coach
+without a program set; the app then runs the standard onboarding instead of
+the consultation (S-REVENUE-124 B-REV-1).
 
 ### `POST /api/me/onboarding/complete`
 
