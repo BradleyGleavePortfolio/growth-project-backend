@@ -1,5 +1,6 @@
 import {
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsNotEmpty,
@@ -71,6 +72,11 @@ export class EditDraftDto {
   // Free-shape patch; the service merges into generatedPayload at the
   // top level so the coach can tweak any field without us mirroring the
   // entire payload shape into a DTO.
+  // AUDIT-14-125: the global ValidationPipe (whitelist +
+  // forbidNonWhitelisted, src/main.ts) refuses any property with no
+  // class-validator decorator, so an undecorated `patch` turned every
+  // "Save edits" on an AI workout or meal draft into a 400.
+  @IsObject()
   patch!: Record<string, unknown>;
 }
 
