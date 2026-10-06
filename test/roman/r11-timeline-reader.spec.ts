@@ -20,7 +20,6 @@ import {
 } from '../../src/roman/context/roman-coach-scope';
 import { localDayStart } from '../../src/roman/context/roman-client-context.service';
 import { matches } from './fixtures/roman-personas';
-import type { PrismaService } from '../../src/prisma.service';
 
 type Row = Record<string, any>;
 const TZ = 'America/Los_Angeles';
@@ -156,7 +155,10 @@ function makeDb() {
       },
     );
   }
-  const reader = new RomanTimelineReader(prisma as unknown as PrismaService);
+  const reader = new RomanTimelineReader(
+    // @ts-expect-error partial structural Prisma double: only the delegates the reader issues are stubbed.
+    prisma,
+  );
   return { reader, users, tables, log };
 }
 
@@ -410,7 +412,7 @@ describe('R11-M2 timeline reader — order and cursor', () => {
         reader.read(A, {
           from: FROM,
           to: TO,
-          kinds: ['bloodwork' as unknown as RomanTimelineKind],
+          kinds: ['bloodwork'] as string[] as RomanTimelineKind[],
         }),
       ),
     ).resolves.toBe('bad_kind');
