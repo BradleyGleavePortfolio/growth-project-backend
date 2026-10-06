@@ -15,8 +15,10 @@ import {
   ROMAN_TURN_AUGMENTERS,
   romanTurnAugmentersProvider,
   runRomanTurnAugmenters,
+  type RomanTurnAugment,
   type RomanTurnAugmenter,
 } from '../../src/roman/augment/roman-turn-augmenter';
+import type { RomanClientContextBundle } from '../../src/roman/context/roman-client-context.types';
 import { RomanBackgroundSpendService } from '../../src/roman/background/roman-background-spend';
 import { isRomanMemoryEnabled } from '../../src/roman/memory/roman-memory.feature';
 import { isRomanPlaybookEnabled } from '../../src/roman/playbook/roman-playbook.feature';
@@ -127,15 +129,18 @@ describe('R11-00 prompt seam', () => {
 
 // ─── augmenter runner ────────────────────────────────────────────────────────
 
-function aug(kind: RomanTurnAugmenter['kind'], impl: () => Promise<unknown>): RomanTurnAugmenter {
-  return { kind, augment: jest.fn(impl) as unknown as RomanTurnAugmenter['augment'] };
+function aug(
+  kind: RomanTurnAugmenter['kind'],
+  impl: () => Promise<RomanTurnAugment | null>,
+): RomanTurnAugmenter {
+  return { kind, augment: jest.fn(impl) };
 }
 const block = (kind: string, text: string) => ({
   block: `<${kind}>${text}</${kind}>`,
   hash: sha(text),
   estimated_tokens: 4,
 });
-const fakeBundle = { rendered: '', hash: 'h', context: {} } as never;
+const fakeBundle = fakeOf<RomanClientContextBundle>({ rendered: '', hash: 'h', context: {} });
 
 describe('R11-00 runRomanTurnAugmenters', () => {
   it('fixed order (client_memory, then coach_method) whatever the registration order', async () => {
@@ -160,7 +165,10 @@ describe('R11-00 runRomanTurnAugmenters', () => {
     });
     const slow = aug(
       'coach_method',
-      () => new Promise((r) => setTimeout(() => r(block('coach_method', 'late')), 200)),
+      () =>
+        new Promise<RomanTurnAugment | null>((r) =>
+          setTimeout(() => r(block('coach_method', 'late')), 200),
+        ),
     );
     const run = await runRomanTurnAugmenters(
       [throwing, slow],
@@ -472,8 +480,8 @@ function fakeBudget(opts: { used?: number; available?: number; fails?: boolean }
 }
 function bg(db: ReturnType<typeof bgDb>, budget: ReturnType<typeof fakeBudget>['budget'] | null) {
   return new RomanBackgroundSpendService(
-    db.prisma as unknown as PrismaService,
-    budget as unknown as CoachAIBudgetService | null,
+    fakeOf<PrismaService>(db.prisma),
+    budget ? fakeOf<CoachAIBudgetService>(budget) : null,
   );
 }
 const memoryJob = {
