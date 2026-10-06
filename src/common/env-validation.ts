@@ -426,6 +426,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'GDPR_SCRUB_DRY_RUN',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     reason: 'Feature flag — when "true", the GDPR scrub worker only reports candidate rows and does not write deleted_at or PII zero-outs. Default is real scrub.',
   },
@@ -1815,6 +1817,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_GOOGLE_CALENDAR_SYNC',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     launch: 'optional-integration',
     default: 'unset → off (only "true" enables)',
@@ -1823,6 +1827,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'GOOGLE_CALENDAR_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     launch: 'optional-integration',
     default: 'unset → stub adapter (only "true" enables)',
@@ -1855,6 +1861,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'GOOGLE_MEET_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     launch: 'optional-integration',
     default: 'unset → stub adapter (only "true" enables)',
@@ -2208,6 +2216,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_SCOUT_INGEST',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → /api/scout routes 404 (only "true")',
     reason: 'Scout ingest routes (feature-flag-not-found middleware).',
@@ -2226,6 +2236,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_EXTENSION_PAIRING',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → /api/extension/pair 404 (only "true")',
     reason: 'Browser-extension pairing routes.',

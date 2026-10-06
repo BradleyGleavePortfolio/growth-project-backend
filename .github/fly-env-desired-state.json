@@ -44,7 +44,13 @@
     "FEATURE_ROMAN_CHAT_ENABLED": "true",
     "FEATURE_ROMAN_ADJUST_ENABLED": "true",
     "APPLE_AUDIENCES": "com.growthproject.app",
-    "APPLE_NONCE_REQUIRED": "unset"
+    "APPLE_NONCE_REQUIRED": "unset",
+    "GDPR_SCRUB_DRY_RUN": "false",
+    "FEATURE_GOOGLE_CALENDAR_SYNC": "unset",
+    "GOOGLE_CALENDAR_ENABLED": "unset",
+    "GOOGLE_MEET_ENABLED": "unset",
+    "FEATURE_SCOUT_INGEST": "unset",
+    "FEATURE_EXTENSION_PAIRING": "unset"
   },
   "secrets": {
     "GOOGLE_CLIENT_IDS": "github-secret",
@@ -138,7 +144,13 @@
     "WHOOP_CLIENT_ID": "Cloud wearables are not used in v1. Absent on Fly.",
     "WHOOP_CLIENT_SECRET": "Cloud wearables are not used in v1. Absent on Fly.",
     "WITHINGS_CLIENT_ID": "Cloud wearables are not used in v1. Absent on Fly.",
-    "WITHINGS_CLIENT_SECRET": "Cloud wearables are not used in v1. Absent on Fly."
+    "WITHINGS_CLIENT_SECRET": "Cloud wearables are not used in v1. Absent on Fly.",
+    "GDPR_SCRUB_DRY_RUN": "Day 1 (owner 10-06 10:48 \"we need to turn everything on thats a day 1 blocker\"), false: deleted accounts must really be scrubbed after the grace period. The scrub dry-runs on 'true' or '1' (src/users/gdpr-scrub.service.ts resolveDryRun); the Fly value differed from the 'true' digest but could be '1', so it is pinned to the explicit off value. Unset also means a real scrub; 'true' is the dry-run kill.",
+    "FEATURE_GOOGLE_CALENDAR_SYNC": "Optional integration, not a launch dependency (owner 2026-10-01; ledger: stay off). Fly held 'true' (digest equal to the 'true' digest on this app, agent 123 10-06) with placeholder Google OAuth values and no mobile button. Unset = off (only 'true'); unset removes the stale name.",
+    "GOOGLE_CALENDAR_ENABLED": "Optional integration, not a launch dependency (owner 2026-10-01; ledger: stay off). Fly held 'true' (digest read, agent 123 10-06); native scheduling is the product. Unset = stub adapter (only 'true' enables); unset removes the stale name.",
+    "GOOGLE_MEET_ENABLED": "Optional integration, not a launch dependency (owner 2026-10-01; ledger: stay off). Fly held 'true' (digest read, agent 123 10-06). Unset = stub adapter (only 'true' enables); unset removes the stale name.",
+    "FEATURE_SCOUT_INGEST": "Importer (Bucket B) is paused for launch (ledger: stay off). Fly held 'true' (digest read, agent 123 10-06), set earlier by fly-feature-flags-set.yml; it failed closed only because FEATURE_SCOUT_PILOT_COACH_IDS is absent. Now owned by this manifest. Unset = /api/scout routes 404 (only 'true').",
+    "FEATURE_EXTENSION_PAIRING": "Importer (Bucket B) is paused for launch (ledger: stay off). Fly held 'true' (digest read, agent 123 10-06), set earlier by fly-feature-flags-set.yml. Now owned by this manifest. Unset = /api/extension/pair 404 (only 'true')."
   },
   "excluded": {
     "FEATURE_COMMUNITY_API_ALLOWLIST": "A list of user ids, not a closed-choice switch; not needed at launch because FEATURE_COMMUNITY_API opens community for everyone.",
@@ -146,13 +158,8 @@
     "AI_GATEWAY_CAPABILITIES": "A capability allow-list, not a closed-choice switch; owned by the AI gateway lane.",
     "FEATURE_BANK_PAYOUTS_V2": "Ledger: money paths wait for S-FEE.",
     "FEATURE_STRIPE_TREASURY_PAYOUTS": "Ledger: money paths wait for S-FEE.",
-    "GOOGLE_CALENDAR_ENABLED": "Present on Fly with a value this lane cannot read; ledger: stays off. Adopt into flags only after an in-machine read confirms its value.",
-    "GOOGLE_MEET_ENABLED": "Present on Fly with a value this lane cannot read; ledger: stays off. Adopt into flags only after an in-machine read confirms its value.",
-    "FEATURE_GOOGLE_CALENDAR_SYNC": "Present on Fly with a value this lane cannot read; ledger: stays off. Adopt into flags only after an in-machine read confirms its value.",
     "ZOOM_ENABLED": "Present on Fly with a value this lane cannot read; ledger: stays off. Adopt into flags only after an in-machine read confirms its value.",
     "DIAGNOSTIC_AI_ENABLED": "Present on Fly with a value this lane cannot read; ledger: stays off until R2b. Adopt into flags only after an in-machine read confirms its value.",
-    "FEATURE_SCOUT_INGEST": "Importer (Bucket B) is paused; owned by fly-feature-flags-set.yml.",
-    "FEATURE_EXTENSION_PAIRING": "Importer (Bucket B) is paused; owned by fly-feature-flags-set.yml.",
     "LEADERBOARD_ENABLED": "Ledger: not in clinic scope until S-REACH decides."
   }
 }
