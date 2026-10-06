@@ -22,6 +22,7 @@ import { JwtAuthGuard } from '../../auth/auth.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { describeFailure } from '../../observability/log-pii';
 import { WearablesCloudConnectorsGuard } from '../cloud-connectors.feature';
 import { ConnectionsService } from './connections.service';
 import { ConnectProviderDto } from './dto/connect-provider.dto';
@@ -147,10 +148,7 @@ export class ConnectionsController {
     } catch (err) {
       // The service already logs a sanitized exchange failure; never echo the
       // error message (it can carry the code or tokens).
-      this.logger.warn({
-        msg: 'wearables.oauth.callback_rejected',
-        error_class: err instanceof Error ? err.constructor.name : typeof err,
-      });
+      this.logger.warn(`wearables.oauth.callback_rejected ${describeFailure(err)}`);
       res.redirect(HttpStatus.FOUND, wearablesAppReturnUrl('error'));
     }
   }
