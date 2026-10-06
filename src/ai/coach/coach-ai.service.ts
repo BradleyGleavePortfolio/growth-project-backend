@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -19,6 +20,12 @@ import { ClientContext } from '../context/client-context.types';
 import { MealPlansService } from '../../meal-plans/meal-plans.service';
 import { WorkoutBuilderService } from '../../workout-builder/workout-builder.service';
 import { WorkoutType } from '../../workout-builder/workout-builder.dto';
+import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
+import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
+import {
+  COACH_AI_BUDGET_EXHAUSTED_CODE,
+  COACH_AI_METERED_CAPABILITIES,
+} from '../../ai-credits/ai-credits.constants';
 
 // Coach AI v1 — orchestration service.
 //
@@ -27,8 +34,11 @@ import { WorkoutType } from '../../workout-builder/workout-builder.dto';
 //   2. Asserts coach owns the client (else 404 — same opacity convention
 //      as the rest of /coach/* in this codebase).
 //   3. Builds a snapshot via ClientContextService.build().
-//   4. Calls AnthropicAdapter.completeStructured with the right prompt.
-//   5. Writes an AIDraft row in DRAFT status.
+//   4. Refuses with 402 COACH_AI_BUDGET_EXHAUSTED when the coach AI pool
+//      (head coach's pool for a sub-coach) is used up (B-AIB1-125).
+//   5. Calls AnthropicAdapter.completeStructured with the right prompt and
+//      debits the call's cost from the pool.
+//   6. Writes an AIDraft row in DRAFT status.
 //
 // Approval flow materializes downstream rows: WORKOUT_PROGRAM -> a
 // WorkoutPlan + WorkoutPlanExercise[]; MEAL_PLAN -> MealPlan; INSIGHT ->
@@ -46,7 +56,68 @@ export class CoachAIService {
     private readonly ctxSvc: ClientContextService,
     private readonly mealPlans: MealPlansService,
     private readonly workouts: WorkoutBuilderService,
+    // B-AIB1-125 — coach AI credit pool. @Optional() so unit tests that build
+    // the service without it keep compiling; AiCreditsModule is @Global, so
+    // production DI always provides it.
+    @Optional() private readonly budget?: CoachAIBudgetService,
   ) {}
+
+  /**
+   * B-AIB1-125 — the same pre-call gate AiGatewayService.invoke runs: refuse
+   * when the pool is already at or over its ceiling (402 with the structured
+   * body the mobile hard-pause modal reads). Returns the pool owner id to
+   * debit after the call, or null when the capability is not metered.
+   */
+  private async assertBudget(coachId: string, capability: string): Promise<string | null> {
+    if (!this.budget || !COACH_AI_METERED_CAPABILITIES.has(capability)) return null;
+    const budgetCoachId = await this.budget.resolveHeadCoachId(coachId);
+    const pre = await this.budget.canCharge(budgetCoachId, 0);
+    if (pre.budget.actual_used_cents < pre.budget.total_actual_available_cents) {
+      return budgetCoachId;
+    }
+    const dto = await this.budget.getBudgetDto(budgetCoachId);
+    throw new CoachAiBudgetExhaustedException({
+      code: COACH_AI_BUDGET_EXHAUSTED_CODE,
+      message: 'AI budget exhausted — top up to continue',
+      pack_options_cents: dto.pack_options_cents,
+      custom_pack_bounds_cents: dto.custom_pack_bounds_cents,
+      budget: {
+        period_end: dto.period_end,
+        base_displayed_cents: dto.base_displayed_cents,
+        pack_displayed_cents: dto.pack_displayed_cents,
+        used_displayed_cents: dto.used_displayed_cents,
+        remaining_displayed_cents: dto.remaining_displayed_cents,
+      },
+    });
+  }
+
+  /**
+   * B-AIB1-125 — debit the provider call's actual cost (the adapter's own
+   * token pricing). The call already happened, so a failed write is logged,
+   * never thrown at the coach (same posture as the gateway).
+   */
+  private async recordSpend(
+    budgetCoachId: string | null,
+    capability: string,
+    clientId: string,
+    tokensIn: number,
+    tokensOut: number,
+  ): Promise<void> {
+    if (!this.budget || !budgetCoachId) return;
+    const actualCostCents = AnthropicAdapter.computeCostCents(tokensIn, tokensOut);
+    try {
+      await this.budget.recordUsage({
+        coachId: budgetCoachId,
+        actualCostCents,
+        capability,
+        contextId: clientId,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Budget recordUsage failed for capability=${capability}: ${(err as Error).message}`,
+      );
+    }
+  }
 
   private assertReady(): void {
     if (!this.state.isReady()) {
@@ -80,6 +151,7 @@ export class CoachAIService {
   ): Promise<{ draftId: string; payload: WorkoutProgramPayload }> {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
+    const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.WORKOUT_PROGRAM);
     const ctx = await this.ctxSvc.build(input.clientId);
     const prompt = WorkoutProgramPrompt;
     const result = await this.anthropic.completeStructured<WorkoutProgramPayload>(
@@ -104,6 +176,13 @@ export class CoachAIService {
         maxTokens: 4096,
       },
     );
+    await this.recordSpend(
+      budgetCoachId,
+      COACH_AI_CAPABILITIES.WORKOUT_PROGRAM,
+      input.clientId,
+      result.tokensIn,
+      result.tokensOut,
+    );
     const draft = await this.persistDraft(
       coachId,
       input.clientId,
@@ -124,6 +203,7 @@ export class CoachAIService {
   ): Promise<{ draftId: string; payload: MealPlanPayload }> {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
+    const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.MEAL_PLAN);
     const ctx = await this.ctxSvc.build(input.clientId);
     const prompt = MealPlanPrompt;
     const result = await this.anthropic.completeStructured<MealPlanPayload>(
@@ -142,6 +222,13 @@ export class CoachAIService {
         surface: 'coach_ai.meal_plan',
         maxTokens: 4096,
       },
+    );
+    await this.recordSpend(
+      budgetCoachId,
+      COACH_AI_CAPABILITIES.MEAL_PLAN,
+      input.clientId,
+      result.tokensIn,
+      result.tokensOut,
     );
     // Soft check (warn-only at draft time): each day's totals should be
     // within ±10% of prescribed.calories / prescribed.protein_g. The
@@ -168,6 +255,7 @@ export class CoachAIService {
   ): Promise<{ draftId: string; payload: ClientInsightPayload }> {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
+    const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.INSIGHT);
     const ctx = await this.ctxSvc.build(input.clientId);
     const prompt = ClientInsightPrompt;
     const result = await this.anthropic.completeStructured<ClientInsightPayload>(
@@ -186,6 +274,13 @@ export class CoachAIService {
         surface: 'coach_ai.insight',
         maxTokens: 1024,
       },
+    );
+    await this.recordSpend(
+      budgetCoachId,
+      COACH_AI_CAPABILITIES.INSIGHT,
+      input.clientId,
+      result.tokensIn,
+      result.tokensOut,
     );
     const draft = await this.persistDraft(
       coachId,
