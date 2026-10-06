@@ -296,6 +296,34 @@ describe('data export archive inventory (C-636-2)', () => {
     ]);
     expect(events.every((e) => e.user_id === U)).toBe(true);
   });
+
+  it('exports the custom foods the user created, oldest first, never a catalog food or another person food (UX-FOOD-PRIV-124)', async () => {
+    const custom = (id: string, name: string, owner: string | null, n: number) => ({
+      id,
+      name,
+      created_by_user_id: owner,
+      serving_description: '1 portion',
+      nutrient_basis: 'PER_SERVING',
+      calories: 520,
+      barcode: null,
+      created_at: t(n),
+    });
+    const archive = await build({
+      foodItem: [
+        custom('f2', "Grandma Rosa's lasagne", U, 2),
+        custom('f1', 'Protein pancakes', U, 1),
+        custom('f-other', 'Someone else stew', OTHER, 0),
+        custom('f-catalog', 'Lasagne', null, 0),
+      ],
+    });
+    const foods = stub<Row[]>(archive.custom_foods);
+    expect(foods.map((f) => f.id)).toEqual(['f1', 'f2']);
+    expect(foods[1]).toMatchObject({ name: "Grandma Rosa's lasagne", calories: 520, nutrient_basis: 'PER_SERVING' });
+    expect(foods[1]).not.toHaveProperty('created_by_user_id');
+    const text = JSON.stringify(archive);
+    expect(text).not.toContain('Someone else stew');
+    expect(text).not.toContain('f-catalog');
+  });
 });
 
 // F-EXPORT-TIE: the archive pages through every table 500 rows at a time.

@@ -128,6 +128,13 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'UserPreferences', field: 'user_id', action: del },
   { model: 'NotificationPreferences', field: 'user_id', action: del },
   { model: 'LoggedFoodEntry', field: 'user_id', action: del },
+  // UX-FOOD-PRIV-124: the user's custom foods are private to them, so they go
+  // with the account; left in place (or detached) they would be served as
+  // shared catalog rows. Only the creator can log one, and
+  // LoggedFoodEntry.food_item_id is ON DELETE RESTRICT, so any entry pointing
+  // at one goes first.
+  { model: 'LoggedFoodEntry', field: 'food_item.created_by_user_id', action: del },
+  { model: 'FoodItem', field: 'created_by_user_id', action: del },
   // ExerciseSet and HabitLog hold ON DELETE RESTRICT FKs to their parents
   // (baseline migration), so the children go first (A-608-3).
   // test/account-deletion/manifest-fk-order.spec.ts derives every FK from

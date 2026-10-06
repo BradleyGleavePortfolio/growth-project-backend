@@ -22,7 +22,8 @@ export class LogService {
   async logFood(userId: string, data: LogFoodDto) {
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
-    const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id);
+    // Another person's custom food resolves as not found (UX-FOOD-PRIV-124).
+    const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id, userId);
     const entryData = {
       user_id: userId,
       date: new Date(data.date),

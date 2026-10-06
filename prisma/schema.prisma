@@ -206,6 +206,7 @@ model User {
   coach_code_redemptions         CoachCodeRedemption[]    @relation("CoachCodeRedemptionUser")
   coachless_prompt_state         CoachlessPromptState?    @relation("CoachlessPromptStateUser")
   logged_entries                 LoggedFoodEntry[]
+  custom_foods                   FoodItem[]               @relation("FoodItemCreator")
   workouts                       WorkoutSession[]
   fasting_windows                FastingWindow[]
   weight_logs                    WeightLog[]
@@ -950,6 +951,13 @@ model FoodItem {
   nutrient_basis      NutrientBasis     @default(PER_100G)
   created_at          DateTime          @default(now())
   log_entries         LoggedFoodEntry[]
+  // UX-FOOD-PRIV-124: the person who typed this food in (POST /foods only).
+  // A custom food is private to its creator; null is the shared catalog
+  // (seeded, USDA and OpenFoodFacts imports, rows created before 20270403).
+  created_by_user_id  String?
+  created_by          User?             @relation("FoodItemCreator", fields: [created_by_user_id], references: [id], onDelete: Cascade)
+
+  @@index([created_by_user_id])
 }
 
 model LoggedFoodEntry {

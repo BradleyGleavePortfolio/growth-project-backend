@@ -37,7 +37,7 @@ describe('food logging contract — ordinary client portions', () => {
 
   it('persists the declared per-portion basis instead of relabelling it per 100g', async () => {
     const { service, foodItem } = setup();
-    await service.create({ ...customFood, category: 'generic', nutrient_basis: 'PER_SERVING' });
+    await service.create({ ...customFood, category: 'generic', nutrient_basis: 'PER_SERVING' }, 'user-a');
     expect(foodItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         calories: 400,
@@ -50,7 +50,7 @@ describe('food logging contract — ordinary client portions', () => {
   it('keeps the existing per-100g default when a basis is not supplied', async () => {
     const { service, foodItem } = setup();
     const { nutrient_basis: _basis, ...payload } = customFood;
-    await service.create({ ...payload, category: 'generic' });
+    await service.create({ ...payload, category: 'generic' }, 'user-a');
     expect(foodItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ nutrient_basis: 'PER_100G' }),
     });
@@ -70,7 +70,7 @@ describe('food logging contract — ordinary client portions', () => {
       id: 'milk', name: 'Milk', category: 'generic', serving_description: '100g',
       serving_size_grams: 100, calories: 61, protein_g: 3.2, carbs_g: 4.8, fat_g: 3.3,
     });
-    expect(await service.getById('milk')).toEqual(expect.objectContaining({
+    expect(await service.getById('milk', 'user-a')).toEqual(expect.objectContaining({
       supports_volume_units: true, cup_grams: 240, tbsp_grams: 15, tsp_grams: 5,
     }));
   });
@@ -81,7 +81,7 @@ describe('food logging contract — ordinary client portions', () => {
       id: 'food', name: 'Food', category: 'unrecognised', serving_description: '100g',
       serving_size_grams: 100, calories: 100, protein_g: 10, carbs_g: 10, fat_g: 2,
     });
-    expect(await service.getById('food')).toEqual(expect.objectContaining({
+    expect(await service.getById('food', 'user-a')).toEqual(expect.objectContaining({
       supports_volume_units: false, cup_grams: undefined,
     }));
   });
@@ -118,7 +118,7 @@ describe('USDA search-to-log detail import', () => {
         ],
       }),
     } as Response);
-    await service.resolveOrImportId('usda_168872');
+    await service.resolveOrImportId('usda_168872', 'user-a');
     expect(foodItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ calories: 379, protein_g: 13, carbs_g: 67.7, fat_g: 6.5 }),
     });
@@ -153,7 +153,7 @@ describe('USDA search-to-log detail import', () => {
         ],
       }),
     } as Response);
-    await service.resolveOrImportId('usda_2261421');
+    await service.resolveOrImportId('usda_2261421', 'user-a');
     expect(foodItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ calories: 389, protein_g: 13 }),
     });
@@ -172,7 +172,7 @@ describe('USDA search-to-log detail import', () => {
         ],
       }),
     } as Response);
-    await expect(service.resolveOrImportId('usda_2261421')).resolves.toBe('created-food');
+    await expect(service.resolveOrImportId('usda_2261421', 'user-a')).resolves.toBe('created-food');
     expect(foodItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ calories: 389, protein_g: 13 }),
     });
@@ -192,7 +192,7 @@ describe('USDA search-to-log detail import', () => {
         ],
       }),
     } as Response);
-    await service.resolveOrImportId('usda_456');
+    await service.resolveOrImportId('usda_456', 'user-a');
     expect(foodItem.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ calories: 130, protein_g: 2.7, carbs_g: 28, fat_g: 0.3 }),
     });
