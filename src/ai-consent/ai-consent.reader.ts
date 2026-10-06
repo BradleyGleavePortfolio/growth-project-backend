@@ -11,18 +11,28 @@
  *   - `false` means do not send. It is returned for: no decision on record,
  *     latest decision is a withdraw, a grant of an older copy version or sha256,
  *     ledger flag off, or a read failure (fail closed).
+ *   - `scope` (client-ai-v5): 'base' (default, every existing AI path) is a
+ *     live grant of client-ai-v4 or client-ai-v5 with its exact sha256;
+ *     'memory' (Roman v1.1 notes, summaries, coach-method learning) is a live
+ *     client-ai-v5 grant only. A withdrawal ends both.
  *
  * Inject with `@Inject(CLIENT_AI_CONSENT_READER)`; AiConsentModule exports it.
  */
+import type { ClientAiConsentScope } from './ai-consent.constants';
+
 export const CLIENT_AI_CONSENT_READER = Symbol('CLIENT_AI_CONSENT_READER');
 
 export interface ClientAiConsentReader {
-  /** True only for a live grant of the CURRENT copy (version + sha256). Never throws. */
-  hasClientAiConsent(userId: string): Promise<boolean>;
+  /** True only for a live grant that covers `scope` (default 'base'). Never throws. */
+  hasClientAiConsent(userId: string, scope?: ClientAiConsentScope): Promise<boolean>;
   /**
-   * Batch form: the subset of `userIds` holding a live grant of the current
-   * copy. At most AI_CONSENT_BATCH_MAX ids per call (RangeError above that).
-   * Never throws for read failures (returns an empty set).
+   * Batch form: the subset of `userIds` holding a live grant that covers
+   * `scope` (default 'base'). At most AI_CONSENT_BATCH_MAX ids per call
+   * (RangeError above that). Never throws for read failures (returns an
+   * empty set).
    */
-  clientsWithAiConsent(userIds: readonly string[]): Promise<ReadonlySet<string>>;
+  clientsWithAiConsent(
+    userIds: readonly string[],
+    scope?: ClientAiConsentScope,
+  ): Promise<ReadonlySet<string>>;
 }

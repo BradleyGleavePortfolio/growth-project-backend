@@ -9,6 +9,8 @@
  *      R2a ledger (CLIENT_AI_CONSENT_READER) immediately before the request.
  *      Nothing is cached here, so a withdrawal stops the very next request,
  *      including retries and JSON repair passes (each one calls send again);
+ *      A subject with scope 'memory' (Roman v1.1) needs a live client-ai-v5
+ *      grant for every listed client; a v4 grant covers 'base' only;
  *   3. fails closed: no grant, an older copy, ledger flag off, a ledger read
  *      error, an unexpected throw, a client subject with no ids, or client
  *      data aimed at a processor other than Anthropic all refuse the send;
@@ -43,6 +45,7 @@ import {
   isAiEgressRefusal,
 } from './ai-consent-required.exception';
 import {
+  AiConsentScope,
   AiDataSubject,
   AiEgressSurface,
   AiProcessor,
@@ -197,11 +200,12 @@ export class AiEgressService {
       );
       throw new AiEgressPolicyException();
     }
-    const granted = await this.consentedClients(ids);
+    const scope = subject.scope === 'memory' ? 'memory' : 'base';
+    const granted = await this.consentedClients(ids, scope);
     const missing = ids.filter((id) => !granted.has(id)).length;
     if (missing > 0) {
       this.logger.log(
-        `ai_egress.refused surface=${surface} reason=no_live_grant clients=${ids.length} missing=${missing}`,
+        `ai_egress.refused surface=${surface} reason=no_live_grant scope=${scope} clients=${ids.length} missing=${missing}`,
       );
       throw new AiConsentRequiredException(subject.audience);
     }
@@ -212,19 +216,23 @@ export class AiEgressService {
    * sites that build one prompt from several clients (coach brief, community
    * triage): drop everyone else BEFORE the prompt is built, then send with
    * the kept ids so the grant is re-read at send time. Fails closed: any
-   * error yields an empty set. Never cached.
+   * error yields an empty set. Never cached. `scope` 'memory' keeps only
+   * live client-ai-v5 holders (Roman v1.1); the default 'base' is unchanged.
    */
-  async consentedClients(clientIds: readonly string[]): Promise<ReadonlySet<string>> {
+  async consentedClients(
+    clientIds: readonly string[],
+    scope: AiConsentScope = 'base',
+  ): Promise<ReadonlySet<string>> {
     const unique = [...new Set(clientIds.filter((id) => typeof id === 'string' && id.length > 0))];
     const out = new Set<string>();
     try {
       for (let i = 0; i < unique.length; i += AI_CONSENT_BATCH_MAX) {
         const chunk = unique.slice(i, i + AI_CONSENT_BATCH_MAX);
         if (chunk.length === 1) {
-          if ((await this.consent.hasClientAiConsent(chunk[0])) === true) out.add(chunk[0]);
+          if ((await this.consent.hasClientAiConsent(chunk[0], scope)) === true) out.add(chunk[0]);
           continue;
         }
-        const granted = await this.consent.clientsWithAiConsent(chunk);
+        const granted = await this.consent.clientsWithAiConsent(chunk, scope);
         for (const id of chunk) if (granted.has(id)) out.add(id);
       }
     } catch {

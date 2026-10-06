@@ -180,7 +180,7 @@ describe('AiConsentService (R2a ledger)', () => {
     it.each([
       ['an older version', { version: 'client-ai-v2' }],
       ['the superseded 180-day version', { version: 'client-ai-v3' }],
-      ['an unknown version', { version: 'client-ai-v5' }],
+      ['an unknown version', { version: 'client-ai-v6' }],
       ['a different copy sha256', { version: 'client-ai-v4', copy_sha256: 'a'.repeat(64) }],
     ])('409 CONSENT_VERSION_MISMATCH for %s, nothing written', async (_label, dto) => {
       await expect(service.grant('u_a', dto)).rejects.toMatchObject({

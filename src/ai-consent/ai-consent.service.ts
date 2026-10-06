@@ -4,8 +4,16 @@
  *   getStatus(userId)            -> what GET /me/ai-consent returns
  *   grant(userId, dto, meta)     -> append a 'grant' row (idempotent)
  *   withdraw(userId, meta)       -> append a 'withdraw' row (idempotent)
- *   hasClientAiConsent(userId)   -> ClientAiConsentReader (for R2b / AI paths)
- *   clientsWithAiConsent(ids)    -> ClientAiConsentReader batch form
+ *   hasClientAiConsent(userId, scope?) -> ClientAiConsentReader (for R2b / AI paths)
+ *   clientsWithAiConsent(ids, scope?)  -> ClientAiConsentReader batch form
+ *
+ * Accepted copies (client-ai-v5): a grant counts only for an accepted version
+ * with that version's exact sha256 (CLIENT_AI_CONSENT_ACCEPTED). v4 gives the
+ * 'base' scope (every day-1 AI path), v5 gives 'base' + 'memory' (Roman v1.1).
+ * POST accepts v4 (the 10-07 app build) and v5. GET offers the v4 copy to
+ * everyone without a live v5 grant, so the 10-07 contract is unchanged, and
+ * adds `scope` plus, for a v4 holder, `upgrade` (the v5 copy, one optional
+ * tap). A withdrawal ends both scopes.
  *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
@@ -44,8 +52,14 @@ import {
   CLIENT_AI_CONSENT_PARAGRAPH_SHA256,
   CLIENT_AI_CONSENT_PROCESSOR,
   CLIENT_AI_CONSENT_PURPOSE,
+  CLIENT_AI_CONSENT_V5_COPY_SHA256,
+  CLIENT_AI_CONSENT_V5_PARAGRAPH,
+  CLIENT_AI_CONSENT_V5_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V5_VERSION,
   CLIENT_AI_CONSENT_VERSION,
+  acceptedClientAiConsent,
   isAiConsentLedgerEnabled,
+  type ClientAiConsentScope,
 } from './ai-consent.constants';
 import type { GrantClientAiConsentDto } from './ai-consent.dto';
 import type { ClientAiConsentReader } from './ai-consent.reader';
@@ -85,7 +99,15 @@ export interface ClientAiConsentStatus {
   current_version: string;
   /** True when the latest decision is a grant of an older copy. */
   needs_reconsent: boolean;
+  /**
+   * The copy on offer: the v5 copy for a live v5 holder, otherwise the v4
+   * copy (the 10-07 build pins v4). `current_version` is its version.
+   */
   copy: ClientAiConsentCopy;
+  /** What the live grant covers; null when there is no live grant. */
+  scope: ClientAiConsentScope | null;
+  /** For a live v4 (base-only) holder: the v5 copy that adds 'memory'. Otherwise null. */
+  upgrade: ClientAiConsentCopy | null;
 }
 
 export interface AiConsentRequestMeta {
@@ -94,16 +116,29 @@ export interface AiConsentRequestMeta {
   locale?: string | null;
 }
 
-/** Pure: is this latest row a live grant of the current copy? */
-export function isCurrentGrant(row: AiConsentLatestRow | null): boolean {
-  return (
-    row !== null &&
-    row.action === AI_CONSENT_ACTION_GRANT &&
-    row.consent_version === CLIENT_AI_CONSENT_VERSION &&
-    row.copy_sha256 === CLIENT_AI_CONSENT_COPY_SHA256
-  );
+/** Pure: the scope a latest row gives, or null when it is not a live accepted grant. */
+export function grantScope(row: AiConsentLatestRow | null): ClientAiConsentScope | null {
+  if (row === null || row.action !== AI_CONSENT_ACTION_GRANT) return null;
+  const accepted = acceptedClientAiConsent(row.consent_version);
+  return accepted !== null && row.copy_sha256 === accepted.copy_sha256 ? accepted.scope : null;
 }
 
+/** Pure: a live grant of client-ai-v4 or client-ai-v5 with its exact sha256. */
+export function isBaseGrant(row: AiConsentLatestRow | null): boolean {
+  return grantScope(row) !== null;
+}
+
+/** Pure: a live grant of client-ai-v5 with its exact sha256 (Roman v1.1 memory). */
+export function isMemoryGrant(row: AiConsentLatestRow | null): boolean {
+  return grantScope(row) === 'memory';
+}
+
+/** Pure: does this latest row cover `scope`? */
+export function coversScope(row: AiConsentLatestRow | null, scope: ClientAiConsentScope): boolean {
+  return scope === 'memory' ? isMemoryGrant(row) : isBaseGrant(row);
+}
+
+/** The v4 copy: offered to everyone without a live v5 grant. */
 export function clientAiConsentCopy(): ClientAiConsentCopy {
   return {
     version: CLIENT_AI_CONSENT_VERSION,
@@ -111,6 +146,20 @@ export function clientAiConsentCopy(): ClientAiConsentCopy {
     paragraph: { text: CLIENT_AI_CONSENT_PARAGRAPH, sha256: CLIENT_AI_CONSENT_PARAGRAPH_SHA256 },
     box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
     sha256: CLIENT_AI_CONSENT_COPY_SHA256,
+  };
+}
+
+/** The v5 copy (memory scope). */
+export function clientAiConsentV5Copy(): ClientAiConsentCopy {
+  return {
+    version: CLIENT_AI_CONSENT_V5_VERSION,
+    processor: CLIENT_AI_CONSENT_PROCESSOR,
+    paragraph: {
+      text: CLIENT_AI_CONSENT_V5_PARAGRAPH,
+      sha256: CLIENT_AI_CONSENT_V5_PARAGRAPH_SHA256,
+    },
+    box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
+    sha256: CLIENT_AI_CONSENT_V5_COPY_SHA256,
   };
 }
 
@@ -181,7 +230,9 @@ export class AiConsentService implements ClientAiConsentReader {
   }
 
   private toStatus(row: AiConsentLatestRow | null): ClientAiConsentStatus {
-    const granted = isCurrentGrant(row);
+    const scope = grantScope(row);
+    const granted = scope !== null;
+    const copy = scope === 'memory' ? clientAiConsentV5Copy() : clientAiConsentCopy();
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
     const isWithdraw = row?.action === AI_CONSENT_ACTION_WITHDRAW;
     let state: ClientAiConsentState = 'not_granted';
@@ -196,9 +247,11 @@ export class AiConsentService implements ClientAiConsentReader {
       version: row?.consent_version ?? null,
       granted_at: isGrant && row ? row.created_at.toISOString() : null,
       withdrawn_at: isWithdraw && row ? row.created_at.toISOString() : null,
-      current_version: CLIENT_AI_CONSENT_VERSION,
+      current_version: copy.version,
       needs_reconsent: isGrant && !granted,
-      copy: clientAiConsentCopy(),
+      copy,
+      scope,
+      upgrade: scope === 'base' ? clientAiConsentV5Copy() : null,
     };
   }
 
@@ -209,9 +262,10 @@ export class AiConsentService implements ClientAiConsentReader {
 
   /**
    * Record box 2 as allowed. 409 CONSENT_VERSION_MISMATCH (nothing written)
-   * unless the client displayed the current version (and, when sent, the
-   * current sha256). Idempotent: when the latest decision is already a grant
-   * of the current copy, nothing is written and the current status returns.
+   * unless the client displayed an accepted version (client-ai-v4 or
+   * client-ai-v5) and, when sent, that version's sha256. Idempotent: when the
+   * latest decision is already a live grant of the same version, nothing is
+   * written and the current status returns.
    */
   async grant(
     userId: string,
@@ -224,10 +278,12 @@ export class AiConsentService implements ClientAiConsentReader {
     if (dto.copy_sha256 !== undefined && typeof dto.copy_sha256 !== 'string') {
       throw new BadRequestException('copy_sha256 must be a 64-character hex string');
     }
+    const accepted = acceptedClientAiConsent(dto.version);
     const shaMismatch =
+      accepted !== null &&
       dto.copy_sha256 !== undefined &&
-      dto.copy_sha256.toLowerCase() !== CLIENT_AI_CONSENT_COPY_SHA256;
-    if (dto.version !== CLIENT_AI_CONSENT_VERSION || shaMismatch) {
+      dto.copy_sha256.toLowerCase() !== accepted.copy_sha256;
+    if (accepted === null || shaMismatch) {
       throw new ConflictException({
         code: AI_CONSENT_ERROR_VERSION_MISMATCH,
         current_version: CLIENT_AI_CONSENT_VERSION,
@@ -235,11 +291,16 @@ export class AiConsentService implements ClientAiConsentReader {
         message: 'The wording has changed. Please review the current version.',
       });
     }
-    return this.append(userId, AI_CONSENT_ACTION_GRANT, {
-      platform: dto.platform ?? meta.platform ?? null,
-      app_version: dto.app_version ?? meta.app_version ?? null,
-      locale: dto.locale ?? meta.locale ?? null,
-    });
+    return this.append(
+      userId,
+      AI_CONSENT_ACTION_GRANT,
+      {
+        platform: dto.platform ?? meta.platform ?? null,
+        app_version: dto.app_version ?? meta.app_version ?? null,
+        locale: dto.locale ?? meta.locale ?? null,
+      },
+      { version: dto.version, copy_sha256: accepted.copy_sha256 },
+    );
   }
 
   /**
@@ -259,12 +320,22 @@ export class AiConsentService implements ClientAiConsentReader {
     userId: string,
     action: typeof AI_CONSENT_ACTION_GRANT | typeof AI_CONSENT_ACTION_WITHDRAW,
     meta: { platform: string | null; app_version: string | null; locale: string | null },
+    /** The accepted copy a grant records (the v4 copy when omitted). */
+    grantCopy: { version: string; copy_sha256: string } = {
+      version: CLIENT_AI_CONSENT_VERSION,
+      copy_sha256: CLIENT_AI_CONSENT_COPY_SHA256,
+    },
   ): Promise<ClientAiConsentStatus> {
     for (let attempt = 1; attempt <= AI_CONSENT_WRITE_ATTEMPTS; attempt += 1) {
       // Re-read on every attempt (a P2002 means another writer won); a failed
       // read is 503 like a failed write.
       const row = await this.latestOr503(userId, action);
-      if (action === AI_CONSENT_ACTION_GRANT && isCurrentGrant(row)) {
+      if (
+        action === AI_CONSENT_ACTION_GRANT &&
+        row !== null &&
+        isBaseGrant(row) &&
+        row.consent_version === grantCopy.version
+      ) {
         return this.toStatus(row);
       }
       if (
@@ -273,14 +344,12 @@ export class AiConsentService implements ClientAiConsentReader {
       ) {
         return this.toStatus(row);
       }
-      // A withdraw refers to the grant it ends; a grant to the current copy.
+      // A withdraw refers to the grant it ends; a grant to the copy it accepts.
       const consent_version =
-        action === AI_CONSENT_ACTION_GRANT || row === null
-          ? CLIENT_AI_CONSENT_VERSION
-          : row.consent_version;
+        action === AI_CONSENT_ACTION_GRANT || row === null ? grantCopy.version : row.consent_version;
       const copy_sha256 =
         action === AI_CONSENT_ACTION_GRANT || row === null
-          ? CLIENT_AI_CONSENT_COPY_SHA256
+          ? grantCopy.copy_sha256
           : row.copy_sha256;
       try {
         const created = await this.prisma.aiProcessingConsentEvent.create({
@@ -323,18 +392,21 @@ export class AiConsentService implements ClientAiConsentReader {
   // ClientAiConsentReader — the narrow interface for R2b and every AI path.
   // ---------------------------------------------------------------------------
 
-  async hasClientAiConsent(userId: string): Promise<boolean> {
+  async hasClientAiConsent(userId: string, scope: ClientAiConsentScope = 'base'): Promise<boolean> {
     if (!isAiConsentLedgerEnabled()) return false;
     if (typeof userId !== 'string' || userId.length === 0) return false;
     try {
-      return isCurrentGrant(await this.latest(userId));
+      return coversScope(await this.latest(userId), scope);
     } catch (err) {
       this.logger.warn(`ai_consent.read_failed code=${prismaErrorCode(err)}`);
       return false;
     }
   }
 
-  async clientsWithAiConsent(userIds: readonly string[]): Promise<ReadonlySet<string>> {
+  async clientsWithAiConsent(
+    userIds: readonly string[],
+    scope: ClientAiConsentScope = 'base',
+  ): Promise<ReadonlySet<string>> {
     const unique = [...new Set(userIds.filter((id) => typeof id === 'string' && id.length > 0))];
     if (unique.length > AI_CONSENT_BATCH_MAX) {
       throw new RangeError(`clientsWithAiConsent accepts at most ${AI_CONSENT_BATCH_MAX} ids`);
@@ -356,7 +428,7 @@ export class AiConsentService implements ClientAiConsentReader {
         if (!prev || row.seq > prev.seq) latestByUser.set(row.user_id, row);
       }
       const out = new Set<string>();
-      for (const [id, row] of latestByUser) if (isCurrentGrant(row)) out.add(id);
+      for (const [id, row] of latestByUser) if (coversScope(row, scope)) out.add(id);
       return out;
     } catch (err) {
       this.logger.warn(`ai_consent.batch_read_failed code=${prismaErrorCode(err)}`);

@@ -41,8 +41,9 @@ written, so those answers are never stored. `P0: null` (withdrawal) is `400
 invalid_answers`.
 
 **The server stores what was shown.** A P0 counts as consent only when BOTH
-hold: `copy_version` is an accepted version (default `consult-consent-v3`,
-the only version the server knows), AND `text_sha256` is the sha256 (UTF-8,
+hold: `copy_version` is an accepted version (default `consult-consent-v3` and
+`consult-consent-v4`, the versions the server knows; v4 is the same screen with
+paragraph 4 = the ledger's `client-ai-v5` paragraph), AND `text_sha256` is the sha256 (UTF-8,
 lowercase hex) of that version's exact screen text. The text lives in
 `src/onboarding/consult-consent-copy.ts`: title, paragraphs 1-3, box 1 label,
 paragraph 4, box 2 label and footer joined with `"\n\n"`, byte-identical to
