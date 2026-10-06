@@ -4,7 +4,7 @@
 // 2. 403 when the InviteCode belongs to a different coach (IDOR guard).
 // 3. Empty array when used_count === 0 (no fake data).
 // 4. Happy path: returns user_id/name/email/redeemed_at/last_active_at
-//    for users whose created_at falls in the invite window, capped at used_count.
+//    for the code's InviteRedemption ledger rows (AUDIT-17-125).
 
 import 'reflect-metadata';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
@@ -12,6 +12,7 @@ import { InviteCodesService } from '../src/invite-codes/invite-codes.service';
 
 interface MockPrisma {
   inviteCode: { findUnique: jest.Mock };
+  inviteRedemption: { findMany: jest.Mock };
   user: { findMany: jest.Mock };
   workoutSession: { findMany: jest.Mock };
   loggedFoodEntry: { findMany: jest.Mock };
@@ -21,6 +22,7 @@ interface MockPrisma {
 function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
   return {
     inviteCode: { findUnique: jest.fn(async () => null) },
+    inviteRedemption: { findMany: jest.fn(async () => []) },
     user: { findMany: jest.fn(async () => []) },
     workoutSession: { findMany: jest.fn(async () => []) },
     loggedFoodEntry: { findMany: jest.fn(async () => []) },
@@ -92,7 +94,7 @@ describe('InviteCodesService.listRedeemersForCoach', () => {
     expect(out).toEqual([]);
   });
 
-  it('returns redeemer rows capped at used_count, sorted by created_at ASC', async () => {
+  it('returns the ledger redeemer rows, sorted by redeemed_at ASC', async () => {
     const createdAt = new Date('2026-04-01T00:00:00Z');
     const expiresAt = new Date('2026-04-30T00:00:00Z');
     const prisma = buildPrisma({
@@ -104,6 +106,13 @@ describe('InviteCodesService.listRedeemersForCoach', () => {
           expires_at: expiresAt,
           used_count: 2,
         })),
+      },
+      // AUDIT-17-125: redeemers come from the InviteRedemption ledger.
+      inviteRedemption: {
+        findMany: jest.fn(async () => [
+          { client_user_id: 'u-1', redeemed_at: new Date('2026-04-05T00:00:00Z') },
+          { client_user_id: 'u-2', redeemed_at: new Date('2026-04-10T00:00:00Z') },
+        ]),
       },
       user: {
         findMany: jest.fn(async () => [
