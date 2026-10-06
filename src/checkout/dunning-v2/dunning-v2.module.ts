@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { AnalyticsModule } from '../../analytics/analytics.module';
+import { ConnectModule } from '../../connect/connect.module';
 import { EmailModule } from '../../email/email.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { VoiceModule } from '../../roman/voice/voice.module';
 import { DunningEscalationClassifier } from './dunning-escalation.classifier';
 import { DunningLockoutGuard } from './dunning-lockout.guard';
 import { DunningLockoutScheduler } from './dunning-lockout.scheduler';
+import { DunningRestartController } from './dunning-restart.controller';
+import { DunningStatusController } from './dunning-status.controller';
 import { DunningV2Dispatcher } from './dunning-v2.dispatcher';
 import { DunningV2Renderer } from './dunning-v2.renderer';
 import { DunningV2Service } from './dunning-v2.service';
@@ -29,7 +32,10 @@ import { DunningV2Telemetry } from './dunning-v2.telemetry';
   // Phase 2: VoiceModule supplies VoicePolicyService so the dispatcher routes
   // the Day 0/1/3/7 in-app client copy through the Roman Option-3 source of
   // truth (FEATURE_ROMAN_COPY_V2-gated; no-op while OFF).
-  imports: [AnalyticsModule, EmailModule, NotificationsModule, VoiceModule],
+  // ConnectModule supplies StripeConnectApiService for the pre-lock Stripe
+  // subscription check (never a charge call).
+  imports: [AnalyticsModule, ConnectModule, EmailModule, NotificationsModule, VoiceModule],
+  controllers: [DunningStatusController, DunningRestartController],
   providers: [
     PrismaService,
     DunningEscalationClassifier,

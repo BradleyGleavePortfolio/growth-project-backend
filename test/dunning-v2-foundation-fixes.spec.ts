@@ -149,11 +149,32 @@ describe('B-687-2 (Sol), operator ruling OR-113-4: the pending prefix has no dep
     }
   });
 
+  // D2d (B-DUND2D-121, operator ruling on B-DUNR2-120): the later dunning
+  // stack migration that may add columns to a table this one creates. It is
+  // pending with this one and sorts after it, so it can never apply first.
+  const STACK_ADDITIONS = new Set(['20270318000000_dunning_dispute_pause_effects']);
+
   it('no later-sorting migration touches a table it creates', () => {
     const own = creates(mine);
     expect(own.length).toBeGreaterThan(0);
-    for (const d of dirs.filter((x) => x > mine)) {
+    for (const d of dirs.filter((x) => x > mine && !STACK_ADDITIONS.has(x))) {
       for (const t of own) expect(sql(d)).not.toContain(`"${t}"`);
+    }
+  });
+
+  it('the dunning stack addition only adds nullable columns to those tables', () => {
+    for (const d of STACK_ADDITIONS) {
+      expect(dirs).toContain(d);
+      expect(d > mine).toBe(true);
+      const body = sql(d)
+        .split('\n')
+        .filter((l) => !l.startsWith('--'))
+        .join('\n');
+      const touched = [
+        ...body.matchAll(/ALTER TABLE "(\w+)" ADD COLUMN IF NOT EXISTS "\w+" TIMESTAMP\(3\);/g),
+      ];
+      expect(touched.length).toBeGreaterThan(0);
+      expect(body).not.toMatch(/DROP|NOT NULL|DEFAULT|CREATE|RENAME/);
     }
   });
 });

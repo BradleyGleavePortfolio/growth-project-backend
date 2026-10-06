@@ -18,12 +18,13 @@ import { effectiveLock } from './dunning-effective-access';
 import { dunningErrorCode } from './dunning-v2.safe-error';
 import { formatMinor } from '../client-billing.money';
 import {
+  ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT,
+  LIVE_SUBSCRIPTION_STATUSES,
+} from '../subscription-plan';
+import {
   DUNNING_V2_CADENCE_DAYS,
   DUNNING_V2_DAY_MS,
   DUNNING_V2_LOCKOUT_DAY,
-  DUNNING_V2_REVERSAL_COACH_GAP_DAYS,
-  DUNNING_V2_REVERSAL_ENTRY_STEP,
-  DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS,
   DunningV2State,
   dunningV2LockoutAt,
   dunningV2StepForElapsed,
@@ -70,11 +71,10 @@ import {
  * LOCK TIMING: the Day-10 lock is applied by the hourly sweep, so it lands
  * up to 1 hour after the Day-10 instant (never before it).
  *
- * DISPUTE CYCLES (B-628-8): a compressed cycle opened by a dispute on a
- * cleared payment is not ended by a later renewal payment or a card update
- * (no invoice is open for the disputed money); it locks on its Day 10 even
- * though the subscription is active, and it resolves when the dispute
- * closes in the client's favour (won / warning_closed).
+ * DISPUTE PAUSE (R-DISPUTE-PAUSE): a dispute on any charge of the plan
+ * locks the cycle at once with the dispute marker and pauses billing at
+ * Stripe. No payment, card update, Stripe status or dispute closure ends
+ * it; only the owning coach's restart does (`restartAfterDisputePause`).
  *
  * ELIGIBILITY: only paid recurring Stripe subscriptions enter v2. A purchase
  * with `amount_cents <= 0`, no `stripe_subscription_id`, or a non-recurring
@@ -140,6 +140,24 @@ const DISPUTE_WON_STATUSES = new Set(['won', 'warning_closed']);
 const DISPUTE_TERMINAL_STATUSES = new Set(['won', 'warning_closed', 'lost', 'charge_refunded']);
 /** Status a dispute obligation is recorded with when its dispute opens. */
 const DISPUTE_OPEN_STATUS = 'open';
+/** The step a dispute pause records: its notices go to the client and coach. */
+const DUNNING_V2_PAUSE_STEP = 3;
+
+/** D2d: how long one dispute pause or coach restart holds the billing lease. */
+const DISPUTE_BILLING_LEASE_MS = 120_000;
+
+/** A held ClientBillingLease (S-DUNNING-R3 B-628-9): holder token + fence. */
+interface DisputeLease {
+  purchaseId: string;
+  token: string;
+  fence: number;
+}
+
+/** A restart never brings back a plan Stripe or the client ended. */
+const PLAN_ENDED_STATUSES = new Set(['canceled', 'expired', 'incomplete_expired']);
+
+/** Subscription statuses a resumed plan may grant access in. */
+const RESTART_LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 
 /** A delivery row this worker holds (B-628-6). */
 interface ClaimedDelivery {
@@ -260,20 +278,48 @@ export interface ClientDunningStatus {
    * for a SetupIntent, present the in-app PaymentSheet, then POST
    * `/v1/checkout/payment-method/confirm`, which (1A) pays the open invoice.
    */
-  update_payment_route: '/v1/checkout/payment-method/setup-intent';
+  update_payment_route: '/v1/checkout/payment-method/setup-intent' | null;
   /** Universal link (emails, notifications) that opens the in-app card update. */
-  update_card_url: string;
+  update_card_url: string | null;
   /**
    * POST to end the plan now (owner 2A: the unpaid invoice is voided, access
    * ends at once, nothing more is collected). Null when there is no cycle.
    */
   cancel_route: string | null;
+  /**
+   * R-DISPUTE-PAUSE mobile contract. 'dispute_paused': a dispute paused the
+   * plan (state 'locked', kind 'dispute', access_ended true, restart_by
+   * 'coach', lockout_at / update_payment_route / update_card_url /
+   * cancel_route / amount_cents all null: no lock date, no retry or card
+   * path). 'payment_failed': a renewal charge failed.
+   */
+  reason: 'dispute_paused' | 'payment_failed' | null;
+  access_ended: boolean;
+  /**
+   * Sol B-705-4: true only once Stripe confirmed the dispute pause; while the
+   * pause is recorded but unconfirmed it is false (the sweep re-asserts it),
+   * so no copy says billing is paused before it is.
+   */
+  billing_paused: boolean;
+  restart_by: 'coach' | null;
 }
 
 const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);
 
 /** `last_failure_reason` marker of a compressed late-reversal (dispute) cycle. */
 export const DUNNING_V2_REVERSAL_REASON = 'charge_disputed';
+
+/** The cycle is paused by a dispute: the marker on an active, locked cycle. */
+function isDisputePausedRow(
+  state: Pick<DunningState, 'status' | 'last_failure_reason' | 'locked_out_at' | 'entered_at'>,
+): boolean {
+  return (
+    state.status === 'active' &&
+    state.last_failure_reason === DUNNING_V2_REVERSAL_REASON &&
+    state.locked_out_at != null &&
+    state.entered_at != null
+  );
+}
 
 /**
  * C-680-18 (Opus R34D-119): a plan that ended or was revoked for money. With
@@ -623,7 +669,8 @@ export class DunningV2Service {
     return (
       state != null &&
       state.status === 'active' &&
-      state.locked_out_at == null &&
+      // R-DISPUTE-PAUSE: a paused (locked) dispute cycle still sends its notices.
+      (state.locked_out_at == null || state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) &&
       state.client_canceled_at == null &&
       state.entered_at != null &&
       dunningCycleKey(state.entered_at) === cycleKey
@@ -715,7 +762,7 @@ export class DunningV2Service {
       const live =
         state != null &&
         state.status === 'active' &&
-        state.locked_out_at == null &&
+        (state.locked_out_at == null || state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) &&
         state.client_canceled_at == null &&
         state.entered_at != null &&
         dunningCycleKey(state.entered_at) === first.cycle_key;
@@ -814,6 +861,11 @@ export class DunningV2Service {
       if (!acted) await this.markSweepChecked(row, now);
     }
     try {
+      await this.reassertDisputePauses(now);
+    } catch (err) {
+      this.logger.warn(`dunning v2 pause re-assert failed: ${dunningErrorCode(err)}`);
+    }
+    try {
       await this.retryDueNotices(now);
     } catch (err) {
       this.logger.warn(`dunning v2 notice retry failed: ${dunningErrorCode(err)}`);
@@ -858,15 +910,8 @@ export class DunningV2Service {
       // B-628-8: a dispute cycle's evidence is the dispute itself, not the
       // subscription (which stays active and keeps renewing). A won dispute
       // resolves the cycle instead of locking.
+      // R-DISPUTE-PAUSE: no dispute outcome resolves a cycle on its own.
       if (purchase.status === 'canceled') return 'skipped';
-      // S-DUNNING-R4/R5 (B-628-8): the cycle is settled only when EVERY
-      // dispute on the purchase (ledger + dunning obligation record) is
-      // closed in the client's favour, not the latest one.
-      const disputes = await this.disputeObligations(this.prisma, purchase.id);
-      if (disputes.length > 0 && outstandingDisputes(disputes, null).length === 0) {
-        await this.resolveDisputeCycle(row.purchase_id, now, null);
-        return 'skipped';
-      }
     } else if (purchase.status !== 'past_due' && purchase.status !== 'unpaid') {
       this.logger.warn(
         `dunning v2 lock skipped state=${row.id}: purchase status ${purchase.status} is not past_due`,
@@ -962,15 +1007,9 @@ export class DunningV2Service {
       },
     });
     if (!state) return { liftedLockout: false };
-    // B-628-8: a renewal payment or card update does not settle a disputed
-    // payment; only the dispute closing in the client's favour ends it.
-    // B-628-13: decided from the open obligation too, not the marker alone.
-    if (
-      via !== 'manual' &&
-      state.status === 'active' &&
-      (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON ||
-        (await this.hasOpenDisputeObligation(client, purchaseId, state.entered_at)))
-    ) {
+    // R-DISPUTE-PAUSE: no payment, card update or manual clear ends a
+    // dispute pause; only the coach restart does.
+    if (state.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) {
       return { liftedLockout: false };
     }
     const wasLocked = state.locked_out_at != null;
@@ -980,8 +1019,14 @@ export class DunningV2Service {
       // C-680-18: decided on the purchase as it is under its row lock. A plan
       // that ended or was revoked (refund, lost dispute, dispute, cancel,
       // expiry) is never handed access back, nor its lock lifted.
+      // R-DISPUTE-PAUSE: the pause is read again under the same locks, so a
+      // dispute applied after the read above keeps the plan paused.
       const purchase = await this.lockedPurchaseForClear(w, purchaseId);
-      if (!purchase || dunningPurchaseEnded(purchase)) {
+      if (
+        !purchase ||
+        dunningPurchaseEnded(purchase) ||
+        (await this.isDisputeCycleOpen(purchaseId, w))
+      ) {
         refused = true;
         return;
       }
@@ -1059,14 +1104,16 @@ export class DunningV2Service {
     });
   }
 
-  // ── §6 Late reversal (dispute on a cleared payment) ───────────────────────
+  // ── §6 Disputes on a recurring plan (R-DISPUTE-PAUSE) ─────────────────────
   /**
-   * Open a compressed cycle when a PREVIOUSLY CLEARED payment is disputed
-   * (spec §6). Enters at Step 2 (Day-3 equivalent): `entered_at` is set three
-   * days in the past so the Day-7 coach step and the Day-10 lockout fall 4 and
-   * 7 days from now, driven by the same hourly sweep as a normal cycle.
-   * Only `charge.dispute.created` reaches this (a refund the coach issued is
-   * never treated as non-payment).
+   * R-DISPUTE-PAUSE (owner 12:01 PDT 10-04): a dispute on ANY charge of a
+   * paid recurring plan, whether or not a renewal ever failed, pauses all
+   * billing for that plan and ends the client's access at once. Nothing
+   * restores it when the dispute closes (won, lost or otherwise); only the
+   * owning coach's restart does (`restartAfterDisputePause`). This replaces
+   * the compressed dispute cycle (lock date). One-time purchases, free and
+   * code grants are not eligible and are unchanged. A refund is never
+   * non-payment (S-DUNNING F11): without a Stripe dispute id nothing pauses.
    */
   async handleLateReversal(input: {
     purchaseId: string;
@@ -1077,109 +1124,19 @@ export class DunningV2Service {
     now?: Date;
   }): Promise<{ opened: boolean; reason: string; claim?: DunningV2StepClaim }> {
     if (!this.enabled()) return { opened: false, reason: 'flag_off' };
-    const now = input.now ?? new Date();
-
-    const purchase = await this.prisma.clientPurchase.findUnique({
-      where: { id: input.purchaseId },
+    if (!input.disputeId) return { opened: false, reason: 'no_dispute_id' };
+    return this.applyDisputePause({
+      purchaseId: input.purchaseId,
+      disputeId: input.disputeId,
+      chargeId: input.chargeId ?? null,
+      status: DISPUTE_OPEN_STATUS,
+      now: input.now ?? new Date(),
     });
-    if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
-      return { opened: false, reason: 'not_eligible' };
-    }
-    // B-628-8: record the obligation under the row lock BEFORE reading the
-    // cycle (a concurrent won resolution sees it, or this reopens below). A
-    // dispute already won (closed webhook first) opens nothing.
-    let openObligation = false;
-    if (input.disputeId) {
-      const recorded = await this.recordDisputeObligation({
-        purchaseId: input.purchaseId,
-        disputeId: input.disputeId,
-        chargeId: input.chargeId ?? null,
-        status: DISPUTE_OPEN_STATUS,
-        now,
-      });
-      if (recorded.priorStatus && DISPUTE_WON_STATUSES.has(recorded.priorStatus)) {
-        return { opened: false, reason: 'dispute_already_won' };
-      }
-      // W4 (Opus D34): new or still open, whatever the webhook order.
-      openObligation =
-        !recorded.priorStatus || !DISPUTE_TERMINAL_STATUSES.has(recorded.priorStatus);
-    }
-    const state = await this.prisma.dunningState.findUnique({
-      where: { purchase_id: input.purchaseId },
-      select: {
-        id: true,
-        status: true,
-        resolved_at: true,
-        purchase_id: true,
-        last_failure_reason: true,
-      },
-    });
-    if (!state) return { opened: false, reason: 'no_state' };
-    if (state.status === 'active') {
-      return { opened: false, reason: 'cycle_already_active' };
-    }
-    // An open obligation on a resolved state opens the cycle (W4), as does a
-    // reversal after the resolution (no dispute id).
-    const previouslyCleared =
-      state.status === 'resolved' &&
-      state.resolved_at != null &&
-      (openObligation || input.reversedChargeAt.getTime() >= state.resolved_at.getTime());
-    if (!previouslyCleared) {
-      return { opened: false, reason: 'not_a_cleared_payment_reversal' };
-    }
-
-    const enteredAt = new Date(
-      now.getTime() -
-        (DUNNING_V2_LOCKOUT_DAY -
-          DUNNING_V2_REVERSAL_COACH_GAP_DAYS -
-          DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS) *
-          DUNNING_V2_DAY_MS,
-    );
-    const claim: DunningV2StepClaim = {
-      dunningStateId: state.id,
-      purchaseId: state.purchase_id,
-      stepIndex: DUNNING_V2_REVERSAL_ENTRY_STEP,
-      isLateReversalCycle: true,
-      cycleKey: dunningCycleKey(enteredAt),
-    };
-    const opened = await this.claimWithOutbox(
-      { id: state.id, status: state.status },
-      {
-        status: 'active',
-        step_index: DUNNING_V2_REVERSAL_ENTRY_STEP,
-        reversal_count: { increment: 1 },
-        resolved_at: null,
-        recovered_at: null,
-        last_failure_at: now,
-        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
-        entered_at: enteredAt,
-        next_attempt_at: addDays(now, DUNNING_V2_REVERSAL_COACH_GAP_DAYS),
-        locked_out_at: null,
-        client_canceled_at: null,
-      },
-      claim,
-      now,
-    );
-    if (!opened) {
-      return { opened: false, reason: 'cycle_already_active' };
-    }
-    await this.prisma.clientPurchase.update({
-      where: { id: input.purchaseId },
-      data: { status: 'past_due' },
-    });
-
-    this.telemetry.reversalDetected(state.purchase_id, {
-      dunning_state_id: state.id,
-      entry_step: DUNNING_V2_REVERSAL_ENTRY_STEP,
-      lockout_in_days: DUNNING_V2_REVERSAL_COACH_GAP_DAYS + DUNNING_V2_REVERSAL_LOCKOUT_GAP_DAYS,
-    });
-    await this.dispatchClaim(claim, now);
-    return { opened: true, reason: 'compressed_cycle_opened', claim };
   }
 
   /**
-   * Late-reversal entry from the webhook (dispute created). Resolves the
-   * purchase from the disputed charge and delegates. No-op while flag off.
+   * Dispute entry from the webhook (dispute created). Resolves the purchase
+   * from the disputed charge and delegates. No-op while flag off.
    */
   async detectAndHandleLateReversal(input: {
     chargeId: string | null;
@@ -1206,26 +1163,29 @@ export class DunningV2Service {
   }
 
   /**
-   * True while a dispute cycle is open (B-628-8), or an active cycle has an
-   * outstanding recorded dispute (B-628-13), so no renewal settles it.
+   * True while the plan is paused by a dispute (the dispute marker on an
+   * active cycle), so no renewal payment, card update or Stripe status
+   * update hands access back. Only the coach restart ends it. Read whatever
+   * FEATURE_DUNNING_V2 says (B-705-4 Opus / B-705-1 Sol): a rollback of the
+   * flag never restores access to a paused plan; only the writes are gated.
    */
   async isDisputeCycleOpen(purchaseId: string, db?: DunningV2Db): Promise<boolean> {
-    if (!this.enabled()) return false;
     const client: DunningV2Db = db ?? this.prisma;
     const state = await client.dunningState.findUnique({
       where: { purchase_id: purchaseId },
-      select: { status: true, last_failure_reason: true, entered_at: true },
+      select: { status: true, last_failure_reason: true },
     });
-    if (state?.status !== 'active') return false;
-    if (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) return true;
-    return this.hasOpenDisputeObligation(client, purchaseId, state.entered_at);
+    return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
+  }
+
+  /** Alias read by the webhook entitlement writers (R-DISPUTE-PAUSE). */
+  async isDisputePaused(purchaseId: string, db?: DunningV2Db): Promise<boolean> {
+    return this.isDisputeCycleOpen(purchaseId, db);
   }
 
   /**
-   * B-628-13: a renewal payment settled the payment part of an active cycle
-   * while a dispute is still open: the cycle continues as the dispute cycle
-   * (marker restored or set; its lock timeline is unchanged). CAS on the
-   * active row, so a cycle resolved meanwhile is never reopened here.
+   * B-628-13: an active cycle with a dispute keeps the dispute marker. CAS
+   * on the active row, so a cycle resolved meanwhile is never reopened here.
    */
   async keepAsDisputeCycle(purchaseId: string, db?: DunningV2Db): Promise<void> {
     if (!this.enabled()) return;
@@ -1244,39 +1204,10 @@ export class DunningV2Service {
   }
 
   /**
-   * B-628-13: a recorded obligation (ledger-only rows never count) whose
-   * merged status is not in the client's favour. B-688-5: lost counts too,
-   * unless it closed before this cycle began (an earlier cycle's).
-   */
-  private async hasOpenDisputeObligation(
-    db: DunningV2Db,
-    purchaseId: string,
-    cycleStart: Date | null,
-  ): Promise<boolean> {
-    const recorded = await db.dunningDisputeObligation.findMany({
-      where: { purchase_id: purchaseId },
-      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true, closed_at: true },
-    });
-    if (recorded.length === 0) return false;
-    const ledger = await db.chargeDispute.findMany({
-      where: { purchase_id: purchaseId },
-      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
-    });
-    const byId = new Map(recorded.map((r) => [r.stripe_dispute_id, r]));
-    return mergeDisputeObligations(ledger, recorded).some((d) => {
-      const r = byId.get(d.stripe_dispute_id);
-      if (!r || DISPUTE_WON_STATUSES.has(d.status)) return false;
-      if (!DISPUTE_TERMINAL_STATUSES.has(d.status)) return true;
-      return !r.closed_at || !cycleStart || r.closed_at >= cycleStart;
-    });
-  }
-
-  /**
-   * `charge.dispute.closed`: a dispute closed in the client's favour (won /
-   * warning_closed) resolves its cycle, lifts a lock, restores access and
-   * dismisses the blockers. A lost dispute keeps the cycle open (the money
-   * stays reversed; support settles it in v1.0); during a payment cycle it
-   * makes that cycle the dispute cycle (B-688-5), so no payment settles it.
+   * `charge.dispute.closed`: records the closing status and restores
+   * NOTHING, won or lost (R-DISPUTE-PAUSE). A closure processed before its
+   * `charge.dispute.created` pauses the plan itself (the dispute existed),
+   * so the outcome never depends on webhook order.
    */
   async onDisputeClosed(input: {
     chargeId: string | null;
@@ -1293,79 +1224,560 @@ export class DunningV2Service {
       input.chargeId,
       input.paymentIntentId ?? null,
     );
-    if (!input.status || !DISPUTE_WON_STATUSES.has(input.status)) {
-      // A lost (or otherwise closed) dispute stays an outstanding obligation;
-      // record its final status so no later won event can outvote it.
-      if (purchaseId && input.disputeId && input.status) {
-        await this.recordDisputeObligation({
-          purchaseId,
-          disputeId: input.disputeId,
-          chargeId: input.chargeId ?? null,
-          status: input.status,
-          now: input.closedAt ?? input.now ?? new Date(),
-          keepAsDispute: DISPUTE_TERMINAL_STATUSES.has(input.status),
-        });
-      }
-      return { resolved: false, reason: 'not_won' };
-    }
     if (!purchaseId) return { resolved: false, reason: 'purchase_unresolved' };
-    const closing: ClosingDispute = {
-      disputeId: input.disputeId ?? null,
+    if (!input.disputeId) return { resolved: false, reason: 'no_dispute_id' };
+    const out = await this.applyDisputePause({
+      purchaseId,
+      disputeId: input.disputeId,
       chargeId: input.chargeId ?? null,
-      status: input.status,
-    };
-    const out = await this.resolveDisputeCycle(purchaseId, input.now ?? new Date(), closing);
-    if (out === 'blocked') return { resolved: false, reason: 'other_dispute_outstanding' };
-    return out
-      ? { resolved: true, reason: 'dispute_won' }
-      : { resolved: false, reason: 'no_open_dispute_cycle' };
+      status: input.status ?? DISPUTE_OPEN_STATUS,
+      now: input.closedAt ?? input.now ?? new Date(),
+    });
+    return { resolved: false, reason: out.opened ? 'paused_on_closure' : 'pause_kept' };
   }
 
   /**
-   * S-DUNNING-R5 (B-628-8): every dispute obligation on a purchase, merged
-   * from the refund / dispute ledger and the dunning obligation record.
+   * The pause itself. Under the DunningState row lock, then the purchase row
+   * lock (the dunning lock order: DunningState before ClientPurchase), in ONE
+   * transaction: record the dispute obligation, lock the cycle now with the
+   * dispute marker (creating the row when the plan never failed a renewal),
+   * end the entitlement and cancel the cycle's pending notices. A dispute id
+   * seen before was applied by that earlier transaction, so a redelivery
+   * after a coach restart changes nothing. Then, outside the transaction (no
+   * Stripe call holds a row lock), billing is paused at Stripe under the
+   * purchase's billing lease (`confirmDisputePause`); a failure throws so the
+   * webhook is redelivered, and the sweep re-asserts the pause meanwhile.
+   * The notices go out only after Stripe confirmed the pause (no copy claims
+   * a pause before it is true).
    */
-  private async disputeObligations(
-    db: DunningV2Db,
-    purchaseId: string,
-  ): Promise<DisputeObligation[]> {
-    const ledger = await db.chargeDispute.findMany({
-      where: { purchase_id: purchaseId },
-      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
-    });
-    const recorded = await db.dunningDisputeObligation.findMany({
-      where: { purchase_id: purchaseId },
-      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
-    });
-    return mergeDisputeObligations(ledger, recorded);
-  }
-
-  /** Row lock on the purchase's DunningState (no-op when none exists). */
-  private async lockDunningState(tx: Prisma.TransactionClient, purchaseId: string): Promise<void> {
-    await tx.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
-  }
-
-  /**
-   * Record a dispute obligation under the DunningState row lock. Returns the
-   * status it had before (null when this call created it).
-   */
-  private async recordDisputeObligation(input: {
+  private async applyDisputePause(input: {
     purchaseId: string;
     disputeId: string;
     chargeId: string | null;
     status: string;
     now: Date;
-    keepAsDispute?: boolean;
-  }): Promise<{ priorStatus: string | null }> {
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockDunningState(tx, input.purchaseId);
-      const out = await this.upsertDisputeObligation(tx, input);
-      // Sol B-688-6: only an obligation outstanding in THIS cycle marks it.
-      if (input.keepAsDispute && (await this.isDisputeCycleOpen(input.purchaseId, tx))) {
-        await this.keepAsDisputeCycle(input.purchaseId, tx);
+  }): Promise<{ opened: boolean; reason: string; claim?: DunningV2StepClaim }> {
+    const { purchaseId, now } = input;
+    let reason = 'not_eligible';
+    let opened = false;
+    let stateId: string | null = null;
+    await this.prisma.$transaction(async (tx) => {
+      await this.lockDunningState(tx, purchaseId);
+      await tx.$queryRaw`SELECT "id" FROM "ClientPurchase" WHERE "id" = ${purchaseId} FOR UPDATE`;
+      const purchase = await tx.clientPurchase.findUnique({ where: { id: purchaseId } });
+      if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) return;
+      const { priorStatus } = await this.upsertDisputeObligation(tx, input);
+      const state = await tx.dunningState.findUnique({ where: { purchase_id: purchaseId } });
+      if (state && isDisputePausedRow(state)) {
+        reason = 'already_paused';
+        stateId = state.id;
+        return;
       }
-      return out;
+      if (priorStatus !== null) {
+        reason = 'dispute_already_applied';
+        return;
+      }
+      if (purchase.status === 'canceled') {
+        reason = 'plan_ended';
+        return;
+      }
+      const data = {
+        status: 'active',
+        step_index: DUNNING_V2_PAUSE_STEP,
+        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
+        last_failure_at: now,
+        entered_at: now,
+        // Access ends now; a cycle already locked keeps its lock instant.
+        locked_out_at:
+          state?.status === 'active' && state.locked_out_at ? state.locked_out_at : now,
+        next_attempt_at: null,
+        resolved_at: null,
+        recovered_at: null,
+        client_canceled_at: null,
+        // Sol B-705-4: recorded, not yet confirmed at Stripe.
+        billing_paused_at: null,
+      };
+      const row = state
+        ? await tx.dunningState.update({
+            where: { id: state.id },
+            data: { ...data, reversal_count: { increment: 1 } },
+          })
+        : await tx.dunningState.create({
+            data: { purchase_id: purchaseId, failure_count: 0, reversal_count: 1, ...data },
+          });
+      await tx.dunningNoticeDelivery.updateMany({
+        where: { dunning_state_id: row.id, status: { in: ['pending', 'failed'] } },
+        data: { status: 'canceled', next_attempt_at: null },
+      });
+      await tx.clientPurchase.update({
+        where: { id: purchaseId },
+        data: { entitlement_active: false },
+      });
+      reason = 'paused';
+      opened = true;
+      stateId = row.id;
     });
+    // TS does not see the assignment inside the transaction callback.
+    const pausedStateId = stateId as string | null;
+    if (!pausedStateId) return { opened: false, reason };
+    const effect = await this.confirmDisputePause(purchaseId, now);
+    if (opened && effect.result !== 'not_paused') {
+      this.telemetry.lockoutEntered(purchaseId, { dunning_state_id: pausedStateId });
+      this.telemetry.reversalDetected(purchaseId, {
+        dunning_state_id: pausedStateId,
+        paused: true,
+      });
+      this.logger.log(
+        JSON.stringify({ event: 'dunning_v2.dispute_paused', purchase_id: purchaseId }),
+      );
+    }
+    return { opened, reason, ...(effect.claim ? { claim: effect.claim } : {}) };
+  }
+
+  /**
+   * D2d (Sol B-705-2/3, Opus B-705-1): make Stripe match a recorded dispute
+   * pause, then tell the client and the coach once per pause (deterministic
+   * outbox ids). Serialized per purchase on the ClientBillingLease, the lease
+   * the coach restart and the client card payment / cancel also take; every
+   * claim has its own fence, so its Stripe idempotency keys are its own and a
+   * pause after a resume is a real request, never a replay of an older one.
+   * 'deferred': another dispute pause or a coach restart holds the lease; it
+   * reads the pause again under that lease and leaves Stripe matching it.
+   * Any other holder throws (redelivered; the sweep re-asserts meanwhile).
+   */
+  private async confirmDisputePause(
+    purchaseId: string,
+    now: Date,
+  ): Promise<{ result: 'confirmed' | 'deferred' | 'not_paused'; claim?: DunningV2StepClaim }> {
+    const lease = await this.claimDisputeLease(purchaseId, 'dispute_pause');
+    if (typeof lease === 'string') {
+      if (lease.startsWith('dispute_')) return { result: 'deferred' };
+      throw new Error('DUNNING_PAUSE_BILLING_BUSY');
+    }
+    let state: DunningState | null;
+    try {
+      state = await this.pauseUnderLease(lease);
+    } finally {
+      await this.releaseDisputeLease(lease);
+    }
+    if (!state) return { result: 'not_paused' };
+    const enteredAt = state.entered_at as Date;
+    const claim: DunningV2StepClaim = {
+      dunningStateId: state.id,
+      purchaseId,
+      stepIndex: DUNNING_V2_PAUSE_STEP,
+      isLateReversalCycle: true,
+      cycleKey: dunningCycleKey(enteredAt),
+    };
+    const live = await this.claimWithOutbox(
+      {
+        id: state.id,
+        status: 'active',
+        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
+        entered_at: enteredAt,
+      },
+      { step_index: DUNNING_V2_PAUSE_STEP },
+      claim,
+      now,
+    );
+    if (live) await this.dispatchClaim(claim, now);
+    return { result: 'confirmed', claim };
+  }
+
+  /**
+   * Under a held lease: read the pause again; when the plan is still paused,
+   * pause Stripe with this lease's own key and record the confirmation
+   * (Sol B-705-4: `billing_paused_at`). Returns the paused row, or null when
+   * nothing is paused any more (a restart won), so nothing is paused at
+   * Stripe against the authoritative state.
+   */
+  private async pauseUnderLease(lease: DisputeLease): Promise<DunningState | null> {
+    const [state, purchase] = await Promise.all([
+      this.prisma.dunningState.findUnique({ where: { purchase_id: lease.purchaseId } }),
+      this.prisma.clientPurchase.findUnique({
+        where: { id: lease.purchaseId },
+        select: { stripe_subscription_id: true },
+      }),
+    ]);
+    if (!state || !isDisputePausedRow(state) || !purchase?.stripe_subscription_id) return null;
+    const enteredAt = state.entered_at as Date;
+    await this.pauseBillingAtStripe(
+      purchase.stripe_subscription_id,
+      lease.purchaseId,
+      dunningCycleKey(enteredAt),
+      lease.fence,
+    );
+    await this.fencedTx(lease, async (tx) => {
+      await tx.dunningState.updateMany({
+        where: {
+          id: state.id,
+          status: 'active',
+          last_failure_reason: DUNNING_V2_REVERSAL_REASON,
+          entered_at: enteredAt,
+        },
+        data: { billing_paused_at: new Date() },
+      });
+    });
+    return state;
+  }
+
+  /**
+   * C-705-6 / Sol B-705-4: a paused plan whose Stripe pause is not confirmed
+   * (the pause call failed, the lease was busy, or a restart stopped after
+   * Stripe resumed) is paused again here. Never throws.
+   */
+  private async confirmUnconfirmedPause(purchaseId: string, now: Date): Promise<boolean> {
+    try {
+      const state = await this.prisma.dunningState.findUnique({
+        where: { purchase_id: purchaseId },
+      });
+      if (!state || !isDisputePausedRow(state) || state.billing_paused_at) return false;
+      return (await this.confirmDisputePause(purchaseId, now)).result === 'confirmed';
+    } catch (err) {
+      this.logger.warn(
+        `dunning v2 pause re-assert failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+      );
+      return false;
+    }
+  }
+
+  /** Sweep step (behind the flag): re-assert unconfirmed dispute pauses. */
+  private async reassertDisputePauses(now: Date, limit = 100): Promise<number> {
+    const rows = await this.prisma.dunningState.findMany({
+      where: {
+        status: 'active',
+        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
+        locked_out_at: { not: null },
+        entered_at: { not: null },
+        billing_paused_at: null,
+      },
+      orderBy: { entered_at: 'asc' },
+      take: limit,
+    });
+    let confirmed = 0;
+    for (const row of rows) {
+      if (await this.confirmUnconfirmedPause(row.purchase_id, now)) confirmed += 1;
+    }
+    return confirmed;
+  }
+
+  /**
+   * Pause collection at Stripe and stop every open invoice's retries (marked
+   * uncollectible, not forgiven). The open-invoice list fails closed: an
+   * incomplete list throws, so the event is redelivered rather than leaving
+   * an invoice being retried. The key carries the lease fence: stable for
+   * one attempt, new for every later attempt (Sol B-705-2, Opus B-705-1).
+   */
+  private async pauseBillingAtStripe(
+    subscriptionId: string,
+    purchaseId: string,
+    cycleKey: string,
+    fence: number,
+  ): Promise<void> {
+    if (!this.stripe) throw new Error('DUNNING_PAUSE_STRIPE_UNAVAILABLE');
+    await this.stripe.pauseSubscriptionCollection({
+      subscriptionId,
+      idempotencyKey: `dunning_v2:dispute_pause:${purchaseId}:${cycleKey}:${fence}`,
+    });
+    const open = await this.stripe.listOpenInvoices(subscriptionId);
+    for (const inv of open) {
+      await this.stripe.markInvoiceUncollectible({
+        invoiceId: inv.id,
+        idempotencyKey: `dunning_v2:dispute_pause:${inv.id}`,
+      });
+    }
+  }
+
+  /**
+   * R-DISPUTE-PAUSE coach restart. Only the plan's own coach (tenant check:
+   * any other caller gets `not_found`, never another coach's data) may
+   * restart a plan a dispute paused. Refused with a coded reason, before any
+   * Stripe call: `not_paused`, `plan_ended`, `other_live_plan` (Opus
+   * B-705-2: the client bought the package again, so a restart would bill two
+   * plans), `billing_busy` (a pause or another billing action holds the
+   * purchase's lease; Sol B-705-3). Under the lease: billing resumes at
+   * Stripe, then, under the row locks, the cycle ends and access returns with
+   * the status and period Stripe reports (Sol B-705-5), but only if the same
+   * pause is still in place and no new dispute was recorded meanwhile. Every
+   * exit that leaves the plan paused after the resume pauses Stripe again
+   * with this attempt's own key (Opus B-705-1).
+   */
+  async restartAfterDisputePause(input: {
+    coachUserId: string;
+    purchaseId: string;
+    now?: Date;
+  }): Promise<{ restarted: boolean; reason: string }> {
+    if (!this.enabled()) return { restarted: false, reason: 'flag_off' };
+    const now = input.now ?? new Date();
+    const first = await this.restartCandidate(input.coachUserId, input.purchaseId);
+    if (typeof first === 'string') return { restarted: false, reason: first };
+    const stripe = this.stripe;
+    if (!stripe) return { restarted: false, reason: 'billing_unavailable' };
+    const lease = await this.claimDisputeLease(input.purchaseId, 'dispute_restart');
+    if (typeof lease === 'string') return { restarted: false, reason: 'billing_busy' };
+    const run = { reason: 'plan_ended', resumeTried: false };
+    try {
+      run.reason = await this.restartUnderLease(stripe, lease, input.coachUserId, now, run);
+    } finally {
+      if (run.reason !== 'restarted' && run.resumeTried) {
+        try {
+          await this.pauseUnderLease(lease);
+        } catch (err) {
+          // Left unconfirmed (billing_paused_at null): the sweep re-asserts it.
+          this.logger.warn(
+            `dunning v2 restart re-pause failed purchase=${input.purchaseId}: ${dunningErrorCode(err)}`,
+          );
+        }
+      }
+      await this.releaseDisputeLease(lease);
+    }
+    // A pause recorded while this restart held the lease left its Stripe step
+    // to this holder: make Stripe match it now.
+    await this.confirmUnconfirmedPause(input.purchaseId, now);
+    if (run.reason !== 'restarted') return { restarted: false, reason: run.reason };
+    this.telemetry.lockoutExited(input.purchaseId, { dunning_state_id: first.state.id });
+    this.logger.log(
+      JSON.stringify({ event: 'dunning_v2.dispute_restarted', purchase_id: input.purchaseId }),
+    );
+    return { restarted: true, reason: run.reason };
+  }
+
+  /** Restart pre-checks, run before the lease and again under it. */
+  private async restartCandidate(
+    coachUserId: string,
+    purchaseId: string,
+  ): Promise<{ purchase: ClientPurchase; state: DunningState } | string> {
+    const purchase = await this.prisma.clientPurchase.findUnique({ where: { id: purchaseId } });
+    if (!purchase || purchase.coach_user_id !== coachUserId) return 'not_found';
+    const state = await this.prisma.dunningState.findUnique({
+      where: { purchase_id: purchase.id },
+    });
+    if (
+      !state?.entered_at ||
+      state.status !== 'active' ||
+      state.last_failure_reason !== DUNNING_V2_REVERSAL_REASON
+    ) {
+      return 'not_paused';
+    }
+    if (
+      PLAN_ENDED_STATUSES.has(purchase.status) ||
+      !DunningV2Service.isEligiblePurchase(purchase)
+    ) {
+      return 'plan_ended';
+    }
+    if (await this.otherLivePlan(this.prisma, purchase)) return 'other_live_plan';
+    return { purchase, state };
+  }
+
+  private async restartUnderLease(
+    stripe: StripeConnectApiService,
+    lease: DisputeLease,
+    coachUserId: string,
+    now: Date,
+    run: { resumeTried: boolean },
+  ): Promise<string> {
+    const again = await this.restartCandidate(coachUserId, lease.purchaseId);
+    if (typeof again === 'string') return again;
+    const { purchase, state } = again;
+    const enteredAt = state.entered_at as Date;
+    const disputesBefore = await this.prisma.dunningDisputeObligation.count({
+      where: { purchase_id: purchase.id },
+    });
+    // Unconfirmed from here: a crash after the resume leaves the sweep a pause
+    // to re-assert, and the client is never told billing is paused meanwhile.
+    await this.fencedTx(lease, async (tx) => {
+      await tx.dunningState.updateMany({
+        where: { id: state.id },
+        data: { billing_paused_at: null },
+      });
+    });
+    run.resumeTried = true;
+    let sub: { status: string; current_period_end?: number };
+    try {
+      sub = await stripe.resumeSubscriptionCollection({
+        subscriptionId: purchase.stripe_subscription_id as string,
+        idempotencyKey: `dunning_v2:dispute_restart:${purchase.id}:${dunningCycleKey(enteredAt)}:${lease.fence}`,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `dunning v2 restart failed purchase=${purchase.id}: ${dunningErrorCode(err)}`,
+      );
+      return 'billing_resume_failed';
+    }
+    const status = String(sub.status);
+    if (!RESTART_LIVE_STATUSES.has(status)) return 'plan_ended';
+    // The webhook's padding: access runs one day past the paid period.
+    const accessExpiresAt =
+      typeof sub.current_period_end === 'number'
+        ? new Date(sub.current_period_end * 1000 + DUNNING_V2_DAY_MS)
+        : null;
+    let reason = 'plan_ended';
+    await this.fencedTx(lease, async (tx) => {
+      // Checkout's per client-coach lock, so a purchase of the same package
+      // cannot become live between the check below and this restart.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT}::int4, hashtext(${`${purchase.client_user_id}:${purchase.coach_user_id}`}))`;
+      await this.lockDunningState(tx, purchase.id);
+      await tx.$queryRaw`SELECT "id" FROM "ClientPurchase" WHERE "id" = ${purchase.id} FOR UPDATE`;
+      const disputesNow = await tx.dunningDisputeObligation.count({
+        where: { purchase_id: purchase.id },
+      });
+      if (disputesNow !== disputesBefore) {
+        reason = 'new_dispute';
+        return;
+      }
+      const fresh = await tx.clientPurchase.findUnique({ where: { id: purchase.id } });
+      if (!fresh || PLAN_ENDED_STATUSES.has(fresh.status)) return;
+      if (await this.otherLivePlan(tx, fresh)) {
+        reason = 'other_live_plan';
+        return;
+      }
+      const res = await tx.dunningState.updateMany({
+        where: {
+          id: state.id,
+          status: 'active',
+          last_failure_reason: DUNNING_V2_REVERSAL_REASON,
+          entered_at: enteredAt,
+        },
+        data: {
+          status: 'resolved',
+          resolved_at: now,
+          locked_out_at: null,
+          next_attempt_at: null,
+          billing_paused_at: null,
+        },
+      });
+      if (res.count !== 1) {
+        reason = 'not_paused';
+        return;
+      }
+      // Sol B-705-5: the status and access period of the resumed
+      // subscription, so the entitlement guard lets the client in (a
+      // `disputed` or `chargeback_lost` status alone still answers 402).
+      await tx.clientPurchase.update({
+        where: { id: purchase.id },
+        data: {
+          entitlement_active: true,
+          status,
+          ...(accessExpiresAt ? { access_expires_at: accessExpiresAt } : {}),
+        },
+      });
+      // Opus B-705-3: every dispute on record is covered by this restart; a
+      // later closure or redelivery of one of them never ends access again.
+      await tx.dunningDisputeObligation.updateMany({
+        where: { purchase_id: purchase.id, restarted_at: null },
+        data: { restarted_at: now },
+      });
+      await tx.notification.updateMany({
+        where: {
+          user_id: purchase.client_user_id,
+          kind: NotificationKind.DUNNING_BLOCKER,
+          read_at: null,
+        },
+        data: { read_at: now },
+      });
+      await tx.dunningNoticeDelivery.updateMany({
+        where: { dunning_state_id: state.id, status: { in: ['pending', 'failed'] } },
+        data: { status: 'canceled', next_attempt_at: null },
+      });
+      reason = 'restarted';
+    });
+    return reason;
+  }
+
+  /**
+   * Opus B-705-2: another recurring plan of the same client for the same
+   * package that checkout counts as live (same predicate as checkout).
+   */
+  private async otherLivePlan(db: DunningV2Db, purchase: ClientPurchase): Promise<boolean> {
+    const other = await db.clientPurchase.findFirst({
+      where: {
+        id: { not: purchase.id },
+        client_user_id: purchase.client_user_id,
+        package_id: purchase.package_id,
+        billing_type: 'recurring',
+        stripe_subscription_id: { not: null },
+        OR: [
+          { entitlement_active: true },
+          { trial_started_at: { not: null }, status: 'trialing' },
+          { status: { in: [...LIVE_SUBSCRIPTION_STATUSES] } },
+        ],
+      },
+      select: { id: true },
+    });
+    return other != null;
+  }
+
+  /**
+   * CAS claim of the purchase's ClientBillingLease (free when no holder or
+   * expired; every claim increments the fence). Busy: the holder token, whose
+   * prefix names the kind of action holding it.
+   */
+  private async claimDisputeLease(
+    purchaseId: string,
+    kind: 'dispute_pause' | 'dispute_restart',
+  ): Promise<DisputeLease | string> {
+    try {
+      await this.prisma.clientBillingLease.upsert({
+        where: { purchase_id: purchaseId },
+        create: { purchase_id: purchaseId, holder: null, holder_until: null, fence: 0 },
+        update: {},
+      });
+    } catch (err) {
+      // Two first-time claimers raced on the create; the row exists now.
+      if ((err as { code?: string } | null)?.code !== 'P2002') throw err;
+    }
+    const now = new Date();
+    const token = `${kind}:${randomUUID()}`;
+    const res = await this.prisma.clientBillingLease.updateMany({
+      where: {
+        purchase_id: purchaseId,
+        OR: [{ holder: null }, { holder_until: null }, { holder_until: { lte: now } }],
+      },
+      data: {
+        holder: token,
+        holder_until: new Date(now.getTime() + DISPUTE_BILLING_LEASE_MS),
+        fence: { increment: 1 },
+      },
+    });
+    const row = await this.prisma.clientBillingLease.findUnique({
+      where: { purchase_id: purchaseId },
+    });
+    if (res.count !== 1 || !row || row.holder !== token) return row?.holder ?? 'unknown';
+    return { purchaseId, token, fence: row.fence };
+  }
+
+  /** Writes that re-check the lease (CAS on holder) in the same transaction. */
+  private async fencedTx(
+    lease: DisputeLease,
+    fn: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const ok = await tx.clientBillingLease.updateMany({
+        where: { purchase_id: lease.purchaseId, holder: lease.token },
+        data: { holder_until: new Date(Date.now() + DISPUTE_BILLING_LEASE_MS) },
+      });
+      if (ok.count !== 1) throw new Error('DUNNING_BILLING_LEASE_LOST');
+      await fn(tx);
+    });
+  }
+
+  private async releaseDisputeLease(lease: DisputeLease): Promise<void> {
+    try {
+      await this.prisma.clientBillingLease.updateMany({
+        where: { purchase_id: lease.purchaseId, holder: lease.token },
+        data: { holder: null, holder_until: null },
+      });
+    } catch (err) {
+      // An unreleased lease expires on its own after DISPUTE_BILLING_LEASE_MS.
+      this.logger.warn(
+        `dunning v2 billing lease release failed purchase=${lease.purchaseId}: ${dunningErrorCode(err)}`,
+      );
+    }
+  }
+
+  /** Row lock on the purchase's DunningState (no-op when none exists). */
+  private async lockDunningState(tx: Prisma.TransactionClient, purchaseId: string): Promise<void> {
+    await tx.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
   }
 
   /**
@@ -1418,93 +1830,6 @@ export class DunningV2Service {
     return { priorStatus: prior.status };
   }
 
-  /**
-   * Resolve a dispute cycle (B-628-8) unless another obligation is still
-   * open or lost; the closing dispute counts with its event status.
-   */
-  private async resolveDisputeCycle(
-    purchaseId: string,
-    now: Date,
-    closing: ClosingDispute | null,
-  ): Promise<boolean | 'blocked'> {
-    let resolved = false;
-    let blocked = false;
-    let wasLocked = false;
-    let stateId = '';
-    await this.prisma.$transaction(async (tx) => {
-      // R5: serialize with dispute-created recording on the same row.
-      await this.lockDunningState(tx, purchaseId);
-      if (closing?.disputeId && closing.status) {
-        await this.upsertDisputeObligation(tx, {
-          purchaseId,
-          disputeId: closing.disputeId,
-          chargeId: closing.chargeId,
-          status: closing.status,
-          now,
-        });
-      }
-      const state = await tx.dunningState.findUnique({
-        where: { purchase_id: purchaseId },
-        include: { purchase: true },
-      });
-      if (
-        !state ||
-        state.status !== 'active' ||
-        state.last_failure_reason !== DUNNING_V2_REVERSAL_REASON
-      ) {
-        return;
-      }
-      const disputes = await this.disputeObligations(tx, purchaseId);
-      const open = outstandingDisputes(disputes, closing);
-      if (open.length > 0) {
-        blocked = true;
-        this.logger.log(
-          JSON.stringify({
-            event: 'dunning_v2.dispute_cycle_kept',
-            purchase_id: purchaseId,
-            outstanding: open.map((d) => d.stripe_dispute_id),
-          }),
-        );
-        return;
-      }
-      const res = await tx.dunningState.updateMany({
-        where: { id: state.id, status: 'active', last_failure_reason: DUNNING_V2_REVERSAL_REASON },
-        data: { status: 'resolved', resolved_at: now, recovered_at: now, locked_out_at: null },
-      });
-      if (res.count !== 1) return;
-      resolved = true;
-      wasLocked = state.locked_out_at != null;
-      stateId = state.id;
-      if (state.purchase.status !== 'canceled') {
-        await tx.clientPurchase.update({
-          where: { id: purchaseId },
-          data: {
-            entitlement_active: true,
-            ...(state.purchase.status === 'past_due' ? { status: 'active' } : {}),
-          },
-        });
-      }
-      await tx.notification.updateMany({
-        where: {
-          user_id: state.purchase.client_user_id,
-          kind: NotificationKind.DUNNING_BLOCKER,
-          read_at: null,
-        },
-        data: { read_at: now },
-      });
-      await tx.dunningNoticeDelivery.updateMany({
-        where: { dunning_state_id: state.id, status: { in: ['pending', 'failed'] } },
-        data: { status: 'canceled', next_attempt_at: null },
-      });
-    });
-    if (resolved) {
-      this.telemetry.recovered(purchaseId, 'manual');
-      if (wasLocked) this.telemetry.lockoutExited(purchaseId, { dunning_state_id: stateId });
-    }
-    if (blocked) return 'blocked';
-    return resolved;
-  }
-
   // ── Client read model (banner + lockout screen) ───────────────────────────
   /**
    * The signed-in client's dunning view. Scoped to `clientUserId` only.
@@ -1530,6 +1855,10 @@ export class DunningV2Service {
       update_payment_route: '/v1/checkout/payment-method/setup-intent',
       update_card_url: DUNNING_UPDATE_CARD_URL,
       cancel_route: null,
+      reason: null,
+      access_ended: false,
+      billing_paused: false,
+      restart_by: null,
     };
     if (!base.enabled) return base;
 
@@ -1570,15 +1899,36 @@ export class DunningV2Service {
     ]);
     const enteredAt = row.entered_at as Date;
     const kind = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';
+    const state = row.locked_out_at && !lockWaived ? 'locked' : 'past_due';
+    if (kind === 'dispute') {
+      // R-DISPUTE-PAUSE: access ended at once, billing is paused, the coach
+      // restarts it. No lock date, no retry, no card update, no cancel path.
+      return {
+        ...base,
+        state,
+        kind,
+        lock_waived: lockWaived,
+        purchase_id: row.purchase_id,
+        currency: row.purchase.currency,
+        failed_at: enteredAt.toISOString(),
+        locked_at: row.locked_out_at ? row.locked_out_at.toISOString() : null,
+        coach_name: coach?.name ?? null,
+        update_payment_route: null,
+        update_card_url: null,
+        reason: 'dispute_paused',
+        access_ended: true,
+        // Sol B-705-4: only once Stripe confirmed the pause.
+        billing_paused: row.billing_paused_at != null,
+        restart_by: 'coach',
+      };
+    }
     return {
       ...base,
-      state: row.locked_out_at && !lockWaived ? 'locked' : 'past_due',
+      state,
       kind,
       lock_waived: lockWaived,
       purchase_id: row.purchase_id,
-      // B-689-5 rule: the failed renewal's amount is not the disputed charge's.
-      amount_cents:
-        kind === 'dispute' ? null : (row.last_failed_amount_cents ?? row.purchase.amount_cents),
+      amount_cents: row.last_failed_amount_cents ?? row.purchase.amount_cents,
       currency: row.purchase.currency,
       failed_at: enteredAt.toISOString(),
       lockout_at: dunningV2LockoutAt(enteredAt).toISOString(),
@@ -1588,6 +1938,8 @@ export class DunningV2Service {
       card_last4: customer?.default_card_last4 ?? null,
       card_brand: customer?.default_card_brand ?? null,
       cancel_route: `/v1/checkout/subscriptions/${row.purchase_id}/cancel`,
+      reason: 'payment_failed',
+      access_ended: state === 'locked',
     };
   }
 
