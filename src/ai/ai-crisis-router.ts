@@ -39,11 +39,29 @@ const PERSON =
   "(i|i'?ve|i have|i just|i think i|i may have|i might have|he|she|they|someone|somebody|my (friend|partner|wife|husband|boyfriend|girlfriend|son|daughter|kid|child|mom|mum|dad|brother|sister|roommate|client|training partner))";
 
 /**
+ * F9: a person named by role ("my teammate", "a guy", "the baby"), so "my
+ * legs won't wake up" is not read as a person.
+ */
+const PERSON_NOUN =
+  '(my|our|a|the|this|that|his|her|their) (friend|partner|wife|husband|boyfriend|girlfriend|spouse|son|daughter|kid|child|baby|toddler|teen|teenager|mom|mum|mother|dad|father|parent|brother|sister|grandma|grandpa|grandmother|grandfather|aunt|uncle|cousin|roommate|flatmate|neighbou?r|client|teammate|coworker|co-worker|colleague|classmate|buddy|mate|guy|girl|man|woman|boy|person|trainer|coach|training partner|gym partner|lifting partner)s?';
+
+/**
  * Training, food and supplement words. "overdosed on cardio" or "overdose on
  * carbs" is a figure of speech, not a poisoning (B-AIG2-122).
  */
 const NOT_A_SUBSTANCE =
   '(cardio|creatine|protein|carbs?|sugar|sweets|candy|chocolate|food|junk food|pizza|fast food|salt|water|fiber|fibre|veggies|vegetables|fruit|exercise|training|workouts?|running|lifting|squats?|reps|sets|volume|the gym|gym|leg day|netflix|tv|sleep)';
+
+/**
+ * F9 (B-CRISIS2-123): the ways people type "overdosed" or "overdosing" about
+ * a person: overdosed, ODed, OD'd, OD'ed, O.D., O.D.'d, O.D.ed, ODing, OD'ing.
+ * "odd" is not one ("he is odd", "I have odd soreness"). Close it with
+ * `(?![\\w'])`, because "O.D." ends on a dot.
+ */
+const OD_VERB = "(overdosed|overdosing|o\\.?d\\.?'?ing|o\\.d\\.(?:'?e?d)?|o\\.?d(?:'e?d|ed))";
+
+/** The same spellings with an apostrophe or dots, which need no person before them. */
+const OD_VERB_MARKED = "(overdosed|overdosing|o\\.?d\\.?'(?:e?d|ing)|o\\.d\\.?(?:e?d|ing))";
 
 /** Training activities ("hard to breathe during heavy squats" is a form question). */
 const ACTIVITY =
@@ -81,6 +99,18 @@ const EMERGENCY: RegExp[] = [
   // breathe after my run, I need help now").
   /^(?=.*\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b)(?=.*\b(help (me )?(right )?now|need help (right )?now|call (911|an ambulance)|ambulance)\b)/i,
   /\b(i'?m|i am) not breathing\b/i,
+  // F9: a person who is not breathing ("he's not breathing", "my teammate
+  // passed out and is not breathing", "unconscious and not breathing", "she
+  // stopped breathing"). How to breathe in a lift ("not breathing properly
+  // during squats", "not breathing between reps") is a form question.
+  /\b(not|isn'?t|aren'?t|wasn'?t|stopped|has stopped|stops) breathing\b(?! (properly|right|correctly|well|enough|deeply|deep|hard|heavily|normally|evenly|fully|out|in|through|during|while|when|on|at|between|with|into|from)\b)/i,
+  // F9: someone who will not wake up ("she won't wake up", "my friend is not
+  // waking up", "passed out and won't wake up"). "I can't wake up early" and
+  // "he won't wake up for morning cardio" are about sleep.
+  new RegExp(
+    `\\b((he|she|they|someone|somebody|${PERSON_NOUN})('s|'re|s|re)?( just| still)? (won'?t|wont|will not|can'?t|cannot|could not|couldn'?t|is not|isn'?t|are not|aren'?t|not)|and (won'?t|wont|will not|is not|isn'?t|is still not)) (wake|waking) up\\b(?! (early|earlier|on time|in time|for|to|before|at|until|till|by|when|in the|anymore)\\b)`,
+    'i',
+  ),
   /\b(i'?m|i am|i feel like i'?m|i think i'?m|feels like i'?m) (fainting|passing out|blacking out|losing consciousness)\b/i,
   /\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
   /\b(just|keeps?|kept) (fainted|passed out|blacked out|collapsed|fainting|passing out|blacking out|collapsing)\b/i,
@@ -102,7 +132,7 @@ const EMERGENCY: RegExp[] = [
   // poisoned"). "Can you overdose on creatine?", "overdose on cardio" and
   // "is mercury poisoning a risk" are ordinary questions for the model.
   new RegExp(
-    `\\b(${PERSON} (just |has |have |had |is |are |am |was |may have |might have |think (i|he|she|they) |)|(i'?m|he'?s|she'?s|they'?re|we'?re) )(overdosed|overdosing|od'?d|od'?ing)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
+    `\\b(${PERSON} (just |has |have |had |is |are |am |was |may have |might have |think (i|he|she|they) |)|(i'?m|he'?s|she'?s|they'?re|we'?re) )${OD_VERB}(?![\\w'])(?! on ${NOT_A_SUBSTANCE}\\b)`,
     'i',
   ),
   /\b(took|taken|take|taking|having|i'?ve had|just had) an overdose\b/i,
@@ -111,13 +141,19 @@ const EMERGENCY: RegExp[] = [
   // overdosing"). A plan or thought ("thinking about overdosing") is the 988
   // line below; "overdosing on cardio" stays an ordinary question.
   new RegExp(
-    `\\b(?<!\\b(about|of|considering|contemplating|planning on|into|like|never|almost|nearly) )(overdosed|overdosing|od'd|od'ing)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
+    `\\b(?<!\\b(about|of|considering|contemplating|planning on|into|like|never|almost|nearly) )${OD_VERB_MARKED}(?![\\w'])(?! on ${NOT_A_SUBSTANCE}\\b)`,
+    'i',
+  ),
+  // F9: "ODed" or "O.D." after someone named by role ("my teammate ODed", "a
+  // guy at my gym O.D."), so the name "Oded" on its own does not route.
+  new RegExp(
+    `\\b(my|our|a|the|this|that|his|her|their) \\w+( (at|in|from|on) (my|our|the|his|her|their) \\w+)? (just |has |had |is |was |may have |might have |)${OD_VERB}(?![\\w'])(?! on ${NOT_A_SUBSTANCE}\\b)`,
     'i',
   ),
   // B-744-1: the noun on its own ("possible overdose, what do I do?", "is this
   // an overdose?", "help, overdose"). "can you overdose on creatine?" and
   // "how much caffeine is an overdose" stay ordinary questions.
-  /\b(possible|suspected|accidental|likely|probable) (overdose|od)\b/i,
+  /\b(possible|suspected|accidental|likely|probable) (overdose|o\.?d\.?)(?![\w'])/i,
   acute('(an? )?overdose'),
   /^\W*((please|help|help me|urgent|emergency)\W+)*(an )?(overdose|od)(\W+(help|help me|please|now|what do i do))*\W*$/i,
   new RegExp(
