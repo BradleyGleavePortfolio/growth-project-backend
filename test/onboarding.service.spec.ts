@@ -1947,3 +1947,33 @@ describe('D2 consent: box 1 only gates completion; box 2 is never required (#607
     expect(sources).not.toMatch(/hasClientAiConsent|client_ai_processing/);
   });
 });
+
+describe('S-REVENUE-124 B-REV-1: GET /me/onboarding says whether the consultation can finish', () => {
+  it('true for a client whose coach has an active clinic program set', async () => {
+    const w = makeWorld();
+    expect((await w.svc.getOnboarding('client-1')).consultation_available).toBe(true);
+  });
+
+  it('false for a client with no coach (coachless Home), the case complete() answers not_attached', async () => {
+    const w = makeWorld();
+    expect((await w.svc.getOnboarding('loner')).consultation_available).toBe(false);
+  });
+
+  it('false for a client whose coach has no program set, the case complete() answers clinic_not_configured', async () => {
+    const w = makeWorld();
+    w.sets.length = 0;
+    expect((await w.svc.getOnboarding('client-1')).consultation_available).toBe(false);
+    w.sets.push({ id: 'set-off', coach_id: 'coach-1', active: false, materialisation: {} });
+    expect((await w.svc.getOnboarding('client-1')).consultation_available).toBe(false);
+  });
+
+  it('true once the consultation is completed, whatever the coach has today', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    await w.svc.complete('client-1', NOW);
+    w.sets.length = 0;
+    const state = await w.svc.getOnboarding('client-1');
+    expect(state.completed).toBe(true);
+    expect(state.consultation_available).toBe(true);
+  });
+});
