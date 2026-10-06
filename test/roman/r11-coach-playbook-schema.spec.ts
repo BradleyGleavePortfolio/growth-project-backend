@@ -92,10 +92,9 @@ describe('R11-P1 validateCoachPlaybook', () => {
     const res = validateCoachPlaybook(fullPlaybook());
     expect(res.ok).toBe(true);
     if (!res.ok) return;
+    const sections: Record<string, Record<string, unknown[]>> = res.value.sections;
     for (const [section, keys] of Object.entries(PLAYBOOK_SECTION_KEYS)) {
-      const lists = (res.value.sections as unknown as Record<string, Record<string, unknown[]>>)[
-        section
-      ];
+      const lists = sections[section];
       expect(Object.keys(lists)).toEqual([...keys]);
     }
     expect(res.value.sections.training.deload).toEqual([]);
@@ -409,14 +408,14 @@ describe('R11-P1 account deletion', () => {
       },
       updateMany: async () => ({ count: 0 }),
     });
-    const client = {
+    const client: Record<string, unknown> = {
       coachMediaAsset: { findMany: async () => [] },
       coachPlaybook: delegate('coachPlaybook'),
       coachPlaybookSource: delegate('coachPlaybookSource'),
       $executeRaw: async () => 0,
       $queryRaw: async () => [{ present: false }],
     };
-    return client as unknown as Prisma.TransactionClient;
+    return client as Prisma.TransactionClient;
   }
 
   const playbookEntries = ERASURE_MANIFEST.filter(

@@ -197,15 +197,29 @@ export function emptyCoachPlaybookSections(): CoachPlaybookSections {
   return fillSections({});
 }
 
+function fillLists<K extends string>(
+  keys: readonly K[],
+  given: Partial<Record<K, PlaybookItem[]>>,
+): Record<K, PlaybookItem[]> {
+  const out: Partial<Record<K, PlaybookItem[]>> = {};
+  for (const key of keys) out[key] = given[key] ?? [];
+  return out as Record<K, PlaybookItem[]>;
+}
+
 function fillSections(input: SectionsShape): CoachPlaybookSections {
-  const out: Record<string, Record<string, unknown[]>> = {};
-  for (const section of Object.keys(PLAYBOOK_SECTION_KEYS) as PlaybookSectionName[]) {
-    const given = (input[section] ?? {}) as Record<string, unknown[] | undefined>;
-    const lists: Record<string, unknown[]> = {};
-    for (const key of PLAYBOOK_SECTION_KEYS[section]) lists[key] = given[key] ?? [];
-    out[section] = lists;
-  }
-  return out as unknown as CoachPlaybookSections;
+  const exercises: NonNullable<SectionsShape['exercises']> = input.exercises ?? {};
+  return {
+    exercises: {
+      go_to: exercises.go_to ?? [],
+      avoid: exercises.avoid ?? [],
+      substitutions: exercises.substitutions ?? [],
+      cues: exercises.cues ?? [],
+      warm_up: exercises.warm_up ?? [],
+    },
+    training: fillLists(PLAYBOOK_SECTION_KEYS.training, input.training ?? {}),
+    diet: fillLists(PLAYBOOK_SECTION_KEYS.diet, input.diet ?? {}),
+    recovery: fillLists(PLAYBOOK_SECTION_KEYS.recovery, input.recovery ?? {}),
+  };
 }
 
 /** `sections.exercises.go_to.3.text:too_big` style; never the value itself. */
