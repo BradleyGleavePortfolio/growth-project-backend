@@ -585,6 +585,8 @@ jobs:
         # S-SCHED-2 adds test/scheduling-booking-concurrency.live.spec.ts: the
         # no-double-booking proof (exclusion constraint applied from its
         # migration file + per-coach advisory lock) on the same gate/bootstrap.
+        # MONEY-WEBHOOK-124 adds test/money-webhook-regrant.live.spec.ts: a plan
+        # granted again after a lockout commits (no unique violation in the tx).
         run: |
           npx jest \
             test/scheduling-booking-concurrency.live.spec.ts \
@@ -597,6 +599,7 @@ jobs:
             test/onboarding-tenancy-fence.live.spec.ts \
             test/checkout-settlement.live.spec.ts \
             test/b-trials-usage-concurrency.live.spec.ts \
+            test/money-webhook-regrant.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096

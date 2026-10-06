@@ -128,14 +128,20 @@ function makeHarness() {
     },
     user: { findUnique: jest.fn(async () => ({ id: 'c1' })) },
     dripResolverMarker: {
-      create: jest.fn(async ({ data }: any) => {
-        const key = `${data.purpose}|${data.purchase_id}|${data.content_id}`;
-        if (markers.includes(key)) {
-          uniqueViolations.push(key);
-          throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+      // ON CONFLICT DO NOTHING (createMany + skipDuplicates), like the real
+      // claim: a duplicate is recorded here and inserts nothing.
+      createMany: jest.fn(async ({ data }: any) => {
+        let count = 0;
+        for (const row of data) {
+          const key = `${row.purpose}|${row.purchase_id}|${row.content_id}`;
+          if (markers.includes(key)) {
+            uniqueViolations.push(key);
+            continue;
+          }
+          markers.push(key);
+          count += 1;
         }
-        markers.push(key);
-        return data;
+        return { count };
       }),
     },
   };
