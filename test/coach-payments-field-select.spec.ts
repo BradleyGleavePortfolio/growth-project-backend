@@ -179,7 +179,9 @@ function buildPrisma() {
       findUnique: jest.fn(async (args: { select?: Row }) => project(dunning, args.select, {})),
     },
     coachPackage: {
-      findFirst: jest.fn(async () => ({ id: 'pkg-1', coach_id: COACH })),
+      findFirst: jest.fn(async () => ({
+        id: 'pkg-1', coach_id: COACH, currency: 'usd', interval: 'month', interval_count: 1,
+      })),
     },
   };
 }

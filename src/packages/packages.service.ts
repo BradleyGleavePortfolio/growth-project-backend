@@ -14,6 +14,11 @@ import { PrismaService } from '../prisma.service';
 import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
+import {
+  monthlyEquivalent,
+  MRR_SUBSCRIPTION_STATUSES,
+  recurringCadenceOf,
+} from '../coach-money/coach-money.service';
 
 // CoachPackage CRUD. Owns coach offers / packages.
 //
@@ -156,15 +161,32 @@ export interface UpdatePackageInput {
   is_active?: boolean;
 }
 
-/** A subscriber row as a coach may see it (C-641-2: no client Stripe secrets). */
+const COACH_PACKAGE_SUBSCRIBER_SELECT = {
+  ...COACH_PURCHASE_SELECT,
+  client: { select: { name: true, email: true } },
+} as const satisfies Prisma.ClientPurchaseSelect;
+
+/** A subscriber row as a coach may see it (no client Stripe secrets). */
 export type CoachSubscriberRow = Prisma.ClientPurchaseGetPayload<{
-  select: typeof COACH_PURCHASE_SELECT;
+  select: typeof COACH_PACKAGE_SUBSCRIBER_SELECT;
 }>;
+
+export interface CoachPackageManagementView extends CoachPackage {
+  /** Distinct clients with access, including free access and trials. */
+  subscriber_count: number;
+  /** Paid monthly-equivalent recurring revenue, in this package's currency. */
+  monthly_revenue_cents: number;
+  pricing_locked: boolean;
+}
 
 export interface SubscribersPage {
   subscribers: CoachSubscriberRow[];
   next_offset: number | null;
   total_returned: number;
+  package_id: string;
+  currency: string;
+  subscriber_count: number;
+  monthly_revenue_cents: number;
 }
 
 /**
@@ -559,11 +581,11 @@ export class PackagesService {
 
       // One count query (no N+1). Active recurring buyer fingerprint: a
       // non-null Stripe subscription id AND an active-ish subscription
-      // status, AND the entitlement still live.
+    // status. Pausing app access does not end the Stripe subscription or
+    // replace its immutable price; those clients can resume their old terms.
       const activeRecurringCount = await tx.clientPurchase.count({
         where: {
           package_id: packageId,
-          entitlement_active: true,
           stripe_subscription_id: { not: null },
           status: { in: ACTIVE_RECURRING_STATUSES },
         },
@@ -708,12 +730,12 @@ export class PackagesService {
   }
 
   // List packages for a coach. Owner = the coach themselves (manage view).
-  // Includes archived rows by default for the owner so they can un-archive.
+  // Archived rows are included when the management caller requests them.
   async listForCoach(
     coachUserId: string,
     opts: { includeArchived?: boolean; activeOnly?: boolean } = {},
-  ): Promise<CoachPackage[]> {
-    return this.prisma.coachPackage.findMany({
+  ): Promise<CoachPackageManagementView[]> {
+    const rows = await this.prisma.coachPackage.findMany({
       where: {
         coach_id: coachUserId,
         ...(opts.activeOnly ? { is_active: true } : {}),
@@ -721,6 +743,7 @@ export class PackagesService {
       },
       orderBy: [{ is_active: 'desc' }, { created_at: 'desc' }],
     });
+    return this.managementViews(rows);
   }
 
   // Public client-facing list: only active, non-archived, PUBLISHED
@@ -747,12 +770,13 @@ export class PackagesService {
   async getOwnedDetail(
     coachUserId: string,
     packageId: string,
-  ): Promise<CoachPackage & { content_count: number }> {
+  ): Promise<CoachPackageManagementView & { content_count: number }> {
     const row = await this.requireOwnedPackage(coachUserId, packageId);
     const content_count = await this.prisma.coachPackageContent.count({
       where: { package_id: packageId, removed_at: null },
     });
-    return { ...row, content_count };
+    const [view] = await this.managementViews([row]);
+    return { ...view, content_count };
   }
 
   // PR-6 — paginated subscribers list. Caller must own the package
@@ -764,7 +788,7 @@ export class PackagesService {
     packageId: string,
     opts: { limit?: number; offset?: number } = {},
   ): Promise<SubscribersPage> {
-    await this.requireOwnedPackage(coachUserId, packageId);
+    const pkg = await this.requireOwnedPackage(coachUserId, packageId);
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
     const offset = Math.max(opts.offset ?? 0, 0);
     const rows = await this.prisma.clientPurchase.findMany({
@@ -774,15 +798,60 @@ export class PackagesService {
       take: limit + 1, // peek for next page
       // C-641-2: allow-listed fields only — never the client's Stripe
       // client_secret / ephemeral key or internal Stripe ids.
-      select: COACH_PURCHASE_SELECT,
+      select: COACH_PACKAGE_SUBSCRIBER_SELECT,
     });
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
+    const [view] = await this.managementViews([pkg]);
     return {
       subscribers: page,
       next_offset: hasMore ? offset + limit : null,
       total_returned: page.length,
+      package_id: packageId,
+      currency: view.currency,
+      subscriber_count: view.subscriber_count,
+      monthly_revenue_cents: view.monthly_revenue_cents,
     };
+  }
+
+  // One read for the whole catalog; never invent zero clients/revenue because
+  // the raw CoachPackage row has no statistics columns. Uses Money's same MRR
+  // math, with the purchase price snapshot and one rounding per package.
+  private async managementViews(rows: CoachPackage[]): Promise<CoachPackageManagementView[]> {
+    if (rows.length === 0) return [];
+    const purchases = await this.prisma.clientPurchase.findMany({
+      where: { package_id: { in: rows.map((p) => p.id) } },
+      select: {
+        package_id: true, client_user_id: true, amount_cents: true,
+        currency: true, billing_type: true, status: true, source: true,
+        entitlement_active: true, stripe_subscription_id: true,
+      },
+    });
+    const byPackage = new Map(rows.map((row) => [
+      row.id, { row, clients: new Set<string>(), mrr: 0, pricingLocked: false },
+    ]));
+    for (const p of purchases) {
+      const bucket = byPackage.get(p.package_id);
+      if (!bucket) continue;
+      if (p.entitlement_active) bucket.clients.add(p.client_user_id);
+      if (p.stripe_subscription_id && ACTIVE_RECURRING_STATUSES.includes(p.status)) {
+        bucket.pricingLocked = true;
+      }
+      if (
+        !p.entitlement_active || p.source != null || p.billing_type !== 'recurring' ||
+        !MRR_SUBSCRIPTION_STATUSES.includes(p.status) ||
+        p.currency.toLowerCase() !== bucket.row.currency.toLowerCase()
+      ) continue;
+      bucket.mrr += monthlyEquivalent(recurringCadenceOf({
+        amount_cents: p.amount_cents, package: bucket.row,
+      }));
+    }
+    return rows.map((row) => ({
+      ...row,
+      subscriber_count: byPackage.get(row.id)!.clients.size,
+      monthly_revenue_cents: Math.round(byPackage.get(row.id)!.mrr),
+      pricing_locked: byPackage.get(row.id)!.pricingLocked,
+    }));
   }
 
   // PR-6 — resolve the effective tenant coach id for a caller. Head
