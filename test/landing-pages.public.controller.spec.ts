@@ -248,18 +248,32 @@ describe('LandingPagePublicController — custom-domain Host routing (B3)', () =
       expect(res._headers['cache-control']).toBe('no-store, max-age=0');
     });
 
-    it('returns a no-store 404 (does NOT look up) for a canonical app host', async () => {
+    it('redirects a canonical app host to the help centre, no lookup (HUNT-09-124)', async () => {
       const { ctrl, svc } = build();
       const req = makeReq({ host: 'app.trygrowthproject.com' });
       const res = makeRes();
 
       await ctrl.renderCustomDomainRoot(req, res);
 
-      // Canonical host short-circuits BEFORE any DB lookup.
+      // Canonical host short-circuits BEFORE any DB lookup, and the bare
+      // root is not a "Page not available" dead end: it opens /help.
       expect(svc.resolveCustomDomainAddress).not.toHaveBeenCalled();
       expect(svc.renderPage).not.toHaveBeenCalled();
-      expect(res._status).toBe(404);
+      expect(res._redirect).toEqual({ status: 302, url: '/help' });
+      expect(res._status).not.toBe(404);
       expect(res._headers['cache-control']).toBe('no-store, max-age=0');
+    });
+
+    it.each([
+      ['APP.TRYGROWTHPROJECT.COM:443'],
+      ['trygrowthproject.com'],
+      ['www.trygrowthproject.com'],
+    ])('redirects canonical host variant %s to /help (HUNT-09-124)', async (host) => {
+      const { ctrl, svc } = build();
+      const res = makeRes();
+      await ctrl.renderCustomDomainRoot(makeReq({ host }), res);
+      expect(svc.resolveCustomDomainAddress).not.toHaveBeenCalled();
+      expect(res._redirect).toEqual({ status: 302, url: '/help' });
     });
 
     it.each([
