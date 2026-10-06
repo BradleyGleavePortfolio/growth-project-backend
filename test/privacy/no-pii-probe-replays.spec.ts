@@ -279,7 +279,7 @@ describe('Opus B-700-1 replay: coach brief log lines never hold the coach name',
 
   it('contract failure twice: the coach id, mode and date, never the name', async () => {
     const lines = spyLogs();
-    const tooFew = 'Patricia, there are updates this morning. Watch for more.';
+    const tooFew = 'Patricia, there are updates this morning and more to watch.';
     const res = await run([tooFew, tooFew], 'coach-1');
     expect(res.generated_by).toBe('fallback');
     const all = lines().join('\n');

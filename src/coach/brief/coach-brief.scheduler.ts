@@ -42,6 +42,23 @@ const DEFAULT_CRON = '* * * * *';
 // 03:15 UTC — off-peak, well after the 05:00 push generation window.
 const TTL_PRUNE_CRON = '15 3 * * *';
 const PUSH_TIMEOUT_MS = 10_000;
+// Same defaults CoachBriefPreferencesService reports for a coach with no row.
+const DEFAULT_BRIEF_NOTIFICATION_TIME = '05:00';
+const DEFAULT_BRIEF_TIMEZONE = 'America/Los_Angeles';
+const PUSH_PREVIEW_MAX_CHARS = 160;
+
+// Push body: the brief's opening, cut at a sentence or word boundary with
+// an ellipsis, never mid-word.
+export function briefPushPreview(narrative: string): string {
+  const text = narrative.replace(/\s+/g, ' ').trim();
+  if (text.length <= PUSH_PREVIEW_MAX_CHARS) return text;
+  const head = text.slice(0, PUSH_PREVIEW_MAX_CHARS - 1);
+  const sentenceEnd = Math.max(head.lastIndexOf('. '), head.lastIndexOf('? '));
+  if (sentenceEnd >= 40) return head.slice(0, sentenceEnd + 1);
+  const space = head.lastIndexOf(' ');
+  const cut = space > 0 ? head.slice(0, space) : head;
+  return `${cut.replace(/[\s,;:.\u2014-]+$/, '')}\u2026`;
+}
 
 // P1-4 fix round 5: bounded retry budget. A coach receives at most
 // MAX_PUSH_ATTEMPTS push attempts per brief_date; after that the
@@ -210,8 +227,28 @@ export class CoachBriefScheduler implements OnModuleInit {
       },
     });
 
+    // Coaches who never opened brief settings get the same defaults the
+    // settings route reports (05:00 America/Los_Angeles, on). Without this
+    // only coaches with a saved settings row were ever pushed.
+    const unsaved = await this.prisma.user.findMany({
+      where: {
+        role: { in: ['coach', 'owner'] },
+        archived_at: null,
+        deleted_at: null,
+        expo_push_token: { not: null },
+        coach_brief_preferences: { is: null },
+      },
+      select: { id: true, name: true, expo_push_token: true },
+    });
+    const defaults = unsaved.map((coach) => ({
+      coach_id: coach.id,
+      notification_time: DEFAULT_BRIEF_NOTIFICATION_TIME,
+      timezone: DEFAULT_BRIEF_TIMEZONE,
+      coach,
+    }));
+
     await Promise.allSettled(
-      allPrefs.map((prefs) => this.maybeDispatch(prefs, now)),
+      [...allPrefs, ...defaults].map((prefs) => this.maybeDispatch(prefs, now)),
     );
   }
 
@@ -375,7 +412,7 @@ export class CoachBriefScheduler implements OnModuleInit {
         return;
       }
 
-      const notifBody = brief.summary.narrative.slice(0, 160);
+      const notifBody = briefPushPreview(brief.summary.narrative);
 
       // P2-6: AbortController feeds the same signal into pushToUser AND
       // the timeout, so when the 10s deadline trips we actually cancel
@@ -403,7 +440,12 @@ export class CoachBriefScheduler implements OnModuleInit {
             prefs.coach_id,
             'Your daily brief is ready',
             notifBody,
-            { deep_link: 'tgp://coach/brief/today', brief_date: briefDate },
+            {
+              deep_link: 'tgp://coach/brief/today',
+              brief_date: briefDate,
+              // The app routes a tap by actionScreen (pushTapRouter).
+              actionScreen: 'CoachBrief',
+            },
             abortController.signal,
           ),
           timeoutPromise,
