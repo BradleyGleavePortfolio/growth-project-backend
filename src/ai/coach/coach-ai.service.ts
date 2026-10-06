@@ -116,8 +116,10 @@ export class CoachAIService {
         contextId: clientId,
       });
     } catch (err) {
+      // Error name only: exception text can carry personal data
+      // (test/privacy/no-pii-in-logs.spec.ts).
       this.logger.error(
-        `Budget recordUsage failed for capability=${capability}: ${(err as Error).message}`,
+        `Budget recordUsage failed for capability=${capability} (err=${err instanceof Error ? err.name : 'unknown'})`,
       );
     }
   }
