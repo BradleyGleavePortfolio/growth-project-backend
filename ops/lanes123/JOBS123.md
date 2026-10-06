@@ -296,3 +296,273 @@ m#386 64c5bde0f20f3a39d76961e7eb9838dc515fa2d3 (was 0a1bc0bd); FIX ROUND 2 comme
 (successful redeem refreshes the shared entitlement gate; integrated test fails without the fix) and B-386-OPUS-1 (iOS "Choose a plan"
 -> "1:1 coaching with <coach>" screen; Android keeps the sheet; tests both). No new Bs outside the freeze. Required checks green at the
 exact head. One verdict.
+
+# WAVE 3 (21:35 PDT 10-05) — 20 runs for the v1 launch (owner 21:28: "pick the next 20 agent runs that make the biggest difference for
+# the v1 launch ... launch them all parallel right now. Then ... stop-and-drain down to 8")
+Preamble for every wave-3 job (read this, then ONLY your entry):
+- State: backend main 5230306c = production (deploy 8). Mobile main a727eb49 (CI green). Production flags ON: community core
+  (API/POSTS/MESSAGES/PUSH/REALTIME), FEATURE_MESSAGING_CORE_V2, FEATURE_ROMAN_CHAT_ENABLED, FEATURE_ROMAN_ADJUST_ENABLED, booking
+  reminders, programs (MWB templates/autosave, named regimes), wearables ingest, AI consent ledger. OFF: FEATURE_COACHLESS_HOME,
+  FEATURE_COACH_CODE_TOOLS, FEATURE_COACH_BROADCASTS, FEATURE_DUNNING_V2, DM, voice notes. The Expo store build is Wed 10-07 from mobile
+  main (EXPO_PUBLIC flags fixed at build time); last store build ff6bd4b (10-01). Owner = Bradley Gleave, and he IS the featured coach.
+- Owner rules: EDGE-CASE FREEZE — B only for normal-use money, private/health data, safety, data loss, reachable security, store/legal,
+  false claims, core-flow dead ends; everything else is "C (edge, deferred)". RUTHLESS SCOPE: zero time on time zones, races, retries.
+  No generic error copy. Never name the clinic partner. Never print secret values (names only).
+- Read-only checkouts for scouts: /home/user/workspace/wt/RO-backend (backend 5230306c) and /home/user/workspace/wt/RO-mobile (mobile
+  a727eb49). Do NOT check out, edit or build in them. Builders make their own worktree under /home/user/workspace/wt/<JOB> from
+  origin/main (absolute paths only; two builders today slipped into the main clones with relative paths), link deps with
+  ops/link_deps.sh, run heavy commands only through ops/heavy.sh, and remove the worktree at the end. Disk is 70% used: no full
+  node_modules installs.
+- Scouts (S-*): read-only. No PRs, no PR comments, no pushes. Deliver the report. If you find a B, give the exact file:line, a
+  normal-user story and the smallest fix; the operator assigns fix builders.
+- Builders (B-*/M-*): one PR on main, under 600 changed lines unless your entry says otherwise, Conventional Commits title (Danger),
+  R75 (no new `as any` / `as unknown as` / `as never`, no empty `.catch(() => undefined)`), tests that fail on main where behaviour
+  changes. Push once, PR CI green, then comment `FIX ROUND 1 (OPENING) (<JOB>, agent 123) — growth-project-<repo>#<n> @ <sha>` ending
+  READY FOR AUDIT. Never merge, deploy, run Fly workflows or env sync.
+- Every job: report at /home/user/workspace/ops/reports/<JOB>.md ending with `## HANDOFF`; notify file
+  /home/user/workspace/ops/lanes123/notify/<JOB>.txt (one line: done, PR/head or "report only", B count). At the time box: stop, write
+  the report with what is done, final answer under 150 words. Times only from `TZ=America/Los_Angeles date`.
+
+## W3-01 S-IOSREV-123 (Claude Opus 5.5, scout, 40 min) — App Store review readiness (launch step 7)
+On mobile main: (a) every purchase surface on iOS: only the labelled "1:1 coaching with <coach>" screens may sell (3.1.3(d)); anything
+else that sells digital content on iOS (coach AI credit packs, programs, storefront, tips) must be hidden when
+nonP2PPurchasesHidden() — list each surface and whether it is hidden; (b) 4.8: Sign in with Apple offered wherever Google sign-in is;
+(c) 5.1.1(v): account deletion reachable in-app for clients and coaches; (d) HealthKit and every iOS permission purpose string in
+app.json / app.config (camera, photos, notifications, health) present and specific; (e) anything that would crash or dead-end for a
+reviewer with a fresh account (no coach, no plan). Report: B list + App Review notes draft (3.1.3(d) one-to-one coaching argument).
+
+## W3-02 S-PLAYREV-123 (GPT-6.1 Sol, scout, 40 min) — Google Play review readiness
+On mobile main: Health Connect permission declarations vs what the app reads (least privilege), the privacy-policy rationale activity,
+data safety mapping (docs PLAY_STORE_READINESS.md) vs day-1 features now on (Roman chat, community, push, health), POST_NOTIFICATIONS,
+targetSdk, foreground service types, exact-alarm or background location use, reviewer access. Report: B list + Play data-safety deltas.
+
+## W3-03 B-BUILDCFG-123 (Claude Opus 5.5, builder, 30 min) — the 10-07 build config
+Check eas.json production + clinic profiles vs config/expected-env.json (every EXPO_PUBLIC name the code reads at build time is
+set; names only), app version / iOS buildNumber / Android versionCode vs the last store build (ff6bd4b) and remote versioning,
+runtimeVersion + expo-updates channel so an OTA fix can reach the 10-07 build, Sentry/PostHog names present, API base URL =
+https://api.trygrowthproject.com. PR only if something must change before the build. Report: an owner build checklist in plain words.
+
+## W3-04 B-APPLE-123 (Claude Opus 5.5, builder, 30 min) — Sign in with Apple on production
+env-truth 37405459790 says APPLE_AUDIENCES fails its shape check ("comma list whose first entry is exactly com.growthproject.app")
+and APPLE_SIGNIN_CLIENT_ID / KEY_ID / PRIVATE_KEY are missing. Find (code) what each is for, what breaks today for a user who taps
+Sign in with Apple (login? deletion-time revocation only?), whether APPLE_AUDIENCES is non-secret (bundle ids) and may be declared as
+a literal in .github/fly-env-desired-state.json (ENV_RULES closed shape); if so open that manifest PR (never fly-secrets-set.yml).
+Report: exactly what the owner must create in Apple Developer and where it goes (GitHub secret name), in plain words.
+
+## W3-05 B-LINKS-123 (Claude Opus 5.5, builder, 30 min) — invite links, QR links and universal links
+The coach Codes screen (m#387) shares a QR/link; invite codes are shared as links. Verify on production (curl, read-only) that the link
+target resolves (app.trygrowthproject.com / api/invite/:code landing), that /.well-known/apple-app-site-association and
+/.well-known/assetlinks.json are served with the right app ids, and that the app handles the link (opens signup/code entry with the
+code filled). Fix PR (backend or mobile) for any dead end.
+
+## W3-06 M-FEATURED-123 (Claude Opus 5.5, builder, 60 min, up to 900 lines) — owner-only Featured coach editor in the app
+The coachless banner, offer, featured code and Roman pitch come only from FeaturedCoachConfig, editable only via owner
+GET/PUT /admin/featured-coach (backend src/coachless/README.md, coachless.dto.ts FeaturedCoachConfigDto); there is no UI, so the owner
+cannot set himself up. Build a Settings row "Featured coach" visible only to the owner role: coach (defaults to the owner's own coach
+account if it is one; read how roles work first), code with create_code_if_missing (suggest GP-BRADLEY), package picker from that
+coach's packages, banner title (120), offer text (200), Roman pitch (400; prefilled suggestion "Sir/Ma'am, just so you're aware, TGP's
+top coach has available slots. Enter code <code> and join for <price>. Interested?"), accepting switch, Roman card switch, caps with
+defaults; live preview of the banner and Roman card; every server error code with its own message. Must ship in the 10-07 build.
+
+## W3-07 B-FLAGS3-123 (Claude Opus 5.5, builder, 30 min) — server flags for Codes, Broadcasts, coachless
+One manifest PR: FEATURE_COACH_CODE_TOOLS, FEATURE_COACH_BROADCASTS, FEATURE_COACHLESS_HOME "true" (closed value sets, gate text,
+runbook table regenerated, manifest spec green). Prove in the report that turning them on changes nothing for the store build ff6bd4b
+(no screens) and nothing for coachless users until the featured config exists (banner hidden?). Operator applies only after the owner
+says go.
+
+## W3-08 M-SENTRY-123 (Claude Opus 5.5, builder, 20 min) — no Sentry noise from switched-off features
+Expected "feature off" responses (broadcasts 503 on every coach Messages visit — C-388 from Opus W2C; coach code tools; 404
+coachless_disabled) must not be reported as errors to Sentry; real 5xx still are. Tests.
+
+## W3-09 B-ROMAN911-123 (Claude Opus 5.5, builder, 30 min) — Roman and AI guide must not send normal gym talk to 911
+Now that Roman chat is on for everyone: "overdose on cardio", "can you overdose on creatine?" go to 911 on Roman (B-AIG4 report). Sweep
+40+ common gym/diet phrases ("this workout is killing me", "dying after leg day", "I could kill for a burger", "my heart is pounding
+after sprints", "I want to crush myself at the gym", "kill this set", "dead lift", "suicide sprints", "suicide squeeze"...) on both
+routers; fix false 911/988 routes; every C-736 / b#739 crisis phrase still routes (tests). Router-table tests.
+
+## W3-10 S-AICOST-123 (GPT-6.1 Sol, scout, 30 min) — AI spend with Roman chat on for everyone
+Per-client daily cap (ROMAN_DAILY_COST_CAP_USD is unset in production: what default applies?), coach pool debit on every Roman turn
+(A6.4), AI guide limits, platform-wide ceiling (none = carried C), model + max tokens per turn. Estimate the worst normal-use day for
+100 active clients. B only for normal-use money. Report with the smallest fix if B.
+
+## W3-11 S-AUTHZ-123 (GPT-6.1 Sol, scout, 40 min) — who can read what on the routes that went live tonight
+Community (workspace/cohort membership on every read and write), messages v2 threads, Roman sessions/messages, coach adjustments,
+plus the flag-off-but-shipping coach codes, broadcasts and coachless routes: can a client or coach read or write another coach's or
+client's data by changing an id? B only for reachable security, with a failing test sketch.
+
+## W3-12 S-RLS-123 (Claude Opus 5.5, scout, 40 min) — RLS on every table from this week's migrations
+Every table created since 2026-09-28 (community*, broadcasts, coach codes/redemptions, roman chats/memory, adjustments, booking
+options, trials, dunning, MWB): RLS enabled and forced, anon revoked, policies scoped; does the mobile app query any of them directly
+with supabase-js (then RLS is the only guard)? B only for reachable exposure.
+
+## W3-13 B-DELETE-123 (Claude Opus 5.5, builder, 45 min) — account deletion and export cover the day-1 data
+Account deletion (finalize job) and data export must cover community posts/comments/reactions/messages, Roman chats and memory notes
+(A6.4: notes survive chat deletion, but not account deletion), broadcasts received, coach codes/redemptions, adjustments, push tokens.
+Find gaps (private data left after deletion = B). One fix PR.
+
+## W3-14 S-PRIVACY-123 (GPT-6.1 Sol, scout, 30 min) — privacy policy and in-app disclosures match day 1
+Find where the privacy policy and terms live (backend landing pages, a web repo, or a URL in the app) and compare with what is now on:
+AI processing by Anthropic, Roman memory that survives chat deletion (A6.4 requires the policy to say so), community visibility,
+health data use limits, push. Report: false or missing statements (B: store/legal, false claims) with owner-ready replacement text.
+
+## W3-15 S-E2E-CLIENT-123 (Claude Opus 5.5, scout, 45 min) — client journey across today's 50+ merges
+Trace on mobile + backend main: sign up (email, Google, Apple) with and without a code -> Day 1 -> buy a plan (Android sheet, iOS
+labelled 1:1 screen) -> access -> first workout -> food log -> check-in -> Roman chat (consent first) -> Community post -> message the
+coach -> push. Find core-flow dead ends and seams between today's PRs. Each B with a repro or failing-test sketch.
+
+## W3-16 S-E2E-COACH-123 (Claude Opus 5.5, scout, 45 min) — coach journey
+Coach sign-up -> Stripe Connect onboarding (live mode) -> create a package with fees -> share a code (Codes screen) -> client joins ->
+program builder (templates, autosave/undo) -> booking options + reminders -> broadcasts -> inbox v2 -> Roman adjustment approve ->
+earnings/tax CSV. Core-flow dead ends and money errors only.
+
+## W3-17 S-PUSH-123 (GPT-6.1 Sol, scout, 30 min) — push end to end with tonight's flags on
+Community push, message push (v2), booking reminders, trial-ending push: token registration (iOS/Android), Android channels,
+permission prompt timing, no names or health details in payloads (A6.5), tap deep-links to the right screen, kill switches.
+
+## W3-18 S-DEVICEPASS-123 (Claude Opus 5.5, writer, 30 min) — the owner's test script for the 10-07 build
+Plain-words checklist (no terminal commands) for one iPhone + one Android: Health Connect (launch step 5) and Android push, iOS
+purchase flow, Apple and Google sign-in, Roman chat, Community, Codes, Broadcasts, the Featured coach editor (if W3-06 lands) and the
+no-coach Home with him as featured coach. For each step: what to tap, what he should see, what to send back. Write it to
+/home/user/workspace/tgp-agent-context/handoffs/op-123/DEVICE_PASS_10-07.md (do not commit; the operator commits).
+
+## W3-19 S-STORECOPY-123 (GPT-6.1 Sol, writer, 30 min) — store text and false-claim sweep
+Owner-ready: App Store "What's New" for the 10-07 build, App Review notes (one-to-one coaching under 3.1.3(d), demo accounts needed,
+health data use), Play "What's new". Sweep in-app copy and docs/store metadata in the repos for false claims (medical claims,
+"HIPAA", "certified", features that are off). Write to handoffs/op-123/STORE_TEXT_10-07.md (do not commit).
+
+## W3-20 S-CAPACITY-123 (GPT-6.1 Sol, scout, 30 min) — launch-day capacity (spend no money)
+Production runs ONE started Fly machine (env sync verify 20:37). Check fly.toml (min machines, auto-stop/start, size, health checks),
+Node memory, Prisma pool size vs the Supabase connection limit (free tier today; Pro on day 1), realtime connection limits for
+community, rate limits. Report: what fails first under a launch-day spike and the owner's options with monthly cost (decisions only).
+
+## Reviews for wave 3
+Builder PRs go to the six finished lenses (W2A/W2B/W2C Opus + Sol) by operator message, two lenses per PR, one verdict each.
+
+# WAVE 3 FIX QUEUE (start only when fewer than 8 agents run; owner 21:28 "stop-and-drain down to 8")
+## F1 B-PUSHMUTE-123 (Claude Opus 5.5, builder, 30 min) — community push must honour "Mute all notifications" (B-S-PUSH-1)
+Report ops/reports/S-PUSH-123.md section B-S-PUSH-1 (exact lines and the smallest fix). In CommunityNotificationsService.sendCommunityPush
+read the recipient's preferences and return before inbox/send when muted === true, keeping the community default table (do NOT stop
+on createNotification() returning null: community kinds fall to digest whose push default is false). Tests: muted reply -> no
+pushToUser; unmuted reply -> sends with community defaults. Backend only (server-side; no build dependency).
+## F2 B-GUIDEPOOL-123 (Claude Opus 5.5, builder, 40 min) — AI Guide must draw from the coach's monthly pool (B-S-AICOST-123-1)
+Report ops/reports/S-AICOST-123.md (exact lines + smallest fix): inject CoachAIBudgetService into AiService; resolve the client's coach /
+head coach like Roman; pre-check the bounded cost before the paid Anthropic call; debit actual cost (same $3/$15 rates, ceil cents)
+after usage; exhausted pool -> existing COACH_AI_BUDGET_EXHAUSTED with client-safe copy (mobile already maps it? check; no generic
+error). Crisis/deterministic replies never spend. Owner / unassigned clients: same as Roman (no pool; per-person cap still applies).
+## F3 M-STORE-123 (Claude Opus 5.5, builder, 50 min, one mobile PR, up to 700 lines) — store-review fixes for the 10-07 build (SECOND IN QUEUE)
+(a) B-IOSREV-1 (ops/reports/S-IOSREV-123.md): app.json iOS NSCameraUsageDescription + NSPhotoLibraryUsageDescription (+ add-only
+photo library if Save Image needs it) with specific purpose text; Share > Save Image and the support-chat camera must not crash.
+(b) B-IOSREV-2: Guideline 1.2: a one-time "Agree and continue" community terms sheet before first Community use (stored per user;
+links to the existing terms/community guidelines page) plus a terms line on Create account. (c)-(e) below (old F3 scope):
+## (was F3 M-COPY-123) Trust Center truthful security copy (B-STORECOPY-1) + stale Play worksheet (B-STORECOPY-4)
+Report ops/reports/S-STORECOPY-123.md + packet tgp-agent-context/handoffs/op-123/STORE_TEXT_10-07.md (exact copy). Mobile
+src/screens/TrustCenterScreen.tsx:459,544-546: replace universal TLS 1.3 / AES-256 / secure-enclave guarantees with accurate wording
+(encrypted transport, Keychain/Keystore token storage, device cache disclosure). PLAY_STORE_READINESS.md:44-64 and
+docs/PLAY_INTERNAL_TESTING_PACKAGE.md:118-152: mark the old data-safety rows superseded and point to the packet. Must be in the 10-07 build.
+Also B-PLAYREV-1 (ops/reports/S-PLAYREV-123.md): the voice-off build still declares Android microphone access; set the expo-audio
+plugin recordAudioAndroid:false (or the matching config) after proving no reachable production UI records audio. Up to 3 small commits, one push.
+## F4 B-COPY-123 (Claude Opus 5.5, builder, 30 min) — public pages: open signup, coach app FAQ, community + leaderboard disclosure
+Backend public pages (exact copy in ops/reports/S-STORECOPY-123.md and ops/reports/S-PRIVACY-123.md): B-STORECOPY-2 /signup no-code
+copy says invite-only (public-pages.html.ts:135-142, trust-pages.html.ts:665) -> open signup wording; B-STORECOPY-3 FAQ says coach is
+web-only (help-pages.html.ts:466-468 + docs/help/faq.md:105-108) -> mobile coach tools; B-PRIVACY-1 policy part: /privacy "Who can see
+your data" and /consumer-health-privacy "Categories we share" -> community spaces + opt-in leaderboard text (after b#747). Never name the
+clinic partner. Snapshot/spec updates for the pages. Also (from m#390, ops/reports/M-STORE-123.md): the backend /terms page needs the
+same zero-tolerance objectionable-content sentence the new in-app Community terms sheet shows (Guideline 1.2), word for word.
+
+## F5 B-AUTHZ-123 (Claude Opus 5.5, builder, 40 min) — cohort member assignment + legacy block list (B-AUTHZ-1, B-AUTHZ-2)
+Report ops/reports/S-AUTHZ-123.md (exact lines, stories, test sketches). B-AUTHZ-1: POST /api/community/cohorts/:cohortId/members
+resolves body user_id/email globally, returns full name + email and upserts an ACTIVE membership for any user: authorize the target
+first (the owning coach's live roster, or an existing active member of that workspace; platform owner may override); foreign target ->
+coded non-disclosing refusal, no lookup data returned, no membership/ban change. B-AUTHZ-2: GET /api/users/blocks returns blocked.name
+verbatim: return memberFirstName for client targets (block/unblock stay available, no new gate). Failing tests first.
+
+## F6 B-COMMWS-123 (Claude Opus 5.5, builder, 45 min, TWO PRs) — FIRST IN QUEUE — community posting dead-end (B-E2E-1)
+Report ops/reports/S-E2E-CLIENT-123.md B-E2E-1 (trace, failing-test sketches, smallest fix). Operator decision D1 = (a).
+PR 1 backend: in CommunityService.getMe, for a coach with no workspace and for a student whose coach has none, idempotently create the
+workspace (slug coach-<coachId>, name "Community") and its first cohort ("All members", sort_order 0) exactly like
+scripts/seed-clinic-programs.ts, then run the existing bootstrap; spec: student of a coach with no workspace gets workspace_id +
+membership and can post (201). Upserts only (concurrent first opens must not fail: unique keys + upsert; no retry machinery).
+PR 2 mobile (must be in the 10-07 build): CommunitySpaceScreen with workspaceId null after a successful /community/me shows the
+Today-style "No cohort yet / Send your coach a message" state and hides the composer CTA; the composer never posts to
+workspaces//posts. Tests for both.
+
+## F7 B-PAYOUTSYNC-123 (Claude Opus 5.5, builder, 30 min) — coach payout status can stay "not ready" (B-COND-1)
+Report ops/reports/S-E2E-COACH-123.md B-COND-1. Operator ruling: treat as B (normal-use money; nobody confirmed the live Connect
+webhook). In ConnectController.me() (or its service), when the saved payout status is not ready, read the account from Stripe and
+persist it through the SAME code path account.updated uses, so Settings > Payouts and the Buy gate agree. No new retry/backoff code;
+a Stripe read failure keeps today's saved status. Test: saved not-ready + Stripe says charges/payouts enabled -> me() returns ready and
+the saved row is updated; Stripe error -> unchanged.
+
+## FIX ROUND 1 on b#744 (B-ROMAN911-123, same builder w3_09) — 21:59. Time box 30 minutes.
+Both R3A lenses REQUEST CHANGES at cda23212514b60adbfffef0e9add310a4c7f541a. Read BOTH AUDIT comments on b#744 and
+ops/reports/AUD-OPUS-R3A-123.md. Must fix: B-744-1 overdose reports with no listed person ("possible overdose", "is this an overdose?",
+"she might be overdosing", "my teammate is overdosing", "a guy at my gym is overdosing") must route to 911 on Roman AND the AI guide (they
+share the list now; main routes them); B-744-2 "I cut myself again" must get the 988 reply; plus every B in the Sol comment. Operator
+ruling on your decision: NOT accepted - a bare "possible overdose" routes to 911. Gym controls ("can you overdose on creatine?", "suicide
+sprints", drills) must stay out. Add every lens phrase as a test that fails on cda23212. One push; comment "FIX ROUND 1 (B-ROMAN911-123,
+agent 123) — growth-project-backend#744 @ <sha>" ending READY FOR AUDIT. Then stop.
+
+# WAVE 3 REVIEW QUEUE (two lenses each; W2 lenses by message once the fleet is under 8)
+## Lens queue R3A (21:48; re-uses both W2A lenses: lens_opus_w2a_flags + lens_sol_w2a_flags). Time box 45 minutes. Queue order:
+1. b#747 ae1c103333361b3442c102b7bde1af4f3c950762 (T4 privacy; operator 123; B-PRIVACY-1 + B-AUTHZ-3; report S-PRIVACY-123 / S-AUTHZ-123)
+2. b#744 cda23212514b60adbfffef0e9add310a4c7f541a (T4 AI safety; Roman crisis lists shared with the AI guide; report B-ROMAN911-123).
+   The 30 B-AIG2 cases, every #736/#739 crisis phrase and the gym controls must hold; check the "possible overdose" with no person case.
+3. b#745 8ad33e4bbc1d826e2c896dc668e0fa86750c6f79 (invite landing per-platform buttons; report B-LINKS-123)
+4. b#742 c911aa95106bb68622d5c2797166fea270a16fcb (feature-off 503s kept out of Sentry; report M-SENTRY-123)
+5. b#743 3493baaa (flags; review only — MERGE HELD for the owner's decision; report B-FLAGS3-123 when it lands)
+6. b#746 31ae184dc06891e1818cd5b818a752d0fea3a4cd (data export day-1 data; READY FOR AUDIT posted; report B-DELETE-123)
+7. b#748 f6b3e191 (Sign in with Apple: APPLE_AUDIENCES in the manifest, APPLE_NONCE_REQUIRED unset, deletion revocation path; report
+   B-APPLE-123; T4 auth). Use the full head from the PR. Check the nonce change is safe for v1 and the workflow edit pushes no secret.
+Verify each head right before posting; if it moved, review at the new head. Post each verdict as soon as that PR is done. Independent
+lenses (rule 8). Wrap-up: final answer lists every PR, head, verdict and comment URL; stop at the time box even if the queue is not empty.
+- b#747 operator fix: legacy leaderboard opt-in (B-PRIVACY-1) + removed/banned viewer own-only (B-AUTHZ-3) @ ae1c103333361b3442c102b7bde1af4f3c950762
+- b#742..b#746 from wave 3 builders (heads in their reports when they finish)
+
+## Lens queue R3B (22:01; both W2A lenses again: Opus starts now, Sol after R3A). Time box 50 minutes. Review each item ONLY once its
+READY FOR AUDIT comment exists (use the head named in that comment; verify it is still the PR head); skip and come back if not ready.
+Mobile build is Wed 10-07: mobile items first when ready.
+1. m#390 (M-STORE-123: iOS purpose strings, community terms sheet, Trust Center copy, mic off; report M-STORE-123)
+2. m#389 6e3c581cadf225c33bfd0b9fe9c82604ae4b9878 (B-COMMWS-123 mobile safety net: no composer without a workspace; report B-COMMWS-123)
+3. b#753 d5cdf747e4e5442929a911a9a96d44f74bd6021f (B-COMMWS-123 backend: workspace + "All members" auto-created in getMe; T4 data;
+   report B-COMMWS-123). OPERATOR RULING on D-F6-1: members (active, unbanned) may create Hall posts (the app was built for it); review
+   that moderation, block and ban still apply to member posts.
+4. b#750 06745d7d4be0df8f85311a1f16c9893f32a91f69 (payout status re-read from Stripe in connect me(); money; report B-PAYOUTSYNC-123)
+5-7. MOVED to R3C at 22:06 (b#752, b#751, b#749) — W2A lenses stop after item 4.
+Wrap-up: final answer lists every PR, head, verdict and comment URL; stop at the time box even if the queue is not empty.
+
+## Lens queue R3C (22:06; re-uses both W2B lenses: lens_opus_w2b_mobile_screens + lens_sol_w2b_mobile_screens). Time box 45 minutes.
+Same rules as R3B (only once READY FOR AUDIT; verify head; post each verdict when done).
+1. b#752 69ad43d08f874f5a4d0122785493fd2c4d28187b (B-AUTHZ-123: cohort member assignment authz + block list first names; security;
+   reports S-AUTHZ-123 and B-AUTHZ-123). Operator ruling: no cross-roster cohort invites for v1.
+2. b#751 6a0261331490412ad1ba3549efa12f67cc4d7d98 (B-PUSHMUTE-123: community push honours Mute all; report B-PUSHMUTE-123)
+3. b#749 ef3bdb4abe994ed46b5416a14249a7fbe71736ff (owner-only GET /admin/featured-coach/coaches; report M-FEATURED-123; READY)
+3b. m#391 914b3ed37b98f0755f19069e6b80c488036af23a (owner-only Featured coach editor in Settings, 898 lines; report M-FEATURED-123;
+   READY). Box for this queue extended by 20 minutes for m#391. Operator ruling: the featured coach stays coach-role only.
+4. F2 B-GUIDEPOOL PR once READY FOR AUDIT inside the box (report B-GUIDEPOOL-123). (b#755 / F4 moved to R3E.)
+Wrap-up: final answer lists every PR, head, verdict and comment URL.
+
+## Lens delta R3D (22:13; both W2A lenses, who reviewed b#744 at cda23212). Time box 20 minutes.
+b#744 d6442512d1ac39be5287a5d59389f2ceab33bde7 — FIX ROUND 1 (B-ROMAN911-123) comment on the PR. Review the delta cda23212..d6442512:
+your B-744-1/B-744-2 phrases (and the other lens's, now in the spec) route to 911/988 on Roman and the AI guide, the gym controls stay
+normal, nothing else regressed. One verdict at d6442512 (T4 AI safety). Wrap-up: final answer with verdict + comment URL.
+
+## Lens queue R3E (22:29; re-uses both W2C lenses: lens_opus_w2c_broadcasts + lens_sol_w2c_broadcasts). Time box 30 minutes.
+1. m#392 f8627da276243ca86860fd85e38717b0a0036fb5 (operator 123: one Trust Center "Who can see your data" line; report S-PRIVACY-123)
+2. b#755 3076cab9871f8d76bce703f0bd59431d8858b849 (B-COPY-123 public pages: open signup, coach FAQ, community + leaderboard privacy
+   text, terms zero-tolerance sentence; reports B-COPY-123, S-STORECOPY-123, S-PRIVACY-123). Never name the clinic partner.
+Same rules (verify head, independent, one verdict per head). Wrap-up: final answer with verdicts + comment URLs.
+
+## FIX ROUND 1 on m#391 (M-FEATURED-123, same builder w3_06) — 22:36. Time box 30 minutes.
+Opus R3C REQUEST CHANGES at 914b3ed37b98f0755f19069e6b80c488036af23a (B-391-1): app start routing sends only coach and client roles
+past sign-in, so the owner account loops to sign-in and can never reach Settings > Featured coach. Read the Opus verdict (and the Sol
+verdict if it is posted when you start). Fix: an owner account lands in the app with no dead end. Preferred: owner -> the coach app,
+skipping new-coach setup, IF the backend coach routes behind coach Home/Settings already accept role owner (check RolesGuard / owner
+override); otherwise a minimal owner stack (Settings with Featured coach + account + sign out). Pick the smaller one that has no dead
+end and say why. Tests: owner routing + the editor reachable. One push; "FIX ROUND 1 (M-FEATURED-123, agent 123) —
+growth-project-mobile#391 @ <sha>" ending READY FOR AUDIT. Featured coach stays coach-role only (operator ruling).
+
+## Lens delta R3F (22:46; both W2B lenses, who reviewed m#391 at 914b3ed3). Time box 20 minutes.
+m#391 4f02a19e36383a64cb18b1e9ec467b638d9a5b87 — FIX ROUND 1 (M-FEATURED-123) comment on the PR. Review the delta 914b3ed3..4f02a19e:
+B-391-1 closed (a signed-in owner reaches the coach app, skips new-coach setup, keeps role owner, can open Settings > Owner > Featured
+coach); coach and client routing unchanged; no new dead end for the owner on coach Home. One verdict at 4f02a19e. Wrap-up: final
+answer with verdict + comment URL.

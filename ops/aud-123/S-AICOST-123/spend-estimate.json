@@ -1,0 +1,70 @@
+{
+  "job": "S-AICOST-123",
+  "backend_sha": "5230306cb63df7290459bb362340a42f385f39d5",
+  "evidence": {
+    "roman_limits": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5230306cb63df7290459bb362340a42f385f39d5/src/roman/roman.constants.ts",
+    "roman_history_and_spend": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5230306cb63df7290459bb362340a42f385f39d5/src/roman/roman.service.ts",
+    "guide_quota_and_calls": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5230306cb63df7290459bb362340a42f385f39d5/src/ai/ai.service.ts",
+    "price": "https://platform.claude.com/docs/en/about-claude/pricing"
+  },
+  "assumptions": {
+    "clients": 100,
+    "roman_user_turns_per_client": 50,
+    "roman_base_system_input_tokens": 6000,
+    "roman_tokens_per_user_message": 100,
+    "roman_output_tokens_per_reply": 1024,
+    "guide_base_system_input_tokens": 2000,
+    "guide_tokens_per_user_message": 100,
+    "guide_output_tokens_per_reply": 600,
+    "sequential_successful_calls_only": true,
+    "note": "Conservative long-reply planning scenario; not telemetry or a strict worst-case theorem."
+  },
+  "roman": {
+    "first_turn": {
+      "turn": 1,
+      "input_tokens": 6100,
+      "output_tokens": 1024,
+      "usd": 0.03366,
+      "pool_debit_cents": 4
+    },
+    "mature_turn": {
+      "turn": 50,
+      "input_tokens": 21836,
+      "output_tokens": 1024,
+      "usd": 0.080868,
+      "pool_debit_cents": 9
+    },
+    "requested_turns": 5000,
+    "requested_provider_usd_before_admission": 368.93400000000025,
+    "requested_pool_debit_usd_before_admission": 410,
+    "configured_default_platform_daily_usd_cap": 100,
+    "default_one_coach_monthly_actual_credit_usd": 40,
+    "minimum_pool_credit_to_admit_turn_cents": 9,
+    "comparison_constant_6000_input_and_1024_output_for_5000_turns_usd": 166.8
+  },
+  "guide": {
+    "ordinary_two_call_example": [
+      {
+        "input_tokens": 2100,
+        "output_tokens": 600,
+        "total_tokens": 2700,
+        "usd": 0.0153
+      },
+      {
+        "input_tokens": 2800,
+        "output_tokens": 600,
+        "total_tokens": 3400,
+        "usd": 0.0174
+      }
+    ],
+    "tokens_consumed_per_client_after_two_calls": 6100,
+    "third_call_required_reservation_tokens": 6600,
+    "nominal_daily_quota_tokens": 12000,
+    "third_call_rejected": true,
+    "provider_usd_for_100_clients_two_calls": 3.27,
+    "provider_usd_for_30_such_days": 98.1,
+    "conservative_nominal_token_envelope_100_clients_usd": 18,
+    "envelope_caveat": "Only the ordinary-usage nominal quota envelope; all-output valuation is deliberately loose, not a hard USD breaker."
+  },
+  "roman_and_guide_nominal_daily_planning_envelope_usd": 118
+}

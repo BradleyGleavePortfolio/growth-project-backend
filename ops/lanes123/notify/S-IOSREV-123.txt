@@ -1,0 +1,1 @@
+S-IOSREV-123 done 21:46 PDT — report only (mobile main a727eb49) — 2 B (B-1 missing camera/photo purpose strings: crash + ITMS-90683; B-2 no UGC terms agreement, Guideline 1.2), 12 C — /home/user/workspace/ops/reports/S-IOSREV-123.md

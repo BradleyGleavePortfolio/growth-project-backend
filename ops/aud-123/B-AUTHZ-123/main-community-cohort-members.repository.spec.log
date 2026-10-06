@@ -1,0 +1,73 @@
+[heavy] waiting for a slot: npx jest test/community/cohorts/community-cohort-members.repository.spec.ts
+FAIL test/community/cohorts/community-cohort-members.repository.spec.ts (60 MB heap size)
+  CommunityCohortMembersRepository.findUserByEmail
+    ✓ issues a case-insensitive equals predicate on email (5 ms)
+    ✓ finds a user whose email was stored mixed-case via a lowercase lookup
+    ✕ scopes an email lookup to the coach roster or active workspace members (11 ms)
+    ✕ scopes a user_id lookup the same way
+
+  ● CommunityCohortMembersRepository.findUserByEmail › scopes an email lookup to the coach roster or active workspace members
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    - Expected
+    + Received
+
+    @@ -3,24 +3,10 @@
+          "email": true,
+          "id": true,
+          "name": true,
+        },
+        "where": Object {
+    -     "OR": Array [
+    -       Object {
+    -         "coach_id": "coach-1",
+    -       },
+    -       Object {
+    -         "community_memberships": Object {
+    -           "some": Object {
+    -             "status": "active",
+    -             "workspace_id": "ws-1",
+    -           },
+    -         },
+    -       },
+    -     ],
+    -     "deleted_at": null,
+          "email": Object {
+            "equals": "jane@example.com",
+            "mode": "insensitive",
+          },
+        },,
+
+    Number of calls: 1
+
+    [0m [90m 62 |[39m     prisma[33m.[39muser[33m.[39mfindFirst[33m.[39mmockResolvedValue([36mnull[39m)[33m;[39m
+     [90m 63 |[39m     [36mawait[39m repo[33m.[39mfindUserByEmail([32m'jane@example.com'[39m[33m,[39m [33mSCOPE[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 64 |[39m     expect(prisma[33m.[39muser[33m.[39mfindFirst)[33m.[39mtoHaveBeenCalledWith({
+     [90m    |[39m                                   [31m[1m^[22m[39m
+     [90m 65 |[39m       where[33m:[39m { email[33m:[39m { equals[33m:[39m [32m'jane@example.com'[39m[33m,[39m mode[33m:[39m [32m'insensitive'[39m }[33m,[39m [33m...[39m[33mSCOPED_FILTER[39m }[33m,[39m
+     [90m 66 |[39m       select[33m:[39m { id[33m:[39m [36mtrue[39m[33m,[39m name[33m:[39m [36mtrue[39m[33m,[39m email[33m:[39m [36mtrue[39m }[33m,[39m
+     [90m 67 |[39m     })[33m;[39m[0m
+
+      at Object.<anonymous> (test/community/cohorts/community-cohort-members.repository.spec.ts:64:35)
+
+  ● CommunityCohortMembersRepository.findUserByEmail › scopes a user_id lookup the same way
+
+    TypeError: this.prisma.user.findUnique is not a function
+
+    [0m [90m 90 |[39m
+     [90m 91 |[39m   [36masync[39m findUserById(userId[33m:[39m string)[33m:[39m [33mPromise[39m[33m<[39m[33mPick[39m[33m<[39m[33mUser[39m[33m,[39m [32m'id'[39m [33m|[39m [32m'name'[39m [33m|[39m [32m'email'[39m[33m>[39m [33m|[39m [36mnull[39m[33m>[39m {
+    [31m[1m>[22m[39m[90m 92 |[39m     [36mreturn[39m [36mthis[39m[33m.[39mprisma[33m.[39muser[33m.[39mfindUnique({
+     [90m    |[39m                             [31m[1m^[22m[39m
+     [90m 93 |[39m       where[33m:[39m { id[33m:[39m userId }[33m,[39m
+     [90m 94 |[39m       select[33m:[39m { id[33m:[39m [36mtrue[39m[33m,[39m name[33m:[39m [36mtrue[39m[33m,[39m email[33m:[39m [36mtrue[39m }[33m,[39m
+     [90m 95 |[39m     })[33m;[39m[0m
+
+      at CommunityCohortMembersRepository.findUserById (src/community/cohorts/community-cohort-members.repository.ts:92:29)
+      at Object.<anonymous> (test/community/cohorts/community-cohort-members.repository.spec.ts:72:16)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 passed, 4 total
+Snapshots:   0 total
+Time:        1.129 s
+Ran all test suites matching test/community/cohorts/community-cohort-members.repository.spec.ts.

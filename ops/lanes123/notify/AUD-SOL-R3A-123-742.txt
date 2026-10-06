@@ -1,0 +1,3 @@
+AUD-SOL-R3A-123 agent 123 — backend#742 c911aa95106bb68622d5c2797166fea270a16fcb APPROVE A/B/C 0/0/0; required CI green.
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/742#issuecomment-6009627792
+Closed-code feature-off 503 skip preserves genuine 5xx sanitized capture and response status/body.

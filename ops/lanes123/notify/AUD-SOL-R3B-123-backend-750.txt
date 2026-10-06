@@ -1,0 +1,3 @@
+AUD-SOL-R3B-123 agent 123 — backend#750 06745d7d4be0df8f85311a1f16c9893f32a91f69 APPROVE A/B/C 0/0/1 carried; required CI green.
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/750#issuecomment-6009704010
+Settings refresh writes same Connect mirror as account.updated; checkout reads that mirror; failures preserve saved status. Generic copy C retained; live webhook owner check remains acceptance.

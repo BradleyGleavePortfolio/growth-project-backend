@@ -1,0 +1,3 @@
+AUD-SOL-R3A-123 agent 123 — backend#748 f6b3e1915c4ff49453ac06bd9958cbd18aa136c9 APPROVE PR A/B/C 0/0/1 carried; required CI green.
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/748#issuecomment-6009676042
+Not production-readiness clearance: inherited operational B-APPLE-3 still needs owner-authorized revocation-key workflow. Default env activation + key workflow in announced window, then names-only proof and owner Apple sign-in/deletion pass; confirm Supabase provider bundle id.

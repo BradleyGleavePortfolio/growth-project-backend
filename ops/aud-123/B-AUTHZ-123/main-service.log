@@ -1,0 +1,95 @@
+[heavy] waiting for a slot: npx jest test/community/cohorts/community-cohort-members.service.spec.ts
+FAIL test/community/cohorts/community-cohort-members.service.spec.ts (86 MB heap size)
+  CommunityCohortMembersService
+    list (roster)
+      ✓ gives a coach the full member rows including status + email (8 ms)
+      ✓ sanitizes the roster for a non-coach active member (no PII/status) (1 ms)
+      ✓ 404s a non-member reader (non-leak) (2 ms)
+      ✓ 404s an unknown cohort (1 ms)
+      ✓ emits a next_cursor when a full page is returned (1 ms)
+    assign
+      ✓ assigns a known user_id as an active student (idempotent upsert) (2 ms)
+      ✓ maps co_coach to the assistant Prisma role (1 ms)
+      ✓ creates a pending invite (status=invited) for an existing user by email
+      ✓ 400s when neither user_id nor email is supplied (1 ms)
+      ✓ 400s when BOTH user_id and email are supplied (XOR)
+      ✓ 404s when the email maps to no platform user (1 ms)
+      ✓ 403s a coach assigning into a cohort they do not own (cross-cohort) (2 ms)
+      target authorization (B-AUTHZ-1)
+        ✕ refuses another coach's client by user_id: coded 404, no data, no membership or ban change (1 ms)
+        ✕ refuses another coach's client by email the same way (26 ms)
+        ✓ still assigns the coach's own client (3 ms)
+        ✕ lets the platform owner override the roster scope (1 ms)
+    remove
+      ✓ soft-removes a student member
+      ✓ 403s removing the owning coach role (protect owner) (1 ms)
+      ✓ is idempotent when the member is already removed
+      ✓ 404s an unknown membership (1 ms)
+      ✓ 403s a coach removing from a cohort they do not own (cross-cohort) (2 ms)
+
+  ● CommunityCohortMembersService › assign › target authorization (B-AUTHZ-1) › refuses another coach's client by user_id: coded 404, no data, no membership or ban change
+
+    expect(received).toBeInstanceOf(expected)
+
+    Expected constructor: NotFoundException
+    Received constructor: TypeError
+
+    [0m [90m 253 |[39m           [33m.[39massign(coachA[33m,[39m [33mCOHORT_A[39m[33m,[39m { user_id[33m:[39m [33mFOREIGN_CLIENT[39m[33m,[39m role[33m:[39m [32m'student'[39m })
+     [90m 254 |[39m           [33m.[39mthen(() [33m=>[39m [36mnull[39m[33m,[39m (e[33m:[39m unknown) [33m=>[39m e)[33m;[39m
+    [31m[1m>[22m[39m[90m 255 |[39m         expect(err)[33m.[39mtoBeInstanceOf([33mNotFoundException[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 256 |[39m         expect(err [36minstanceof[39m [33mNotFoundException[39m [33m?[39m err[33m.[39mgetResponse() [33m:[39m [36mnull[39m)[33m.[39mtoEqual({
+     [90m 257 |[39m           error[33m:[39m [32m'not_found'[39m[33m,[39m
+     [90m 258 |[39m           code[33m:[39m [32m'community.cohort.user_not_found'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/community/cohorts/community-cohort-members.service.spec.ts:255:21)
+
+  ● CommunityCohortMembersService › assign › target authorization (B-AUTHZ-1) › refuses another coach's client by email the same way
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": Object {
+    -     "code": "community.cohort.user_not_found",
+    -   },
+    - }
+    + [TypeError: Cannot read properties of undefined (reading 'id')]
+
+    [0m [90m 272 |[39m         [36mawait[39m expect(
+     [90m 273 |[39m           service[33m.[39massign(coachA[33m,[39m [33mCOHORT_A[39m[33m,[39m { email[33m:[39m [32m'other@example.com'[39m[33m,[39m role[33m:[39m [32m'student'[39m })[33m,[39m
+    [31m[1m>[22m[39m[90m 274 |[39m         )[33m.[39mrejects[33m.[39mtoMatchObject({
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m 275 |[39m           response[33m:[39m { code[33m:[39m [32m'community.cohort.user_not_found'[39m }[33m,[39m
+     [90m 276 |[39m         })[33m;[39m
+     [90m 277 |[39m         expect(repo[33m.[39mfindUserByEmail)[33m.[39mtoHaveBeenCalledWith([32m'other@example.com'[39m[33m,[39m {[0m
+
+      at Object.toMatchObject (../../deps/backend/node_modules/expect/build/index.js:2155:20)
+      at Object.<anonymous> (test/community/cohorts/community-cohort-members.service.spec.ts:274:19)
+
+  ● CommunityCohortMembersService › assign › target authorization (B-AUTHZ-1) › lets the platform owner override the roster scope
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    Expected: "bbbbbbbb-0000-0000-0000-0000000000f1", null
+    Received: "bbbbbbbb-0000-0000-0000-0000000000f1"
+
+    Number of calls: 1
+
+    [0m [90m 295 |[39m         repo[33m.[39mupsertMembership[33m.[39mmockResolvedValue(membership({ user_id[33m:[39m [33mFOREIGN_CLIENT[39m }))[33m;[39m
+     [90m 296 |[39m         [36mawait[39m service[33m.[39massign(platformOwner[33m,[39m [33mCOHORT_A[39m[33m,[39m { user_id[33m:[39m [33mFOREIGN_CLIENT[39m[33m,[39m role[33m:[39m [32m'student'[39m })[33m;[39m
+    [31m[1m>[22m[39m[90m 297 |[39m         expect(repo[33m.[39mfindUserById)[33m.[39mtoHaveBeenCalledWith([33mFOREIGN_CLIENT[39m[33m,[39m [36mnull[39m)[33m;[39m
+     [90m     |[39m                                   [31m[1m^[22m[39m
+     [90m 298 |[39m         expect(repo[33m.[39mupsertMembership)[33m.[39mtoHaveBeenCalledWith(
+     [90m 299 |[39m           expect[33m.[39mobjectContaining({ userId[33m:[39m [33mFOREIGN_CLIENT[39m })[33m,[39m
+     [90m 300 |[39m         )[33m;[39m[0m
+
+      at Object.<anonymous> (test/community/cohorts/community-cohort-members.service.spec.ts:297:35)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 18 passed, 21 total
+Snapshots:   0 total
+Time:        2.895 s
+Ran all test suites matching test/community/cohorts/community-cohort-members.service.spec.ts.

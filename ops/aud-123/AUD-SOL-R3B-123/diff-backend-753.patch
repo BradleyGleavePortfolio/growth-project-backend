@@ -1,0 +1,510 @@
+diff --git a/src/community/community.repository.ts b/src/community/community.repository.ts
+index 6ed03c87..50c250aa 100644
+--- a/src/community/community.repository.ts
++++ b/src/community/community.repository.ts
+@@ -1,6 +1,10 @@
+ import { Injectable } from '@nestjs/common';
+ import { PrismaService } from '../prisma.service';
+ 
++/** Names for a coach's auto-created space (B-E2E-1); they match the clinic seed. */
++export const DEFAULT_WORKSPACE_NAME = 'Community';
++export const DEFAULT_COHORT_NAME = 'All members';
++
+ /**
+  * Data-access layer for the Community v1-2 foundation endpoints.
+  *
+@@ -35,6 +39,33 @@ export class CommunityRepository {
+     });
+   }
+ 
++  /**
++   * B-E2E-1: the coach's community space, created on first open when the coach
++   * has none, in the same shape as scripts/seed-clinic-programs.ts (a workspace
++   * plus its first cohort, "All members", sort_order 0). Both writes are upserts
++   * on unique keys (workspace slug, cohort workspace_id + name), so two first
++   * opens at once land on the same rows. An archived space stays archived.
++   */
++  async ensureWorkspaceForCoach(coachId: string) {
++    const existing = await this.findWorkspaceOwnedByCoach(coachId);
++    if (existing) return existing;
++    const slug = `coach-${coachId}`;
++    const workspace = await this.prisma.communityWorkspace.upsert({
++      where: { slug },
++      create: { coach_id: coachId, name: DEFAULT_WORKSPACE_NAME, slug },
++      update: {},
++    });
++    if (workspace.coach_id !== coachId || workspace.archived_at) return null;
++    await this.prisma.communityCohort.upsert({
++      where: {
++        workspace_id_name: { workspace_id: workspace.id, name: DEFAULT_COHORT_NAME },
++      },
++      create: { workspace_id: workspace.id, name: DEFAULT_COHORT_NAME, sort_order: 0 },
++      update: {},
++    });
++    return workspace;
++  }
++
+   /**
+    * The derived default cohort for a coach's workspace: the active cohort with
+    * the lowest sort_order, tie-broken by earliest created_at. Returns null when
+diff --git a/src/community/community.service.ts b/src/community/community.service.ts
+index 96c0bc7c..8ee91a99 100644
+--- a/src/community/community.service.ts
++++ b/src/community/community.service.ts
+@@ -131,12 +131,15 @@ export class CommunityService {
+     if (scope === 'coach') {
+       // Coaches do not ride in community_memberships the way students do; their
+       // relationship to a workspace is ownership. Surface the owned workspace
+-      // and a synthetic coach membership view (no row) when one exists.
+-      workspace = await this.repo.findWorkspaceOwnedByCoach(user.id);
++      // (created on first open, B-E2E-1) and a synthetic coach membership view.
++      workspace = await this.repo.ensureWorkspaceForCoach(user.id);
+     } else if (scope === 'student' && !membership) {
+       // Bootstrap (readiness §4 item 4): first touch creates the student's
+       // membership in their coach's default cohort. Idempotent via upsert.
++      // B-E2E-1: a coach with no space yet gets one first, so the client never
++      // lands in a Hall it cannot post to.
+       if (user.coach_id) {
++        await this.repo.ensureWorkspaceForCoach(user.coach_id);
+         const cohort = await this.repo.findDefaultCohortForCoach(user.coach_id);
+         // B-610-2: a durable ban survives new/archived/re-ordered cohorts, so
+         // first-touch bootstrap never re-admits a banned member.
+diff --git a/src/community/posts/community-posts.service.ts b/src/community/posts/community-posts.service.ts
+index 9593bb2a..8d79ddb9 100644
+--- a/src/community/posts/community-posts.service.ts
++++ b/src/community/posts/community-posts.service.ts
+@@ -32,14 +32,11 @@ const POST_NOT_FOUND = {
+ /**
+  * Lab posts (longer-form, coach-authored) and their comments.
+  *
+- * clientPostsEnabled: the brief's contract is "client may create a post only if
+- * workspace.clientPostsEnabled === true". That column does NOT exist on
+- * CommunityWorkspace in the v1-1 schema (verified by grep; see the builder
+- * report's deviation list). Adding it would violate R69 (no schema mutation in
+- * v1-3). The secure, launch-ready default is therefore COACH-ONLY post
+- * creation: a client POST returns 403. This matches required test case 3
+- * (client create → 403) exactly. When the column lands in a future schema PR,
+- * canCreatePost() is the single place to relax this gate.
++ * Member posts: there is no per-workspace clientPostsEnabled column, so every
++ * active, unbanned member may create a post (B-E2E-1, agent 123 F6; this was
++ * coach-only, which dead-ended the client Hall composer). When a coach toggle
++ * lands in a future schema PR, canCreatePost() is the single place to gate it;
++ * the 403 community.post.client_posts_disabled body stays for that toggle.
+  *
+  * Comments: stored as CommunityMessage rows tagged with the parent post id (the
+  * v1-1 CommunityResponse model has only a 32-char response_kind column and
+@@ -97,10 +94,15 @@ export class CommunityPostsService {
+     return Number.isNaN(d.getTime()) ? null : d;
+   }
+ 
+-  /** Coach (or owner) may author posts; clients may not (clientPostsEnabled). */
++  /**
++   * The owner, the workspace coach and any active, unbanned member may author
++   * posts (B-E2E-1: the Hall's "Be the first to post" is a member action). The
++   * content filter, report and block apply to every post as they do to comments.
++   */
+   private async canCreatePost(workspaceId: string, user: User): Promise<boolean> {
+     if (user.role === 'owner') return true;
+-    return this.access.isWorkspaceCoach(workspaceId, user.id);
++    if (await this.access.isWorkspaceCoach(workspaceId, user.id)) return true;
++    return (await this.access.membershipInWorkspace(workspaceId, user.id)) !== null;
+   }
+ 
+   async create(
+diff --git a/test/community/community-me-auto-provision.spec.ts b/test/community/community-me-auto-provision.spec.ts
+new file mode 100644
+index 00000000..d7147b0d
+--- /dev/null
++++ b/test/community/community-me-auto-provision.spec.ts
+@@ -0,0 +1,227 @@
++/**
++ * B-E2E-1 (agent 123 F6): GET /community/me creates the coach's community space
++ * on first open, so a client of a coach with no space is placed in it instead of
++ * landing in a Hall it cannot post to.
++ *
++ * Runs the real CommunityService + CommunityRepository over an in-memory Prisma
++ * stand-in (the live-DB proof is community-posts.e2e.spec.ts test 2b). On main
++ * the client's /me returns workspace_id null and nothing is created.
++ */
++import type { User } from '@prisma/client';
++import { CommunityService } from '../../src/community/community.service';
++import { CommunityRepository } from '../../src/community/community.repository';
++import type { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
++import type { PrismaService } from '../../src/prisma.service';
++
++type Ws = {
++  id: string;
++  coach_id: string;
++  name: string;
++  slug: string;
++  archived_at: Date | null;
++  dm_enabled_default: boolean;
++  created_at: Date;
++};
++type Cohort = {
++  id: string;
++  workspace_id: string;
++  name: string;
++  sort_order: number;
++  status: 'active';
++  archived_at: null;
++  created_at: Date;
++};
++type Membership = {
++  id: string;
++  workspace_id: string;
++  cohort_id: string;
++  user_id: string;
++  role: 'student';
++  status: 'active';
++  notify_level: string;
++  dm_enabled: boolean | null;
++  last_read_message_at: Date | null;
++  joined_at: Date;
++  created_at: Date;
++};
++
++function stub<T>(v: unknown): T {
++  return v as T;
++}
++
++function memoryPrisma() {
++  const db = { ws: [] as Ws[], cohorts: [] as Cohort[], members: [] as Membership[] };
++  let n = 0;
++  const id = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
++  const prisma = {
++    communityWorkspace: {
++      findFirst: jest.fn(
++        async ({ where }: { where: { coach_id: string } }) =>
++          db.ws.find((w) => w.coach_id === where.coach_id && w.archived_at === null) ?? null,
++      ),
++      findUnique: jest.fn(
++        async ({ where }: { where: { id: string } }) =>
++          db.ws.find((w) => w.id === where.id) ?? null,
++      ),
++      upsert: jest.fn(
++        async ({
++          where,
++          create,
++        }: {
++          where: { slug: string };
++          create: { coach_id: string; name: string; slug: string };
++        }) => {
++          const found = db.ws.find((w) => w.slug === where.slug);
++          if (found) return found;
++          const row: Ws = {
++            id: id(),
++            ...create,
++            archived_at: null,
++            dm_enabled_default: false,
++            created_at: new Date(),
++          };
++          db.ws.push(row);
++          return row;
++        },
++      ),
++    },
++    communityCohort: {
++      upsert: jest.fn(
++        async ({
++          create,
++        }: {
++          create: { workspace_id: string; name: string; sort_order: number };
++        }) => {
++          const found = db.cohorts.find(
++            (c) => c.workspace_id === create.workspace_id && c.name === create.name,
++          );
++          if (found) return found;
++          const row: Cohort = {
++            id: id(),
++            ...create,
++            status: 'active',
++            archived_at: null,
++            created_at: new Date(),
++          };
++          db.cohorts.push(row);
++          return row;
++        },
++      ),
++      findFirst: jest.fn(
++        async ({ where }: { where: { workspace_id: string } }) =>
++          db.cohorts
++            .filter((c) => c.workspace_id === where.workspace_id)
++            .sort((a, b) => a.sort_order - b.sort_order)[0] ?? null,
++      ),
++    },
++    communityMembership: {
++      findFirst: jest.fn(
++        async ({ where }: { where: { user_id: string } }) =>
++          db.members.find((m) => m.user_id === where.user_id) ?? null,
++      ),
++      findMany: jest.fn(async ({ where }: { where: { user_id: string } }) =>
++        db.members.filter((m) => m.user_id === where.user_id),
++      ),
++      upsert: jest.fn(
++        async ({
++          create,
++        }: {
++          create: { workspace_id: string; cohort_id: string; user_id: string };
++        }) => {
++          const found = db.members.find(
++            (m) => m.cohort_id === create.cohort_id && m.user_id === create.user_id,
++          );
++          if (found) return found;
++          const now = new Date();
++          const row: Membership = {
++            id: id(),
++            ...create,
++            role: 'student',
++            status: 'active',
++            notify_level: 'digest',
++            dm_enabled: null,
++            last_read_message_at: null,
++            joined_at: now,
++            created_at: now,
++          };
++          db.members.push(row);
++          return row;
++        },
++      ),
++    },
++    communityWorkspaceBan: { findFirst: jest.fn(async () => null) },
++    communityMessage: { count: jest.fn(async () => 0) },
++  };
++  return { db, prisma };
++}
++
++const COACH_ID = 'coach-user-1';
++const coach = stub<User>({ id: COACH_ID, role: 'coach', coach_id: null });
++const client = stub<User>({ id: 'client-user-1', role: 'student', coach_id: COACH_ID });
++
++describe('B-E2E-1: /community/me creates the coach space on first open', () => {
++  const prevFlag = process.env.FEATURE_COMMUNITY_API;
++  beforeAll(() => {
++    process.env.FEATURE_COMMUNITY_API = 'true';
++  });
++  afterAll(() => {
++    if (prevFlag === undefined) delete process.env.FEATURE_COMMUNITY_API;
++    else process.env.FEATURE_COMMUNITY_API = prevFlag;
++  });
++
++  function build() {
++    const { db, prisma } = memoryPrisma();
++    const p = stub<PrismaService>(prisma);
++    const service = new CommunityService(
++      p,
++      new CommunityRepository(p),
++      stub<CommunitySafetyService>({}),
++    );
++    return { db, service };
++  }
++
++  it('a client of a coach with no space gets the space, the All members cohort and a membership', async () => {
++    const { db, service } = build();
++    const me = await service.getMe(client);
++
++    expect(db.ws).toHaveLength(1);
++    expect(db.ws[0]).toMatchObject({
++      coach_id: COACH_ID,
++      name: 'Community',
++      slug: `coach-${COACH_ID}`,
++    });
++    expect(db.cohorts.map((c) => [c.name, c.sort_order])).toEqual([['All members', 0]]);
++    expect(me.workspace_id).toBe(db.ws[0].id);
++    expect(me.membership).not.toBeNull();
++    expect(me.membership?.role).toBe('client');
++    expect(db.members[0]).toMatchObject({ cohort_id: db.cohorts[0].id, user_id: client.id });
++  });
++
++  it('repeat opens by the client and the coach reuse the same space', async () => {
++    const { db, service } = build();
++    const first = await service.getMe(client);
++    const again = await service.getMe(client);
++    const coachMe = await service.getMe(coach);
++
++    expect(db.ws).toHaveLength(1);
++    expect(db.cohorts).toHaveLength(1);
++    expect(db.members).toHaveLength(1);
++    expect(again.workspace_id).toBe(first.workspace_id);
++    expect(coachMe.workspace_id).toBe(first.workspace_id);
++  });
++
++  it('a coach opening first gets the space; an existing space is never duplicated', async () => {
++    const { db, service } = build();
++    const coachMe = await service.getMe(coach);
++    expect(coachMe.workspace_id).toBe(db.ws[0].id);
++    await service.getMe(client);
++    expect(db.ws).toHaveLength(1);
++  });
++
++  it('a client with no coach gets no space (unchanged)', async () => {
++    const { db, service } = build();
++    const me = await service.getMe({ ...client, coach_id: null });
++    expect(me.workspace_id).toBeNull();
++    expect(db.ws).toHaveLength(0);
++  });
++});
+diff --git a/test/community/community-posts.e2e.spec.ts b/test/community/community-posts.e2e.spec.ts
+index deb65152..35d5ad87 100644
+--- a/test/community/community-posts.e2e.spec.ts
++++ b/test/community/community-posts.e2e.spec.ts
+@@ -48,6 +48,10 @@ import { NotificationsService } from '../../src/notifications/notifications.serv
+ import { liveDbUrl } from './_support/community-db';
+ import { insertLiveUsers } from './_support/community-live-seed';
+ import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
++import { CommunityController } from '../../src/community/community.controller';
++import { CommunityService } from '../../src/community/community.service';
++import { CommunityRepository } from '../../src/community/community.repository';
++import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
+ 
+ const itLive = liveDbUrl() ? describe : describe.skip;
+ 
+@@ -73,6 +77,8 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
+     coachB: '',
+     studentA: '',
+     studentB: '',
++    coachNoSpace: '',
++    studentNoSpace: '',
+     wsA: '',
+     wsB: '',
+     cohortA: '',
+@@ -138,8 +144,11 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
+     await prismaForStub.$connect();
+ 
+     const moduleRef: TestingModule = await Test.createTestingModule({
+-      controllers: [CommunityPostsController],
++      controllers: [CommunityPostsController, CommunityController],
+       providers: [
++        CommunityService,
++        CommunityRepository,
++        ClientEntitlementGuard,
+         CommunityPostsService,
+         CommunityPostsRepository,
+         CommunityMessagesRepository,
+@@ -193,12 +202,17 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
+     ids.coachB = randomUUID();
+     ids.studentA = randomUUID();
+     ids.studentB = randomUUID();
++    ids.coachNoSpace = randomUUID();
++    ids.studentNoSpace = randomUUID();
+ 
+     const users: Array<[string, Role, string, string | null]> = [
+       [ids.coachA, 'coach', 'Coach A', null],
+       [ids.coachB, 'coach', 'Coach B', null],
+       [ids.studentA, 'student', 'Student A', ids.coachA],
+       [ids.studentB, 'student', 'Student B', ids.coachB],
++      // B-E2E-1: a coach with no community space and one client.
++      [ids.coachNoSpace, 'coach', 'Coach C', null],
++      [ids.studentNoSpace, 'student', 'Student C', ids.coachNoSpace],
+     ];
+     await insertLiveUsers(prisma, users);
+ 
+@@ -228,18 +242,33 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
+   }
+ 
+   async function cleanup() {
+-    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentB].filter(Boolean);
++    const userIds = [
++      ids.coachA,
++      ids.coachB,
++      ids.studentA,
++      ids.studentB,
++      ids.coachNoSpace,
++      ids.studentNoSpace,
++    ].filter(Boolean);
++    // Includes the space /community/me created for coachNoSpace (B-E2E-1).
++    const created = ids.coachNoSpace
++      ? await prisma.communityWorkspace.findMany({
++          where: { coach_id: ids.coachNoSpace },
++          select: { id: true },
++        })
++      : [];
++    const wsIds = [ids.wsA, ids.wsB, ...created.map((w) => w.id)].filter(Boolean);
+     await prisma.communityMessage.deleteMany({
+-      where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
++      where: { workspace_id: { in: wsIds } },
+     });
+     await prisma.communityPost.deleteMany({
+-      where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
++      where: { workspace_id: { in: wsIds } },
+     });
+     await prisma.communityMembership.deleteMany({
+       where: { user_id: { in: userIds } },
+     });
+     await prisma.communityWorkspace.deleteMany({
+-      where: { id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
++      where: { id: { in: wsIds } },
+     });
+     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+   }
+@@ -266,15 +295,66 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
+     expect(res.body.post.author_user_id).toBe(ids.coachA);
+   });
+ 
+-  it('2. client create → 403 (clientPostsEnabled default off)', async () => {
++  it('2. an active member (client) creates a post → 201 (B-E2E-1)', async () => {
+     const res = await call(
+       'POST',
+       `/api/community/workspaces/${ids.wsA}/posts`,
+       asUser(ids.studentA),
+-      { title: 'Client post', body: 'nope' },
++      { title: 'Client post', body: 'first week done' },
+     );
+-    expect(res.status).toBe(403);
+-    expect(res.body.code).toBe('community.post.client_posts_disabled');
++    expect(res.status).toBe(201);
++    expect(res.body.post.author_user_id).toBe(ids.studentA);
++  });
++
++  it('2b. B-E2E-1: client of a coach with no space gets one on /me and can post → 201', async () => {
++    const before = await prisma.communityWorkspace.count({
++      where: { coach_id: ids.coachNoSpace },
++    });
++    expect(before).toBe(0);
++
++    const me = await call('GET', '/api/community/me', asUser(ids.studentNoSpace));
++    expect(me.status).toBe(200);
++    expect(me.body.workspace_id).toEqual(expect.any(String));
++    expect(me.body.membership).not.toBeNull();
++    expect(me.body.membership.role).toBe('client');
++    const workspaceId: string = me.body.workspace_id;
++
++    const ws = await prisma.communityWorkspace.findUnique({ where: { id: workspaceId } });
++    expect(ws?.coach_id).toBe(ids.coachNoSpace);
++    expect(ws?.slug).toBe(`coach-${ids.coachNoSpace}`);
++    expect(ws?.name).toBe('Community');
++    const cohorts = await prisma.communityCohort.findMany({
++      where: { workspace_id: workspaceId },
++    });
++    expect(cohorts.map((c) => [c.name, c.sort_order])).toEqual([['All members', 0]]);
++
++    // Second open and the coach's own open land on the same space.
++    const again = await call('GET', '/api/community/me', asUser(ids.studentNoSpace));
++    expect(again.body.workspace_id).toBe(workspaceId);
++    const coachMe = await call('GET', '/api/community/me', asUser(ids.coachNoSpace));
++    expect(coachMe.status).toBe(200);
++    expect(coachMe.body.workspace_id).toBe(workspaceId);
++    expect(await prisma.communityWorkspace.count({ where: { coach_id: ids.coachNoSpace } })).toBe(
++      1,
++    );
++
++    const post = await call(
++      'POST',
++      `/api/community/workspaces/${workspaceId}/posts`,
++      asUser(ids.studentNoSpace),
++      { title: 'Hello', body: 'first post in the Hall' },
++    );
++    expect(post.status).toBe(201);
++    expect(post.body.post.workspace_id).toBe(workspaceId);
++
++    // Another coach's client still cannot post there.
++    const foreign = await call(
++      'POST',
++      `/api/community/workspaces/${workspaceId}/posts`,
++      asUser(ids.studentB),
++      { title: 'Nope', body: 'not my space' },
++    );
++    expect(foreign.status).toBe(404);
+   });
+ 
+   it('3. any active member may comment → 201', async () => {

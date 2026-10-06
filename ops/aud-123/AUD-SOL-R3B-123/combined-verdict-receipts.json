@@ -1,0 +1,62 @@
+[
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/742#issuecomment-6009627792",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#742 @ c911aa95106bb68622d5c2797166fea270a16fcb — VERDICT: APPROVE",
+    "created_at": "2026-10-06T04:56:39Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/743#issuecomment-6009653688",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#743 @ 3493baaa23f7155b1ee6b1f0ad25f5fb5acb1d27 — VERDICT: APPROVE",
+    "created_at": "2026-10-06T04:59:11Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/744#issuecomment-6009607839",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#744 @ cda23212514b60adbfffef0e9add310a4c7f541a — VERDICT: REQUEST CHANGES",
+    "created_at": "2026-10-06T04:54:41Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/745#issuecomment-6009621152",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#745 @ 8ad33e4bbc1d826e2c896dc668e0fa86750c6f79 — VERDICT: APPROVE",
+    "created_at": "2026-10-06T04:56:00Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/746#issuecomment-6009661461",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#746 @ 31ae184dc06891e1818cd5b818a752d0fea3a4cd — VERDICT: APPROVE",
+    "created_at": "2026-10-06T04:59:57Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/747#issuecomment-6009607540",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#747 @ ae1c103333361b3442c102b7bde1af4f3c950762 — VERDICT: APPROVE",
+    "created_at": "2026-10-06T04:54:39Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/748#issuecomment-6009676042",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#748 @ f6b3e1915c4ff49453ac06bd9958cbd18aa136c9 — VERDICT: APPROVE",
+    "created_at": "2026-10-06T05:01:22Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/750#issuecomment-6009704010",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#750 @ 06745d7d4be0df8f85311a1f16c9893f32a91f69 — VERDICT: APPROVE",
+    "created_at": "2026-10-06T05:04:01Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/751#issuecomment-6009711290",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#751 @ 6a0261331490412ad1ba3549efa12f67cc4d7d98 — VERDICT: APPROVE",
+    "created_at": "2026-10-06T05:04:44Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/753#issuecomment-6009723246",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-backend#753 @ d5cdf747e4e5442929a911a9a96d44f74bd6021f — VERDICT: APPROVE",
+    "created_at": "2026-10-06T05:05:53Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/389#issuecomment-6009734802",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-mobile#389 @ 6e3c581cadf225c33bfd0b9fe9c82604ae4b9878 — VERDICT: APPROVE",
+    "created_at": "2026-10-06T05:06:58Z"
+  },
+  {
+    "comment_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/390#issuecomment-6009779876",
+    "verdict_header": "AUDIT GPT-6.1 Sol — growth-project-mobile#390 @ f55cc61b7fc7da9beea1a183fb579229052454b0 — VERDICT: APPROVE",
+    "created_at": "2026-10-06T05:11:04Z"
+  }
+]

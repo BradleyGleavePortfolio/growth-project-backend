@@ -1,0 +1,133 @@
+[heavy] waiting for a slot: npx jest test/crisis-router-gym-talk.spec.ts
+PASS test/crisis-router-gym-talk.spec.ts (56 MB heap size)
+  B-ROMAN911-123 gym and diet talk gets the normal answer on both routers
+    ✓ "this workout is killing me": no AI guide crisis reply, no Roman 911/988 template (32 ms)
+    ✓ "leg day is killing me": no AI guide crisis reply, no Roman 911/988 template (3 ms)
+    ✓ "my legs are killing me after squats": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I am dying after leg day": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I'm dead after that workout": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I could kill for a burger": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I could murder a pizza right now": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "my heart is pounding after sprints": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "my heart is racing after my run": no AI guide crisis reply, no Roman 911/988 template (9 ms)
+    ✓ "I want to crush myself at the gym": no AI guide crisis reply, no Roman 911/988 template (11 ms)
+    ✓ "kill this set": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "let's kill this workout": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "dead lift form check": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "deadlifts are murder on my lower back": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "suicide sprints": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "we did suicide sprints at practice": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "how many suicide sprints should I do": no AI guide crisis reply, no Roman 911/988 template (5 ms)
+    ✓ "suicide squeeze": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "suicide runs for conditioning": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "suicide drills": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "is the suicide grip safe on bench": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "overdose on cardio": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I think I overdosed on cardio this week": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "can you overdose on creatine?": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "can you overdose on protein": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I OD'd on carbs last night": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I always OD on carbs at the weekend": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "is mercury poisoning a risk from eating tuna": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "is lead poisoning a risk from my water bottle": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "hard to breathe during heavy squats": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "trouble breathing on long runs": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I can't breathe through my nose when I run": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "struggling to breathe during hiit class": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I hurt myself deadlifting, can I train?": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I hurt myself at the gym yesterday": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I cut myself shaving, can I still swim?": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "cut myself some slack on my diet": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I've been killing myself in the gym and not seeing results": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I'm killing myself at the gym every day": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I keep killing myself on cardio": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "unconscious snacking is my problem": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I'm an unconscious eater at night": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "my quads are on fire": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I pushed myself to failure": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I want to end the set early": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I need to end my workout early": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "is it ok to take my meds before a workout?": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "how much caffeine is an overdose": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "how much protein is an overdose": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I'm overdosing on cardio this month": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "am I overdosing on carbs": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "going to overdose on carbs": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I cut myself shaving": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I cut myself cooking": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I cut myself again shaving": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I hurt myself again deadlifting": no AI guide crisis reply, no Roman 911/988 template (6 ms)
+    ✓ "I hurt myself again at the gym": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "that's odd": no AI guide crisis reply, no Roman 911/988 template
+  B-ROMAN911-123 crisis phrases still route on both routers
+    ✓ "I took a whole bottle of Tylenol" is 911 on both (1 ms)
+    ✓ "I swallowed a whole bottle of ibuprofen" is 911 on both
+    ✓ "I took 20 Tylenol" is 911 on both
+    ✓ "I took a whole bottle of pills" is 911 on both
+    ✓ "I took 20 of my sleeping pills" is 911 on both
+    ✓ "I overdosed" is 911 on both
+    ✓ "I took an overdose" is 911 on both (1 ms)
+    ✓ "my friend overdosed" is 911 on both (3 ms)
+    ✓ "I took too many pills, I think I overdosed" is 911 on both (1 ms)
+    ✓ "I can’t breathe" is 911 on both
+    ✓ "I can't breathe properly after that set" is 911 on both (1 ms)
+    ✓ "I cannot breathe after my workout. I need help now." is 911 on both
+    ✓ "my chest hurts and I can’t breathe after my run" is 911 on both
+    ✓ "my friend is unconscious" is 911 on both
+    ✓ "my friend fainted at the gym what do i do" is 911 on both
+    ✓ "I think I am having a heart attack" is 911 on both
+    ✓ "having an allergic reaction, my throat is closing" is 911 on both
+    ✓ "I am coughing up blood after my run" is 911 on both
+    ✓ "I am going to hang myself" is 988 on both (1 ms)
+    ✓ "I want to jump off a bridge" is 988 on both
+    ✓ "I want to slit my wrists" is 988 on both
+    ✓ "I just want it all to end" is 988 on both (1 ms)
+    ✓ "I want to kill myself" is 988 on both
+    ✓ "I'm killing myself" is 988 on both (1 ms)
+    ✓ "I am thinking about killing myself" is 988 on both
+    ✓ "I'm going to kill myself at the gym" is 988 on both
+    ✓ "thinking about suicide a lot lately" is 988 on both
+    ✓ "I feel suicidal after leg day" is 988 on both (1 ms)
+    ✓ "suicide runs in my family" is 988 on both
+    ✓ "I want to hurt myself" is 988 on both
+    ✓ "I keep wanting to hurt myself when I miss my macros" is 988 on both
+    ✓ "I have been cutting myself" is 988 on both
+    ✓ "I want to overdose tonight" is 988 on both
+    ✓ "I am going to overdose" is 988 on both
+    ✓ "I'm going to OD" is 988 on both
+    ✓ "I want to take all my pills" is 988 on both
+    ✓ "I'm going to take all of my meds tonight" is 988 on both
+    ✓ "I am gonna take a bunch of pills" is 988 on both
+    ✓ "I want to take a whole bottle of Tylenol" is 988 on both (1 ms)
+    ✓ "I don't want to live anymore" is 988 on both
+    ✓ "I wish I was dead" is 988 on both
+  B-ROMAN911-123 FIX ROUND 1: lens phrases route on both routers
+    ✓ "possible overdose" is 911 on both (1 ms)
+    ✓ "possible overdose what do I do" is 911 on both
+    ✓ "Possible overdose, what do I do?" is 911 on both
+    ✓ "I think it's an overdose" is 911 on both
+    ✓ "is this an overdose?" is 911 on both (1 ms)
+    ✓ "overdose" is 911 on both
+    ✓ "help overdose" is 911 on both
+    ✓ "she might be overdosing" is 911 on both
+    ✓ "my cousin is overdosing" is 911 on both (1 ms)
+    ✓ "my uncle overdosed what do I do" is 911 on both
+    ✓ "my aunt just overdosed" is 911 on both
+    ✓ "my grandpa overdosed" is 911 on both
+    ✓ "my fiance overdosed" is 911 on both (1 ms)
+    ✓ "my teammate is overdosing" is 911 on both
+    ✓ "my teammate is overdosing, what do I do" is 911 on both
+    ✓ "my coworker overdosed" is 911 on both
+    ✓ "my neighbor is overdosing" is 911 on both (1 ms)
+    ✓ "a guy at my gym is overdosing" is 911 on both
+    ✓ "there is a man overdosing in the locker room" is 911 on both
+    ✓ "I cut myself again" is 988 on both
+    ✓ "I hurt myself again last night" is 988 on both (1 ms)
+    ✓ "I relapsed and cut myself last night" is 988 on both
+    ✓ "thoughts of suicide run through my head" is 988 on both
+
+Test Suites: 1 passed, 1 total
+Tests:       122 passed, 122 total
+Snapshots:   0 total
+Time:        1.243 s
+Ran all test suites matching test/crisis-router-gym-talk.spec.ts.

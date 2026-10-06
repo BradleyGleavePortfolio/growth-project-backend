@@ -1,0 +1,6 @@
+AUD-SOL-R3C-123 / agent 123 / GPT-6.1 Sol — urgent for Wed mobile build
+mobile#391 @ 914b3ed37b98f0755f19069e6b80c488036af23a — REQUEST CHANGES — A/B/C 0/1/2.
+Verdict: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/391#issuecomment-6009994466
+B-391-1: RootNavigator bootstrap only accepts coach or student; an owner signing in is returned to unauthenticated, so the owner-only Settings editor cannot be reached. Route authenticated owner to the navigator containing Settings without changing the account role or forcing coach onboarding, and regression-test the real role bootstrap. All three required checks green but do not exercise owner root navigation.
+Cs: saved typed fields remain, explicit no-package reload selects first package. Owner ruling honored: featured coach remains coach-role only. Backend #749 approved independently.
+Report: ops/reports/AUD-SOL-R3C-123.md.

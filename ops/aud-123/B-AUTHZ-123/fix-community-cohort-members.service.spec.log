@@ -1,0 +1,34 @@
+[heavy] waiting for a slot: npx jest test/community/cohorts/community-cohort-members.service.spec.ts
+PASS test/community/cohorts/community-cohort-members.service.spec.ts (69 MB heap size)
+  CommunityCohortMembersService
+    list (roster)
+      ✓ gives a coach the full member rows including status + email (11 ms)
+      ✓ sanitizes the roster for a non-coach active member (no PII/status) (2 ms)
+      ✓ 404s a non-member reader (non-leak) (2 ms)
+      ✓ 404s an unknown cohort
+      ✓ emits a next_cursor when a full page is returned (3 ms)
+    assign
+      ✓ assigns a known user_id as an active student (idempotent upsert) (2 ms)
+      ✓ maps co_coach to the assistant Prisma role (1 ms)
+      ✓ creates a pending invite (status=invited) for an existing user by email (1 ms)
+      ✓ 400s when neither user_id nor email is supplied (1 ms)
+      ✓ 400s when BOTH user_id and email are supplied (XOR)
+      ✓ 404s when the email maps to no platform user (3 ms)
+      ✓ 403s a coach assigning into a cohort they do not own (cross-cohort) (7 ms)
+      target authorization (B-AUTHZ-1)
+        ✓ refuses another coach's client by user_id: coded 404, no data, no membership or ban change (12 ms)
+        ✓ refuses another coach's client by email the same way (2 ms)
+        ✓ still assigns the coach's own client (1 ms)
+        ✓ lets the platform owner override the roster scope
+    remove
+      ✓ soft-removes a student member (1 ms)
+      ✓ 403s removing the owning coach role (protect owner)
+      ✓ is idempotent when the member is already removed (1 ms)
+      ✓ 404s an unknown membership
+      ✓ 403s a coach removing from a cohort they do not own (cross-cohort) (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       21 passed, 21 total
+Snapshots:   0 total
+Time:        2.077 s
+Ran all test suites matching test/community/cohorts/community-cohort-members.service.spec.ts.

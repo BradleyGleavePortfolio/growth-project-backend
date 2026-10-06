@@ -1,0 +1,109 @@
+{
+  "job": "S-PLAYREV-123",
+  "proofLevel": "Read-only source and config-plugin evaluation; no generated Android project or AAB",
+  "mobileHead": "a727eb495a0ce381a22c4ac40370c0c69f53a656",
+  "backendContextHead": "5230306cb63df7290459bb362340a42f385f39d5",
+  "healthConnect": {
+    "readTypes": [
+      "Steps",
+      "ActiveCaloriesBurned",
+      "HeartRate",
+      "RestingHeartRate",
+      "Vo2Max",
+      "ExerciseSession",
+      "Distance",
+      "Weight",
+      "BodyFat",
+      "BloodPressure",
+      "SleepSession",
+      "HeartRateVariabilityRmssd",
+      "OxygenSaturation",
+      "RespiratoryRate",
+      "BodyTemperature"
+    ],
+    "configurations": {
+      "0": {
+        "enabled": false,
+        "healthPermissions": [],
+        "blockedPermissions": [
+          "android.permission.READ_CALENDAR",
+          "android.permission.WRITE_CALENDAR",
+          "android.permission.health.READ_STEPS",
+          "android.permission.health.READ_HEART_RATE",
+          "android.permission.health.READ_RESTING_HEART_RATE",
+          "android.permission.health.READ_SLEEP",
+          "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+          "android.permission.health.READ_DISTANCE",
+          "android.permission.health.READ_EXERCISE",
+          "android.permission.health.READ_OXYGEN_SATURATION",
+          "android.permission.health.READ_RESPIRATORY_RATE",
+          "android.permission.health.READ_HEART_RATE_VARIABILITY",
+          "android.permission.health.READ_BODY_TEMPERATURE",
+          "android.permission.health.READ_WEIGHT",
+          "android.permission.health.READ_BODY_FAT",
+          "android.permission.health.READ_VO2_MAX",
+          "android.permission.health.READ_BLOOD_PRESSURE",
+          "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA",
+          "android.permission.ACTIVITY_RECOGNITION"
+        ],
+        "declarationMatchesReadSet": null
+      },
+      "1": {
+        "enabled": true,
+        "healthPermissions": [
+          "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+          "android.permission.health.READ_BLOOD_PRESSURE",
+          "android.permission.health.READ_BODY_FAT",
+          "android.permission.health.READ_BODY_TEMPERATURE",
+          "android.permission.health.READ_DISTANCE",
+          "android.permission.health.READ_EXERCISE",
+          "android.permission.health.READ_HEART_RATE",
+          "android.permission.health.READ_HEART_RATE_VARIABILITY",
+          "android.permission.health.READ_OXYGEN_SATURATION",
+          "android.permission.health.READ_RESPIRATORY_RATE",
+          "android.permission.health.READ_RESTING_HEART_RATE",
+          "android.permission.health.READ_SLEEP",
+          "android.permission.health.READ_STEPS",
+          "android.permission.health.READ_VO2_MAX",
+          "android.permission.health.READ_WEIGHT"
+        ],
+        "blockedPermissions": [
+          "android.permission.READ_CALENDAR",
+          "android.permission.WRITE_CALENDAR",
+          "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA",
+          "android.permission.ACTIVITY_RECOGNITION"
+        ],
+        "declarationMatchesReadSet": true
+      }
+    }
+  },
+  "profiles": {
+    "production": {
+      "extends": null,
+      "healthConnectSwitch": "0"
+    },
+    "clinic": {
+      "extends": "production",
+      "healthConnectSwitch": "1"
+    }
+  },
+  "audio": {
+    "config": {
+      "microphonePermission": "The Growth Project uses your microphone only while you record a voice note for your coaching community.",
+      "enableBackgroundPlayback": false,
+      "enableBackgroundRecording": false
+    },
+    "androidPermissionsAfterPlugin": [
+      "android.permission.RECORD_AUDIO",
+      "android.permission.MODIFY_AUDIO_SETTINGS"
+    ],
+    "recordAudioAndroidExplicitlySpecified": false
+  },
+  "sdkDefaults": {
+    "expo": "56.0.12",
+    "reactNative": "0.85.3",
+    "targetSdk": "36",
+    "compileSdk": "36",
+    "configuredMinSdk": 26
+  }
+}

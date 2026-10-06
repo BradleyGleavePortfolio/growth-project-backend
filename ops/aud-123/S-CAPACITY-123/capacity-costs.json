@@ -1,0 +1,124 @@
+{
+  "currency": "USD",
+  "region": "sjc",
+  "billingAssumption": "30 days of continuous Fly runtime; Supabase approximate monthly list prices for one project",
+  "exclusions": "Redis, provider/API/AI charges, taxes, egress, stopped rootfs, additional projects and usage overages",
+  "inputs": {
+    "secondsPerMonth": 2592000,
+    "sjcMarkup": 1.192307692,
+    "cpuPrices": {
+      "shared": 8.465e-7,
+      "performance": 0.000012732
+    },
+    "includedMemory": {
+      "shared": 0.25,
+      "performance": 2
+    },
+    "extraMemoryPerGBSecond": 0.000002316,
+    "source": "https://docs.fly.io/about/pricing/"
+  },
+  "presets": [
+    {
+      "name": "shared-cpu-2x / 2GB",
+      "kind": "shared",
+      "cpus": 2,
+      "memoryGB": 2,
+      "perSecond": 0.0000061606538445639994,
+      "hourlyUSD": 0.0222,
+      "monthly30DaysUSD": 15.97,
+      "source": "https://docs.fly.io/about/pricing/"
+    },
+    {
+      "name": "shared-cpu-2x / 4GB",
+      "kind": "shared",
+      "cpus": 2,
+      "memoryGB": 4,
+      "perSecond": 0.000011683423073908,
+      "hourlyUSD": 0.0421,
+      "monthly30DaysUSD": 30.28,
+      "source": "https://docs.fly.io/about/pricing/"
+    },
+    {
+      "name": "performance-1x / 2GB",
+      "kind": "performance",
+      "cpus": 1,
+      "memoryGB": 2,
+      "perSecond": 0.000015180461534543999,
+      "hourlyUSD": 0.0546,
+      "monthly30DaysUSD": 39.35,
+      "source": "https://docs.fly.io/about/pricing/"
+    },
+    {
+      "name": "performance-2x / 4GB",
+      "kind": "performance",
+      "cpus": 2,
+      "memoryGB": 4,
+      "perSecond": 0.000030360923069087997,
+      "hourlyUSD": 0.1093,
+      "monthly30DaysUSD": 78.7,
+      "source": "https://docs.fly.io/about/pricing/"
+    }
+  ],
+  "supabase": {
+    "proBaseUSD": 25,
+    "computeCreditUSD": 10,
+    "microComputeUSD": 10,
+    "smallComputeUSD": 15,
+    "mediumComputeUSD": 60,
+    "proMicroTotalUSD": 25,
+    "proSmallTotalUSD": 30,
+    "proMediumTotalUSD": 75,
+    "source": "https://supabase.com/pricing"
+  },
+  "options": [
+    {
+      "name": "One shared / Pro Micro",
+      "machines": 1,
+      "flyPreset": "shared-cpu-2x / 2GB",
+      "flyUSD": 15.97,
+      "supabaseUSD": 25,
+      "totalUSD": 40.97
+    },
+    {
+      "name": "Two shared / Pro Small",
+      "machines": 2,
+      "flyPreset": "shared-cpu-2x / 2GB",
+      "flyUSD": 31.94,
+      "supabaseUSD": 30,
+      "totalUSD": 61.94
+    },
+    {
+      "name": "One performance / Pro Small",
+      "machines": 1,
+      "flyPreset": "performance-1x / 2GB",
+      "flyUSD": 39.35,
+      "supabaseUSD": 30,
+      "totalUSD": 69.35
+    },
+    {
+      "name": "Two performance / Pro Small",
+      "machines": 2,
+      "flyPreset": "performance-1x / 2GB",
+      "flyUSD": 78.7,
+      "supabaseUSD": 30,
+      "totalUSD": 108.7
+    },
+    {
+      "name": "One larger performance / Pro Small",
+      "machines": 1,
+      "flyPreset": "performance-2x / 4GB",
+      "flyUSD": 78.7,
+      "supabaseUSD": 30,
+      "totalUSD": 108.7
+    },
+    {
+      "name": "Two larger performance / Pro Small",
+      "machines": 2,
+      "flyPreset": "performance-2x / 4GB",
+      "flyUSD": 157.39,
+      "supabaseUSD": 30,
+      "totalUSD": 187.39
+    }
+  ],
+  "peakOnlySecondPerformanceMachine10HoursUSD": 0.55
+}

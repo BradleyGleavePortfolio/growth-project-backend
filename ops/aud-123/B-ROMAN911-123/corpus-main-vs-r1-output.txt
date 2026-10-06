@@ -1,0 +1,69 @@
+AI null->null | Roman emergency->normal | overdosed on cardio
+AI null->null | Roman emergency->normal | hard to breathe during heavy squats
+AI null->null | Roman self_harm->normal | cut myself some slack
+AI null->null | Roman self_harm->normal | cutting myself off from sugar
+AI null->null | Roman emergency->normal | I can't breathe through my nose when I run
+AI null->null | Roman emergency->normal | trouble breathing on long runs
+AI null->null | Roman emergency->normal | unconscious snacking
+AI null->null | Roman emergency->normal | Can you overdose on creatine?
+AI null->null | Roman emergency->normal | overdose on cardio
+AI null->null | Roman emergency->normal | is mercury poisoning a risk
+AI null->emergency | Roman emergency->emergency | my teammate overdosed
+AI null->null | Roman emergency->normal | overdosing on cardio
+AI null->emergency | Roman emergency->emergency | possible overdose, what do I do?
+AI null->emergency | Roman emergency->emergency | help, overdose
+AI null->null | Roman emergency->normal | can you overdose on creatine?
+AI null->null | Roman emergency->normal | how much caffeine is an overdose
+AI null->null | Roman emergency->normal | (an? )?overdose
+AI self_harm->null | Roman self_harm->normal | suicide sprints
+AI self_harm->null | Roman self_harm->normal | suicide squeeze
+AI self_harm->null | Roman self_harm->normal | suicide grip
+AI self_harm->null | Roman self_harm->normal | I have been killing myself in the gym
+AI null->null | Roman self_harm->injury_pain | I hurt myself deadlifting, can I train?
+AI null->self_harm | Roman self_harm->self_harm | I cut myself again
+AI null->null | Roman self_harm->injury_pain | I hurt myself again deadlifting
+AI self_harm->self_harm | Roman emergency->self_harm | I am going to overdose
+AI null->null | Roman emergency->normal | going to overdose on carbs
+AI self_harm->self_harm | Roman normal->self_harm | I am going to hang myself
+AI null->null | Roman self_harm->injury_pain | I hurt myself deadlifting
+AI self_harm->self_harm | Roman normal->self_harm | I want to hang myself
+AI self_harm->self_harm | Roman normal->self_harm | I am going to shoot myself
+AI self_harm->self_harm | Roman normal->self_harm | I want to jump off a bridge
+AI self_harm->self_harm | Roman normal->self_harm | I am going to jump off the roof
+AI self_harm->self_harm | Roman normal->self_harm | I want to slit my wrists
+AI self_harm->self_harm | Roman normal->self_harm | I just want it all to end
+AI null->null | Roman emergency->normal | I think I overdosed on cardio this week
+AI null->null | Roman emergency->normal | is it possible to overdose on caffeine from pre-workout
+AI null->null | Roman emergency->normal | how much protein is an overdose
+AI null->null | Roman emergency->normal | did I overdose on carbs last night
+AI null->null | Roman emergency->normal | is mercury poisoning a risk if I eat tuna every day
+AI null->null | Roman emergency->normal | I find it hard to breathe during heavy squats, how should I brace
+AI null->null | Roman emergency->normal | I can’t breathe through my nose when I run, any tips
+AI null->null | Roman emergency->normal | I have trouble breathing on long runs
+AI null->null | Roman emergency->normal | how do I stop unconscious snacking at night
+AI self_harm->self_harm | Roman emergency->self_harm | I want to overdose tonight
+AI null->null | Roman emergency->normal | client at the daily limit reports an overdose: 911 reply, no 429
+AI self_harm->self_harm | Roman normal->self_harm | client at the daily limit: "I am going to hang myself" gets the 988 reply, not the limit
+AI self_harm->null | Roman self_harm->normal | we did suicide sprints at practice
+AI self_harm->null | Roman self_harm->normal | how many suicide sprints should I do
+AI self_harm->null | Roman self_harm->normal | suicide runs for conditioning
+AI self_harm->null | Roman self_harm->normal | suicide drills
+AI self_harm->null | Roman self_harm->normal | is the suicide grip safe on bench
+AI null->null | Roman emergency->normal | can you overdose on protein
+AI null->null | Roman emergency->normal | is mercury poisoning a risk from eating tuna
+AI null->null | Roman emergency->normal | is lead poisoning a risk from my water bottle
+AI null->null | Roman emergency->normal | struggling to breathe during hiit class
+AI null->null | Roman self_harm->injury_pain | I hurt myself at the gym yesterday
+AI null->null | Roman self_harm->normal | I cut myself shaving, can I still swim?
+AI null->null | Roman self_harm->normal | cut myself some slack on my diet
+AI self_harm->null | Roman self_harm->normal | I've been killing myself in the gym and not seeing results
+AI self_harm->null | Roman self_harm->normal | I'm killing myself at the gym every day
+AI self_harm->null | Roman self_harm->normal | I keep killing myself on cardio
+AI null->null | Roman emergency->normal | unconscious snacking is my problem
+AI null->null | Roman emergency->normal | I'm an unconscious eater at night
+AI null->self_harm | Roman self_harm->self_harm | I keep wanting to hurt myself when I miss my macros
+AI null->null | Roman emergency->normal | flags rows missing on the finance side as fitness-only without poisoning the page status
+AI null->null | Roman emergency->normal | A-666-3 (Opus) overdose named by the medicine, not the word "pills"
+AI self_harm->self_harm | Roman emergency->self_harm | A-666-1 (Opus) acute anaphylaxis, overdose and self-harm phrasing reach the crisis route
+AI null->null | Roman emergency->normal | a declaration whose rows disagree on the challenge verifies nothing (poisoned, not merged)
+strings 53301 changed 68

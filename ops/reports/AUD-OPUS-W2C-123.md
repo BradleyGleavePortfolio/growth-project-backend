@@ -33,7 +33,23 @@ Started 20:23 PDT 10-05. Time box 45 minutes. Done 20:30 PDT.
 ## Operator decisions
 1. C-388-1 Sentry noise while the flag is off. Recommended default: flip FEATURE_COACH_BROADCASTS on after the dual APPROVE and the device pass (as already planned), and file a backend ticket to answer the kill switch as 404.
 
+## R3E (22:29-22:34 PDT, operator mail; time box 30 minutes)
+| Item | Head | Result | Comment |
+|---|---|---|---|
+| m#392 Trust Center "Who can see your data" line | f8627da276243ca86860fd85e38717b0a0036fb5 | APPROVE A0/B0/C1 | https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/392#issuecomment-6010053601 |
+| b#755 public pages copy | 3076cab9871f8d76bce703f0bd59431d8858b849 | NOT POSTED: an Opus verdict already exists at this exact head | https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/755#issuecomment-6010007150 (AUD-OPUS-W2B-123, R3C, APPROVE, 22:28:56) |
+
+- m#392: the new line matches backend main. b#747 is merged, so the legacy leaderboard shows only clients who opted in. `/me/leaderboard` shows opted-in clients of the same coach only, and challenge leaderboards are opt-in and limited to the cohort. Required checks green at the head: Typecheck, lint, test (CI run 37418810495); Analyze (CodeQL run 37418810510); CodeQL. C-392-1: the app wording ("display name and participation score") is shorter than the policy text in b#755 ("display name, rank and participation information"). Align the two on the next copy edit. Verdict text: ops/aud-123/AUD-OPUS-W2C-123/m392_verdict.md.
+- b#755: posting a second Opus verdict at the same head would break the rule of one verdict per PR per head (rule 8). My spot check agrees with the posted APPROVE:
+  - COACH_CODE_GATE_ENABLED is absent from the manifest, so signup is open.
+  - SIGNUP_ROLE_CHOICE_ENABLED is unset, which means on, so coach accounts can be created.
+  - Mobile has coach package and availability screens.
+  - The clinic partner is not named.
+- Notify: ops/lanes123/notify/AUD-OPUS-W2C-123-R3E-m392.txt and ops/lanes123/notify/AUD-OPUS-W2C-123-R3E-b755.txt.
+- Operator decision: record the W2B Opus verdict as the Opus attestation for b#755. Recommended default: yes. The Sol W2C lens is still needed only if no Sol verdict exists at 3076cab9 yet.
+- Cleanup: the temporary fetch refs pr-392-opusw2c and pr-755-opusw2c were deleted. No worktrees, branches or locks.
+
 ## HANDOFF
-- State: DONE. One verdict posted at the exact head. No code changes, pushes or merges.
+- State: DONE (BC1 and R3E). BC1: one verdict posted at the exact head. R3E: m#392 verdict posted; b#755 skipped because its Opus slot was already filled. No code changes, pushes or merges.
 - Cleanup: worktree wt/AUD-OPUS-W2C-123-388 removed. The local ref refs/remotes/origin/pr-388-opusw2c in the mobile clone was deleted. No ci/* or audit/* branches were created, and no locks are held. Claim file left in place.
 - Next: the operator collects the Sol W2C verdict. If both lenses APPROVE at 6ad27c87, the PR can merge with `--match-head-commit 6ad27c87592fcfca38c7d145643c8deed1fb163f`. If the head moves, this lens re-reviews the delta only.

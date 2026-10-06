@@ -1,0 +1,170 @@
+diff --git a/src/ai/ai-crisis-router.ts b/src/ai/ai-crisis-router.ts
+index 9d708f60..e400f3b2 100644
+--- a/src/ai/ai-crisis-router.ts
++++ b/src/ai/ai-crisis-router.ts
+@@ -106,6 +106,20 @@ const EMERGENCY: RegExp[] = [
+     'i',
+   ),
+   /\b(took|taken|take|taking|having|i'?ve had|just had) an overdose\b/i,
++  // B-744-1: an overdose reported with no listed person or lead-in ("a guy at
++  // my gym is overdosing", "my teammate overdosed", "she might be
++  // overdosing"). A plan or thought ("thinking about overdosing") is the 988
++  // line below; "overdosing on cardio" stays an ordinary question.
++  new RegExp(
++    `\\b(?<!\\b(about|of|considering|contemplating|planning on|into|like|never|almost|nearly) )(overdosed|overdosing|od'd|od'ing)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
++    'i',
++  ),
++  // B-744-1: the noun on its own ("possible overdose, what do I do?", "is this
++  // an overdose?", "help, overdose"). "can you overdose on creatine?" and
++  // "how much caffeine is an overdose" stay ordinary questions.
++  /\b(possible|suspected|accidental|likely|probable) (overdose|od)\b/i,
++  acute('(an? )?overdose'),
++  /^\W*((please|help|help me|urgent|emergency)\W+)*(an )?(overdose|od)(\W+(help|help me|please|now|what do i do))*\W*$/i,
+   new RegExp(
+     `\\b${PERSON} (just |has |have |had |was |were |got |has been |have been |think (i|he|she|they) (was |were |got |have been |has been )?|)(been )?poisoned\\b`,
+     'i',
+@@ -128,7 +142,7 @@ const SELF_HARM: RegExp[] = [
+   // B-ROMAN911-123: drill and grip names ("suicide sprints", "suicide
+   // runs", "suicide squeeze", "suicide grip") are training vocabulary.
+   // "suicide runs in my family" still routes.
+-  /\bsuicid(e|al)\b(?! (sprints?|drills?|shuttles?|squeeze|squeezes|grips?)\b| runs?\b(?! in\b))/i,
++  /\bsuicid(e|al)\b(?! (sprints?|drills?|shuttles?|squeeze|squeezes|grips?)\b| runs?\b(?! (in|through)\b))/i,
+   // B-ROMAN911-123: "I have been killing myself in the gym" and "I keep
+   // killing myself on cardio" describe effort. "kill myself", "thinking about
+   // killing myself" and "I am killing myself" on its own still route.
+@@ -154,6 +168,14 @@ const SELF_HARM: RegExp[] = [
+     `\\b(hurt|hurting|cut|cutting|harm|harming|burn|burning) myself (on purpose|deliberately|intentionally)\\b`,
+     'i',
+   ),
++  // B-744-2: a relapse disclosure ("I cut myself again", "I hurt myself
++  // again last night"). "I hurt myself again deadlifting" and "I cut myself
++  // again shaving" are training or everyday injuries.
++  new RegExp(
++    `\\b(hurt|hurting|cut|cutting|harmed|harming|burned|burnt|burning) myself again\\b(?! (on|in|at|during|when|while|with|doing|from|lifting|deadlifting|squatting|benching|running|training|playing|working|shaving|cooking)\\b)`,
++    'i',
++  ),
++  /^(?=.*\brelaps(e|ed|ing)\b)(?=.*\b(hurt|hurting|cut|cutting|harmed|harming|burned|burning) myself\b)/i,
+   // B-AIG3-123: a stated plan or wish to overdose ("I want to overdose
+   // tonight", "I am going to overdose"). "going to overdose on carbs" stays
+   // an ordinary question.
+diff --git a/test/ai.service.spec.ts b/test/ai.service.spec.ts
+index c369f689..24980ac9 100644
+--- a/test/ai.service.spec.ts
++++ b/test/ai.service.spec.ts
+@@ -965,6 +965,10 @@ describe('AiService.chat — crisis phrasing a client actually types (B-AIG2-122
+     ['I cannot breathe after my workout. I need help now.', 'emergency', '911'],
+     ['I can’t breathe during my workout. Please help me.', 'emergency', '911'],
+     ['my chest hurts and I can’t breathe after my run', 'emergency', '911'],
++    // B-ROMAN911-123 FIX ROUND 1 (B-744-1 / B-744-2).
++    ['Possible overdose, what do I do?', 'emergency', '911'],
++    ['my teammate is overdosing, what do I do', 'emergency', '911'],
++    ['I cut myself again', 'self_harm', '988'],
+   ])('client at the daily limit: "%s" gets the crisis reply, not the limit (B-AIG3-123)', async (message, classification, line) => {
+     const quota = makeQuotaStub();
+     const { svc } = makeService(quota);
+diff --git a/test/crisis-router-gym-talk.spec.ts b/test/crisis-router-gym-talk.spec.ts
+index 1b9d118a..9d755aee 100644
+--- a/test/crisis-router-gym-talk.spec.ts
++++ b/test/crisis-router-gym-talk.spec.ts
+@@ -52,6 +52,18 @@ const GYM_TALK = [
+   'I want to end the set early',
+   'I need to end my workout early',
+   'is it ok to take my meds before a workout?',
++  // FIX ROUND 1 controls for the overdose and relapse rules below.
++  'how much caffeine is an overdose',
++  'how much protein is an overdose',
++  "I'm overdosing on cardio this month",
++  'am I overdosing on carbs',
++  'going to overdose on carbs',
++  'I cut myself shaving',
++  'I cut myself cooking',
++  'I cut myself again shaving',
++  'I hurt myself again deadlifting',
++  'I hurt myself again at the gym',
++  "that's odd",
+ ];
+ 
+ const EMERGENCY_911 = [
+@@ -126,3 +138,53 @@ describe('B-ROMAN911-123 crisis phrases still route on both routers', () => {
+     expect(roman.short_circuit).toBe(true);
+   });
+ });
++
++// FIX ROUND 1 (B-ROMAN911-123) on b#744: every lens phrase. Each one is
++// missed by both routers at cda23212 (Roman main sent them to 911 / 988).
++const LENS_911 = [
++  // B-744-1: an overdose with no listed person, or the noun on its own.
++  'possible overdose',
++  'possible overdose what do I do',
++  'Possible overdose, what do I do?',
++  "I think it's an overdose",
++  'is this an overdose?',
++  'overdose',
++  'help overdose',
++  'she might be overdosing',
++  'my cousin is overdosing',
++  'my uncle overdosed what do I do',
++  'my aunt just overdosed',
++  'my grandpa overdosed',
++  'my fiance overdosed',
++  'my teammate is overdosing',
++  'my teammate is overdosing, what do I do',
++  'my coworker overdosed',
++  'my neighbor is overdosing',
++  'a guy at my gym is overdosing',
++  'there is a man overdosing in the locker room',
++];
++
++const LENS_988 = [
++  // B-744-2: a self-harm relapse disclosure.
++  'I cut myself again',
++  'I hurt myself again last night',
++  'I relapsed and cut myself last night',
++  // C-744-1: "suicide run(s) through" is not a drill.
++  'thoughts of suicide run through my head',
++];
++
++describe('B-ROMAN911-123 FIX ROUND 1: lens phrases route on both routers', () => {
++  it.each(LENS_911)('"%s" is 911 on both', (message) => {
++    expect(classifyAiGuideCrisis(message)).toBe('emergency');
++    const roman = classifySafety(message);
++    expect(roman.class).toBe('emergency');
++    expect(roman.short_circuit).toBe(true);
++  });
++
++  it.each(LENS_988)('"%s" is 988 on both', (message) => {
++    expect(classifyAiGuideCrisis(message)).toBe('self_harm');
++    const roman = classifySafety(message);
++    expect(roman.class).toBe('self_harm');
++    expect(roman.short_circuit).toBe(true);
++  });
++});
+diff --git a/test/roman/roman-streaming.spec.ts b/test/roman/roman-streaming.spec.ts
+index a5de55d7..50f8bb8e 100644
+--- a/test/roman/roman-streaming.spec.ts
++++ b/test/roman/roman-streaming.spec.ts
+@@ -641,6 +641,24 @@ describe('Roman — crisis messages are never blocked by the turn limit or the s
+     expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+   });
+ 
++  it.each([
++    ['Possible overdose, what do I do?', 'emergency'],
++    ['my teammate is overdosing, what do I do', 'emergency'],
++    ['I cut myself again', 'self_harm'],
++  ] as const)(
++    'daily cap reached: "%s" gets the %s template, no model call (B-ROMAN911-123 FIX ROUND 1)',
++    async (content, cls) => {
++      process.env.ROMAN_DAILY_COST_CAP_USD = '0';
++      const { ctrl, anthropic, messages } = setup();
++      const { res, writes } = makeRes();
++      await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content });
++      const done = parseFrames(writes).find((f) => f.data?.type === 'done');
++      expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES[cls]);
++      expect(anthropic.messages.stream).not.toHaveBeenCalled();
++      expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
++    },
++  );
++
+   it('turn limit used up: an emergency message still gets the 911 template; an ordinary one gets the 429', async () => {
+     const { ctrl, anthropic, romanMessage } = setup();
+     romanMessage.count.mockResolvedValue(10_000);

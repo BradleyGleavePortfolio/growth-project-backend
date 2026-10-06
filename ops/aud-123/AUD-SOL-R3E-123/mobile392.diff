@@ -1,0 +1,32 @@
+diff --git a/src/screens/TrustCenterScreen.tsx b/src/screens/TrustCenterScreen.tsx
+index 36ee8a46..804a86c6 100644
+--- a/src/screens/TrustCenterScreen.tsx
++++ b/src/screens/TrustCenterScreen.tsx
+@@ -536,6 +536,7 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+           <Text style={styles.bulletGroupLabel}>Who can see your data</Text>
+           <BulletItem text="You — always" />
+           <BulletItem text="Your coach — your consultation answers, logs, check-ins and connected health data" />
++          <BulletItem text="Members of your community spaces — the content you choose to share there. If you opt in to a leaderboard, other clients of your coach can also see your display name and participation score." />
+           <BulletItem text="Not your coach — your Roman conversations, which are kept until you delete them or your account" />
+           <BulletItem text="Service providers that run the app for The Growth Project, such as Anthropic for Roman, only as described in the Privacy Policy" />
+           <BulletItem text="Your data is never sold, and your health data is never used for advertising" />
+diff --git a/src/screens/__tests__/trustCenterPolicyLinks.test.tsx b/src/screens/__tests__/trustCenterPolicyLinks.test.tsx
+index 4a1aa498..d0cd5849 100644
+--- a/src/screens/__tests__/trustCenterPolicyLinks.test.tsx
++++ b/src/screens/__tests__/trustCenterPolicyLinks.test.tsx
+@@ -173,6 +173,15 @@ describe('TrustCenterScreen security copy (B-STORECOPY-1: no universal guarantee
+   });
+ });
+ 
++describe('TrustCenterScreen who can see your data (S-PRIVACY-123)', () => {
++  it('names community members and the opt-in leaderboard as recipients', () => {
++    const bullets = [...SCREEN_SRC.matchAll(/<BulletItem text="([^"]+)"/g)].map((m) => m[1]);
++    expect(bullets).toContain(
++      'Members of your community spaces — the content you choose to share there. If you opt in to a leaderboard, other clients of your coach can also see your display name and participation score.',
++    );
++  });
++});
++
+ describe('TrustCenterScreen labels (operator ruling 10-01: "Privacy", "Delete account")', () => {
+   it('uses the approved Settings labels', () => {
+     expect(SCREEN_SRC).toContain('>Delete account</Text>');

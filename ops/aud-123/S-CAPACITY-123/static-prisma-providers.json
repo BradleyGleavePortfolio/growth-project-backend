@@ -1,0 +1,183 @@
+{
+  "method": "TypeScript AST only; resolves static named imports by file and exported class from AppModule; counts bare PrismaService provider registrations",
+  "backend_head": "5230306cb63df7290459bb362340a42f385f39d5",
+  "registration_count": 18,
+  "registrations": [
+    {
+      "module": "AiCreditsModule",
+      "file": "src/ai-credits/ai-credits.module.ts",
+      "providers": [
+        {
+          "line": 30
+        }
+      ]
+    },
+    {
+      "module": "BillingModule",
+      "file": "src/billing/billing.module.ts",
+      "providers": [
+        {
+          "line": 55
+        }
+      ]
+    },
+    {
+      "module": "DunningV2Module",
+      "file": "src/checkout/dunning-v2/dunning-v2.module.ts",
+      "providers": [
+        {
+          "line": 40
+        }
+      ]
+    },
+    {
+      "module": "CoachConnectModule",
+      "file": "src/coach-connect/coach-connect.module.ts",
+      "providers": [
+        {
+          "line": 21
+        }
+      ]
+    },
+    {
+      "module": "CoachMoneyModule",
+      "file": "src/coach-money/coach-money.module.ts",
+      "providers": [
+        {
+          "line": 11
+        }
+      ]
+    },
+    {
+      "module": "CoachBriefModule",
+      "file": "src/coach/brief/coach-brief.module.ts",
+      "providers": [
+        {
+          "line": 21
+        }
+      ]
+    },
+    {
+      "module": "CoachHomeModule",
+      "file": "src/coach/home/coach-home.module.ts",
+      "providers": [
+        {
+          "line": 18
+        }
+      ]
+    },
+    {
+      "module": "InsightsModule",
+      "file": "src/insights/insights.module.ts",
+      "providers": [
+        {
+          "line": 14
+        }
+      ]
+    },
+    {
+      "module": "MacrosModule",
+      "file": "src/macros/macros.module.ts",
+      "providers": [
+        {
+          "line": 16
+        }
+      ]
+    },
+    {
+      "module": "PayoutsV2Module",
+      "file": "src/payouts-v2/payouts-v2.module.ts",
+      "providers": [
+        {
+          "line": 45
+        }
+      ]
+    },
+    {
+      "module": "PrismaModule",
+      "file": "src/prisma/prisma.module.ts",
+      "providers": [
+        {
+          "line": 9
+        }
+      ]
+    },
+    {
+      "module": "RealMealPlansModule",
+      "file": "src/real-meal-plans/real-meal-plans.module.ts",
+      "providers": [
+        {
+          "line": 21
+        }
+      ]
+    },
+    {
+      "module": "ScoutModule",
+      "file": "src/scout/scout.module.ts",
+      "providers": [
+        {
+          "line": 68
+        }
+      ]
+    },
+    {
+      "module": "SubCoachesModule",
+      "file": "src/sub-coaches/sub-coaches.module.ts",
+      "providers": [
+        {
+          "line": 28
+        }
+      ]
+    },
+    {
+      "module": "AntiBotModule",
+      "file": "src/talent-marketplace/anti-bot/anti-bot.module.ts",
+      "providers": [
+        {
+          "line": 18
+        }
+      ]
+    },
+    {
+      "module": "TalentMarketplaceModule",
+      "file": "src/talent-marketplace/talent-marketplace.module.ts",
+      "providers": [
+        {
+          "line": 66
+        }
+      ]
+    },
+    {
+      "module": "TeamModeModule",
+      "file": "src/team-mode/team-mode.module.ts",
+      "providers": [
+        {
+          "line": 22
+        }
+      ]
+    },
+    {
+      "module": "TeamModule",
+      "file": "src/team/team.module.ts",
+      "providers": [
+        {
+          "line": 24
+        }
+      ]
+    }
+  ],
+  "capacity_scenarios": [
+    {
+      "connection_limit_per_client": 5,
+      "one_machine_configured_pool_maximum": 90,
+      "two_machines_configured_pool_maximum": 180,
+      "note": "Configured maxima, not measured open connections; transaction pooling decouples these client connections from direct Postgres slots."
+    },
+    {
+      "connection_limit_per_client": 10,
+      "one_machine_configured_pool_maximum": 180,
+      "two_machines_configured_pool_maximum": 360,
+      "note": "Configured maxima, not measured open connections; transaction pooling decouples these client connections from direct Postgres slots."
+    }
+  ]
+}

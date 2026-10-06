@@ -1,0 +1,1 @@
+S-E2E-COACH-123 done 21:46 PDT: report only (ops/reports/S-E2E-COACH-123.md), B 0 definite + 1 conditional (B-COND-1 Settings>Payouts mirror-only Connect status; owner check O-1), C 6

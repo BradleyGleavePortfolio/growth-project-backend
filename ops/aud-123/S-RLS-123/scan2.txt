@@ -1,0 +1,97 @@
+community_workspaces: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_workspaces_coach_all : FOR ALL TO public USING ("coach_id"::text = app.current_user_id()) WITH CHECK ("coach_id"::text = app.current_user_id())
+     community_workspaces_member_select : FOR SELECT TO public USING (app.is_community_workspace_member("id"))
+community_cohorts: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_cohorts_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_cohorts_member_select : FOR SELECT TO public USING (app.shares_community_cohort("id"))
+community_memberships: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_memberships_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_memberships_self_or_shared_cohort_select : FOR SELECT TO public USING ( "user_id"::text = app.current_user_id() OR app.shares_community_cohort("cohort_id") )
+community_messages: enable=True force=True revoke_anon=False create_policies=4 drops=0
+     community_messages_select : FOR SELECT TO public USING ( app.is_community_workspace_coach("workspace_id") OR ("scope" = 'cohort' AND app.shares_community_cohort("cohort_id")) OR ("scope" = 'dm' AND ( "sender_id"::text = app.curr
+     community_messages_author_insert : FOR INSERT TO public WITH CHECK ( "sender_id"::text = app.current_user_id() AND ( app.is_community_workspace_coach("workspace_id") OR ("scope" = 'cohort' AND app.shares_community_cohort("cohort_id")) 
+     community_messages_author_update : FOR UPDATE TO public USING ( "sender_id"::text = app.current_user_id() OR app.is_community_workspace_coach("workspace_id") ) WITH CHECK ( "sender_id"::text = app.current_user_id() OR app.is_community_
+     community_messages_author_delete : FOR DELETE TO public USING ( "sender_id"::text = app.current_user_id() OR app.is_community_workspace_coach("workspace_id") )
+community_posts: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_posts_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_posts_member_select : FOR SELECT TO public USING ( ("release_at" IS NULL OR "release_at" <= now()) AND "visibility" = 'active' AND ( ("scope" = 'hall' AND app.is_community_workspace_member("workspace_id")) OR ("scope" = 'c
+community_responses: enable=True force=True revoke_anon=False create_policies=4 drops=0
+     community_responses_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_responses_member_select : FOR SELECT TO public USING (app.is_community_workspace_member("workspace_id"))
+     community_responses_own_insert : FOR INSERT TO public WITH CHECK ( "user_id"::text = app.current_user_id() AND app.is_community_workspace_member("workspace_id") )
+     community_responses_own_delete : FOR DELETE TO public USING ("user_id"::text = app.current_user_id())
+community_events: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_events_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_events_member_select : FOR SELECT TO public USING ( ("cohort_id" IS NULL AND app.is_community_workspace_member("workspace_id")) OR ("cohort_id" IS NOT NULL AND app.shares_community_cohort("cohort_id")) )
+community_event_rsvps: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_event_rsvps_coach_select : FOR SELECT TO public USING (app.is_community_workspace_coach("workspace_id"))
+     community_event_rsvps_own_all : FOR ALL TO public USING ("user_id"::text = app.current_user_id()) WITH CHECK ( "user_id"::text = app.current_user_id() AND app.is_community_workspace_member("workspace_id") )
+community_challenges: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_challenges_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_challenges_member_select : FOR SELECT TO public USING ( ("cohort_id" IS NULL AND app.is_community_workspace_member("workspace_id")) OR ("cohort_id" IS NOT NULL AND app.shares_community_cohort("cohort_id")) )
+community_challenge_participations: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_challenge_participations_coach_select : FOR SELECT TO public USING (app.is_community_workspace_coach("workspace_id"))
+     community_challenge_participations_own_all : FOR ALL TO public USING ("user_id"::text = app.current_user_id()) WITH CHECK ( "user_id"::text = app.current_user_id() AND app.is_community_workspace_member("workspace_id") )
+community_moderation_actions: enable=True force=True revoke_anon=False create_policies=3 drops=0
+     community_moderation_actions_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_moderation_actions_reporter_insert : FOR INSERT TO public WITH CHECK ( "reported_by_id"::text = app.current_user_id() AND app.is_community_workspace_member("workspace_id") )
+     community_moderation_actions_reporter_select : FOR SELECT TO public USING ("reported_by_id"::text = app.current_user_id())
+community_classroom_posts: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_classroom_posts_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_classroom_posts_member_select : FOR SELECT TO public USING ( "status" = 'published' AND ("release_at" IS NULL OR "release_at" <= now()) AND "soft_deleted_at" IS NULL AND ( ("cohort_id" IS NULL AND app.is_community_workspace_member("
+community_classroom_media_assets: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_classroom_media_assets_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_classroom_media_assets_member_select : FOR SELECT TO public USING ( EXISTS ( SELECT 1 FROM "community_classroom_posts" p WHERE p."id" = "community_classroom_media_assets"."post_id" AND p."status" = 'published' AND (p."release_at" IS NULL O
+community_voice_notes: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_voice_notes_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspace_id")) WITH CHECK (app.is_community_workspace_coach("workspace_id"))
+     community_voice_notes_member_select : FOR SELECT TO public USING ( "soft_deleted_at" IS NULL AND ( ( "conversation_id" IS NULL AND ( ("cohort_id" IS NULL AND app.is_community_workspace_member("workspace_id")) OR ("cohort_id" IS NOT NULL A
+community_search_entries: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_search_entries_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspaceId")) WITH CHECK (app.is_community_workspace_coach("workspaceId"))
+     community_search_entries_member_select : FOR SELECT TO public USING ( "softDeletedAt" IS NULL AND ( ("cohortId" IS NULL AND app.is_community_workspace_member("workspaceId")) OR ("cohortId" IS NOT NULL AND app.shares_community_cohort("cohortI
+community_wearable_prompts: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_wearable_prompts_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspaceId")) WITH CHECK (app.is_community_workspace_coach("workspaceId"))
+     community_wearable_prompts_coach_all : FOR ALL TO public USING (app.is_community_workspace_coach("workspaceId")) WITH CHECK (app.is_community_workspace_coach("workspaceId"))
+community_wearable_prompt_sources: enable=True force=True revoke_anon=False create_policies=2 drops=0
+     community_wearable_prompt_sources_coach_all : FOR ALL TO public USING ( EXISTS ( SELECT 1 FROM "community_wearable_prompts" p WHERE p."id" = "community_wearable_prompt_sources"."promptId" AND app.is_community_workspace_coach(p."workspaceId") ) ) 
+     community_wearable_prompt_sources_coach_all : FOR ALL TO public USING ( EXISTS ( SELECT 1 FROM "community_wearable_prompts" p WHERE p."id" = "community_wearable_prompt_sources"."promptId" AND app.is_community_workspace_coach(p."workspaceId") ) ) 
+community_reports: enable=False force=False revoke_anon=False create_policies=0 drops=0
+CommunityWin: enable=True force=True revoke_anon=False create_policies=9 drops=0
+     p_communitywin_select : AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("user_id" = app.current_user_id() OR "coach_id" = app.current_user_id() OR ("visibility" = 'public'
+     p_communitywin_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("user_id" = app.current_user_id() OR app.is_current_coach_of("user_id")))))
+     p_communitywin_update : AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("user_id" = app.current_user_id() OR "coach_id" = app.current_user_id() OR app.is_current_coach_of(
+     p_communitywin_delete : AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("user_id" = app.current_user_id() OR "coach_id" = app.current_user_id() OR app.is_current_coach_of(
+     p_communitywin_select : AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND (app.is_current_coach_of("user_id") OR ("hidden_at" IS NULL AND ("user_id" = app.current_user_id() O
+     p_communitywin_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "visibility" = 'circle' AND ("user_id" = app.current_user_id() OR app.is_current_coach_of("user
+     p_communitywin_update : AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("user_id" = app.current_user_id() OR app.is_current_coach_of("user_id"))))) WITH CHECK ((app.is_own
+     p_communitywin_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "visibility" = 'circle' AND ("user_id" = app.current_user_id() OR app.is_current_coach_of("user
+RomanSession: enable=True force=True revoke_anon=False create_policies=4 drops=0
+     p_romansession_select : AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id())))
+     p_romansession_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id())))
+     p_romansession_update : AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id()))) WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NU
+RomanMessage: enable=True force=True revoke_anon=False create_policies=3 drops=0
+     p_romanmessage_select : AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id() AND EXISTS (SELECT 1 FROM public."RomanSession" rs WHERE rs."id" =
+     p_romanmessage_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id() AND EXISTS (SELECT 1 FROM public."RomanSession" rs WHERE rs."
+WorkoutProgram: enable=True force=True revoke_anon=False create_policies=5 drops=0
+     p_workoutprogram_select : AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "owner_user_id" = app.current_user_id()) OR (app.current_user_id() IS NOT NULL AND "visibility" = 't
+     p_workoutprogram_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "owner_user_id" = app.current_user_id())))
+     p_workoutprogram_update : AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "owner_user_id" = app.current_user_id()))) WITH CHECK ((app.is_owner() OR (app.current_user_id() IS 
+     p_workoutprogram_delete : AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "owner_user_id" = app.current_user_id())))
+WorkoutPlanRevision: enable=True force=True revoke_anon=False create_policies=5 drops=0
+     p_workoutplanrevision_select : AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutPlan" wp WHERE wp."id" = "WorkoutPlanRevision"."workout_plan_id" AND (wp."coach_id" = app.current_use
+     p_workoutplanrevision_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutPlan" wp WHERE wp."id" = "WorkoutPlanRevision"."workout_plan_id" AND (wp."coach_id" = app.curren
+     p_workoutplanrevision_update : AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutPlan" wp WHERE wp."id" = "WorkoutPlanRevision"."workout_plan_id" AND (wp."coach_id" = app.current_use
+     p_workoutplanrevision_delete : AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutPlan" wp WHERE wp."id" = "WorkoutPlanRevision"."workout_plan_id" AND (wp."coach_id" = app.current_use
+WorkoutProgramRevision: enable=True force=True revoke_anon=False create_policies=5 drops=0
+     p_workoutprogramrevision_select : AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutProgram" wprg WHERE wprg."id" = "WorkoutProgramRevision"."program_id" AND (wprg."owner_user_id" = app
+     p_workoutprogramrevision_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutProgram" wprg WHERE wprg."id" = "WorkoutProgramRevision"."program_id" AND wprg."owner_user_id" =
+     p_workoutprogramrevision_update : AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutProgram" wprg WHERE wprg."id" = "WorkoutProgramRevision"."program_id" AND wprg."owner_user_id" = app.
+     p_workoutprogramrevision_delete : AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."WorkoutProgram" wprg WHERE wprg."id" = "WorkoutProgramRevision"."program_id" AND wprg."owner_user_id" = app.
+ClientWorkoutAssignmentSnapshot: enable=True force=True revoke_anon=False create_policies=5 drops=0
+     p_clientworkoutassignmentsnapshot_select : AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND (cwa."cl
+     p_clientworkoutassignmentsnapshot_insert : AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND (cw
+     p_clientworkoutassignmentsnapshot_update : AS PERMISSIVE FOR UPDATE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND (cwa."as
+     p_clientworkoutassignmentsnapshot_delete : AS PERMISSIVE FOR DELETE TO public USING ((app.is_owner() OR (EXISTS (SELECT 1 FROM public."ClientWorkoutAssignment" cwa WHERE cwa."id" = "ClientWorkoutAssignmentSnapshot"."assignment_id" AND (cwa."as
+CoachBookingOption: enable=False force=False revoke_anon=False create_policies=0 drops=0
+AiProcessingConsentEvent: enable=True force=True revoke_anon=True create_policies=3 drops=0
+     p_aiprocessingconsentevent_select_self : AS PERMISSIVE FOR SELECT TO public USING (app.current_user_id() IS NOT NULL AND "user_id" = app.current_user_id())
+     deny_all_anon_aiprocessingconsentevent : AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false)

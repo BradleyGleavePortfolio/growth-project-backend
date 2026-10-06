@@ -1,0 +1,263 @@
+diff --git a/docs/help/faq.md b/docs/help/faq.md
+index d8198a7f..53e7fd48 100644
+--- a/docs/help/faq.md
++++ b/docs/help/faq.md
+@@ -102,10 +102,10 @@ days, recovery is not possible.
+ 
+ ## Other
+ 
+-**Is there a coach app, or is the console web-only?**
+-The coach surface is web-only today. The mobile app is the client
+-surface. Some coach functions are also available inside the mobile
+-app for coaches who prefer it.
++**Is there a coach app?**
++Coach tools are available in The Growth Project mobile app. Sign in
++with a coach account to manage clients, messages, training programs,
++coaching packages and availability.
+ 
+ **How do I report a bug?**
+ See [Contact support](./contact-support.md).
+diff --git a/src/public-pages/help-pages.html.ts b/src/public-pages/help-pages.html.ts
+index f91eb8d7..377c13cf 100644
+--- a/src/public-pages/help-pages.html.ts
++++ b/src/public-pages/help-pages.html.ts
+@@ -44,7 +44,7 @@ export { SUPPORT_EMAIL } from './trust-pages.html';
+ 
+ // Last-reviewed date for the help copy. Bump on substantive edits so the
+ // freshness signal at the top of each page reflects reality.
+-export const HELP_LAST_REVIEWED = '2026-04-30';
++export const HELP_LAST_REVIEWED = '2026-10-05';
+ 
+ // Token defaults align with the staging/production hostnames described in
+ // docs/help/_tokens.md. The renderer never invents values that depend on
+@@ -463,9 +463,9 @@ function faqContent(): HelpPageContent {
+         heading: 'Other',
+         items: [
+           {
+-            question: 'Is there a coach app, or is the console web-only?',
++            question: 'Is there a coach app?',
+             answer:
+-              'The coach surface is web-only today. The mobile app is the client surface. Some coach functions are also available inside the mobile app for coaches who prefer it.',
++              'Coach tools are available in The Growth Project mobile app. Sign in with a coach account to manage clients, messages, training programs, coaching packages and availability.',
+           },
+           {
+             question: 'How do I report a bug?',
+diff --git a/src/public-pages/public-pages.html.ts b/src/public-pages/public-pages.html.ts
+index 79b5d51f..bec64d2c 100644
+--- a/src/public-pages/public-pages.html.ts
++++ b/src/public-pages/public-pages.html.ts
+@@ -132,14 +132,16 @@ export function renderSignupPage(inviteCode?: string | null): string {
+   }
+   return baseDocument({
+     title: 'The Growth Project — Sign up',
+-    headline: 'Sign up by invite',
++    // Signup is open (owner decision; B-STORECOPY-2): no invite code is
++    // needed. A coach's invite code only connects the new client to them.
++    headline: 'Create an account',
+     body:
+-      'The Growth Project is currently invite-only. If your coach has ' +
+-      'shared an invite link with you, open it on your phone to start. ' +
+-      'If you do not have an invite yet, reach out to your coach or ' +
+-      'email us and we will connect you with one.',
+-    cta_label: 'Email us',
+-    cta_href: `mailto:${SUPPORT_EMAIL}?subject=Request%20an%20invite`,
++      'Open The Growth Project app to create a client or coach account. ' +
++      'If a coach shared an invite code, enter it during setup to connect ' +
++      'with them. No invite code is needed to create an account. For help ' +
++      'with setup, contact support.',
++    cta_label: 'Contact support',
++    cta_href: `mailto:${SUPPORT_EMAIL}?subject=Signup%20help`,
+   });
+ }
+ 
+diff --git a/src/public-pages/trust-pages.html.ts b/src/public-pages/trust-pages.html.ts
+index 59936b7e..383959c9 100644
+--- a/src/public-pages/trust-pages.html.ts
++++ b/src/public-pages/trust-pages.html.ts
+@@ -32,7 +32,21 @@ export const SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
+ 
+ // Last-reviewed date for the policy text. Bump when copy changes.
+ // Format ISO-8601 (UTC) so it sorts and renders consistently.
+-export const POLICY_LAST_REVIEWED = '2026-10-03';
++export const POLICY_LAST_REVIEWED = '2026-10-05';
++
++// Who sees community and leaderboard data (B-PRIVACY-1). Shared by /privacy
++// "Who can see your data" and /consumer-health-privacy "Categories we share".
++// Leaderboard rows are opt-in (show_on_leaderboard, default off) on both the
++// legacy /community/leaderboard and /me/leaderboard reads.
++export const COMMUNITY_VISIBILITY_TEXT =
++  'Members of the community spaces you join can see your display name and the posts, comments, reactions, shared wins and group messages you choose to share in those spaces. Messages sent directly to your coach are not group messages.';
++export const LEADERBOARD_VISIBILITY_TEXT =
++  'If you opt in to a leaderboard, other clients assigned to the same coach can see your display name, rank and participation information, such as workout counts or a habit-consistency score and its change. The habit score uses check-in, workout, meal-log and coach-message activity, not the content of your private messages. You can opt out to hide your leaderboard entry.';
++
++// Apple Guideline 1.2: word for word the sentence the in-app Community terms
++// sheet shows before first Community use (mobile CommunityTermsGate).
++export const COMMUNITY_ZERO_TOLERANCE_TEXT =
++  'There is no tolerance for objectionable content or abusive users. Content that breaks these guidelines is removed, and the account that posted it can be removed.';
+ 
+ // Public paths of the two privacy documents. The mobile app links to the
+ // same paths (growth-project-mobile src/config/env.ts), so keep them stable.
+@@ -234,7 +248,10 @@ function privacyContent(): TrustPageContent {
+         bullets: [
+           'You.',
+           'Your coach, and any coach on their team who is assigned to you: your profile, consultation answers including readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. If any readiness answer is yes, your coach is told so they can adjust your training.',
+-          'Members of a community space you belong to: what you post, comment or react there, and your name. Coaches can sort the members of their spaces by when they joined.',
++          // B-PRIVACY-1 (after the leaderboard opt-in fix, b#747): community
++          // spaces and the opt-in leaderboard. Same text on the health policy.
++          `${COMMUNITY_VISIBILITY_TEXT} Coaches can sort the members of their spaces by when they joined.`,
++          LEADERBOARD_VISIBILITY_TEXT,
+           'Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging.',
+           'TGP staff, only when needed to provide support, keep people safe, fix problems, secure the service or meet a legal duty.',
+           'The service providers listed below, only to run the service for us.',
+@@ -433,7 +450,8 @@ function consumerHealthContent(): TrustPageContent {
+         paragraphs: ['We share the health data described above only as follows:'],
+         bullets: [
+           'Your coach, and any coach on their team assigned to you — your consultation and readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. Your Roman conversations are never shared with your coach.',
+-          'Other members of community spaces you join — only the health information you choose to post there.',
++          COMMUNITY_VISIBILITY_TEXT,
++          LEADERBOARD_VISIBILITY_TEXT,
+           'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies and your coach’s AI drafts, and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
+           'Authorities, when the law requires it or to protect someone’s safety.',
+         ],
+@@ -529,6 +547,7 @@ function termsContent(): TrustPageContent {
+         heading: 'Acceptable use',
+         paragraphs: [
+           'You agree not to misuse the service. In particular, you may not attempt to disrupt or break security controls, scrape or abuse the API, upload unlawful, harassing or harmful content, or impersonate another person. Community content can be reported and members can be blocked. We may remove content and suspend or terminate accounts that violate these rules.',
++          COMMUNITY_ZERO_TOLERANCE_TEXT,
+         ],
+       },
+       {
+@@ -662,7 +681,7 @@ function statusContent(): TrustPageContent {
+         heading: 'Public endpoints',
+         paragraphs: ['The user-facing surface area today is small and intentionally so:'],
+         bullets: [
+-          'https://app.trygrowthproject.com/signup — invite-only signup landing.',
++          'https://app.trygrowthproject.com/signup — signup information and coaching invitations.',
+           'https://app.trygrowthproject.com/download/ios — iOS download status.',
+           'https://app.trygrowthproject.com/download/android — Android download status.',
+           'https://app.trygrowthproject.com/join/:code — invite landing for a specific code.',
+diff --git a/test/help-pages.spec.ts b/test/help-pages.spec.ts
+index 6877e4fe..6a8e0cc5 100644
+--- a/test/help-pages.spec.ts
++++ b/test/help-pages.spec.ts
+@@ -223,4 +223,14 @@ describe('PublicPagesController help pages', () => {
+     expect(html).toContain('Are messages real-time');
+     expect(html).toContain('Where do I get an invoice');
+   });
++
++  it('faq says coach tools are in the mobile app, never that coaching is web-only', () => {
++    const html = renderHelpPage('faq');
++    expect(html).toContain('Is there a coach app?');
++    expect(html).toContain(
++      'Coach tools are available in The Growth Project mobile app. Sign in with a coach account ' +
++        'to manage clients, messages, training programs, coaching packages and availability.',
++    );
++    expect(html).not.toMatch(/web-only/i);
++  });
+ });
+diff --git a/test/public-pages.spec.ts b/test/public-pages.spec.ts
+index cf47078b..2c466ffa 100644
+--- a/test/public-pages.spec.ts
++++ b/test/public-pages.spec.ts
+@@ -48,11 +48,19 @@ describe('PublicPagesController', () => {
+     expect(res.body).toContain('Google Play');
+   });
+ 
+-  it('serves a 200 HTML page for /signup that explains invite-only access', () => {
++  it('serves a 200 HTML page for /signup that explains open signup (no code needed)', () => {
+     const res = makeRes();
+     controller.signup(undefined, res);
+     expect(res.statusCode).toBe(200);
+-    expect(res.body).toContain('invite');
++    expect(res.body).toContain('Create an account');
++    expect(res.body).toContain(
++      'Open The Growth Project app to create a client or coach account. If a coach shared an ' +
++        'invite code, enter it during setup to connect with them. No invite code is needed to ' +
++        'create an account. For help with setup, contact support.',
++    );
++    expect(res.body).toContain('Contact support');
++    expect(res.body).toContain('subject=Signup%20help');
++    expect(res.body).not.toMatch(/invite-only|Sign up by invite|Request%20an%20invite/i);
+   });
+ 
+   it('does not embed unresolved Apple/Google placeholder IDs', () => {
+@@ -106,7 +114,7 @@ describe('PublicPagesController', () => {
+       controller.signup(bad, res);
+       expect(res.statusCode).toBe(200);
+       // Generic copy is shown when the code doesn't validate.
+-      expect(res.body).toContain('Sign up by invite');
++      expect(res.body).toContain('Create an account');
+       expect(res.body).not.toContain('Your invite code');
+       // No reflection of the bad input back into the markup.
+       expect(res.body).not.toContain(bad);
+@@ -117,7 +125,7 @@ describe('PublicPagesController', () => {
+     const res = makeRes();
+     controller.signupWithCode('not valid', res);
+     expect(res.statusCode).toBe(200);
+-    expect(res.body).toContain('Sign up by invite');
++    expect(res.body).toContain('Create an account');
+     expect(res.body).not.toContain('Your invite code');
+   });
+ });
+diff --git a/test/trust-pages.spec.ts b/test/trust-pages.spec.ts
+index ef6bf092..0586bd40 100644
+--- a/test/trust-pages.spec.ts
++++ b/test/trust-pages.spec.ts
+@@ -630,3 +630,57 @@ describe('consumer health policy link on other public pages', () => {
+     expect(renderDownloadPage('android')).toContain('href="/consumer-health-privacy"');
+   });
+ });
++
++describe('community and leaderboard disclosure (B-PRIVACY-1, after b#747)', () => {
++  const community =
++    'Members of the community spaces you join can see your display name and the posts, ' +
++    'comments, reactions, shared wins and group messages you choose to share in those spaces. ' +
++    'Messages sent directly to your coach are not group messages.';
++  const leaderboard =
++    'If you opt in to a leaderboard, other clients assigned to the same coach can see your ' +
++    'display name, rank and participation information, such as workout counts or a ' +
++    'habit-consistency score and its change. The habit score uses check-in, workout, meal-log ' +
++    'and coach-message activity, not the content of your private messages. You can opt out to ' +
++    'hide your leaderboard entry.';
++
++  it('/privacy "Who can see your data" names community spaces and the opt-in leaderboard', () => {
++    const text = visibleText(renderTrustPage('privacy'));
++    const section = text.slice(
++      text.indexOf('Who can see your data'),
++      text.indexOf('Roman and AI', text.indexOf('Who can see your data')),
++    );
++    expect(section).toContain(community);
++    expect(section).toContain(leaderboard);
++    expect(section).toContain('Coaches can sort the members of their spaces by when they joined.');
++  });
++
++  it('/consumer-health-privacy "Categories we share" names community spaces and the opt-in leaderboard', () => {
++    const text = visibleText(renderTrustPage('consumer-health'));
++    const section = text.slice(
++      text.indexOf('Categories we share'),
++      text.indexOf('Who we do not share with'),
++    );
++    expect(section).toContain(community);
++    expect(section).toContain(leaderboard);
++    expect(text).not.toContain('only the health information you choose to post there');
++  });
++});
++
++describe('Terms of Service community zero tolerance (Apple Guideline 1.2)', () => {
++  it('carries the in-app Community terms sentence word for word', () => {
++    expect(visibleText(renderTrustPage('terms'))).toContain(
++      'There is no tolerance for objectionable content or abusive users. Content that breaks ' +
++        'these guidelines is removed, and the account that posted it can be removed.',
++    );
++  });
++});
++
++describe('status page signup endpoint label (B-STORECOPY-2)', () => {
++  it('describes /signup as open signup, not invite-only', () => {
++    const text = visibleText(renderTrustPage('status'));
++    expect(text).toContain(
++      'https://app.trygrowthproject.com/signup — signup information and coaching invitations.',
++    );
++    expect(text).not.toMatch(/invite-only/i);
++  });
++});

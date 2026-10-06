@@ -1,0 +1,633 @@
+[heavy] waiting for a slot: npx jest test/crisis-router-gym-talk.spec.ts
+FAIL test/crisis-router-gym-talk.spec.ts (54 MB heap size)
+  B-ROMAN911-123 gym and diet talk gets the normal answer on both routers
+    ✓ "this workout is killing me": no AI guide crisis reply, no Roman 911/988 template (27 ms)
+    ✓ "leg day is killing me": no AI guide crisis reply, no Roman 911/988 template (6 ms)
+    ✓ "my legs are killing me after squats": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I am dying after leg day": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I'm dead after that workout": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I could kill for a burger": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I could murder a pizza right now": no AI guide crisis reply, no Roman 911/988 template (16 ms)
+    ✓ "my heart is pounding after sprints": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "my heart is racing after my run": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I want to crush myself at the gym": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "kill this set": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "let's kill this workout": no AI guide crisis reply, no Roman 911/988 template (16 ms)
+    ✓ "dead lift form check": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "deadlifts are murder on my lower back": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "suicide sprints": no AI guide crisis reply, no Roman 911/988 template (11 ms)
+    ✕ "we did suicide sprints at practice": no AI guide crisis reply, no Roman 911/988 template (8 ms)
+    ✕ "how many suicide sprints should I do": no AI guide crisis reply, no Roman 911/988 template
+    ✕ "suicide squeeze": no AI guide crisis reply, no Roman 911/988 template
+    ✕ "suicide runs for conditioning": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "suicide drills": no AI guide crisis reply, no Roman 911/988 template
+    ✕ "is the suicide grip safe on bench": no AI guide crisis reply, no Roman 911/988 template (15 ms)
+    ✕ "overdose on cardio": no AI guide crisis reply, no Roman 911/988 template
+    ✕ "I think I overdosed on cardio this week": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "can you overdose on creatine?": no AI guide crisis reply, no Roman 911/988 template
+    ✕ "can you overdose on protein": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I OD'd on carbs last night": no AI guide crisis reply, no Roman 911/988 template (13 ms)
+    ✓ "I always OD on carbs at the weekend": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "is mercury poisoning a risk from eating tuna": no AI guide crisis reply, no Roman 911/988 template (10 ms)
+    ✕ "is lead poisoning a risk from my water bottle": no AI guide crisis reply, no Roman 911/988 template
+    ✕ "hard to breathe during heavy squats": no AI guide crisis reply, no Roman 911/988 template (6 ms)
+    ✕ "trouble breathing on long runs": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "I can't breathe through my nose when I run": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "struggling to breathe during hiit class": no AI guide crisis reply, no Roman 911/988 template (6 ms)
+    ✕ "I hurt myself deadlifting, can I train?": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "I hurt myself at the gym yesterday": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "I cut myself shaving, can I still swim?": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "cut myself some slack on my diet": no AI guide crisis reply, no Roman 911/988 template (2 ms)
+    ✕ "I've been killing myself in the gym and not seeing results": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "I'm killing myself at the gym every day": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✕ "I keep killing myself on cardio": no AI guide crisis reply, no Roman 911/988 template
+    ✕ "unconscious snacking is my problem": no AI guide crisis reply, no Roman 911/988 template (2 ms)
+    ✕ "I'm an unconscious eater at night": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "my quads are on fire": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I pushed myself to failure": no AI guide crisis reply, no Roman 911/988 template
+    ✓ "I want to end the set early": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "I need to end my workout early": no AI guide crisis reply, no Roman 911/988 template (1 ms)
+    ✓ "is it ok to take my meds before a workout?": no AI guide crisis reply, no Roman 911/988 template (4 ms)
+  B-ROMAN911-123 crisis phrases still route on both routers
+    ✓ "I took a whole bottle of Tylenol" is 911 on both (1 ms)
+    ✓ "I swallowed a whole bottle of ibuprofen" is 911 on both
+    ✓ "I took 20 Tylenol" is 911 on both (19 ms)
+    ✓ "I took a whole bottle of pills" is 911 on both
+    ✓ "I took 20 of my sleeping pills" is 911 on both (1 ms)
+    ✓ "I overdosed" is 911 on both
+    ✓ "I took an overdose" is 911 on both
+    ✓ "my friend overdosed" is 911 on both (1 ms)
+    ✓ "I took too many pills, I think I overdosed" is 911 on both
+    ✓ "I can’t breathe" is 911 on both (1 ms)
+    ✓ "I can't breathe properly after that set" is 911 on both
+    ✓ "I cannot breathe after my workout. I need help now." is 911 on both (1 ms)
+    ✓ "my chest hurts and I can’t breathe after my run" is 911 on both
+    ✓ "my friend is unconscious" is 911 on both
+    ✓ "my friend fainted at the gym what do i do" is 911 on both (1 ms)
+    ✓ "I think I am having a heart attack" is 911 on both
+    ✓ "having an allergic reaction, my throat is closing" is 911 on both
+    ✓ "I am coughing up blood after my run" is 911 on both
+    ✕ "I am going to hang myself" is 988 on both (17 ms)
+    ✕ "I want to jump off a bridge" is 988 on both (1 ms)
+    ✕ "I want to slit my wrists" is 988 on both
+    ✕ "I just want it all to end" is 988 on both
+    ✓ "I want to kill myself" is 988 on both (1 ms)
+    ✓ "I'm killing myself" is 988 on both
+    ✓ "I am thinking about killing myself" is 988 on both
+    ✓ "I'm going to kill myself at the gym" is 988 on both
+    ✓ "thinking about suicide a lot lately" is 988 on both (1 ms)
+    ✓ "I feel suicidal after leg day" is 988 on both (2 ms)
+    ✓ "suicide runs in my family" is 988 on both
+    ✓ "I want to hurt myself" is 988 on both
+    ✕ "I keep wanting to hurt myself when I miss my macros" is 988 on both (1 ms)
+    ✓ "I have been cutting myself" is 988 on both
+    ✕ "I want to overdose tonight" is 988 on both (1 ms)
+    ✕ "I am going to overdose" is 988 on both (1 ms)
+    ✓ "I'm going to OD" is 988 on both (1 ms)
+    ✓ "I want to take all my pills" is 988 on both
+    ✓ "I'm going to take all of my meds tonight" is 988 on both
+    ✓ "I am gonna take a bunch of pills" is 988 on both (1 ms)
+    ✓ "I want to take a whole bottle of Tylenol" is 988 on both
+    ✓ "I don't want to live anymore" is 988 on both
+    ✓ "I wish I was dead" is 988 on both
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "suicide sprints": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "we did suicide sprints at practice": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "how many suicide sprints should I do": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "suicide squeeze": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "suicide runs for conditioning": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "suicide drills": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "is the suicide grip safe on bench": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "overdose on cardio": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I think I overdosed on cardio this week": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "can you overdose on creatine?": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "can you overdose on protein": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "is mercury poisoning a risk from eating tuna": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "is lead poisoning a risk from my water bottle": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "hard to breathe during heavy squats": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "trouble breathing on long runs": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I can't breathe through my nose when I run": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "struggling to breathe during hiit class": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I hurt myself deadlifting, can I train?": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "self_harm"
+
+    [0m [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m
+     [90m 112 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:109:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I hurt myself at the gym yesterday": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "self_harm"
+
+    [0m [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m
+     [90m 112 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:109:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I cut myself shaving, can I still swim?": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "self_harm"
+
+    [0m [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m
+     [90m 112 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:109:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "cut myself some slack on my diet": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "self_harm"
+
+    [0m [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m
+     [90m 112 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:109:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I've been killing myself in the gym and not seeing results": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I'm killing myself at the gym every day": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I keep killing myself on cardio": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).toBeNull()
+
+    Received: "self_harm"
+
+    [0m [90m 104 |[39m describe([32m'B-ROMAN911-123 gym and diet talk gets the normal answer on both routers'[39m[33m,[39m () [33m=>[39m {
+     [90m 105 |[39m   it[33m.[39meach([33mGYM_TALK[39m)([32m'"%s": no AI guide crisis reply, no Roman 911/988 template'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:106:44
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "unconscious snacking is my problem": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 gym and diet talk gets the normal answer on both routers › "I'm an unconscious eater at night": no AI guide crisis reply, no Roman 911/988 template
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "emergency"
+
+    [0m [90m 106 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBeNull()[33m;[39m
+     [90m 107 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'emergency'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mnot[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 110 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:108:29
+
+  ● B-ROMAN911-123 crisis phrases still route on both routers › "I am going to hang myself" is 988 on both
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 123 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 124 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 125 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 126 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 127 |[39m   })[33m;[39m
+     [90m 128 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:125:25
+
+  ● B-ROMAN911-123 crisis phrases still route on both routers › "I want to jump off a bridge" is 988 on both
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 123 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 124 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 125 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 126 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 127 |[39m   })[33m;[39m
+     [90m 128 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:125:25
+
+  ● B-ROMAN911-123 crisis phrases still route on both routers › "I want to slit my wrists" is 988 on both
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 123 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 124 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 125 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 126 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 127 |[39m   })[33m;[39m
+     [90m 128 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:125:25
+
+  ● B-ROMAN911-123 crisis phrases still route on both routers › "I just want it all to end" is 988 on both
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 123 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 124 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 125 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 126 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 127 |[39m   })[33m;[39m
+     [90m 128 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:125:25
+
+  ● B-ROMAN911-123 crisis phrases still route on both routers › "I keep wanting to hurt myself when I miss my macros" is 988 on both
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: null
+
+    [0m [90m 121 |[39m
+     [90m 122 |[39m   it[33m.[39meach([33mSELF_HARM_988[39m)([32m'"%s" is 988 on both'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 123 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 124 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+     [90m 125 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 126 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:123:44
+
+  ● B-ROMAN911-123 crisis phrases still route on both routers › "I want to overdose tonight" is 988 on both
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "emergency"
+
+    [0m [90m 123 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 124 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 125 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 126 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 127 |[39m   })[33m;[39m
+     [90m 128 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:125:25
+
+  ● B-ROMAN911-123 crisis phrases still route on both routers › "I am going to overdose" is 988 on both
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "emergency"
+
+    [0m [90m 123 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m 124 |[39m     [36mconst[39m roman [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 125 |[39m     expect(roman[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 126 |[39m     expect(roman[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 127 |[39m   })[33m;[39m
+     [90m 128 |[39m })[33m;[39m[0m
+
+      at test/crisis-router-gym-talk.spec.ts:125:25
+
+Test Suites: 1 failed, 1 total
+Tests:       33 failed, 55 passed, 88 total
+Snapshots:   0 total
+Time:        2.166 s
+Ran all test suites matching test/crisis-router-gym-talk.spec.ts.

@@ -1,0 +1,4 @@
+AUD-SOL-R3A-123 agent 123 — backend#744 cda23212514b60adbfffef0e9add310a4c7f541a REQUEST CHANGES A/B/C 0/1/1 carried; required CI green.
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/744#issuecomment-6009607839
+B-744-1: "Possible overdose, what do I do?" loses Roman's fixed 911 route after list sharing; follows ordinary model/consent/limit gates. Add narrow urgent/possible-overdose coverage without breaking figurative gym controls.
+No new runtime probe; source-path confirmed. Operator/builder owns fix round.

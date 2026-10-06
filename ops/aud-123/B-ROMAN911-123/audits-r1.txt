@@ -1,0 +1,44 @@
+=====
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/744#issuecomment-6009586369
+AUDIT Claude Opus 5.5 — growth-project-backend#744 @ cda23212514b60adbfffef0e9add310a4c7f541a — VERDICT: REQUEST CHANGES
+
+Lens AUD-OPUS-R3A-123 (lens queue R3A item 2, agent 123). T4 AI safety. A 0 / B 2 / C 2. One commit on main 5230306c, 3 files +157/-118. Required checks green at this head (build-and-test run 37414609790).
+
+What holds: the gym controls are fixed on both surfaces ("can you overdose on creatine?", "overdose on cardio", "hard to breathe during heavy squats", "unconscious snacking", "suicide sprints", "suicide grip", "I've been killing myself in the gym", "cut myself some slack" are no longer 911/988 on Roman). Every #736/#739 phrase I tried still routes ("I want to take all my pills", "I'm going to OD", "I want to kill myself", "I'm killing myself", "thinking about killing myself", "I feel suicidal", "suicide runs in my family", "I can't breathe", "chest pain", "my chest hurts and my left arm is numb", "I'm having a heart attack", "I think I'm having a stroke", "my throat is closing", "someone overdosed", "my friend is overdosing", "I think I overdosed", "she took 20 pills", "my dad took a whole bottle of tylenol"). Roman also gains 988 for "I'm going to hang myself", "I want to jump off a bridge", "I just want it all to end", "I've been hurting myself", and 911 for "my son swallowed bleach".
+
+Probe: both router files at main and at this head, types stripped in memory and evaluated in node on raw strings (no build, no jest). ops/aud-123/AUD-OPUS-R3A-123/probe744/ (run.js, od.txt, sh.txt).
+
+B-744-1 (overdose with no listed person loses 911 on Roman). src/roman/guardrails/safety-router.ts:32 now uses only the AI guide's overdose rules (src/ai/ai-crisis-router.ts:38-39 PERSON list and :104-108), which need a listed person and a listed lead-in. Main's Roman rule `\b(overdos(e|ed|ing)|...)\b` is gone. At main -> this head, Roman goes emergency -> normal for: "possible overdose", "possible overdose what do I do", "I think it's an overdose", "is this an overdose?", "overdose", "help overdose", "she might be overdosing", "my cousin is overdosing", "my uncle overdosed what do I do", "my aunt just overdosed", "my grandpa overdosed", "my fiance overdosed", "my teammate is overdosing", "my coworker overdosed", "my neighbor is overdosing", "a guy at my gym is overdosing", "there is a man overdosing in the locker room". (The AI guide already misses all of these; the shared list makes Roman match it.)
+Story: a client whose teammate collapses after taking pills types "my teammate is overdosing, what do I do" to Roman, which is on for everyone, and gets a normal model chat reply instead of the fixed "call 911 now" answer that main gives.
+Fix idea (both surfaces): treat any "overdosed / overdosing / OD'd / OD'ing" not followed by "on <NOT_A_SUBSTANCE>" as an emergency without needing a person, or widen PERSON (cousin, aunt, uncle, grandma/grandpa, fiance(e), teammate, coworker, neighbor/neighbour, baby, guy, man, woman, girl, boy, person) and the lead-ins ("might be", "may be", "could be"); add the noun forms "possible / suspected / accidental overdose", acute('(an? )?overdose') ("is this an overdose", "I think it's an overdose"), and a message that is only "overdose" / "help overdose". Keep "can you overdose on creatine?", "overdose on cardio" and "how much caffeine is an overdose" normal. Add these to test/crisis-router-gym-talk.spec.ts.
+
+B-744-2 (a self-harm relapse disclosure loses 988 on Roman). Roman's old `\b(hurt|cut|cutting) myself\b` is replaced by the AI guide's intent-only form (ai-crisis-router.ts:145-148). At main -> this head, Roman goes self_harm -> normal for "I cut myself again" and self_harm -> injury_pain for "I hurt myself again last night" (the AI guide misses both too). "I cut myself shaving" / "I cut myself cooking" going normal is right.
+Story: a client who self-harms tells Roman "I cut myself again" and gets an ordinary chat reply instead of the fixed 988 answer main gives.
+Fix idea: route "(cut|cutting|burned|burning|harmed) myself again" and "hurt myself again" when no training word follows (same ACTIVITY guard as the breathing rule), plus "started cutting again" / "relapsed" + cut; keep "I cut myself shaving" and "I hurt myself deadlifting, can I train?" normal.
+
+Cs:
+- C-744-1: "thoughts of suicide run through my head" goes 988 -> normal on both (the new " runs?" drill exclusion, ai-crisis-router.ts:131); excluding "run(s) through" from the drill exception would close it. C (edge, deferred to 10k clients).
+- C-744-2: "my teammate passed out and is not breathing" is medical_scope on main and here (teammate not in the PERSON list of the not-breathing rule, ai-crisis-router.ts:87); the B-744-1 PERSON widening would also fix it.
+
+=====
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/744#issuecomment-6009607839
+AUDIT GPT-6.1 Sol — growth-project-backend#744 @ cda23212514b60adbfffef0e9add310a4c7f541a — VERDICT: REQUEST CHANGES
+
+R3A, AUD-SOL-R3A-123, agent 123. Independent review; no other lens's current-round material read.
+
+**A: 0 | B: 1 | C: 1 carried.**
+
+**B-744-1 — a plain urgent overdose request loses the fixed crisis route.**
+
+**Normal-user story:** A client worried about an overdose types “Possible overdose, what do I do?” into Roman and now receives an ordinary model/consent/limit path instead of the fixed 911 reply. ([changed router and existing turn path](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/744))
+
+`src/roman/guardrails/safety-router.ts:32` replaces Roman's existing bare-overdose emergency match with the shared guide list; `src/ai/ai-crisis-router.ts:99-109` requires an explicitly named person with a past/ongoing overdose form, or “took/taking … an overdose,” and no pattern matches the quoted urgent request. The resulting non-short-circuit reaches the ordinary limits/consent/model gates in `src/roman/roman.controller.ts:112-139`. This is an ordinary safety-routing regression, not an unusual input or timing edge. ([PR diff and source paths](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/744))
+
+Smallest fix: retain the shared list, add a narrowly framed urgent/possible-overdose rule that does not require a person pronoun, keep the figurative cardio/creatine controls normal, and add this exact sentence to both router and capped-turn regressions. This finding is source-path confirmed; no new runtime probe was run.
+
+The requested existing guide, #736/#739 crisis and gym-control suites pass, and all required CI checks are green; those suites do not cover the above regression. ([CI: relevant specs and 870 suites / 15,247 tests passed](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37414609790/job/112110350075))
+
+**C, carried:** “I want to die of embarrassment” still errs to 988; non-blocking. ([builder's deferred list](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/744#issuecomment-6009539547))
+
+Owner edge-case freeze applied: edge cases are **C (edge, deferred to 10k clients)**; the B above is a normal-use crisis miss. No local tests/builds, code edits, pushes, merges or production actions.
+

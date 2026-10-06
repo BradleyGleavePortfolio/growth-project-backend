@@ -1,0 +1,47 @@
+[heavy] waiting for a slot: npx jest test/messages-safety.service.spec.ts
+PASS test/messages-safety.service.spec.ts (119 MB heap size)
+  MessagesSafetyService — reports
+    ✓ reports a coach message as a client (happy path) (6 ms)
+    ✓ is idempotent: second report from same reporter returns already_reported with the original id (1 ms)
+    ✓ 404 when message does not exist (1 ms)
+    ✓ 404 when reporter is not a party to the thread (does not leak existence) (1 ms)
+    ✓ 400 when reporting your own message (1 ms)
+    ✓ caps free-text details at 1000 chars (1 ms)
+  MessagesSafetyService — blocks
+    ✓ block creates a UserBlock row (1 ms)
+    ✓ block is idempotent (same blocker+blocked pair) (1 ms)
+    ✓ 400 on block self (1 ms)
+    ✓ 404 on block missing user (1 ms)
+    ✓ unblock removes the row + is idempotent when no row exists (1 ms)
+    ✓ listBlocks returns display names + iso timestamps (1 ms)
+    ✓ listBlocks shows a blocked client by first name only (B-AUTHZ-2) (8 ms)
+    ✓ listBlocks keeps a blocked coach's profile name (1 ms)
+    ✓ isEitherSideBlocked detects both directions (1 ms)
+    ✓ isEitherSideBlocked short-circuits on same-user and empty ids (1 ms)
+  MessagingService — block-aware list + unread filters
+    ✓ client thread excludes coach messages when client has blocked coach (2 ms)
+    ✓ coach thread excludes client messages when coach has blocked client (2 ms)
+    ✓ unreadCountForClient returns 0 when the client has blocked their coach (1 ms)
+    ✓ unreadCountForCoach drops blocked clients from total + per-client breakdown (2 ms)
+  MessagingService — fail-closed block enforcement on send
+    ✓ sendAsCoach throws ForbiddenException and creates no row when client has blocked the coach (2 ms)
+    ✓ sendAsCoach throws ForbiddenException when coach has blocked the client (symmetric) (2 ms)
+    ✓ sendAsClient throws ForbiddenException and creates no row when coach has blocked the client (2 ms)
+    ✓ sendAsClient throws ForbiddenException when client has blocked the coach (symmetric) (1 ms)
+    ✓ ForbiddenException carries a stable non-leaking error code + user-facing message (2 ms)
+  MessagesSafetyService — concurrent double-submit idempotency
+    ✓ reportMessage: when create throws P2002, the second caller gets already_reported with the surviving id (1 ms)
+    ✓ blockUser: when create throws P2002, the second caller gets the existing blockId (no 500) (2 ms)
+    ✓ reportMessage: handles concurrent Promise.all double-submit without 500 (2 ms)
+    ✓ blockUser: handles concurrent Promise.all double-submit without 500 (1 ms)
+    ✓ reportMessage: non-P2002 Prisma errors still surface (the catch is narrow) (2 ms)
+  MessagesSafetyController — throttle metadata on block/unblock
+    ✓ POST /users/:id/block carries @Throttle({ default: { ttl: 3_600_000, limit: 60 } })
+    ✓ DELETE /users/:id/block carries @Throttle({ default: { ttl: 3_600_000, limit: 60 } }) (1 ms)
+    ✓ POST /messages/report retains its 20 / hour throttle (no regression) (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       33 passed, 33 total
+Snapshots:   0 total
+Time:        1.883 s, estimated 3 s
+Ran all test suites matching test/messages-safety.service.spec.ts.

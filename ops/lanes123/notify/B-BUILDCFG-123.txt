@@ -1,0 +1,1 @@
+done 21:38 PDT: B-BUILDCFG-123 report only (no PR), mobile main a727eb49, B 0; owner checklist in ops/reports/B-BUILDCFG-123.md (build clinic profile once per platform; EXPO_PUBLIC_API_URL must end /api; SENTRY_AUTH_TOKEN + hide flag in EAS production env)

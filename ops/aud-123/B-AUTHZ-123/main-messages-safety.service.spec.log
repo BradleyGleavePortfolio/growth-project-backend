@@ -1,0 +1,64 @@
+[heavy] waiting for a slot: npx jest test/messages-safety.service.spec.ts
+FAIL test/messages-safety.service.spec.ts (128 MB heap size)
+  MessagesSafetyService — reports
+    ✓ reports a coach message as a client (happy path) (6 ms)
+    ✓ is idempotent: second report from same reporter returns already_reported with the original id (1 ms)
+    ✓ 404 when message does not exist (1 ms)
+    ✓ 404 when reporter is not a party to the thread (does not leak existence) (8 ms)
+    ✓ 400 when reporting your own message
+    ✓ caps free-text details at 1000 chars
+  MessagesSafetyService — blocks
+    ✓ block creates a UserBlock row (4 ms)
+    ✓ block is idempotent (same blocker+blocked pair) (1 ms)
+    ✓ 400 on block self (1 ms)
+    ✓ 404 on block missing user (1 ms)
+    ✓ unblock removes the row + is idempotent when no row exists (5 ms)
+    ✓ listBlocks returns display names + iso timestamps (1 ms)
+    ✕ listBlocks shows a blocked client by first name only (B-AUTHZ-2) (3 ms)
+    ✓ listBlocks keeps a blocked coach's profile name
+    ✓ isEitherSideBlocked detects both directions
+    ✓ isEitherSideBlocked short-circuits on same-user and empty ids (1 ms)
+  MessagingService — block-aware list + unread filters
+    ✓ client thread excludes coach messages when client has blocked coach (5 ms)
+    ✓ coach thread excludes client messages when coach has blocked client (2 ms)
+    ✓ unreadCountForClient returns 0 when the client has blocked their coach
+    ✓ unreadCountForCoach drops blocked clients from total + per-client breakdown (1 ms)
+  MessagingService — fail-closed block enforcement on send
+    ✓ sendAsCoach throws ForbiddenException and creates no row when client has blocked the coach (1 ms)
+    ✓ sendAsCoach throws ForbiddenException when coach has blocked the client (symmetric) (1 ms)
+    ✓ sendAsClient throws ForbiddenException and creates no row when coach has blocked the client (1 ms)
+    ✓ sendAsClient throws ForbiddenException when client has blocked the coach (symmetric) (1 ms)
+    ✓ ForbiddenException carries a stable non-leaking error code + user-facing message (1 ms)
+  MessagesSafetyService — concurrent double-submit idempotency
+    ✓ reportMessage: when create throws P2002, the second caller gets already_reported with the surviving id (2 ms)
+    ✓ blockUser: when create throws P2002, the second caller gets the existing blockId (no 500) (1 ms)
+    ✓ reportMessage: handles concurrent Promise.all double-submit without 500 (1 ms)
+    ✓ blockUser: handles concurrent Promise.all double-submit without 500
+    ✓ reportMessage: non-P2002 Prisma errors still surface (the catch is narrow) (1 ms)
+  MessagesSafetyController — throttle metadata on block/unblock
+    ✓ POST /users/:id/block carries @Throttle({ default: { ttl: 3_600_000, limit: 60 } }) (1 ms)
+    ✓ DELETE /users/:id/block carries @Throttle({ default: { ttl: 3_600_000, limit: 60 } })
+    ✓ POST /messages/report retains its 20 / hour throttle (no regression)
+
+  ● MessagesSafetyService — blocks › listBlocks shows a blocked client by first name only (B-AUTHZ-2)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Carol"
+    Received: "Carol Q Member"
+
+    [0m [90m 434 |[39m     [36mconst[39m rows [33m=[39m [36mawait[39m svc[33m.[39mlistBlocks([32m'a'[39m)[33m;[39m
+     [90m 435 |[39m     expect(rows)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 436 |[39m     expect(rows[[35m0[39m][33m.[39mdisplayName)[33m.[39mtoBe([32m'Carol'[39m)[33m;[39m
+     [90m     |[39m                                 [31m[1m^[22m[39m
+     [90m 437 |[39m     expect([33mJSON[39m[33m.[39mstringify(rows))[33m.[39mnot[33m.[39mtoContain([32m'Q Member'[39m)[33m;[39m
+     [90m 438 |[39m   })[33m;[39m
+     [90m 439 |[39m[0m
+
+      at Object.<anonymous> (test/messages-safety.service.spec.ts:436:33)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 32 passed, 33 total
+Snapshots:   0 total
+Time:        3.01 s
+Ran all test suites matching test/messages-safety.service.spec.ts.

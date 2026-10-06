@@ -1,0 +1,18 @@
+FIX ROUND 1 (OPENING) (B-PUSHMUTE-123, agent 123) — growth-project-backend#751 @ 6a0261331490412ad1ba3549efa12f67cc4d7d98
+
+**Fixes B-S-PUSH-1** (scout S-PUSH-123): a member who turns on "Mute all notifications" still got community push, for example when another member replied to their post. `sendCommunityPush` ignored the `null` from `createNotification` and called `pushToUser` directly.
+
+**Change** (`src/community/notifications/community-notifications.service.ts`, +15/-1): inside the existing try block, before the replay guard, inbox write and send, read the recipient's push gate via `NotificationsService.channelGate(recipientId, kind, 'push')`. When it returns `muted`, emit `community.push.skipped` with reason `muted` and return. The gate's `off` is ignored on purpose: community kinds fall back to the `digest` prefix, whose push default is off, so treating `off` as a skip (or stopping on `createNotification() === null`) would silence every community push. `COMMUNITY_PUSH_DEFAULTS` stays the per-kind source. A failed preference read is caught and logged like any other send failure, so the comment write never fails.
+
+**Tests** (`test/community/notifications/community-push-mute.spec.ts`, +119; real NotificationsService gate over stubbed Prisma, only `pushToUser` spied):
+1. muted member, ordinary reply: no `pushToUser`, no inbox row, skipped/muted telemetry. **Fails on main** (checked locally against main's service file).
+2. unmuted member (digest_push false): the reply sends with title `Community`, body `New reply on your post`, category `client_bot`.
+3. no preferences row yet: the reply sends.
+
+**Size** 2 files, +134/-1. R75 clean. No schema, flag or config change; server-side only, no mobile build dependency.
+
+**CI at this head:** all 15 checks green (build-and-test, community-live-tests, rls-live-tests, mwb-3-live-tests, danger, R75, CodeQL, schema parity, npm audit, deploy-readiness); deploy-readiness-gate skipped by design. [build-and-test](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37415941434/job/112114448918)
+
+**C (pre-existing, out of scope):** for community kinds `createNotification` returns null (digest push off), so no inbox row is written and the idempotency replay guard never matches. Not changed here.
+
+READY FOR AUDIT

@@ -1,0 +1,21 @@
+FIX ROUND 1 (B-ROMAN911-123, agent 123) — growth-project-backend#744 @ d6442512d1ac39be5287a5d59389f2ceab33bde7
+
+One commit on cda23212 (one push, 22:03). Delta: src/ai/ai-crisis-router.ts +23/-1 (shared list, so Roman and the AI guide both change), 3 specs +84. PR total about 383 changed lines.
+
+Fixed:
+- B-744-1 (Opus) / B-744-1 (Sol), overdose with no listed person. Three new emergency rules in the shared list: (1) "overdosed / overdosing / OD'd / OD'ing" with no person needed, unless "on <training/food word>" follows or a thought word comes before ("thinking about overdosing" stays on the 988 line); (2) "possible / suspected / accidental / likely / probable overdose" and acute('an overdose') ("is this an overdose?", "I think it's an overdose"); (3) a message that is only "overdose" / "help overdose" / "help, overdose". All 19 Opus phrases and Sol's "Possible overdose, what do I do?" are 911 on both routers. Operator ruling applied: a bare "possible overdose" routes to 911.
+- B-744-2 (Opus), relapse disclosure: "(cut|hurt|harmed|burned...) myself again" unless a training or everyday word follows, plus "relapse(d)" with "cut/hurt... myself". "I cut myself again" and "I hurt myself again last night" are 988 on both; "I cut myself again shaving" and "I hurt myself again deadlifting" stay normal.
+- C-744-1 (Opus, cheap to close): "suicide run(s) through" is no longer treated as a drill; "thoughts of suicide run through my head" is 988 on both.
+
+Gym controls held on both routers: "can you overdose on creatine?", "overdose on cardio", "overdosing on cardio", "am I overdosing on carbs", "how much caffeine is an overdose", "how much protein is an overdose", "is it possible to overdose on caffeine from pre-workout", "I OD'd on carbs last night", "suicide sprints", "suicide drills", "suicide runs for conditioning", "that's odd".
+
+Tests (every lens phrase fails on cda23212):
+- test/crisis-router-gym-talk.spec.ts: 19 lens 911 phrases and 4 lens 988 phrases on both routers; 11 new controls. 122/122 green; with cda23212's router: 23 fail (exactly the lens phrases).
+- Capped-turn regressions (Sol): test/roman/roman-streaming.spec.ts (ROMAN_DAILY_COST_CAP_USD=0) and test/ai.service.spec.ts (client at the daily limit): "Possible overdose, what do I do?" and "my teammate is overdosing, what do I do" get 911, "I cut myself again" gets 988, no model call. 31/31 and 58/58 green; 3 + 3 fail at cda23212.
+- Existing specs green locally (heavy.sh, one file each): ai-crisis-router 50/50, roman-guardrails 25/25, rb121 117/117, c2-rmn3 28/28, guardrails-round2 36/36, launch-hardening 58/58, roman-golden.eval 27/27. prettier and eslint clean on the changed files.
+- 53,301 string literals in src/ and test/ through both routers, cda23212 vs head: 4 change class, all lens phrases to 911/988. Main 5230306c vs head: no crisis phrase leaves 911/988; the only Roman moves off 911/988 are the gym and diet controls.
+- PR CI at this head: 15 SUCCESS, 1 SKIPPED (deploy-readiness-gate); build-and-test (lint, full type-check, build, full suite) SUCCESS, run https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37416655065
+
+Cs, not fixed: C-744-2 "my teammate passed out and is not breathing" is medical_scope on main and here (C (edge, deferred to 10k clients)); "I want to die of embarrassment" still gets 988.
+
+READY FOR AUDIT

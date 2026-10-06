@@ -1,0 +1,3663 @@
+{
+  "schema": "env-truth/v1",
+  "generatedAt": "2026-10-06T02:43:11.574Z",
+  "summary": {
+    "registered": 341,
+    "present": 155,
+    "registeredMissing": 208,
+    "empty": 6,
+    "placeholder": 2,
+    "duplicateGroups": 15,
+    "duplicateKeys": 56,
+    "unregisteredPresent": 22,
+    "suspiciousNames": 0,
+    "malformedNamesRedacted": 0,
+    "shapeChecksFailing": 1
+  },
+  "shapeChecks": [
+    {
+      "name": "APPLE_AUDIENCES",
+      "check": "first-entry-is-ios-bundle-id",
+      "describe": "comma list whose first entry is exactly com.growthproject.app (Sign in with Apple + deletion-time token revocation)",
+      "result": "fail"
+    },
+    {
+      "name": "ANDROID_CERT_SHA256_FINGERPRINTS",
+      "check": "non-empty-colon-hex-sha256",
+      "describe": "non-empty; every comma entry is a colon-separated SHA-256 (32 hex byte pairs)",
+      "result": "pass"
+    }
+  ],
+  "rows": [
+    {
+      "name": "ADMIN_BACKEND_API_URL",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "ADMIN_SERVICE_TOKEN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "AI_GATEWAY_CAPABILITIES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "AI_GATEWAY_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "AI_GATEWAY_PROVIDER",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "AI_GATEWAY_REQUIRE_APPROVAL",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "ALLOW_SELF_SERVICE_BECOME_COACH",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D1",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "ANDROID_CERT_SHA256_FINGERPRINTS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "ANDROID_PACKAGE_NAME",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "ANDROID_SHA256_FINGERPRINT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "ANTHROPIC_API_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "APPLE_AUDIENCES",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "APPLE_NONCE_REQUIRED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "APPLE_SIGNIN_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "APPLE_SIGNIN_KEY_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "APPLE_SIGNIN_PRIVATE_KEY",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "APPLE_TEAM_ID",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "APP_BASE_URL",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D2",
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "APP_STORE_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "APP_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D2",
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUDIT_LOGGING_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUTH_LOGIN_ACCOUNT_FAILURES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUTH_LOGIN_PER_HOUR",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D4",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUTH_LOGIN_PER_MIN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D5",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUTH_OAUTH_COACH_SIGNUP_PER_HOUR",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUTH_OAUTH_PER_HOUR",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUTH_OAUTH_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUTH_PWD_RESET_PER_HOUR",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D5",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "AUTH_SIGNUP_WITH_CODE_PER_HOUR",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "BILLING_ENFORCEMENT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "BILLING_PORTAL_URL",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "BLOODWORK_STALE_AFTER_DAYS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "BLOODWORK_STALE_DISABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "BLOODWORK_WRITE_PER_MIN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D6",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "BOOKING_REMINDERS_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D7",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "BOOKING_REMINDER_1H_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "BOOKING_REMINDER_24H_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "BOOTSTRAP_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "BUILD_WEEK_AUTO_START_ON_SIGNUP",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "BUILD_WEEK_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "CHECKOUT_MINT_PER_HOUR",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D4",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "CHECKOUT_RECEIPT_DISABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "CHECKOUT_RECONCILE_DISABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "CHECKOUT_RECOVERY_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "CLIENT_DAILY_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_AI_BUDGET_ROLLOVER_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_AI_BUDGET_ROLLOVER_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_AI_DORMANCY_UNREAD_THRESHOLD",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_AI_MAX_ACTUAL_CENTS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_AI_PACK_CANCEL_URL",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_AI_PACK_SUCCESS_URL",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_AI_VALUE_MULTIPLIER",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_ALERT_BATCH_LIMIT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D8",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_ALERT_RED_TRANSITION_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_BRIEF_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_BRIEF_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_BRIEF_NOTIFICATIONS_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D7",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_BRIEF_RETENTION_DAYS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_CMD_CENTER_PER_MIN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D9",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_CODE_GATE_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_DAILY_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_EFFECTIVENESS_CRON",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_EFFECTIVENESS_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_MESSAGES_PER_MIN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D9",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_ONBOARDING_AUTO_START",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_SIGNUP_SECRET",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "COACH_WELCOME_SCHEDULER_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_ACK_SLA_HARD_MS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_ACK_SLA_SOFT_MS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_COMMENTS_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_DM_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_EVENTS_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_EVENT_LINK_HOSTS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_EVENT_RSVP_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_MESSAGES_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_MSG_EDIT_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_POSTS_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_REACTIONS_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_READS_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_REPORTS_PER_5MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "COMMUNITY_SEARCH_PAGE_SIZE",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "CONSOLE_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "CONSULT_CONSENT_COPY_VERSIONS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "CONTRACT_PDF_BUCKET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "CONTRACT_PDF_URL_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "CORS_ORIGINS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "CRM_LEAD_SYNC_DISABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "CRON_COACH_AI_INSIGHT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D7",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATABASE_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D10",
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_BUCKET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_DOWNLOAD_LINK_TTL_SECONDS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_DOWNLOAD_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_EXPIRY_DAYS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_FS_DIR",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_RATE_LIMIT_HRS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_STALE_RUN_MINUTES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_STORAGE",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DATA_EXPORT_TOKEN_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "DELETION_FINALIZE_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DELETION_GRACE_DAYS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DELETION_RECEIPT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DELETION_RECEIPT_SECRET_PREVIOUS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DELETION_TOKEN_TTL_HOURS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DIAGNOSTIC_AI_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "DIAGNOSTIC_RATE_LIMIT_PER_HOUR",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D6",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "DIRECT_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D10",
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "DRIP_DISPATCHER_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DUNNING_CADENCE_DAYS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DUNNING_GRACE_DAYS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DUNNING_MAX_FAILURES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DUNNING_MAX_SEND_RETRIES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "DUNNING_RETRY_BACKOFF_MS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "EMAIL_DIGEST_CLIENT_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "EMAIL_DIGEST_COACH_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "EMAIL_FROM_ADDRESS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "EMAIL_TRANSPORT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "ENABLE_API_DOCS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "EXERCISEDB_API_HOST",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "EXERCISEDB_API_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_AI_CONSENT_LEDGER_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_BANK_PAYOUTS_V2",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COACHLESS_HOME",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COACH_BROADCASTS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COACH_CODE_TOOLS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_ACKS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_AI_TRIAGE",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_API",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_API_ALLOWLIST",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_CHALLENGES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_CLASSROOM_POSTS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_DM",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_EVENTS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_MESSAGES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_PLAN_TAGS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_POSTS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_PUSH",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_REALTIME",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_SCHEMA",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_SEARCH",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_TELEMETRY",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_VOICE_NOTES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_COMMUNITY_WEARABLE_PROMPTS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_CONTRACTS_DOCUSIGN_PROVIDER",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_CONTRACTS_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_CONTRACTS_NATIVE_CANVAS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_DUNNING_V2",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_EXTENSION_PAIRING",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_GOOGLE_CALENDAR_SYNC",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_MESSAGING_CORE_V2",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_MWB_AI_LIVE_CREATE",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_MWB_AUTOSAVE_UNDO",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_MWB_TEMPLATES",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_NAMED_REGIMES",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_ROMAN_ADJUST_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_ROMAN_CHAT_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_ROMAN_COACH_REVIEWED_AT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_ROMAN_COPY_V2",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_ROMAN_FIRST_PAYMENT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_ROMAN_THREE_ARC_COUNTS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_SCOUT_INGEST",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_SCOUT_PILOT_COACH_IDS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_SCOUT_RECONSTRUCT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_STRIPE_TREASURY_PAYOUTS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_WEARABLES_CLOUD_CONNECTORS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEATURE_WEARABLES_INGEST_POST",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FEDERATION_SERVICE_TOKEN",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "FINANCE_API_BASE_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "FINANCE_FEDERATION_TIMEOUT_MS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FINANCE_SERVICE_TOKEN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": "angle-brackets",
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "FINANCE_SERVICE_TOKEN_NEXT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FITBIT_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FITBIT_CLIENT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FITBIT_REDIRECT_URI",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FITBIT_VERIFICATION_CODE",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_ALLOC_ID",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D11",
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_API_TOKEN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_APP_NAME",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_IMAGE_REF",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_MACHINE_ID",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D11",
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_MACHINE_VERSION",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_PRIMARY_REGION",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_PRIVATE_IP",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_PROCESS_GROUP",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_REGION",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D12",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_SSH",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D13",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "FLY_VM_MEMORY_MB",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "GARMIN_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GARMIN_CLIENT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GARMIN_PUSH_TOKEN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GARMIN_REDIRECT_URI",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GARMIN_WEBHOOK_SALT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GDPR_SCRUB_BATCH_LIMIT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D8",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "GDPR_SCRUB_DRY_RUN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": "wrapped-in-quotes",
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "GIT_SHA",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D14",
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_CALENDAR_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_CALENDAR_WATCH_CHANNELS_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_CALENDAR_WEBHOOK_PUBLIC_BASE_URL",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_CALENDAR_WEBHOOK_TOKEN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_CLIENT_IDS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_MEET_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_OAUTH_CLIENT_ID",
+      "registered": true,
+      "present": true,
+      "empty": true,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_OAUTH_CLIENT_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": true,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_OAUTH_REDIRECT_URI",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "GOOGLE_OAUTH_SCOPES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "GUEST_CHECKOUT_PII_SALT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "HELLOSIGN_API_KEY",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "HELLOSIGN_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "HELLOSIGN_TEST_MODE",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "HOME",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "IOS_BUNDLE_ID",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "JWT_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "JWT_SIGNING_KEY",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "KMS_KEY_ALIAS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "KMS_KEY_VERSION",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D13",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "KMS_MASTER_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "LANDING_CNAME_TARGET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "LANDING_VIEW_HASH_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "LAST_SECURITY_DEPLOY_AT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "LEADERBOARD_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "LEADERBOARD_RECOMPUTE_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "LEGACY_PDF_RECEIPT_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "LOG_FORMAT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "LOG_LEVEL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "MARKETPLACE_IDEMPOTENCY_CLAIM_TTL_MS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "MEDIA_SIGNED_URL_TTL_SEC",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "METRICS_AUTH_TOKEN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "METRICS_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "MUSCLEWIKI_API_KEY",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "MUX_SIGNING_KEY_ID",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "MUX_SIGNING_KEY_PRIVATE",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "128+",
+      "suspiciousName": false
+    },
+    {
+      "name": "MUX_TOKEN_ID",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "MUX_TOKEN_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "MUX_WEBHOOK_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "MWB_AUTOSAVE_LOCK_TOKEN_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "NODE_ENV",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "NODE_VERSION",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "NOTIF_PREFS_PER_MIN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D4",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "NUDGE_DETECTION_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "NUDGE_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "OURA_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "OURA_CLIENT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "OURA_REDIRECT_URI",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "OURA_VERIFICATION_TOKEN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "PAIR_CODE_TTL_SECONDS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "PAIR_REDEEM_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "PATH",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "PERPLEXITY_API_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "PLAY_STORE_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "POLAR_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "POLAR_CLIENT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "POLAR_REDIRECT_URI",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "POLAR_WEBHOOK_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "PORT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "POSTHOG_HOST",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "POSTHOG_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "POSTMARK_SERVER_TOKEN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "PRIMARY_REGION",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D12",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "PROFILE_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D1",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "PTM_RECOMPUTE_BATCH_LIMIT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D8",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "PTM_RISK_BOARD_PAGE_SIZE",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "PTM_SCORING_CRON",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "PTM_SCORING_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "PTM_WEIGHTED_ACTIVATION_OUTCOMES",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "PUBLIC_APP_BASE_URL",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "PUBLIC_INVITE_BASE_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D2",
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "PUBLIC_LISTING_CURSOR_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "PUBLIC_READS_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "PUBLIC_WEB_SIGNUP_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "RATELIMIT_ANON_PER_MIN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "RATELIMIT_AUTHED_PER_MIN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "RATELIMIT_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "RECEIPT_FS_DIR",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "RECENT_AUTH_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "RECENT_AUTH_TTL_MS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "REDIS_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "RELEASE_VERSION",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D14",
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "RESEND_API_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "RESEND_FROM_EMAIL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "ROMAN_DAILY_COST_CAP_USD",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SCHEDULING_WEBHOOK_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SCOUT_RUN_DEADLINE_MS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SENDGRID_API_KEY",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SENTRY_DSN",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "SENTRY_RELEASE",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SENTRY_TRACES_SAMPLE_RATE",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "SFEE_SETTLEMENT_SWEEP_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SHELL",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "SIGNUP_ROLE_CHOICE_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STOREFRONT_BASE_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "STOREFRONT_JOIN_IP_PER_MIN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRAVA_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRAVA_CLIENT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRAVA_REDIRECT_URI",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRAVA_WEBHOOK_ALLOWED_IPS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRAVA_WEBHOOK_SUBSCRIPTION_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRAVA_WEBHOOK_VERIFY_TOKEN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_API_TIMEOUT_MS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_BILLING_PORTAL_RETURN_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_CHECKOUT_CANCEL_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_CHECKOUT_SUCCESS_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_CONNECT_REFRESH_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_CONNECT_RETURN_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_CUSTOMER_PORTAL_LOGIN_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_PRICE_ENTERPRISE",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_PRICE_GROWTH",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D15",
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_PRICE_ID_FINANCE",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_PRICE_ID_FITNESS",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D15",
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_PRICE_PRO",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "16-31",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_PRICE_STAFF_SEAT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_PUBLISHABLE_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_SECRET_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "64-127",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_WEBHOOK_SECRET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "STRIPE_WEBHOOK_SECRET_NEXT",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "SUPABASE_ANON_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "128+",
+      "suspiciousName": false
+    },
+    {
+      "name": "SUPABASE_BLOODWORK_BUCKET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SUPABASE_MEDIA_BUCKET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SUPABASE_REDIRECT_URL",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "SUPABASE_SERVICE_ROLE_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "128+",
+      "suspiciousName": false
+    },
+    {
+      "name": "SUPABASE_URL",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "SUPABASE_VOICE_BUCKET",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "8-15",
+      "suspiciousName": false
+    },
+    {
+      "name": "TERM",
+      "registered": false,
+      "present": true,
+      "empty": true,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "TM_ANTIBOT_DEVICE_FANOUT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "TM_ANTIBOT_IDENTITY_IP_FANOUT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "TM_ANTIBOT_IDENTITY_LIMIT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "TM_ANTIBOT_IP_LIMIT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "TM_ANTIBOT_IP_WINDOW_SEC",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "TM_ANTIBOT_SIGNAL_TTL_DAYS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "USDA_API_KEY",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "32-63",
+      "suspiciousName": false
+    },
+    {
+      "name": "VOICE_KEY_SIGNING_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "VOICE_NOTE_MAX_BYTES",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "VOICE_NOTE_MAX_DURATION_MS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "VOICE_NOTE_MAX_DURATION_SEC",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "VOICE_NOTE_MAX_SIZE_MB",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "VOICE_SIGNED_URL_TTL_SEC",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WAHOO_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WAHOO_CLIENT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WAHOO_REDIRECT_URI",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WAHOO_WEBHOOK_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WAHOO_WEBHOOK_TOKEN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WEARABLES_OAUTH_REDIRECT_BASE_URL",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WEARABLE_PROCESSED_EVENT_RETENTION_DAYS",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WEEKLY_DIGEST_CRON",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WHOOP_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WHOOP_CLIENT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WHOOP_REDIRECT_URI",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WHOOP_WEBHOOK_SALT",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WHOOP_WEBHOOK_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WITHINGS_CLIENT_ID",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WITHINGS_CLIENT_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WITHINGS_REDIRECT_URI",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WITHINGS_VERIFICATION_TOKEN",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WITHINGS_WEBHOOK_SECRET",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "WORKOUT_REMINDERS_ENABLED",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "YARN_VERSION",
+      "registered": false,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "YMOVE_API_KEY",
+      "registered": true,
+      "present": false,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "ZOOM_ENABLED",
+      "registered": true,
+      "present": true,
+      "empty": false,
+      "placeholder": null,
+      "duplicateGroup": "D3",
+      "lengthBucket": "1-7",
+      "suspiciousName": false
+    },
+    {
+      "name": "ZOOM_OAUTH_ACCOUNT_ID",
+      "registered": false,
+      "present": true,
+      "empty": true,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "ZOOM_OAUTH_CLIENT_ID",
+      "registered": false,
+      "present": true,
+      "empty": true,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    },
+    {
+      "name": "ZOOM_OAUTH_CLIENT_SECRET",
+      "registered": false,
+      "present": true,
+      "empty": true,
+      "placeholder": null,
+      "duplicateGroup": null,
+      "lengthBucket": "0",
+      "suspiciousName": false
+    }
+  ]
+}

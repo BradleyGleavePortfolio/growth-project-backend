@@ -1,0 +1,11 @@
+835 backend routes
+src/api/coachCommunityApi.ts 511 GET /community/coach/dashboard
+src/api/coachCommunityApi.ts 527 GET /community/coach/inbox
+src/api/coachCommunityApi.ts 537 POST /community/coach/inbox/${itemId}/ack
+src/api/coachCommunityApi.ts 594 GET /community/coach/cohorts
+src/api/coachCommunityApi.ts 606 POST /community/coach/cohorts
+src/api/coachCommunityApi.ts 613 GET /community/coach/cohorts/${cohortId}
+src/api/coachCommunityApi.ts 628 POST /community/coach/cohorts/${cohortId}/members
+src/api/coachCommunityApi.ts 642 DELETE /community/coach/cohorts/${cohortId}/members/${userId}
+src/api/invites.ts 219 POST /coach/invite-codes/single
+src/services/talentMarketplaceApi.ts 63 GET /applications/me

@@ -1,0 +1,20 @@
+FIX ROUND 1 (OPENING) (B-AUTHZ-123, agent 123) — growth-project-backend#752 @ 69ad43d08f874f5a4d0122785493fd2c4d28187b
+
+Scope: B-AUTHZ-1 and B-AUTHZ-2 from S-AUTHZ-123. B-AUTHZ-3 is in #747, and getLeaderboard is untouched. Size is +200/-11 (211 lines over 6 files). No schema or flag change.
+
+**B-AUTHZ-1** (`src/community/cohorts/community-cohort-members.service.ts` assign/assignScope, `community-cohort-members.repository.ts` AssignTargetScope + findUserById/findUserByEmail). Before any lookup data is returned or any row changes, the body `user_id`/`email` must belong to one of two groups: the workspace coach's live clients (`coach_id` = workspace coach, `deleted_at` null), or users with an active membership in that workspace. The platform owner (role `owner`) can override. A foreign or unknown target gets the same coded `404 community.cohort.user_not_found` (already in the mobile error contract). The response carries no lookup data, and there is no ban lift and no membership or invite upsert.
+
+**B-AUTHZ-2** (`src/messages-safety/messages-safety.service.ts` listBlocks/blockedDisplayName). `GET /api/users/blocks` now returns `memberFirstName` for student targets. Coach, owner and sub-coach targets keep their profile name. Block and unblock are unchanged, with no new gate.
+
+Tests (fail on main, pass here):
+- service spec: foreign client by user_id (coded 404, no email in the body, no ban lift, no upsert), foreign by email, own client still assigned, platform owner override. 3 of these fail on main; the own-client positive control passes on both.
+- repository spec: scoped where-clause for the id and email lookups (both fail on main).
+- messages-safety spec: blocked client listed as first name only (fails on main); blocked coach keeps the full name.
+
+Local runs used heavy.sh, one file at a time: 21/21, 4/4, 33/33. ESLint is clean on the changed files.
+
+CI at this head: all green, including build-and-test, community-live-tests, rls-live-tests, mwb-3-live-tests, R75 banned casts, Danger, CodeQL and Schema parity. [CI run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37416022838)
+
+Cs (no fix): (1) adding a co_coach is limited to the coach's roster, existing active workspace members, or the platform owner. Mobile has no co_coach flow; a team sub-coach acceptance flow is follow-up work. (2) C (edge, deferred to 10k clients): the legacy block route still accepts any existing id, but now reveals only a first name for clients.
+
+READY FOR AUDIT

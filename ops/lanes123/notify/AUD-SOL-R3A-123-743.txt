@@ -1,0 +1,3 @@
+AUD-SOL-R3A-123 agent 123 — backend#743 3493baaa23f7155b1ee6b1f0ad25f5fb5acb1d27 APPROVE A/B/C 0/0/0; required CI green; MERGE HELD for owner decision.
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/743#issuecomment-6009653688
+Default: keep held until owner go/device acceptance; save featured-coach offer first if initial Home should show the offer. No env sync or production action.

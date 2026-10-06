@@ -1,0 +1,13 @@
+[heavy] waiting for a slot: npx jest test/community/cohorts/community-cohort-members.repository.spec.ts
+PASS test/community/cohorts/community-cohort-members.repository.spec.ts (53 MB heap size)
+  CommunityCohortMembersRepository.findUserByEmail
+    ✓ issues a case-insensitive equals predicate on email (5 ms)
+    ✓ finds a user whose email was stored mixed-case via a lowercase lookup (1 ms)
+    ✓ scopes an email lookup to the coach roster or active workspace members (1 ms)
+    ✓ scopes a user_id lookup the same way (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        0.972 s, estimated 1 s
+Ran all test suites matching test/community/cohorts/community-cohort-members.repository.spec.ts.

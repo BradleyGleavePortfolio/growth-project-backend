@@ -1,0 +1,182 @@
+diff --git a/src/community/cohorts/community-cohort-members.repository.ts b/src/community/cohorts/community-cohort-members.repository.ts
+index 6057c73a..56b0ed6c 100644
+--- a/src/community/cohorts/community-cohort-members.repository.ts
++++ b/src/community/cohorts/community-cohort-members.repository.ts
+@@ -1,5 +1,5 @@
+ import { Injectable } from '@nestjs/common';
+-import type { CommunityMembership, CommunityMembershipRole, User } from '@prisma/client';
++import type { CommunityMembership, CommunityMembershipRole, Prisma, User } from '@prisma/client';
+ import { PrismaService } from '../../prisma.service';
+ import { liftWorkspaceBan } from '../community-ban';
+ 
+@@ -21,6 +21,31 @@ export interface MemberPageCursor {
+   id: string;
+ }
+ 
++/**
++ * B-AUTHZ-1: who a coach may add to a cohort. A target qualifies only when it
++ * is a live client of the workspace coach (`coach_id` match, not deleted) or
++ * already holds an active membership somewhere in the same workspace.
++ */
++export interface AssignTargetScope {
++  workspaceId: string;
++  coachId: string;
++}
++
++function assignTargetFilter(scope: AssignTargetScope | null): Prisma.UserWhereInput {
++  if (!scope) return {};
++  return {
++    deleted_at: null,
++    OR: [
++      { coach_id: scope.coachId },
++      {
++        community_memberships: {
++          some: { workspace_id: scope.workspaceId, status: 'active' },
++        },
++      },
++    ],
++  };
++}
++
+ @Injectable()
+ export class CommunityCohortMembersRepository {
+   constructor(private readonly prisma: PrismaService) {}
+@@ -81,16 +106,26 @@ export class CommunityCohortMembersRepository {
+    * user. `mode: 'insensitive'` (Postgres ILIKE-equivalent) matches regardless
+    * of casing; findFirst because an insensitive predicate is not a unique key.
+    */
+-  async findUserByEmail(email: string): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
++  async findUserByEmail(
++    email: string,
++    scope: AssignTargetScope | null = null,
++  ): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
+     return this.prisma.user.findFirst({
+-      where: { email: { equals: email, mode: 'insensitive' } },
++      where: { email: { equals: email, mode: 'insensitive' }, ...assignTargetFilter(scope) },
+       select: { id: true, name: true, email: true },
+     });
+   }
+ 
+-  async findUserById(userId: string): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
+-    return this.prisma.user.findUnique({
+-      where: { id: userId },
++  /**
++   * Resolve an assign target by id. With a scope, a user outside it resolves
++   * to null exactly like an unknown id (no existence leak).
++   */
++  async findUserById(
++    userId: string,
++    scope: AssignTargetScope | null = null,
++  ): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
++    return this.prisma.user.findFirst({
++      where: { id: userId, ...assignTargetFilter(scope) },
+       select: { id: true, name: true, email: true },
+     });
+   }
+diff --git a/src/community/cohorts/community-cohort-members.service.ts b/src/community/cohorts/community-cohort-members.service.ts
+index dcd484e3..4c6b64f1 100644
+--- a/src/community/cohorts/community-cohort-members.service.ts
++++ b/src/community/cohorts/community-cohort-members.service.ts
+@@ -9,6 +9,7 @@ import { CommunityAccessService } from '../community-access.service';
+ import { CommunitySafetyService } from '../safety/community-safety.service';
+ import { memberFirstName } from '../member-display-name';
+ import {
++  AssignTargetScope,
+   CommunityCohortMembersRepository,
+   MemberPageCursor,
+   MembershipWithUser,
+@@ -157,6 +158,18 @@ export class CommunityCohortMembersService {
+     }
+   }
+ 
++  /**
++   * Who a cohort assignment may target. `null` (no restriction) only for the
++   * platform owner; every coach is limited to the workspace coach's live
++   * roster plus people already active in the workspace.
++   */
++  private async assignScope(workspaceId: string, user: User): Promise<AssignTargetScope | null> {
++    if (user.role === 'owner') return null;
++    const workspace = await this.access.findWorkspace(workspaceId);
++    if (!workspace) throw new NotFoundException(NOT_FOUND);
++    return { workspaceId: workspace.id, coachId: workspace.coach_id };
++  }
++
+   async list(
+     user: User,
+     cohortId: string,
+@@ -218,8 +231,15 @@ export class CommunityCohortMembersService {
+ 
+     const prismaRole = API_TO_PRISMA_ROLE[body.role];
+ 
++    // B-AUTHZ-1: the target must already belong to this coach's world (their
++    // live client roster, or an active member of this workspace) before any
++    // lookup data is returned or any membership/ban row changes. A foreign or
++    // unknown target gets the same coded 404, so the endpoint never confirms
++    // that another coach's client exists. The platform owner may override.
++    const scope = await this.assignScope(cohort.workspace_id, user);
++
+     if (hasUserId) {
+-      const target = await this.repo.findUserById(body.user_id as string);
++      const target = await this.repo.findUserById(body.user_id as string, scope);
+       if (!target) throw new NotFoundException(USER_NOT_FOUND);
+       // Direct assign of a known user → active immediately (idempotent: an
+       // existing/removed row is revived to the requested role + active).
+@@ -244,7 +264,7 @@ export class CommunityCohortMembersService {
+     // onboarding flow first. (Decision documented in the PR body: cohort
+     // membership reuses the CommunityMembership row with status='invited'
+     // rather than the unrelated coach-roster invite-codes module.)
+-    const target = await this.repo.findUserByEmail(body.email as string);
++    const target = await this.repo.findUserByEmail(body.email as string, scope);
+     if (!target) throw new NotFoundException(USER_NOT_FOUND);
+     const row = await this.repo.upsertMembership({
+       workspaceId: cohort.workspace_id,
+diff --git a/src/messages-safety/messages-safety.service.ts b/src/messages-safety/messages-safety.service.ts
+index 05713692..142ae494 100644
+--- a/src/messages-safety/messages-safety.service.ts
++++ b/src/messages-safety/messages-safety.service.ts
+@@ -4,10 +4,11 @@ import {
+   Logger,
+   NotFoundException,
+ } from '@nestjs/common';
+-import { Prisma } from '@prisma/client';
++import { Prisma, Role } from '@prisma/client';
+ import { PrismaService } from '../prisma.service';
+ import { AuditService } from '../audit/audit.service';
+ import { AnalyticsService } from '../analytics/analytics.service';
++import { memberFirstName } from '../community/member-display-name';
+ import { ReportMessageDto, ReportReason } from './dto/report-message.dto';
+ 
+ // Prisma unique-constraint violation. Surfaced when two concurrent
+@@ -21,6 +22,17 @@ const EVENT_REPORTED = 'safety_message_reported';
+ const EVENT_BLOCKED = 'safety_user_blocked';
+ const EVENT_UNBLOCKED = 'safety_user_unblocked';
+ 
++/**
++ * B-AUTHZ-2: the block list follows the community privacy contract. A client
++ * (student) target shows the first name only, the same as every community
++ * surface; coach-side accounts keep the name already shown on their profile.
++ */
++function blockedDisplayName(blocked: { name: string | null; role: Role } | null): string {
++  if (!blocked) return '';
++  if (blocked.role === 'student') return memberFirstName(blocked.name);
++  return blocked.name ?? '';
++}
++
+ /**
+  * MessagesSafetyService — Apple 1.2 abuse-reporting + per-user blocklist.
+  *
+@@ -244,12 +256,12 @@ export class MessagesSafetyService {
+       select: {
+         blocked_id: true,
+         created_at: true,
+-        blocked: { select: { name: true } },
++        blocked: { select: { name: true, role: true } },
+       },
+     });
+     return rows.map((r) => ({
+       blockedId: r.blocked_id,
+-      displayName: r.blocked?.name ?? '',
++      displayName: blockedDisplayName(r.blocked),
+       blockedAt: r.created_at.toISOString(),
+     }));
+   }

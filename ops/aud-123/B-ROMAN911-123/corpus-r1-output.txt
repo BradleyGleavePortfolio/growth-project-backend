@@ -1,0 +1,5 @@
+AI null->emergency | Roman normal->emergency | my teammate overdosed
+AI null->emergency | Roman normal->emergency | possible overdose, what do I do?
+AI null->emergency | Roman normal->emergency | help, overdose
+AI null->self_harm | Roman normal->self_harm | I cut myself again
+strings 53301 changed 4

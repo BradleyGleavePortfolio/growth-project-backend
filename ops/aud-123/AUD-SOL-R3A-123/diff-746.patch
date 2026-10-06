@@ -1,0 +1,482 @@
+diff --git a/src/data-export/README.md b/src/data-export/README.md
+index dc4065cd..369c6edf 100644
+--- a/src/data-export/README.md
++++ b/src/data-export/README.md
+@@ -44,7 +44,7 @@ Every export is a single JSON file. The top-level object has the following keys:
+ | Key | Source model(s) | Redaction notes |
+ |-----|----------------|-----------------|
+ | `manifest` | synthetic | `export_id`, `user_id`, `schema_version`, `requested_at`, `completed_at`, `sha256` |
+-| `user` | `User` | `id`, `email`, `name`, `phone`, `role`, `created_at`, `archived_at`, `deletion_scheduled_at`. Fields excluded: `supabase_id`, `coach_id`, `deleted_at` (internal). |
++| `user` | `User` | `id`, `email`, `name`, `phone`, `role`, `created_at`, `archived_at`, `deletion_scheduled_at`, and `push_token_registered` (true when a device push token is on file; the token itself is never exported). Fields excluded: `supabase_id`, `coach_id`, `deleted_at` (internal). |
+ | `profile` | `UserProfile` | All fields. |
+ | `preferences` | `UserPreferences` | All fields. |
+ | `notification_preferences` | `NotificationPreferences` | All fields. |
+@@ -76,6 +76,15 @@ Every export is a single JSON file. The top-level object has the following keys:
+ | `roman_sessions` | `RomanSession` | The user's own Roman/AI chat sessions that are not deleted (`deleted_at` null): id, surface, day, message count, dates. The internal `subject_context_json` blob and voice-budget counters are left out. A chat the user deleted is never exported. |
+ | `roman_messages` | `RomanMessage` | Every turn (user and assistant) of those sessions, oldest first: role, content, the model id of an assistant reply, interrupted flag, date. Scoped by both `user_id` and the session's owner. |
+ | `ai_processing_consent_events` | `AiProcessingConsentEvent` | The full AI-processing consent ledger: every grant and withdrawal with processor, purpose, copy version and copy digest. |
++| `community_posts` | `CommunityPost` | Posts the user wrote that they have not deleted: workspace, scope, type, title, body, visibility, dates. |
++| `community_messages` | `CommunityMessage` | Messages and comments the user sent that they have not deleted: scope, kind, body, voice length, parent message, visibility, dates. The recipient's id and the voice file URL are left out. |
++| `community_reactions` | `CommunityResponse` | Reactions the user left: target type and id, kind, date. |
++| `broadcasts_received` | `CoachBroadcastDelivery` | Coach broadcasts delivered to the user: broadcast id, message id, status, dates. The text is the coach's message and follows the `coach_messages` redaction. |
++| `coach_code_redemptions` | `CoachCodeRedemption` | Coach-code redemption attempts: status, outcome, coach id, date. The stored response is left out. |
++| `invite_redemptions` | `InviteRedemption` | Invite and QR codes the user redeemed: coach id, code, source, package id, date. |
++| `workout_adjustments` | `WorkoutAdjustmentProposal` | Roman workout adjustments proposed for the user: status, severity, the recovery signals used, the proposed and applied change, Roman's text, dates. The coach's dismiss note and the internal rule key are left out. |
++| `wearable_connections` | `WearableConnection` | Provider, status, scopes and sync dates. Tokens, secret refs and errors are never exported. |
++| `wearable_samples` | `WearableSample` | Every wearable sample, oldest first: provider, metric, bucket, value, unit, start/end, source time zone, recorded date. |
+ 
+ ---
+ 
+diff --git a/src/data-export/data-export.service.ts b/src/data-export/data-export.service.ts
+index d29e0466..8d7ba3ef 100644
+--- a/src/data-export/data-export.service.ts
++++ b/src/data-export/data-export.service.ts
+@@ -192,6 +192,123 @@ const ROMAN_MESSAGE_EXPORT_SELECT: Record<string, true> = {
+   created_at: true,
+ };
+ 
++/*
++ * W3-13 day-1 sections. Each select keeps `id` (archive paging follows it)
++ * and leaves out other people's ids and content, storage URLs, credentials
++ * and internal rule keys.
++ */
++
++/** Community posts the user wrote. */
++const COMMUNITY_POST_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  workspace_id: true,
++  scope: true,
++  type: true,
++  title: true,
++  body: true,
++  visibility: true,
++  created_at: true,
++  updated_at: true,
++};
++
++/** Community messages and comments the user sent (no recipient id, no voice URL). */
++const COMMUNITY_MESSAGE_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  workspace_id: true,
++  scope: true,
++  kind: true,
++  body: true,
++  voice_duration_ms: true,
++  parent_message_id: true,
++  plan_context_type: true,
++  visibility: true,
++  created_at: true,
++  updated_at: true,
++};
++
++/** Reactions the user left on posts and messages. */
++const COMMUNITY_REACTION_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  workspace_id: true,
++  target_type: true,
++  target_id: true,
++  response_kind: true,
++  created_at: true,
++};
++
++/** Coach broadcasts delivered to the user (the copy itself is in coach_messages). */
++const BROADCAST_DELIVERY_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  broadcast_id: true,
++  message_id: true,
++  status: true,
++  delivered_at: true,
++  created_at: true,
++};
++
++/** Coach-code redemption attempts the user made (stored response left out). */
++const COACH_CODE_REDEMPTION_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  status: true,
++  outcome: true,
++  coach_id: true,
++  created_at: true,
++};
++
++/** Invite and QR codes the user redeemed. */
++const INVITE_REDEMPTION_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  coach_id: true,
++  code: true,
++  source: true,
++  package_id: true,
++  redeemed_at: true,
++};
++
++/**
++ * Roman workout adjustments proposed for the user: the recovery signals they
++ * were based on, the change and its outcome. The coach's own dismiss note and
++ * the internal rule key are left out.
++ */
++const WORKOUT_ADJUSTMENT_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  coach_id: true,
++  assignment_id: true,
++  status: true,
++  severity: true,
++  signals: true,
++  proposed_change: true,
++  applied_change: true,
++  roman_text: true,
++  decided_at: true,
++  created_at: true,
++};
++
++/** Wearable connections: provider and sync state only, never tokens or secret refs. */
++const WEARABLE_CONNECTION_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  provider: true,
++  status: true,
++  scopes: true,
++  last_synced_at: true,
++  disconnected_at: true,
++  created_at: true,
++};
++
++/** Wearable health samples (consumer health data). */
++const WEARABLE_SAMPLE_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  provider: true,
++  metric: true,
++  bucket: true,
++  value: true,
++  unit: true,
++  start_at: true,
++  end_at: true,
++  source_tz: true,
++  recorded_at: true,
++};
++
+ /** Why an archive must go although no request row owns it (B-608-11). */
+ export type ArchiveCleanupReason = 'request_removed' | 'failed_run';
+ 
+@@ -1131,6 +1248,15 @@ export class DataExportService {
+       romanSessions,
+       romanMessages,
+       aiConsentEvents,
++      communityPosts,
++      communityMessages,
++      communityReactions,
++      broadcastDeliveries,
++      coachCodeRedemptions,
++      inviteRedemptions,
++      workoutAdjustments,
++      wearableConnections,
++      wearableSamples,
+     ] = await Promise.all([
+       this.prisma.user.findUnique({
+         where: { id: userId },
+@@ -1143,6 +1269,7 @@ export class DataExportService {
+           created_at: true,
+           archived_at: true,
+           deletion_scheduled_at: true,
++          expo_push_token: true,
+         },
+       }),
+       this._streamAll('userProfile', { user_id: userId }),
+@@ -1201,8 +1328,66 @@ export class DataExportService {
+       ),
+       // C-636-2: the AI-processing consent ledger (every grant and withdrawal).
+       this._streamAll('aiProcessingConsentEvent', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
++      // W3-13: day-1 data. Posts and messages the user deleted are left out,
++      // like a deleted Roman chat.
++      this._streamAll(
++        'communityPost',
++        { author_id: userId, deleted_at: null },
++        { select: COMMUNITY_POST_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
++      ),
++      this._streamAll(
++        'communityMessage',
++        { sender_id: userId, deleted_at: null },
++        { select: COMMUNITY_MESSAGE_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
++      ),
++      this._streamAll(
++        'communityResponse',
++        { user_id: userId },
++        { select: COMMUNITY_REACTION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
++      ),
++      this._streamAll(
++        'coachBroadcastDelivery',
++        { recipient_id: userId },
++        { select: BROADCAST_DELIVERY_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
++      ),
++      this._streamAll(
++        'coachCodeRedemption',
++        { user_id: userId },
++        { select: COACH_CODE_REDEMPTION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
++      ),
++      this._streamAll(
++        'inviteRedemption',
++        { client_user_id: userId },
++        {
++          select: INVITE_REDEMPTION_EXPORT_SELECT,
++          orderBy: [{ redeemed_at: 'asc' }, { id: 'asc' }],
++        },
++      ),
++      this._streamAll(
++        'workoutAdjustmentProposal',
++        { client_id: userId },
++        { select: WORKOUT_ADJUSTMENT_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
++      ),
++      this._streamAll(
++        'wearableConnection',
++        { user_id: userId },
++        { select: WEARABLE_CONNECTION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
++      ),
++      this._streamAll(
++        'wearableSample',
++        { user_id: userId },
++        { select: WEARABLE_SAMPLE_EXPORT_SELECT, orderBy: [{ start_at: 'asc' }, { id: 'asc' }] },
++      ),
+     ]);
+ 
++    // The push token is a send credential for the user's phone: the archive
++    // says whether one is registered, never the token itself.
++    let exportedUser: Record<string, unknown> | null = null;
++    if (user) {
++      const { expo_push_token: pushToken, ...fields } = user;
++      exportedUser = { ...fields, push_token_registered: Boolean(pushToken) };
++    }
++
+     const completedAt = new Date();
+ 
+     // Build with placeholder sha256 first, then replace
+@@ -1215,7 +1400,7 @@ export class DataExportService {
+         completed_at: completedAt.toISOString(),
+         sha256: null,
+       },
+-      user,
++      user: exportedUser,
+       profile,
+       preferences,
+       notification_preferences: notificationPrefs,
+@@ -1250,6 +1435,15 @@ export class DataExportService {
+       roman_sessions: romanSessions,
+       roman_messages: romanMessages,
+       ai_processing_consent_events: aiConsentEvents,
++      community_posts: communityPosts,
++      community_messages: communityMessages,
++      community_reactions: communityReactions,
++      broadcasts_received: broadcastDeliveries,
++      coach_code_redemptions: coachCodeRedemptions,
++      invite_redemptions: inviteRedemptions,
++      workout_adjustments: workoutAdjustments,
++      wearable_connections: wearableConnections,
++      wearable_samples: wearableSamples,
+     };
+ 
+     const jsonForHash = JSON.stringify(archive);
+diff --git a/test/data-export-archive-inventory.spec.ts b/test/data-export-archive-inventory.spec.ts
+index a8e6accf..794b3c0d 100644
+--- a/test/data-export-archive-inventory.spec.ts
++++ b/test/data-export-archive-inventory.spec.ts
+@@ -227,7 +227,7 @@ function store(extra: Record<string, Row[]> = {}, opts: StoreOptions = {}) {
+     {
+       get(_target, prop) {
+         if (prop === 'user')
+-          return { findUnique: async () => ({ id: U, email: 'u@example.test' }) };
++          return { findUnique: async () => extra.user?.[0] ?? { id: U, email: 'u@example.test' } };
+         if (typeof prop !== 'string' || prop.startsWith('$') || prop === 'then') return undefined;
+         return delegate(prop);
+       },
+@@ -376,3 +376,195 @@ describe('data export paging (F-EXPORT-TIE)', () => {
+     );
+   });
+ });
++
++// W3-13 (B-DELETE-123): the export left out the data that went live on day 1
++// (community, broadcasts, coach codes, Roman adjustments, wearables), although
++// the privacy pages point people at the in-app export for a copy of it.
++describe('data export day-1 sections (W3-13)', () => {
++  const day1: Record<string, Row[]> = {
++    user: [{ id: U, email: 'u@example.test', expo_push_token: 'ExponentPushToken[secret]' }],
++    communityPost: [
++      {
++        id: 'p1',
++        author_id: U,
++        title: 'Week one',
++        body: 'Squats felt good',
++        deleted_at: null,
++        created_at: t(2),
++      },
++      { id: 'p-del', author_id: U, body: 'a post I deleted', deleted_at: t(3), created_at: t(1) },
++      {
++        id: 'p-other',
++        author_id: OTHER,
++        body: 'post by someone else',
++        deleted_at: null,
++        created_at: t(1),
++      },
++    ],
++    communityMessage: [
++      {
++        id: 'cm1',
++        sender_id: U,
++        recipient_user_id: OTHER,
++        body: 'Nice work on the deadlift',
++        voice_url: 'https://storage.example/voice/cm1.m4a',
++        deleted_at: null,
++        created_at: t(4),
++      },
++      {
++        id: 'cm-other',
++        sender_id: OTHER,
++        body: 'reply by someone else',
++        deleted_at: null,
++        created_at: t(5),
++      },
++    ],
++    communityResponse: [
++      {
++        id: 'cr1',
++        user_id: U,
++        target_type: 'post',
++        target_id: 'p-other',
++        response_kind: 'clap',
++        created_at: t(6),
++      },
++      {
++        id: 'cr-other',
++        user_id: OTHER,
++        target_type: 'post',
++        target_id: 'p1',
++        response_kind: 'clap',
++        created_at: t(6),
++      },
++    ],
++    coachBroadcastDelivery: [
++      {
++        id: 'bd1',
++        recipient_id: U,
++        broadcast_id: 'b1',
++        status: 'delivered',
++        lease_holder: 'machine-1',
++        created_at: t(7),
++      },
++      {
++        id: 'bd-other',
++        recipient_id: OTHER,
++        broadcast_id: 'b1',
++        status: 'delivered',
++        created_at: t(7),
++      },
++    ],
++    coachCodeRedemption: [
++      {
++        id: 'ccr1',
++        user_id: U,
++        status: 'completed',
++        outcome: 'linked',
++        coach_id: 'coach-1',
++        response: { internal: true },
++        created_at: t(8),
++      },
++    ],
++    inviteRedemption: [
++      {
++        id: 'ir1',
++        client_user_id: U,
++        coach_id: 'coach-1',
++        code: 'BRAD10',
++        source: 'qr',
++        redeemed_at: t(9),
++      },
++      {
++        id: 'ir-other',
++        client_user_id: OTHER,
++        coach_id: 'coach-1',
++        code: 'OTHER1',
++        redeemed_at: t(9),
++      },
++    ],
++    workoutAdjustmentProposal: [
++      {
++        id: 'wa1',
++        client_id: U,
++        coach_id: 'coach-1',
++        status: 'applied',
++        signals: { sleep_hours: 5.1 },
++        proposed_change: { volume: -0.2 },
++        rule_key: 'internal.rule',
++        dismiss_reason: 'coach note',
++        created_at: t(10),
++      },
++    ],
++    wearableConnection: [
++      {
++        id: 'wc1',
++        user_id: U,
++        provider: 'oura',
++        status: 'active',
++        encrypted_refresh_token: 'enc-secret',
++        created_at: t(11),
++      },
++    ],
++    wearableSample: [
++      {
++        id: 'ws2',
++        user_id: U,
++        metric: 'resting_hr',
++        value: 52,
++        unit: 'bpm',
++        raw_ref: 'raw/2',
++        start_at: t(13),
++      },
++      { id: 'ws1', user_id: U, metric: 'sleep_duration', value: 7.5, unit: 'h', start_at: t(12) },
++      {
++        id: 'ws-other',
++        user_id: OTHER,
++        metric: 'resting_hr',
++        value: 70,
++        unit: 'bpm',
++        start_at: t(12),
++      },
++    ],
++  };
++  const ids = (rows: unknown): string[] => stub<Row[]>(rows).map((r) => String(r.id));
++
++  it('exports the user own community posts, messages and reactions, never deleted or other people rows', async () => {
++    const archive = await build(day1);
++    expect(ids(archive.community_posts)).toEqual(['p1']);
++    expect(stub<Row[]>(archive.community_posts)[0]).toMatchObject({ body: 'Squats felt good' });
++    expect(ids(archive.community_messages)).toEqual(['cm1']);
++    expect(stub<Row[]>(archive.community_messages)[0]).not.toHaveProperty('recipient_user_id');
++    expect(stub<Row[]>(archive.community_messages)[0]).not.toHaveProperty('voice_url');
++    expect(ids(archive.community_reactions)).toEqual(['cr1']);
++    const text = JSON.stringify(archive);
++    expect(text).not.toContain('a post I deleted');
++    expect(text).not.toContain('someone else');
++  });
++
++  it('exports broadcasts received, code redemptions and Roman adjustments without internal fields', async () => {
++    const archive = await build(day1);
++    expect(ids(archive.broadcasts_received)).toEqual(['bd1']);
++    expect(stub<Row[]>(archive.broadcasts_received)[0]).not.toHaveProperty('lease_holder');
++    expect(ids(archive.coach_code_redemptions)).toEqual(['ccr1']);
++    expect(stub<Row[]>(archive.coach_code_redemptions)[0]).not.toHaveProperty('response');
++    expect(ids(archive.invite_redemptions)).toEqual(['ir1']);
++    const [adjustment] = stub<Row[]>(archive.workout_adjustments);
++    expect(adjustment).toMatchObject({ id: 'wa1', signals: { sleep_hours: 5.1 } });
++    expect(adjustment).not.toHaveProperty('rule_key');
++    expect(adjustment).not.toHaveProperty('dismiss_reason');
++  });
++
++  it('exports wearable samples oldest first and connections without tokens', async () => {
++    const archive = await build(day1);
++    expect(ids(archive.wearable_samples)).toEqual(['ws1', 'ws2']);
++    expect(stub<Row[]>(archive.wearable_samples)[1]).not.toHaveProperty('raw_ref');
++    expect(ids(archive.wearable_connections)).toEqual(['wc1']);
++    expect(JSON.stringify(archive)).not.toContain('enc-secret');
++  });
++
++  it('says a push token is registered without exporting the token', async () => {
++    const archive = await build(day1);
++    expect(archive.user).toMatchObject({ id: U, push_token_registered: true });
++    expect(JSON.stringify(archive)).not.toContain('ExponentPushToken');
++  });
++});

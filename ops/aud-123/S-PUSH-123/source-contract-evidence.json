@@ -1,0 +1,38 @@
+{
+  "scope": "Static source-contract inspection only; no application execution or device delivery",
+  "backendHead": "5230306cb63df7290459bb362340a42f385f39d5",
+  "mobileHead": "a727eb495a0ce381a22c4ac40370c0c69f53a656",
+  "facts": {
+    "androidTaxonomyIdsMatch": true,
+    "androidTaxonomyIds": [
+      "client-bot",
+      "coach-messages",
+      "milestones",
+      "system"
+    ],
+    "communityFlagReadAtCallSite": true,
+    "communityPrivacyForcedOn": true,
+    "communityPushEnvelopeHasActionScreen": false,
+    "communityPushEnvelopeHasActionParams": false,
+    "communityPushEnvelopeHasDeepLink": false,
+    "communityInboxWriteResultAssigned": false,
+    "directTransportReadsNotificationPreferences": false,
+    "directTransportHasExplicitChannelId": false,
+    "mobileTapRejectsMissingActionScreen": true,
+    "trialActionScreen": "ClientPackages",
+    "clientPushRoutesContainClientPackages": false,
+    "clientNavigatorContainsClientPackages": true,
+    "communityKindsHaveDedicatedPreferencePrefix": false,
+    "cohortMessageServiceCallsPush": false,
+    "authenticatedRegistrationNeverPrompts": true,
+    "clientHomeMountsPermissionPrimer": true,
+    "coachNavigatorMountsPermissionPrimer": false,
+    "productionRelevantBuildFlags": {
+      "EXPO_PUBLIC_NOTIFICATIONS_MOCK": "false",
+      "EXPO_PUBLIC_FF_CLIENT_CALENDAR": "true",
+      "EXPO_PUBLIC_FF_COMMUNITY_TAB": "true",
+      "EXPO_PUBLIC_FF_COMMUNITY_HALL": "true",
+      "EXPO_PUBLIC_FF_COMMUNITY_COHORTS": "true"
+    }
+  }
+}

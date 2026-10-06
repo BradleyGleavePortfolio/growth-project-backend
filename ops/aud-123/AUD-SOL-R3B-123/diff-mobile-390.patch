@@ -1,0 +1,879 @@
+diff --git a/PLAY_STORE_READINESS.md b/PLAY_STORE_READINESS.md
+index acd0e13d..7882e41b 100644
+--- a/PLAY_STORE_READINESS.md
++++ b/PLAY_STORE_READINESS.md
+@@ -39,6 +39,25 @@ The corresponding iOS notes live alongside each item in parentheses where they d
+ 
+ ## 4. Data safety form (Play Console)
+ 
++> **SUPERSEDED 2026-10-05 — do not paste these rows into Play Console.** The table and permission list below describe an
++> older build. Use the October 07 store packet instead: [STORE_TEXT_10-07.md](https://github.com/BradleyGleavePortfolio/tgp-agent-context/blob/main/handoffs/op-123/STORE_TEXT_10-07.md) (section 4, B-STORECOPY-4), and fill
++> the form from the final 10-07 binary. Known gaps in the old rows:
++> - Messages: coach/client messages and Roman chat are collected (Messages > Other in-app messages); Roman sends message and
++>   account context to Anthropic only after the optional AI permission.
++> - App activity: community posts, comments and reactions are user-generated content, not only analytics events.
++> - Personal info: account IDs (User IDs) are sent with analytics and crash reports; consultation answers (date of birth, sex)
++>   are Other info.
++> - Health and fitness: readiness/injury answers, check-ins, sleep and heart data, plus Health Connect reads where a profile
++>   enables it (the `production` profile has Health Connect off).
++> - Device or other IDs: the Expo push token is uploaded after the person allows notifications.
++> - Financial info: purchase, renewal, refund and invoice metadata (Stripe holds card numbers).
++> - Analytics (PostHog) and diagnostics (Sentry) start automatically when configured, so they are not "optional" unless an
++>   in-app opt-out exists.
++> - Permissions (10-07 build): no `RECORD_AUDIO` (voice notes are off; `recordAudioAndroid: false` and blocked), calendar
++>   read/write blocked, notifications asked from Home (not at first launch). iOS camera and photo-library strings exist for the
++>   support chat and Save Image only; nothing is collected from the camera.
++> - Keep "collected" and "shared" separate: sending data to The Growth Project's own backend is collection, not sharing.
++
+ The form must be filled in to match what the app actually does. Current behavior:
+ 
+ | Category                        | Collected? | Shared off-device? | Encrypted in transit | Optional? | Reason                                                              |
+@@ -58,6 +77,8 @@ Confirm the form with whichever account types are listed in the live privacy pol
+ 
+ ### Permissions declared
+ 
++> **SUPERSEDED 2026-10-05** — see the banner at the top of section 4 and [STORE_TEXT_10-07.md](https://github.com/BradleyGleavePortfolio/tgp-agent-context/blob/main/handoffs/op-123/STORE_TEXT_10-07.md).
++
+ `app.json` only declares one runtime permission today:
+ 
+ - iOS: `NSCameraUsageDescription` — barcode scanning. The Android equivalent (`<uses-permission android:name="android.permission.CAMERA"/>`) will be auto-added by Expo when a camera-using plugin is included, or must be added explicitly if barcode scanning lands.
+diff --git a/app.json b/app.json
+index 730f0701..d027e4cf 100644
+--- a/app.json
++++ b/app.json
+@@ -28,7 +28,10 @@
+         "NSFaceIDUsageDescription": "Unlock the app and confirm sensitive actions with Face ID",
+         "NSHealthShareUsageDescription": "The Growth Project uses your Apple Health data so your coach can personalize training, recovery, and check-ins around real signals (sleep, heart rate, workouts).",
+         "NSHealthUpdateUsageDescription": "The Growth Project may write workouts you log to Apple Health so all your activity stays in one place.",
+-        "NSMotionUsageDescription": "The Growth Project reads motion and step activity so your coach can track daily movement and progress."
++        "NSMotionUsageDescription": "The Growth Project reads motion and step activity so your coach can track daily movement and progress.",
++        "NSCameraUsageDescription": "The Growth Project uses the camera only when you choose to take a photo to send in a support chat.",
++        "NSPhotoLibraryUsageDescription": "The Growth Project opens your photo library only when you choose a photo to send in a support chat.",
++        "NSPhotoLibraryAddUsageDescription": "The Growth Project saves an image to your photo library only when you choose Save Image, for example a progress card or an invite QR code."
+       },
+       "associatedDomains": [
+         "applinks:app.trygrowthproject.com"
+@@ -46,7 +49,8 @@
+       "versionCode": 5,
+       "blockedPermissions": [
+         "android.permission.READ_CALENDAR",
+-        "android.permission.WRITE_CALENDAR"
++        "android.permission.WRITE_CALENDAR",
++        "android.permission.RECORD_AUDIO"
+       ],
+       "intentFilters": [
+         {
+@@ -143,6 +147,7 @@
+         "expo-audio",
+         {
+           "microphonePermission": "The Growth Project uses your microphone only while you record a voice note for your coaching community.",
++          "recordAudioAndroid": false,
+           "enableBackgroundPlayback": false,
+           "enableBackgroundRecording": false
+         }
+diff --git a/docs/PLAY_INTERNAL_TESTING_PACKAGE.md b/docs/PLAY_INTERNAL_TESTING_PACKAGE.md
+index 556c90fa..29d31d31 100644
+--- a/docs/PLAY_INTERNAL_TESTING_PACKAGE.md
++++ b/docs/PLAY_INTERNAL_TESTING_PACKAGE.md
+@@ -115,6 +115,10 @@ git status --porcelain   # must be empty before `eas build`
+ 
+ ## 5. Android permissions review
+ 
++> **SUPERSEDED 2026-10-05 — do not paste.** This section describes an older build. Use the October 07 store packet
++> [STORE_TEXT_10-07.md](https://github.com/BradleyGleavePortfolio/tgp-agent-context/blob/main/handoffs/op-123/STORE_TEXT_10-07.md) (section 4, B-STORECOPY-4) and the banner in `PLAY_STORE_READINESS.md` section 4, and check
++> the final 10-07 binary's manifest. The 10-07 build declares no `RECORD_AUDIO` (voice notes off).
++
+ `app.json` declares no Android `<uses-permission>` entries directly. Permissions are inferred by Expo from the plugins/APIs in use. Resulting AndroidManifest will (per Expo SDK 55 defaults for the libraries we depend on) include:
+ 
+ | Permission | Source | Visible to user? | Justification (for Data Safety + listing) |
+@@ -141,6 +145,10 @@ If anything other than the table above shows up, that permission needs a justifi
+ 
+ ## 6. Data Safety form
+ 
++> **SUPERSEDED 2026-10-05 — do not paste.** This section describes an older build. Use the October 07 store packet
++> [STORE_TEXT_10-07.md](https://github.com/BradleyGleavePortfolio/tgp-agent-context/blob/main/handoffs/op-123/STORE_TEXT_10-07.md) (section 4, B-STORECOPY-4) and the banner in `PLAY_STORE_READINESS.md` section 4, and check
++> the final 10-07 binary's manifest. The 10-07 build declares no `RECORD_AUDIO` (voice notes off).
++
+ Source of truth for the answers: `PLAY_STORE_READINESS.md` § 4. Summary copy-paste for the Play form:
+ 
+ - **Personal info**: name, email — collected, shared with backend over TLS, required.
+diff --git a/src/components/README.md b/src/components/README.md
+index eee00a97..f422624d 100644
+--- a/src/components/README.md
++++ b/src/components/README.md
+@@ -232,3 +232,13 @@ npm dependency is required.
+ - RTL render of the Skeleton primitive
+ - Wiring assertions for all three screens
+ 
++
++## Community terms agreement (Apple 1.2, 2026-10-05)
++
++`community/CommunityTermsGate.tsx` wraps the client Community stack (`CommunityNavigator`), the coach Community stack
++(`CoachCommunityNavigator`) and More > Community (`withCommunityTerms(CommunityScreen)` in `ClientNavigator`). Before first
++use it shows `COMMUNITY_GUIDELINES`, the zero-tolerance sentence, "Agree and continue" (stored per user in `prefsStorage`
++under `community_terms_agreed:v1:<userId>`) and "Read the Terms of Service" (`TERMS_URL`). Legal links open through
++`src/lib/legalLinks.ts`, which names the page and gives its web address when the phone cannot open it. The Create account
++screen states the Terms of Service and Privacy Policy agreement with both links. Tests:
++`community/__tests__/CommunityTermsGate.test.tsx`, `screens/auth/__tests__/CreateAccountScreen.test.tsx`.
+diff --git a/src/components/community/CommunityTermsGate.tsx b/src/components/community/CommunityTermsGate.tsx
+new file mode 100644
+index 00000000..a041a3df
+--- /dev/null
++++ b/src/components/community/CommunityTermsGate.tsx
+@@ -0,0 +1,191 @@
++/**
++ * CommunityTermsGate — one-time community terms agreement (App Store
++ * Guideline 1.2, B-IOSREV-2).
++ *
++ * Apple requires that people agree to terms that make clear there is no
++ * tolerance for objectionable content or abusive users before they take part
++ * in user-generated content. The filter, report, block and contact pieces
++ * already exist (server filter, SafetyMenu, CommunitySafetyScreen); this gate
++ * is the agreement step.
++ *
++ * It wraps the client and coach Community stacks and the More > Community
++ * wins feed, so every Community route (including a push or deep link into a
++ * thread or the composer) sits behind it. The agreement is stored per user in prefsStorage under
++ * `community_terms_agreed:v1:<userId>`, so a second account on the same phone
++ * is asked on its own. "Read the Terms of Service" opens the public /terms
++ * page (TERMS_URL).
++ */
++import React, { useCallback, useEffect, useState } from 'react';
++import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import HapticPressable from '../HapticPressable';
++import { useTheme } from '../../theme/useTheme';
++import { radius, spacing } from '../../theme/tokens';
++import { prefsStorage } from '../../storage/mmkv';
++import { useCurrentUser } from '../../hooks/useCurrentUser';
++import { COMMUNITY_GUIDELINES } from '../../api/communitySafetyApi';
++import { openTermsOfService } from '../../lib/legalLinks';
++import { logger } from '../../utils/logger';
++
++export const COMMUNITY_TERMS_KEY_PREFIX = 'community_terms_agreed:v1:';
++export const communityTermsKey = (userId: string): string =>
++  `${COMMUNITY_TERMS_KEY_PREFIX}${userId}`;
++
++export const COMMUNITY_TERMS_COPY = {
++  title: 'Community guidelines',
++  intro:
++    'Before taking part in Community, read these guidelines and the Terms of Service. Agreeing applies to every post, comment and message in Community.',
++  zeroTolerance:
++    'There is no tolerance for objectionable content or abusive users. Content that breaks these guidelines is removed, and the account that posted it can be removed.',
++  agree: 'Agree and continue',
++  readTerms: 'Read the Terms of Service',
++} as const;
++
++type GateState = 'loading' | 'needed' | 'agreed';
++
++export default function CommunityTermsGate({
++  children,
++}: {
++  children: React.ReactNode;
++}): React.ReactElement {
++  const { semanticColors: sc } = useTheme();
++  const user = useCurrentUser();
++  const userId = user?.id ?? null;
++  const [state, setState] = useState<GateState>('loading');
++
++  useEffect(() => {
++    let mounted = true;
++    if (!userId) {
++      setState('loading');
++      return undefined;
++    }
++    setState('loading');
++    prefsStorage
++      .getStringAsync(communityTermsKey(userId))
++      .then((value) => {
++        if (mounted) setState(value ? 'agreed' : 'needed');
++      })
++      .catch((err: unknown) => {
++        // Unreadable storage: ask again rather than skip the agreement.
++        logger.warn('CommunityTermsGate', 'agreement read failed', err);
++        if (mounted) setState('needed');
++      });
++    return () => {
++      mounted = false;
++    };
++  }, [userId]);
++
++  const agree = useCallback(() => {
++    if (!userId) return;
++    setState('agreed');
++    prefsStorage.set(communityTermsKey(userId), new Date().toISOString()).catch((err: unknown) => {
++      // Not saved: the person is asked once more next time Community opens.
++      logger.warn('CommunityTermsGate', 'agreement save failed', err);
++    });
++  }, [userId]);
++
++  if (state === 'agreed') return <>{children}</>;
++
++  if (state === 'loading') {
++    return (
++      <View
++        style={[styles.center, { backgroundColor: sc.bgPrimary }]}
++        testID="community-terms-loading"
++      >
++        <ActivityIndicator color={sc.accent} />
++      </View>
++    );
++  }
++
++  return (
++    <SafeAreaView
++      style={[styles.safe, { backgroundColor: sc.bgPrimary }]}
++      edges={['top']}
++      testID="community-terms-gate"
++    >
++      <ScrollView contentContainerStyle={styles.content}>
++        <Text style={[styles.title, { color: sc.textPrimary }]} accessibilityRole="header">
++          {COMMUNITY_TERMS_COPY.title}
++        </Text>
++        <Text style={[styles.body, { color: sc.textMuted }]}>{COMMUNITY_TERMS_COPY.intro}</Text>
++        <View style={[styles.card, { backgroundColor: sc.bgSurface, borderColor: sc.border }]}>
++          {COMMUNITY_GUIDELINES.map((line) => (
++            <Text key={line} style={[styles.bullet, { color: sc.textPrimary }]}>
++              {`\u2022 ${line}`}
++            </Text>
++          ))}
++        </View>
++        <Text
++          style={[styles.body, styles.strong, { color: sc.textPrimary }]}
++          testID="community-terms-zero-tolerance"
++        >
++          {COMMUNITY_TERMS_COPY.zeroTolerance}
++        </Text>
++        <HapticPressable
++          intent="medium"
++          onPress={agree}
++          accessibilityRole="button"
++          accessibilityLabel={COMMUNITY_TERMS_COPY.agree}
++          style={[styles.primary, { backgroundColor: sc.accent }]}
++          testID="community-terms-agree"
++        >
++          <Text style={[styles.primaryText, { color: sc.textOnAccent }]}>
++            {COMMUNITY_TERMS_COPY.agree}
++          </Text>
++        </HapticPressable>
++        <HapticPressable
++          intent="light"
++          onPress={openTermsOfService}
++          accessibilityRole="link"
++          accessibilityLabel={COMMUNITY_TERMS_COPY.readTerms}
++          style={styles.link}
++          testID="community-terms-read-terms"
++        >
++          <Text style={[styles.linkText, { color: sc.accentText }]}>
++            {COMMUNITY_TERMS_COPY.readTerms}
++          </Text>
++        </HapticPressable>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++/** Wraps a single Community screen (More > Community wins feed) in the gate. */
++export function withCommunityTerms<P extends object>(
++  Component: React.ComponentType<P>,
++): React.ComponentType<P> {
++  const Wrapped: React.FC<P> = (props) => (
++    <CommunityTermsGate>
++      <Component {...props} />
++    </CommunityTermsGate>
++  );
++  const displayName = Component.displayName || Component.name || 'Component';
++  Wrapped.displayName = `withCommunityTerms(${displayName})`;
++  return Wrapped;
++}
++
++const styles = StyleSheet.create({
++  safe: { flex: 1 },
++  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
++  content: { padding: spacing.lg, gap: spacing.md },
++  title: { fontSize: 24, fontWeight: '600' },
++  body: { fontSize: 15, lineHeight: 22 },
++  strong: { fontWeight: '600' },
++  card: {
++    borderWidth: StyleSheet.hairlineWidth,
++    borderRadius: radius.lg,
++    padding: spacing.md,
++    gap: spacing.sm,
++  },
++  bullet: { fontSize: 15, lineHeight: 22 },
++  primary: {
++    minHeight: 48,
++    borderRadius: radius.sm,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginTop: spacing.sm,
++  },
++  primaryText: { fontSize: 16, fontWeight: '600' },
++  link: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
++  linkText: { fontSize: 15, fontWeight: '600', textDecorationLine: 'underline' },
++});
+diff --git a/src/components/community/__tests__/CommunityTermsGate.test.tsx b/src/components/community/__tests__/CommunityTermsGate.test.tsx
+new file mode 100644
+index 00000000..cfe991fe
+--- /dev/null
++++ b/src/components/community/__tests__/CommunityTermsGate.test.tsx
+@@ -0,0 +1,187 @@
++/**
++ * CommunityTermsGate (Apple Guideline 1.2, B-IOSREV-2).
++ *
++ *  - A person who has not agreed sees the guidelines, the zero-tolerance
++ *    sentence, "Agree and continue" and "Read the Terms of Service"; Community
++ *    itself is not rendered.
++ *  - "Agree and continue" opens Community and stores the agreement under the
++ *    person's own key; next time Community opens straight away.
++ *  - Another account's agreement on the same phone does not count.
++ *  - "Read the Terms of Service" opens /terms; a link that does not open names
++ *    the page and gives its web address.
++ *  - The client and coach Community stacks and More > Community sit behind it.
++ */
++import * as fs from 'fs';
++import * as path from 'path';
++import React from 'react';
++import { Alert, Linking, Text } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++
++const mockStore = new Map<string, string>();
++const mockSet = jest.fn(async (key: string, value: string) => {
++  mockStore.set(key, value);
++});
++jest.mock('../../../storage/mmkv', () => ({
++  prefsStorage: {
++    getStringAsync: async (key: string) => mockStore.get(key),
++    set: (key: string, value: string) => mockSet(key, value),
++  },
++}));
++
++let mockUserId: string | null = 'u-me';
++jest.mock('../../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => (mockUserId ? { id: mockUserId, email: 'me@example.test' } : null),
++}));
++jest.mock('../../../theme/useTheme', () => {
++  const { lightTokens } = jest.requireActual('../../../theme/tokens');
++  return { useTheme: () => ({ colorScheme: 'light', semanticColors: lightTokens }) };
++});
++jest.mock('react-native-safe-area-context', () => {
++  const actual = jest.requireActual('react-native-safe-area-context');
++  const { View } = require('react-native');
++  return { ...actual, SafeAreaView: View };
++});
++jest.mock('../../HapticPressable', () => {
++  const React = require('react');
++  const { Pressable } = require('react-native');
++  return {
++    __esModule: true,
++    default: ({
++      children,
++      onPress,
++      testID,
++    }: {
++      children: React.ReactNode;
++      onPress?: () => void;
++      testID?: string;
++    }) => React.createElement(Pressable, { onPress, testID }, children),
++  };
++});
++
++import CommunityTermsGate, {
++  COMMUNITY_TERMS_COPY,
++  communityTermsKey,
++} from '../CommunityTermsGate';
++import { COMMUNITY_GUIDELINES } from '../../../api/communitySafetyApi';
++import { TERMS_URL } from '../../../config/env';
++
++const ROOT = path.join(__dirname, '../../..');
++const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
++
++function renderGate() {
++  return render(
++    <CommunityTermsGate>
++      <Text testID="community-content">Community feed</Text>
++    </CommunityTermsGate>,
++  );
++}
++
++let openUrl: jest.SpyInstance;
++let alertSpy: jest.SpyInstance;
++beforeEach(() => {
++  mockStore.clear();
++  mockSet.mockClear();
++  mockUserId = 'u-me';
++  openUrl = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
++  alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++});
++afterEach(() => {
++  openUrl.mockRestore();
++  alertSpy.mockRestore();
++});
++
++describe('CommunityTermsGate', () => {
++  it('asks before first use and keeps Community closed until the person agrees', async () => {
++    const screen = await renderGate();
++    expect(await screen.findByTestId('community-terms-gate')).toBeTruthy();
++    expect(screen.queryByTestId('community-content')).toBeNull();
++    expect(screen.getByText(COMMUNITY_TERMS_COPY.title)).toBeTruthy();
++    for (const line of COMMUNITY_GUIDELINES) {
++      expect(screen.getByText(`\u2022 ${line}`)).toBeTruthy();
++    }
++    expect(screen.getByTestId('community-terms-zero-tolerance').props.children).toBe(
++      'There is no tolerance for objectionable content or abusive users. Content that breaks these guidelines is removed, and the account that posted it can be removed.',
++    );
++    expect(screen.getByText('Agree and continue')).toBeTruthy();
++    expect(screen.getByText('Read the Terms of Service')).toBeTruthy();
++  });
++
++  it('"Agree and continue" opens Community and stores the agreement for this person only', async () => {
++    const screen = await renderGate();
++    await fireEvent.press(await screen.findByTestId('community-terms-agree'));
++    expect(await screen.findByTestId('community-content')).toBeTruthy();
++    expect(mockSet).toHaveBeenCalledWith(communityTermsKey('u-me'), expect.any(String));
++    expect(communityTermsKey('u-me')).toBe('community_terms_agreed:v1:u-me');
++    expect(mockStore.has('community_terms_agreed:v1:u-me')).toBe(true);
++  });
++
++  it('after agreeing once, Community opens straight away', async () => {
++    mockStore.set(communityTermsKey('u-me'), '2026-10-05T00:00:00.000Z');
++    const screen = await renderGate();
++    expect(await screen.findByTestId('community-content')).toBeTruthy();
++    expect(screen.queryByTestId('community-terms-gate')).toBeNull();
++  });
++
++  it("another account's agreement on the same phone does not count", async () => {
++    mockStore.set(communityTermsKey('u-other'), '2026-10-05T00:00:00.000Z');
++    const screen = await renderGate();
++    expect(await screen.findByTestId('community-terms-gate')).toBeTruthy();
++    expect(screen.queryByTestId('community-content')).toBeNull();
++  });
++
++  it('waits for the signed-in user before deciding', async () => {
++    mockUserId = null;
++    const screen = await renderGate();
++    expect(screen.getByTestId('community-terms-loading')).toBeTruthy();
++    expect(screen.queryByTestId('community-content')).toBeNull();
++    expect(screen.queryByTestId('community-terms-agree')).toBeNull();
++  });
++
++  it('"Read the Terms of Service" opens the public terms page', async () => {
++    const screen = await renderGate();
++    await fireEvent.press(await screen.findByTestId('community-terms-read-terms'));
++    expect(openUrl).toHaveBeenCalledWith(TERMS_URL);
++    expect(TERMS_URL).toBe('https://app.trygrowthproject.com/terms');
++  });
++
++  it('a terms link that does not open names the page and gives its address', async () => {
++    openUrl.mockRejectedValueOnce(new Error('no browser'));
++    const screen = await renderGate();
++    await act(async () => {
++      await fireEvent.press(await screen.findByTestId('community-terms-read-terms'));
++    });
++    await waitFor(() =>
++      expect(alertSpy).toHaveBeenCalledWith(
++        'Terms of Service',
++        'This phone could not open the link. Open app.trygrowthproject.com/terms in any web browser to read the Terms of Service.',
++      ),
++    );
++  });
++
++  it('copy has no first person and no exclamation marks', () => {
++    for (const text of Object.values(COMMUNITY_TERMS_COPY)) {
++      expect(text).not.toMatch(/!|\b(we|our|us|I)\b/);
++    }
++  });
++});
++
++describe('every Community entry sits behind the gate', () => {
++  it('client Community stack', () => {
++    const src = read('navigation/CommunityNavigator.tsx');
++    expect(src).toMatch(
++      /export default function CommunityNavigator\(\): React\.ReactElement \{\s*return \(\s*<CommunityTermsGate>\s*<CommunityNavigatorStack \/>\s*<\/CommunityTermsGate>/,
++    );
++  });
++
++  it('coach Community stack', () => {
++    const src = read('navigation/CoachCommunityNavigator.tsx');
++    expect(src).toMatch(
++      /export default function CoachCommunityNavigator\(\): React\.ReactElement \{\s*return \(\s*<CommunityTermsGate>\s*<CoachCommunityNavigatorStack \/>\s*<\/CommunityTermsGate>/,
++    );
++  });
++
++  it('More > Community wins feed', () => {
++    const src = read('navigation/ClientNavigator.tsx');
++    expect(src).toContain('withProtectedScreen(withCommunityTerms(CommunityScreen))');
++  });
++});
+diff --git a/src/config/__tests__/storeReviewPermissions.test.js b/src/config/__tests__/storeReviewPermissions.test.js
+new file mode 100644
+index 00000000..bb28aa4a
+--- /dev/null
++++ b/src/config/__tests__/storeReviewPermissions.test.js
+@@ -0,0 +1,93 @@
++/**
++ * Store-review permissions for the 10-07 build (M-STORE-123).
++ *
++ * B-IOSREV-1: iOS ends the app when a framework touches the camera or the
++ * photo library without a purpose string. The share sheet's "Save Image"
++ * (progress card, invite QR) writes to the photo library, and the Crisp
++ * support chat can take or pick a photo, so all three keys must be present
++ * with specific text. App Store Connect also rejects such a binary at upload
++ * (ITMS-90683).
++ *
++ * B-PLAYREV-1: voice notes are off in every store profile, so the Android
++ * build must not declare RECORD_AUDIO. expo-audio adds it unless
++ * `recordAudioAndroid` is false; the manifest merger can also restore it from
++ * a library, so it is blocked as well.
++ */
++const fs = require('fs');
++const path = require('path');
++
++const ROOT = path.join(__dirname, '../../..');
++const app = require('../../../app.json').expo;
++const eas = require('../../../eas.json');
++const configure = require('../../../app.config');
++
++const RECORD_AUDIO = 'android.permission.RECORD_AUDIO';
++const originalSwitch = process.env.TGP_ANDROID_HEALTH_CONNECT;
++
++afterEach(() => {
++  if (originalSwitch === undefined) delete process.env.TGP_ANDROID_HEALTH_CONNECT;
++  else process.env.TGP_ANDROID_HEALTH_CONNECT = originalSwitch;
++});
++
++describe('B-IOSREV-1: iOS camera and photo-library purpose strings', () => {
++  test.each([
++    ['NSCameraUsageDescription', /camera only when you choose to take a photo/],
++    ['NSPhotoLibraryUsageDescription', /photo library only when you choose a photo/],
++    ['NSPhotoLibraryAddUsageDescription', /only when you choose Save Image/],
++  ])('%s is present and names its purpose', (key, purpose) => {
++    const text = app.ios.infoPlist[key];
++    expect(typeof text).toBe('string');
++    expect(text).toMatch(/^The Growth Project /);
++    expect(text).toMatch(purpose);
++    expect(text).not.toMatch(/!|\b(we|our|us|I)\b/);
++  });
++
++  test.each([undefined, '1'])('the resolved config keeps them (TGP_ANDROID_HEALTH_CONNECT=%s)', (value) => {
++    if (value === undefined) delete process.env.TGP_ANDROID_HEALTH_CONNECT;
++    else process.env.TGP_ANDROID_HEALTH_CONNECT = value;
++    const result = configure();
++    for (const key of [
++      'NSCameraUsageDescription',
++      'NSPhotoLibraryUsageDescription',
++      'NSPhotoLibraryAddUsageDescription',
++    ]) {
++      expect(result.ios.infoPlist[key]).toBe(app.ios.infoPlist[key]);
++    }
++  });
++});
++
++describe('B-PLAYREV-1: no Android microphone permission while voice notes are off', () => {
++  const audioEntry = () => app.plugins.find((p) => Array.isArray(p) && p[0] === 'expo-audio');
++
++  test('expo-audio is configured with recordAudioAndroid false', () => {
++    expect(audioEntry()[1].recordAudioAndroid).toBe(false);
++  });
++
++  test.each([undefined, '1'])(
++    'the real expo-audio plugin adds no RECORD_AUDIO and the permission is blocked (TGP_ANDROID_HEALTH_CONNECT=%s)',
++    (value) => {
++      if (value === undefined) delete process.env.TGP_ANDROID_HEALTH_CONNECT;
++      else process.env.TGP_ANDROID_HEALTH_CONNECT = value;
++      const result = JSON.parse(JSON.stringify(configure()));
++      const pluginModule = require('expo-audio/app.plugin.js');
++      const withAudio = pluginModule.default || pluginModule;
++      const entry = result.plugins.find((p) => Array.isArray(p) && p[0] === 'expo-audio');
++      const withPlugin = withAudio(result, entry[1]);
++      expect(withPlugin.android.permissions ?? []).not.toContain(RECORD_AUDIO);
++      expect(withPlugin.android.blockedPermissions).toContain(RECORD_AUDIO);
++    },
++  );
++
++  test('voice notes stay off in every store profile, so no screen records audio', () => {
++    const flags = fs.readFileSync(path.join(ROOT, 'src/config/featureFlags.ts'), 'utf8');
++    expect(flags).toMatch(/communityVoiceNotes: readFlag\('EXPO_PUBLIC_FF_COMMUNITY_VOICE_NOTES', false\)/);
++    for (const [name, profile] of Object.entries(eas.build)) {
++      const v = profile.env?.EXPO_PUBLIC_FF_COMMUNITY_VOICE_NOTES;
++      expect([name, v === undefined || v === 'false']).toEqual([name, true]);
++    }
++    // The only recording surface is the voice composer route, registered only
++    // with the flag on.
++    const nav = fs.readFileSync(path.join(ROOT, 'src/navigation/CommunityNavigator.tsx'), 'utf8');
++    expect(nav).toMatch(/featureFlags\.communityVoiceNotes \? \(\s*<CommunityStack\.Screen\s*name="CommunityVoiceComposer"/);
++  });
++});
+diff --git a/src/lib/legalLinks.ts b/src/lib/legalLinks.ts
+new file mode 100644
+index 00000000..0c33f307
+--- /dev/null
++++ b/src/lib/legalLinks.ts
+@@ -0,0 +1,21 @@
++/**
++ * Opens a public legal page (Terms of Service, Privacy Policy). When the phone
++ * cannot open the link, the alert names the page and gives its exact web
++ * address, so the person can still read it in any browser.
++ */
++import { Alert, Linking } from 'react-native';
++import { PRIVACY_POLICY_URL, TERMS_URL } from '../config/env';
++import { logger } from '../utils/logger';
++
++export const legalPageFailureBody = (title: string, url: string): string =>
++  `This phone could not open the link. Open ${url.replace(/^https:\/\//, '')} in any web browser to read the ${title}.`;
++
++export function openLegalPage(url: string, title: string): void {
++  Linking.openURL(url).catch((err: unknown) => {
++    logger.warn('legalLinks', `${title} link did not open`, err);
++    Alert.alert(title, legalPageFailureBody(title, url));
++  });
++}
++
++export const openTermsOfService = (): void => openLegalPage(TERMS_URL, 'Terms of Service');
++export const openPrivacyPolicyPage = (): void => openLegalPage(PRIVACY_POLICY_URL, 'Privacy Policy');
+diff --git a/src/navigation/ClientNavigator.tsx b/src/navigation/ClientNavigator.tsx
+index 32ebd21d..6682e849 100644
+--- a/src/navigation/ClientNavigator.tsx
++++ b/src/navigation/ClientNavigator.tsx
+@@ -137,6 +137,7 @@ import UnreadBadge from '../components/community/UnreadBadge';
+ // the entitlement gate runs before the screen body. Server-side
+ // ClientEntitlementGuard remains canonical (Rule 20).
+ import { withProtectedScreen } from '../entitlements/withProtectedScreen';
++import { withCommunityTerms } from '../components/community/CommunityTermsGate';
+ // Clinic launch — Roman-led client tutorial (C09). The host is a pass-through
+ // unless featureFlags.clientTutorial is on.
+ import TutorialHost from '../components/tutorial/TutorialHost';
+@@ -160,7 +161,9 @@ const ProtectedClientDailyMealPlanScreen = withProtectedScreen(ClientDailyMealPl
+ const ProtectedFastingScreen = withProtectedScreen(FastingScreen);
+ const ProtectedLogScreen = withProtectedScreen(LogScreen);
+ const ProtectedClientMacrosScreen = withProtectedScreen(ClientMacrosScreen);
+-const ProtectedCommunityScreen = withProtectedScreen(CommunityScreen);
++// Apple 1.2 (B-IOSREV-2): the wins feed is community content, so it sits
++// behind the one-time community terms agreement too.
++const ProtectedCommunityScreen = withProtectedScreen(withCommunityTerms(CommunityScreen));
+ const ProtectedAIGuideScreen = withProtectedScreen(AIGuideScreen);
+ // Messages is deliberately NOT wrapped (audit #304 B1). Basic text DM with
+ // the assigned coach is free server-side (client-messaging.controller.ts:
+diff --git a/src/navigation/CoachCommunityNavigator.tsx b/src/navigation/CoachCommunityNavigator.tsx
+index cd0afc97..40aeb3d5 100644
+--- a/src/navigation/CoachCommunityNavigator.tsx
++++ b/src/navigation/CoachCommunityNavigator.tsx
+@@ -22,6 +22,7 @@
+  */
+ import React from 'react';
+ import { createNativeStackNavigator } from '@react-navigation/native-stack';
++import CommunityTermsGate from '../components/community/CommunityTermsGate';
+ import { Colors } from '../theme';
+ import { featureFlags } from '../config/featureFlags';
+ import CoachCommunityHomeScreen from '../screens/community/CoachCommunityHomeScreen';
+@@ -37,7 +38,19 @@ import type { CoachCommunityStackParamList } from '../screens/community/coachCom
+ const CoachCommunityStack =
+   createNativeStackNavigator<CoachCommunityStackParamList>();
+ 
++/**
++ * Apple 1.2 (B-IOSREV-2): the whole stack sits behind the one-time community
++ * terms agreement, so a deep link or push into any Community route asks first.
++ */
+ export default function CoachCommunityNavigator(): React.ReactElement {
++  return (
++    <CommunityTermsGate>
++      <CoachCommunityNavigatorStack />
++    </CommunityTermsGate>
++  );
++}
++
++function CoachCommunityNavigatorStack(): React.ReactElement {
+   return (
+     <CoachCommunityStack.Navigator
+       screenOptions={{
+diff --git a/src/navigation/CommunityNavigator.tsx b/src/navigation/CommunityNavigator.tsx
+index a9e26ef1..d8f019a9 100644
+--- a/src/navigation/CommunityNavigator.tsx
++++ b/src/navigation/CommunityNavigator.tsx
+@@ -25,6 +25,7 @@
+  */
+ import React from 'react';
+ import { createNativeStackNavigator } from '@react-navigation/native-stack';
++import CommunityTermsGate from '../components/community/CommunityTermsGate';
+ import { colors } from '../theme/tokens';
+ import { featureFlags } from '../config/featureFlags';
+ import CommunityTabScreen from '../screens/community/CommunityTabScreen';
+@@ -47,7 +48,19 @@ import type { CommunityStackParamList } from '../screens/community/communityNavT
+ 
+ const CommunityStack = createNativeStackNavigator<CommunityStackParamList>();
+ 
++/**
++ * Apple 1.2 (B-IOSREV-2): the whole stack sits behind the one-time community
++ * terms agreement, so a deep link or push into any Community route asks first.
++ */
+ export default function CommunityNavigator(): React.ReactElement {
++  return (
++    <CommunityTermsGate>
++      <CommunityNavigatorStack />
++    </CommunityTermsGate>
++  );
++}
++
++function CommunityNavigatorStack(): React.ReactElement {
+   return (
+     <CommunityStack.Navigator
+       screenOptions={{
+diff --git a/src/screens/TrustCenterScreen.tsx b/src/screens/TrustCenterScreen.tsx
+index 4d49e92c..36ee8a46 100644
+--- a/src/screens/TrustCenterScreen.tsx
++++ b/src/screens/TrustCenterScreen.tsx
+@@ -343,7 +343,7 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+         // Fallback to static values if network fails
+         setMeta({
+           lastSecurityUpdate: '2026-04-25T20:00:00Z',
+-          encryptionLevel: 'TLS 1.3 + AES-256',
++          encryptionLevel: 'Encrypted in transit; secure token storage',
+           dataResidency: 'US East',
+           auditPolicyVersion: 'v1.0',
+           dataExportSupported: true,
+@@ -456,7 +456,7 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+               <MetaRow
+                 icon="lock-closed-outline"
+                 label="Encryption"
+-                value="TLS 1.3 + AES-256 at rest"
++                value="Encrypted in transit; secure token storage"
+               />
+               <MetaRow
+                 icon="document-text-outline"
+@@ -540,10 +540,10 @@ export default function TrustCenterScreen({ navigation }: { navigation: Navigati
+           <BulletItem text="Service providers that run the app for The Growth Project, such as Anthropic for Roman, only as described in the Privacy Policy" />
+           <BulletItem text="Your data is never sold, and your health data is never used for advertising" />
+ 
+-          <Text style={[styles.bulletGroupLabel, { marginTop: 16 }]}>What is encrypted</Text>
+-          <BulletItem text="All data in transit uses TLS 1.3 (the strongest available)" />
+-          <BulletItem text="All stored data is encrypted with AES-256 at rest" />
+-          <BulletItem text="Authentication tokens are stored in your device's secure enclave (Keychain / Keystore)" />
++          <Text style={[styles.bulletGroupLabel, { marginTop: 16 }]}>Security and storage</Text>
++          <BulletItem text="Data sent to The Growth Project's servers is encrypted in transit." />
++          <BulletItem text="Authentication tokens use iOS Keychain or Android Keystore-backed secure storage." />
++          <BulletItem text="Some app data is cached on this device. The Privacy Policy describes server storage and access." />
+         </View>
+       </View>
+ 
+diff --git a/src/screens/__tests__/trustCenterPolicyLinks.test.tsx b/src/screens/__tests__/trustCenterPolicyLinks.test.tsx
+index 376e62dc..4a1aa498 100644
+--- a/src/screens/__tests__/trustCenterPolicyLinks.test.tsx
++++ b/src/screens/__tests__/trustCenterPolicyLinks.test.tsx
+@@ -155,6 +155,24 @@ describe('TrustCenterScreen source', () => {
+   });
+ });
+ 
++describe('TrustCenterScreen security copy (B-STORECOPY-1: no universal guarantees)', () => {
++  it('drops the TLS 1.3 / AES-256 / secure enclave promises', () => {
++    expect(SCREEN_SRC).not.toMatch(/TLS 1\.3|AES-256|secure enclave/);
++  });
++
++  it('says what the app actually does: encrypted transport, Keychain/Keystore tokens, device cache', () => {
++    const bullets = [...SCREEN_SRC.matchAll(/<BulletItem text="([^"]+)"/g)].map((m) => m[1]);
++    expect(bullets).toEqual(
++      expect.arrayContaining([
++        "Data sent to The Growth Project's servers is encrypted in transit.",
++        'Authentication tokens use iOS Keychain or Android Keystore-backed secure storage.',
++        'Some app data is cached on this device. The Privacy Policy describes server storage and access.',
++      ]),
++    );
++    expect(SCREEN_SRC).toContain('value="Encrypted in transit; secure token storage"');
++  });
++});
++
+ describe('TrustCenterScreen labels (operator ruling 10-01: "Privacy", "Delete account")', () => {
+   it('uses the approved Settings labels', () => {
+     expect(SCREEN_SRC).toContain('>Delete account</Text>');
+diff --git a/src/screens/auth/CreateAccountScreen.tsx b/src/screens/auth/CreateAccountScreen.tsx
+index 0b0bcd37..473337b0 100644
+--- a/src/screens/auth/CreateAccountScreen.tsx
++++ b/src/screens/auth/CreateAccountScreen.tsx
+@@ -46,6 +46,7 @@ import type { NavigationProp, ParamListBase } from '@react-navigation/native';
+ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+ import type { AuthStackParamList } from '../../navigation/AuthNavigator';
+ import AppleSignInButton from '../../components/AppleSignInButton';
++import { openPrivacyPolicyPage, openTermsOfService } from '../../lib/legalLinks';
+ import { signInWithApple } from '../../utils/appleAuth';
+ import { SupportEmailFallback, useSupportEmail } from '../../components/support/SupportEmailFallback';
+ // Static import (was a dynamic `import()`): Metro bundles the module either
+@@ -1372,6 +1373,29 @@ export default function CreateAccountScreen({ navigation, route }: Props) {
+           />
+         </View>
+ 
++        {/* Apple 1.2 (B-IOSREV-2): covers email, Google and Apple sign-up. */}
++        <Text style={styles.legalText} testID="create-account-legal">
++          By creating an account, you agree to the{' '}
++          <Text
++            style={styles.legalLink}
++            onPress={openTermsOfService}
++            accessibilityRole="link"
++            testID="create-account-terms-link"
++          >
++            Terms of Service
++          </Text>{' '}
++          and the{' '}
++          <Text
++            style={styles.legalLink}
++            onPress={openPrivacyPolicyPage}
++            accessibilityRole="link"
++            testID="create-account-privacy-link"
++          >
++            Privacy Policy
++          </Text>
++          .
++        </Text>
++
+         <TouchableOpacity
+           style={[styles.registerButton, loading && styles.buttonDisabled]}
+           onPress={handleRegister}
+@@ -1521,6 +1545,8 @@ const makeStyles = (colors: ThemeColors) =>
+     marginBottom: Spacing.xl,
+   },
+   signupText: { color: colors.textMuted, fontSize: 15 },
++  legalText: { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginTop: Spacing.md, textAlign: 'center' },
++  legalLink: { color: colors.primary, fontWeight: '600', textDecorationLine: 'underline' },
+   signupLink: { color: colors.primary, fontSize: 15, fontWeight: '600' },
+   verifyContent: {
+     flex: 1,
+diff --git a/src/screens/auth/__tests__/CreateAccountScreen.test.tsx b/src/screens/auth/__tests__/CreateAccountScreen.test.tsx
+index 8ab023ca..aa75a921 100644
+--- a/src/screens/auth/__tests__/CreateAccountScreen.test.tsx
++++ b/src/screens/auth/__tests__/CreateAccountScreen.test.tsx
+@@ -78,6 +78,7 @@ const mockEmit = jest.fn();
+ jest.mock('../../../utils/authEvents', () => ({ authEvents: { emit: () => mockEmit() } }));
+ 
+ import CreateAccountScreen from '../CreateAccountScreen';
++import { PRIVACY_POLICY_URL, TERMS_URL } from '../../../config/env';
+ import { __resetSignupPolicyCacheForTests, loadSignupPolicy } from '../../../lib/signupPolicy';
+ import { secureStorage } from '../../../services/secureStorage';
+ import { CoachSignupUnavailableError } from '../../../lib/intendedRole';
+@@ -139,6 +140,29 @@ describe('CreateAccountScreen', () => {
+     expect(await findByText('INVITE CODE')).toBeTruthy();
+   });
+ 
++  it('B-IOSREV-2: states the Terms and Privacy agreement above the sign-up buttons, with both links', async () => {
++    mockGetSignupPolicy.mockResolvedValue({ data: { invite_code_required: false, providers: ['email', 'apple'] } });
++    const openUrl = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
++    const { findByTestId, getByTestId } = await renderScreen();
++    const line = await findByTestId('create-account-legal');
++    const flat = (node: unknown): string =>
++      typeof node === 'string'
++        ? node
++        : Array.isArray(node)
++          ? node.map(flat).join('')
++          : node && typeof node === 'object' && 'props' in node
++            ? flat((node as { props: { children?: unknown } }).props.children)
++            : '';
++    expect(flat(line.props.children)).toBe(
++      'By creating an account, you agree to the Terms of Service and the Privacy Policy.',
++    );
++    await fireEvent.press(getByTestId('create-account-terms-link'));
++    expect(openUrl).toHaveBeenCalledWith(TERMS_URL);
++    await fireEvent.press(getByTestId('create-account-privacy-link'));
++    expect(openUrl).toHaveBeenCalledWith(PRIVACY_POLICY_URL);
++    openUrl.mockRestore();
++  });
++
+   it('falls back to legacy names when canonical ones are absent', async () => {
+     mockGetSignupPolicy.mockResolvedValue({ data: { require_invite_code: false, google_signin_enabled: true } });
+     const { findByText } = await renderScreen();

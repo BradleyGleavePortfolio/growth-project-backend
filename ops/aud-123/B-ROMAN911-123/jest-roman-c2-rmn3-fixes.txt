@@ -1,0 +1,39 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-c2-rmn3-fixes.spec.ts
+PASS test/roman/roman-c2-rmn3-fixes.spec.ts (41 MB heap size)
+  A-666-3 (Opus) overdose named by the medicine, not the word "pills"
+    ✓ I took a whole bottle of Tylenol -> emergency template (short circuit) (13 ms)
+    ✓ I just swallowed a bottle of Advil -> emergency template (short circuit) (6 ms)
+    ✓ I took 30 Tylenol -> emergency template (short circuit) (1 ms)
+    ✓ I took 20 ibuprofen an hour ago -> emergency template (short circuit) (1 ms)
+    ✓ I took a bunch of Xanax -> emergency template (short circuit)
+    ✓ I took a whole bottle of my sleeping meds -> emergency template (short circuit) (1 ms)
+    ✓ control: I took 2 Tylenol for my headache -> not emergency or self_harm (12 ms)
+    ✓ control: I took 2 pills of ibuprofen for my headache -> not emergency or self_harm (7 ms)
+    ✓ control: Can I take Advil before a run? -> not emergency or self_harm (2 ms)
+    ✓ control: I took a whole bottle of water to the gym -> not emergency or self_harm (1 ms)
+    ✓ control: I took lots of vitamins -> not emergency or self_harm (1 ms)
+    ✓ control: Can I end my workout early today? -> not emergency or self_harm
+  B-666-5 (Sol) a daily total that mentions meals is checked against the whole day
+    ✓ rejected (lunch passed off as the day): You have logged 450 kcal today across two meals. (22 ms)
+    ✓ rejected (lunch passed off as the day): Your total intake today is 450 kcal from your meals. (3 ms)
+    ✓ control (correct total or one actual meal): You have logged 780 kcal today across two meals. (7 ms)
+    ✓ control (correct total or one actual meal): Your total intake today is 780 kcal from your meals. (4 ms)
+    ✓ control (correct total or one actual meal): You logged 450 kcal at lunch today. (1 ms)
+    ✓ control (correct total or one actual meal): You have logged 780 kcal today. (1 ms)
+    ✓ control (correct total or one actual meal): Breakfast was 330 kcal. (1 ms)
+  B-669-1 (Sol) aggregate wording is checked against the whole day, with or without "today"
+    ✓ rejected (one meal passed off as the sum): You have logged 450 kcal across two meals. (1 ms)
+    ✓ rejected (one meal passed off as the sum): You logged 450 kcal across breakfast and lunch. (1 ms)
+    ✓ rejected (one meal passed off as the sum): Your meals add up to 450 kcal. (3 ms)
+    ✓ control (correct total or one actual meal): You have logged 780 kcal across two meals. (1 ms)
+    ✓ control (correct total or one actual meal): You logged 780 kcal across breakfast and lunch. (4 ms)
+    ✓ control (correct total or one actual meal): Your meals add up to 780 kcal. (1 ms)
+    ✓ control (correct total or one actual meal): You logged 450 kcal at lunch today.
+    ✓ control (correct total or one actual meal): You have logged 780 kcal today. (1 ms)
+    ✓ control (correct total or one actual meal): Breakfast was 330 kcal. (7 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        1.326 s
+Ran all test suites matching test/roman/roman-c2-rmn3-fixes.spec.ts.

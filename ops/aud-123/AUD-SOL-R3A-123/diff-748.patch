@@ -1,0 +1,230 @@
+diff --git a/.github/fly-env-desired-state.json b/.github/fly-env-desired-state.json
+index 201da0ff..3d715d8b 100644
+--- a/.github/fly-env-desired-state.json
++++ b/.github/fly-env-desired-state.json
+@@ -42,7 +42,9 @@
+     "FEATURE_COACH_CODE_TOOLS": "unset",
+     "FEATURE_COACH_BROADCASTS": "unset",
+     "FEATURE_ROMAN_CHAT_ENABLED": "true",
+-    "FEATURE_ROMAN_ADJUST_ENABLED": "true"
++    "FEATURE_ROMAN_ADJUST_ENABLED": "true",
++    "APPLE_AUDIENCES": "com.growthproject.app",
++    "APPLE_NONCE_REQUIRED": "unset"
+   },
+   "secrets": {
+     "GOOGLE_CLIENT_IDS": "github-secret",
+@@ -108,6 +110,8 @@
+     "FEATURE_COACH_BROADCASTS": "A4 coach broadcasts, rich cards, saved replies and client tags (annex lane A4). Stays unset (off) until the backend PR and the mobile composer pass audit and a device pass; then the operator flips it to true. Unsetting it is the kill: routes answer 503 broadcasts.disabled and the dispatcher parks in-flight deliveries without re-sending delivered ones.",
+     "FEATURE_ROMAN_CHAT_ENABLED": "Day 1 (owner 10-02 16:34 and 10-05 09:57), true: Roman train #665-#670/#667 and b#736 deployed (deploy 7); mobile EXPO_PUBLIC_FF_ROMAN_CHAT on in the production and clinic profiles for the 10-07 build; ANTHROPIC_API_KEY present on Fly; box-2 consent enforced by FEATURE_AI_CONSENT_LEDGER_ENABLED. Unset = off (only 'true'); emergency kill: unset (every /roman route returns 404; saved chats are kept).",
+     "FEATURE_ROMAN_ADJUST_ENABLED": "Day 1 (owner 10-05 09:57), true: b#655 deployed (deploy 6), mobile m#337 merged, and the C-337 copy fix m#384 merged (raised sets now read '% more volume'), so both ship in the 10-07 build. Unset = off (only 'true'); emergency kill: unset (every /coach/adjustments route returns 404 and the card hides).",
++    "APPLE_AUDIENCES": "Day 1 (B-APPLE-123), com.growthproject.app: the iOS bundle id (app.json ios.bundleIdentifier) and the audience of every identity token the native Sign in with Apple sheet issues. Not secret (it ships in the app binary). Env-truth 37405459790 found a value whose first entry is not the bundle id, so every Apple sign-in and Apple re-auth for account deletion returns 401. Emergency kill: unset (POST /auth/apple returns 503 and signup-policy hides Apple).",
++    "APPLE_NONCE_REQUIRED": "Day 1 (B-APPLE-123), unset: the mobile app (main and the 10-07 build) sends no raw_nonce, so 'true' (the value env-truth 37405459790 groups it with) fails every Apple sign-in with 401 before a session is minted. Flip to true only after a mobile build that sends raw_nonce is the oldest supported build. Unset = off (only 'true' enforces).",
+     "GOOGLE_CLIENT_IDS": "Wave B: launch-required Google sign-in audiences. The GitHub secret GOOGLE_CLIENT_IDS exists; flip to github-secret to copy it to Fly. Must be a comma list of non-empty client ids.",
+     "MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "Precondition of FEATURE_MWB_AUTOSAVE_UNDO=true, github-secret in the same PR as the autosave flag. Merge only after the owner confirms the GitHub Actions secret MWB_AUTOSAVE_LOCK_TOKEN_SECRET exists on this repository (64+ hex characters, for example 'openssl rand -hex 32'); the plan fails closed while it is missing or too short.",
+     "GOOGLE_OAUTH_CLIENT_ID": "Present on Fly (set outside this manifest); asserted present, never written here.",
+diff --git a/.github/workflows/fly-apple-signin-set.yml b/.github/workflows/fly-apple-signin-set.yml
+index 348721f1..e42a70f5 100644
+--- a/.github/workflows/fly-apple-signin-set.yml
++++ b/.github/workflows/fly-apple-signin-set.yml
+@@ -3,8 +3,9 @@ name: Fly Apple Sign-In Secrets Set (operator)
+ # Production-mutating operator workflow: pushes APPLE_SIGNIN_KEY_ID and
+ # APPLE_SIGNIN_PRIVATE_KEY (the Sign in with Apple .p8 key, multi-line PEM)
+ # from GitHub Actions secrets to the Fly app. With both set (plus the already
+-# configured APPLE_TEAM_ID and APPLE_SIGNIN_CLIENT_ID / APPLE_AUDIENCES) the
+-# account-deletion flow revokes Sign in with Apple tokens (backend #608).
++# configured APPLE_TEAM_ID, and the Apple audience allow-list that
++# .github/fly-env-desired-state.json declares) the account-deletion flow
++# revokes Sign in with Apple tokens (backend #608).
+ #
+ # Input handling (S2-R2-A-01): dispatch inputs are DATA, never shell source.
+ # Every `inputs.*` value enters a step only through `env:` and is used as a
+diff --git a/.github/workflows/fly-db-secrets-set.yml b/.github/workflows/fly-db-secrets-set.yml
+index 1dd670c9..2090b391 100644
+--- a/.github/workflows/fly-db-secrets-set.yml
++++ b/.github/workflows/fly-db-secrets-set.yml
+@@ -2,8 +2,9 @@ name: Fly DB Secrets Set (operator)
+ 
+ # Operator workflow that pushes database-related secrets to the production
+ # Fly app via `fly secrets set`. Used after rotating the Supabase database
+-# password, or when bootstrapping a backend with DATABASE_URL / DIRECT_URL /
+-# APPLE_NONCE_REQUIRED for the first time.
++# password, or when bootstrapping a backend with DATABASE_URL / DIRECT_URL
++# for the first time. The Sign in with Apple nonce switch is declared in
++# .github/fly-env-desired-state.json and applied only by fly-env-sync.yml.
+ #
+ # Triggered manually via workflow_dispatch only.
+ #
+@@ -11,7 +12,6 @@ name: Fly DB Secrets Set (operator)
+ #   1. Reads the sensitive values from GitHub Actions secrets:
+ #        - DATABASE_URL          (Postgres connection string for runtime)
+ #        - DIRECT_URL            (Postgres connection string for migrations)
+-#        - APPLE_NONCE_REQUIRED  (Sign in with Apple nonce verification flag)
+ #      Fails loudly if any are missing.
+ #   2. Pushes them to Fly in one `fly secrets set` invocation so the app
+ #      only restarts once.
+@@ -88,13 +88,11 @@ jobs:
+         env:
+           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+           DIRECT_URL: ${{ secrets.DIRECT_URL }}
+-          APPLE_NONCE_REQUIRED: ${{ secrets.APPLE_NONCE_REQUIRED }}
+         run: |
+           set +x
+           missing=()
+           [ -z "${DATABASE_URL}" ]         && missing+=("DATABASE_URL")
+           [ -z "${DIRECT_URL}" ]           && missing+=("DIRECT_URL")
+-          [ -z "${APPLE_NONCE_REQUIRED}" ] && missing+=("APPLE_NONCE_REQUIRED")
+           if [ "${#missing[@]}" -gt 0 ]; then
+             echo "::error::Missing required GitHub Actions secrets: ${missing[*]}"
+             echo "Add them in: Settings → Secrets and variables → Actions, then re-run."
+@@ -110,7 +108,6 @@ jobs:
+           APP: ${{ inputs.app }}
+           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+           DIRECT_URL: ${{ secrets.DIRECT_URL }}
+-          APPLE_NONCE_REQUIRED: ${{ secrets.APPLE_NONCE_REQUIRED }}
+         run: |
+           set -euo pipefail
+           set +x
+@@ -125,8 +122,7 @@ jobs:
+           # a half-staged state.
+           flyctl secrets set -a "${APP}" --stage \
+             DATABASE_URL="${DATABASE_URL}" \
+-            DIRECT_URL="${DIRECT_URL}" \
+-            APPLE_NONCE_REQUIRED="${APPLE_NONCE_REQUIRED}"
++            DIRECT_URL="${DIRECT_URL}"
+ 
+           echo "[secrets-set] staged; running fly secrets deploy ..."
+           flyctl secrets deploy -a "${APP}"
+@@ -143,7 +139,6 @@ jobs:
+           expected=(
+             DATABASE_URL
+             DIRECT_URL
+-            APPLE_NONCE_REQUIRED
+           )
+ 
+           # Parse name + status columns. A secret line looks like:
+diff --git a/.github/workflows/fly-env-sync.yml b/.github/workflows/fly-env-sync.yml
+index 071d789b..ce1e0dce 100644
+--- a/.github/workflows/fly-env-sync.yml
++++ b/.github/workflows/fly-env-sync.yml
+@@ -356,7 +356,7 @@ jobs:
+           unset_names=()
+           while IFS= read -r line; do
+             [ -n "${line}" ] || continue
+-            if ! printf '%s\n' "${line}" | grep -Eq '^[A-Z][A-Z0-9_]*=[a-z0-9]+$'; then
++            if ! printf '%s\n' "${line}" | grep -Eq '^[A-Z][A-Z0-9_]*=[a-z0-9]+([.][a-z0-9]+)*$'; then
+               echo "::error::The plan's flag list has a line that is not NAME=value, so nothing was staged. Fix: re-run the workflow; the plan step writes this list from the manifest."
+               exit 1
+             fi
+diff --git a/docs/runbooks/launch-flags.md b/docs/runbooks/launch-flags.md
+index 3d55d99d..efd4c23b 100644
+--- a/docs/runbooks/launch-flags.md
++++ b/docs/runbooks/launch-flags.md
+@@ -132,6 +132,8 @@ FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 F
+ FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_BROADCASTS | "FEATURE_COACH_BROADCASTS": "unset"
+ FEATURE_ROMAN_CHAT_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_CHAT_ENABLED | "FEATURE_ROMAN_CHAT_ENABLED": "unset"
+ FEATURE_ROMAN_ADJUST_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_ADJUST_ENABLED | "FEATURE_ROMAN_ADJUST_ENABLED": "unset"
++APPLE_AUDIENCES | off | fly secrets unset -a backend-spring-lake-3890 APPLE_AUDIENCES | "APPLE_AUDIENCES": "unset"
++APPLE_NONCE_REQUIRED | off | fly secrets unset -a backend-spring-lake-3890 APPLE_NONCE_REQUIRED | "APPLE_NONCE_REQUIRED": "unset"
+ ```
+ 
+ ## Deploy-window sequences
+@@ -168,6 +170,15 @@ Roll back with `"unset"` on the three flags (the emergency kills in the table ab
+ 
+ **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
+ 
++**Sign in with Apple (day 1): APPLE_AUDIENCES=com.growthproject.app and APPLE_NONCE_REQUIRED unset.** The native iOS sheet issues identity tokens whose audience is the bundle id `com.growthproject.app`, and the app sends no `raw_nonce`. Any other audience, or `APPLE_NONCE_REQUIRED=true`, fails every Apple sign-in (and the Apple re-auth for account deletion) with 401. Both values are public, so they live here, not in a secret.
++
++1. Merge the PR that declares both lines.
++2. Run apply with `deploy_staged=true` (one rolling restart).
++3. Run plan. Both rows must read `keep` (`APPLE_AUDIENCES` deployed and matching, `APPLE_NONCE_REQUIRED` absent). Then run `fly-env-truth.yml`: the `APPLE_AUDIENCES` shape check must read `pass`.
++4. Owner device pass on iOS: Sign in with Apple on a fresh account lands in the app.
++
++The token-revocation keys (`APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`) are never copied by this workflow; `fly-apple-signin-set.yml` owns them.
++
+ ## Notes and limits
+ 
+ - The plan's in-machine check samples one started machine (`flyctl ssh console` picks it), and a failure there is only a warning, because plan and stage-only never claim the running state. Apply-now checks every started machine and fails closed. `FLY_API_TOKEN` must be allowed to list machines and open ssh sessions; a deploy token is enough.
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index 5269910c..291379f0 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -243,7 +243,9 @@ export const ENV_RULES: EnvRule[] = [
+     name: 'APPLE_AUDIENCES',
+     tier: 'feature',
+     reason:
+-      'Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple. Without it, the endpoint returns 503 and /auth/signup-policy omits "apple" from providers. Set to your iOS bundle id (e.g. com.thegrowthproject.app) before enabling Sign in with Apple in Supabase.',
++      'Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple and the Apple re-auth for account deletion. Without it, the endpoint returns 503 and /auth/signup-policy omits "apple" from providers. Must be exactly the iOS bundle id com.growthproject.app (app.json ios.bundleIdentifier): the native sheet issues identity tokens with that audience, so any other value fails every Apple sign-in with 401. Not secret; declared in .github/fly-env-desired-state.json.',
++    values: ['com.growthproject.app'],
++    unsetIs: 'off',
+   },
+   {
+     name: 'GOOGLE_CLIENT_ID',
+@@ -897,7 +899,9 @@ export const ENV_RULES: EnvRule[] = [
+     tier: 'optional',
+     default: 'unset → nonce check skipped (only the literal "true" enforces it)',
+     reason:
+-      'Sign in with Apple: require the hashed nonce claim on the identity token when exactly "true".',
++      'Sign in with Apple: require the hashed nonce claim on the identity token when exactly "true". Keep unset until the mobile app sends raw_nonce (it does not today), or every Apple sign-in fails with 401.',
++    values: ['true', 'false'],
++    unsetIs: 'off',
+   },
+   {
+     name: 'SUPABASE_ANON_KEY',
+diff --git a/test/ci/fly-env-manifest.spec.ts b/test/ci/fly-env-manifest.spec.ts
+index c708db56..40798786 100644
+--- a/test/ci/fly-env-manifest.spec.ts
++++ b/test/ci/fly-env-manifest.spec.ts
+@@ -11,7 +11,9 @@ import { readdirSync, readFileSync } from 'fs';
+ import { load as parseYaml } from 'js-yaml';
+ import { join } from 'path';
+ 
++import { DEFAULT_APPLE_SIGNIN_CLIENT_ID } from '../../src/account-deletion/apple-token-revocation.service';
+ import { ENV_RULES } from '../../src/common/env-validation';
++import { IOS_BUNDLE_ID, shapeChecks } from '../../scripts/env-truth/fly-env-classifier';
+ import * as fem from '../../scripts/fly-env/fly-env-manifest';
+ import type { Fleet, FlyEnvManifest, MachineCheck } from '../../scripts/fly-env/fly-env-manifest';
+ 
+@@ -952,3 +954,21 @@ describe('planChanges / verifyState matrix', () => {
+     expect(text).not.toContain('Fly already matches the manifest');
+   });
+ });
++
++describe('Sign in with Apple on production (B-APPLE-123)', () => {
++  it('declares the iOS bundle id as the Apple audience, the value the env-truth shape check and token revocation expect', () => {
++    const declared = base().flags.APPLE_AUDIENCES;
++    expect(declared).toBe('com.growthproject.app');
++    expect(declared).toBe(IOS_BUNDLE_ID);
++    expect(declared).toBe(DEFAULT_APPLE_SIGNIN_CLIENT_ID);
++    expect(
++      shapeChecks({ APPLE_AUDIENCES: declared }).find((c) => c.name === 'APPLE_AUDIENCES')?.result,
++    ).toBe('pass');
++    expect(rules.get('APPLE_AUDIENCES')?.values).toEqual(['com.growthproject.app']);
++  });
++
++  it('keeps APPLE_NONCE_REQUIRED unset: the app sends no raw_nonce, so "true" would fail every Apple sign-in', () => {
++    expect(base().flags.APPLE_NONCE_REQUIRED).toBe('unset');
++    expect(rules.get('APPLE_NONCE_REQUIRED')?.unsetIs).toBe('off');
++  });
++});
+diff --git a/test/ci/fly-env-sync-behavior.spec.ts b/test/ci/fly-env-sync-behavior.spec.ts
+index adaa78dc..3fc47056 100644
+--- a/test/ci/fly-env-sync-behavior.spec.ts
++++ b/test/ci/fly-env-sync-behavior.spec.ts
+@@ -616,6 +616,17 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
+       expectNoLeak(run);
+     });
+ 
++    it('stages a dotted flag value: APPLE_AUDIENCES=com.growthproject.app passes the NAME=value guard (B-APPLE-123)', () => {
++      const run = runJob({
++        mode: 'apply',
++        edits: { 'flags.APPLE_AUDIENCES': 'com.growthproject.app' },
++      });
++      expect(run.ok).toBe(true);
++      expect(writes(run)).toEqual(['secrets set stage=1 names=APPLE_AUDIENCES']);
++      expect(run.fly.APPLE_AUDIENCES).toEqual({ value: 'com.growthproject.app', status: 'Staged' });
++      expectNoLeak(run);
++    });
++
+     it('deploy_staged=true: one deploy, then the running machine is proven to hold the value', () => {
+       const run = runJob({
+         mode: 'apply',

@@ -1,0 +1,51 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-guardrails-round2.spec.ts
+PASS test/roman/roman-guardrails-round2.spec.ts (62 MB heap size)
+  B-651-2 ordinary rowing / swimming vocabulary is not an emergency
+    ✓ What should my stroke rate be on the rower? -> not emergency (22 ms)
+    ✓ How do I improve my back stroke for swim day? -> not emergency (12 ms)
+    ✓ My rowing stroke feels weak at the catch, any drills? -> not emergency
+    ✓ Breaststroke or freestyle for a recovery swim? -> not emergency (1 ms)
+    ✓ I fainted once last year after giving blood, can I still do cardio? -> not emergency
+    ✓ a past fainting episode is medical scope (physician line), not the 911 template (1 ms)
+    ✓ I think I am having a stroke -> emergency (positive control)
+    ✓ My face is drooping and my speech is slurred -> emergency (positive control) (1 ms)
+    ✓ I just fainted at the gym -> emergency (positive control)
+    ✓ My friend passed out and is not waking up -> emergency (positive control)
+    ✓ My throat is closing after I ate peanuts -> emergency (positive control)
+  B-651-3 ordinary treat / dose / negated starvation language survives
+    ✓ Yes, a small treat fits tonight. is unchanged (8 ms)
+    ✓ A Friday treat meal is fine inside your plan. is unchanged (13 ms)
+    ✓ Try a small dose of cardio. is unchanged (1 ms)
+    ✓ You are not starving yourself by eating at your target. is unchanged
+    ✓ Take 400 mg of ibuprofen before you train. is still removed (positive control) (1 ms)
+    ✓ You should treat the tendinitis with a cortisone shot. is still removed (positive control)
+    ✓ Starve yourself until Friday. is still removed (positive control) (1 ms)
+  B-651-6 a daily intake directive below the floor never ships
+    ✓ Aim for 300 kcal per day. is replaced (6 ms)
+    ✓ Eat 900 kcal per day. is replaced (2 ms)
+    ✓ Aim for ９００ kcal per day. is replaced (1 ms)
+    ✓ control: a snack-sized amount is unchanged
+  B-651-7 a remaining / logged / average number never validates a false target
+    ✓ Your daily target is 670 kcal. (equals the remaining value) is corrected (1 ms)
+    ✓ Your daily target is 780 kcal. (equals the logged today value) is corrected
+    ✓ Your daily target is 1100 kcal. (equals the 7-day average value) is corrected
+    ✓ Your protein target is 60 g. (equals the remaining protein value) is corrected
+    ✓ control: the true fact You have 670 kcal remaining today. is unchanged (1 ms)
+    ✓ control: the true fact You have logged 780 kcal today. is unchanged (1 ms)
+    ✓ control: the true fact Your daily target is 1450 kcal. is unchanged
+    ✓ control: the true fact You averaged 1100 kcal on the days you logged. is unchanged (1 ms)
+  B-651-8 an earlier rewrite never skips the injury / medical safe action
+    ✓ Sol probe: injury class + a sub-floor reply keeps the stop action and the physician line (2 ms)
+    ✓ injury_pain + rewrite (Take 400 mg of ibuprofen and push through.) still carries the physician line (1 ms)
+    ✓ medical_scope + rewrite (Your daily target is 670 kcal.) still carries the physician line (1 ms)
+  B-651-9 no shipped reply carries an exclamation mark
+    ✓ even with the old per-session allowance granted, every mark becomes a full stop
+    ✓ full-width and doubled exclamation forms are scrubbed too (2 ms)
+  OR-115-1 the owner audit list never returns the safety-route reason
+    ✓ roman.safety_route rows come back without metadata; other rows keep theirs (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       36 passed, 36 total
+Snapshots:   0 total
+Time:        1.364 s
+Ran all test suites matching test/roman/roman-guardrails-round2.spec.ts.

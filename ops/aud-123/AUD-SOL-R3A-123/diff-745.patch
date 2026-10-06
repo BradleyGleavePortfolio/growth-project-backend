@@ -1,0 +1,540 @@
+diff --git a/docs/invite-landing.md b/docs/invite-landing.md
+index cdb2a15d..32eacf6e 100644
+--- a/docs/invite-landing.md
++++ b/docs/invite-landing.md
+@@ -48,28 +48,38 @@ Mobile registers two link surfaces:
+   immediate-open path on the HTML page. Works only when the app is already
+   installed.
+ 
+-The HTML page renders three CTAs:
+-
+-1. **Open in The Growth Project** → universal link
+-   (`https://app.tgp.com/join/<code>`). On a device with the app
+-   installed, the OS intercepts before the browser ever loads. On a
+-   device without it, this falls through to the same HTML page (no
+-   redirect loop — the user then taps a store link).
+-2. **Already have the app?** → custom scheme `tgp://join/<code>`.
+-3. **Continue on web** → `PUBLIC_WEB_SIGNUP_URL` (defaults to the same
+-   universal-link base).
+-
+-App store fallbacks live below the primary CTA and use
+-`APP_STORE_URL` / `PLAY_STORE_URL` (placeholders by default — set the
+-real listing URLs as Fly secrets before launch).
++The HTML page only renders when the OS did not open the app for the shared
++link, so it never offers that same link again as a button (on iOS a
++same-domain tap stays in Safari and just reloads the page). The buttons
++depend on the visitor's platform (User-Agent; the response sets
++`Vary: User-Agent`):
++
++1. **iPhone** → main button **Get the app on the App Store**
++   (`APP_STORE_URL`), then **Already have the app? Open it** →
++   `tgp://join/<code>`.
++2. **Android** → main button **Open in The Growth Project** →
++   `intent://join/<code>#Intent;scheme=tgp;package=<ANDROID_PACKAGE_NAME>;S.browser_fallback_url=<PLAY_STORE_URL>;end`
++   (opens the installed app with the code filled in, otherwise Google Play),
++   plus a Google Play link.
++3. **Anything else** → "Open this invite on your phone to join." with both
++   store links.
++
++Every layout shows the code and says to open the invite link again after
++installing, or to enter the code when creating the account. There is no
++"Continue on web" link: there is no web signup, and `/signup` asks the
++visitor to open the invite on a phone.
++
++When `APP_STORE_URL` is unset the App Store button points at
++`<invite host>/download/ios` (the durable status page), never a placeholder
++listing. Set the real listing URLs as Fly secrets once the stores are live.
+ 
+ ## Configuration
+ 
+ | Env var | Default | Purpose |
+ | --- | --- | --- |
+ | `PUBLIC_INVITE_BASE_URL` | `https://app.tgp.com/join` | universal-link base used to build CTA hrefs and to mint default invite-link URLs in `GET /coaches/me/invite-link` |
+-| `PUBLIC_WEB_SIGNUP_URL` | `${PUBLIC_INVITE_BASE_URL}/<code>` | "Continue on web" target |
+-| `APP_STORE_URL` | placeholder | iOS App Store listing URL |
++| `PUBLIC_WEB_SIGNUP_URL` | `PUBLIC_INVITE_BASE_URL` | "Continue without a code" target on the invite-unavailable page |
++| `APP_STORE_URL` | `<invite host>/download/ios` | iOS App Store listing URL |
+ | `PLAY_STORE_URL` | placeholder | Google Play listing URL |
+ 
+ These are read on every request — change them as Fly secrets without a
+diff --git a/src/invite-landing/README.md b/src/invite-landing/README.md
+index b9cee876..9efb4ce5 100644
+--- a/src/invite-landing/README.md
++++ b/src/invite-landing/README.md
+@@ -12,8 +12,9 @@ when it is not, the user lands here.
+ - Render a single, generic "invite unavailable" page for any
+   not-found / revoked / expired / paused / canceled state — never
+   confirm to a stranger that a specific code existed.
+-- Drive the App Store / Play Store / web-signup fallback so a user
+-  without the app installed has a path forward.
++- Drive the App Store / Play Store fallback so a user without the app
++  installed has a path forward (buttons chosen per platform, see
++  docs/invite-landing.md).
+ - Stay extraction-ready: when this template moves to a dedicated
+   marketing app, the controller seam is the only edit.
+ 
+@@ -47,12 +48,13 @@ served by `InviteCodesController` — the JSON contract is unchanged.
+    service can grow a richer DTO (e.g. coach headshot URL) without
+    changing every caller.
+ 3. On `{ valid: true }`, `renderValid` produces an HTML document with:
+-   - Universal link (`https://app.tgp.com/join/<code>`) — primary CTA.
+-   - Custom-scheme deep link (`tgp://join/<code>`) — fallback for cold
+-     start when the app is installed.
+-   - Web-signup URL — for the no-app case (resolves to the
+-     `/signup/<code>` durable page in the public-pages module).
+-   - App Store / Play Store URLs from env.
++   - iPhone: App Store button first, then the custom-scheme deep link
++     (`tgp://join/<code>`) for an installed app.
++   - Android: an `intent://` link that opens the app or falls back to
++     Google Play.
++   - Other devices: both store links and "open this invite on your phone".
++   - The shared universal link is never re-offered as a button (a
++     same-domain tap only reloads this page).
+ 4. On `{ valid: false }`, `renderInvalid` produces a 404 page with the
+    same visual language but no coach data.
+ 
+@@ -90,7 +92,7 @@ The same limit governs anonymous CDN-bypass clients; the underlying
+ | Var | Tier | Purpose |
+ |---|---|---|
+ | `PUBLIC_INVITE_BASE_URL` | prod | Universal-link base (defaults to `https://app.tgp.com/join`). Drives the primary CTA href. |
+-| `PUBLIC_WEB_SIGNUP_URL` | prod | Web-signup fallback the "Continue on web" link points at. |
++| `PUBLIC_WEB_SIGNUP_URL` | prod | "Continue without a code" target on the invite-unavailable page. The valid page has no web-signup link (there is no web signup). |
+ | `APP_STORE_URL` | prod | iOS App Store URL. Until the listing is live, points at the durable status page. |
+ | `PLAY_STORE_URL` | prod | Google Play URL. Same fallback story. |
+ 
+diff --git a/src/invite-landing/invite-landing.controller.ts b/src/invite-landing/invite-landing.controller.ts
+index d303e3ed..d34051e1 100644
+--- a/src/invite-landing/invite-landing.controller.ts
++++ b/src/invite-landing/invite-landing.controller.ts
+@@ -1,9 +1,9 @@
+-import { Controller, Get, HttpStatus, Param, Res } from '@nestjs/common';
++import { Controller, Get, Headers, HttpStatus, Param, Res } from '@nestjs/common';
+ import { ApiTags } from '@nestjs/swagger';
+ import { Throttle } from '@nestjs/throttler';
+ import type { Response } from 'express';
+ import { Public } from '../common/decorators/public.decorator';
+-import { InviteLandingService } from './invite-landing.service';
++import { InviteLandingService, landingPlatformFromUserAgent } from './invite-landing.service';
+ 
+ // Public, server-rendered landing for `/join/:code` and `/invite/:code`.
+ //
+@@ -29,8 +29,12 @@ export class InviteLandingController {
+   @Public()
+   @Get('join/:code')
+   @Throttle({ default: { ttl: 60000, limit: 60 } })
+-  async joinHtml(@Param('code') code: string, @Res() res: Response) {
+-    return this.renderLanding(code, res);
++  async joinHtml(
++    @Param('code') code: string,
++    @Res() res: Response,
++    @Headers('user-agent') userAgent?: string,
++  ) {
++    return this.renderLanding(code, res, userAgent);
+   }
+ 
+   // /invite/:code is the alternate canonical landing — same renderer,
+@@ -39,13 +43,17 @@ export class InviteLandingController {
+   @Public()
+   @Get('invite/:code')
+   @Throttle({ default: { ttl: 60000, limit: 60 } })
+-  async inviteHtml(@Param('code') code: string, @Res() res: Response) {
+-    return this.renderLanding(code, res);
++  async inviteHtml(
++    @Param('code') code: string,
++    @Res() res: Response,
++    @Headers('user-agent') userAgent?: string,
++  ) {
++    return this.renderLanding(code, res, userAgent);
+   }
+ 
+   // ----- shared renderer --------------------------------------------
+ 
+-  private async renderLanding(code: string, res: Response) {
++  private async renderLanding(code: string, res: Response, userAgent?: string) {
+     // Length-bound the param before going to the database. The DTO layer
+     // doesn't run on path params, so guard here to make brute-force
+     // enumeration of garbage strings cheap to reject.
+@@ -61,21 +69,21 @@ export class InviteLandingController {
+ 
+     const base =
+       process.env.PUBLIC_INVITE_BASE_URL || 'https://app.trygrowthproject.com/join';
+-    const webSignup = process.env.PUBLIC_WEB_SIGNUP_URL || `${base}/${code}`;
+-    // tgp:// is the custom scheme registered by the mobile app for cold-start
+-    // deep linking; the universal link works when the app is installed AND
+-    // when it isn't (the OS hands it to Safari/Chrome which lands here, on
+-    // this same page — recursion is fine because the user can then use the
+-    // store buttons). Keep both: tgp:// is the immediate-open path; the
+-    // https URL is the share-friendly canonical form.
+-    const universalLink = `${base}/${code}`;
++    // tgp:// is the custom scheme the app registers; it opens the installed
++    // app on CreateAccount with the code filled in (or stores the code for a
++    // signed-in user). The universal link (base/<code>) is the URL coaches
++    // share; when a visitor sees this page the OS already declined to open
++    // the app for it, so it is not offered again as a button (B-LINKS-123).
+     const deepLink = `tgp://join/${code}`;
+-    const appStore =
+-      process.env.APP_STORE_URL ||
+-      'https://apps.apple.com/app/the-growth-project/id0';
++    // Until the App Store listing exists, APP_STORE_URL points at the durable
++    // /download/ios status page. The old unset fallback (`.../id0`) was a
++    // dead App Store link; fall back to the status page on the same host.
++    const appStore = process.env.APP_STORE_URL || `${publicOrigin(base)}/download/ios`;
+     const playStore =
+       process.env.PLAY_STORE_URL ||
+       'https://play.google.com/store/apps/details?id=com.growthproject.app';
++    const androidPackage =
++      (process.env.ANDROID_PACKAGE_NAME ?? '').trim() || 'com.growthproject.app';
+ 
+     const html = this.landing.renderValid({
+       code,
+@@ -84,10 +92,10 @@ export class InviteLandingController {
+       accent_color: preview.branding.accent_color,
+       logo_url: preview.branding.logo_url,
+       deep_link_url: deepLink,
+-      universal_link_url: universalLink,
+-      web_signup_url: webSignup,
+       app_store_url: appStore,
+       play_store_url: playStore,
++      android_package: androidPackage,
++      platform: landingPlatformFromUserAgent(userAgent),
+     });
+ 
+     // No-cache: the underlying CoachProfile (paused / canceled / branding)
+@@ -95,6 +103,7 @@ export class InviteLandingController {
+     // button to point a brand-new client at a paused coach. The page is
+     // small (<3 KB gz), so paying the round-trip per visit is fine.
+     res.setHeader('Cache-Control', 'no-store, max-age=0');
++    res.setHeader('Vary', 'User-Agent');
+     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+     res.status(HttpStatus.OK).send(html);
+   }
+@@ -113,3 +122,12 @@ export class InviteLandingController {
+     res.status(HttpStatus.NOT_FOUND).send(html);
+   }
+ }
++
++// Origin of the public invite host (PUBLIC_INVITE_BASE_URL without /join).
++function publicOrigin(base: string): string {
++  try {
++    return new URL(base).origin;
++  } catch {
++    return 'https://app.trygrowthproject.com';
++  }
++}
+diff --git a/src/invite-landing/invite-landing.service.ts b/src/invite-landing/invite-landing.service.ts
+index 591fbc26..1858f541 100644
+--- a/src/invite-landing/invite-landing.service.ts
++++ b/src/invite-landing/invite-landing.service.ts
+@@ -24,8 +24,20 @@ export class InviteLandingService {
+ 
+   // Render the success/landing HTML for a valid code. Quiet-luxury aesthetic:
+   // serif headline, warm neutral palette, generous whitespace, no marketing
+-  // chrome. Inline CSS so the page renders instantly without a second hop and
+-  // is trivially cache-able at the CDN.
++  // chrome. Inline CSS so the page renders instantly without a second hop.
++  //
++  // B-LINKS-123: a visitor only sees this page when the OS did NOT hand the
++  // link to the app (app not installed, link opened inside another app's
++  // browser, or typed into the address bar). So the main button must never
++  // be the universal link itself: iOS keeps same-domain taps in Safari, so
++  // that button only reloaded this page. There is also no web signup (the
++  // old "Continue on web" target asked the visitor to open the invite on a
++  // phone, which looped). The buttons are now chosen per platform:
++  //   - iPhone:  Get the app (App Store), then "Open the app" (tgp://).
++  //   - Android: Open the app through an intent:// link whose fallback is
++  //              the Play Store, so one tap works with or without the app.
++  //   - Other:   ask the visitor to open the invite on a phone, with both
++  //              store links and the code to enter.
+   renderValid(params: {
+     code: string;
+     coach_name: string;
+@@ -33,10 +45,10 @@ export class InviteLandingService {
+     accent_color: string | null;
+     logo_url: string | null;
+     deep_link_url: string;
+-    universal_link_url: string;
+-    web_signup_url: string;
+     app_store_url: string;
+     play_store_url: string;
++    android_package: string;
++    platform: LandingPlatform;
+   }): string {
+     const accent = sanitizeColor(params.accent_color) || '#1F1B16';
+     const businessLine = params.business_name
+@@ -46,15 +58,43 @@ export class InviteLandingService {
+       ? `<img class="logo" src="${escapeAttr(params.logo_url)}" alt="" />`
+       : '';
+     const codeDisplay = escapeHtml(params.code);
++    const appStore = escapeAttr(params.app_store_url);
++    const playStore = escapeAttr(params.play_store_url);
++    const openApp = escapeAttr(params.deep_link_url);
++
++    let actions: string;
++    if (params.platform === 'ios') {
++      actions = `
++    <a class="primary" href="${appStore}" rel="noopener">Get the app on the App Store</a>
++    <p class="lead">After installing, open this invite link again, or enter code ${codeDisplay} when you create your account.</p>
++    <div class="alt">
++      <a href="${openApp}">Already have the app? Open it</a>
++    </div>`;
++    } else if (params.platform === 'android') {
++      const intentUrl = buildAndroidIntentUrl(
++        params.code,
++        params.android_package,
++        params.play_store_url,
++      );
++      actions = `
++    <a class="primary" href="${escapeHtml(intentUrl)}">Open in The Growth Project</a>
++    <p class="lead">Without the app, this opens Google Play. After installing, open this invite link again, or enter code ${codeDisplay} when you create your account.</p>
++    <div class="stores">
++      <a href="${playStore}" rel="noopener">Google Play</a>
++    </div>`;
++    } else {
++      actions = `
++    <p class="lead">Open this invite on your phone to join. Install The Growth Project, then enter code ${codeDisplay} when you create your account.</p>
++    <div class="stores">
++      <a href="${appStore}" rel="noopener">App Store</a>
++      <a href="${playStore}" rel="noopener">Google Play</a>
++    </div>`;
++    }
+ 
+     return baseDocument({
+       title: `Coach invite — ${escapeHtml(params.coach_name)}`,
+       accent,
+       bodyClass: 'state-valid',
+-      // The deep link lives in a real anchor (not just a button) so iOS Smart
+-      // App Banners and Android intent handlers can pick it up. The fallback
+-      // links sit below — if the universal link fails to open the app the user
+-      // taps the store link manually rather than getting stuck.
+       body: `
+   <main class="card">
+     ${logo}
+@@ -62,21 +102,7 @@ export class InviteLandingService {
+     <h1>${escapeHtml(params.coach_name)}'s coaching</h1>
+     ${businessLine}
+     <p class="code"><span>code</span> ${codeDisplay}</p>
+-
+-    <a class="primary" href="${escapeAttr(params.universal_link_url)}">
+-      Open in The Growth Project
+-    </a>
+-
+-    <div class="alt">
+-      <a href="${escapeAttr(params.deep_link_url)}">Already have the app?</a>
+-      <span class="dot">·</span>
+-      <a href="${escapeAttr(params.web_signup_url)}">Continue on web</a>
+-    </div>
+-
+-    <div class="stores">
+-      <a href="${escapeAttr(params.app_store_url)}" rel="noopener">App Store</a>
+-      <a href="${escapeAttr(params.play_store_url)}" rel="noopener">Google Play</a>
+-    </div>
++${actions}
+   </main>
+       `,
+     });
+@@ -111,6 +137,36 @@ export class InviteLandingService {
+ 
+ // ---- helpers ---------------------------------------------------------------
+ 
++export type LandingPlatform = 'ios' | 'android' | 'other';
++
++// Coarse platform from the User-Agent, used only to order the buttons. iPadOS
++// in desktop mode reports a Mac UA and gets the "other" layout (both stores),
++// which still works.
++export function landingPlatformFromUserAgent(ua: string | undefined): LandingPlatform {
++  const s = ua ?? '';
++  if (/iPhone|iPad|iPod/i.test(s)) return 'ios';
++  if (/Android/i.test(s)) return 'android';
++  return 'other';
++}
++
++// Android intent link: opens the installed app on tgp://join/<code>, and
++// when the app is missing the browser follows S.browser_fallback_url (the
++// Play Store listing). The code was already validated by previewCode
++// (letters, digits, dashes) and is URI-encoded again here.
++export function buildAndroidIntentUrl(
++  code: string,
++  androidPackage: string,
++  playStoreUrl: string,
++): string {
++  const fallback = /^https?:\/\//i.test(playStoreUrl.trim())
++    ? `S.browser_fallback_url=${encodeURIComponent(playStoreUrl.trim())};`
++    : '';
++  const pkg = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/.test(androidPackage.trim())
++    ? androidPackage.trim()
++    : 'com.growthproject.app';
++  return `intent://join/${encodeURIComponent(code)}#Intent;scheme=tgp;package=${pkg};${fallback}end`;
++}
++
+ // Strict allowlist for inline color values. We accept #RGB / #RRGGBB only —
+ // anything else is dropped to the default. This keeps a malicious or
+ // malformed `branding_accent_color` from breaking out of the style attribute.
+diff --git a/test/invite-landing.spec.ts b/test/invite-landing.spec.ts
+index b9548aa4..b55f1011 100644
+--- a/test/invite-landing.spec.ts
++++ b/test/invite-landing.spec.ts
+@@ -1,5 +1,9 @@
+ import { InviteLandingController } from '../src/invite-landing/invite-landing.controller';
+-import { InviteLandingService } from '../src/invite-landing/invite-landing.service';
++import {
++  InviteLandingService,
++  buildAndroidIntentUrl,
++  landingPlatformFromUserAgent,
++} from '../src/invite-landing/invite-landing.service';
+ 
+ // Builds a minimal express-like Response double that records what the
+ // controller sent. Avoids pulling in supertest/booting Nest for what is
+@@ -69,9 +73,57 @@ describe('InviteLandingController', () => {
+       expect(res.body).toContain('GP-A1B2C3');
+       // Accent color flows into CSS as a custom property
+       expect(res.body).toContain('--accent: #7A5C3C');
+-      // Deep link + universal link buttons exist
+-      expect(res.body).toContain('tgp://join/GP-A1B2C3');
+-      expect(res.body).toContain('/GP-A1B2C3');
++      // No user agent: the page asks for a phone and lists both stores.
++      expect(res.body).toContain('Open this invite on your phone to join.');
++      expect(res.body).toContain('Google Play');
++    });
++
++    it('iPhone visitor without the app gets the App Store, not a reload of the same link', async () => {
++      inviteCodesMock.previewCode.mockResolvedValue({
++        valid: true,
++        coach_id: 'c1',
++        coach_name: 'Lara Hayes',
++        business_name: null,
++        branding: { accent_color: null, logo_url: null },
++      });
++      const prevStore = process.env.APP_STORE_URL;
++      delete process.env.APP_STORE_URL;
++      try {
++        const res = makeRes();
++        await controller.joinHtml(
++          'GP-A1B2C3',
++          res,
++          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
++        );
++        expect(res.statusCode).toBe(200);
++        expect(res.headers['Vary']).toBe('User-Agent');
++        // Unset APP_STORE_URL falls back to the live status page, never a dead id0 listing.
++        expect(res.body).toContain(
++          'class="primary" href="https://app.trygrowthproject.com/download/ios"',
++        );
++        expect(res.body).not.toContain('id0');
++        expect(res.body).not.toContain('href="https://app.trygrowthproject.com/join/GP-A1B2C3"');
++      } finally {
++        if (prevStore === undefined) delete process.env.APP_STORE_URL;
++        else process.env.APP_STORE_URL = prevStore;
++      }
++    });
++
++    it('Android visitor gets an intent link that opens the app or Google Play', async () => {
++      inviteCodesMock.previewCode.mockResolvedValue({
++        valid: true,
++        coach_id: 'c1',
++        coach_name: 'Lara Hayes',
++        business_name: null,
++        branding: { accent_color: null, logo_url: null },
++      });
++      const res = makeRes();
++      await controller.joinHtml(
++        'GP-A1B2C3',
++        res,
++        'Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/129.0 Mobile Safari/537.36',
++      );
++      expect(res.body).toContain('href="intent://join/GP-A1B2C3#Intent;scheme=tgp;package=');
+     });
+ 
+     it('renders a 404 generic invalid page when the code is unknown', async () => {
+@@ -193,27 +245,76 @@ describe('InviteLandingController', () => {
+ 
+ describe('InviteLandingService.renderValid', () => {
+   // The renderer is reused for both /join and /invite, so its output is the
+-  // single source of truth for the deep-link URL contract documented in
+-  // docs/invite-landing.md. Pin it explicitly.
++  // single source of truth for the landing-page button contract. Pin it.
+   const inviteCodesMock = { previewCode: jest.fn() } as any;
+   const svc = new InviteLandingService(inviteCodesMock);
++  const base = {
++    code: 'GP-X1Y2Z3',
++    coach_name: 'A',
++    business_name: null,
++    accent_color: null,
++    logo_url: null,
++    deep_link_url: 'tgp://join/GP-X1Y2Z3',
++    app_store_url: 'https://apps.apple.com/app/x',
++    play_store_url: 'https://play.google.com/store/apps/details?id=x',
++    android_package: 'com.growthproject.app',
++  };
+ 
+-  it('emits both the universal link and the custom-scheme deep link', () => {
+-    const html = svc.renderValid({
+-      code: 'GP-X1Y2Z3',
+-      coach_name: 'A',
+-      business_name: null,
+-      accent_color: null,
+-      logo_url: null,
+-      deep_link_url: 'tgp://join/GP-X1Y2Z3',
+-      universal_link_url: 'https://app.tgp.com/join/GP-X1Y2Z3',
+-      web_signup_url: 'https://app.tgp.com/signup',
+-      app_store_url: 'https://apps.apple.com/app/x',
+-      play_store_url: 'https://play.google.com/store/apps/details?id=x',
+-    });
++  it('never offers the shared link itself as a button (same-domain tap only reloads the page)', () => {
++    for (const platform of ['ios', 'android', 'other'] as const) {
++      const html = svc.renderValid({ ...base, platform });
++      expect(html).not.toContain('href="https://app.tgp.com/join/GP-X1Y2Z3"');
++      expect(html).not.toContain('Continue on web');
++      expect(html).toContain('GP-X1Y2Z3');
++    }
++  });
++
++  it('iPhone: the main button is the App Store, with an open-the-app link for installed apps', () => {
++    const html = svc.renderValid({ ...base, platform: 'ios' });
++    expect(html).toMatch(/class="primary" href="https:\/\/apps\.apple\.com\/app\/x"/);
+     expect(html).toContain('href="tgp://join/GP-X1Y2Z3"');
+-    expect(html).toContain('href="https://app.tgp.com/join/GP-X1Y2Z3"');
++    expect(html).toContain('enter code GP-X1Y2Z3 when you create your account');
++  });
++
++  it('Android: the main button opens the app through an intent link that falls back to Google Play', () => {
++    const html = svc.renderValid({ ...base, platform: 'android' });
++    const fallback = encodeURIComponent(base.play_store_url);
++    expect(html).toContain(
++      `class="primary" href="intent://join/GP-X1Y2Z3#Intent;scheme=tgp;package=com.growthproject.app;S.browser_fallback_url=${fallback};end"`,
++    );
++    expect(html).toContain('href="https://play.google.com/store/apps/details?id=x"');
++  });
++
++  it('other devices: asks for a phone and lists both stores', () => {
++    const html = svc.renderValid({ ...base, platform: 'other' });
++    expect(html).not.toContain('class="primary"');
++    expect(html).toContain('Open this invite on your phone to join.');
+     expect(html).toContain('apps.apple.com');
+     expect(html).toContain('play.google.com');
+   });
+ });
++
++describe('landing helpers', () => {
++  it('maps user agents to a platform', () => {
++    expect(
++      landingPlatformFromUserAgent(
++        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
++      ),
++    ).toBe('ios');
++    expect(
++      landingPlatformFromUserAgent(
++        'Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/129.0 Mobile Safari/537.36',
++      ),
++    ).toBe('android');
++    expect(landingPlatformFromUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)')).toBe(
++      'other',
++    );
++    expect(landingPlatformFromUserAgent(undefined)).toBe('other');
++  });
++
++  it('falls back to the app package when the env value is not a package name', () => {
++    expect(buildAndroidIntentUrl('GP-1', 'x;S.evil=1', 'https://play.example/x')).toContain(
++      'package=com.growthproject.app;',
++    );
++  });
++});

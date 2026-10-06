@@ -1,0 +1,1 @@
+S-RLS-123 done 21:41 PDT: report only, B=0 (42 new tables RLS on+forced in prod, mobile no direct table queries; C=6). Report ops/reports/S-RLS-123.md
