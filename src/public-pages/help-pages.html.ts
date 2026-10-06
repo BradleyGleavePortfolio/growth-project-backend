@@ -630,7 +630,7 @@ function contactContent(): HelpPageContent {
       },
     ],
     footnote:
-      'There is no chat or phone line. Email is the only support channel today; if and when a form or in-app channel is added, this page will say so.',
+      `In the app, open Settings, then Support to use the in-app support chat when it is available. You can also email ${SUPPORT_EMAIL}, including when chat cannot open. There is no phone line.`,
   };
 }
 
