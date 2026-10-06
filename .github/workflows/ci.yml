@@ -393,6 +393,17 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run workout assignment client-tenancy live RLS suite (D8)
+        # Builds the production shape of ClientWorkoutAssignment + WorkoutPlan (RLS forced, API-role
+        # grants, production policies verbatim), applies 20260702000000 and then
+        # prisma/migrations/20270319000000_cwa_coach_manage_client_tenancy {migration,down}.sql
+        # verbatim, and proves as PostgREST principals (authenticated/anon + request.jwt.claims) that a
+        # coach cannot read, delete, insert or re-point an assignment for another coach's client, while
+        # own-roster and open-sub-coach clients still work. Refuses to skip under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/cwa-coach-manage-client-tenancy-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   community-live-tests:
     # C-610-4 (#610 fix round 2, T4 CI gate change): the DB-backed community
     # moderation/safety suites were env-gated on COMMUNITY_TEST_DATABASE_URL
