@@ -305,6 +305,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CoachAIBudget', field: 'coach_user_id', action: retain(FINANCE) },
   { model: 'CoachLtvPeak', field: 'coach_id', action: del },
   { model: 'ExtensionPairCode', field: 'coach_id', action: del },
+  // A2 signup ledger (#658 C-658-2): both sides are deleted with the person.
+  { model: 'InviteRedemption', field: 'coach_id', action: del },
+  { model: 'InviteRedemption', field: 'client_user_id', action: del },
   { model: 'InviteCode', field: 'coach_id', action: del },
   { model: 'InviteCode', field: 'invited_by_user_id', action: detach('invited_by_user_id') },
   { model: 'InviteCode', field: 'accepted_by_user_id', action: detach('accepted_by_user_id') },
@@ -313,6 +316,19 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
     field: 'intended_email',
     action: detach('intended_email'),
     match: 'email',
+  },
+  // A1-COACHLESS (#657): the redemption ledger and the Roman card state are the
+  // user's own rows (FK cascade); a ledger row naming an erased coach replays
+  // that coach's card, so it goes too. The featured-coach singleton stays and
+  // only loses the erased person (FK SET NULL for the coach).
+  { model: 'CoachCodeRedemption', field: 'user_id', action: del },
+  { model: 'CoachCodeRedemption', field: 'coach_id', action: del },
+  { model: 'CoachlessPromptState', field: 'user_id', action: del },
+  { model: 'FeaturedCoachConfig', field: 'coach_user_id', action: detach('coach_user_id') },
+  {
+    model: 'FeaturedCoachConfig',
+    field: 'updated_by_user_id',
+    action: detach('updated_by_user_id'),
   },
 
   // ── Teams and sub-coaches (B-608-6)

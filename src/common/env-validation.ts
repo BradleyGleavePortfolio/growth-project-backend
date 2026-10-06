@@ -1929,6 +1929,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Stripe Treasury payouts flag.',
   },
   {
+    name: 'FEATURE_COACH_CODE_TOOLS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A2 coach code tools kill switch: /coach/codes list, create, rotate, revoke and daily signups (src/invite-codes/coach-code-tools.feature.ts). Only "true" enables; unset/other = 404 coach_code_tools_disabled. The signup ledger is always written.',
+  },
+  {
     name: 'FEATURE_DUNNING_V2',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -2054,6 +2063,15 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community events.',
+  },
+  {
+    name: 'FEATURE_COACHLESS_HOME',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A1-COACHLESS kill switch for the coachless Home surfaces: GET /coachless/home, the coach-code check/redeem routes and the scripted Roman card routes (404 coachless_disabled while off), and the coachless_home key of GET /me/feature-flags. The owner-only /admin/featured-coach config is not gated so the offer can be set up before the flip.',
   },
   {
     name: 'FEATURE_COMMUNITY_SEARCH',
