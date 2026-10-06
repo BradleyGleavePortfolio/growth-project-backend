@@ -1,0 +1,22 @@
+{
+  "id": "evt_dv2_sub_updated_past_due",
+  "object": "event",
+  "api_version": "2024-06-20",
+  "type": "customer.subscription.updated",
+  "livemode": false,
+  "data": {
+    "object": {
+      "id": "sub_dv2_client",
+      "object": "subscription",
+      "customer": "cus_dv2_client",
+      "status": "past_due",
+      "cancel_at_period_end": false,
+      "cancel_at": null,
+      "canceled_at": null,
+      "current_period_start": 0,
+      "current_period_end": 0,
+      "latest_invoice": "in_dv2_renewal_1"
+    },
+    "previous_attributes": { "status": "active" }
+  }
+}

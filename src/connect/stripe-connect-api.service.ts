@@ -1023,7 +1023,8 @@ export class StripeConnectApiService {
     const form: Record<string, string> = {
       customer: args.customer,
       usage: 'off_session',
-      on_behalf_of: args.onBehalfOf,
+      // Stripe refuses an empty on_behalf_of: a client with no destination account omits it.
+      ...(args.onBehalfOf ? { on_behalf_of: args.onBehalfOf } : {}),
     };
     for (const [k, v] of Object.entries(args.metadata)) form[`metadata[${k}]`] = v;
     return this.post('/setup_intents', form, args.idempotencyKey);
@@ -1146,6 +1147,49 @@ export class StripeConnectApiService {
     return this.post<StripeInvoiceObject>(
       `/invoices/${encodeURIComponent(args.invoiceId)}/pay`,
       { payment_method: args.paymentMethodId, off_session: 'false' },
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * R-DISPUTE-PAUSE: pause collection on a subscription. `void` voids every
+   * invoice Stripe generates while paused, so nothing accrues or is charged
+   * for the paused time; the subscription keeps its price and card.
+   */
+  async pauseSubscriptionCollection(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { 'pause_collection[behavior]': 'void' },
+      args.idempotencyKey,
+    );
+  }
+
+  /** R-DISPUTE-PAUSE coach restart: clear pause_collection (empty unsets). */
+  async resumeSubscriptionCollection(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { pause_collection: '' },
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * Stop collection on an open invoice without forgiving it: Stripe makes
+   * no further attempt; it can still be paid by hand.
+   */
+  async markInvoiceUncollectible(args: {
+    invoiceId: string;
+    idempotencyKey: string;
+  }): Promise<StripeInvoiceObject> {
+    return this.post<StripeInvoiceObject>(
+      `/invoices/${encodeURIComponent(args.invoiceId)}/mark_uncollectible`,
+      {},
       args.idempotencyKey,
     );
   }
