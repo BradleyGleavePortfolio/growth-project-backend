@@ -85,15 +85,10 @@ const EMERGENCY: RegExp[] = [
   /\bchest (pain|pressure|tightness)\b/i,
   /^(?=.*\bchest (hurts|is hurting|aches|is aching|feels (tight|heavy))\b)(?=.*\b(numb(ness)?|tingl(e|es|ed|ing|y)|short(ness)? of breath|out of breath|jaw|left arm|cold sweat|can'?t breathe|cannot breathe|can not breathe|hard to breathe|trouble breathing|struggling to breathe)\b)/i,
   /\b(crushing|squeezing) (pain|feeling) in my chest\b/i,
-  // B-AIG3-123: "I can't breathe" is an emergency ("I cannot breathe after my
-  // workout"). The airway is a technique question ("I can't breathe through
-  // my nose when I run"). F9: so is "I can't breathe during burpees", how a
-  // hard set feels; with a call for help or a chest symptom it still routes
-  // (the help-now rule below and the chest rule above).
-  new RegExp(
-    `\\b(can(?:'|no)?t|can not|cannot|unable to) breath(e|ing)?\\b(?! (properly |well |right )?(through|out of|in through|with) (my |the |one )?(nose|mouth|nostrils?)\\b)(?! (during|while|while doing|when doing|in the middle of) (my |the |a |an |long |heavy |hard |fast |big |intense |every |these |those |all |of )*${ACTIVITY}\\b)`,
-    'i',
-  ),
+  // B-AIG3-123: "I can't breathe" is an emergency wherever it happens ("I
+  // cannot breathe after my workout"). Only the airway is a technique
+  // question ("I can't breathe through my nose when I run").
+  /\b(can(?:'|no)?t|can not|cannot|unable to) breath(e|ing)?\b(?! (properly |well |right )?(through|out of|in through|with) (my |the |one )?(nose|mouth|nostrils?)\b)/i,
   // Breathing trouble is an emergency; "hard to breathe during heavy squats"
   // or "trouble breathing on long runs" is a training question.
   new RegExp(
@@ -102,7 +97,7 @@ const EMERGENCY: RegExp[] = [
   ),
   // B-AIG3-123: any breathing trouble with a call for help now ("hard to
   // breathe after my run, I need help now").
-  /^(?=.*\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b)(?=.*\b(help (me )?(right )?now|need help (right )?now|please help|help me|call (911|an ambulance)|ambulance)\b)/i,
+  /^(?=.*\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b)(?=.*\b(help (me )?(right )?now|need help (right )?now|call (911|an ambulance)|ambulance)\b)/i,
   /\b(i'?m|i am) not breathing\b/i,
   // F9: a person who is not breathing ("he's not breathing", "my teammate
   // passed out and is not breathing", "unconscious and not breathing", "she

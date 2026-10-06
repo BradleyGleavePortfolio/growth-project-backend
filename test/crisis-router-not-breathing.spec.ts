@@ -59,12 +59,25 @@ const STILL_911 = [
   "I can't breathe during squats and my chest hurts",
 ];
 
-// Got 911 on main; ordinary gym talk.
-const NOW_NORMAL = [
+// Got 911 on main; ordinary gym talk (the old `od'?d` token matched "odd").
+const NOW_NORMAL = ['he is odd', 'I have odd soreness after leg day'];
+
+// B-758-1 (FIX ROUND 2): every "can't breathe" stays 911 as on main, also
+// during a workout. A red flag the other rules do not list (wheezing, blue
+// lips, a tight chest, no inhaler, a bare "help") must not lose the 911 reply;
+// "I can't breathe during burpees" is an accepted over-escalation.
+const CANT_BREATHE_DURING_911 = [
+  "I can't breathe while running and I'm wheezing",
+  "I can't breathe during my workout and my lips are blue",
+  "I can't breathe during my workout and my lips are turning blue",
+  "I can't breathe during my run and my chest is tight",
+  "I can't breathe during cardio and I don't have my inhaler",
+  "I can't breathe during my workout, I think it's asthma",
+  "I can't breathe during my workout, help",
+  "I can't breathe during my workout, what do I do",
+  "I can't breathe during spin class and my heart is racing",
   "can't breathe during burpees",
   "I can't breathe during burpees",
-  'he is odd',
-  'I have odd soreness after leg day',
 ];
 
 // Normal on main and still normal.
@@ -110,6 +123,10 @@ describe('F9 a person who is not breathing or will not wake up is 911 on both ro
 describe("F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers", () => {
   it.each(OD_SPELLINGS_911)('"%s" is 911 on both', expect911);
   it.each(STILL_911)('"%s" is still 911 on both', expect911);
+});
+
+describe('B-758-1 every "can\'t breathe" during a workout is 911 on both routers', () => {
+  it.each(CANT_BREATHE_DURING_911)('"%s" is 911 on both', expect911);
 });
 
 describe('F9 gym talk keeps the normal answer on both routers', () => {
