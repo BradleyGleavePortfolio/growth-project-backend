@@ -11,6 +11,7 @@ import { RequestMethod } from '@nestjs/common';
 import { WearableProvider } from '@prisma/client';
 import { ConnectionsController } from './connections.controller';
 import { JwtAuthGuard } from '../../auth/auth.guard';
+import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { ConnectProviderDto } from './dto/connect-provider.dto';
 import { OauthCallbackDto } from './dto/oauth-callback.dto';
 import { DisconnectProviderParamDto } from './dto/disconnect-provider.dto';
@@ -26,6 +27,10 @@ interface ServiceShape {
   handleCallback: jest.Mock;
   list: jest.Mock;
   disconnect: jest.Mock;
+}
+
+function makeRes(): { redirect: jest.Mock } {
+  return { redirect: jest.fn() };
 }
 
 function makeReq(userId: string): AuthedRequest {
@@ -67,11 +72,13 @@ describe('ConnectionsController', () => {
       expect(limit).toBe(10);
     });
 
-    it('GET oauth/callback → 200 with a throttle limit', () => {
+    // B-WEARLIST-125: the provider redirect carries no JWT, so the callback is
+    // public (the single-use state names the user) and redirects to the app.
+    it('GET oauth/callback is public with a throttle limit', () => {
       const h = controller.oauthCallback;
       expect(Reflect.getMetadata(PATH_METADATA, h)).toBe('oauth/callback');
       expect(Reflect.getMetadata(METHOD_METADATA, h)).toBe(RequestMethod.GET);
-      expect(Reflect.getMetadata(HTTP_CODE_METADATA, h)).toBe(200);
+      expect(Reflect.getMetadata(IS_PUBLIC_KEY, h)).toBe(true);
       expect(Reflect.getMetadata(THROTTLE_LIMIT_DEFAULT_KEY, h)).toBe(20);
     });
 
@@ -99,14 +106,18 @@ describe('ConnectionsController', () => {
       expect(res).toEqual({ authorizationUrl: 'u', state: 's' });
     });
 
-    it('oauthCallback forwards code + state and returns the service result', async () => {
+    it('oauthCallback forwards code + state and sends the browser back to the app', async () => {
       service.handleCallback.mockResolvedValue({
         success: true,
         provider: WearableProvider.OURA,
       });
-      const res = await controller.oauthCallback({ code: 'c1', state: 's1' });
+      const res = makeRes();
+      await controller.oauthCallback({ code: 'c1', state: 's1' }, res);
       expect(service.handleCallback).toHaveBeenCalledWith({ code: 'c1', state: 's1' });
-      expect(res).toEqual({ success: true, provider: WearableProvider.OURA });
+      expect(res.redirect).toHaveBeenCalledWith(
+        302,
+        'tgp://wearables/connected?status=ok&provider=OURA',
+      );
     });
 
     it('list passes the caller id only', async () => {

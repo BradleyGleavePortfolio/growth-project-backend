@@ -5,19 +5,23 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   ParseEnumPipe,
   Post,
   Query,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { WearableProvider } from '@prisma/client';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { WearablesCloudConnectorsGuard } from '../cloud-connectors.feature';
 import { ConnectionsService } from './connections.service';
 import { ConnectProviderDto } from './dto/connect-provider.dto';
@@ -30,18 +34,36 @@ import {
   WEARABLES_SKIP_THROTTLERS,
 } from '../wearables-throttle';
 import {
+  CloudProvidersResult,
   DisconnectResult,
-  OauthCallbackResult,
   SafeWearableConnection,
   StartOauthResult,
 } from './types';
 
 /**
+ * B-WEARLIST-125: where the OAuth callback sends the in-app browser when it is
+ * done. It matches the app's auth-session return URL (ConnectProviderSheet
+ * RETURN_URL), so the session closes by itself and the app re-reads the list.
+ */
+export const WEARABLES_APP_RETURN_URL = 'tgp://wearables/connected';
+
+export function wearablesAppReturnUrl(
+  status: 'ok' | 'error',
+  provider?: WearableProvider,
+): string {
+  const params = new URLSearchParams({ status });
+  if (provider) params.set('provider', provider);
+  return `${WEARABLES_APP_RETURN_URL}?${params.toString()}`;
+}
+
+/**
  * PR-HK-1 — generic wearable OAuth + connection-management API.
  *
- * Every route is JWT-authenticated and user-scoped (the owning user comes
- * from the verified token via `req.user.id`, NEVER from the request body or
- * path — no IDOR surface, 50-Failures #5). Connect + callback are rate-limited
+ * Every route except the OAuth callback is JWT-authenticated and user-scoped
+ * (the owning user comes from the verified token via `req.user.id`, NEVER from
+ * the request body or path — no IDOR surface, 50-Failures #5). The callback
+ * is reached by a provider redirect that carries no JWT; its owning user comes
+ * from the single-use server-minted `state` (B-WEARLIST-125). Connect + callback are rate-limited
  * (#6) because each triggers an outbound provider OAuth round-trip. Inputs are
  * validated by the global ValidationPipe against the DTOs below; the
  * `:provider` path param is validated against the `WearableProvider` enum by
@@ -58,7 +80,23 @@ import {
 @Controller('v1/wearables/connections')
 @UseGuards(JwtAuthGuard)
 export class ConnectionsController {
+  private readonly logger = new Logger(ConnectionsController.name);
+
   constructor(private readonly connections: ConnectionsService) {}
+
+  /**
+   * B-WEARLIST-125: the cloud providers the caller can connect right now. The
+   * app lists a cloud tracker only when it appears here, so a provider lights
+   * up as soon as its keys are set, with no new app build. Never returns
+   * credential values.
+   */
+  @Get('providers')
+  @Roles('student', 'coach')
+  @SkipThrottle(WEARABLES_SKIP_THROTTLERS)
+  @Throttle({ default: { ttl: 60_000, limit: WEARABLES_CONNECTIONS_LIST_PER_MIN } })
+  providers(): CloudProvidersResult {
+    return { providers: this.connections.connectableCloudProviders() };
+  }
 
   /**
    * Begin a cloud-OAuth connect flow for the authenticated user. Returns the
@@ -79,23 +117,42 @@ export class ConnectionsController {
   }
 
   /**
-   * Complete an OAuth callback. The provider redirects the in-app web-view
-   * here with `?code&state`; the web-view carries the user's JWT so the route
-   * stays authenticated. The CSRF `state` is validated + consumed (single-use)
-   * BEFORE any token exchange. Tokens are KMS-wrapped server-side and NEVER
-   * returned — the response is just `{success, provider}`.
+   * Complete an OAuth callback. The provider redirects the in-app browser
+   * here with `?code&state`. B-WEARLIST-125: a provider redirect never carries
+   * the app's JWT, so the route is public; the single-use CSRF `state` (minted
+   * for the signed-in user by `oauth/start`) is the credential and names the
+   * owning user. It is validated + consumed BEFORE any token exchange. Tokens
+   * are KMS-wrapped server-side and NEVER returned. The browser is then sent
+   * back to the app (`tgp://wearables/connected?status=ok|error`), which
+   * closes the auth session and re-reads the connection list.
    */
+  @Public()
   @Get('oauth/callback')
-  @Roles('student')
-  @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   async oauthCallback(
     @Query() query: OauthCallbackDto,
-  ): Promise<OauthCallbackResult> {
-    return this.connections.handleCallback({
-      code: query.code,
-      state: query.state,
-    });
+    @Res() res: Pick<Response, 'redirect'>,
+  ): Promise<void> {
+    if (!query.code || query.error) {
+      // The person declined on the provider's page (or it sent no code).
+      res.redirect(HttpStatus.FOUND, wearablesAppReturnUrl('error'));
+      return;
+    }
+    try {
+      const result = await this.connections.handleCallback({
+        code: query.code,
+        state: query.state,
+      });
+      res.redirect(HttpStatus.FOUND, wearablesAppReturnUrl('ok', result.provider));
+    } catch (err) {
+      // The service already logs a sanitized exchange failure; never echo the
+      // error message (it can carry the code or tokens).
+      this.logger.warn({
+        msg: 'wearables.oauth.callback_rejected',
+        error_class: err instanceof Error ? err.constructor.name : typeof err,
+      });
+      res.redirect(HttpStatus.FOUND, wearablesAppReturnUrl('error'));
+    }
   }
 
   /**

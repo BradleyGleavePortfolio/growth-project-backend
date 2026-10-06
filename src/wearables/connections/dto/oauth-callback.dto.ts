@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -18,12 +18,17 @@ const trim = ({ value }: { value: unknown }) =>
  * string is a DoS vector (#8 phantom validation).
  */
 export class OauthCallbackDto {
-  /** Provider authorization code to exchange for tokens. */
+  /**
+   * Provider authorization code to exchange for tokens. B-WEARLIST-125:
+   * optional so a declined consent (`?error=access_denied&state=...`, no code)
+   * reaches the handler and is sent back to the app instead of a raw 400 page.
+   */
+  @IsOptional()
   @IsString()
   @Transform(trim)
   @MinLength(1)
   @MaxLength(2048)
-  code!: string;
+  code?: string;
 
   /** Opaque CSRF state previously minted by `oauth/start`. */
   @IsString()
@@ -31,4 +36,25 @@ export class OauthCallbackDto {
   @MinLength(1)
   @MaxLength(512)
   state!: string;
+
+  /**
+   * B-WEARLIST-125: extra parameters providers add to the redirect (Strava,
+   * WHOOP and Oura echo `scope`; a declined consent sends `error`). Declared
+   * so the global forbidNonWhitelisted pipe does not reject a normal callback.
+   * Never logged.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  scope?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  error?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  error_description?: string;
 }

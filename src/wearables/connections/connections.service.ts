@@ -18,6 +18,7 @@ import {
   WearableConnectionStatus,
 } from './types';
 import { ON_DEVICE_LANE_PROVIDERS, type OnDeviceLaneProvider } from './dto/register-on-device.dto';
+import { connectableCloudProviders } from './cloud-availability';
 
 /**
  * S14 — fixed `external_account_id` for on-device connections. A device source
@@ -61,6 +62,18 @@ export class ConnectionsService {
     private readonly registry: ConnectorRegistry,
     private readonly oauthState: OauthStateService,
   ) {}
+
+  /**
+   * B-WEARLIST-125: the cloud providers a person can connect right now
+   * (master switch on, shared OAuth settings and that provider's credentials
+   * present, cloud connector registered). Names only, never values.
+   */
+  connectableCloudProviders(): WearableProvider[] {
+    return connectableCloudProviders(
+      (provider) =>
+        this.registry.has(provider) && this.registry.get(provider).authModel !== 'on-device',
+    );
+  }
 
   /**
    * Begin a cloud-OAuth connect flow. Mints a single-use CSRF state (and PKCE
