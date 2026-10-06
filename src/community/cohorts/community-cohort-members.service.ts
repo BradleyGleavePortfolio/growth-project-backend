@@ -9,6 +9,7 @@ import { CommunityAccessService } from '../community-access.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { memberFirstName } from '../member-display-name';
 import {
+  AssignTargetScope,
   CommunityCohortMembersRepository,
   MemberPageCursor,
   MembershipWithUser,
@@ -157,6 +158,18 @@ export class CommunityCohortMembersService {
     }
   }
 
+  /**
+   * Who a cohort assignment may target. `null` (no restriction) only for the
+   * platform owner; every coach is limited to the workspace coach's live
+   * roster plus people already active in the workspace.
+   */
+  private async assignScope(workspaceId: string, user: User): Promise<AssignTargetScope | null> {
+    if (user.role === 'owner') return null;
+    const workspace = await this.access.findWorkspace(workspaceId);
+    if (!workspace) throw new NotFoundException(NOT_FOUND);
+    return { workspaceId: workspace.id, coachId: workspace.coach_id };
+  }
+
   async list(
     user: User,
     cohortId: string,
@@ -218,8 +231,15 @@ export class CommunityCohortMembersService {
 
     const prismaRole = API_TO_PRISMA_ROLE[body.role];
 
+    // B-AUTHZ-1: the target must already belong to this coach's world (their
+    // live client roster, or an active member of this workspace) before any
+    // lookup data is returned or any membership/ban row changes. A foreign or
+    // unknown target gets the same coded 404, so the endpoint never confirms
+    // that another coach's client exists. The platform owner may override.
+    const scope = await this.assignScope(cohort.workspace_id, user);
+
     if (hasUserId) {
-      const target = await this.repo.findUserById(body.user_id as string);
+      const target = await this.repo.findUserById(body.user_id as string, scope);
       if (!target) throw new NotFoundException(USER_NOT_FOUND);
       // Direct assign of a known user → active immediately (idempotent: an
       // existing/removed row is revived to the requested role + active).
@@ -244,7 +264,7 @@ export class CommunityCohortMembersService {
     // onboarding flow first. (Decision documented in the PR body: cohort
     // membership reuses the CommunityMembership row with status='invited'
     // rather than the unrelated coach-roster invite-codes module.)
-    const target = await this.repo.findUserByEmail(body.email as string);
+    const target = await this.repo.findUserByEmail(body.email as string, scope);
     if (!target) throw new NotFoundException(USER_NOT_FOUND);
     const row = await this.repo.upsertMembership({
       workspaceId: cohort.workspace_id,

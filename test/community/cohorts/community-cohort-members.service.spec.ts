@@ -48,6 +48,7 @@ function membership(over: Partial<MembershipWithUser> = {}): MembershipWithUser 
 describe('CommunityCohortMembersService', () => {
   let access: {
     findCohort: jest.Mock;
+    findWorkspace: jest.Mock;
     isWorkspaceCoach: jest.Mock;
     membershipInCohort: jest.Mock;
   };
@@ -65,6 +66,7 @@ describe('CommunityCohortMembersService', () => {
   beforeEach(() => {
     access = {
       findCohort: jest.fn(),
+      findWorkspace: jest.fn().mockResolvedValue({ id: WS_A, coach_id: coachA.id }),
       isWorkspaceCoach: jest.fn(),
       membershipInCohort: jest.fn(),
     };
@@ -222,6 +224,81 @@ describe('CommunityCohortMembersService', () => {
           role: 'student',
         } as never),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    describe('target authorization (B-AUTHZ-1)', () => {
+      const OWN_CLIENT = 'aaaaaaaa-0000-0000-0000-000000000001';
+      const FOREIGN_CLIENT = 'bbbbbbbb-0000-0000-0000-0000000000f1';
+      const users = [
+        { id: OWN_CLIENT, name: 'Jane Client', email: 'jane@example.com', coachId: coachA.id },
+        { id: FOREIGN_CLIENT, name: 'Other Coach Client', email: 'other@example.com', coachId: coachB.id },
+      ];
+      // Emulates the repository's scoped lookup: with a scope only the
+      // workspace coach's own clients resolve; without one, anybody does.
+      const scopedLookup =
+        (key: 'id' | 'email') =>
+        async (value: string, scope?: { workspaceId: string; coachId: string } | null) => {
+          const u = users.find((x) => x[key] === value);
+          if (!u || (scope && u.coachId !== scope.coachId)) return null;
+          return { id: u.id, name: u.name, email: u.email };
+        };
+
+      beforeEach(() => {
+        repo.findUserById.mockImplementation(scopedLookup('id'));
+        repo.findUserByEmail.mockImplementation(scopedLookup('email'));
+      });
+
+      it('refuses another coach\'s client by user_id: coded 404, no data, no membership or ban change', async () => {
+        const err = await service
+          .assign(coachA, COHORT_A, { user_id: FOREIGN_CLIENT, role: 'student' })
+          .then(() => null, (e: unknown) => e);
+        expect(err).toBeInstanceOf(NotFoundException);
+        expect(err instanceof NotFoundException ? err.getResponse() : null).toEqual({
+          error: 'not_found',
+          code: 'community.cohort.user_not_found',
+        });
+        expect(JSON.stringify(err instanceof NotFoundException ? err.getResponse() : {})).not.toContain(
+          'other@example.com',
+        );
+        expect(repo.findUserById).toHaveBeenCalledWith(FOREIGN_CLIENT, {
+          workspaceId: WS_A,
+          coachId: coachA.id,
+        });
+        expect(repo.liftWorkspaceBan).not.toHaveBeenCalled();
+        expect(repo.upsertMembership).not.toHaveBeenCalled();
+      });
+
+      it('refuses another coach\'s client by email the same way', async () => {
+        await expect(
+          service.assign(coachA, COHORT_A, { email: 'other@example.com', role: 'student' }),
+        ).rejects.toMatchObject({
+          response: { code: 'community.cohort.user_not_found' },
+        });
+        expect(repo.findUserByEmail).toHaveBeenCalledWith('other@example.com', {
+          workspaceId: WS_A,
+          coachId: coachA.id,
+        });
+        expect(repo.upsertMembership).not.toHaveBeenCalled();
+      });
+
+      it('still assigns the coach\'s own client', async () => {
+        repo.upsertMembership.mockResolvedValue(membership());
+        const res = await service.assign(coachA, COHORT_A, { user_id: OWN_CLIENT, role: 'student' });
+        expect(res.member.user_id).toBe(OWN_CLIENT);
+        expect(repo.upsertMembership).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: OWN_CLIENT, status: 'active' }),
+        );
+      });
+
+      it('lets the platform owner override the roster scope', async () => {
+        const platformOwner: User = { ...coachA, role: 'owner' };
+        repo.upsertMembership.mockResolvedValue(membership({ user_id: FOREIGN_CLIENT }));
+        await service.assign(platformOwner, COHORT_A, { user_id: FOREIGN_CLIENT, role: 'student' });
+        expect(repo.findUserById).toHaveBeenCalledWith(FOREIGN_CLIENT, null);
+        expect(repo.upsertMembership).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: FOREIGN_CLIENT }),
+        );
+      });
     });
 
     it('403s a coach assigning into a cohort they do not own (cross-cohort)', async () => {
