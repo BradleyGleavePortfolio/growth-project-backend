@@ -22,7 +22,7 @@ export type CardBehavior = 'ok' | 'decline' | 'requires_action';
 export interface FakeInvoice {
   id: string;
   object: 'invoice';
-  status: 'open' | 'paid' | 'void';
+  status: 'open' | 'paid' | 'void' | 'uncollectible';
   subscription: string;
   customer: string;
   amount_due: number;
@@ -359,6 +359,27 @@ export class FakeStripeBilling {
     const sub = this.mustSub(subId);
     sub.status = 'canceled';
     return { id: sub.id, status: sub.status };
+  }
+
+  // D2c dispute pause (main's signatures): billing paused, open invoices
+  // marked uncollectible.
+  async pauseSubscriptionCollection(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<FakeSubscription> {
+    this.calls.push({ op: 'pauseSubscriptionCollection', key: args.idempotencyKey, args });
+    return { ...this.mustSub(args.subscriptionId) };
+  }
+
+  async markInvoiceUncollectible(args: {
+    invoiceId: string;
+    idempotencyKey: string;
+  }): Promise<FakeInvoice> {
+    this.calls.push({ op: 'markInvoiceUncollectible', key: args.idempotencyKey, args });
+    const inv = this.invoices.get(args.invoiceId);
+    if (!inv) throw new StripeConnectApiError('No such invoice', 404, 'resource_missing', 'invalid_request_error');
+    inv.status = 'uncollectible';
+    return this.copy(inv);
   }
 
   async retrieveSubscription(id: string): Promise<FakeSubscription> {

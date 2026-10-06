@@ -10,15 +10,23 @@ import { PrismaService } from '../../prisma.service';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 import { LOCKED_DUNNING_CODE } from './dunning-v2.cadence';
-import { hasOtherLiveAccess } from './dunning-effective-access';
+import { effectiveLock } from './dunning-effective-access';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 
 /**
  * B3 Smart Dunning v2 — Day-10 hard-lockout guard (spec §3 / §8.1).
  *
- * Backend enforcement of the hard lockout: when the signed-in client has a
- * DunningState in lockout (`locked_out_at != null` AND `entitlement_active ===
- * false`), every NON-allowed route returns `403 LOCKED_DUNNING`. Login then
+ * Backend enforcement of the hard lockout: when the signed-in client has an
+ * ACTIVE DunningState with `locked_out_at != null` (set only by the Day-10
+ * sweep, cleared only by payment) and no OTHER live entitlement, every
+ * NON-allowed route returns `403 LOCKED_DUNNING`.
+ *
+ * S-DUNNING: the lock no longer also requires `entitlement_active === false`.
+ * Stripe's `customer.subscription.updated` (sent for many reasons while a
+ * subscription is past_due) re-derives `entitlement_active = true` for
+ * past_due, which silently lifted the lockout. `locked_out_at` is now the sole
+ * authority. A client who also holds a separate live grant (a comp or
+ * invite-code purchase, or a coach-kept access) is not locked. Login then
  * collapses to the payment-update screen only; community, workouts, programs,
  * generic chat are all 403.
  *
@@ -31,6 +39,12 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *     recovery must never be locked). Note there is no mounted /auth/logout or
  *     /auth/refresh; the mounted refresh route is /auth/extension/refresh.
  *   - health checks (health, healthz, readyz)
+ *   - data export (/v1/me/data-export/*) and account deletion
+ *     (/me/delete-account*) — required while locked (App Store 5.1.1(v), and a
+ *     locked client must always be able to take their data and leave)
+ *   - contact the coach: the 1:1 thread (/messages GET/POST, /messages/read,
+ *     /messages/unread-count) and /messages/report (safety). Voice uploads
+ *     and the coach-review surface stay locked.
  *   - Roman chat: /roman/* (RomanController) — the dedicated Roman assistant
  *     surface, so Roman can explain the lockout. This is the ONLY AI-adjacent
  *     carve-out. The entitlement-gated student AI assistant (/ai/*, AiController)
@@ -105,6 +119,26 @@ const PRIVACY_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]>
   ['DELETE', 'me/ai-consent/roman'], // AiConsentController.withdraw
 ] as const;
 
+/**
+ * Account-rights surfaces matched as full route prefixes: data export and
+ * account deletion stay reachable while locked (S-DUNNING F8).
+ */
+const ACCOUNT_RIGHTS_PREFIXES: readonly string[] = [
+  'me/data-export', // DataExportController — request, status, download
+  'me/delete-account', // AccountDeletionController — request, confirm, cancel, status
+] as const;
+
+/**
+ * Contact-the-coach routes, matched EXACTLY (not as prefixes) so a future
+ * `messages/*` value surface is locked by default (S-DUNNING F8).
+ */
+const ALLOWED_EXACT_PATHS: ReadonlySet<string> = new Set([
+  'messages', // ClientMessagingController — GET thread, POST send
+  'messages/read',
+  'messages/unread-count',
+  'messages/report', // MessagesSafetyController — report a message
+]);
+
 @Injectable()
 export class DunningLockoutGuard implements CanActivate {
   private readonly logger = new Logger(DunningLockoutGuard.name);
@@ -165,28 +199,16 @@ export class DunningLockoutGuard implements CanActivate {
   }
 
   /**
-   * A client is locked out when ANY of their purchases has a DunningState with
-   * `locked_out_at != null` and the purchase entitlement is off. We resolve via
-   * ClientPurchase.client_user_id → DunningState.purchase_id. Other live
-   * access (another paid plan, a grant, a re-buy after a dispute pause)
-   * waives the lock: the same rule GET /v1/me/dunning-status reads
-   * (`hasOtherLiveAccess`, S-DUNNING-R3 B-628-7), so a client the status calls
-   * `lock_waived` is never refused here.
+   * A client is locked out when ANY of their purchases has an ACTIVE
+   * DunningState with `locked_out_at != null`, unless the client also holds a
+   * different live entitlement (comp / invite-code grant, another paid
+   * package, or access the coach kept on). Resolved via
+   * ClientPurchase.client_user_id -> DunningState.purchase_id.
    */
   private async isClientLockedOut(userId: string): Promise<boolean> {
-    const lockedRow = await this.prisma.dunningState.findFirst({
-      where: {
-        locked_out_at: { not: null },
-        status: 'active',
-        purchase: {
-          client_user_id: userId,
-          entitlement_active: false,
-        },
-      },
-      select: { id: true, purchase_id: true },
-    });
-    if (lockedRow == null) return false;
-    return !(await hasOtherLiveAccess(this.prisma, userId, lockedRow.purchase_id));
+    // S-DUNNING-R3 (B-628-7): the same rule the status read model uses.
+    const lock = await effectiveLock(this.prisma, userId);
+    return lock.locked;
   }
 }
 
@@ -218,7 +240,10 @@ export function isAllowedWhileLocked(path: string): boolean {
   for (const chat of ROMAN_CHAT_PREFIXES) {
     if (matchesRoutePrefix(path, chat)) return true;
   }
-  return false;
+  for (const prefix of ACCOUNT_RIGHTS_PREFIXES) {
+    if (matchesRoutePrefix(path, prefix)) return true;
+  }
+  return ALLOWED_EXACT_PATHS.has(path);
 }
 
 /**
