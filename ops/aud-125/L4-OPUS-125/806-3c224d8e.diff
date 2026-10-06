@@ -1,0 +1,503 @@
+diff --git a/src/ai/coach/ai-program-start.ts b/src/ai/coach/ai-program-start.ts
+new file mode 100644
+index 000000000..1194ccf22
+--- /dev/null
++++ b/src/ai/coach/ai-program-start.ts
+@@ -0,0 +1,91 @@
++// B-AIASSIGN-125: the day an approved AI workout program starts for the
++// client. Day 1 of week 1 lands on the next Monday in the client's time zone
++// (strictly after today), unless the draft carries its own `start_date`
++// (YYYY-MM-DD). The instant is 09:00 local on that date so the client's
++// calendar shows the intended day in any zone.
++
++const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
++const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
++const START_HOUR_LOCAL = 9;
++
++interface LocalParts {
++  year: number;
++  month: number;
++  day: number;
++  hour: number;
++  minute: number;
++  weekday: string;
++}
++
++function localParts(at: Date, timeZone: string): LocalParts {
++  const parts = new Intl.DateTimeFormat('en-US', {
++    timeZone,
++    year: 'numeric',
++    month: '2-digit',
++    day: '2-digit',
++    hour: '2-digit',
++    minute: '2-digit',
++    hourCycle: 'h23',
++    weekday: 'short',
++  }).formatToParts(at);
++  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
++  return {
++    year: Number(get('year')),
++    month: Number(get('month')),
++    day: Number(get('day')),
++    hour: Number(get('hour')),
++    minute: Number(get('minute')),
++    weekday: get('weekday'),
++  };
++}
++
++/** The UTC instant of `hour`:00 local time on the given calendar date in `timeZone`. */
++function localTimeToUtc(year: number, month: number, day: number, hour: number, timeZone: string): Date {
++  const guess = Date.UTC(year, month - 1, day, hour, 0, 0);
++  const seen = localParts(new Date(guess), timeZone);
++  const seenAsUtc = Date.UTC(seen.year, seen.month - 1, seen.day, seen.hour, seen.minute, 0);
++  return new Date(guess - (seenAsUtc - guess));
++}
++
++function validTimeZone(tz: string | null | undefined): string {
++  if (!tz) return 'UTC';
++  try {
++    new Intl.DateTimeFormat('en-US', { timeZone: tz });
++    return tz;
++  } catch {
++    return 'UTC';
++  }
++}
++
++/**
++ * ISO instant for week 1 / day 1 of an approved AI program.
++ * `draftStartDate` wins when it is a real YYYY-MM-DD date.
++ */
++export function aiProgramStartIso(
++  now: Date,
++  clientTimeZone: string | null | undefined,
++  draftStartDate?: unknown,
++): string {
++  const tz = validTimeZone(clientTimeZone);
++  if (typeof draftStartDate === 'string') {
++    const m = YMD.exec(draftStartDate.trim());
++    if (m) {
++      const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
++      const check = new Date(Date.UTC(y, mo - 1, d));
++      if (check.getUTCFullYear() === y && check.getUTCMonth() === mo - 1 && check.getUTCDate() === d) {
++        return localTimeToUtc(y, mo, d, START_HOUR_LOCAL, tz).toISOString();
++      }
++    }
++  }
++  const today = localParts(now, tz);
++  const dow = WEEKDAYS.indexOf(today.weekday); // 0 = Monday
++  const daysUntilMonday = 7 - (dow < 0 ? 0 : dow); // Monday -> next week's Monday
++  const target = new Date(Date.UTC(today.year, today.month - 1, today.day + daysUntilMonday));
++  return localTimeToUtc(
++    target.getUTCFullYear(),
++    target.getUTCMonth() + 1,
++    target.getUTCDate(),
++    START_HOUR_LOCAL,
++    tz,
++  ).toISOString();
++}
+diff --git a/src/ai/coach/coach-ai.service.ts b/src/ai/coach/coach-ai.service.ts
+index 125700f31..ef3519f94 100644
+--- a/src/ai/coach/coach-ai.service.ts
++++ b/src/ai/coach/coach-ai.service.ts
+@@ -1,5 +1,6 @@
+ import {
+   BadRequestException,
++  ConflictException,
+   Injectable,
+   Logger,
+   NotFoundException,
+@@ -19,6 +20,8 @@ import { ClientContext } from '../context/client-context.types';
+ import { MealPlansService } from '../../meal-plans/meal-plans.service';
+ import { WorkoutBuilderService } from '../../workout-builder/workout-builder.service';
+ import { WorkoutType } from '../../workout-builder/workout-builder.dto';
++import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
++import { aiProgramStartIso } from './ai-program-start';
+ 
+ // Coach AI v1 — orchestration service.
+ //
+@@ -274,13 +277,14 @@ export class CoachAIService {
+ 
+   async approveDraft(coachId: string, draftId: string) {
+     const draft = await this.getDraft(coachId, draftId);
++    if (draft.type === 'WORKOUT_PROGRAM') {
++      return this.approveWorkoutProgram(coachId, draft);
++    }
+     if (draft.status !== 'DRAFT') {
+       throw new BadRequestException(`Cannot approve a draft in status=${draft.status}`);
+     }
+     let approvedAsId: string | null = null;
+-    if (draft.type === 'WORKOUT_PROGRAM') {
+-      approvedAsId = await this.materializeWorkoutProgram(coachId, draft);
+-    } else if (draft.type === 'MEAL_PLAN') {
++    if (draft.type === 'MEAL_PLAN') {
+       approvedAsId = await this.materializeMealPlan(coachId, draft);
+     }
+     return this.prisma.aIDraft.update({
+@@ -289,22 +293,99 @@ export class CoachAIService {
+     });
+   }
+ 
+-  // ─── Materializers ────────────────────────────────────────────────────────
+-
+-  private async materializeWorkoutProgram(
++  /**
++   * B-AIASSIGN-125: "Approve & assign" puts every AI day on the client's
++   * calendar. Plans are created in the coach library, then ONE transaction
++   * writes one ClientWorkoutAssignment + snapshot per plan (offset
++   * (week-1)*7 + (day-1) days from the start date) and stamps the draft
++   * APPROVED with approvedAsId, so approvedAsId set <=> assignments exist.
++   * One push to the client after commit. A double tap is fenced by a
++   * conditional DRAFT -> APPROVED claim: the second request replays the
++   * finished result instead of assigning the program twice.
++   */
++  private async approveWorkoutProgram(
+     coachId: string,
+-    draft: { generatedPayload: Prisma.JsonValue; clientId: string },
+-  ): Promise<string> {
++    draft: Awaited<ReturnType<CoachAIService['getDraft']>>,
++  ) {
++    const dayCount = this.workoutProgramDays(draft).days.length;
++    if (draft.status !== 'DRAFT') return this.replayWorkoutApproval(coachId, draft.id, dayCount);
++    // The client may have left this coach since the draft was generated.
++    await this.assertCoachOwnsClient(coachId, draft.clientId);
++
++    const claim = await this.prisma.aIDraft.updateMany({
++      where: { id: draft.id, coachId, status: 'DRAFT' },
++      data: { status: 'APPROVED' },
++    });
++    if (claim.count === 0) return this.replayWorkoutApproval(coachId, draft.id, dayCount);
++
++    try {
++      const plans = await this.materializeWorkoutProgram(coachId, draft);
++      const startDate = aiProgramStartIso(
++        new Date(),
++        await resolveRecipientTimeZone(this.prisma, draft.clientId),
++        (draft.generatedPayload as { start_date?: unknown } | null)?.start_date,
++      );
++      const { approved, assignments } = await this.prisma.$transaction(async (tx) => {
++        const rows = await this.workouts.writePlanAssignmentsInTx(
++          tx,
++          coachId,
++          draft.clientId,
++          plans,
++          startDate,
++        );
++        const updated = await tx.aIDraft.update({
++          where: { id: draft.id },
++          data: { status: 'APPROVED', approvedAsId: plans[0].id },
++        });
++        return { approved: updated, assignments: rows };
++      });
++      this.workouts.notifyProgramAssigned(draft.clientId, assignments[0].id, plans[0].id);
++      return { ...approved, assigned_count: assignments.length };
++    } catch (err) {
++      // Release the claim so the coach can approve again after a failure.
++      await this.prisma.aIDraft
++        .updateMany({
++          where: { id: draft.id, status: 'APPROVED', approvedAsId: null },
++          data: { status: 'DRAFT' },
++        })
++        .catch((releaseErr: unknown) =>
++          this.logger.warn(`approve claim release failed for draft ${draft.id}: ${String(releaseErr)}`),
++        );
++      throw err;
++    }
++  }
++
++  private async replayWorkoutApproval(coachId: string, draftId: string, dayCount: number) {
++    const current = await this.getDraft(coachId, draftId);
++    if (current.status === 'APPROVED' && current.approvedAsId) {
++      return { ...current, assigned_count: dayCount };
++    }
++    if (current.status === 'APPROVED') {
++      throw new ConflictException('This program is already being assigned.');
++    }
++    throw new BadRequestException(`Cannot approve a draft in status=${current.status}`);
++  }
++
++  private workoutProgramDays(draft: { generatedPayload: Prisma.JsonValue }) {
+     const payload = draft.generatedPayload as unknown as WorkoutProgramPayload;
+     if (!payload || !Array.isArray(payload.days) || payload.days.length === 0) {
+       throw new BadRequestException('Workout program payload has no days');
+     }
+-    // Materialize ALL days as individual WorkoutPlan records. The first
+-    // plan's id is returned as approvedAsId so the AIDraft FK resolves to
+-    // a concrete record; all plans are created under the same coach and
+-    // are immediately visible in the coach's plan library for assignment.
+-    let firstPlanId: string | null = null;
+-    for (const day of payload.days) {
++    return { payload, days: payload.days };
++  }
++
++  // ─── Materializers ────────────────────────────────────────────────────────
++
++  private async materializeWorkoutProgram(
++    coachId: string,
++    draft: { generatedPayload: Prisma.JsonValue; clientId: string },
++  ): Promise<Array<{ id: string; week_index: number; day_index: number }>> {
++    const { payload, days } = this.workoutProgramDays(draft);
++    // Materialize ALL days as individual WorkoutPlan records under the coach
++    // (visible in the coach's plan library). The caller assigns them to the
++    // client; the first plan's id becomes the draft's approvedAsId.
++    const created: Array<{ id: string; week_index: number; day_index: number }> = [];
++    for (const day of days) {
+       const dayLabel = `W${day.week}D${day.day}`;
+       const planName = (
+         `${payload.summary?.slice(0, 40) || 'AI program'} – ${day.name || dayLabel}`
+@@ -330,11 +411,13 @@ export class CoachAIService {
+           })),
+         );
+       }
+-      if (firstPlanId === null) {
+-        firstPlanId = plan.id;
+-      }
++      created.push({
++        id: plan.id,
++        week_index: Math.max(0, Math.trunc(Number(day.week) || 1) - 1),
++        day_index: Math.max(0, Math.trunc(Number(day.day) || 1) - 1),
++      });
+     }
+-    return firstPlanId!;
++    return created;
+   }
+ 
+   private async materializeMealPlan(
+diff --git a/src/workout-builder/workout-builder.service.ts b/src/workout-builder/workout-builder.service.ts
+index 42630e616..8d37ee449 100644
+--- a/src/workout-builder/workout-builder.service.ts
++++ b/src/workout-builder/workout-builder.service.ts
+@@ -1435,6 +1435,26 @@ export class WorkoutBuilderService {
+     this.emitAssignmentPush(clientId, assignmentId, workoutPlanId);
+   }
+ 
++  /**
++   * B-AIASSIGN-125: the same fan-out for an explicit list of plans that are
++   * not rows of one WorkoutProgram (Coach AI approve creates one plan per AI
++   * day). `week_index` / `day_index` are 0-based offsets. Runs inside the
++   * caller's transaction; the caller owns the tenancy check, the exactly-once
++   * fence and the push (`notifyProgramAssigned` after commit).
++   */
++  async writePlanAssignmentsInTx(
++    tx: Prisma.TransactionClient,
++    coachId: string,
++    clientId: string,
++    plans: Array<{ id: string; week_index: number; day_index: number }>,
++    startDate: string,
++  ): Promise<Array<{ id: string }>> {
++    if (plans.length === 0) {
++      throw new BadRequestException('Program has no plans to assign');
++    }
++    return this.fanOutProgramPlans(tx, plans, coachId, clientId, startDate);
++  }
++
+   /** Shared by assignProgramToClient and writeProgramAssignmentsInTx. */
+   private async fanOutProgramPlans(
+     tx: Prisma.TransactionClient,
+diff --git a/test/ai/ai-program-start.spec.ts b/test/ai/ai-program-start.spec.ts
+new file mode 100644
+index 000000000..c466a3d77
+--- /dev/null
++++ b/test/ai/ai-program-start.spec.ts
+@@ -0,0 +1,31 @@
++// B-AIASSIGN-125: start day for an approved AI workout program.
++import { aiProgramStartIso } from '../../src/ai/coach/ai-program-start';
++
++describe('aiProgramStartIso', () => {
++  it('starts on the next Monday at 09:00 in the client zone', () => {
++    // Tue 2026-10-06 15:00 PDT -> Mon 2026-10-12 09:00 PDT.
++    expect(aiProgramStartIso(new Date('2026-10-06T22:00:00Z'), 'America/Los_Angeles')).toBe(
++      '2026-10-12T16:00:00.000Z',
++    );
++  });
++
++  it('on a Monday it starts the following Monday', () => {
++    expect(aiProgramStartIso(new Date('2026-10-12T18:00:00Z'), 'America/Los_Angeles')).toBe(
++      '2026-10-19T16:00:00.000Z',
++    );
++  });
++
++  it("uses the draft's own start_date when it is a real date", () => {
++    expect(aiProgramStartIso(new Date('2026-10-06T22:00:00Z'), 'America/New_York', '2026-10-08')).toBe(
++      '2026-10-08T13:00:00.000Z',
++    );
++    expect(aiProgramStartIso(new Date('2026-10-06T22:00:00Z'), 'America/Los_Angeles', '2026-02-30')).toBe(
++      '2026-10-12T16:00:00.000Z',
++    );
++  });
++
++  it('falls back to UTC when the zone is unknown', () => {
++    expect(aiProgramStartIso(new Date('2026-10-06T22:00:00Z'), null)).toBe('2026-10-12T09:00:00.000Z');
++    expect(aiProgramStartIso(new Date('2026-10-06T22:00:00Z'), 'Not/AZone')).toBe('2026-10-12T09:00:00.000Z');
++  });
++});
+diff --git a/test/ai/coach-ai.controller.spec.ts b/test/ai/coach-ai.controller.spec.ts
+index 823fb3036..f22cf5754 100644
+--- a/test/ai/coach-ai.controller.spec.ts
++++ b/test/ai/coach-ai.controller.spec.ts
+@@ -7,7 +7,7 @@
+ //   - approval flow materializes downstream rows for WORKOUT_PROGRAM
+ //     and MEAL_PLAN, no-op for INSIGHT.
+ 
+-import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
++import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+ import { CoachAIService } from '../../src/ai/coach/coach-ai.service';
+ import { CoachAIStateService } from '../../src/ai/coach/coach-ai-state.service';
+ 
+@@ -21,7 +21,11 @@ function makeFixtures() {
+         return null;
+       }),
+       findMany: jest.fn().mockResolvedValue([]),
++      findUnique: jest.fn().mockResolvedValue(null),
+     },
++    // No stored time zone for client1 (approve then schedules in UTC).
++    notificationPreferences: { findUnique: jest.fn().mockResolvedValue(null) },
++    coachProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+     aIDraft: {
+       create: jest.fn(async ({ data }: any) => {
+         const row = {
+@@ -39,8 +43,21 @@ function makeFixtures() {
+         drafts[i] = { ...drafts[i], ...data };
+         return drafts[i];
+       }),
++      updateMany: jest.fn(async ({ where, data }: any) => {
++        let count = 0;
++        drafts.forEach((d, i) => {
++          if (d.id !== where.id) return;
++          if (where.coachId !== undefined && d.coachId !== where.coachId) return;
++          if (where.status !== undefined && d.status !== where.status) return;
++          if (where.approvedAsId !== undefined && (d.approvedAsId ?? null) !== where.approvedAsId) return;
++          drafts[i] = { ...d, ...data };
++          count += 1;
++        });
++        return { count };
++      }),
+     },
+   } as any;
++  prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
+ 
+   const stateImpl = {
+     _ready: true as boolean,
+@@ -129,6 +146,11 @@ function makeFixtures() {
+   const workouts = {
+     createPlan: jest.fn().mockResolvedValue({ id: 'wp-1' }),
+     setExercises: jest.fn().mockResolvedValue([]),
++    writePlanAssignmentsInTx: jest.fn(
++      async (_tx: unknown, _coach: string, _client: string, plans: Array<{ id: string }>) =>
++        plans.map((_p, i) => ({ id: `cwa-${i + 1}` })),
++    ),
++    notifyProgramAssigned: jest.fn(),
+     // MWB-1 (§7.2): CoachAIService now delegates its client gate to
+     // WorkoutBuilderService.assertCanAccessClient. Mirror the old ownership
+     // rule (only coach1 owns client1) so the access-control tests still
+@@ -246,6 +268,111 @@ describe('CoachAIService', () => {
+     expect(f.workouts.setExercises).toHaveBeenCalledTimes(1);
+   });
+ 
++  // B-AIASSIGN-125: "Approve & assign" must put the days on the client's calendar.
++  async function threeDayDraft(f: ReturnType<typeof makeFixtures>) {
++    const ex = [{ exercise_external_id: 'bench', name: 'Bench', order: 1, sets: 4, reps_or_duration_seconds: 8 }];
++    f.anthropic.completeStructured.mockResolvedValue({
++      data: {
++        summary: 'Strength block',
++        weeks: 2,
++        days_per_week: 2,
++        days: [
++          { week: 1, day: 1, name: 'Upper', type: 'strength', exercises: ex },
++          { week: 1, day: 3, name: 'Lower', type: 'strength', exercises: ex },
++          { week: 2, day: 1, name: 'Upper', type: 'strength', exercises: ex },
++        ],
++        coach_notes: '',
++      },
++      tokensIn: 100,
++      tokensOut: 100,
++      modelUsed: 'claude-sonnet-4-6',
++      latencyMs: 100,
++    });
++    f.workouts.createPlan
++      .mockResolvedValueOnce({ id: 'wp-1' })
++      .mockResolvedValueOnce({ id: 'wp-2' })
++      .mockResolvedValueOnce({ id: 'wp-3' });
++    const { draftId } = await f.svc.generateWorkoutProgram('coach1', {
++      clientId: 'client1',
++      weeks: 2,
++      daysPerWeek: 2,
++    });
++    return draftId;
++  }
++
++  it('approve assigns every AI day to the client, one push, and returns assigned_count', async () => {
++    const f = makeFixtures();
++    const draftId = await threeDayDraft(f);
++    const before = Date.now();
++    const approved: any = await f.svc.approveDraft('coach1', draftId);
++    expect(approved.status).toBe('APPROVED');
++    expect(approved.approvedAsId).toBe('wp-1');
++    expect(approved.assigned_count).toBe(3);
++    expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
++    expect(f.workouts.writePlanAssignmentsInTx).toHaveBeenCalledTimes(1);
++    const [tx, coachId, clientId, plans, startIso] = f.workouts.writePlanAssignmentsInTx.mock.calls[0];
++    expect(tx).toBe(f.prisma);
++    expect(coachId).toBe('coach1');
++    expect(clientId).toBe('client1');
++    expect(plans).toEqual([
++      { id: 'wp-1', week_index: 0, day_index: 0 },
++      { id: 'wp-2', week_index: 0, day_index: 2 },
++      { id: 'wp-3', week_index: 1, day_index: 0 },
++    ]);
++    // No client zone known in this fixture -> next Monday 09:00 UTC.
++    const start = new Date(startIso);
++    expect(start.getUTCDay()).toBe(1);
++    expect(start.getTime()).toBeGreaterThan(before);
++    expect(start.getTime() - before).toBeLessThanOrEqual(8 * 24 * 60 * 60 * 1000);
++    expect(f.workouts.notifyProgramAssigned).toHaveBeenCalledTimes(1);
++    expect(f.workouts.notifyProgramAssigned).toHaveBeenCalledWith('client1', 'cwa-1', 'wp-1');
++  });
++
++  it('a second approve (double tap) replays the result without assigning again', async () => {
++    const f = makeFixtures();
++    const draftId = await threeDayDraft(f);
++    const first: any = await f.svc.approveDraft('coach1', draftId);
++    const second: any = await f.svc.approveDraft('coach1', draftId);
++    expect(first.assigned_count).toBe(3);
++    expect(second.assigned_count).toBe(3);
++    expect(second.approvedAsId).toBe('wp-1');
++    expect(f.workouts.createPlan).toHaveBeenCalledTimes(3);
++    expect(f.workouts.writePlanAssignmentsInTx).toHaveBeenCalledTimes(1);
++    expect(f.workouts.notifyProgramAssigned).toHaveBeenCalledTimes(1);
++  });
++
++  it('two approves at once assign the program once', async () => {
++    const f = makeFixtures();
++    const draftId = await threeDayDraft(f);
++    const results = await Promise.allSettled([
++      f.svc.approveDraft('coach1', draftId),
++      f.svc.approveDraft('coach1', draftId),
++    ]);
++    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
++    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
++    expect(rejected.reason).toBeInstanceOf(ConflictException);
++    expect(f.workouts.createPlan).toHaveBeenCalledTimes(3);
++    expect(f.workouts.writePlanAssignmentsInTx).toHaveBeenCalledTimes(1);
++  });
++
++  it('a failed assignment leaves the draft approvable again', async () => {
++    const f = makeFixtures();
++    const draftId = await threeDayDraft(f);
++    f.workouts.writePlanAssignmentsInTx.mockRejectedValueOnce(new Error('db down'));
++    await expect(f.svc.approveDraft('coach1', draftId)).rejects.toThrow('db down');
++    expect(f.drafts.find((d) => d.id === draftId).status).toBe('DRAFT');
++    expect(f.workouts.notifyProgramAssigned).not.toHaveBeenCalled();
++  });
++
++  it('approve refuses a client the coach can no longer reach', async () => {
++    const f = makeFixtures();
++    const draftId = await threeDayDraft(f);
++    f.workouts.assertCanAccessClient.mockRejectedValueOnce(new Error('moved'));
++    await expect(f.svc.approveDraft('coach1', draftId)).rejects.toBeInstanceOf(NotFoundException);
++    expect(f.workouts.writePlanAssignmentsInTx).not.toHaveBeenCalled();
++    expect(f.drafts.find((d) => d.id === draftId).status).toBe('DRAFT');
++  });
++
+   it('approve flow on a MEAL_PLAN draft materializes a MealPlan', async () => {
+     const f = makeFixtures();
+     f.anthropic.completeStructured.mockResolvedValue({

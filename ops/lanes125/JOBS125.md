@@ -419,3 +419,31 @@ ops/reports/P-AIB-125.md), plain words first, then engineering:
 6. A ready-to-paste JOBS entry for each builder (same format as JOBS125.md entries), so agent 126 can launch them in minutes.
 Read-only: no PRs, no pushes except committing the plan file to tgp-agent-context main (git pull first; commit as Bradley Gleave
 <bradley@bradleytgpcoaching.com>; never name the clinic partner).
+
+# LATE WAVE (owner 15:42: "spin up two more or 4 more agents to keep progress going! I want more PR progression before agent 126's takeover!")
+Builders: hard stop 16:20, one PR each unless stated, READY comment per _COMMON_125 item 5. Lens pair L4 (Opus + Sol) reviews them.
+
+## B-AIB1-125 (Claude Opus 5.5, builder, T4 money/AI) — AI builder foundations (AIB-1 of the AI MASTER WORKOUT BUILDER plan).
+Read ops/reports/SAFE-MWBAI-125.md ("Not fixed" 1-2) and ops/reports/AUDIT-14-125.md (U2, U4, "Not fixed" 2-3) first. Two backend PRs:
+PR-A metering: add 'draft.create_workout_plan' and 'draft.edit_workout_plan' to COACH_AI_METERED_CAPABILITIES
+(src/ai-credits/ai-credits.constants.ts:39-70), AND meter Coach AI v1 (workout_program, meal_plan, client-insight in
+src/ai/coach/coach-ai.service.ts): inject CoachAIBudgetService, run the same pre-check as AiGatewayService.invoke before the Anthropic
+call (throw the existing budget-exhausted exception), recordUsage after it with the adapter's cost. Tests that fail on main.
+PR-B approval: let the tenant coach approve/reject AI-authored drafts of their own clients in ai-approval.service.ts (~92-94: the
+requester-cannot-decide rule must not block a coach deciding an AI/system-generated draft; keep it for human-requested drafts in
+multi-user tenants), AND first add the roster check + materialised_ref write to SendNotificationMaterializer (AUDIT-14 C). Tests for
+coach approves own AI draft, coach cannot decide another coach's client's draft, notification materialiser roster check.
+Each PR under 400 lines. Never flip flags.
+
+## B-AIASSIGN-125 (Claude Opus 5.5, builder, T3 workout) — "Approve & assign" really assigns (AUDIT-14 B1).
+A coach generates an AI workout program for a client, taps Approve, and the days are not on the client's calendar (only unassigned
+library plans are created). Fix exactly as AUDIT-14 "Not fixed" 1 says: in CoachAIService.approveDraft (src/ai/coach/coach-ai.service.ts
+~255), after materializeWorkoutProgram, in one transaction write one ClientWorkoutAssignment + snapshot per created plan, reusing the
+WorkoutBuilderService assignment fan-out (offset (week-1)*7 + (day-1) from a start date: next Monday in the client's timezone unless the
+draft has one), one push to the client, and return `assigned_count` (mobile m#425 already reads it and switches its copy). Idempotent
+on double-tap approve. Tests that fail on main. One backend PR under 400 lines. Do not touch src/ai/gateway or ai-approval.service.ts
+(B-AIB1-125 owns them).
+
+## L4-OPUS-125 / L4-SOL-125 (lens pair) — review the LATE WAVE PRs (B-AIB1-125 PR-A and PR-B, B-AIASSIGN-125) as they post READY,
+plus any delta. Same lens rules as L3 (verdict comment at the exact head: "<Opus|Sol> verdict @ <sha>: APPROVE|REQUEST CHANGES B=<n>").
+T4: money and AI approval paths get the full 12-point AI checklist from the SAFETY PASSES block where relevant. Stop 16:35 or at WRAP UP.

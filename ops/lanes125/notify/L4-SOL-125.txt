@@ -1,0 +1,7 @@
+active | 15:42 PDT | watching agent125/b-aib1-125* and agent125/b-aiassign-125* | no READY PRs at first poll
+growth-project-backend#806 @ 3c224d8e APPROVE B=0 | posted 16:01:29 PDT | https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/806#issuecomment-6027016879
+growth-project-backend#807 @ 0cdafb37 APPROVE B=0 | posted 16:06:01 PDT | https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/807#issuecomment-6027070443
+pending #805 | awaiting builder READY | normal sequential near-empty pool can remain positive after recorded:false and continue giving away paid generation calls | evidence in ops/reports/L4-SOL-125.md
+growth-project-backend#805 @ 41493e41 REQUEST CHANGES B=1 | posted 16:15:32 PDT | https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/805#issuecomment-6027181969 | B-805-1: sequential near-empty pool repeatedly skips debit; consume remaining headroom or record incurred spend, then next call must 402 | active for delta until 16:35
+operator mail acknowledged 16:32 | all three exact heads already reviewed and posted above; no duplicate same-head verdicts | #805 B=1 remains open | new stop 16:55 | active for READY deltas, priority #806 then #805 then #807
+done | stopped 16:55:02 PDT | verdicts: #806 @ 3c224d8e APPROVE B=0; #805 @ 41493e41 REQUEST CHANGES B=1; #807 @ 0cdafb37 APPROVE B=0 | no READY deltas through 16:54:15 poll | B=1 U=0 C=1 | needs operator: 1 (#805 sequential debit bypass) | report: ops/reports/L4-SOL-125.md

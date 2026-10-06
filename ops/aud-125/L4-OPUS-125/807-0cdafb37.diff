@@ -1,0 +1,460 @@
+diff --git a/src/ai/gateway/ai-approval.service.ts b/src/ai/gateway/ai-approval.service.ts
+index e9ec22c89..5baabe991 100644
+--- a/src/ai/gateway/ai-approval.service.ts
++++ b/src/ai/gateway/ai-approval.service.ts
+@@ -14,7 +14,9 @@ import { CapabilityMaterializerRegistry } from './materialisers/capability-mater
+ // Human-approval workflow for consequential AI outputs. AiActionDraft
+ // rows land here as `pending`; an authorized human (coach for own-tenant
+ // drafts, owner for any draft) decides them. AI cannot self-approve —
+-// the service refuses any decision where decided_by_id == requester_id.
++// the service refuses any decision where decided_by_id == requester_id,
++// except a tenant coach deciding a model-authored draft or a draft in a
++// single-coach tenant (B-AIB1-125).
+ //
+ // Decisions are recorded both on the draft row and as an entry in the
+ // global AuditLog so the action is visible alongside other sensitive
+@@ -22,6 +24,21 @@ import { CapabilityMaterializerRegistry } from './materialisers/capability-mater
+ 
+ type Decision = 'approved' | 'rejected';
+ 
++/**
++ * B-AIB1-125 — true when a draft's payload is the model's own reply: the
++ * gateway stores `{ reply: response.text }` when the caller supplies no
++ * `proposedActionPayload`, and the same text (first 1,000 chars) as the
++ * rationale. Caller-supplied payloads (every Stream 2 capability and
++ * MWB-5 live-create today) are human-authored.
++ */
++export function isModelAuthoredPayload(payload: unknown, rationale: string | null): boolean {
++  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
++  const keys = Object.keys(payload);
++  if (keys.length !== 1 || keys[0] !== 'reply') return false;
++  const reply = (payload as { reply?: unknown }).reply;
++  return typeof reply === 'string' && reply.length > 0 && rationale === reply.slice(0, 1000);
++}
++
+ export interface DecideInput {
+   draftId: string;
+   decider: { id: string; role: string };
+@@ -72,6 +89,25 @@ export class AiApprovalService {
+     return draft;
+   }
+ 
++  /**
++   * B-AIB1-125 — may the tenant coach decide a draft they requested?
++   * Only a coach deciding inside their own tenant (checked by the caller).
++   * Yes when the model authored the payload (the gateway's default
++   * `{ reply: <model text> }`, whose text is also the stored rationale), or
++   * when the tenant has no active sub-coach (the coach is its only human).
++   */
++  private async tenantCoachMayDecideOwnDraft(
++    draft: { payload: unknown; rationale: string | null; tenant_coach_id: string | null },
++    decider: { id: string; role: string },
++  ): Promise<boolean> {
++    if (decider.role !== 'coach' || draft.tenant_coach_id !== decider.id) return false;
++    if (isModelAuthoredPayload(draft.payload, draft.rationale)) return true;
++    const otherHumans = await this.prisma.teamSubCoachAssignment.count({
++      where: { head_coach_id: decider.id, archived_at: null },
++    });
++    return otherHumans === 0;
++  }
++
+   async decide(input: DecideInput) {
+     const draft = await this.prisma.aiActionDraft.findUnique({
+       where: { id: input.draftId },
+@@ -83,25 +119,46 @@ export class AiApprovalService {
+       throw new ForbiddenException(`Draft already ${draft.status}`);
+     }
+ 
+-    // AI never approves itself. The original requester also cannot
+-    // approve their OWN draft — even if the requester is a coach,
+-    // approving an action they themselves initiated defeats the purpose
+-    // of the human-in-the-loop check. Owners are still bound by this
+-    // rule because in a single-operator deployment that is the only
+-    // safety net we have.
+-    if (draft.requester_id && draft.requester_id === input.decider.id) {
+-      throw new ForbiddenException('A draft cannot be decided by its requester');
+-    }
+-
+     // Tenant boundary: coaches can only decide drafts inside their own
+-    // tenant. Owners can decide any draft. Other roles are rejected.
++    // tenant, for their own clients. Owners can decide any draft. Other
++    // roles are rejected. B-AIB1-125: a draft with no tenant is no coach's
++    // to decide, and the subject must be on the deciding coach's roster
++    // (re-read now), so a coach can never decide another coach's client's
++    // draft.
+     if (input.decider.role !== 'owner') {
+       if (input.decider.role !== 'coach') {
+         throw new ForbiddenException('Approver role not permitted');
+       }
+-      if (draft.tenant_coach_id && draft.tenant_coach_id !== input.decider.id) {
++      if (draft.tenant_coach_id !== input.decider.id) {
+         throw new ForbiddenException('Draft is outside your tenant');
+       }
++      if (draft.subject_user_id) {
++        const subject = await this.prisma.user.findUnique({
++          where: { id: draft.subject_user_id },
++          select: { coach_id: true },
++        });
++        if (subject?.coach_id !== input.decider.id) {
++          throw new ForbiddenException('Draft is outside your tenant');
++        }
++      }
++    }
++
++    // AI never approves itself. The original requester also cannot
++    // approve their OWN human-written draft when someone else in the
++    // tenant could — approving an action they themselves typed defeats the
++    // human-in-the-loop check. Owners stay bound by this rule.
++    //
++    // B-AIB1-125 (AUDIT-14 U2, SAFE-MWBAI-125 blocker 3): the tenant coach
++    // IS the human in the loop for (a) a draft whose payload the model
++    // wrote, and (b) any draft in a single-coach tenant (no one else in the
++    // tenant can decide, so the rule only dead-ended the coach). The tenant
++    // and roster checks above already ran.
++    if (
++      draft.requester_id &&
++      draft.requester_id === input.decider.id &&
++      !(await this.tenantCoachMayDecideOwnDraft(draft, input.decider))
++    ) {
++      throw new ForbiddenException('A draft cannot be decided by its requester');
+     }
+ 
+     const status = input.decision;
+diff --git a/src/ai/gateway/materialisers/send-notification.materialiser.ts b/src/ai/gateway/materialisers/send-notification.materialiser.ts
+index c0c476b99..29e1dfa32 100644
+--- a/src/ai/gateway/materialisers/send-notification.materialiser.ts
++++ b/src/ai/gateway/materialisers/send-notification.materialiser.ts
+@@ -128,6 +128,12 @@ export class SendNotificationMaterializer implements CapabilityMaterializer {
+       throw err;
+     }
+ 
++    // B-AIB1-125 (AUDIT-14 C) — roster check. The recipient must be a client
++    // of the draft's tenant coach and the draft's own subject, re-read at
++    // approval time; otherwise a draft naming any user id could push to a
++    // stranger once approved.
++    await this.assertRecipientInRoster(draft, payload.clientId);
++
+     // Idempotency via schema-level @unique on ai_draft_id. Same race
+     // pattern as the other Stream 2 materialisers.
+     let notificationId: string;
+@@ -158,6 +164,7 @@ export class SendNotificationMaterializer implements CapabilityMaterializer {
+           select: { id: true },
+         });
+         if (existing) {
++          await this.markMaterialised(draft.id, existing.id);
+           return { status: 'already_materialised', ref: existing.id };
+         }
+         this.logger.error(
+@@ -175,6 +182,49 @@ export class SendNotificationMaterializer implements CapabilityMaterializer {
+     // requires an explicit nudge, swap this comment for that call;
+     // the row already exists so it is fire-and-forget either way.
+ 
++    await this.markMaterialised(draft.id, notificationId);
+     return { status: 'sent', ref: notificationId };
+   }
++
++  private async assertRecipientInRoster(
++    draft: AiActionDraft,
++    clientId: string,
++  ): Promise<void> {
++    const recipient = draft.tenant_coach_id
++      ? await this.prisma.user.findUnique({
++          where: { id: clientId },
++          select: { id: true, coach_id: true },
++        })
++      : null;
++    const inRoster =
++      !!recipient &&
++      recipient.coach_id === draft.tenant_coach_id &&
++      (!draft.subject_user_id || draft.subject_user_id === clientId);
++    if (inRoster) return;
++    this.logger.warn(
++      {
++        event: 'AI_MATERIALISER_ROSTER_REJECTED',
++        capability: this.capability,
++        draftId: draft.id,
++        tenantCoachId: draft.tenant_coach_id ?? null,
++      },
++      'materialiser refused: notification recipient is not a client of the draft tenant',
++    );
++    throw new ForbiddenException({
++      error: 'AI_DRAFT_RECIPIENT_NOT_IN_ROSTER',
++      capability: this.capability,
++      message: 'The notification recipient is not a client of this coach.',
++    });
++  }
++
++  // B-AIB1-125 (AUDIT-14 C) — persist the committed-success marker the decide
++  // gate requires (`materialised_ref IS NOT NULL` when a ref is returned).
++  // Without it AiApprovalService.decide 409s after the Notification row was
++  // already created, leaving a sent push on a still-pending draft.
++  private async markMaterialised(draftId: string, ref: string): Promise<void> {
++    await this.prisma.aiActionDraft.updateMany({
++      where: { id: draftId, materialised_ref: null },
++      data: { materialised_at: new Date(), materialised_ref: ref },
++    });
++  }
+ }
+diff --git a/test/ai-approval.service.spec.ts b/test/ai-approval.service.spec.ts
+index ca7b3944d..3ecc3f09d 100644
+--- a/test/ai-approval.service.spec.ts
++++ b/test/ai-approval.service.spec.ts
+@@ -1,4 +1,4 @@
+-import { AiApprovalService } from '../src/ai/gateway/ai-approval.service';
++import { AiApprovalService, isModelAuthoredPayload } from '../src/ai/gateway/ai-approval.service';
+ import { AuditService } from '../src/audit/audit.service';
+ 
+ function matchesWhere(row: any, where: any): boolean {
+@@ -18,10 +18,25 @@ function matchesWhere(row: any, where: any): boolean {
+   return true;
+ }
+ 
+-function buildPrisma(seed: any[] = []) {
++function buildPrisma(
++  seed: any[] = [],
++  // B-AIB1-125: roster (client id -> coach id) and active sub-coach count for
++  // the tenant-coach self-decide rule.
++  opts: { coachOf?: Record<string, string>; subCoachCount?: number } = {},
++) {
+   const drafts: any[] = [...seed];
+   const client: any = {
+     drafts,
++    user: {
++      findUnique: jest.fn(async ({ where }: any) =>
++        opts.coachOf && where.id in opts.coachOf
++          ? { id: where.id, coach_id: opts.coachOf[where.id] }
++          : null,
++      ),
++    },
++    teamSubCoachAssignment: {
++      count: jest.fn(async () => opts.subCoachCount ?? 0),
++    },
+     // HK-6a R2 (P1-4): decide() now wraps the status-flip + linked audit-row
+     // update in an interactive $transaction. Prisma's interactive transaction
+     // invokes the callback with a transaction client that exposes the same
+@@ -111,16 +126,19 @@ describe('AiApprovalService', () => {
+     expect(auditData.target_id).toBe('d-1');
+   });
+ 
+-  it('refuses to let the requester approve their own draft', async () => {
+-    const prisma = buildPrisma([
+-      {
+-        id: 'd-1',
+-        status: 'pending',
+-        capability: 'draft.coach_message',
+-        requester_id: 'coach-1',
+-        tenant_coach_id: 'coach-1',
+-      },
+-    ]);
++  it('refuses to let the requester approve their own human-written draft in a multi-coach tenant', async () => {
++    const prisma = buildPrisma(
++      [
++        {
++          id: 'd-1',
++          status: 'pending',
++          capability: 'draft.coach_message',
++          requester_id: 'coach-1',
++          tenant_coach_id: 'coach-1',
++        },
++      ],
++      { subCoachCount: 1 },
++    );
+     const svc = new AiApprovalService(prisma, makeAudit(prisma));
+     await expect(
+       svc.decide({
+@@ -151,6 +169,109 @@ describe('AiApprovalService', () => {
+     ).rejects.toThrow(/outside your tenant/);
+   });
+ 
++  describe('B-AIB1-125 — tenant coach decides drafts of their own clients', () => {
++    const aiDraft = (over: Partial<any> = {}) => ({
++      id: 'd-ai',
++      status: 'pending',
++      capability: 'draft.coach_message',
++      requester_id: 'coach-1',
++      subject_user_id: 'client-1',
++      tenant_coach_id: 'coach-1',
++      payload: { reply: 'Great week. Keep the Tuesday session.' },
++      rationale: 'Great week. Keep the Tuesday session.',
++      ...over,
++    });
++
++    it.each(['approved', 'rejected'] as const)(
++      'coach %s their own AI-authored draft (multi-coach tenant)',
++      async (decision) => {
++        const prisma = buildPrisma([aiDraft()], {
++          coachOf: { 'client-1': 'coach-1' },
++          subCoachCount: 2,
++        });
++        const svc = new AiApprovalService(prisma, makeAudit(prisma));
++        const updated = await svc.decide({
++          draftId: 'd-ai',
++          decider: { id: 'coach-1', role: 'coach' },
++          decision,
++        });
++        expect(updated.status).toBe(decision);
++        expect(updated.decided_by_id).toBe('coach-1');
++      },
++    );
++
++    it('coach approves their own human-written draft when they are the only coach in the tenant', async () => {
++      const prisma = buildPrisma(
++        [
++          aiDraft({
++            capability: 'draft.send_notification',
++            payload: { clientId: 'client-1', kind: 'coach_nudge', body: 'Check in tonight?' },
++            rationale: 'stub',
++          }),
++        ],
++        { coachOf: { 'client-1': 'coach-1' }, subCoachCount: 0 },
++      );
++      const svc = new AiApprovalService(prisma, makeAudit(prisma));
++      const updated = await svc.decide({
++        draftId: 'd-ai',
++        decider: { id: 'coach-1', role: 'coach' },
++        decision: 'approved',
++      });
++      expect(updated.status).toBe('approved');
++    });
++
++    it("coach cannot decide a draft about another coach's client, even in their own tenant", async () => {
++      const prisma = buildPrisma([aiDraft({ subject_user_id: 'client-2' })], {
++        coachOf: { 'client-1': 'coach-1', 'client-2': 'coach-2' },
++      });
++      const svc = new AiApprovalService(prisma, makeAudit(prisma));
++      await expect(
++        svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'approved' }),
++      ).rejects.toThrow(/outside your tenant/);
++      expect(prisma.drafts[0].status).toBe('pending');
++    });
++
++    it("coach cannot decide another coach's AI draft", async () => {
++      const prisma = buildPrisma(
++        [aiDraft({ requester_id: 'coach-2', tenant_coach_id: 'coach-2', subject_user_id: 'client-2' })],
++        { coachOf: { 'client-2': 'coach-2' } },
++      );
++      const svc = new AiApprovalService(prisma, makeAudit(prisma));
++      await expect(
++        svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'rejected' }),
++      ).rejects.toThrow(/outside your tenant/);
++    });
++
++    it('a draft with no tenant is no coach\'s to decide', async () => {
++      const prisma = buildPrisma([aiDraft({ requester_id: 'client-9', tenant_coach_id: null })], {
++        coachOf: { 'client-1': 'coach-1' },
++      });
++      const svc = new AiApprovalService(prisma, makeAudit(prisma));
++      await expect(
++        svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'approved' }),
++      ).rejects.toThrow(/outside your tenant/);
++    });
++
++    it('owner stays bound by the requester rule, even on an AI-authored draft', async () => {
++      const prisma = buildPrisma([aiDraft({ requester_id: 'owner-1' })], {
++        coachOf: { 'client-1': 'coach-1' },
++      });
++      const svc = new AiApprovalService(prisma, makeAudit(prisma));
++      await expect(
++        svc.decide({ draftId: 'd-ai', decider: { id: 'owner-1', role: 'owner' }, decision: 'approved' }),
++      ).rejects.toThrow(/requester/);
++    });
++
++    it('isModelAuthoredPayload: only the gateway default reply shape counts', () => {
++      expect(isModelAuthoredPayload({ reply: 'hi' }, 'hi')).toBe(true);
++      expect(isModelAuthoredPayload({ reply: 'x'.repeat(1500) }, 'x'.repeat(1000))).toBe(true);
++      expect(isModelAuthoredPayload({ reply: 'hi' }, 'other')).toBe(false);
++      expect(isModelAuthoredPayload({ reply: 'hi', clientId: 'c' }, 'hi')).toBe(false);
++      expect(isModelAuthoredPayload({ clientId: 'c', body: 'b' }, 'b')).toBe(false);
++      expect(isModelAuthoredPayload(null, null)).toBe(false);
++    });
++  });
++
+   it('refuses to decide an already-decided draft', async () => {
+     const prisma = buildPrisma([
+       {
+diff --git a/test/ai-execution-stream2.spec.ts b/test/ai-execution-stream2.spec.ts
+index 009120140..345576b0c 100644
+--- a/test/ai-execution-stream2.spec.ts
++++ b/test/ai-execution-stream2.spec.ts
+@@ -51,7 +51,7 @@ import { grantAllEgress } from './ai-egress/ai-egress.fakes';
+ // ---------------------------------------------------------------------------
+ 
+ interface MiniStore {
+-  users: Map<string, { id: string; role: string }>;
++  users: Map<string, { id: string; role: string; coach_id?: string | null }>;
+   workoutPlans: Map<string, { id: string; coach_id: string }>;
+   dailyMealPlans: Map<string, { id: string; coach_id: string }>;
+   workoutAssignments: any[];
+@@ -187,6 +187,10 @@ function makePrismaMock(store: MiniStore, opts: MockOpts = {}): any {
+         );
+       }),
+     },
++    // B-AIB1-125: SendNotificationMaterializer writes the materialised marker.
++    aiActionDraft: {
++      updateMany: jest.fn(async () => ({ count: 1 })),
++    },
+     $transaction: jest.fn(async (cb: any) => cb(prisma)),
+   };
+   return prisma;
+@@ -550,6 +554,7 @@ describe('Stream 2 §4.2 — SendNotificationMaterializer', () => {
+   function seedStore(): MiniStore {
+     const store = newStore();
+     store.users.set(COACH_ID, { id: COACH_ID, role: 'coach' });
++    store.users.set(CLIENT_ID, { id: CLIENT_ID, role: 'student', coach_id: COACH_ID });
+     return store;
+   }
+ 
+@@ -613,6 +618,53 @@ describe('Stream 2 §4.2 — SendNotificationMaterializer', () => {
+     expect(store.notifications).toHaveLength(0);
+   });
+ 
++  it('B-AIB1-125: writes materialised_ref (the decide gate needs it) on sent and on the race path', async () => {
++    const store = seedStore();
++    const prisma = makePrismaMock(store);
++    const m = new SendNotificationMaterializer(prisma);
++    const r = await m.materialize(happyDraft());
++    expect(prisma.aiActionDraft.updateMany).toHaveBeenCalledWith({
++      where: { id: '55555555-5555-5555-5555-555555555555', materialised_ref: null },
++      data: { materialised_at: expect.any(Date), materialised_ref: r.ref },
++    });
++    const r2 = await m.materialize(happyDraft());
++    expect(r2.status).toBe('already_materialised');
++    expect(prisma.aiActionDraft.updateMany).toHaveBeenLastCalledWith(
++      expect.objectContaining({ data: expect.objectContaining({ materialised_ref: r.ref }) }),
++    );
++  });
++
++  it("B-AIB1-125 roster: refuses a recipient who is another coach's client", async () => {
++    const store = seedStore();
++    store.users.set(CLIENT_ID, { id: CLIENT_ID, role: 'student', coach_id: 'other-coach' });
++    const prisma = makePrismaMock(store);
++    const m = new SendNotificationMaterializer(prisma);
++    await expect(m.materialize(happyDraft())).rejects.toMatchObject({
++      response: expect.objectContaining({ error: 'AI_DRAFT_RECIPIENT_NOT_IN_ROSTER' }),
++    });
++    expect(store.notifications).toHaveLength(0);
++  });
++
++  it('B-AIB1-125 roster: refuses a payload recipient that is not the draft subject', async () => {
++    const store = seedStore();
++    const prisma = makePrismaMock(store);
++    const m = new SendNotificationMaterializer(prisma);
++    const draft = happyDraft();
++    draft.subject_user_id = '33333333-3333-3333-3333-333333333333';
++    await expect(m.materialize(draft)).rejects.toBeInstanceOf(ForbiddenException);
++    expect(store.notifications).toHaveLength(0);
++  });
++
++  it('B-AIB1-125 roster: refuses a draft with no tenant coach', async () => {
++    const store = seedStore();
++    const prisma = makePrismaMock(store);
++    const m = new SendNotificationMaterializer(prisma);
++    const draft = happyDraft();
++    draft.tenant_coach_id = null;
++    await expect(m.materialize(draft)).rejects.toBeInstanceOf(ForbiddenException);
++    expect(store.notifications).toHaveLength(0);
++  });
++
+   it('owner role is accepted (parity with coach)', async () => {
+     const store = seedStore();
+     store.users.set(COACH_ID, { id: COACH_ID, role: 'owner' });

@@ -1,0 +1,1 @@
+done | PRs: none (planner) | plan: tgp-agent-context handoffs/op-125/AI_MASTER_BUILDER_PLAN.md @ 78aba854 | 7 code PRs (AIB-1a/1b in flight + AIB-2..6) + FLIP | needs operator: 2 (Fly secret-name check for AI_GATEWAY_CAPABILITIES; flip after SAFE-AIB + owner device tap)
