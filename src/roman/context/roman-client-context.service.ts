@@ -62,6 +62,7 @@ import {
   RomanSafetyIntakeSource,
 } from './roman-client-context.types';
 import { onRomanContextInvalidate } from './roman-context-invalidation';
+import { resolveRomanCoachScope } from './roman-coach-scope';
 
 export const ROMAN_CONTEXT_MEMO_TTL_MS = 15_000;
 /** C-651-4: hard bound on memoised bundles held in process memory. */
@@ -396,17 +397,16 @@ export class RomanClientContextService {
       return { context: this.emptyContext(clock, now, ['user']), query_count: queries };
     }
 
-    // Coach-owned facts only for a student whose current coach is live.
-    const coach =
-      user.coach && user.coach.role === 'coach' && !user.coach.deleted_at ? user.coach : null;
-    // Both the DB role and the JWT role must say "student" (defence in depth:
-    // the service already gates on the caller role; a mismatch gets nothing).
-    const coachId = user.role === 'student' && caller.role === 'student' && coach ? coach.id : null;
-    // B-665-3: a delegated sub-coach assigns plans and meal plans and writes in
-    // the head-coach thread as itself (MessagingService pins the thread to the
-    // head coach). Only an open delegation from the current head coach counts.
-    const subCoachId = coachId && overlay?.head_coach_id === coachId ? overlay.sub_coach_id : null;
-    const coachSide: string[] = coachId ? (subCoachId ? [coachId, subCoachId] : [coachId]) : [];
+    // Coach-owned facts only for a student (DB and JWT role) whose current
+    // coach is live, plus an open sub-coach delegation from that coach
+    // (B-665-3). The rule lives in roman-coach-scope.ts (shared with the
+    // v1.1 timeline reader).
+    const { coach, coachId, coachSide } = resolveRomanCoachScope({
+      userRole: user.role,
+      callerRole: caller.role,
+      coach: user.coach,
+      overlay,
+    });
 
     const today = clock.local_date;
     const d7 = addDays(today, -6);
