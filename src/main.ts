@@ -157,6 +157,9 @@ async function bootstrap() {
       // S-DUNNING-R2 — dunning email link; universal link to the in-app
       // card update, calm "open the app" page otherwise.
       'billing/update-card',
+      // HUNT-01-124 — sign-up confirmation landing (Supabase redirect for a
+      // confirmation link opened on a computer or without the app).
+      'verified',
       // Universal Links / App Links require these documents at the apex
       // domain (not under /api). See WellKnownController.
       '.well-known/apple-app-site-association',
