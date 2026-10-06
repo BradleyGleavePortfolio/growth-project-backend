@@ -14,6 +14,9 @@ import { SubscriptionCheckoutController } from './subscription-checkout.controll
 import { SubscriptionCheckoutService } from './subscription-checkout.service';
 import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
 import { TrialConflictService } from '../packages/trials/trial-conflict.service';
+import { ClientBillingController } from './client-billing.controller';
+import { ClientBillingReconciler } from './client-billing.reconciler';
+import { ClientBillingService } from './client-billing.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Module } from './dunning-v2/dunning-v2.module';
 import {
@@ -85,6 +88,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     AdminPaymentOpsController,
     AdminRefundReversalController,
     CoachPaymentOpsController,
+    // S-DUNNING-R2 — native card update (1A) and client cancel (2A / option A).
+    ClientBillingController,
   ],
   providers: [
     CheckoutService,
@@ -97,6 +102,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     RefundDisputeHandlerService,
     RefundTransferReversalScheduler,
     AdminAnalyticsService,
+    ClientBillingService,
+    ClientBillingReconciler,
     // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
     CronLeaseService,
     SettlementSweepCron,
@@ -110,6 +117,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     DunningService,
     RefundDisputeHandlerService,
     AdminAnalyticsService,
+    ClientBillingService,
   ],
 })
 export class CheckoutModule {}

@@ -99,6 +99,17 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CoachThreadState', field: 'user_id', action: del },
   { model: 'CoachThreadState', field: 'coach_id', action: del },
   { model: 'CoachThreadState', field: 'client_id', action: del },
+  // A4 broadcasts (#659). Copies already sent are ordinary CoachMessage rows
+  // (handled above; their cards cascade with the message). A broadcast the
+  // user owns as tenant or wrote as author is deleted with its runs and
+  // deliveries, so a removed author never keeps sending (A-659-7). Deliveries
+  // addressed to the user, their saved replies and client tags go too.
+  { model: 'CoachBroadcast', field: 'author_user_id', action: del },
+  { model: 'CoachBroadcast', field: 'coach_id', action: del },
+  { model: 'CoachBroadcastDelivery', field: 'recipient_id', action: del },
+  { model: 'CoachSavedReply', field: 'owner_user_id', action: del },
+  { model: 'CoachClientTag', field: 'coach_id', action: del },
+  { model: 'CoachClientTag', field: 'client_id', action: del },
   { model: 'Message', field: 'sender_id', action: del },
   { model: 'Message', field: 'recipient_id', action: del },
   { model: 'MessageDraft', field: 'coach_id', action: del },
@@ -157,6 +168,15 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'Lesson', field: 'coach_id', action: retain(FROZEN_PLAN) },
 
   // ── Workout and meal programming
+  // Roman approve-to-adjust (#655): a proposal carries the client's recovery
+  // signals, so it goes with the client and with the proposing or deciding
+  // coach; the change it applied stays in the client's assignment snapshot.
+  // Events cascade from their proposal. The append-only trigger refuses
+  // UPDATE, so an actor's events are deleted, never detached.
+  { model: 'WorkoutAdjustmentProposal', field: 'client_id', action: del },
+  { model: 'WorkoutAdjustmentProposal', field: 'coach_id', action: del },
+  { model: 'WorkoutAdjustmentProposal', field: 'decided_by_id', action: del },
+  { model: 'WorkoutAdjustmentEvent', field: 'actor_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'client_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'assigned_by_coach_id', action: retain(FROZEN_PLAN) },
   // S-MWB Programs (#640, B-640-3): the client's own program copies (bulk
@@ -305,6 +325,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CoachAIBudget', field: 'coach_user_id', action: retain(FINANCE) },
   { model: 'CoachLtvPeak', field: 'coach_id', action: del },
   { model: 'ExtensionPairCode', field: 'coach_id', action: del },
+  // A2 signup ledger (#658 C-658-2): both sides are deleted with the person.
+  { model: 'InviteRedemption', field: 'coach_id', action: del },
+  { model: 'InviteRedemption', field: 'client_user_id', action: del },
   { model: 'InviteCode', field: 'coach_id', action: del },
   { model: 'InviteCode', field: 'invited_by_user_id', action: detach('invited_by_user_id') },
   { model: 'InviteCode', field: 'accepted_by_user_id', action: detach('accepted_by_user_id') },
@@ -313,6 +336,19 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
     field: 'intended_email',
     action: detach('intended_email'),
     match: 'email',
+  },
+  // A1-COACHLESS (#657): the redemption ledger and the Roman card state are the
+  // user's own rows (FK cascade); a ledger row naming an erased coach replays
+  // that coach's card, so it goes too. The featured-coach singleton stays and
+  // only loses the erased person (FK SET NULL for the coach).
+  { model: 'CoachCodeRedemption', field: 'user_id', action: del },
+  { model: 'CoachCodeRedemption', field: 'coach_id', action: del },
+  { model: 'CoachlessPromptState', field: 'user_id', action: del },
+  { model: 'FeaturedCoachConfig', field: 'coach_user_id', action: detach('coach_user_id') },
+  {
+    model: 'FeaturedCoachConfig',
+    field: 'updated_by_user_id',
+    action: detach('updated_by_user_id'),
   },
 
   // ── Teams and sub-coaches (B-608-6)

@@ -1,0 +1,23 @@
+{
+  "id": "evt_dv2_invoice_paid",
+  "object": "event",
+  "api_version": "2024-06-20",
+  "type": "invoice.paid",
+  "livemode": false,
+  "data": {
+    "object": {
+      "id": "in_dv2_renewal_1",
+      "object": "invoice",
+      "billing_reason": "subscription_cycle",
+      "subscription": "sub_dv2_client",
+      "customer": "cus_dv2_client",
+      "amount_due": 15000,
+      "amount_paid": 15000,
+      "currency": "usd",
+      "attempt_count": 3,
+      "status": "paid",
+      "charge": "ch_dv2_retry_paid",
+      "status_transitions": { "paid_at": 0 }
+    }
+  }
+}

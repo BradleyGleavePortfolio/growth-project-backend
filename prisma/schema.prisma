@@ -200,6 +200,11 @@ model User {
   signup_ref                String?
 
   profile                        UserProfile?
+  // A1-COACHLESS — featured-coach config rows naming this coach, the user's
+  // coach-code redemption ledger and the coachless Roman card state.
+  featured_coach_configs         FeaturedCoachConfig[]    @relation("FeaturedCoachConfigCoach")
+  coach_code_redemptions         CoachCodeRedemption[]    @relation("CoachCodeRedemptionUser")
+  coachless_prompt_state         CoachlessPromptState?    @relation("CoachlessPromptStateUser")
   logged_entries                 LoggedFoodEntry[]
   workouts                       WorkoutSession[]
   fasting_windows                FastingWindow[]
@@ -378,6 +383,9 @@ model User {
   team_audit_events_as_actor    TeamAuditEvent[]         @relation("TeamAuditEventActor")
   team_audit_events_as_target   TeamAuditEvent[]         @relation("TeamAuditEventTarget")
   invite_codes_invited_by       InviteCode[]             @relation("InviteCodeInvitedBy")
+  // A2 coach code tools — signup ledger (coach side / client side).
+  invite_redemptions_as_coach   InviteRedemption[]       @relation("InviteRedemptionCoach")
+  invite_redemptions_as_client  InviteRedemption[]       @relation("InviteRedemptionClient")
 
   // Phase 8 Connect — head-coach team profile (business name, public team
   // code, capacity mirror) and sub-coach invitations. One TeamProfile per
@@ -511,6 +519,14 @@ model User {
   community_classroom_posts_authored CommunityClassroomPost[]          @relation("CommunityClassroomPostCoach")
   community_voice_notes_authored     CommunityVoiceNote[]              @relation("CommunityVoiceNoteAuthor")
   community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
+  // A4 broadcasts, saved replies and client tags (additive back-relations;
+  // migration 20270304000000_a4_broadcasts_cards_saved_replies).
+  coach_broadcasts_as_tenant         CoachBroadcast[]                  @relation("CoachBroadcastTenant")
+  coach_broadcasts_authored          CoachBroadcast[]                  @relation("CoachBroadcastAuthor")
+  coach_broadcasts_received          CoachBroadcastDelivery[]          @relation("CoachBroadcastDeliveryRecipient")
+  coach_saved_replies                CoachSavedReply[]                 @relation("CoachSavedReplyOwner")
+  coach_client_tags_as_coach         CoachClientTag[]                  @relation("CoachClientTagCoach")
+  coach_client_tags_as_client        CoachClientTag[]                  @relation("CoachClientTagClient")
 
   // Roman Phase 1 — Chat MVP. A user owns Roman chat sessions (one active
   // session per (userId, surface) day-key). Each session holds an ordered
@@ -577,6 +593,15 @@ model CoachProfile {
   current_period_end         DateTime?
   trial_end                  DateTime?
   ai_monthly_spend_cap_cents Int                 @default(5000)
+  // S-AVAIL-122: coach booking options. Defaults reproduce the fixed rules
+  // that applied before coaches could set them (5 minutes notice, 120 days
+  // ahead, no buffers, no daily cap). Ranges are enforced by the API.
+  booking_min_notice_minutes Int                 @default(5)
+  booking_window_days        Int                 @default(120)
+  booking_buffer_before_min  Int                 @default(0)
+  booking_buffer_after_min   Int                 @default(0)
+  // NULL = no daily cap.
+  booking_daily_max          Int?
   created_by_owner_id        String?
   created_by_owner           User?               @relation("CoachProfileCreatedBy", fields: [created_by_owner_id], references: [id])
   created_at                 DateTime            @default(now())
@@ -763,35 +788,80 @@ model ActivityEvent {
 }
 
 model InviteCode {
-  id                  String    @id @default(uuid())
-  code                String    @unique
+  id                  String             @id @default(uuid())
+  code                String             @unique
   coach_id            String
-  coach               User      @relation("CoachInviteCodes", fields: [coach_id], references: [id])
+  coach               User               @relation("CoachInviteCodes", fields: [coach_id], references: [id])
   // Team Mode — sub-coach attribution. When a sub-coach creates an invite
   // their user_id lands here while coach_id remains the head coach who
   // owns the team. Null on legacy rows where the head coach issued the
   // invite directly. The audit feed reads this to show "Invited by sub-
   // coach <name>" without joining a separate ledger.
   invited_by_user_id  String?
-  invited_by          User?     @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
-  created_at          DateTime  @default(now())
+  invited_by          User?              @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
+  created_at          DateTime           @default(now())
   expires_at          DateTime?
   max_uses            Int?
-  used_count          Int       @default(0)
-  revoked             Boolean   @default(false)
-  intended_email      String?   @db.Text
+  used_count          Int                @default(0)
+  revoked             Boolean            @default(false)
+  intended_email      String?            @db.Text
   accepted_by_user_id String?
   accepted_at         DateTime?
   // C01 — optional package binding: on successful attach via this code the
   // redeemer receives a $0 grant for `package` according to `grant_mode`.
   package_id          String?
-  package             CoachPackage? @relation("InviteCodePackage", fields: [package_id], references: [id], onDelete: SetNull)
-  grant_mode          InviteGrantMode @default(none)
+  package             CoachPackage?      @relation("InviteCodePackage", fields: [package_id], references: [id], onDelete: SetNull)
+  grant_mode          InviteGrantMode    @default(none)
+  // A2 coach code tools (20270302000000). `label` is the coach's own name
+  // for the code ("Clinic front desk"). `revoked_at` stamps when `revoked`
+  // flipped. A rotation links the successor to the code it replaced through
+  // `rotated_from_id` (unique: one successor per code, which also makes a
+  // retried rotate idempotent). `idempotency_key` makes a retried create
+  // return the first row instead of minting a second code.
+  label               String?            @db.Text
+  revoked_at          DateTime?
+  idempotency_key     String?            @db.Text
+  rotated_from_id     String?            @unique
+  rotated_from        InviteCode?        @relation("InviteCodeRotation", fields: [rotated_from_id], references: [id], onDelete: SetNull)
+  // Archived coach link rows only: the coach link code that replaced this one (B-658-7 retry replay).
+  successor_code      String?            @db.Text
+  rotated_to          InviteCode?        @relation("InviteCodeRotation")
+  redemptions         InviteRedemption[]
 
+  @@unique([coach_id, idempotency_key])
   @@index([coach_id])
   @@index([code])
   @@index([invited_by_user_id])
   @@index([package_id])
+}
+
+// A2 coach code tools — append-only signup ledger. One row per NEW
+// redemption (InviteCodesService.attachUserToCoachByCode, inside the attach
+// transaction), never for an idempotent replay. `code` is the exact code
+// string redeemed (coach link or InviteCode row) and `package_id` the package
+// bound to that code at redemption time, so daily signups per code and per
+// package are exact counts of rows, bucketed in the coach's time zone.
+// Coach-scoped RLS (owner reads all); no public writes.
+model InviteRedemption {
+  id             String        @id @default(uuid())
+  coach_id       String
+  coach          User          @relation("InviteRedemptionCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_user_id String
+  client         User          @relation("InviteRedemptionClient", fields: [client_user_id], references: [id], onDelete: Cascade)
+  invite_code_id String?
+  invite_code    InviteCode?   @relation(fields: [invite_code_id], references: [id], onDelete: SetNull)
+  code           String        @db.Text
+  // 'coach_link' (CoachProfile.invite_code) | 'invite_code' (InviteCode row)
+  source         String        @db.Text
+  package_id     String?
+  package        CoachPackage? @relation("InviteRedemptionPackage", fields: [package_id], references: [id], onDelete: SetNull)
+  redeemed_at    DateTime      @default(now())
+
+  @@index([coach_id, redeemed_at])
+  @@index([invite_code_id])
+  @@index([client_user_id])
+  @@index([package_id])
+  @@index([code])
 }
 
 model UserProfile {
@@ -1283,6 +1353,11 @@ model CoachMessage {
   // MessagingService.sendAsCoach returns the existing row with no side effects.
   // NULL for every other message.
   welcome_job_id String? @unique
+
+  // A4 — rich card attached to this message (workout, meal plan, booking,
+  // package, check-in) and, for broadcast copies, the delivery that wrote it.
+  card               CoachMessageCard?
+  broadcast_delivery CoachBroadcastDelivery?
 
   // A3-MSG-CORE (20270303000000) — Telegram-grade message actions.
   // Offline-queue idempotency key minted by the sender's device (UUID). A
@@ -2596,10 +2671,65 @@ model ClientWorkoutAssignment {
   // legacy assignments have none and fall back to the live workout_plan join.
   snapshot ClientWorkoutAssignmentSnapshot? @relation()
 
+  // Roman approve-to-adjust proposals targeting this workout.
+  adjustment_proposals WorkoutAdjustmentProposal[]
+
   @@index([client_id, scheduled_for])
   @@index([workout_plan_id, scheduled_for])
   @@index([assigned_by_coach_id])
   @@index([assigned_by_coach_id, approved_by_coach_at])
+}
+
+// Roman approve-to-adjust (20270227000000). A deterministic recovery rule
+// (src/roman-adjust/roman-adjust.rules.ts) proposes a change to ONE client's
+// next workout; the coach approves, edits or dismisses it. The change is
+// written to that assignment's snapshot only, never the shared plan.
+// status: pending | approved | edited | dismissed | undone | expired | withdrawn
+// RLS: service_role all; the proposing coach reads own rows; no client,
+// owner or anon access. Kill switch FEATURE_ROMAN_ADJUST_ENABLED (default off).
+model WorkoutAdjustmentProposal {
+  id                  String                   @id @default(uuid())
+  coach_id            String
+  client_id           String
+  assignment_id       String
+  assignment          ClientWorkoutAssignment  @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  rule_key            String
+  rule_version        Int
+  status              String                   @default("pending")
+  severity            String
+  signals             Json
+  proposed_change     Json
+  applied_change      Json?
+  base_fingerprint    String
+  applied_fingerprint String?
+  before_exercises    Json?
+  roman_text          String
+  decided_by_id       String?
+  decided_at          DateTime?
+  dismiss_reason      String?
+  undo_until          DateTime?
+  created_at          DateTime                 @default(now())
+  updated_at          DateTime                 @updatedAt
+  events              WorkoutAdjustmentEvent[]
+
+  @@unique([assignment_id, rule_key])
+  @@index([coach_id, status, created_at])
+  @@index([client_id, created_at])
+}
+
+// Append-only audit trail of every proposal state change (trigger rejects
+// UPDATE). action: proposed | approved | edited | dismissed | undone |
+// expired | withdrawn | apply_refused
+model WorkoutAdjustmentEvent {
+  id          String                    @id @default(uuid())
+  proposal_id String
+  proposal    WorkoutAdjustmentProposal @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
+  actor_id    String?
+  action      String
+  detail      Json?
+  created_at  DateTime                  @default(now())
+
+  @@index([proposal_id, created_at])
 }
 
 // Generic idempotency ledger for workout-builder coach-side mutations.
@@ -3707,7 +3837,10 @@ model CoachPackage {
   purchases ClientPurchase[]
   // C01 — invite codes / permanent coach codes bound to this package.
   bound_invite_codes    InviteCode[]   @relation("InviteCodePackage")
+  invite_redemptions    InviteRedemption[] @relation("InviteRedemptionPackage")
   bound_coach_profiles  CoachProfile[] @relation("CoachProfileInviteCodePackage")
+  // A1-COACHLESS — featured-coach configs that sell this package.
+  featured_coach_configs FeaturedCoachConfig[] @relation("FeaturedCoachConfigPackage")
 
   // R43 Storefront Phase 1 — guest-checkout share links.
   // share_token is minted on demand via POST /packages/:id/share-link and
@@ -4039,6 +4172,11 @@ model ClientPurchase {
   // S-FEE — one settlement per Stripe charge (first charge + every renewal).
   settlements            ChargeSettlement[]
   dunning                DunningState?
+  // S-DUNNING-R3: per-purchase billing-action lease (fenced) and the durable
+  // journal of the client's own billing operations (1A pay, 2A cancel).
+  billing_lease          ClientBillingLease?
+  billing_operations     ClientBillingOperation[]
+  dispute_obligations    DunningDisputeObligation[]
   reminders              PaymentReminder[]
   refunds                ChargeRefund[]
   disputes               ChargeDispute[]
@@ -4695,12 +4833,136 @@ model DunningState {
   // charge is later reversed. Drives regular-vs-"again" copy selection.
   // Defaulted: existing rows read back 0 (zero-mutation-elsewhere).
   reversal_count           Int            @default(0)
+  // S-DUNNING-R2/R3 (owner 2A) — the client ended their plan during this
+  // dunning cycle. Written together with the durable ClientBillingOperation
+  // intent BEFORE the first void; status 'abandoned' follows once the
+  // subscription is canceled. Cleared again when the cancel falls back to
+  // option A because the period turned out to be paid. While set, the
+  // cycle sends no notices, never Day-10 locks, and a live
+  // customer.subscription.updated cannot hand access back.
+  client_canceled_at       DateTime?
+  // B-688-2: when the v2 sweep last looked at this due cycle without
+  // advancing or locking it. The sweep serves never and least recently
+  // looked at cycles first, so rows that keep skipping cannot starve a due
+  // cycle behind them.
+  sweep_checked_at         DateTime?
+  // D2d (Sol B-705-4): when Stripe confirmed the dispute pause of this cycle
+  // (pause_collection set and open invoices stopped). Null while the pause
+  // is only recorded here: the client is never told billing is paused until
+  // it is, and the v2 sweep re-asserts an unconfirmed pause. Cleared by the
+  // coach restart before Stripe resumes.
+  billing_paused_at        DateTime?
 
-  attempts DunningAttempt[]
+  attempts         DunningAttempt[]
+  // S-DUNNING-R3 (B-628-6): durable per-channel notice outbox.
+  notice_deliveries DunningNoticeDelivery[]
 
   @@index([status])
   @@index([status, cancel_scheduled_at])
   @@index([status, next_attempt_at])
+}
+
+/// S-DUNNING-R3 (B-628-9) — per-purchase billing-action lease with a
+/// monotonic fence. A client card update that pays open invoices and a
+/// client cancel that voids them claim it by CAS (free when holder is null
+/// or holder_until has passed; every claim increments fence). The holder
+/// re-checks it (CAS on holder) before every Stripe money call and inside
+/// every money-write transaction, so a stalled holder whose lease expired
+/// can never write after a newer holder took over. One row per purchase,
+/// created on first use, so it works when no DunningState exists.
+model ClientBillingLease {
+  purchase_id  String         @id
+  purchase     ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  holder       String?
+  holder_until DateTime?
+  fence        Int            @default(0)
+  created_at   DateTime       @default(now())
+  updated_at   DateTime       @updatedAt
+}
+
+/// S-DUNNING-R3 (B-628-2/5) — durable journal of one client billing
+/// operation on one purchase. kind 'card_pay' (owner 1A: pay the approved
+/// open invoices with the card just saved; one row per purchase and
+/// SetupIntent) or 'cancel' (owner 2A: written BEFORE the first void).
+/// phase records how far it got; completed_at null + stale updated_at is
+/// resumed by the hourly reconciler. lines holds per-invoice integer-cent
+/// results ([{invoice_id, currency, amount_due_cents, amount_paid_cents,
+/// result}]); never summed across currencies.
+model ClientBillingOperation {
+  id              String         @id @default(uuid())
+  purchase_id     String
+  purchase        ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  kind            String
+  phase           String
+  fence           Int
+  setup_intent_id String?
+  lines           Json?
+  error_code      String?
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+  completed_at    DateTime?
+
+  @@index([purchase_id, kind, completed_at])
+  @@index([kind, completed_at, updated_at])
+  @@index([setup_intent_id])
+}
+
+/// S-DUNNING-R3 (B-628-6) — durable per-channel delivery record for one
+/// dunning v2 notice step of one cycle. id is deterministic
+/// "<dunning_state_id>:<cycle_key>:<step_index>:<channel>" so a step is
+/// recorded once per cycle; cycle_key is the cycle's entered_at instant, so
+/// a later renewal cycle on the same DunningState never reuses a key.
+/// status pending | sent | failed | skipped | dead. A pending or failed row
+/// whose next_attempt_at has passed is retried by the hourly sweep.
+model DunningNoticeDelivery {
+  id               String       @id
+  dunning_state_id String
+  dunning_state    DunningState @relation(fields: [dunning_state_id], references: [id], onDelete: Cascade)
+  cycle_key        String
+  step_index       Int
+  channel          String
+  status           String       @default("pending")
+  attempts         Int          @default(0)
+  last_error       String?
+  next_attempt_at  DateTime?
+  sent_at          DateTime?
+  /// S-DUNNING-R4 (B-628-6): the worker that claimed this delivery
+  /// ('sending'; next_attempt_at is then the claim's expiry). Only that
+  /// holder may write the receipt.
+  claim_token      String?
+  /// Transport idempotency attempt of the current claim; a takeover of an
+  /// expired claim reuses it so an email that did go out is not sent again.
+  key_attempt      Int?
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @updatedAt
+
+  @@index([status, next_attempt_at])
+  @@index([dunning_state_id, cycle_key])
+}
+
+/// S-DUNNING-R5 (B-628-8) — one Stripe dispute obligation on one purchase,
+/// as the dunning v2 path saw it. Written under the purchase's DunningState
+/// row lock by BOTH charge.dispute.created (status 'open') and
+/// charge.dispute.closed (the closing status), so a won dispute can never
+/// lift a purchase-wide reversal lock while another dispute on that purchase
+/// is open or lost, whichever webhook lands first. ChargeDispute (refund /
+/// dispute ledger) is read alongside it; a terminal status on either wins.
+model DunningDisputeObligation {
+  stripe_dispute_id String         @id
+  purchase_id       String
+  purchase          ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  stripe_charge_id  String?
+  /// open | won | warning_closed | lost | <other Stripe dispute status>
+  status            String
+  closed_at         DateTime?
+  /// D2d (Opus B-705-3): the coach restarted the plan with this dispute on
+  /// record. A later closure (lost included) or a redelivered opening of
+  /// this dispute never changes that plan's access again; money still moves.
+  restarted_at      DateTime?
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+
+  @@index([purchase_id])
 }
 
 // DUNNING-V2 (B3 §2.1) — branded JWT recovery links. NEW TABLE ONLY; no FK
@@ -8122,6 +8384,249 @@ model AiProcessingConsentEvent {
   created_at      DateTime @default(now())
 
   @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
+}
+
+// ============================================================
+// A4-MSG-BROADCAST — segmented, scheduled and recurring coach broadcasts,
+// rich message cards, saved replies and coach-private client tags.
+// Migration 20270304000000_a4_broadcasts_cards_saved_replies.
+//
+// Every table is server-only: RLS enabled + forced, service_role all, anon
+// and authenticated denied (RESTRICTIVE). All reads and writes go through
+// the API, which scopes each row to the caller's coaching tenant.
+//
+// Member privacy: a broadcast is fanned out as one CoachMessage per
+// recipient in that recipient's own 1:1 thread. No client-facing route ever
+// reads CoachBroadcast or CoachBroadcastDelivery, so a client never learns
+// who else received it.
+// ============================================================
+
+// One broadcast definition. `segment` and `recurrence` are validated JSON
+// (src/broadcasts/segment.ts, src/broadcasts/recurrence.ts). `next_run_at`
+// is the next occurrence the dispatcher will claim; it is advanced with a
+// compare-and-set in the same transaction that inserts the run row.
+model CoachBroadcast {
+  id               String    @id @default(uuid())
+  // Tenant: the head coach whose roster the segment is drawn from.
+  coach_id         String
+  coach            User      @relation("CoachBroadcastTenant", fields: [coach_id], references: [id], onDelete: Cascade)
+  // Who wrote it (head coach or a sub-coach of the tenant).
+  author_user_id   String?
+  author           User?     @relation("CoachBroadcastAuthor", fields: [author_user_id], references: [id], onDelete: SetNull)
+  // draft | scheduled | sending | sent | paused | canceled | failed
+  status           String    @default("draft")
+  body             String
+  // Validated card spec { type, ref_id, snapshot } or null.
+  card             Json?
+  segment          Json
+  // IANA zone the schedule and recurrence are expressed in.
+  timezone         String
+  send_at          DateTime?
+  recurrence       Json?
+  next_run_at      DateTime?
+  // Urgent broadcasts bypass recipient quiet hours (OR-113-5).
+  urgent           Boolean   @default(false)
+  occurrences_sent Int       @default(0)
+  last_run_at      DateTime?
+  failure_code     String?
+  idempotency_key  String?
+  canceled_at      DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  runs CoachBroadcastRun[]
+
+  // A-659-6: the Idempotency-Key namespace is per author, so a key replays
+  // only the caller's own broadcast and never resolves another author's row.
+  @@unique([coach_id, author_user_id, idempotency_key])
+  @@index([status, next_run_at])
+  @@index([coach_id, created_at(sort: Desc)])
+  @@map("coach_broadcasts")
+}
+
+// One occurrence of a broadcast. (broadcast_id, run_key) is unique, so an
+// occurrence can be created once no matter how many dispatcher instances or
+// restarts race for it. lease_holder / lease_until is the CronLease-style
+// single-runner lease for the fan-out step.
+model CoachBroadcastRun {
+  id              String         @id @default(uuid())
+  broadcast_id    String
+  broadcast       CoachBroadcast @relation(fields: [broadcast_id], references: [id], onDelete: Cascade)
+  // ISO instant of the scheduled occurrence.
+  run_key         String
+  scheduled_for   DateTime
+  // pending | delivering | complete | failed
+  status          String         @default("pending")
+  lease_holder    String?
+  lease_until     DateTime?
+  recipient_count Int            @default(0)
+  failure_code    String?
+  fanned_out_at   DateTime?
+  completed_at    DateTime?
+  created_at      DateTime       @default(now())
+  // B-659-1: the occurrence payload, frozen in the transaction that claims
+  // the occurrence. Fan-out reads `segment`; delivery reads `body`, `card`
+  // and `urgent`. An edit to the broadcast never changes a claimed run.
+  body            String
+  card            Json?
+  segment         Json
+  urgent          Boolean        @default(false)
+
+  deliveries CoachBroadcastDelivery[]
+
+  @@unique([broadcast_id, run_key])
+  @@index([status, lease_until])
+  @@map("coach_broadcast_runs")
+}
+
+// Per-recipient delivery state. (run_id, recipient_id) is unique, so a
+// recipient appears once per occurrence; message_id is unique, so one
+// delivery can write at most one CoachMessage.
+model CoachBroadcastDelivery {
+  id            String            @id @default(uuid())
+  run_id        String
+  run           CoachBroadcastRun @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  broadcast_id  String
+  recipient_id  String
+  recipient     User              @relation("CoachBroadcastDeliveryRecipient", fields: [recipient_id], references: [id], onDelete: Cascade)
+  // pending | deferred | delivered | skipped_blocked | skipped_ineligible | failed
+  status        String            @default("pending")
+  deliver_after DateTime          @default(now())
+  defer_reason  String?
+  lease_holder  String?
+  lease_until   DateTime?
+  attempts      Int               @default(0)
+  message_id    String?           @unique
+  message       CoachMessage?     @relation(fields: [message_id], references: [id], onDelete: SetNull)
+  // sent | suppressed_muted | suppressed_pref | failed
+  push_status   String?
+  failure_code  String?
+  delivered_at  DateTime?
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
+
+  @@unique([run_id, recipient_id])
+  @@index([status, deliver_after])
+  @@index([broadcast_id, status])
+  @@index([recipient_id])
+  @@map("coach_broadcast_deliveries")
+}
+
+// A rich card on a CoachMessage. `ref_id` was validated against the sending
+// coach's tenant when the card was attached; `snapshot` is the display data
+// captured then, so a client never needs read access to the coach's library.
+model CoachMessageCard {
+  id         String       @id @default(uuid())
+  message_id String       @unique
+  message    CoachMessage @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  // workout | meal_plan | booking | package | check_in
+  card_type  String
+  ref_id     String?
+  snapshot   Json
+  created_at DateTime     @default(now())
+
+  @@index([card_type, ref_id])
+  @@map("coach_message_cards")
+}
+
+// Saved replies: reusable message text per coach user.
+model CoachSavedReply {
+  id            String    @id @default(uuid())
+  owner_user_id String
+  owner         User      @relation("CoachSavedReplyOwner", fields: [owner_user_id], references: [id], onDelete: Cascade)
+  title         String
+  body          String
+  use_count     Int       @default(0)
+  last_used_at  DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@unique([owner_user_id, title])
+  @@index([owner_user_id, updated_at(sort: Desc)])
+  @@map("coach_saved_replies")
+}
+
+// Coach-private tags on a client (segment input). Never shown to clients.
+model CoachClientTag {
+  id         String   @id @default(uuid())
+  coach_id   String
+  coach      User     @relation("CoachClientTagCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_id  String
+  client     User     @relation("CoachClientTagClient", fields: [client_id], references: [id], onDelete: Cascade)
+  tag        String
+  created_at DateTime @default(now())
+
+  @@unique([coach_id, client_id, tag])
+  @@index([coach_id, tag])
+  @@index([client_id])
+  @@map("coach_client_tags")
+}
+
+// ─── A1-COACHLESS: coachless Home, scripted Roman pitch, coach code ─────────
+//
+// FeaturedCoachConfig is a singleton (id = 'default', CHECK-enforced) holding
+// the platform's featured-coach offer shown to coachless clients: the code,
+// the banner/offer/Roman copy and the Roman card frequency caps. Edited only
+// by the platform owner through PUT /admin/featured-coach (audited). The
+// "accepting clients" state served to clients is this row's switch AND the
+// featured coach being able to accept clients (code resolves, coach role,
+// CoachSubscription active/trialing/grandfathered).
+model FeaturedCoachConfig {
+  id                      String        @id @default("default")
+  coach_user_id           String?
+  coach                   User?         @relation("FeaturedCoachConfigCoach", fields: [coach_user_id], references: [id], onDelete: SetNull)
+  code                    String?
+  package_id              String?
+  package                 CoachPackage? @relation("FeaturedCoachConfigPackage", fields: [package_id], references: [id], onDelete: SetNull)
+  banner_title            String
+  offer_text              String?
+  roman_pitch_text        String?
+  accepting_clients       Boolean       @default(false)
+  roman_enabled           Boolean       @default(false)
+  roman_min_hours_between Int           @default(24)
+  roman_max_per_week      Int           @default(3)
+  roman_snooze_days       Int           @default(14)
+  roman_max_not_now       Int           @default(2)
+  updated_by_user_id      String?
+  created_at              DateTime      @default(now())
+  updated_at              DateTime      @updatedAt
+}
+
+// Idempotency ledger + attempt record for POST /coachless/coach-code/redeem.
+// One row per (user, Idempotency-Key). 'completed' rows replay their stored
+// response; 'failed' rows may be reclaimed by a retry of the same key;
+// 'in_progress' rows older than the stale window may be reclaimed after a
+// crash. Rows cascade with the user (account erasure).
+model CoachCodeRedemption {
+  id              String   @id @default(uuid())
+  user_id         String
+  user            User     @relation("CoachCodeRedemptionUser", fields: [user_id], references: [id], onDelete: Cascade)
+  idempotency_key String
+  request_hash    String
+  status          String   @default("in_progress")
+  outcome         String?
+  coach_id        String?
+  http_status     Int?
+  response        Json?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@unique([user_id, idempotency_key])
+  @@index([user_id, created_at])
+}
+
+// Per-user state of the scripted coachless Roman card: impression counts for
+// the frequency cap and the persisted "Not now". Cascades with the user.
+model CoachlessPromptState {
+  user_id                 String    @id
+  user                    User      @relation("CoachlessPromptStateUser", fields: [user_id], references: [id], onDelete: Cascade)
+  roman_seen_count        Int       @default(0)
+  roman_window_started_at DateTime?
+  roman_last_seen_at      DateTime?
+  roman_not_now_count     Int       @default(0)
+  roman_not_now_at        DateTime?
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
 }
 
 // S-SCHED-5 auto-expiry: single-runner lease for scheduling sweeps (one row

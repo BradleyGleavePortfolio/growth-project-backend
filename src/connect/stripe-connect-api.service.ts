@@ -24,6 +24,12 @@ export class StripeConnectApiError extends Error {
     public readonly httpStatus: number,
     public readonly stripeCode: string | null,
     public readonly stripeType: string | null,
+    // S-DUNNING-R2: the issuer's decline reason on a card_error
+    // (e.g. insufficient_funds), so a failed in-app payment is truthful.
+    public readonly declineCode: string | null = null,
+    // B-628-11 (R9): Stripe's `Idempotent-Replayed: true` header. Only a
+    // replayed answer is the cached result of the key's first execution.
+    public readonly idempotentReplayed: boolean = false,
   ) {
     super(message);
     this.name = 'StripeConnectApiError';
@@ -193,6 +199,21 @@ export interface StripeChargeObject {
 
 // Client-side deadline for every Stripe Connect API call (ms).
 export const STRIPE_CONNECT_TIMEOUT_MS = 10_000;
+
+// S-DUNNING-R2 — an invoice as the dunning paths read it.
+export interface StripeInvoiceObject {
+  id: string;
+  status: string; // draft | open | paid | uncollectible | void
+  subscription?: string | null;
+  customer?: string | null;
+  amount_due?: number;
+  amount_paid?: number;
+  amount_remaining?: number;
+  currency?: string;
+  created?: number;
+  payment_intent?: string | { id?: string; status?: string; client_secret?: string | null } | null;
+  [k: string]: unknown;
+}
 
 @Injectable()
 export class StripeConnectApiService {
@@ -765,10 +786,11 @@ export class StripeConnectApiService {
 
   // B-680-2 — one invoice as Stripe shows it now (draft | open | paid | void |
   // uncollectible). A late invoice.payment_failed is checked against it.
-  async retrieveInvoice(
-    invoiceId: string,
-  ): Promise<{ id: string; status?: string | null; [k: string]: unknown }> {
-    return this.get(`/invoices/${encodeURIComponent(invoiceId)}`);
+  // S-DUNNING-R2 — `payment_intent` is expanded so the dunning card-update
+  // path can hand its client_secret to the app when the bank wants 3DS.
+  async retrieveInvoice(invoiceId: string): Promise<StripeInvoiceObject> {
+    const q = new URLSearchParams({ 'expand[0]': 'payment_intent' }).toString();
+    return this.get<StripeInvoiceObject>(`/invoices/${encodeURIComponent(invoiceId)}?${q}`);
   }
 
   // S-FEE round 3 (B-627-1) — one page of the platform's PAID invoices created
@@ -1050,7 +1072,8 @@ export class StripeConnectApiService {
     const form: Record<string, string> = {
       customer: args.customer,
       usage: 'off_session',
-      on_behalf_of: args.onBehalfOf,
+      // Stripe refuses an empty on_behalf_of: a client with no destination account omits it.
+      ...(args.onBehalfOf ? { on_behalf_of: args.onBehalfOf } : {}),
     };
     for (const [k, v] of Object.entries(args.metadata)) form[`metadata[${k}]`] = v;
     return this.post('/setup_intents', form, args.idempotencyKey);
@@ -1076,6 +1099,163 @@ export class StripeConnectApiService {
       customer: args.customerId,
       return_url: args.returnUrl,
     });
+  }
+
+  // --- S-DUNNING-R2 — native card update (OR-110-2) and owner rulings 1A/2A ---
+  //
+  // All on the PLATFORM account (no Stripe-Account header): the client's
+  // Customer, the subscription and its invoices live on the platform; funds
+  // reach the coach through the S-FEE settlement transfer of each paid
+  // charge. Every mutation carries an Idempotency-Key. createSetupIntent,
+  // retrieveSetupIntent, setSubscriptionDefaultPaymentMethod, retrieveInvoice
+  // and voidInvoice are the shared B-RECUR / B-680-2 / C-679-1 methods above.
+
+  /** Customer default for future invoices (priority 3 in Stripe's order). */
+  async setCustomerDefaultPaymentMethod(args: {
+    customerId: string;
+    paymentMethodId: string;
+    idempotencyKey: string;
+  }): Promise<StripeCustomerObject> {
+    return this.post<StripeCustomerObject>(
+      `/customers/${encodeURIComponent(args.customerId)}`,
+      { 'invoice_settings[default_payment_method]': args.paymentMethodId },
+      args.idempotencyKey,
+    );
+  }
+
+  /** Open (finalized, unpaid) invoices of one subscription, newest first. */
+  /**
+   * Every open invoice on a subscription, following Stripe's `has_more`
+   * cursor (S-DUNNING-R3 B-628-4: a single page silently dropped invoices
+   * past the first 10). A partial list is never returned: past the page cap
+   * or on a malformed page this throws, so callers never act on (charge,
+   * void, quote) an incomplete set.
+   */
+  async listOpenInvoices(
+    subscriptionId: string,
+    opts: { pageSize?: number; maxPages?: number } = {},
+  ): Promise<StripeInvoiceObject[]> {
+    const pageSize = Math.min(Math.max(opts.pageSize ?? 100, 1), 100);
+    const maxPages = Math.max(opts.maxPages ?? 10, 1);
+    const all: StripeInvoiceObject[] = [];
+    let startingAfter: string | null = null;
+    for (let page = 0; page < maxPages; page++) {
+      const params: Record<string, string> = {
+        subscription: subscriptionId,
+        status: 'open',
+        limit: String(pageSize),
+      };
+      if (startingAfter) params.starting_after = startingAfter;
+      const q = new URLSearchParams(params).toString();
+      const res = await this.get<{ data?: StripeInvoiceObject[]; has_more?: boolean }>(
+        `/invoices?${q}`,
+      );
+      if (!Array.isArray(res?.data)) {
+        throw new StripeConnectApiError(
+          'Stripe returned a malformed invoice list',
+          502,
+          'invoice_list_malformed',
+          'api_error',
+        );
+      }
+      all.push(...res.data);
+      const last = res.data[res.data.length - 1];
+      if (res.has_more !== true) return all;
+      if (!last?.id) {
+        throw new StripeConnectApiError(
+          'Stripe invoice list said has_more without a cursor',
+          502,
+          'invoice_list_malformed',
+          'api_error',
+        );
+      }
+      startingAfter = last.id;
+    }
+    throw new StripeConnectApiError(
+      `Open invoice list exceeded ${maxPages * pageSize} invoices`,
+      502,
+      'invoice_list_incomplete',
+      'api_error',
+    );
+  }
+
+  /**
+   * Attempt payment of one open invoice with an explicit payment method,
+   * on-session (the client is in the app, having just saved the card). The
+   * invoice owns exactly one PaymentIntent, so this and any Stripe retry
+   * confirm the SAME PaymentIntent: an invoice can be paid at most once.
+   * Stripe answers 402 `invoice_payment_intent_requires_action` when the
+   * bank wants 3DS; the caller then hands the invoice's PaymentIntent
+   * client_secret to the app.
+   */
+  async payInvoice(args: {
+    invoiceId: string;
+    paymentMethodId: string;
+    idempotencyKey: string;
+  }): Promise<StripeInvoiceObject> {
+    return this.post<StripeInvoiceObject>(
+      `/invoices/${encodeURIComponent(args.invoiceId)}/pay`,
+      { payment_method: args.paymentMethodId, off_session: 'false' },
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * R-DISPUTE-PAUSE: pause collection on a subscription. `void` voids every
+   * invoice Stripe generates while paused, so nothing accrues or is charged
+   * for the paused time; the subscription keeps its price and card.
+   */
+  async pauseSubscriptionCollection(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { 'pause_collection[behavior]': 'void' },
+      args.idempotencyKey,
+    );
+  }
+
+  /** R-DISPUTE-PAUSE coach restart: clear pause_collection (empty unsets). */
+  async resumeSubscriptionCollection(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { pause_collection: '' },
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * Stop collection on an open invoice without forgiving it: Stripe makes
+   * no further attempt; it can still be paid by hand.
+   */
+  async markInvoiceUncollectible(args: {
+    invoiceId: string;
+    idempotencyKey: string;
+  }): Promise<StripeInvoiceObject> {
+    return this.post<StripeInvoiceObject>(
+      `/invoices/${encodeURIComponent(args.invoiceId)}/mark_uncollectible`,
+      {},
+      args.idempotencyKey,
+    );
+  }
+
+  /**
+   * Voluntary cancel outside dunning (owner 13:43 option A): the client keeps
+   * access through the period already paid, no refund, no proration.
+   */
+  async setCancelAtPeriodEnd(args: {
+    subscriptionId: string;
+    idempotencyKey: string;
+  }): Promise<StripeSubscriptionObject> {
+    return this.post<StripeSubscriptionObject>(
+      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
+      { cancel_at_period_end: 'true', proration_behavior: 'none' },
+      args.idempotencyKey,
+    );
   }
 
   // --- Phase 6 — Payout readiness, balance, refunds, disputes ---
@@ -1352,7 +1532,9 @@ export class StripeConnectApiService {
         (errEnvelope?.message as string | undefined) ?? `Stripe API ${res.status} on ${path}`;
       const code = (errEnvelope?.code as string | undefined) ?? null;
       const type = (errEnvelope?.type as string | undefined) ?? null;
-      throw new StripeConnectApiError(message, res.status, code, type);
+      const declineCode = (errEnvelope?.decline_code as string | undefined) ?? null;
+      const replayed = res.headers?.get?.('idempotent-replayed') === 'true';
+      throw new StripeConnectApiError(message, res.status, code, type, declineCode, replayed);
     }
     return parsed as T;
   }

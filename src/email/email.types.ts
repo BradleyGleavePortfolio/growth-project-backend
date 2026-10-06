@@ -30,6 +30,11 @@ export const EmailTemplateKey = {
   TRIAL_ENDING: 'trial-ending',
   // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
   COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
+  // S-DUNNING-R2 — Smart Dunning v2 notices. The body is Roman's rendered
+  // copy (`roman_body`); the button opens the native in-app card update via
+  // the https universal link (`update_card_url`). Append-only.
+  DUNNING_V2_CLIENT: 'dunning-v2-client',
+  DUNNING_V2_COACH: 'dunning-v2-coach',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];

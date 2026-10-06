@@ -131,6 +131,32 @@ export class SetAvailabilityDto {
   windows!: AvailabilityWindowDto[];
 }
 
+// S-AVAIL-122: PATCH /scheduling/coach/booking-options. Every field is
+// optional (omitted = unchanged); daily_max_sessions null removes the cap.
+// Ranges are checked by the service (mergeBookingOptions) so a refusal names
+// the field and its allowed range.
+export class UpdateBookingOptionsDto {
+  @IsOptional()
+  @IsInt({ message: 'Minimum notice must be a whole number of minutes.' })
+  min_notice_minutes?: number;
+
+  @IsOptional()
+  @IsInt({ message: 'How far ahead clients may book must be a whole number of days.' })
+  booking_window_days?: number;
+
+  @IsOptional()
+  @IsInt({ message: 'Buffer before each session must be a whole number of minutes.' })
+  buffer_before_minutes?: number;
+
+  @IsOptional()
+  @IsInt({ message: 'Buffer after each session must be a whole number of minutes.' })
+  buffer_after_minutes?: number;
+
+  @IsOptional()
+  @IsInt({ message: 'Daily maximum must be a whole number of sessions, or empty for no limit.' })
+  daily_max_sessions?: number | null;
+}
+
 export class RequestSessionDto {
   @IsUUID()
   coach_id!: string;

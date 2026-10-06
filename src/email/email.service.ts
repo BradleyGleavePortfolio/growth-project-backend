@@ -70,6 +70,11 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'trial-ending': 'Your free trial ends on {{trial_end_date}}',
   // S-FEE round 5 (OR-111-1) — the notice's own title (plain, no exclamation).
   'coach-payout-adjustment': '{{#if subject}}{{subject}}{{else}}A change to your payouts{{/if}}',
+  // S-DUNNING-R2 — the dispatcher passes a per-step `subject`.
+  'dunning-v2-client':
+    '{{#if subject}}{{subject}}{{else}}About your Growth Project payment{{/if}}',
+  'dunning-v2-coach':
+    '{{#if clientName}}A payment from {{clientName}} needs attention{{else}}A client payment needs attention{{/if}}',
 };
 
 // EmailService is the single entry point for sending transactional email.

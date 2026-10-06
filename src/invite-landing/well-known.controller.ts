@@ -115,8 +115,10 @@ export class WellKnownController {
     const components = [
       { '/': '/join/*', comment: 'Coach invite — universal link' },
       { '/': '/invite/*', comment: 'Coach invite — alternate canonical' },
+      // S-DUNNING-R2 — dunning emails open the native card update screen.
+      { '/': '/billing/update-card', comment: 'Client card update — dunning' },
     ];
-    const paths = ['/join/*', '/invite/*'];
+    const paths = ['/join/*', '/invite/*', '/billing/update-card'];
 
     const body = appID
       ? {
