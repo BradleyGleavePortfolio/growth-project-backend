@@ -9,6 +9,10 @@ order: 60
 
 Write to `${SUPPORT_EMAIL}`.
 
+In the app, open **Settings → Support** to use the in-app support chat
+when it is available. Email is also available, including when chat cannot
+open. There is no phone line.
+
 Before you write, please read [What support covers](./support-boundaries.md).
 The fastest support reply is the one that fits a request we can
 actually answer.
