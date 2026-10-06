@@ -10,8 +10,12 @@
  *
  * The patterns mirror the Roman SafetyRouter's `emergency` and `self_harm`
  * classes (src/roman/guardrails/safety-router.ts on the Roman stack), which
- * have been through the Roman safety reviews. Once the Roman stack is on
- * main, both surfaces should share one list.
+ * have been through the Roman safety reviews, including its named-medicine
+ * overdose pattern. B-AIG2-122 then narrows the overdose, poisoning,
+ * breathing, unconscious and hurt-myself patterns so ordinary training and
+ * nutrition questions keep their normal answer, and adds the common
+ * suicide-method phrasings. Once the Roman stack is on main, both surfaces
+ * should share one list.
  */
 
 export type AiGuideCrisisClass = 'emergency' | 'self_harm';
@@ -29,17 +33,41 @@ function acute(condition: string): RegExp {
   );
 }
 
+/** People an emergency can be reported about. */
+const PERSON =
+  "(i|i'?ve|i have|i just|i think i|i may have|i might have|he|she|they|someone|somebody|my (friend|partner|wife|husband|boyfriend|girlfriend|son|daughter|kid|child|mom|mum|dad|brother|sister|roommate|client|training partner))";
+
+/**
+ * Training, food and supplement words. "overdosed on cardio" or "overdose on
+ * carbs" is a figure of speech, not a poisoning (B-AIG2-122).
+ */
+const NOT_A_SUBSTANCE =
+  '(cardio|creatine|protein|carbs?|sugar|sweets|candy|chocolate|food|junk food|pizza|fast food|salt|water|fiber|fibre|veggies|vegetables|fruit|exercise|training|workouts?|running|lifting|squats?|reps|sets|volume|the gym|gym|leg day|netflix|tv|sleep)';
+
+/** Training activities ("hard to breathe during heavy squats" is a form question). */
+const ACTIVITY =
+  '(squats?|squatting|runs?|running|jogs?|jogging|sprints?|sprinting|sets?|reps?|lifts?|lifting|workouts?|training|cardio|exercise|exercising|bench|benching|deadlifts?|deadlifting|swims?|swimming|hiit|class|classes|cycling|bike|biking|spin|rowing|planks?|burpees|yoga|hikes?|hiking|climbs?|stairs|the gym|gym|nose|mouth|mask|i (run|jog|lift|train|swim|squat|exercise|work out|bench|sprint|cycle|row))';
+
+/** "cut myself some slack", "cutting myself off from sugar" are not self-harm. */
+const NOT_A_FIGURE = '(?! (some |a little |any |a bit of )?(slack|off|a break|short)\\b)';
+
 const EMERGENCY: RegExp[] = [
   /\bchest (pain|pressure|tightness)\b/i,
   /^(?=.*\bchest (hurts|is hurting|aches|is aching|feels (tight|heavy))\b)(?=.*\b(numb(ness)?|tingl(e|es|ed|ing|y)|short(ness)? of breath|out of breath|jaw|left arm|cold sweat)\b)/i,
   /\b(crushing|squeezing) (pain|feeling) in my chest\b/i,
-  /\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b/i,
+  // "I can't breathe" is an emergency; "I can't breathe through my nose when
+  // I run" or "trouble breathing on long runs" is a training question.
+  new RegExp(
+    `\\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\\b(?! (during|when|while|on|through|after|in|at|with|before) (my |the |a |an |long |heavy |hard |fast |big |hot |cold |intense |every )*${ACTIVITY}\\b)`,
+    'i',
+  ),
   /\b(i'?m|i am) not breathing\b/i,
   /\b(i'?m|i am|i feel like i'?m|i think i'?m|feels like i'?m) (fainting|passing out|blacking out|losing consciousness)\b/i,
   /\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
   /\b(just|keeps?|kept) (fainted|passed out|blacked out|collapsed|fainting|passing out|blacking out|collapsing)\b/i,
   /\b(someone|somebody|he|she|they|my (friend|partner|wife|husband|son|daughter|mom|mum|dad|brother|sister|client|training partner)) (just |has |is )?(fainted|passed out|blacked out|collapsed|unconscious|unresponsive|not breathing)\b/i,
-  /\b(unconscious|unresponsive)\b/i,
+  // A person who is unconscious (not "unconscious snacking").
+  /\b(is|are|was|were|went|been|be|knocked|lying|lies|found (him|her|them|someone)|i'?m|he'?s|she'?s|they'?re|we'?re) (still |now |just |completely )?(unconscious|unresponsive)\b/i,
   /\b((i'?m|i am|he'?s|she'?s|they'?re|is|am|are|might be|could be|think i'?m|think (he|she|they)'?s?( is| are)?) having|signs of|symptoms of|is (this|it|that) a|could (this|it|that) be a|i think it'?s a) (a )?stroke\b/i,
   /\bstroke (symptoms|signs)\b/i,
   /\b(face (is )?droop(ing)?|slurr(ed|ing) (my |his |her )?speech|one side of (my|his|her) (body|face) (is |went |feels )?(numb|weak|drooping))\b/i,
@@ -50,12 +78,30 @@ const EMERGENCY: RegExp[] = [
   /\b(used|use|using|grab|give (me|him|her|them)) (my |an |the |his |her |their )?epi ?-?pens?\b|\bneed(s|ed)? (my|his|her|their) epi ?-?pens?\b|\bepi ?-?pens? (now|is not working|isn'?t working|did not work|didn'?t work)\b/i,
   acute('(a )?(heart attack|cardiac arrest)'),
   /\b(heart attack|cardiac arrest),? (right )?now\b|\b(is|are|gone|going) into cardiac arrest\b/i,
-  // "food poisoning" last week is history; an overdose or a poisoning is not.
-  /\b(overdos(e|ed|ing)|(?<!food )poison(ed|ing))\b/i,
+  // B-AIG2-122: an overdose or a poisoning reported as happening to a person
+  // ("I overdosed", "I took an overdose", "my friend is overdosing", "I was
+  // poisoned"). "Can you overdose on creatine?", "overdose on cardio" and
+  // "is mercury poisoning a risk" are ordinary questions for the model.
+  new RegExp(
+    `\\b(${PERSON} (just |has |have |had |is |are |am |was |may have |might have |think (i|he|she|they) |)|(i'?m|he'?s|she'?s|they'?re|we'?re) )(overdosed|overdosing|od'?d|od'?ing)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
+    'i',
+  ),
+  /\b(took|taken|take|taking|having|i'?ve had|just had) an overdose\b/i,
+  new RegExp(
+    `\\b${PERSON} (just |has |have |had |was |were |got |has been |have been |think (i|he|she|they) (was |were |got |have been |has been )?|)(been )?poisoned\\b`,
+    'i',
+  ),
+  /\b(drank|swallowed|ate|ingested|drinking|swallowing) (some |a |the |a bottle of |a cup of )?(bleach|antifreeze|poison|rat poison|drain cleaner|weed killer|pesticide|lighter fluid)\b/i,
+  /\b(has|have|got|having|is having|am having|with) (alcohol|carbon monoxide|co) poisoning\b/i,
   // An overdose described without the word.
   /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of)( of)?( my| the)? (\w+ )?(pills|tablets|meds|medication|medicine|capsules|painkillers|sleeping pills)\b/i,
   // An overdose given as a count: five or more ("took 2 pills" is a dose).
   /\b(took|taken|swallowed|have taken|i'?ve taken) ([5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the)? (\w+ )?(pills|tablets|meds|capsules|painkillers)\b/i,
+  // Copied from the Roman SafetyRouter (A-666-3): the same overdose with the
+  // medicine named instead of "pills" ("a whole bottle of Tylenol", "30
+  // ibuprofen", "a bunch of Xanax"). Five or more, or a bottle/pack/handful;
+  // "took 2 Tylenol" is a dose.
+  /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of|[5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the| his| her| their)? (\w+ )?(tylenol|acetaminophen|paracetamol|advil|motrin|ibuprofen|aleve|naproxen|aspirin|excedrin|nyquil|benadryl|diphenhydramine|xanax|valium|ativan|klonopin|ambien|zolpidem|oxy|oxys|oxycodone|oxycontin|percocet|vicodin|hydrocodone|codeine|tramadol|morphine|fentanyl|adderall|lithium|seroquel|antidepressants|sleeping meds|sleep meds)s?\b/i,
   /\b(coughing|throwing|vomiting) up blood\b/i,
 ];
 
@@ -67,7 +113,27 @@ const SELF_HARM: RegExp[] = [
   /\b(i'?m|i am) going to (kill myself|end it)\b/i,
   /\bwant to die\b/i,
   /\bself[- ]?harm(ing)?\b/i,
-  /\b(hurt|cut|cutting) myself\b/i,
+  // B-AIG2-122: hurting or cutting oneself with intent or as an ongoing
+  // pattern ("I want to hurt myself", "I have been cutting myself"). A past
+  // injury report ("I hurt myself deadlifting, can I train?") is a training
+  // question for the model.
+  new RegExp(
+    `\\b(want to|wanna|going to|gonna|urge to|urges to|need to|plan(ning)? to|thinking (about|of)|thought (about|of)|feel like|tempted to|try(ing)? to) (hurting|cutting|hurt|cut|harming|harm|burning|burn) myself\\b${NOT_A_FIGURE}`,
+    'i',
+  ),
+  new RegExp(
+    `\\b(keep|kept|been|started|start|stop|stopped|can'?t stop|cannot stop|i'?m|i am) (hurting|cutting|harming|burning) myself\\b${NOT_A_FIGURE}(?! (on|in|at|during|when|while|with|doing|from|lifting|deadlifting|squatting|benching|running|training|playing|working)\\b)`,
+    'i',
+  ),
+  new RegExp(
+    `\\b(hurt|hurting|cut|cutting|harm|harming|burn|burning) myself (on purpose|deliberately|intentionally)\\b`,
+    'i',
+  ),
+  // Common suicide-method phrasings ("I am going to hang myself").
+  /\b(hang|hanging|hanged|shoot|shooting|stab|stabbing|drown|drowning|strangle|strangling|suffocate|suffocating) myself\b(?! (a |an )?(text|message|email|note|reminder|dm|link|line)\b| in (work|coffee|caffeine|food|sugar|carbs|protein|homework|emails?|paperwork)\b)/i,
+  /\bslit(ting)? my (wrists?|throat)\b/i,
+  /\b(want to|wanna|going to|gonna|i'?ll|i will|thinking (about|of)|thought (about|of)|plan(ning)? to|about to|ready to|should just|feel like|urge to) (just )?(jump|jumping|throw myself|step|stepping|walk|walking) (off|from|in front of|into) (a |the |my |this )?(bridge|roof|rooftop|building|balcony|cliff|window|train|bus|car|truck|traffic|ledge|overpass|tracks)\b/i,
+  /\b(want|wish|need) (it all|everything|my life) to (end|stop|be over)\b/i,
   /\bno reason to (live|go on|keep going)\b/i,
   /\bbetter off dead\b/i,
   /\b(want|wish) (to die|i was dead|i were dead)\b/i,

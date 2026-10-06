@@ -895,3 +895,80 @@ describe('AiService.chat — crisis reply before the daily limit (B-AIG-122)', (
     });
   });
 });
+
+// B-AIG2-122 — the AI guide's crisis check matches what a client actually
+// types: a named-medicine overdose (911) and a suicide-method phrase (988)
+// reach the crisis line at the daily limit, while ordinary training and
+// supplement questions keep their normal answer.
+describe('AiService.chat — crisis phrasing a client actually types (B-AIG2-122)', () => {
+  beforeEach(() => {
+    engineReady = true;
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({ text: 'Keep going.', tokensIn: 5, tokensOut: 5 });
+  });
+
+  function seedAtCap(svc: AiService, quota: ReturnType<typeof makeQuotaStub>) {
+    const today = Reflect.apply(Reflect.get(svc, 'getQuotaDate'), svc, []) as Date;
+    quota.rows.set(quota.keyOf('u1', today), {
+      user_id: 'u1',
+      quota_date: today.toISOString(),
+      tokens_used: DAILY_TOKEN_QUOTA,
+      request_count: 20,
+    });
+  }
+
+  it('client at the daily limit: "I took a whole bottle of Tylenol" gets the 911 reply, not the limit', async () => {
+    const quota = makeQuotaStub();
+    const { svc } = makeService(quota);
+    seedAtCap(svc, quota);
+    const result = await svc.chat('u1', 'I took a whole bottle of Tylenol', []);
+    expect(result.reply).toContain('911');
+    expect(result.guardrails_applied).toEqual(['crisis:emergency']);
+    expect(result.model_used).toBe('safety');
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(quota.userAIQuota.upsert).not.toHaveBeenCalled();
+    expect(quota.userAIQuota.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('client at the daily limit: "I am going to hang myself" gets the 988 reply, not the limit', async () => {
+    const quota = makeQuotaStub();
+    const { svc } = makeService(quota);
+    seedAtCap(svc, quota);
+    const result = await svc.chat('u1', 'I am going to hang myself', []);
+    expect(result.reply).toContain('988');
+    expect(result.guardrails_applied).toEqual(['crisis:self_harm']);
+    expect(result.model_used).toBe('safety');
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(quota.userAIQuota.upsert).not.toHaveBeenCalled();
+    expect(quota.userAIQuota.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'overdose on cardio',
+    'can you overdose on creatine?',
+    'I hurt myself deadlifting, can I train?',
+    'kill this workout',
+    "I'm dying after leg day",
+    'took 2 Tylenol for my headache',
+  ])('ordinary training or supplement question "%s" gets the normal answer', async (message) => {
+    const { svc } = makeService();
+    const result = await svc.chat('u1', message, []);
+    expect(result.model_used).toBe('anthropic');
+    expect(result.guardrails_applied.some((g) => g.startsWith('crisis:'))).toBe(false);
+    expect(result.reply).not.toMatch(/911|988/);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['overdose on cardio', 'can you overdose on creatine?', 'I hurt myself deadlifting, can I train?'])(
+    'ordinary question "%s" at the daily limit gets the 429 limit reply, not a crisis reply',
+    async (message) => {
+      const quota = makeQuotaStub();
+      const { svc } = makeService(quota);
+      seedAtCap(svc, quota);
+      await expect(svc.chat('u1', message, [])).rejects.toMatchObject({
+        response: { error: AI_DAILY_QUOTA_EXCEEDED },
+      });
+      expect(mockCreate).not.toHaveBeenCalled();
+    },
+  );
+});
