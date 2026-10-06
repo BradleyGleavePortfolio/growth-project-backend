@@ -32,14 +32,11 @@ const POST_NOT_FOUND = {
 /**
  * Lab posts (longer-form, coach-authored) and their comments.
  *
- * clientPostsEnabled: the brief's contract is "client may create a post only if
- * workspace.clientPostsEnabled === true". That column does NOT exist on
- * CommunityWorkspace in the v1-1 schema (verified by grep; see the builder
- * report's deviation list). Adding it would violate R69 (no schema mutation in
- * v1-3). The secure, launch-ready default is therefore COACH-ONLY post
- * creation: a client POST returns 403. This matches required test case 3
- * (client create → 403) exactly. When the column lands in a future schema PR,
- * canCreatePost() is the single place to relax this gate.
+ * Member posts: there is no per-workspace clientPostsEnabled column, so every
+ * active, unbanned member may create a post (B-E2E-1, agent 123 F6; this was
+ * coach-only, which dead-ended the client Hall composer). When a coach toggle
+ * lands in a future schema PR, canCreatePost() is the single place to gate it;
+ * the 403 community.post.client_posts_disabled body stays for that toggle.
  *
  * Comments: stored as CommunityMessage rows tagged with the parent post id (the
  * v1-1 CommunityResponse model has only a 32-char response_kind column and
@@ -97,10 +94,15 @@ export class CommunityPostsService {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  /** Coach (or owner) may author posts; clients may not (clientPostsEnabled). */
+  /**
+   * The owner, the workspace coach and any active, unbanned member may author
+   * posts (B-E2E-1: the Hall's "Be the first to post" is a member action). The
+   * content filter, report and block apply to every post as they do to comments.
+   */
   private async canCreatePost(workspaceId: string, user: User): Promise<boolean> {
     if (user.role === 'owner') return true;
-    return this.access.isWorkspaceCoach(workspaceId, user.id);
+    if (await this.access.isWorkspaceCoach(workspaceId, user.id)) return true;
+    return (await this.access.membershipInWorkspace(workspaceId, user.id)) !== null;
   }
 
   async create(

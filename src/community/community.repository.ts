@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
+/** Names for a coach's auto-created space (B-E2E-1); they match the clinic seed. */
+export const DEFAULT_WORKSPACE_NAME = 'Community';
+export const DEFAULT_COHORT_NAME = 'All members';
+
 /**
  * Data-access layer for the Community v1-2 foundation endpoints.
  *
@@ -33,6 +37,33 @@ export class CommunityRepository {
       where: { coach_id: coachId, archived_at: null },
       orderBy: { created_at: 'asc' },
     });
+  }
+
+  /**
+   * B-E2E-1: the coach's community space, created on first open when the coach
+   * has none, in the same shape as scripts/seed-clinic-programs.ts (a workspace
+   * plus its first cohort, "All members", sort_order 0). Both writes are upserts
+   * on unique keys (workspace slug, cohort workspace_id + name), so two first
+   * opens at once land on the same rows. An archived space stays archived.
+   */
+  async ensureWorkspaceForCoach(coachId: string) {
+    const existing = await this.findWorkspaceOwnedByCoach(coachId);
+    if (existing) return existing;
+    const slug = `coach-${coachId}`;
+    const workspace = await this.prisma.communityWorkspace.upsert({
+      where: { slug },
+      create: { coach_id: coachId, name: DEFAULT_WORKSPACE_NAME, slug },
+      update: {},
+    });
+    if (workspace.coach_id !== coachId || workspace.archived_at) return null;
+    await this.prisma.communityCohort.upsert({
+      where: {
+        workspace_id_name: { workspace_id: workspace.id, name: DEFAULT_COHORT_NAME },
+      },
+      create: { workspace_id: workspace.id, name: DEFAULT_COHORT_NAME, sort_order: 0 },
+      update: {},
+    });
+    return workspace;
   }
 
   /**
