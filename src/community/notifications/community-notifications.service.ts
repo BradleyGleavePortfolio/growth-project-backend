@@ -59,7 +59,7 @@ export interface SendCommunityPushInput {
   lockscreenPrivacy?: boolean;
 }
 
-type SkipReason = 'flag_off' | 'preference_off' | 'no_token';
+type SkipReason = 'flag_off' | 'preference_off' | 'muted' | 'no_token';
 
 @Injectable()
 export class CommunityNotificationsService {
@@ -166,6 +166,20 @@ export class CommunityNotificationsService {
     });
 
     try {
+      // 2b) Global "Mute all notifications" — the recipient's own switch wins
+      // over the community defaults table. Only the global mute is honoured
+      // here: community kinds have no per-kind preference columns and the core
+      // gate maps them onto `digest`, whose push default is false, so treating
+      // the gate's 'off' as a skip would silence every community push.
+      const gate = await this.notifications.channelGate(recipientId, kind, 'push');
+      if (gate === 'muted') {
+        this.track(recipientId, COMMUNITY_TELEMETRY_EVENTS.pushSkipped, {
+          kind,
+          reason: 'muted' satisfies SkipReason,
+        });
+        return;
+      }
+
       // 3) Replay guard: if a notification row with this idempotency key
       // already exists for this recipient+kind, do not double-push.
       const existing = await this.prisma.notification.findFirst({
