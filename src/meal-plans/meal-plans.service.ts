@@ -1,6 +1,55 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import type { CreateMealPlanDto, UpdateMealPlanDto } from './meal-plans.dto';
+import type {
+  CreateMealPlanDto,
+  MealPlanItemDto,
+  UpdateMealPlanDto,
+} from './meal-plans.dto';
+
+// AI-approved plans store items with time_of_day "Day N – slot" (written by
+// CoachAiService.materializeMealPlan) plus the same meals per day in `days`,
+// which the client app renders in preference to `items`.
+const DAY_SLOT = /^day\s+(\d+)\s*[–-](.*)$/i;
+
+/**
+ * Rebuild the per-day shape from edited items so a coach's edit of an
+ * AI-approved plan is what the client sees. Returns null (flat items only)
+ * when any item has no "Day N – slot" label, since its day is unknown.
+ */
+export function daysFromItems(items: MealPlanItemDto[]): Prisma.InputJsonValue | null {
+  const byDay = new Map<number, Map<string, MealPlanItemDto[]>>();
+  for (const it of items) {
+    const m = DAY_SLOT.exec((it.time_of_day ?? '').trim());
+    if (!m) return null;
+    const day = Number(m[1]);
+    const slot = m[2].trim() || 'meal';
+    const meals = byDay.get(day) ?? new Map<string, MealPlanItemDto[]>();
+    meals.set(slot, [...(meals.get(slot) ?? []), it]);
+    byDay.set(day, meals);
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([day, meals]) => {
+      const dayItems = [...meals.values()].flat();
+      return {
+        day,
+        meals: [...meals.entries()].map(([slot, rows]) => ({
+          slot,
+          items: rows.map((r) => ({
+            name: r.name,
+            serving: '',
+            calories: r.calories ?? 0,
+            protein_g: r.protein ?? 0,
+          })),
+        })),
+        daily_totals: {
+          calories: dayItems.reduce((n, r) => n + (r.calories ?? 0), 0),
+          protein_g: dayItems.reduce((n, r) => n + (r.protein ?? 0), 0),
+        },
+      };
+    });
+}
 
 @Injectable()
 export class MealPlansService {
@@ -61,7 +110,7 @@ export class MealPlansService {
   async updateByCoach(coachId: string, planId: string, dto: UpdateMealPlanDto) {
     const existing = await this.prisma.mealPlan.findFirst({
       where: { id: planId, coach_id: coachId, archived_at: null },
-      select: { id: true },
+      select: { id: true, days: true },
     });
     if (!existing) throw new NotFoundException('Meal plan not found');
 
@@ -69,10 +118,16 @@ export class MealPlansService {
       title?: string;
       notes?: string | null;
       items?: object;
+      days?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
     } = {};
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.notes !== undefined) data.notes = dto.notes;
     if (dto.items !== undefined) data.items = dto.items as unknown as object;
+    // An AI-approved plan also carries `days`, which the client renders
+    // first: keep it in step with the edited items (AUDIT-08-125).
+    if (dto.items !== undefined && existing.days !== null && existing.days !== undefined) {
+      data.days = daysFromItems(dto.items) ?? Prisma.DbNull;
+    }
 
     return this.prisma.mealPlan.update({
       where: { id: planId },

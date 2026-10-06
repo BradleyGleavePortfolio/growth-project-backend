@@ -20,6 +20,10 @@ import {
 
 // Whitespace trim before length validation so a title of spaces only fails
 // MinLength(1) instead of slipping through as an empty-looking plan.
+// An approved 7-day AI plan holds about 28 meals of 2-4 items each, so the
+// coach must be able to save well over 50 items when editing it (AUDIT-08-125).
+export const MEAL_PLAN_MAX_ITEMS = 300;
+
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
@@ -73,7 +77,7 @@ export class CreateMealPlanDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(50)
+  @ArrayMaxSize(MEAL_PLAN_MAX_ITEMS)
   @ValidateNested({ each: true })
   @Type(() => MealPlanItemDto)
   items!: MealPlanItemDto[];
@@ -108,7 +112,7 @@ export class UpdateMealPlanDto {
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(50)
+  @ArrayMaxSize(MEAL_PLAN_MAX_ITEMS)
   @ValidateNested({ each: true })
   @Type(() => MealPlanItemDto)
   items?: MealPlanItemDto[];
