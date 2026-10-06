@@ -132,6 +132,8 @@ FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 F
 FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_BROADCASTS | "FEATURE_COACH_BROADCASTS": "unset"
 FEATURE_ROMAN_CHAT_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_CHAT_ENABLED | "FEATURE_ROMAN_CHAT_ENABLED": "unset"
 FEATURE_ROMAN_ADJUST_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_ADJUST_ENABLED | "FEATURE_ROMAN_ADJUST_ENABLED": "unset"
+FEATURE_ROMAN_MEMORY | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_MEMORY | "FEATURE_ROMAN_MEMORY": "unset"
+FEATURE_ROMAN_PLAYBOOK | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_PLAYBOOK | "FEATURE_ROMAN_PLAYBOOK": "unset"
 APPLE_AUDIENCES | off | fly secrets unset -a backend-spring-lake-3890 APPLE_AUDIENCES | "APPLE_AUDIENCES": "unset"
 APPLE_NONCE_REQUIRED | off | fly secrets unset -a backend-spring-lake-3890 APPLE_NONCE_REQUIRED | "APPLE_NONCE_REQUIRED": "unset"
 GDPR_SCRUB_DRY_RUN | off | fly secrets unset -a backend-spring-lake-3890 GDPR_SCRUB_DRY_RUN | "GDPR_SCRUB_DRY_RUN": "unset"
@@ -184,6 +186,8 @@ Roll back with `"unset"` on the three flags (the emergency kills in the table ab
 4. Owner device pass on iOS: Sign in with Apple on a fresh account lands in the app.
 
 The token-revocation keys (`APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`) are never copied by this workflow; `fly-apple-signin-set.yml` owns them.
+
+**FEATURE_ROMAN_MEMORY and FEATURE_ROMAN_PLAYBOOK (Roman v1.1, off).** Both stay `unset` until their flip PRs (R11-F1 memory, R11-F2 playbook) land after the v1.1 slices are merged and deployed. Only the exact value `true` turns each on; unset is the kill, and with both unset every v1.1 path is inert and the Roman turn prompt is unchanged. Background work for both is bounded by `ROMAN_BACKGROUND_DAILY_COST_CAP_USD` (default 10 US dollars per UTC day, not managed by this manifest) and by each coach's monthly AI pool.
 
 ## Notes and limits
 

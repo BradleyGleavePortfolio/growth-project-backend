@@ -2182,6 +2182,31 @@ export const ENV_RULES: EnvRule[] = [
       'Platform-wide daily spend ceiling for all Roman turns together (UTC day, US dollars), a runaway breaker sized to launch volume; the per-client limit is the 429 ROMAN_RATE_LIMIT turn cap and the per-coach bound is the monthly AI credit pool. Over the ceiling Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 100.',
   },
   {
+    name: 'FEATURE_ROMAN_MEMORY',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      'Kill switch for Roman v1.1 memory and timeline (day summaries, notes kept from chats, the client-memory block in a turn). Off = every memory path is inert and the turn prompt is unchanged.',
+  },
+  {
+    name: 'FEATURE_ROMAN_PLAYBOOK',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      "Kill switch for the Roman v1.1 coach playbook (playbook signals and builds, the coach-method block in a client's turn). Off = every playbook path is inert and the turn prompt is unchanged.",
+  },
+  {
+    name: 'ROMAN_BACKGROUND_DAILY_COST_CAP_USD',
+    tier: 'optional',
+    default: 'unset → 10 (ROMAN_BACKGROUND_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 10, never no cap',
+    reason:
+      'Platform-wide daily spend ceiling for Roman v1.1 background work together (capabilities roman.memory and roman.playbook; UTC day, US dollars), separate from the chat ceiling so background work never uses chat headroom. Over the ceiling a background job is skipped; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanBackgroundSpendService.dailyCapUsd treats a non-numeric or negative value as 10.',
+  },
+  {
     name: 'FEATURE_MESSAGING_CORE_V2',
     values: ['true', 'false'],
     unsetIs: 'off',

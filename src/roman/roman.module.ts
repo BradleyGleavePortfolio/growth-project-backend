@@ -24,6 +24,8 @@ import { RomanClientContextService } from './context/roman-client-context.servic
 import { RomanConsultationIntakeSource } from './context/roman-consultation.source';
 import { RomanContextController } from './context/roman-context.controller';
 import { ROMAN_SAFETY_INTAKE_SOURCE } from './context/roman-client-context.types';
+import { romanTurnAugmentersProvider } from './augment/roman-turn-augmenter';
+import { RomanBackgroundSpendService } from './background/roman-background-spend';
 
 @Module({
   // RomanChatsController (list + delete own chats) is not behind the chat
@@ -43,7 +45,11 @@ import { ROMAN_SAFETY_INTAKE_SOURCE } from './context/roman-client-context.types
     RomanClientContextService,
     RomanConsultationIntakeSource,
     { provide: ROMAN_SAFETY_INTAKE_SOURCE, useExisting: RomanConsultationIntakeSource },
+    // R11-00 seams: the turn-augmenter list (empty until a v1.1 slice
+    // provides its kind token) and the background spend admission.
+    romanTurnAugmentersProvider,
+    RomanBackgroundSpendService,
   ],
-  exports: [RomanService],
+  exports: [RomanService, RomanBackgroundSpendService],
 })
 export class RomanModule {}

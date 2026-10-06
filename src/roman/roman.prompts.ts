@@ -79,6 +79,12 @@ export interface BuildSystemPromptInput {
   clientData?: string | null;
   /** A-R3-1: the client's data could not be loaded for this turn. */
   clientDataUnavailable?: boolean;
+  /**
+   * R11-00: v1.1 turn-augmenter blocks (client memory, then coach method),
+   * each its own section appended after client_data on the client surface,
+   * never inside it. Absent or empty = the prompt is exactly the pre-v1.1 one.
+   */
+  augments?: readonly string[];
 }
 
 /**
@@ -109,7 +115,8 @@ function surfaceFraming(surface: RomanSurface): string {
  * and (optionally) the subject context.
  */
 export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
-  const { surface, voice, subjectContext, routerHint, clientData, clientDataUnavailable } = input;
+  const { surface, voice, subjectContext, routerHint, clientData, clientDataUnavailable, augments } =
+    input;
 
   // B-651-9: shipped replies carry no exclamation marks at all, so the old
   // one-per-session allowance is gone whatever the session recorded.
@@ -138,6 +145,9 @@ export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
       sections.push(clientData.trim());
     } else if (clientDataUnavailable) {
       sections.push(ROMAN_CLIENT_DATA_UNAVAILABLE_NOTICE);
+    }
+    for (const block of augments ?? []) {
+      if (typeof block === 'string' && block.trim().length > 0) sections.push(block.trim());
     }
   }
 
