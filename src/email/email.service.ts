@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as Handlebars from 'handlebars';
@@ -27,6 +28,7 @@ interface EmailTransport {
     html: string;
     replyTo?: string;
     signal?: AbortSignal;
+    idempotencyKey?: string;
   }): Promise<{ providerMessageId: string }>;
 }
 
@@ -64,6 +66,8 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   'payment-final-notice':
     "A second heads-up — subscription ends {{cancellation_date}} if payment doesn't go through",
   'payment-recovered': "You're all set — payment received",
+  // B-TRIALS (OR-113-2) — plain and exact: the date, no urgency.
+  'trial-ending': 'Your free trial ends on {{trial_end_date}}',
   // S-FEE round 5 (OR-111-1) — the notice's own title (plain, no exclamation).
   'coach-payout-adjustment': '{{#if subject}}{{subject}}{{else}}A change to your payouts{{/if}}',
   // S-DUNNING-R2 — the dispatcher passes a per-step `subject`.
@@ -234,6 +238,7 @@ export class EmailService {
         html,
         replyTo: input.replyTo,
         signal: input.signal,
+        idempotencyKey: this._providerKey(input, from, subject, html),
       });
       await this._finalize(logRow.id, 'sent', providerMessageId, null);
       this.logger.log(
@@ -265,8 +270,24 @@ export class EmailService {
 
   // ── internal ────────────────────────────────────────────────────────────
 
+  // error 'aborted' keeps the trial notice's failure code (B-672-4).
   private notStarted(idempotencyKey: string): SendEmailResult {
-    return { status: 'failed', providerMessageId: null, idempotencyKey, notStarted: true };
+    return {
+      status: 'failed',
+      providerMessageId: null,
+      idempotencyKey,
+      error: 'aborted',
+      notStarted: true,
+    };
+  }
+
+  // B-672-4 — the caller's stable key plus a hash of the rendered message
+  // (Resend allows 1-256 characters).
+  private _providerKey(input: SendEmailInput, ...content: string[]): string | undefined {
+    if (!input.providerIdempotencyKey) return undefined;
+    const message = JSON.stringify([...content, input.to, input.replyTo ?? null]);
+    const digest = createHash('sha256').update(message).digest('hex').slice(0, 32);
+    return `${input.providerIdempotencyKey.slice(0, 200)}:${digest}`;
   }
 
   private async _finalize(
@@ -368,6 +389,7 @@ class ResendTransport implements EmailTransport {
     html: string;
     replyTo?: string;
     signal?: AbortSignal;
+    idempotencyKey?: string;
   }): Promise<{ providerMessageId: string }> {
     const body: Record<string, unknown> = {
       from: args.from,
@@ -382,6 +404,7 @@ class ResendTransport implements EmailTransport {
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
+        ...(args.idempotencyKey ? { 'Idempotency-Key': args.idempotencyKey } : {}),
       },
       body: JSON.stringify(body),
       signal: args.signal,

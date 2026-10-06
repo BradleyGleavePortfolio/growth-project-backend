@@ -136,6 +136,16 @@ export const NotificationKind = {
   // category like other coach-targeted kinds.
   // Payload: { amount: number; currency: string; clientId: string }.
   FIRST_PAYMENT: 'first_payment',
+
+  // ── B-TRIALS (OR-113-2) — free trial ending ───────────────────────────────
+  // Client: their free trial ends in three days and the card on file will be
+  // charged then (or, after a cancel, that nothing will be charged). Emitted
+  // once per (purchase, trial end) from the customer.subscription.trial_will_end
+  // webhook (PackageTrialNotice ledger). A billing notice, not marketing: no
+  // NotificationPreferences columns, so it is not opt-out-able per kind (a
+  // global mute still applies). Payload: { purchase_id, package_id,
+  // trial_ends_at, amount_cents, currency, will_charge }.
+  TRIAL_ENDING: 'trial_ending',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

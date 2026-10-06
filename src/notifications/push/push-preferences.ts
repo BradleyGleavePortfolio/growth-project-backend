@@ -57,6 +57,10 @@ export function notificationPrefsPrefix(kind: string): string {
   // this branch FIRST_PAYMENT would silently short-circuit on the 'digest'
   // false defaults (the PR-10 R1 P2 silent-drop bug, 50-Failures #36).
   if (kind.startsWith('first_payment')) return 'first_payment';
+  // B-TRIALS (OR-113-2) — TRIAL_ENDING is a billing notice with no prefs
+  // columns (same reasoning as FIRST_PAYMENT): a dedicated prefix keeps it
+  // off the 'digest' false defaults so the notice is always written and sent.
+  if (kind.startsWith('trial_ending')) return 'trial_ending';
   if (kind.startsWith('fasting')) return 'fasting';
   if (kind.includes('digest')) return 'digest';
   return 'digest'; // safe default — falls back to digest prefs

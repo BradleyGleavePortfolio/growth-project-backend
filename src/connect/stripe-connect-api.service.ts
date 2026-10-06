@@ -393,6 +393,57 @@ export class StripeConnectApiService {
     );
   }
 
+  // B-TR4-119 (Sol B-673-1) — one bounded page of a subscription's paid
+  // invoices; has_more says whether the page is the complete history.
+  async listSubscriptionPaidInvoices(subscriptionId: string): Promise<{
+    data?: Array<{ id: string; amount_paid?: number; total?: number }>;
+    has_more?: boolean;
+  }> {
+    const q = new URLSearchParams({ subscription: subscriptionId, status: 'paid', limit: '100' });
+    return this.get(`/invoices?${q.toString()}`);
+  }
+
+  // B-TR5-119 (B-673-1) — the open invoices a never-billed cancel voids first:
+  // one page; has_more says whether it is complete (dunning's listOpenInvoices
+  // below follows the cursor instead).
+  async listOpenInvoicePage(
+    subscriptionId: string,
+  ): Promise<{ data?: Array<{ id?: string }>; has_more?: boolean }> {
+    const q = new URLSearchParams({ subscription: subscriptionId, status: 'open', limit: '100' });
+    return this.get(`/invoices?${q.toString()}`);
+  }
+
+  // B-TR6-119 (Sol B-673-1) — uncollectible invoices stay payable (Stripe allows
+  // uncollectible -> paid), so the void domain lists them as well.
+  async listUncollectibleInvoices(
+    subscriptionId: string,
+  ): Promise<{ data?: Array<{ id?: string }>; has_more?: boolean }> {
+    const q = new URLSearchParams({
+      subscription: subscriptionId,
+      status: 'uncollectible',
+      limit: '100',
+    });
+    return this.get(`/invoices?${q.toString()}`);
+  }
+
+  // B-TR7-120 (B-707-1) — a renewal draft can finalize and be paid, so the
+  // never-billed cancel fences drafts as well.
+  async listDraftInvoices(
+    subscriptionId: string,
+  ): Promise<{ data?: Array<{ id?: string }>; has_more?: boolean }> {
+    const q = new URLSearchParams({ subscription: subscriptionId, status: 'draft', limit: '100' });
+    return this.get(`/invoices?${q.toString()}`);
+  }
+
+  // B-TR7-120 (B-707-1) — Stripe never deletes a subscription's draft (it must
+  // be finalized, then voided). auto_advance=false: finalizing attempts no
+  // payment, so the invoice stays open until the void that follows.
+  async finalizeInvoice(invoiceId: string): Promise<{ id?: string; status?: string }> {
+    return this.post(`/invoices/${encodeURIComponent(invoiceId)}/finalize`, {
+      auto_advance: 'false',
+    });
+  }
+
   // Stripe Product — represents the package itself (name, description).
   // One Product per CoachPackage. The Stripe Product id is cached on the
   // CoachPackage row.
