@@ -2128,6 +2128,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Workout builder templates.',
   },
   {
+    name: 'FEATURE_ROMAN_ADJUST_ENABLED',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      'Kill switch for Roman approve-to-adjust: deterministic recovery suggestions on the coach side (GET/POST /coach/adjustments). Off = every route 404s.',
+  },
+  {
     name: 'FEATURE_NAMED_REGIMES',
     values: ['true', 'false'],
     unsetIs: 'off',

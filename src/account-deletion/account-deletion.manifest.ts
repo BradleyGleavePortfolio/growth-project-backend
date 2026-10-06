@@ -157,6 +157,15 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'Lesson', field: 'coach_id', action: retain(FROZEN_PLAN) },
 
   // ── Workout and meal programming
+  // Roman approve-to-adjust (#655): a proposal carries the client's recovery
+  // signals, so it goes with the client and with the proposing or deciding
+  // coach; the change it applied stays in the client's assignment snapshot.
+  // Events cascade from their proposal. The append-only trigger refuses
+  // UPDATE, so an actor's events are deleted, never detached.
+  { model: 'WorkoutAdjustmentProposal', field: 'client_id', action: del },
+  { model: 'WorkoutAdjustmentProposal', field: 'coach_id', action: del },
+  { model: 'WorkoutAdjustmentProposal', field: 'decided_by_id', action: del },
+  { model: 'WorkoutAdjustmentEvent', field: 'actor_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'client_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'assigned_by_coach_id', action: retain(FROZEN_PLAN) },
   // S-MWB Programs (#640, B-640-3): the client's own program copies (bulk
