@@ -32,7 +32,7 @@ import {
 // POST /auth/google, /auth/apple            | auth-oauth-per-min      | AUTH_OAUTH_PER_MIN / min (IP, never reset)
 //                                           | auth-oauth-per-hour     | AUTH_OAUTH_PER_HOUR / hour (IP, never reset)
 // POST /auth/forgot-password                | auth-password-reset     | AUTH_PWD_RESET_PER_HOUR / hour (IP)
-// POST /auth/register                       | auth-signup             | 5 / hour (IP)
+// POST /auth/register                       | auth-signup             | AUTH_SIGNUP_PER_HOUR / hour (IP)
 // POST /auth/signup-with-code (no code)     | auth-signup             | shared (IP)
 // POST /auth/signup-with-code (with code)   | auth-signup-with-code   | AUTH_SIGNUP_WITH_CODE_PER_HOUR / hour (IP)
 // POST /coach/clients/:id/messages          | coach-messages          | COACH_MESSAGES_PER_MIN / min (user)
@@ -57,6 +57,8 @@ export const THROTTLER_NAMES = {
   AUTH_LOGIN_PER_HOUR: 'auth-login-per-hour',
   /** Per-hour cap on password-reset requests — keyed by IP, future: by email. */
   AUTH_PASSWORD_RESET: 'auth-password-reset',
+  /** Confirmation-link recovery has its own bounded shared-network budget. */
+  AUTH_CONFIRMATION_RESEND: 'auth-confirmation-resend',
   /** Per-hour cap on signup attempts per IP. */
   AUTH_SIGNUP: 'auth-signup',
   /** C03 — per-hour cap on signup attempts per IP that carry a well-formed
@@ -165,10 +167,10 @@ const PUBLIC_READS_PER_MIN      = readIntEnv('PUBLIC_READS_PER_MIN', PUBLIC_READ
 
 // Auth route overrides
 // C14 fix round: per-IP password-login ceilings are never reset, so they are
-// sized for a room of ~40 people signing in on one network (20/min, 200/h).
+// sized for a room of ~40 people signing in on one network (60/min, 200/h).
 // Guessing against any one account is bounded separately by the per-account
 // failure lock (AUTH_LOGIN_ACCOUNT_FAILURES, LoginThrottleResetService).
-const AUTH_LOGIN_PER_MIN        = readIntEnv('AUTH_LOGIN_PER_MIN',   20,   1, 1_000);
+const AUTH_LOGIN_PER_MIN        = readIntEnv('AUTH_LOGIN_PER_MIN',   60,   1, 1_000);
 const AUTH_LOGIN_PER_HOUR       = readIntEnv('AUTH_LOGIN_PER_HOUR', 200,   1, 5_000);
 // C14 fix round: Google / Apple token exchanges get their OWN per-IP buckets.
 // The identity token is provider-signed (nothing to guess), so the ceiling
@@ -177,12 +179,16 @@ const AUTH_LOGIN_PER_HOUR       = readIntEnv('AUTH_LOGIN_PER_HOUR', 200,   1, 5_
 const AUTH_OAUTH_PER_MIN        = readIntEnv('AUTH_OAUTH_PER_MIN',   60,   5, 5_000);
 const AUTH_OAUTH_PER_HOUR       = readIntEnv('AUTH_OAUTH_PER_HOUR', 400,  20, 20_000);
 const AUTH_PWD_RESET_PER_HOUR   = readIntEnv('AUTH_PWD_RESET_PER_HOUR', 3, 1, 1_000);
+// Codeless client signup is a normal advertised launch path. Six people on
+// one Wi-Fi must not exhaust an hour's budget; retain a bounded IP ceiling.
+const AUTH_SIGNUP_PER_HOUR = readIntEnv('AUTH_SIGNUP_PER_HOUR', 100, 5, 500);
+const AUTH_CONFIRMATION_RESEND_PER_HOUR = 100;
 // C03 — signup-with-code burst cap for requests carrying a well-formed invite
 // code. 100/hour/IP by default, clamped to [5, 500]. Sized for a clinic event:
 // 40+ patients sign up from the clinic Wi-Fi (one public IP) inside the same
 // hour, and retries / mistyped passwords draw from the same bucket, so the
 // default leaves ~2.5x headroom over a 40-person room. Abuse stays bounded:
-// codeless signups keep the 5/hour auth-signup baseline, and every request
+// codeless signups keep their own bounded auth-signup budget, and every request
 // still has to pass previewCode before any account is created.
 export const AUTH_SIGNUP_WITH_CODE_PER_HOUR_DEFAULT = 100;
 const AUTH_SIGNUP_WITH_CODE_PER_HOUR = readIntEnv(
@@ -290,6 +296,8 @@ export const THROTTLER_ROUTE_LIMITS = {
   AUTH_OAUTH_PER_MIN,
   AUTH_OAUTH_PER_HOUR,
   AUTH_PWD_RESET_PER_HOUR,
+  AUTH_SIGNUP_PER_HOUR,
+  AUTH_CONFIRMATION_RESEND_PER_HOUR,
   AUTH_SIGNUP_WITH_CODE_PER_HOUR,
   COACH_MESSAGES_PER_MIN,
   NOTIF_PREFS_PER_MIN,
@@ -322,10 +330,11 @@ export const THROTTLER_LIMITS = [
   { name: THROTTLER_NAMES.AUTH_OAUTH_PER_HOUR, ttl: 3_600_000,    limit: AUTH_OAUTH_PER_HOUR },
   // Password-reset: 3/hour by default, keyed by IP
   { name: THROTTLER_NAMES.AUTH_PASSWORD_RESET, ttl: 3_600_000,    limit: AUTH_PWD_RESET_PER_HOUR },
-  // Signup: 5/hour/IP (unchanged from original). C03: on
+  { name: THROTTLER_NAMES.AUTH_CONFIRMATION_RESEND, ttl: 3_600_000, limit: AUTH_CONFIRMATION_RESEND_PER_HOUR },
+  // Signup: bounded shared-network allowance. C03: on
   // POST /auth/signup-with-code a request carrying a well-formed invite code
   // is skipped here and counted in auth-signup-with-code instead.
-  { name: THROTTLER_NAMES.AUTH_SIGNUP,         ttl: 3_600_000,    limit: 5,
+  { name: THROTTLER_NAMES.AUTH_SIGNUP,         ttl: 3_600_000,    limit: AUTH_SIGNUP_PER_HOUR,
     skipIf: skipSignupBaselineWhenCodePresent },
   // C03 — signup WITH a well-formed invite code. The GLOBAL baseline is
   // non-biting (10_000/hour) for the same reason as STOREFRONT_JOIN_IP below;

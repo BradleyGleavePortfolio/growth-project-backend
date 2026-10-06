@@ -11,6 +11,7 @@ import {
 import { Transform } from 'class-transformer';
 import { BadRequestException } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { normalizeEmail } from './email-normalize';
 
 // SECURITY: DTOs for high-risk auth endpoints that touch the User model and/or
 // the `role` field. The global ValidationPipe (src/main.ts) is configured with
@@ -38,6 +39,7 @@ const INTENDED_ROLE_API = {
 
 export class RegisterDto {
   @ApiProperty({ example: 'jane@example.com', format: 'email' })
+  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
   @IsEmail()
   email!: string;
 
@@ -73,6 +75,7 @@ export class RegisterDto {
 
 export class LoginDto {
   @ApiProperty({ example: 'jane@example.com', format: 'email' })
+  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
   @IsEmail()
   email!: string;
 
@@ -325,6 +328,7 @@ export class ValidateInviteCodePublicDto {
 
 export class ForgotPasswordDto {
   @ApiProperty({ example: 'jane@example.com', format: 'email' })
+  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
   @IsEmail()
   email!: string;
 }
@@ -347,6 +351,7 @@ export class BecomeCoachDto {
 // flow falls back to ordinary register + later attach.
 export class SignupWithCodeDto {
   @ApiProperty({ example: 'jane@example.com', format: 'email' })
+  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
   @IsEmail()
   email!: string;
 

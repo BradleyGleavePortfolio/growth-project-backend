@@ -23,7 +23,7 @@ describe('throttler.config -- named limits', () => {
     const byName = Object.fromEntries(THROTTLER_LIMITS.map((t) => [t.name, t]));
     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toMatchObject({
       ttl: 60_000,
-      limit: 20,
+      limit: 60,
     });
     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toMatchObject({
       ttl: 3_600_000,
@@ -31,7 +31,7 @@ describe('throttler.config -- named limits', () => {
     });
     expect(byName[THROTTLER_NAMES.AUTH_SIGNUP]).toMatchObject({
       ttl: 3_600_000,
-      limit: 5,
+      limit: 100,
     });
     expect(byName[THROTTLER_NAMES.AUTH_PASSWORD_RESET]).toMatchObject({
       ttl: 3_600_000,
@@ -68,10 +68,10 @@ describe('AuthController @Throttle metadata routes through named throttlers', ()
     return out;
   };
 
-  it('uses auth-login-per-min (20/min) on POST /auth/login', () => {
+  it('uses auth-login-per-min (60/min) on POST /auth/login', () => {
     const meta = readThrottle(AuthController.prototype.login);
     expect(meta).toHaveProperty(THROTTLER_NAMES.AUTH_LOGIN_PER_MIN);
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 20 });
+    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 60 });
   });
 
   it('uses auth-login-per-hour (200/hr) on POST /auth/login', () => {
@@ -80,16 +80,16 @@ describe('AuthController @Throttle metadata routes through named throttlers', ()
     expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 200 });
   });
 
-  it('uses auth-signup (5/hour) on POST /auth/register', () => {
+  it('uses auth-signup (100/hour) on POST /auth/register', () => {
     const meta = readThrottle(AuthController.prototype.register);
     expect(meta).toHaveProperty(THROTTLER_NAMES.AUTH_SIGNUP);
-    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 5 });
+    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 100 });
   });
 
-  it('uses auth-signup (5/hour) on POST /auth/signup-with-code', () => {
+  it('uses auth-signup (100/hour) on POST /auth/signup-with-code', () => {
     const meta = readThrottle(AuthController.prototype.signupWithCode);
     expect(meta).toHaveProperty(THROTTLER_NAMES.AUTH_SIGNUP);
-    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 5 });
+    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 100 });
   });
 
   it('uses auth-password-reset (3/hr) on POST /auth/forgot-password', () => {

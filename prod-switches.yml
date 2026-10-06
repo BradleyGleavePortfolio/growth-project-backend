@@ -124,18 +124,24 @@ switches:
     auto_flip_on_in_prod: false
     owner: auth
     description: "Phase 10 / C14 — per-IP POST /auth/login attempts per hour. Never reset by a successful login. Defaults to 200; clamped to [1, 5000]."
+  - name: AUTH_SIGNUP_PER_HOUR
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "HUNT-02 — codeless /auth/register and /auth/signup-with-code attempts per hour per IP. Defaults to 100 for shared-network launch intake; clamped to [5, 500]. Bootstrap-owner retains its 5/hour limit."
   - name: AUTH_SIGNUP_WITH_CODE_PER_HOUR
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500]."
+    description: "Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups use AUTH_SIGNUP_PER_HOUR. Defaults to 100; clamped to [5, 500]."
   - name: AUTH_LOGIN_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Phase 10 — per-IP login attempts per minute (POST /auth/login, /auth/apple, /auth/google). Defaults to 5; clamped to [1, 1000]. A successful"
+    description: "HUNT-02 — per-IP password login attempts per minute (POST /auth/login). Defaults to 60; clamped to [1, 1000]. Never reset by success; the per-account password failure lock is unchanged."
   - name: AUTH_OAUTH_PER_HOUR
     tier: optional
     prod_default: STUB_ALLOWED

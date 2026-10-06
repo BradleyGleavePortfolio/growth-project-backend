@@ -30,6 +30,10 @@ import type { AnalyticsService } from '../src/analytics/analytics.service';
 import type { AuditService } from '../src/audit/audit.service';
 import type { EmailService } from '../src/email/email.service';
 
+// HUNT-02: codeless signups share the bounded AUTH_SIGNUP_PER_HOUR baseline
+// (default 100/hour/IP); the burst bucket for well-formed codes is separate.
+const CODELESS_PER_HOUR = THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_PER_HOUR;
+
 // Clinic launch C03 — reliable invite attach.
 //
 //   1. attachUserToCoachByCode refuses to re-parent a student whose coach_id is
@@ -38,7 +42,7 @@ import type { EmailService } from '../src/email/email.service';
 //   2. Every attach failure carries a safe machine-readable code, and the auth
 //      flows (signup-with-code / Google / Apple) return
 //      `invite_attached` + `invite_attach_error` instead of swallowing it.
-//   3. Signup throttle: 5/hour/IP without a code, 100/hour/IP (default) with a
+//   3. Signup throttle: AUTH_SIGNUP_PER_HOUR/IP without a code, 100/hour/IP (default) with a
 //      well-formed code, enforced by the real UserThrottlerGuard over in-memory
 //      storage. A 40-patient clinic event on one Wi-Fi IP completes inside an
 //      hour while the codeless baseline and the burst ceiling still hold.
@@ -563,7 +567,7 @@ describe('C03 — auth flows report invite_attached / invite_attach_error', () =
   });
 });
 
-// ---- 3. signup throttle: 5/h codeless, 100/h with a well-formed code --------
+// ---- 3. signup throttle: codeless baseline, 100/h with a well-formed code ---
 
 describe('C03 — signup-with-code throttle burst for invite-code holders', () => {
   function makeCtx(opts: {
@@ -644,7 +648,7 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
   it('config + handler metadata: both buckets are registered and mutually exclusive on the handler', () => {
     const byName: Record<string, { ttl: number; limit: number; skipIf?: unknown }> =
       Object.fromEntries(THROTTLER_LIMITS.map((t) => [t.name, t]));
-    expect(byName[THROTTLER_NAMES.AUTH_SIGNUP]).toMatchObject({ ttl: 3_600_000, limit: 5 });
+    expect(byName[THROTTLER_NAMES.AUTH_SIGNUP]).toMatchObject({ ttl: 3_600_000, limit: CODELESS_PER_HOUR });
     expect(byName[THROTTLER_NAMES.AUTH_SIGNUP].skipIf).toBe(skipSignupBaselineWhenCodePresent);
     expect(byName[THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE]).toMatchObject({ ttl: 3_600_000 });
     expect(byName[THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE].skipIf).toBe(
@@ -659,7 +663,7 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
     const handler = AuthController.prototype.signupWithCode;
     const limit = (name: string) =>
       Reflect.getMetadata(`THROTTLER:LIMIT${name}`, handler) as number;
-    expect(limit(THROTTLER_NAMES.AUTH_SIGNUP)).toBe(5);
+    expect(limit(THROTTLER_NAMES.AUTH_SIGNUP)).toBe(CODELESS_PER_HOUR);
     expect(limit(THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE)).toBe(100);
     // /auth/register keeps only the baseline bucket.
     expect(
@@ -714,7 +718,7 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
     return { allowed, blocked };
   }
 
-  it('codeless signups from one IP: 5 allowed, the 6th is 429', async () => {
+  it('codeless signups from one IP: the AUTH_SIGNUP_PER_HOUR baseline is allowed, the next is 429', async () => {
     const { guard } = buildGuard();
     await guard.onModuleInit();
     const build = () =>
@@ -723,7 +727,7 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
         body: { email: 'a@b.c', password: 'x' },
         ip: '10.0.0.1',
       }).ctx;
-    expect(await hammer(guard, build, 6)).toEqual({ allowed: 5, blocked: 1 });
+    expect(await hammer(guard, build, CODELESS_PER_HOUR + 1)).toEqual({ allowed: CODELESS_PER_HOUR, blocked: 1 });
   });
 
   it('signups carrying a well-formed code from one IP: 100 allowed, the 101st is 429', async () => {
@@ -769,7 +773,7 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
       // same hour still fits: another 40 attempts are admitted.
       expect(await hammer(guard, patient(99), 40)).toEqual({ allowed: 40, blocked: 0 });
 
-      // Abuse limit 1: codeless signups from the same IP keep the 5/hour
+      // Abuse limit 1: codeless signups from the same IP keep the codeless
       // baseline, untouched by the 80 code-bearing requests above.
       const codeless = () =>
         makeCtx({
@@ -777,10 +781,10 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
           body: { email: 'bot@example.test', password: 'x' },
           ip: clinicIp,
         }).ctx;
-      expect(await hammer(guard, codeless, 6)).toEqual({ allowed: 5, blocked: 1 });
+      expect(await hammer(guard, codeless, CODELESS_PER_HOUR + 1)).toEqual({ allowed: CODELESS_PER_HOUR, blocked: 1 });
 
       // Abuse limit 2: a malformed code does not unlock the burst bucket; it
-      // lands on the (now exhausted) 5/hour baseline.
+      // lands on the (now exhausted) codeless baseline.
       const malformed = () =>
         makeCtx({
           path: '/auth/signup-with-code',
@@ -805,14 +809,14 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
       makeCtx({ path: '/auth/signup-with-code', body: { email: 'a@b.c' }, ip }).ctx;
     const withCode = () =>
       makeCtx({ path: '/auth/signup-with-code', body: { invite_code: 'GP-CLINIC' }, ip }).ctx;
-    expect(await hammer(guard, codeless, 6)).toEqual({ allowed: 5, blocked: 1 });
+    expect(await hammer(guard, codeless, CODELESS_PER_HOUR + 1)).toEqual({ allowed: CODELESS_PER_HOUR, blocked: 1 });
     expect(await hammer(guard, withCode, 100)).toEqual({ allowed: 100, blocked: 0 });
     // Codeless is still blocked; code-bearing is now blocked too.
     expect(await hammer(guard, codeless, 1)).toEqual({ allowed: 0, blocked: 1 });
     expect(await hammer(guard, withCode, 1)).toEqual({ allowed: 0, blocked: 1 });
   });
 
-  it('a malformed code does NOT unlock the burst bucket (counts against the 5/h baseline)', async () => {
+  it('a malformed code does NOT unlock the burst bucket (counts against the codeless baseline)', async () => {
     const { guard } = buildGuard();
     await guard.onModuleInit();
     const build = () =>
@@ -821,6 +825,6 @@ describe('C03 — signup-with-code throttle burst for invite-code holders', () =
         body: { invite_code: 'not a code!!' },
         ip: '10.0.0.4',
       }).ctx;
-    expect(await hammer(guard, build, 6)).toEqual({ allowed: 5, blocked: 1 });
+    expect(await hammer(guard, build, CODELESS_PER_HOUR + 1)).toEqual({ allowed: CODELESS_PER_HOUR, blocked: 1 });
   });
 });

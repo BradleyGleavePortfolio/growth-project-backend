@@ -70,14 +70,14 @@ export class AuthController {
       'Creates a Supabase user and the corresponding application User row. ' +
       'Optional intended_role (client | coach, default client) fixes the role at creation; ' +
       'coach provisions a free/active CoachSubscription. ' +
-      'Rate-limited to 5/hour/IP to blunt enumeration and spam signup loops.',
+      'Rate-limited by AUTH_SIGNUP_PER_HOUR per IP, with a bounded shared-network allowance.',
   })
   @ApiResponse({ status: 200, description: 'Session tokens for the new user.' })
   @ApiResponse({ status: 400, description: 'Validation error.' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('register')
-  @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
+  @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_PER_HOUR } })
   async register(@Body() body: RegisterDto, @Request() req: AuditableRequest) {
     return this.authService.register(body, auditContext(req));
   }
@@ -345,6 +345,24 @@ export class AuthController {
     return this.authService.forgotPassword(body.email);
   }
 
+  @ApiOperation({
+    summary: 'Request another signup confirmation link',
+    description: 'Anonymous submission response; never confirms account existence or email delivery.',
+  })
+  @ApiResponse({ status: 200, description: 'Verification request submitted.' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+  @Public()
+  @Post('resend-verification')
+  @Throttle({
+    [THROTTLER_NAMES.AUTH_CONFIRMATION_RESEND]: {
+      ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_CONFIRMATION_RESEND_PER_HOUR,
+    },
+  })
+  @HttpCode(HttpStatus.OK)
+  async resendVerification(@Body() body: ForgotPasswordDto) {
+    return this.authService.resendVerification(body.email);
+  }
+
   @ApiBearerAuth('bearer')
   @ApiOperation({ summary: 'Get the authenticated user' })
   @ApiResponse({ status: 200, description: 'Caller profile.' })
@@ -380,7 +398,7 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
   @Public()
   @Post('signup-with-code')
-  // C03: codeless signups keep the 5/hour/IP baseline; requests carrying a
+  // C03: codeless signups keep the bounded AUTH_SIGNUP_PER_HOUR baseline; requests carrying a
   // well-formed invite code are counted in the burst bucket instead
   // (AUTH_SIGNUP_WITH_CODE_PER_HOUR, default 100/hour/IP). The two skipIf
   // predicates in throttler.config.ts make the buckets mutually exclusive.
@@ -391,7 +409,7 @@ export class AuthController {
   // on the storefront join route for the same isolation).
   @SkipThrottle(SIGNUP_WITH_CODE_SKIP_THROTTLERS)
   @Throttle({
-    [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 },
+    [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_PER_HOUR },
     [THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE]: {
       ttl: 3_600_000,
       limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_WITH_CODE_PER_HOUR,

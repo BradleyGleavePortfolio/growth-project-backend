@@ -156,6 +156,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'auth/me',
   'auth/recent-auth-token',
   'auth/register',
+  'auth/resend-verification', // HUNT-02 — public signup confirmation recovery, like forgot-password
   'auth/select-role',
   'auth/signup-policy',
   'auth/signup-with-code',
