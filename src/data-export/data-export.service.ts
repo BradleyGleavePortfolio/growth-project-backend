@@ -284,6 +284,34 @@ const WORKOUT_ADJUSTMENT_EXPORT_SELECT: Record<string, true> = {
   created_at: true,
 };
 
+/**
+ * Roman v1.1 memory (R11-M1): the notes Roman keeps about the user (live,
+ * expired and superseded), with when each was said and when it expires. The
+ * internal slot key and the source message id are left out.
+ */
+const ROMAN_CLIENT_NOTE_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  kind: true,
+  text: true,
+  source_at: true,
+  expires_at: true,
+  superseded_at: true,
+  created_at: true,
+};
+
+/**
+ * Roman v1.1 memory (R11-M1): the user's day, week and month summaries. The
+ * internal facts blob, input digest and model id are left out. The memory job
+ * state (RomanMemoryState) is internal bookkeeping and is not exported.
+ */
+const ROMAN_CLIENT_SUMMARY_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  period: true,
+  period_start: true,
+  text: true,
+  generated_at: true,
+};
+
 /** Wearable connections: provider and sync state only, never tokens or secret refs. */
 const WEARABLE_CONNECTION_EXPORT_SELECT: Record<string, true> = {
   id: true,
@@ -1255,6 +1283,8 @@ export class DataExportService {
       coachCodeRedemptions,
       inviteRedemptions,
       workoutAdjustments,
+      romanClientNotes,
+      romanClientSummaries,
       wearableConnections,
       wearableSamples,
     ] = await Promise.all([
@@ -1368,6 +1398,20 @@ export class DataExportService {
         { client_id: userId },
         { select: WORKOUT_ADJUSTMENT_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
       ),
+      // R11-M1: Roman's notes and summaries about the user (their own rows only).
+      this._streamAll(
+        'romanClientNote',
+        { client_id: userId },
+        { select: ROMAN_CLIENT_NOTE_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'romanClientSummary',
+        { client_id: userId },
+        {
+          select: ROMAN_CLIENT_SUMMARY_EXPORT_SELECT,
+          orderBy: [{ period_start: 'asc' }, { id: 'asc' }],
+        },
+      ),
       this._streamAll(
         'wearableConnection',
         { user_id: userId },
@@ -1442,6 +1486,8 @@ export class DataExportService {
       coach_code_redemptions: coachCodeRedemptions,
       invite_redemptions: inviteRedemptions,
       workout_adjustments: workoutAdjustments,
+      roman_notes: romanClientNotes,
+      roman_summaries: romanClientSummaries,
       wearable_connections: wearableConnections,
       wearable_samples: wearableSamples,
     };

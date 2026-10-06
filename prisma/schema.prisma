@@ -546,6 +546,11 @@ model User {
   coach_welcome_job           CoachWelcomeMessageJob?          @relation("CoachWelcomeJobClient")
   workout_reminder_deliveries WorkoutReminderDelivery[]        @relation("WorkoutReminderClient")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
+  // Roman v1.1 memory (R11-M1): notes, summaries and job state about this
+  // client. Server only; erased with the account.
+  roman_client_notes     RomanClientNote[]    @relation("RomanClientNoteClient")
+  roman_client_summaries RomanClientSummary[] @relation("RomanClientSummaryClient")
+  roman_memory_state     RomanMemoryState?    @relation("RomanMemoryStateClient")
 
   // R2a — AI processing consent ledger (box 2 of the onboarding consent
   // screen). Append-only grant / withdraw history; see AiProcessingConsentEvent.
@@ -7566,6 +7571,10 @@ model RomanMessage {
   parent  RomanMessage?  @relation("RomanMessageParent", fields: [parent_message_id], references: [id])
   replies RomanMessage[] @relation("RomanMessageParent")
 
+  // Roman v1.1 notes taken from this message; erasing the message leaves
+  // them with a null source (R11-M1).
+  roman_notes RomanClientNote[] @relation("RomanClientNoteSourceMessage")
+
   // Hot read path: a session's messages in chronological order (the controller
   // paginates newest-first by reversing a created_at cursor over this index).
   @@index([session_id, created_at])
@@ -8639,4 +8648,74 @@ model SchedulingJobLease {
   lease_until DateTime
   acquired_at DateTime
   updated_at  DateTime @updatedAt
+}
+
+// Roman v1.1 memory (R11-M1, migration 20270401000000_roman_memory). Server
+// only: RLS gives service_role all access and anon a restrictive deny; there
+// is no client or coach SELECT policy (coaches never see a client's memory;
+// the client sees it only through a server projection). Every row is erased
+// with the account (account-deletion manifest, by client_id). Written only
+// while FEATURE_ROMAN_MEMORY is on and the client holds memory-scope consent.
+
+// A dated, sourced note Roman keeps about one client (e.g. "dislikes oats").
+// kind: preference | schedule | household | work | injury_history | goal |
+// equipment | diet_like | diet_dislike | travel | other. key is the
+// normalised slot ("diet_dislike.oats"); a newer note on the same key
+// supersedes the old one (superseded_at + superseded_by_id). Deleting the
+// chat a note came from erases the message and leaves the note with a null
+// source_message_id (ON DELETE SET NULL); deleting the account erases notes.
+model RomanClientNote {
+  id                String            @id @default(uuid())
+  client_id         String
+  client            User              @relation("RomanClientNoteClient", fields: [client_id], references: [id], onDelete: Cascade)
+  kind              String
+  key               String
+  text              String
+  source_kind       String            @default("roman_chat")
+  source_message_id String?
+  source_message    RomanMessage?     @relation("RomanClientNoteSourceMessage", fields: [source_message_id], references: [id], onDelete: SetNull)
+  source_at         DateTime
+  expires_at        DateTime?
+  superseded_at     DateTime?
+  superseded_by_id  String?
+  superseded_by     RomanClientNote?  @relation("RomanClientNoteSupersede", fields: [superseded_by_id], references: [id], onDelete: SetNull)
+  supersedes        RomanClientNote[] @relation("RomanClientNoteSupersede")
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+
+  @@index([client_id, superseded_at, expires_at])
+  @@index([source_message_id])
+  @@index([superseded_by_id])
+}
+
+// A rolling summary of one client's day, week or month. text is <= 1,200
+// characters; facts holds the numbers it may state, each with its source
+// refs ({table, id}); input_hash is the digest of the source rows it was
+// built from (unchanged hash = no rebuild). One row per (client, period,
+// period_start). period: day | week | month.
+model RomanClientSummary {
+  id           String   @id @default(uuid())
+  client_id    String
+  client       User     @relation("RomanClientSummaryClient", fields: [client_id], references: [id], onDelete: Cascade)
+  period       String
+  period_start DateTime @db.Date
+  text         String
+  facts        Json
+  input_hash   String
+  model_id     String
+  generated_at DateTime @default(now())
+
+  @@unique([client_id, period, period_start])
+}
+
+// Per-client memory job state: how far notes and summaries have been built
+// and the outcome of the last run. last_outcome: ok | no_consent |
+// pool_empty | breaker | error. Not exported (internal bookkeeping only).
+model RomanMemoryState {
+  client_id          String    @id
+  client             User      @relation("RomanMemoryStateClient", fields: [client_id], references: [id], onDelete: Cascade)
+  notes_watermark_at DateTime?
+  summaries_through  DateTime? @db.Date
+  last_run_at        DateTime?
+  last_outcome       String?
 }
