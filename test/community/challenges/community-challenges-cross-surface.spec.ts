@@ -28,6 +28,7 @@ import {
 import { COMMENT_CONTEXT_TYPE } from '../../../src/community/messages/community-messages.repository';
 import { makeUser } from './test-user.factory';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
+import { noCommunityPush } from '../messages/community-push-test-helpers';
 
 const COHORT = '11111111-1111-1111-1111-111111111111';
 const WORKSPACE = '22222222-2222-2222-2222-222222222222';
@@ -99,7 +100,7 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
         realtime as never,
         planContext as never,
         safetyWithBlocks(),
-        { pushEnabled: () => false, sendCommunityPush: jest.fn() } as never,
+        noCommunityPush(),
       );
     });
 

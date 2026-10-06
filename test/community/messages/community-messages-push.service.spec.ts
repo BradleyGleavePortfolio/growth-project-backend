@@ -14,9 +14,20 @@
 import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
 import { CommunityMessagesRepository } from '../../../src/community/messages/community-messages.repository';
+import type { CommunityAccessService } from '../../../src/community/community-access.service';
+import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
+import type { PlanContextService } from '../../../src/community/plan-context/plan-context.service';
+import type {
+  CommunityNotificationsService,
+  SendCommunityPushInput,
+} from '../../../src/community/notifications/community-notifications.service';
 import { NotificationKind } from '../../../src/notifications/notification-kind';
 import type { PrismaService } from '../../../src/prisma.service';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
+
+function stub<T>(v: unknown): T {
+  return v as T;
+}
 
 const COHORT = '11111111-1111-1111-1111-111111111111';
 const OTHER_COHORT = '11111111-1111-1111-1111-222222222222';
@@ -43,7 +54,7 @@ function fakePrisma(memberships: MembershipRow[], bannedUserIds: string[] = []) 
     communityMessage: {
       create: jest.fn(async (args: { data: Record<string, unknown> }) => {
         const at = new Date('2026-01-01T00:00:00.000Z');
-        return {
+        return stub<CommunityMessage>({
           id: MESSAGE_ID,
           created_at: at,
           updated_at: at,
@@ -54,7 +65,7 @@ function fakePrisma(memberships: MembershipRow[], bannedUserIds: string[] = []) 
           plan_context_type: null,
           ...args.data,
           plan_context_payload: null,
-        } as unknown as CommunityMessage;
+        });
       }),
       updateMany: jest.fn(async () => ({ count: 0 })),
     },
@@ -86,7 +97,7 @@ function fakePrisma(memberships: MembershipRow[], bannedUserIds: string[] = []) 
   };
 }
 
-const sender = { id: SENDER, role: 'client' } as unknown as User;
+const sender = stub<User>({ id: SENDER, role: 'client' });
 
 /** Flush the fire-and-forget push tail. */
 async function settle(): Promise<void> {
@@ -111,23 +122,21 @@ function build(opts: {
   };
   const communityPush = {
     pushEnabled: jest.fn(() => opts.pushOn ?? true),
-    sendCommunityPush: jest.fn(async () => undefined),
+    sendCommunityPush: jest.fn(async (_input: SendCommunityPushInput) => undefined),
   };
   const service = new CommunityMessagesService(
-    access as never,
-    new CommunityMessagesRepository(prisma as unknown as PrismaService),
-    realtime as never,
-    { validate: jest.fn(async () => null) } as never,
+    stub<CommunityAccessService>(access),
+    new CommunityMessagesRepository(stub<PrismaService>(prisma)),
+    stub<CommunityRealtimeService>(realtime),
+    stub<PlanContextService>({ validate: jest.fn(async () => null) }),
     safetyWithBlocks(opts.blocks ?? []),
-    communityPush as never,
+    stub<CommunityNotificationsService>(communityPush),
   );
   return { service, communityPush, prisma };
 }
 
-function recipients(push: { sendCommunityPush: jest.Mock }): string[] {
-  return push.sendCommunityPush.mock.calls.map(
-    (c: unknown[]) => (c[0] as { recipientId: string }).recipientId,
-  );
+function recipients(push: ReturnType<typeof build>['communityPush']): string[] {
+  return push.sendCommunityPush.mock.calls.map(([input]) => input.recipientId);
 }
 
 describe('CommunityMessagesService.send — group chat push (C-S-PUSH-4)', () => {
@@ -139,9 +148,7 @@ describe('CommunityMessagesService.send — group chat push (C-S-PUSH-4)', () =>
     await settle();
 
     expect(recipients(communityPush).sort()).toEqual([MATE, MATE2].sort());
-    for (const [input] of communityPush.sendCommunityPush.mock.calls as unknown as Array<
-      [Record<string, unknown>]
-    >) {
+    for (const [input] of communityPush.sendCommunityPush.mock.calls) {
       expect(input).toEqual({
         recipientId: expect.any(String),
         kind: NotificationKind.COMMUNITY_MESSAGE_RECEIVED,

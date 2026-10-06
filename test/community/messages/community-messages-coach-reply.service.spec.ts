@@ -12,6 +12,7 @@
 import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
+import { noCommunityPush } from './community-push-test-helpers';
 
 const COHORT = '11111111-1111-1111-1111-111111111111';
 const WORKSPACE = '22222222-2222-2222-2222-222222222222';
@@ -84,7 +85,7 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
       realtime as never,
       planContext as never,
       safetyWithBlocks(),
-      { pushEnabled: () => false, sendCommunityPush: jest.fn() } as never,
+      noCommunityPush(),
     );
   });
 
