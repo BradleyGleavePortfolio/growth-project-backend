@@ -194,7 +194,7 @@ function makeRegistry(materialise: jest.Mock) {
 function makeNotifications() {
   return {
     createNotification: jest.fn(async () => ({ id: 'n-1' })),
-    pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
+    sendPush: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
   } as any;
 }
 
@@ -236,8 +236,8 @@ describe('DripDispatcherCron', () => {
     expect(state.drops[0].attempt_count).toBe(1);
     expect(state.drops[0].alert_dispatched_at).toBeInstanceOf(Date);
     // 2 in-app + push notification calls happen via the same helper —
-    // we expect both an in-app and a push channel write, plus pushToUser.
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    // we expect both an in-app and a push channel write, plus sendPush.
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
     expect(notifications.createNotification).toHaveBeenCalledTimes(2);
     const channels = notifications.createNotification.mock.calls.map(
       (c: any[]) => c[0].channel,
@@ -494,7 +494,7 @@ describe('DripDispatcherCron', () => {
       createNotification: jest
         .fn()
         .mockRejectedValue(new Error('expo blew up')),
-      pushToUser: jest.fn().mockRejectedValue(new Error('expo blew up')),
+      sendPush: jest.fn().mockRejectedValue(new Error('expo blew up')),
     } as any;
     const cron = new DripDispatcherCron(
       prisma as any,
@@ -1012,7 +1012,7 @@ describe('DripDispatcherCron', () => {
     expect(state.drops[0].materialised_ref).toBe('mp-silent');
     // But NO alert sent — guard short-circuited on the pre-set column.
     expect(notifications.createNotification).not.toHaveBeenCalled();
-    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(notifications.sendPush).not.toHaveBeenCalled();
     // Guard returns before the re-stamp, so the original timestamp is
     // preserved untouched.
     expect(state.drops[0].alert_dispatched_at).toEqual(preStamped);
@@ -1038,7 +1038,7 @@ describe('DripDispatcherCron', () => {
 
     expect(stats.delivered).toBe(1);
     // Alert fully sent: push + 2 in-app/push channel rows.
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
     expect(notifications.createNotification).toHaveBeenCalledTimes(2);
     // And the column is now stamped so a later tick never re-pushes.
     expect(state.drops[0].alert_dispatched_at).toBeInstanceOf(Date);
@@ -1128,7 +1128,7 @@ describe('DripDispatcherCron', () => {
     expect(state.drops[0].alert_dispatched_at).toBeInstanceOf(Date);
     const stampedAt = state.drops[0].alert_dispatched_at as Date;
     // Exactly one push + the in-app/push channel rows from the first send.
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
     expect(notifications.createNotification).toHaveBeenCalledTimes(2);
 
     // Second worker over the SAME (now-stamped) row: the alert claim
@@ -1139,7 +1139,7 @@ describe('DripDispatcherCron', () => {
       'client-1',
       new Date(NOW.getTime() + 6 * 60 * 1000),
     );
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
     expect(notifications.createNotification).toHaveBeenCalledTimes(2);
     // The original stamp is untouched (we never re-write on a count===0).
     expect(state.drops[0].alert_dispatched_at).toEqual(stampedAt);
@@ -1208,7 +1208,7 @@ describe('DripDispatcherCron', () => {
     expect(state.drops[0].materialised_ref).toBe('mp-notify-off');
     // NO alert: claim count was 0 because the column was non-NULL.
     expect(notifications.createNotification).not.toHaveBeenCalled();
-    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(notifications.sendPush).not.toHaveBeenCalled();
     // Seed stamp untouched (we never write on count===0).
     expect(state.drops[0].alert_dispatched_at).toEqual(preStamped);
   });
@@ -1230,7 +1230,7 @@ describe('DripDispatcherCron', () => {
       createNotification: jest
         .fn()
         .mockRejectedValue(new Error('expo blew up')),
-      pushToUser: jest.fn().mockRejectedValue(new Error('expo blew up')),
+      sendPush: jest.fn().mockRejectedValue(new Error('expo blew up')),
     } as any;
     const cron = new DripDispatcherCron(
       prisma as any,
@@ -1247,13 +1247,13 @@ describe('DripDispatcherCron', () => {
     expect(state.drops[0].alert_dispatched_at).toEqual(NOW);
 
     // A second worker now sees count===0 and sends nothing more.
-    const callsBefore = notifications.pushToUser.mock.calls.length;
+    const callsBefore = notifications.sendPush.mock.calls.length;
     await (cron as any).dispatchBuyerAlert(
       { ...state.drops[0] },
       'client-1',
       new Date(NOW.getTime() + 6 * 60 * 1000),
     );
-    expect(notifications.pushToUser.mock.calls.length).toBe(callsBefore);
+    expect(notifications.sendPush.mock.calls.length).toBe(callsBefore);
   });
 
   it('parent ClientPurchase missing → drop canceled defensively, never re-tried', async () => {

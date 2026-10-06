@@ -116,7 +116,7 @@ function makeNotifications() {
     createNotification: jest.fn(async (_input: unknown): Promise<unknown> => ({
       id: 'notif_1',
     })),
-    pushToUser: jest.fn(async () => undefined),
+    sendPush: jest.fn(async () => undefined),
   };
 }
 
@@ -170,7 +170,16 @@ describe('PurchaseFanoutService — COACH_NEW_PURCHASE (PR-15A A2)', () => {
       ([c]: any[]) => c.kind === NotificationKind.COACH_NEW_PURCHASE,
     );
     expect(inAppCalls.length).toBe(2); // inapp + push channel row
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
+    // AUDIT-09-125: the device push goes through sendPush (mute, the
+    // coach_new_purchase switch, quiet hours, fixed lock-screen copy).
+    expect(notifications.sendPush).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'coach_1',
+        kind: NotificationKind.COACH_NEW_PURCHASE,
+        deep_link: 'tgp://coach/purchases/pur_1',
+      }),
+    );
     const firstCall: any = inAppCalls[0]![0];
     expect(firstCall.user_id).toBe('coach_1');
     expect(firstCall.body).toMatch(/Alex Buyer/);
@@ -196,7 +205,7 @@ describe('PurchaseFanoutService — COACH_NEW_PURCHASE (PR-15A A2)', () => {
     );
     svc.flushAlerts('pur_1');
     await flush();
-    const firstCount = notifications.pushToUser.mock.calls.length;
+    const firstCount = notifications.sendPush.mock.calls.length;
 
     // Stripe replay — same purchase id, same tx state already has marker.
     await svc.onPurchaseEntitled(
@@ -207,7 +216,7 @@ describe('PurchaseFanoutService — COACH_NEW_PURCHASE (PR-15A A2)', () => {
     svc.flushAlerts('pur_1');
     await flush();
 
-    expect(notifications.pushToUser.mock.calls.length).toBe(firstCount);
+    expect(notifications.sendPush.mock.calls.length).toBe(firstCount);
     expect(state.markers.length).toBe(1);
   });
 
@@ -231,7 +240,7 @@ describe('PurchaseFanoutService — COACH_NEW_PURCHASE (PR-15A A2)', () => {
     svc.discardPendingAlerts('pur_1');
     svc.flushAlerts('pur_1');
     await flush();
-    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(notifications.sendPush).not.toHaveBeenCalled();
     const calls = notifications.createNotification.mock.calls.filter(
       ([c]: any[]) => c.kind === NotificationKind.COACH_NEW_PURCHASE,
     );
@@ -288,7 +297,7 @@ describe('PurchaseFanoutService — COACH_NEW_PURCHASE (PR-15A A2)', () => {
     svc.flushAlerts('pur_1');
     await flush();
     // A null return from createNotification (= prefs OFF) MUST NOT throw.
-    // pushToUser is still attempted (NotificationsService.pushToUser
+    // sendPush is still attempted (NotificationsService.sendPush
     // applies its own per-kind prefs check inside).
     expect(notifications.createNotification).toHaveBeenCalled();
   });

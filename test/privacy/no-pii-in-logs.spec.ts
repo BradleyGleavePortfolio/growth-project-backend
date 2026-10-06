@@ -25,6 +25,7 @@ import { EmailService } from '../../src/email/email.service';
 import { EmailTemplateKey } from '../../src/email/email.types';
 import { DigestService } from '../../src/notifications/digest.service';
 import { CoachAlertsService } from '../../src/coach/coach-alerts.service';
+import type { CoachAlertEmitter } from '../../src/notifications/emitters/coach-alert.emitter';
 import { PracticeTypeService } from '../../src/coach/practice-type/practice-type.service';
 import { SchedulingWebhookController } from '../../src/scheduling/scheduling-webhook.controller';
 
@@ -221,10 +222,10 @@ describe('C-611-17: other log lines that carried a name, an address or a payload
         create: jest.fn().mockResolvedValue(alert),
       },
     });
-    const notifications = fake<NotificationsService>({
-      pushToCoach: jest.fn().mockResolvedValue(false),
+    const emitter = fake<CoachAlertEmitter>({
+      emit: jest.fn().mockResolvedValue({ inapp: 'sent', push: 'skipped' }),
     });
-    const svc = new CoachAlertsService(prisma, notifications);
+    const svc = new CoachAlertsService(prisma, emitter);
     await svc.createAlert({
       coachId: 'coach-1',
       clientId: 'client-1',

@@ -695,7 +695,6 @@ export class PurchaseFanoutService {
     }
 
     const amountStr = formatAmount(alert.amountCents, alert.currency);
-    const title = 'New purchase';
     const body =
       `${alert.buyerDisplayName} just bought ${alert.packageName}` +
       (amountStr ? ` (${amountStr})` : '');
@@ -727,9 +726,14 @@ export class PurchaseFanoutService {
         );
       }
       try {
-        await this.notifications!.pushToUser(alert.coachId, title, body.slice(0, 160), {
+        // AUDIT-09-125: through sendPush, so the push honours "Mute all",
+        // the coach_new_purchase switch and quiet hours, and the lock screen
+        // shows fixed copy (never the buyer's name or the amount paid).
+        await this.notifications!.sendPush({
+          user_id: alert.coachId,
           kind: NotificationKind.COACH_NEW_PURCHASE,
-          purchase_id: alert.purchaseId,
+          body: body.slice(0, 160),
+          deep_link,
         });
       } catch (err) {
         this.logger.warn(

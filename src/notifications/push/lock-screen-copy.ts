@@ -100,6 +100,15 @@ const TEMPLATES: Record<string, LockScreenCopy> = {
     title: 'New meal plan',
     body: `Your coach added a meal plan for you. ${OPEN}`,
   },
+  // AUDIT-09-125: no content title, buyer name or amount on the lock screen.
+  [NotificationKind.DRIP_RELEASED]: {
+    title: 'New content',
+    body: `New content from your coach is ready. ${OPEN}`,
+  },
+  [NotificationKind.COACH_NEW_PURCHASE]: {
+    title: 'New purchase',
+    body: `A client bought a package. ${OPEN}`,
+  },
 };
 
 // B-653-4: a client's move request keeps the booking_rescheduled kind, but
