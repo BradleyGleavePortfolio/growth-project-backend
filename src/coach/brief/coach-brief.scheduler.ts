@@ -35,6 +35,12 @@ import { PrismaService } from '../../prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CoachBriefService, bucketDateLocal } from './coach-brief.service';
 import { coachBriefEnabled } from './coach-brief-enabled.guard';
+import { usableTimeZone } from '../../notifications/local-time';
+import { QuietHoursPolicy } from '../../notifications/nudges/quiet-hours.policy';
+import {
+  NUDGE_QUIET_HOURS_END,
+  NUDGE_QUIET_HOURS_START,
+} from '../../notifications/nudges/nudge.types';
 
 const CRON_JOB_NAME = 'coach-brief-dispatch';
 const TTL_CRON_JOB_NAME = 'coach-brief-ttl-prune';
@@ -42,12 +48,57 @@ const DEFAULT_CRON = '* * * * *';
 // 03:15 UTC — off-peak, well after the 05:00 push generation window.
 const TTL_PRUNE_CRON = '15 3 * * *';
 const PUSH_TIMEOUT_MS = 10_000;
+// S-BRIEF-124 (B-766-1, operator D1): a coach with no saved brief time gets
+// it at 08:00 in their own zone, the first minute after quiet hours.
+const DEFAULT_BRIEF_NOTIFICATION_TIME = '08:00';
+const QUIET_HOURS_OPEN_TIME = '08:00';
+const DEFAULT_BRIEF_TIMEZONE = 'America/Los_Angeles';
+const PUSH_PREVIEW_MAX_CHARS = 160;
+
+// Push body: the brief's opening, cut at a sentence or word boundary with
+// an ellipsis, never mid-word.
+export function briefPushPreview(narrative: string): string {
+  const text = narrative.replace(/\s+/g, ' ').trim();
+  if (text.length <= PUSH_PREVIEW_MAX_CHARS) return text;
+  const head = text.slice(0, PUSH_PREVIEW_MAX_CHARS - 1);
+  const sentenceEnd = Math.max(head.lastIndexOf('. '), head.lastIndexOf('? '));
+  if (sentenceEnd >= 40) return head.slice(0, sentenceEnd + 1);
+  const space = head.lastIndexOf(' ');
+  const cut = space > 0 ? head.slice(0, space) : head;
+  return `${cut.replace(/[\s,;:.\u2014-]+$/, '')}\u2026`;
+}
 
 // P1-4 fix round 5: bounded retry budget. A coach receives at most
 // MAX_PUSH_ATTEMPTS push attempts per brief_date; after that the
 // scheduler stops retrying so a long Expo outage cannot drive
 // unbounded calls. The budget resets when last_push_attempt_date
 // rolls to a new day.
+/**
+ * S-BRIEF-124 (B-766-1): the brief push keeps the app's stated quiet hours,
+ * 9:00 PM to 8:00 AM in the coach's zone (QuietHoursPolicy, the window every
+ * other push uses). The app offers no way to opt out of them, so a saved time
+ * inside the window is held to 08:00.
+ */
+export function briefSendTime(saved: string): string {
+  const [hour, minute] = saved.split(':').map((v) => parseInt(v, 10));
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return saved;
+  if (hour < NUDGE_QUIET_HOURS_END || hour >= NUDGE_QUIET_HOURS_START) {
+    return QUIET_HOURS_OPEN_TIME;
+  }
+  return saved;
+}
+
+/** The coach's own zone: the device-supplied one, else their coach profile's. */
+function coachZone(user: {
+  notification_prefs?: { timezone: string; timezone_updated_at: Date | null } | null;
+  coach_profile?: { timezone: string | null } | null;
+}): string {
+  const supplied = user.notification_prefs?.timezone_updated_at
+    ? usableTimeZone(user.notification_prefs.timezone)
+    : null;
+  return supplied ?? usableTimeZone(user.coach_profile?.timezone) ?? DEFAULT_BRIEF_TIMEZONE;
+}
+
 const MAX_PUSH_ATTEMPTS = 5;
 
 // P1-4 fix round 5: the lease that prevents two cron instances from
@@ -210,8 +261,34 @@ export class CoachBriefScheduler implements OnModuleInit {
       },
     });
 
+    // Coaches who never opened brief settings get it at 08:00 in their own
+    // zone (America/Los_Angeles when unknown). Without this only coaches with
+    // a saved settings row were ever pushed.
+    const unsaved = await this.prisma.user.findMany({
+      where: {
+        role: { in: ['coach', 'owner'] },
+        archived_at: null,
+        deleted_at: null,
+        expo_push_token: { not: null },
+        coach_brief_preferences: { is: null },
+      },
+      select: {
+        id: true,
+        name: true,
+        expo_push_token: true,
+        notification_prefs: { select: { timezone: true, timezone_updated_at: true } },
+        coach_profile: { select: { timezone: true } },
+      },
+    });
+    const defaults = unsaved.map((coach) => ({
+      coach_id: coach.id,
+      notification_time: DEFAULT_BRIEF_NOTIFICATION_TIME,
+      timezone: coachZone(coach),
+      coach: { id: coach.id, name: coach.name, expo_push_token: coach.expo_push_token },
+    }));
+
     await Promise.allSettled(
-      allPrefs.map((prefs) => this.maybeDispatch(prefs, now)),
+      [...allPrefs, ...defaults].map((prefs) => this.maybeDispatch(prefs, now)),
     );
   }
 
@@ -229,7 +306,7 @@ export class CoachBriefScheduler implements OnModuleInit {
     now: Date,
   ): Promise<void> {
     try {
-      const [prefHour, prefMinute] = prefs.notification_time
+      const [prefHour, prefMinute] = briefSendTime(prefs.notification_time)
         .split(':')
         .map((s) => parseInt(s, 10));
       if (Number.isNaN(prefHour) || Number.isNaN(prefMinute)) return;
@@ -269,10 +346,23 @@ export class CoachBriefScheduler implements OnModuleInit {
       if (localHour === 24) localHour = 0;
 
       if (localHour !== prefHour || localMinute !== prefMinute) return;
+      // Never inside quiet hours, whatever the zone resolved to.
+      if (!QuietHoursPolicy.evaluate(now, effectiveTimezone).allowed) return;
 
       // No expo token — generation still happens via getOrGenerateTodaysBrief
       // when the coach opens the app, so skip the push silently.
       if (!prefs.coach.expo_push_token) return;
+
+      // S-BRIEF-124 (B-766-1): "Mute all notifications" silences the brief
+      // push too (read at send time, so a mute set this morning holds).
+      const notificationPrefs = await this.prisma.notificationPreferences.findUnique({
+        where: { user_id: prefs.coach_id },
+        select: { muted: true },
+      });
+      if (notificationPrefs?.muted === true) {
+        this.logger.debug(`coach brief push skipped for coach=${prefs.coach_id} — notifications muted`);
+        return;
+      }
 
       const briefDate = bucketDateLocal(now, effectiveTimezone);
 
@@ -375,7 +465,7 @@ export class CoachBriefScheduler implements OnModuleInit {
         return;
       }
 
-      const notifBody = brief.summary.narrative.slice(0, 160);
+      const notifBody = briefPushPreview(brief.summary.narrative);
 
       // P2-6: AbortController feeds the same signal into pushToUser AND
       // the timeout, so when the 10s deadline trips we actually cancel
@@ -403,7 +493,12 @@ export class CoachBriefScheduler implements OnModuleInit {
             prefs.coach_id,
             'Your daily brief is ready',
             notifBody,
-            { deep_link: 'tgp://coach/brief/today', brief_date: briefDate },
+            {
+              deep_link: 'tgp://coach/brief/today',
+              brief_date: briefDate,
+              // The app routes a tap by actionScreen (pushTapRouter).
+              actionScreen: 'CoachBrief',
+            },
             abortController.signal,
           ),
           timeoutPromise,

@@ -19,6 +19,8 @@ import {
   bucketDateLocal,
   validateClaudeNarrative,
   normalizeClaudeOutput,
+  fitNarrativeToLimit,
+  formatUsd,
   startOfDayInTz,
   endOfDayInTz,
   sanitizePromptIdentifier,
@@ -28,7 +30,7 @@ import {
 import type {
   BriefContextHeadCoach,
 } from '../src/coach/brief/coach-brief.types';
-import { CoachBriefScheduler } from '../src/coach/brief/coach-brief.scheduler';
+import { CoachBriefScheduler, briefPushPreview, briefSendTime } from '../src/coach/brief/coach-brief.scheduler';
 import { CoachDailyLogService } from '../src/coach/brief/coach-daily-log.service';
 import { CoachBriefPreferencesService } from '../src/coach/brief/coach-brief-preferences.service';
 import {
@@ -394,9 +396,27 @@ describe('validateClaudeNarrative', () => {
   });
 
   it('rejects too few sentences', () => {
-    expect(validateClaudeNarrative('Sarah, we got nothing.', 'Sarah')).toMatch(
+    expect(validateClaudeNarrative('Good morning, Sarah.', 'Sarah')).toMatch(
       /^too_few_sentences:/,
     );
+  });
+
+  it('accepts a two-sentence brief', () => {
+    expect(
+      validateClaudeNarrative(
+        'Good morning, Sarah. Nothing needs your attention today.',
+        'Sarah',
+      ),
+    ).toBeNull();
+  });
+
+  it('rejects a reply that stops mid-sentence', () => {
+    expect(
+      validateClaudeNarrative(
+        'Good morning, Sarah. $98 came in from 2 payments. Three clients are wait',
+        'Sarah',
+      ),
+    ).toBe('unterminated');
   });
 
   it('rejects too many sentences', () => {
@@ -433,13 +453,13 @@ describe('validateClaudeNarrative', () => {
     ).toBe('missing_first_name');
   });
 
-  it('rejects missing first-person plural voice', () => {
+  it('accepts the no-first-person butler voice (the copy rule)', () => {
     expect(
       validateClaudeNarrative(
-        "Sarah, the roster looks good today. Three clients checked in. Two more need attention.",
+        'Good morning, Sarah. $147.50 came in from 3 payments since midnight. Maya and 2 other clients are waiting for a reply, and 2 workouts need approval. The details are below.',
         'Sarah',
       ),
-    ).toBe('missing_we_voice');
+    ).toBeNull();
   });
 
   it('rejects narratives over 600 chars', () => {
@@ -460,6 +480,45 @@ describe('normalizeClaudeOutput', () => {
       normalizeClaudeOutput("Here is your brief: Sarah, we got it."),
     ).toMatch(/^Sarah/);
   });
+
+  it('turns exclamation marks into full stops and drops emojis', () => {
+    expect(
+      normalizeClaudeOutput('Good morning, Sarah! Great start \u{1F389}! Two payments came in.'),
+    ).toBe('Good morning, Sarah. Great start. Two payments came in.');
+  });
+
+  it('joins line breaks into one paragraph', () => {
+    expect(normalizeClaudeOutput('Good morning, Sarah.\n\nTwo payments came in.')).toBe(
+      'Good morning, Sarah. Two payments came in.',
+    );
+  });
+});
+
+describe('fitNarrativeToLimit', () => {
+  it('keeps whole sentences when a reply runs past 600 characters', () => {
+    const sentence = 'Two clients checked in and both logged full workouts this morning before work.';
+    const long = `Good morning, Sarah. ${Array.from({ length: 10 }, () => sentence).join(' ')}`;
+    expect(long.length).toBeGreaterThan(600);
+    const fitted = fitNarrativeToLimit(long);
+    expect(fitted.length).toBeLessThanOrEqual(600);
+    expect(fitted.endsWith('work.')).toBe(true);
+    expect(fitted.startsWith('Good morning, Sarah.')).toBe(true);
+  });
+
+  it('leaves a short reply unchanged', () => {
+    expect(fitNarrativeToLimit('Good morning, Sarah. All clear.')).toBe(
+      'Good morning, Sarah. All clear.',
+    );
+  });
+});
+
+describe('formatUsd', () => {
+  it('shows cents when the amount has them and whole dollars otherwise', () => {
+    expect(formatUsd(4999)).toBe('$49.99');
+    expect(formatUsd(4900)).toBe('$49');
+    expect(formatUsd(120000)).toBe('$1,200');
+    expect(formatUsd(0)).toBe('$0');
+  });
 });
 
 // ─── Claude call + fallback + repair (P1-7) ────────────────────────────
@@ -477,7 +536,7 @@ describe('CoachBriefService.callClaude', () => {
     );
 
     const result = await callClaudeAllAllowed(svc, 
-      makeBriefContext({ workouts_pending_approval: 1, missed_checkin: 0 }),
+      makeBriefContext({ workouts_completed_today: 1, missed_checkin: 0 }),
     );
     expect(result.generated_by).toBe('ai');
     expect(result.narrative).toBe(valid);
@@ -486,11 +545,10 @@ describe('CoachBriefService.callClaude', () => {
 
   it('attempts one repair then falls back when Claude keeps violating the contract', async () => {
     const prisma = makeMockPrisma();
-    // Two-sentence response — fails too_few_sentences and is not
+    // One-sentence response — fails too_few_sentences and is not
     // recoverable via normalizeClaudeOutput (no meta prefix or
     // markdown to strip), so the violation surfaces on both attempts.
-    const tooFew =
-      "Sarah, we have updates this morning. We will keep watching for you.";
+    const tooFew = 'Good morning, Sarah, with updates this morning.';
     const anthropic = makeMockAnthropic([tooFew, tooFew]);
     const svc = new CoachBriefService(
       asPrismaService(prisma),
@@ -499,7 +557,7 @@ describe('CoachBriefService.callClaude', () => {
     );
 
     const result = await callClaudeAllAllowed(svc, 
-      makeBriefContext({ workouts_pending_approval: 1, missed_checkin: 0 }),
+      makeBriefContext({ workouts_completed_today: 1, missed_checkin: 0 }),
     );
     expect(result.generated_by).toBe('fallback');
     expect(anthropic.messages.create).toHaveBeenCalledTimes(2);
@@ -515,7 +573,7 @@ describe('CoachBriefService.callClaude', () => {
     );
 
     const result = await callClaudeAllAllowed(svc, 
-      makeBriefContext({ workouts_pending_approval: 1 }),
+      makeBriefContext({ workouts_completed_today: 1 }),
     );
     expect(result.generated_by).toBe('fallback');
     expect(result.narrative).toMatch(/Sarah/);
@@ -534,7 +592,7 @@ describe('CoachBriefService.callClaude', () => {
       makeBriefContext({
         checked_in_today: 5,
         missed_checkin: 0,
-        workouts_pending_approval: 0,
+        workouts_completed_today: 0,
         weight_logs_flagged: 0,
         unread_messages: 0,
       }),
@@ -547,7 +605,7 @@ describe('CoachBriefService.callClaude', () => {
     const prisma = makeMockPrisma();
     const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const result = await callClaudeAllAllowed(svc, 
-      makeBriefContext({ workouts_pending_approval: 1 }),
+      makeBriefContext({ workouts_completed_today: 1 }),
     );
     expect(result.generated_by).toBe('fallback');
   });
@@ -623,9 +681,9 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
       .mockResolvedValueOnce([{ id: delegatedClientId, created_at: now }]);
 
     // Revenue + dunning + MRR aggregates.
-    prisma.clientPurchase.aggregate
-      .mockResolvedValueOnce({ _sum: { amount_cents: 420000 }, _count: { _all: 3 } }) // revenue today
-      .mockResolvedValueOnce({ _sum: { amount_cents: 2840000 } }); // revenue 30d
+    prisma.chargeSettlement.aggregate
+      .mockResolvedValueOnce({ _sum: { gross_cents: 420000 }, _count: { _all: 3 } }) // revenue today
+      .mockResolvedValueOnce({ _sum: { gross_cents: 2840000 } }); // revenue 30d
     // A5-P1-5 — MRR was migrated from prisma.clientPurchase.findMany
     // (one row + JS reducer) to a single $queryRaw aggregate. The
     // first $queryRaw call is now the MRR sum (mrr_cents bigint),
@@ -693,7 +751,7 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
     // Context shape: no per-client counters in the head-coach payload.
     const ctx = capturedContext as Record<string, unknown>;
     expect(ctx.brief_mode).toBe('head_coach');
-    expect(ctx.workouts_pending_approval).toBeUndefined();
+    expect(ctx.workouts_completed_today).toBeUndefined();
     expect(ctx.unread_messages).toBeUndefined();
     expect(ctx.weight_logs_flagged).toBeUndefined();
     expect(ctx.missed_checkin).toBeUndefined();
@@ -709,15 +767,17 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
     // {head, ...subs}. The latter would leak a sub-coach's
     // independent business revenue into the head's brief. Inspect
     // the first aggregate call to prove the filter shape.
+    // S-BRIEF-124: the money now comes from the per-charge ledger, scoped
+    // through the charge's purchase to the same tenant clients.
     const firstAggCall = (
-      prisma.clientPurchase.aggregate as jest.Mock
+      prisma.chargeSettlement.aggregate as jest.Mock
     ).mock.calls[0]?.[0] as {
       where: {
-        client_user_id?: { in: string[] };
+        purchase?: { client_user_id?: { in: string[] } };
         coach_user_id?: { in: string[] };
       };
     };
-    expect(firstAggCall.where.client_user_id).toEqual({
+    expect(firstAggCall.where.purchase?.client_user_id).toEqual({
       in: expect.arrayContaining([ownClientId, delegatedClientId]),
     });
     expect(firstAggCall.where.coach_user_id).toBeUndefined();
@@ -813,6 +873,7 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
     // dunning query with an empty IN filter that some Prisma
     // versions match all rows for.
     expect(prisma.clientPurchase.aggregate).not.toHaveBeenCalled();
+    expect(prisma.chargeSettlement.aggregate).not.toHaveBeenCalled();
     expect(prisma.clientPurchase.findMany).not.toHaveBeenCalled();
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
@@ -838,8 +899,8 @@ describe('CoachBriefService sub-coach unread messages — P1-5', () => {
     prisma.checkIn.findMany.mockResolvedValue([]);
     prisma.clientWorkoutAssignment.findMany.mockResolvedValue([]);
     prisma.clientWorkoutAssignment.count.mockResolvedValue(0);
-    prisma.clientPurchase.aggregate.mockResolvedValue({
-      _sum: { amount_cents: null },
+    prisma.chargeSettlement.aggregate.mockResolvedValue({
+      _sum: { gross_cents: null },
       _count: { _all: 0 },
     });
     prisma.clientPurchase.count.mockResolvedValue(0);
@@ -899,32 +960,110 @@ describe('CoachBriefService sub-coach unread messages — P1-5', () => {
   });
 });
 
+// ─── S-BRIEF-124 round 2 (agent 124) ───────────────────────────────────
+
+describe('S-BRIEF-124 money from the per-charge ledger (B-766-2)', () => {
+  it('a recurring $49.99 invoice paid today counts, though its purchase stays active', async () => {
+    const prisma = makeMockPrisma();
+    wireSoloDefaults(prisma, { coachId: 'coach1', clientIds: ['c1'] });
+    // A status='paid' purchase query sees nothing: the subscription stays 'active'.
+    prisma.clientPurchase.aggregate.mockResolvedValue({ _sum: { amount_cents: null }, _count: { _all: 0 } });
+    prisma.chargeSettlement.aggregate.mockResolvedValue({ _sum: { gross_cents: 4999 }, _count: { _all: 1 } });
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
+    const agg = await svc['aggregateSoloContext']('coach1', ['c1'], 'America/Los_Angeles', '2026-10-07', 'solo_coach');
+    expect(agg.context.revenue_today_cents).toBe(4999);
+    expect(agg.context.paid_today_count).toBe(1);
+    const where = (prisma.chargeSettlement.aggregate.mock.calls[0][0] as { where: Record<string, unknown> }).where;
+    expect(where.coach_user_id).toBe('coach1');
+    expect(buildFallbackNarrative(agg.context)).toContain('$49.99 came in from 1 payment since midnight.');
+  });
+});
+
+describe('S-BRIEF-124 completed workouts are reported, never an approval (B-398-1)', () => {
+  it('the fallback reports completed workouts without an approve verb', () => {
+    const out = buildFallbackNarrative(
+      makeBriefContext({ checked_in_today: 2, roster_size: 3, workouts_completed_today: 1 }),
+    );
+    expect(out).toContain('2 of 3 clients have checked in today, and 1 workout was completed.');
+    expect(out).not.toMatch(/approv/i);
+  });
+
+  it('the prompts never ask the model to mention approvals', () => {
+    const ctx = makeBriefContext({ workouts_completed_today: 2 });
+    expect(buildSoloCoachSystemPrompt()).not.toMatch(/approval/i);
+    expect(buildBriefPrompt(ctx)).toContain('Workouts completed today: 2');
+    expect(buildBriefPrompt(ctx)).not.toMatch(/waiting for approval/i);
+  });
+});
+
 // ─── Voice fallback (P1-6) ─────────────────────────────────────────────
 
+// Product copy: no first person, no exclamation marks.
+const FIRST_PERSON = /\b(i|i'm|i've|we|we're|we've|we'll|us|our)\b/i;
+
 describe('buildFallbackNarrative — TGP voice contract (P1-6)', () => {
-  it('produces 3–5 sentences, opens with coach first name, uses we-voice', () => {
+  it('produces 3–5 sentences, opens with the greeting, no first person', () => {
     const out = buildFallbackNarrative(
       makeBriefContext({
         coach_first_name: 'Sarah',
         checked_in_today: 5,
         missed_checkin: 2,
-        workouts_pending_approval: 1,
+        workouts_completed_today: 1,
       }),
     );
     expect(out.length).toBeLessThanOrEqual(600);
-    expect(out.startsWith('Sarah, ')).toBe(true);
-    expect(/\b(we|we're|we've|we'll)\b/i.test(out)).toBe(true);
+    expect(out.startsWith('Good morning, Sarah. ')).toBe(true);
+    expect(FIRST_PERSON.test(out)).toBe(false);
+    expect(out).not.toContain('!');
     const sentences = out.split(/(?<=[.!?])(?=\s|$)/).filter((s) => s.trim());
     expect(sentences.length).toBeGreaterThanOrEqual(3);
     expect(sentences.length).toBeLessThanOrEqual(5);
+  });
+
+  it('a coach with no clients yet gets a welcome, never "0 active clients"', () => {
+    const out = buildFallbackNarrative(
+      makeBriefContext({
+        roster_size: 0,
+        checked_in_today: 0,
+        missed_checkin: 0,
+        workouts_completed_today: 0,
+        weight_logs_flagged: 0,
+        unread_messages: 0,
+        paid_today_count: 0,
+        revenue_today_cents: 0,
+        dunning_in_progress: 0,
+      }),
+    );
+    expect(out).toBe(
+      'Good morning, Sarah. No clients are on the roster yet. Share an invite code from the Clients tab, and this brief fills in as soon as the first client joins.',
+    );
+  });
+
+  it('shows the exact amount collected, cents included', () => {
+    const out = buildFallbackNarrative(
+      makeBriefContext({
+        roster_size: 3,
+        checked_in_today: 1,
+        missed_checkin: 2,
+        paid_today_count: 1,
+        revenue_today_cents: 4999,
+        dunning_in_progress: 0,
+        unread_messages: 2,
+        workouts_completed_today: 0,
+        weight_logs_flagged: 0,
+      }),
+    );
+    expect(out).toContain('$49.99 came in from 1 payment since midnight.');
+    expect(out).toContain('Waiting below: 2 client messages waiting for a reply.');
+    expect(out).not.toContain('$50');
   });
 
   it('produces a valid head-coach fallback', () => {
     const out = buildFallbackNarrative(
       makeHeadCoachContext({ coach_first_name: 'Marcus' }),
     );
-    expect(out.startsWith('Marcus, ')).toBe(true);
-    expect(/\b(we|we're|we've|we'll)\b/i.test(out)).toBe(true);
+    expect(out.startsWith('Good morning, Marcus. ')).toBe(true);
+    expect(FIRST_PERSON.test(out)).toBe(false);
     const sentences = out.split(/(?<=[.!?])(?=\s|$)/).filter((s) => s.trim());
     expect(sentences.length).toBeGreaterThanOrEqual(3);
     expect(sentences.length).toBeLessThanOrEqual(5);
@@ -935,13 +1074,13 @@ describe('buildFallbackNarrative — TGP voice contract (P1-6)', () => {
       makeBriefContext({
         checked_in_today: 3,
         missed_checkin: 0,
-        workouts_pending_approval: 0,
+        workouts_completed_today: 0,
         weight_logs_flagged: 0,
         unread_messages: 0,
       }),
     );
-    expect(out.startsWith('Sarah, ')).toBe(true);
-    expect(/\bwe(?:'(?:re|ve|ll))?\b/i.test(out)).toBe(true);
+    expect(out.startsWith('Good morning, Sarah. ')).toBe(true);
+    expect(FIRST_PERSON.test(out)).toBe(false);
   });
 
   it('P1-9: never exceeds BRIEF_MAX_NARRATIVE_CHARS even after period append', () => {
@@ -955,7 +1094,7 @@ describe('buildFallbackNarrative — TGP voice contract (P1-6)', () => {
         coach_first_name: longName,
         checked_in_today: 5,
         missed_checkin: 2,
-        workouts_pending_approval: 1,
+        workouts_completed_today: 1,
         unread_messages: 2,
         weight_logs_flagged: 1,
       }),
@@ -1113,9 +1252,6 @@ describe('sanitizePromptIdentifier (P1-8)', () => {
 describe('buildActionItems (solo / sub-coach)', () => {
   it('sorts by priority ASC then by type alphabetically', () => {
     const items = buildActionItems({
-      pendingWorkouts: [
-        { id: 'w1', client_id: 'c1', client_name: 'Alex', plan_name: 'Upper' },
-      ],
       unreadThreads: [
         { client_id: 'c2', client_name: 'Bea', message_preview: 'hi' },
       ],
@@ -1124,14 +1260,14 @@ describe('buildActionItems (solo / sub-coach)', () => {
       ],
       missingCheckinClients: [{ id: 'c4', name: 'Dan' }],
     });
-    expect(items.map((i) => i.priority)).toEqual([1, 1, 2, 3]);
+    expect(items.map((i) => i.priority)).toEqual([1, 2, 3]);
     expect(items[0].type).toBe('message_unread');
-    expect(items[1].type).toBe('workout_approval');
+    // S-BRIEF-124 (B-398-1): nothing in the app approves a workout.
+    expect(items.map((i) => i.type)).not.toContain('workout_approval');
   });
 
   it('caps missing check-in items at 5', () => {
     const items = buildActionItems({
-      pendingWorkouts: [],
       unreadThreads: [],
       flaggedWeightLogs: [],
       missingCheckinClients: Array.from({ length: 10 }, (_, i) => ({
@@ -1163,16 +1299,19 @@ describe('buildHeadCoachActionItems', () => {
 });
 
 describe('buildSoloCoachSystemPrompt / buildHeadCoachSystemPrompt', () => {
-  it('solo prompt mentions warm voice + first-person plural', () => {
+  it('solo prompt asks for the butler highlights voice with no first person', () => {
     const p = buildSoloCoachSystemPrompt();
-    expect(p).toContain('first-person plural');
-    expect(p).toContain('first name');
+    expect(p).toContain('No first person');
+    expect(p).toContain('no exclamation marks');
+    expect(p).toContain('Good morning, <coach first name>.');
+    expect(p).toContain('under 450 characters');
   });
 
-  it('head-coach prompt mentions COO + revenue', () => {
+  it('head-coach prompt is about the business and the team', () => {
     const p = buildHeadCoachSystemPrompt();
-    expect(p).toContain('COO');
+    expect(p).toContain('No first person');
     expect(p).toContain('team');
+    expect(p).toContain('Never mention individual clients');
   });
 });
 
@@ -1254,7 +1393,7 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'token' },
       },
@@ -1271,11 +1410,11 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     const briefService = makeSchedulerBriefService(null);
     const scheduler = makeScheduler(prisma, briefService, notifications);
 
-    const now = new Date('2026-05-25T14:00:00Z'); // 07:00 PT
+    const now = new Date('2026-05-25T16:00:00Z'); // 09:00 PT
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
@@ -1315,11 +1454,11 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     const briefService = makeSchedulerBriefService();
     const scheduler = makeScheduler(prisma, briefService, notifications);
 
-    const now = new Date('2026-05-25T14:00:00Z');
+    const now = new Date('2026-05-25T16:00:00Z');
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
@@ -1333,6 +1472,55 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     // dedup any more — that table holds coach-writable RLS state.
     expect(prisma.coachBriefPreferences.updateMany).not.toHaveBeenCalled();
     expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('push body ends on a whole sentence and the tap opens the brief screen', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    prisma.coachBriefPushLedger.findUnique.mockResolvedValue({
+      last_push_date: null,
+      last_push_attempt_date: null,
+      push_attempts_today: 0,
+      push_attempt_lease_until: null,
+    });
+    prisma.coachBriefPushLedger.updateMany.mockResolvedValue({ count: 1 });
+    const notifications: SchedulerNotifications = {
+      pushToUser: jest.fn().mockResolvedValue({ delivered: true, code: 'delivered' }),
+    };
+    const narrative =
+      'Good morning, Sarah. $147.50 came in from 3 payments since midnight, and both renewals went through. Maya and 2 other clients are waiting for a reply. Two workouts need approval.';
+    const scheduler = makeScheduler(
+      prisma,
+      makeSchedulerBriefService({ narrative }),
+      notifications,
+    );
+    await scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '09:00',
+        timezone: 'America/Los_Angeles',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      new Date('2026-05-25T16:00:00Z'),
+    );
+    const [, title, body, data] = notifications.pushToUser.mock.calls[0] as [
+      string,
+      string,
+      string,
+      Record<string, unknown>,
+    ];
+    expect(title).toBe('Your daily brief is ready');
+    expect(body).toBe(
+      'Good morning, Sarah. $147.50 came in from 3 payments since midnight, and both renewals went through. Maya and 2 other clients are waiting for a reply.',
+    );
+    expect(data).toMatchObject({ actionScreen: 'CoachBrief' });
+  });
+
+  it('briefPushPreview cuts at a word with an ellipsis when no sentence fits', () => {
+    const word = 'abcdefghi ';
+    const out = briefPushPreview(word.repeat(30));
+    expect(out.length).toBeLessThanOrEqual(160);
+    expect(out.endsWith('abcdefghi\u2026')).toBe(true);
   });
 
   it('does NOT mark success when pushToUser reports delivered=false (P1-5)', async () => {
@@ -1362,11 +1550,11 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
-      new Date('2026-05-25T14:00:00Z'),
+      new Date('2026-05-25T16:00:00Z'),
     );
 
     // Two updateMany calls: the lease claim and the lease release.
@@ -1397,11 +1585,11 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
-      new Date('2026-05-25T14:00:00Z'),
+      new Date('2026-05-25T16:00:00Z'),
     );
 
     expect(notifications.pushToUser).not.toHaveBeenCalled();
@@ -1425,11 +1613,11 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
-      new Date('2026-05-25T14:00:00Z'),
+      new Date('2026-05-25T16:00:00Z'),
     );
 
     expect(notifications.pushToUser).not.toHaveBeenCalled();
@@ -1454,11 +1642,11 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     await scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
-      new Date('2026-05-25T14:00:00Z'),
+      new Date('2026-05-25T16:00:00Z'),
     );
     expect(notifications.pushToUser).not.toHaveBeenCalled();
   });
@@ -1495,11 +1683,11 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     const dispatchPromise = scheduler.maybeDispatch(
       {
         coach_id: 'coach1',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
       },
-      new Date('2026-05-25T14:00:00Z'),
+      new Date('2026-05-25T16:00:00Z'),
     );
 
     await jest.advanceTimersByTimeAsync(11_000);
@@ -1547,7 +1735,7 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
     prisma.coachBriefPreferences.findMany.mockResolvedValue([
       {
         coach_id: 'a',
-        notification_time: '07:00',
+        notification_time: '09:00',
         timezone: 'America/Los_Angeles',
         coach: { id: 'a', name: 'A', expo_push_token: null },
       },
@@ -1558,12 +1746,110 @@ describe('CoachBriefScheduler.maybeDispatch', () => {
         coach: { id: 'b', name: 'B', expo_push_token: null },
       },
     ]);
+    prisma.user.findMany.mockResolvedValue([]);
     const scheduler = makeScheduler(
       prisma,
       { getOrGenerateTodaysBrief: jest.fn() },
       { pushToUser: jest.fn() },
     );
     await expect(scheduler.dispatchDailyBriefs()).resolves.toBeUndefined();
+  });
+
+  // S-BRIEF-124 (B-766-1, operator D1): 08:00 in the coach's own zone.
+  it('a coach who never saved brief settings is pushed at 08:00 in their own zone', async () => {
+    const prisma = makeMockPrisma();
+    prisma.coachBriefPreferences.findMany.mockResolvedValue([]);
+    prisma.user.findMany.mockResolvedValue([
+      {
+        id: 'coach9',
+        name: 'Nia Cole',
+        expo_push_token: 'ExpoToken',
+        notification_prefs: { timezone: 'America/New_York', timezone_updated_at: new Date() },
+        coach_profile: { timezone: null },
+      },
+      {
+        id: 'coach10',
+        name: 'Ola Park',
+        expo_push_token: 'ExpoToken',
+        notification_prefs: null,
+        coach_profile: null,
+      },
+    ]);
+    const brief = makeSchedulerBriefService(null);
+    const scheduler = makeScheduler(prisma, brief, { pushToUser: jest.fn() });
+    const spy = jest.spyOn(scheduler, 'maybeDispatch');
+    await scheduler.dispatchDailyBriefs();
+    const where = (prisma.user.findMany.mock.calls[0][0] as { where: Record<string, unknown> }).where;
+    expect(where).toMatchObject({
+      expo_push_token: { not: null },
+      coach_brief_preferences: { is: null },
+    });
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ coach_id: 'coach9', notification_time: '08:00', timezone: 'America/New_York' }),
+      expect.any(Date),
+    );
+    // Zone unknown: America/Los_Angeles.
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({ coach_id: 'coach10', notification_time: '08:00', timezone: 'America/Los_Angeles' }),
+      expect.any(Date),
+    );
+  });
+
+  function readyLedger(prisma: MockPrisma): void {
+    prisma.coachBriefPushLedger.upsert.mockResolvedValue({});
+    prisma.coachBriefPushLedger.findUnique.mockResolvedValue({
+      last_push_date: null,
+      last_push_attempt_date: null,
+      push_attempts_today: 0,
+      push_attempt_lease_until: null,
+    });
+    prisma.coachBriefPushLedger.updateMany.mockResolvedValue({ count: 1 });
+  }
+
+  it('a coach who muted all notifications gets no brief push (B-766-1)', async () => {
+    const prisma = makeMockPrisma();
+    readyLedger(prisma);
+    prisma.notificationPreferences.findUnique.mockResolvedValue({ muted: true });
+    const push = { pushToUser: jest.fn().mockResolvedValue({ delivered: true, code: 'delivered' }) };
+    const brief = makeSchedulerBriefService();
+    const scheduler = makeScheduler(prisma, brief, push);
+    await scheduler.maybeDispatch(
+      {
+        coach_id: 'coach1',
+        notification_time: '09:00',
+        timezone: 'America/Los_Angeles',
+        coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+      },
+      new Date('2026-05-25T16:00:00Z'), // 09:00 PT
+    );
+    expect(push.pushToUser).not.toHaveBeenCalled();
+    expect(brief.getOrGenerateTodaysBrief).not.toHaveBeenCalled();
+  });
+
+  it('a saved time inside quiet hours (05:00) is held to 08:00 (B-766-1)', async () => {
+    const prisma = makeMockPrisma();
+    readyLedger(prisma);
+    const push = { pushToUser: jest.fn().mockResolvedValue({ delivered: true, code: 'delivered' }) };
+    const brief = makeSchedulerBriefService();
+    const scheduler = makeScheduler(prisma, brief, push);
+    const prefs = {
+      coach_id: 'coach1',
+      notification_time: '05:00',
+      timezone: 'America/Los_Angeles',
+      coach: { id: 'coach1', name: 'S', expo_push_token: 'ExpoToken' },
+    };
+    await scheduler.maybeDispatch(prefs, new Date('2026-05-25T12:00:00Z')); // 05:00 PT
+    expect(push.pushToUser).not.toHaveBeenCalled();
+    await scheduler.maybeDispatch(prefs, new Date('2026-05-25T15:00:00Z')); // 08:00 PT
+    expect(push.pushToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('briefSendTime keeps open-hours times and holds quiet-hours times to 08:00', () => {
+    expect(briefSendTime('09:30')).toBe('09:30');
+    expect(briefSendTime('20:59')).toBe('20:59');
+    expect(briefSendTime('21:00')).toBe('08:00');
+    expect(briefSendTime('05:00')).toBe('08:00');
+    expect(briefSendTime('07:59')).toBe('08:00');
   });
 });
 
@@ -1647,7 +1933,7 @@ describe('CoachBriefPreferencesService', () => {
 describe('CoachBriefService — R2b box-2 consent', () => {
   const VALID =
     "Sarah, we ran your roster and pulled the highlights together. Three of seven clients have already checked in today. We're chasing one failed payment in the background. Two workouts need your eyes before noon. Here's what to tackle: workouts and one message.";
-  const ACTIVE_CTX = () => makeBriefContext({ workouts_pending_approval: 1, missed_checkin: 0 });
+  const ACTIVE_CTX = () => makeBriefContext({ workouts_completed_today: 1, missed_checkin: 0 });
 
   function build(granted: string[]) {
     const anthropic = makeMockAnthropic(VALID);
@@ -1719,10 +2005,9 @@ describe('CoachBriefService — R2b box-2 consent', () => {
 
     it('some allowed: counts re-aggregated over ONLY the consenting clients', async () => {
       const { svc } = build(['c2']);
-      const restricted = makeBriefContext({ roster_size: 1, workouts_pending_approval: 1 });
+      const restricted = makeBriefContext({ roster_size: 1, workouts_completed_today: 1 });
       const aggregate = jest.fn(async () => ({
         context: restricted,
-        pendingWorkouts: [],
         unreadThreads: [],
         flaggedWeightLogs: [],
         missingCheckinClients: [],

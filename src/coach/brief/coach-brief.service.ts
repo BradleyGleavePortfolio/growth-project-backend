@@ -74,6 +74,9 @@ export const BRIEF_MAX_TOKENS = 300;
 export const BRIEF_TEMPERATURE = 0.6;
 export const BRIEF_ANTHROPIC_TIMEOUT_MS = 15_000;
 export const BRIEF_MAX_NARRATIVE_CHARS = 600;
+// What the prompt asks for. Kept well under the hard cap so an ordinary
+// reply never reaches it.
+export const BRIEF_TARGET_NARRATIVE_CHARS = 450;
 // P1-1: how long a status='generating' row may sit before another caller
 // is allowed to steal the lease. Tuned to comfortably exceed the
 // Anthropic timeout above so a healthy generation finishes before the
@@ -82,6 +85,21 @@ export const BRIEF_GENERATION_LEASE_MS = 5 * 60 * 1000;
 
 // WeightLog stores `weight_lbs`; 2.0 kg ≈ 4.4 lbs is the flag threshold.
 const WEIGHT_FLAG_THRESHOLD_LBS = 4.4;
+
+// Dollar amounts as the coach would read them: "$49.99", "$1,200".
+// Whole-dollar rounding showed a $49.99 payment as "$50".
+export function formatUsd(cents: number): string {
+  const safe = Number.isFinite(cents) ? Math.max(0, Math.round(cents)) : 0;
+  const digits = safe % 100 === 0 ? 0 : 2;
+  return `$${(safe / 100).toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
+}
+
+function plural(n: number, one: string, many: string): string {
+  return n === 1 ? one : many;
+}
 
 // Format a Date as YYYY-MM-DD in the given IANA timezone. Uses
 // Intl.DateTimeFormat with an explicit `timeZone` so production hosts
@@ -141,36 +159,36 @@ class CoachBriefClaudeError extends Error {
 // ─── Pure prompt builders (exported for tests) ──────────────────────────
 
 export function buildSoloCoachSystemPrompt(): string {
-  return `You are TGP — a smart AI platform that actively manages a fitness coach's business in the background. Your job is to write the coach's daily brief: a short, warm paragraph (3–5 sentences) delivered each morning.
+  return `You write a fitness coach's daily brief in TGP. It arrives once each morning from Roman, the coach's private assistant, and turns scattered information into a few highlights, like a discreet, polished butler briefing a busy principal.
 
-Voice and tone rules — these are mandatory:
-- Write in first-person plural as TGP ("we", "we've", "we're"). You are the platform speaking, not a third party.
-- Address the coach by their first name in the opening sentence.
-- Lead with wins and momentum — who checked in, what progress clients made, any money that came in.
-- When TGP is actively handling something in the background (retrying a payment, flagging a weight log, sending a reminder), say so explicitly: "we're working on it", "we flagged this", "we've already sent the retry", "you don't need to do anything on that one."
-- End with a natural handoff sentence that signals the action items below. Match the count to the actual number of items: "Here's what needs your quick approval:", "Three things need your eyes:", "Just two things from you today:"
-- 3–5 sentences MAXIMUM.
-- No bullet points, no markdown, no headers.
-- Do not start with "Here is your brief" or any meta-phrase. Start directly with the coach's name.
-- Output ONLY the brief text. Nothing else.`;
+Rules (all mandatory):
+- The first sentence is exactly "Good morning, <coach first name>." using the first name given.
+- Then the highlights, most important first: money that came in, messages waiting for a reply, check-ins, workouts completed, anything flagged. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
+- If failed payments are being retried, say the retries run automatically and nothing is needed from the coach.
+- If there are action items, end with one short sentence that points to them below, matching the count given.
+- 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
+- Plain prose only: no lists, no markdown, no headings, no emojis, no exclamation marks.
+- No first person: never use "I", "we", "us" or "our". State the facts directly, for example "$98 came in from 2 payments since midnight."
+- Never invent names, numbers or events that are not in the data. Do not sign the brief.
+- Output only the brief text.`;
 }
 
 export function buildHeadCoachSystemPrompt(): string {
-  return `You are TGP — a smart AI platform that runs the back office for a fitness coaching business. Your job is to write the head coach's daily business brief: a short, confident paragraph (3–5 sentences) delivered each morning.
+  return `You write the daily business brief for the head coach of a coaching team in TGP. It arrives once each morning from Roman, the coach's private assistant, and turns scattered information into a few highlights, like a discreet, polished chief of staff briefing a busy principal.
 
-This coach runs a team. Lead with the business — revenue, team performance, growth — before individual client details.
+This coach runs a team, so the brief is about the business, not single clients.
 
-Voice and tone rules — these are mandatory:
-- Write in first-person plural as TGP ("we", "we've", "we're"). You are the platform managing the business.
-- Address the coach by their first name in the opening sentence.
-- Lead with revenue and team wins: what the team collected today, how the month is tracking, which sub-coach is performing.
-- When TGP is actively handling failed payments or dunning, make it clear: "we're chasing down X from 2 clients", "you don't need to do anything on that."
-- If sub-coach highlights exist (new clients added, strong performance), weave them in naturally.
-- End with a natural handoff to action items: "Here's what needs your attention:", "Two things from you today:", etc.
-- Tone is like a COO briefing, not a personal trainer. Confident, data-forward, brief.
-- 3–5 sentences MAXIMUM. No bullets, no markdown, no headers.
-- Do not start with "Here is your brief". Start directly with the coach's name.
-- Output ONLY the brief text.`;
+Rules (all mandatory):
+- The first sentence is exactly "Good morning, <coach first name>." using the first name given.
+- Then the business highlights, most important first: team revenue today, monthly recurring revenue, failed payments being retried, team growth and sub-coach highlights. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
+- If failed payments are being retried, say the retries run automatically and nothing is needed from the coach.
+- Never mention individual clients.
+- If there are action items, end with one short sentence that points to them below.
+- 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
+- Plain prose only: no lists, no markdown, no headings, no emojis, no exclamation marks.
+- No first person: never use "I", "we", "us" or "our". State the facts directly.
+- Never invent names, numbers or events that are not in the data. Do not sign the brief.
+- Output only the brief text.`;
 }
 
 // P1-8 fix round 5: sanitize user-controlled string fields (coach
@@ -261,8 +279,9 @@ function sanitizeHeadCoachCtxForPrompt(
 }
 
 function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
+  // Completed workouts are reported, never an action item (S-BRIEF-124
+  // B-398-1: nothing in the app approves a workout).
   const actionCount =
-    ctx.workouts_pending_approval +
     ctx.weight_logs_flagged +
     ctx.unread_messages +
     (ctx.missed_checkin > 0 ? 1 : 0);
@@ -283,18 +302,17 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
     `Roster size: ${ctx.roster_size} active clients`,
     `Check-ins received today: ${ctx.checked_in_today} of ${ctx.roster_size}`,
     `Missing check-ins: ${ctx.missed_checkin}`,
-    `Workouts waiting for approval: ${ctx.workouts_pending_approval}`,
-    `Workouts approved today: ${ctx.workouts_approved_today}`,
+    `Workouts completed today: ${ctx.workouts_completed_today}`,
     `Unread messages: ${ctx.unread_messages}`,
     `Weight log flags (large delta): ${ctx.weight_logs_flagged}`,
     ``,
     `--- PAYMENTS / TGP HANDLING ---`,
-    `Payments received today: ${ctx.paid_today_count} payment(s), $${(ctx.revenue_today_cents / 100).toFixed(0)} total`,
+    `Payments received since midnight: ${ctx.paid_today_count} payment(s), ${formatUsd(ctx.revenue_today_cents)} total`,
     `Healthy renewals in next 7 days: ${ctx.renewals_upcoming_7d}`,
     `Failed payments TGP is retrying (dunning active): ${ctx.dunning_in_progress}`,
     ctx.dunning_in_progress > 0
-      ? `→ Say: "We're working on getting the ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} sorted — you don't need to do anything."`
-      : `→ No dunning in progress.`,
+      ? `→ Retries for the ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} run automatically; nothing is needed from the coach.`
+      : `→ No failed payments.`,
     ``,
     handoffHint,
   ];
@@ -326,13 +344,13 @@ function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
     `Sub-coaches on team: ${ctx.team_size}`,
     `Total active clients across team: ${ctx.team_clients_total}`,
     `New clients added in last 24h (team-wide): ${ctx.new_clients_last_24h}`,
-    `Team revenue today: $${(ctx.total_revenue_today_cents / 100).toFixed(0)} from ${ctx.paid_today_count} payment(s)`,
-    `Team revenue last 30 days: $${(ctx.team_revenue_30d_cents / 100).toFixed(0)}`,
-    `Projected MRR (active recurring subscriptions): $${(ctx.mrr_projected_cents / 100).toFixed(0)}`,
-    `Failed payments TGP is retrying — ${ctx.dunning_in_progress} client(s), $${(ctx.dunning_amount_cents / 100).toFixed(0)}`,
+    `Team revenue since midnight: ${formatUsd(ctx.total_revenue_today_cents)} from ${ctx.paid_today_count} payment(s)`,
+    `Team revenue last 30 days: ${formatUsd(ctx.team_revenue_30d_cents)}`,
+    `Projected MRR (active recurring subscriptions): ${formatUsd(ctx.mrr_projected_cents)}`,
+    `Failed payments TGP is retrying — ${ctx.dunning_in_progress} client(s), ${formatUsd(ctx.dunning_amount_cents)}`,
     ctx.dunning_in_progress > 0
-      ? `→ Say: "We're chasing down ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} — you don't need to do anything on that."`
-      : `→ No dunning in progress this morning.`,
+      ? `→ Retries for the ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} run automatically; nothing is needed from the coach.`
+      : `→ No failed payments this morning.`,
     ``,
     `Sub-coach highlights (top 3 by active clients):`,
     ...(ctx.sub_coach_highlights.length === 0
@@ -349,10 +367,11 @@ function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
   return parts.join('\n');
 }
 
-// P1-6: deterministic fallback narrative. CPO ruling — TGP voice (first
-// person plural, "we / we're / we've"), coach first name, 3–5 sentences,
-// max 600 chars. Used when Claude is unavailable OR when Claude output
-// fails the contract validation in callClaude (P1-7).
+// P1-6: deterministic fallback narrative. Same voice as the AI brief:
+// opens "Good morning, <first name>.", no first person, no exclamation
+// marks, exact dollar amounts, 3–5 sentences, max 600 chars. Used when
+// Claude is unavailable, when no client allowed AI help, on quiet days,
+// or when Claude output fails the contract validation in callClaude (P1-7).
 export function buildFallbackNarrative(
   ctx: BriefContext | BriefContextHeadCoach,
 ): string {
@@ -364,26 +383,19 @@ export function buildFallbackNarrative(
   // Trim to 5 and pad to 3 just in case — the contract requires 3–5.
   while (sentences.length > 5) sentences.pop();
   while (sentences.length < 3) {
-    sentences.push(`We're keeping an eye on everything else for you.`);
+    sentences.push('The full details are below.');
   }
 
   let narrative = sentences.join(' ');
   if (narrative.length > BRIEF_MAX_NARRATIVE_CHARS) {
     // P1-9 fix round 5: slice to MAX-1 BEFORE appending the period
-    // so the worst case is exactly BRIEF_MAX_NARRATIVE_CHARS. The
-    // previous slice(0, MAX) followed by `+= '.'` could produce a
-    // 601-character string and silently violate the DB CHECK and the
-    // documented ≤600 contract.
+    // so the worst case is exactly BRIEF_MAX_NARRATIVE_CHARS.
     narrative = narrative
       .slice(0, BRIEF_MAX_NARRATIVE_CHARS - 1)
       .trimEnd();
     if (!/[.!?]$/.test(narrative)) narrative += '.';
   }
-  // Defense in depth: never allow a value greater than the hard cap to
-  // escape this function under any input. trimEnd above can also
-  // shorten the string, so the cap is automatically respected; the
-  // explicit guard is here so a future edit to the slice line still
-  // honors the contract.
+  // Defense in depth: never allow a value greater than the hard cap.
   if (narrative.length > BRIEF_MAX_NARRATIVE_CHARS) {
     narrative = narrative.slice(0, BRIEF_MAX_NARRATIVE_CHARS);
   }
@@ -391,124 +403,108 @@ export function buildFallbackNarrative(
 }
 
 function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
-  const total =
-    ctx.workouts_pending_approval +
-    ctx.missed_checkin +
-    ctx.weight_logs_flagged +
-    ctx.unread_messages;
+  const sentences: string[] = [`Good morning, ${ctx.coach_first_name}.`];
 
-  const sentences: string[] = [];
-  // Sentence 1 — opening with coach first name, TGP "we" voice.
-  sentences.push(
-    `${ctx.coach_first_name}, we ran your roster this morning and pulled together what matters.`,
-  );
-
-  // Sentence 2 — check-in / activity snapshot.
-  if (ctx.checked_in_today > 0) {
+  // Day 1 for a new coach: no clients yet. Never "0 active clients".
+  if (ctx.roster_size === 0) {
+    sentences.push('No clients are on the roster yet.');
     sentences.push(
-      `${ctx.checked_in_today} of ${ctx.roster_size} client${ctx.roster_size === 1 ? '' : 's'} ${ctx.checked_in_today === 1 ? 'has' : 'have'} already checked in today.`,
+      'Share an invite code from the Clients tab, and this brief fills in as soon as the first client joins.',
     );
-  } else {
-    sentences.push(
-      `No one has logged a check-in yet this morning across your ${ctx.roster_size} active client${ctx.roster_size === 1 ? '' : 's'}.`,
-    );
+    return sentences;
   }
 
-  // Sentence 3 — payments / TGP handling.
+  // Money first.
+  if (ctx.paid_today_count > 0) {
+    sentences.push(
+      `${formatUsd(ctx.revenue_today_cents)} came in from ${ctx.paid_today_count} ${plural(ctx.paid_today_count, 'payment', 'payments')} since midnight.`,
+    );
+  }
   if (ctx.dunning_in_progress > 0) {
     sentences.push(
-      `We're chasing down ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress === 1 ? '' : 's'} in the background — you don't need to do anything on those.`,
+      `${ctx.dunning_in_progress} failed ${plural(ctx.dunning_in_progress, 'payment is', 'payments are')} being retried automatically, so nothing is needed from you there.`,
     );
-  } else if (ctx.paid_today_count > 0) {
-    sentences.push(
-      `We've collected $${(ctx.revenue_today_cents / 100).toFixed(0)} across ${ctx.paid_today_count} payment${ctx.paid_today_count === 1 ? '' : 's'} so far today.`,
-    );
-  } else {
-    sentences.push(`We haven't seen any payment activity yet this morning.`);
   }
 
-  // Sentence 4 — action items handoff.
-  if (total === 0) {
+  // Check-in snapshot, with workouts completed today (reported, not an action).
+  const workouts =
+    ctx.workouts_completed_today > 0
+      ? `, and ${ctx.workouts_completed_today} ${plural(ctx.workouts_completed_today, 'workout was', 'workouts were')} completed`
+      : '';
+  if (ctx.checked_in_today > 0) {
     sentences.push(
-      `Nothing needs your hands-on attention right now, so we'll keep watching and ping you if that changes.`,
+      `${ctx.checked_in_today} of ${ctx.roster_size} ${plural(ctx.roster_size, 'client has', 'clients have')} checked in today${workouts}.`,
     );
   } else {
-    const fragments: string[] = [];
-    if (ctx.workouts_pending_approval > 0)
-      fragments.push(
-        `${ctx.workouts_pending_approval} workout${ctx.workouts_pending_approval === 1 ? '' : 's'} waiting on approval`,
-      );
-    if (ctx.unread_messages > 0)
-      fragments.push(
-        `${ctx.unread_messages} unread message${ctx.unread_messages === 1 ? '' : 's'}`,
-      );
-    if (ctx.missed_checkin > 0)
-      fragments.push(
-        `${ctx.missed_checkin} missed check-in${ctx.missed_checkin === 1 ? '' : 's'}`,
-      );
-    if (ctx.weight_logs_flagged > 0)
-      fragments.push(
-        `${ctx.weight_logs_flagged} weight log${ctx.weight_logs_flagged === 1 ? '' : 's'} flagged`,
-      );
     sentences.push(
-      `Here's what needs your eyes: ${fragments.join(', ')}.`,
+      `No check-ins yet today from your ${ctx.roster_size} ${plural(ctx.roster_size, 'client', 'clients')}${workouts}.`,
     );
+  }
+
+  // What needs the coach (missed check-ins are covered by the line above).
+  const fragments: string[] = [];
+  if (ctx.unread_messages > 0)
+    fragments.push(
+      `${ctx.unread_messages} ${plural(ctx.unread_messages, 'client message', 'client messages')} waiting for a reply`,
+    );
+  if (ctx.weight_logs_flagged > 0)
+    fragments.push(
+      `${ctx.weight_logs_flagged} weight ${plural(ctx.weight_logs_flagged, 'change', 'changes')} to review`,
+    );
+  if (fragments.length === 0) {
+    sentences.push('Nothing else needs your attention right now.');
+  } else {
+    sentences.push(`Waiting below: ${fragments.join(', ')}.`);
   }
 
   return sentences;
 }
 
 function buildHeadCoachFallbackSentences(ctx: BriefContextHeadCoach): string[] {
-  const sentences: string[] = [];
-  sentences.push(
-    `${ctx.coach_first_name}, we pulled together this morning's team report for you.`,
-  );
+  const sentences: string[] = [`Good morning, ${ctx.coach_first_name}.`];
 
-  // Revenue + headcount snapshot.
   if (ctx.total_revenue_today_cents > 0) {
     sentences.push(
-      `We've collected $${(ctx.total_revenue_today_cents / 100).toFixed(0)} across ${ctx.paid_today_count} payment${ctx.paid_today_count === 1 ? '' : 's'} today, with $${(ctx.mrr_projected_cents / 100).toFixed(0)} in projected monthly recurring revenue.`,
+      `${formatUsd(ctx.total_revenue_today_cents)} came in across the team from ${ctx.paid_today_count} ${plural(ctx.paid_today_count, 'payment', 'payments')} since midnight, with ${formatUsd(ctx.mrr_projected_cents)} in monthly recurring revenue.`,
     );
   } else {
     sentences.push(
-      `No team payments have landed yet today; we're tracking $${(ctx.mrr_projected_cents / 100).toFixed(0)} in projected monthly recurring revenue across active subscriptions.`,
+      `No team payments yet today, and monthly recurring revenue stands at ${formatUsd(ctx.mrr_projected_cents)}.`,
     );
   }
 
-  // Dunning handling — TGP working in background.
   if (ctx.dunning_in_progress > 0) {
     sentences.push(
-      `We're working on ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress === 1 ? '' : 's'} worth $${(ctx.dunning_amount_cents / 100).toFixed(0)} in the background — you don't need to do anything on that.`,
+      `${ctx.dunning_in_progress} failed ${plural(ctx.dunning_in_progress, 'payment', 'payments')} worth ${formatUsd(ctx.dunning_amount_cents)} ${plural(ctx.dunning_in_progress, 'is', 'are')} being retried automatically, so nothing is needed from you there.`,
     );
   } else {
-    sentences.push(`We're not seeing any failed payments to chase this morning.`);
+    sentences.push('No failed payments need chasing.');
   }
 
-  // Team health.
   if (ctx.team_size > 0) {
     sentences.push(
-      `Your team of ${ctx.team_size} sub-coach${ctx.team_size === 1 ? '' : 'es'} is supporting ${ctx.team_clients_total} active client${ctx.team_clients_total === 1 ? '' : 's'}, with ${ctx.new_clients_last_24h} new sign-up${ctx.new_clients_last_24h === 1 ? '' : 's'} in the last 24 hours.`,
+      `${ctx.team_size} ${plural(ctx.team_size, 'sub-coach supports', 'sub-coaches support')} ${ctx.team_clients_total} active ${plural(ctx.team_clients_total, 'client', 'clients')}, with ${ctx.new_clients_last_24h} new in the last 24 hours.`,
     );
   } else {
-    sentences.push(
-      `You don't have sub-coaches active right now, so we're keeping the team metrics simple.`,
-    );
+    sentences.push('No sub-coaches are active on the team right now.');
   }
 
   return sentences;
 }
 
 // P1-7: Coach Brief voice contract validation. Reject Claude output that
-// drifts from the CPO voice ruling so a misbehaving model can't poison
-// the mobile brief surface. Returns null when the output is clean, or a
-// short violation reason otherwise. Run AFTER trimming markdown/meta
-// prefixes via normalizeClaudeOutput. Test contract:
-//   - 3 ≤ sentences ≤ 5
+// drifts from the voice ruling so a misbehaving model can't poison the
+// mobile brief surface. Returns null when the output is clean, or a short
+// violation reason otherwise. Run AFTER normalizeClaudeOutput and
+// fitNarrativeToLimit. Every rule here must accept an ordinary good reply
+// from the pinned model; anything stricter only pushes coaches into the
+// fallback. Contract:
+//   - 2 ≤ sentences ≤ 5
 //   - Coach first name appears in sentence 1 or 2 (case-insensitive)
-//   - At least one of "we", "we're", "we've", "we'll" in the text
 //   - No markdown bullet/heading/code-fence characters left after normalize
 //   - No meta prefix ("Here is", "Sure,", "Of course")
 //   - Length ≤ BRIEF_MAX_NARRATIVE_CHARS
+//   - Ends with terminal punctuation (never a cut-off sentence)
 export function validateClaudeNarrative(
   narrative: string,
   coachFirstName: string,
@@ -528,14 +524,14 @@ export function validateClaudeNarrative(
   const markdownPattern = /(^|\n)\s*([*\-#>+]|\d+\.)\s|\*\*|`{1,3}|__/;
   if (markdownPattern.test(narrative)) return 'markdown';
 
+  // A reply that stops mid-sentence reads broken.
+  if (!/[.?:]["')\u201d\u2019]?$/.test(narrative.trim())) return 'unterminated';
+
   // Sentence count — split on terminal punctuation followed by whitespace
   // or end of string. Decimal numerals (12.5) don't terminate sentences
   // because they are not followed by whitespace.
-  const sentences = narrative
-    .split(/(?<=[.!?])(?=\s|$)/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  if (sentences.length < 3) return `too_few_sentences:${sentences.length}`;
+  const sentences = splitSentences(narrative);
+  if (sentences.length < 2) return `too_few_sentences:${sentences.length}`;
   if (sentences.length > 5) return `too_many_sentences:${sentences.length}`;
 
   // Coach first name must appear in sentence 1 or 2.
@@ -546,12 +542,31 @@ export function validateClaudeNarrative(
   const opener = sentences.slice(0, 2).join(' ');
   if (!namePattern.test(opener)) return 'missing_first_name';
 
-  // First-person plural — TGP voice.
-  if (!/\b(we|we're|we've|we'll|we are|we have)\b/i.test(narrative)) {
-    return 'missing_we_voice';
-  }
-
   return null;
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?]["')\u201d\u2019]?)(?=\s|$)/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+// A reply longer than the hard cap keeps its whole leading sentences
+// (never a cut-off word). Returns the input unchanged when it already
+// fits, or when not even two whole sentences fit (the validator then
+// rejects it as too long and the repair round runs).
+export function fitNarrativeToLimit(text: string): string {
+  if (text.length <= BRIEF_MAX_NARRATIVE_CHARS) return text;
+  const kept: string[] = [];
+  let length = 0;
+  for (const sentence of splitSentences(text)) {
+    const next = length === 0 ? sentence.length : length + 1 + sentence.length;
+    if (next > BRIEF_MAX_NARRATIVE_CHARS) break;
+    kept.push(sentence);
+    length = next;
+  }
+  return kept.length >= 2 ? kept.join(' ') : text;
 }
 
 function escapeRegex(s: string): string {
@@ -561,6 +576,8 @@ function escapeRegex(s: string): string {
 // Strip markdown / meta-prefix wrappers from Claude output before
 // validating. Keeps us from rejecting an otherwise valid brief that
 // only fails because the model wrapped it in "Here is your brief: ...".
+// Product copy carries no exclamation marks and no emojis, so both are
+// normalized here instead of rejecting an otherwise good brief.
 export function normalizeClaudeOutput(raw: string): string {
   let text = raw.trim();
   // Remove leading code fences.
@@ -569,17 +586,23 @@ export function normalizeClaudeOutput(raw: string): string {
   // "Here is your brief:" — keeping the actual brief that follows.
   // Stops at the first colon so we don't eat past the real opening.
   text = text.replace(/^(here(?:'s|\s+is|\s+are)\s+[^:\n]{0,80}:\s*)/i, '');
+  // One paragraph: line breaks between sentences become spaces.
+  text = text.replace(/\s*\n+\s*/g, ' ');
+  // Emojis and pictographs out; exclamation marks become full stops.
+  text = text
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/\p{Emoji_Modifier}/gu, '')
+    .replace(/\u{FE0F}|\u{200D}/gu, '')
+    .replace(/!+/g, '.')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([.,;:?])/g, '$1');
   return text.trim();
 }
 
 // Deterministic — NOT AI-generated. Sorted ascending by priority.
+// S-BRIEF-124 (B-398-1): no workout-approval item. Nothing in the app
+// approves a workout, so the brief never asks for it.
 export function buildActionItems(args: {
-  pendingWorkouts: Array<{
-    id: string;
-    client_id: string;
-    client_name: string;
-    plan_name: string;
-  }>;
   unreadThreads: Array<{
     client_id: string;
     client_name: string;
@@ -593,17 +616,6 @@ export function buildActionItems(args: {
   missingCheckinClients: Array<{ id: string; name: string }>;
 }): ActionItem[] {
   const items: ActionItem[] = [];
-
-  for (const w of args.pendingWorkouts) {
-    items.push({
-      type: 'workout_approval',
-      client_id: w.client_id,
-      client_name: w.client_name,
-      detail: `${w.plan_name} needs approval`,
-      priority: 1,
-      deep_link: `tgp://workout/approval/${w.id}`,
-    });
-  }
 
   for (const t of args.unreadThreads) {
     items.push({
@@ -654,7 +666,7 @@ export function buildHeadCoachActionItems(
   if (ctx.dunning_in_progress > 0) {
     items.push({
       type: 'dunning_queue',
-      detail: `${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress === 1 ? '' : 's'} ($${(ctx.dunning_amount_cents / 100).toFixed(0)}) being retried by TGP`,
+      detail: `${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress === 1 ? '' : 's'} (${formatUsd(ctx.dunning_amount_cents)}) being retried by TGP`,
       priority: 1,
       deep_link: 'tgp://billing/dunning',
     });
@@ -667,7 +679,7 @@ export function buildHeadCoachActionItems(
   ) {
     items.push({
       type: 'team_revenue_review',
-      detail: `Team revenue today $${(ctx.total_revenue_today_cents / 100).toFixed(0)} • MRR $${(ctx.mrr_projected_cents / 100).toFixed(0)} • 30d $${(ctx.team_revenue_30d_cents / 100).toFixed(0)}`,
+      detail: `Team revenue today ${formatUsd(ctx.total_revenue_today_cents)} • MRR ${formatUsd(ctx.mrr_projected_cents)} • 30d ${formatUsd(ctx.team_revenue_30d_cents)}`,
       priority: 2,
       deep_link: 'tgp://command-center/revenue',
     });
@@ -804,12 +816,6 @@ export class CoachBriefService {
     briefMode: BriefMode = 'solo_coach',
   ): Promise<{
     context: BriefContext;
-    pendingWorkouts: Array<{
-      id: string;
-      client_id: string;
-      client_name: string;
-      plan_name: string;
-    }>;
     unreadThreads: Array<{
       client_id: string;
       client_name: string;
@@ -842,7 +848,7 @@ export class CoachBriefService {
           date: briefDate,
           checked_in_today: 0,
           missed_checkin: 0,
-          workouts_pending_approval: 0,
+          workouts_completed_today: 0,
           workouts_approved_today: 0,
           paid_today_count: 0,
           revenue_today_cents: 0,
@@ -854,7 +860,6 @@ export class CoachBriefService {
           coach_first_name: coachFirstName,
           roster_size: 0,
         },
-        pendingWorkouts: [],
         unreadThreads: [],
         flaggedWeightLogs: [],
         missingCheckinClients: [],
@@ -863,7 +868,7 @@ export class CoachBriefService {
 
     const [
       checkedInToday,
-      pendingWorkoutsRaw,
+      workoutsCompletedToday,
       workoutsApprovedToday,
       paidTodayAgg,
       renewalsUpcoming7d,
@@ -877,23 +882,14 @@ export class CoachBriefService {
         select: { user_id: true },
         distinct: ['user_id'],
       }),
-      this.prisma.clientWorkoutAssignment.findMany({
+      // Workouts completed today (reported only; S-BRIEF-124 B-398-1).
+      this.prisma.clientWorkoutAssignment.count({
         where: {
           client_id: { in: clientIds },
-          completed_at: { not: null },
-          approved_by_coach_at: null,
-          // In sub-coach mode, restrict action items to workouts the
-          // sub-coach actually assigned. Without this, a sub-coach could
-          // see head-coach pending approvals for their scoped clients.
+          completed_at: { gte: briefDateStart, lte: briefDateEnd },
+          // Sub-coach mode: only workouts the sub-coach assigned.
           ...(briefMode === 'sub_coach' ? { assigned_by_coach_id: coachId } : {}),
         },
-        select: {
-          id: true,
-          client_id: true,
-          client: { select: { name: true } },
-          workout_plan: { select: { name: true } },
-        },
-        take: 50,
       }),
       this.prisma.clientWorkoutAssignment.count({
         where: {
@@ -901,13 +897,14 @@ export class CoachBriefService {
           approved_by_coach_at: { gte: briefDateStart, lte: briefDateEnd },
         },
       }),
-      this.prisma.clientPurchase.aggregate({
-        _sum: { amount_cents: true },
+      // S-BRIEF-124 (B-766-2): money from the per-charge ledger, so a
+      // recurring invoice (its purchase stays 'active') counts too.
+      this.prisma.chargeSettlement.aggregate({
+        _sum: { gross_cents: true },
         _count: { _all: true },
         where: {
           coach_user_id: coachId,
-          status: 'paid',
-          updated_at: { gte: briefDateStart, lte: briefDateEnd },
+          created_at: { gte: briefDateStart, lte: briefDateEnd },
         },
       }),
       this.prisma.clientPurchase.count({
@@ -1016,13 +1013,6 @@ export class CoachBriefService {
       delta_lbs: r.delta_lbs,
     }));
 
-    const pendingWorkouts = pendingWorkoutsRaw.map((w) => ({
-      id: w.id,
-      client_id: w.client_id,
-      client_name: w.client?.name ?? 'Client',
-      plan_name: w.workout_plan?.name ?? 'Workout',
-    }));
-
     const dunningInProgress = Number(dunningInProgressRaw[0]?.count ?? 0);
 
     const context: BriefContext = {
@@ -1030,10 +1020,10 @@ export class CoachBriefService {
       date: briefDate,
       checked_in_today: checkedInCount,
       missed_checkin: Math.max(0, clientIds.length - checkedInCount),
-      workouts_pending_approval: pendingWorkoutsRaw.length,
+      workouts_completed_today: workoutsCompletedToday,
       workouts_approved_today: workoutsApprovedToday,
       paid_today_count: paidTodayAgg._count._all,
-      revenue_today_cents: paidTodayAgg._sum.amount_cents ?? 0,
+      revenue_today_cents: paidTodayAgg._sum.gross_cents ?? 0,
       renewals_upcoming_7d: renewalsUpcoming7d,
       dunning_in_progress: dunningInProgress,
       weight_logs_flagged: flaggedWeightLogs.length,
@@ -1045,7 +1035,6 @@ export class CoachBriefService {
 
     return {
       context,
-      pendingWorkouts,
       unreadThreads,
       flaggedWeightLogs,
       missingCheckinClients: missingCheckinRaw,
@@ -1243,21 +1232,21 @@ export class CoachBriefService {
     if (tenantClientIds.length > 0) {
       const [revenueTodayAgg, revenue30dAgg, mrrAgg, dunningRows] =
         await Promise.all([
-          this.prisma.clientPurchase.aggregate({
-            _sum: { amount_cents: true },
+          // S-BRIEF-124 (B-766-2): per-charge ledger (recurring invoices
+          // included), same tenant scope (the purchase's client).
+          this.prisma.chargeSettlement.aggregate({
+            _sum: { gross_cents: true },
             _count: { _all: true },
             where: {
-              client_user_id: { in: tenantClientIds },
-              status: 'paid',
-              updated_at: { gte: briefDateStart, lte: briefDateEnd },
+              purchase: { client_user_id: { in: tenantClientIds } },
+              created_at: { gte: briefDateStart, lte: briefDateEnd },
             },
           }),
-          this.prisma.clientPurchase.aggregate({
-            _sum: { amount_cents: true },
+          this.prisma.chargeSettlement.aggregate({
+            _sum: { gross_cents: true },
             where: {
-              client_user_id: { in: tenantClientIds },
-              status: 'paid',
-              updated_at: { gte: thirtyDaysAgo },
+              purchase: { client_user_id: { in: tenantClientIds } },
+              created_at: { gte: thirtyDaysAgo },
             },
           }),
           // A5-P1-5: SQL aggregate. SUM(ROUND(per-row monthly equivalent))
@@ -1298,9 +1287,9 @@ export class CoachBriefService {
             `,
           ),
         ]);
-      revenueTodayCents = revenueTodayAgg._sum.amount_cents ?? 0;
+      revenueTodayCents = revenueTodayAgg._sum.gross_cents ?? 0;
       revenueTodayCount = revenueTodayAgg._count._all ?? 0;
-      revenue30dCents = revenue30dAgg._sum.amount_cents ?? 0;
+      revenue30dCents = revenue30dAgg._sum.gross_cents ?? 0;
       mrrProjectedCents = Number(mrrAgg[0]?.mrr_cents ?? 0);
       dunningStateRaw = dunningRows;
     }
@@ -1413,8 +1402,9 @@ export class CoachBriefService {
         };
       }
     } else {
+      // Completed workouts are worth narrating, so they keep the AI brief.
       const actionCount =
-        ctx.workouts_pending_approval +
+        ctx.workouts_completed_today +
         (ctx.missed_checkin > 0 ? 1 : 0) +
         ctx.weight_logs_flagged +
         ctx.unread_messages;
@@ -1487,7 +1477,7 @@ export class CoachBriefService {
         `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
       );
 
-      const repairPrompt = `${userPrompt}\n\nYour previous response violated the contract (${violation}). Output a fresh brief that:\n- Is exactly 3 to 5 complete sentences (no more, no fewer).\n- Begins with ${safeCoachFirstName} in the very first sentence.\n- Uses first-person plural TGP voice ("we", "we're", "we've") at least once.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_MAX_NARRATIVE_CHARS} characters.`;
+      const repairPrompt = `${userPrompt}\n\nThe previous response broke the format (${violation}). Output a fresh brief that:\n- Opens with the sentence "Good morning, ${safeCoachFirstName}."\n- Is 2 to 4 complete sentences.\n- Uses no first person ("I", "we", "us", "our"), no exclamation marks and no emojis.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_TARGET_NARRATIVE_CHARS} characters.`;
 
       const secondAttempt = await this.invokeClaudeOnce(
         client,
@@ -1567,12 +1557,10 @@ export class CoachBriefService {
           'Empty Claude response',
         );
       }
-      const normalized = normalizeClaudeOutput(rawText);
-      const clamped =
-        normalized.length > BRIEF_MAX_NARRATIVE_CHARS
-          ? normalized.slice(0, BRIEF_MAX_NARRATIVE_CHARS)
-          : normalized;
-      return { kind: 'success', narrative: clamped };
+      // Never cut a reply mid-word: an over-long reply keeps its whole
+      // leading sentences, or goes to the validator as too long.
+      const narrative = fitNarrativeToLimit(normalizeClaudeOutput(rawText));
+      return { kind: 'success', narrative };
     } catch (err) {
       // B-700-1: the class, status and code only; an SDK or egress message
       // can quote prompt content.
@@ -1794,7 +1782,6 @@ export class CoachBriefService {
         }
         context = agg.context;
         actionItems = buildActionItems({
-          pendingWorkouts: agg.pendingWorkouts,
           unreadThreads: agg.unreadThreads,
           flaggedWeightLogs: agg.flaggedWeightLogs,
           missingCheckinClients: agg.missingCheckinClients,
