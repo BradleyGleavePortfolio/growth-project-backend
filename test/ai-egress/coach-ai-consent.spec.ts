@@ -189,7 +189,13 @@ describe('CoachAIStateService probe — health_probe exemption (no client data)'
     await state.onApplicationBootstrap();
     expect(state.isReady()).toBe(true);
     expect(create.mock.calls[0]).toEqual([
-      { model: expect.any(String), max_tokens: 4, messages: [{ role: 'user', content: 'ping' }] },
+      {
+        model: expect.any(String),
+        max_tokens: 4,
+        thinking: { type: 'between_tools' },
+        output_config: { effort: 'high' },
+        messages: [{ role: 'user', content: 'ping' }],
+      },
       { maxRetries: 0 },
     ]);
     expect(reader.calls).toHaveLength(0);

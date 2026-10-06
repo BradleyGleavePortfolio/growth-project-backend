@@ -66,7 +66,7 @@ describe('AnthropicAdapter.complete', () => {
     expect(result.tokensIn).toBe(100);
     expect(result.tokensOut).toBe(50);
     expect(result.modelUsed).toBe('claude-sonnet-4-6');
-    // cost: 100/1e6 * 3 + 50/1e6 * 15 = 0.0003 + 0.00075 = 0.00105$ => 0 cents (rounded)
+    // cost: 100/1e6 * 2 + 50/1e6 * 10 = 0.0002 + 0.0005 = 0.0007$ => 0 cents (rounded)
     // confirm log row was written
     expect(aiCalls.length).toBe(1);
     expect(aiCalls[0]).toMatchObject({
@@ -77,6 +77,22 @@ describe('AnthropicAdapter.complete', () => {
       coachId: 'c1',
       clientId: 'u1',
     });
+  });
+
+  it('sends Sonnet 5.5 with no temperature, no up-front thinking and high effort (B-ROMANIQ-125)', async () => {
+    messagesCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+      model: 'claude-sonnet-5-5',
+    });
+    const { adapter } = buildAdapter();
+    await adapter.complete({ system: 's', user: 'u' }, { ...GRANTED_CLIENT, capability: 'meal_plan', maxTokens: 4096 });
+    const body = messagesCreate.mock.calls[0][0];
+    expect(body.model).toBe('claude-sonnet-5-5');
+    expect(body).not.toHaveProperty('temperature');
+    expect(body.thinking).toEqual({ type: 'between_tools' });
+    expect(body.output_config).toEqual({ effort: 'high' });
+    expect(body.max_tokens).toBe(4096);
   });
 
   it('retries on 429 then succeeds', async () => {
@@ -156,8 +172,8 @@ describe('AnthropicAdapter.completeStructured', () => {
     expect(messagesCreate).toHaveBeenCalledTimes(2);
   });
 
-  it('cost computation: 1M input + 1M output ≈ $18.00 = 1800 cents', () => {
-    expect(AnthropicAdapter.computeCostCents(1_000_000, 1_000_000)).toBe(1800);
+  it('cost computation: 1M input + 1M output at Sonnet 5.5 $2 / $10 = $12.00 = 1200 cents', () => {
+    expect(AnthropicAdapter.computeCostCents(1_000_000, 1_000_000)).toBe(1200);
     expect(AnthropicAdapter.computeCostCents(0, 0)).toBe(0);
   });
 });

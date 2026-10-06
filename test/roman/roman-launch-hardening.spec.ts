@@ -532,7 +532,7 @@ describe('A-R3-1 grounding failure is sanitised and degraded, never silent', () 
 
 describe('OR-113-2 launch hardening', () => {
   it('uses the current model id (claude-3-7-sonnet-20250219 was retired 2026-02-19)', () => {
-    expect(ROMAN_MODEL_PHASE_1).toBe('claude-sonnet-4-6');
+    expect(ROMAN_MODEL_PHASE_1).toBe('claude-sonnet-5-5');
   });
 
   it('over the daily cap: coded 503 with specific copy, zero provider calls', async () => {

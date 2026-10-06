@@ -17,7 +17,10 @@
 
 import { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { AnthropicHandle } from '../ai-egress/ai-egress.service';
+import type {
+  AnthropicHandle,
+  AnthropicThinkingBetweenTools,
+} from '../ai-egress/ai-egress.service';
 import { createAnthropicClient } from '../ai-egress/provider-clients';
 
 /** DI token for Roman's Anthropic client (brief §4). */
@@ -29,12 +32,30 @@ export const ROMAN_ANTHROPIC_CLIENT = 'ROMAN_ANTHROPIC_CLIENT';
  * note: this is the PRODUCT runtime model the deployed Roman calls, chosen by
  * the brief; it is unrelated to the agent runtime that authored this code.
  */
-export const ROMAN_MODEL_PHASE_1 = 'claude-sonnet-4-6';
-// OR-113-2: the former id claude-3-7-sonnet-20250219 was retired by the
-// provider on 2026-02-19 (every request to it fails); claude-sonnet-4-6 is the
-// documented replacement and the id the coach AI already uses
-// (src/ai/coach/coach-ai.constants.ts). Pricing used by the daily spend cap:
-// ROMAN_PRICE_PER_MTOK in roman.constants.ts.
+export const ROMAN_MODEL_PHASE_1 = 'claude-sonnet-5-5';
+// B-ROMANIQ-125: Claude Sonnet 5.5 (was claude-sonnet-4-6; before that
+// claude-3-7-sonnet-20250219, retired 2026-02-19), the same id the coach AI
+// uses (src/ai/coach/coach-ai.constants.ts). Pricing used by the daily spend
+// cap: ROMAN_PRICE_PER_MTOK in roman.constants.ts.
+
+/** The id Roman turns used before B-ROMANIQ-125 (priced below for ledger rows it wrote). */
+export const ROMAN_MODEL_PREVIOUS = 'claude-sonnet-4-6';
+
+/**
+ * Roman turn thinking + effort (B-ROMANIQ-125). Sonnet 5.5 thinks before
+ * answering when a request has no `thinking` field, which would delay the
+ * first streamed word and spend ROMAN_MAX_OUTPUT_TOKENS on thinking. A turn
+ * sends the lowest setting instead, `between_tools` (no up-front thinking;
+ * with no tools the response is text only), as claude-sonnet-4-6 ran:
+ * platform.claude.com/docs/en/models/sonnet-5-5/migration-guide "To turn off
+ * up-front thinking on Claude Sonnet 5.5, send thinking: {type:
+ * between_tools}". Effort `medium`: "For chat and other latency-sensitive
+ * work, start with medium or low" (platform.claude.com/docs/en/
+ * build-with-claude/effort); one level for the whole conversation, which
+ * between_tools requires.
+ */
+export const ROMAN_TURN_THINKING: AnthropicThinkingBetweenTools = { type: 'between_tools' };
+export const ROMAN_TURN_EFFORT = 'medium' as const;
 
 /**
  * R11-00: the cheaper model for v1.1 background work (day summaries and note
@@ -50,7 +71,8 @@ export const ROMAN_MODEL_BACKGROUND = 'claude-haiku-4-5-20251001';
  * under-counts).
  */
 export const ROMAN_MODEL_PRICE_PER_MTOK: Readonly<Record<string, { input: number; output: number }>> = {
-  [ROMAN_MODEL_PHASE_1]: { input: 3, output: 15 },
+  [ROMAN_MODEL_PHASE_1]: { input: 2, output: 10 },
+  [ROMAN_MODEL_PREVIOUS]: { input: 3, output: 15 },
   [ROMAN_MODEL_BACKGROUND]: { input: 1, output: 5 },
 };
 

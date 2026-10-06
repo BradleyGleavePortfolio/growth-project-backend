@@ -36,6 +36,8 @@ import {
 import {
   ROMAN_ANTHROPIC_CLIENT,
   ROMAN_MODEL_PHASE_1,
+  ROMAN_TURN_EFFORT,
+  ROMAN_TURN_THINKING,
 } from './anthropic-client.provider';
 import {
   ROMAN_CURSOR_INVALID_MESSAGE,
@@ -1081,6 +1083,8 @@ export class RomanService {
         {
           model: ROMAN_MODEL_PHASE_1,
           max_tokens: ROMAN_MAX_OUTPUT_TOKENS,
+          thinking: ROMAN_TURN_THINKING,
+          output_config: { effort: ROMAN_TURN_EFFORT },
           system,
           messages,
         },

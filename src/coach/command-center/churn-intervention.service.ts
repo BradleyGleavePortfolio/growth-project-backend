@@ -42,7 +42,11 @@ import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
-import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';
+import {
+  COACH_AI_EFFORT,
+  COACH_AI_MODEL,
+  COACH_AI_THINKING,
+} from '../../ai/coach/coach-ai.constants';
 
 // DI token so tests can inject a fake Anthropic client without reaching
 // out to the public API. Production boot leaves it unset and the service
@@ -755,7 +759,9 @@ Output ONLY the message text — no preamble, no explanation.`;
         {
           model: COACH_AI_MODEL,
           max_tokens: 400,
-          temperature: 0.7,
+          // B-ROMANIQ-125: no temperature (a 400 on Sonnet 5.5).
+          thinking: COACH_AI_THINKING,
+          output_config: { effort: COACH_AI_EFFORT },
           system,
           messages: [
             {

@@ -10,7 +10,9 @@ import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception
 import type { AiDataSubject, AiEgressSurface } from '../../ai-egress/ai-egress.types';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import {
+  COACH_AI_EFFORT,
   COACH_AI_MODEL,
+  COACH_AI_THINKING,
   INPUT_USD_PER_MTOK,
   OUTPUT_USD_PER_MTOK,
   CoachAICapability,
@@ -34,7 +36,6 @@ export interface AnthropicCompleteOptions {
   // R2b — call-site label for egress logs (no user data).
   surface: AiEgressSurface;
   maxTokens?: number;
-  temperature?: number;
   // Logging metadata. Persisted to AICallLog. None of these end up in the
   // request body to Anthropic.
   capability?: CoachAICapability | string;
@@ -100,7 +101,6 @@ export class AnthropicAdapter {
     opts: AnthropicCompleteOptions,
   ): Promise<AnthropicCompleteResult> {
     const maxTokens = opts.maxTokens ?? 1024;
-    const temperature = opts.temperature ?? 0.7;
     const startedAt = Date.now();
 
     let lastErr: unknown = null;
@@ -117,7 +117,10 @@ export class AnthropicAdapter {
           {
             model: COACH_AI_MODEL,
             max_tokens: maxTokens,
-            temperature,
+            // B-ROMANIQ-125: no temperature (a non-default value is a 400 on
+            // Sonnet 5.5); thinking and effort pinned in coach-ai.constants.
+            thinking: COACH_AI_THINKING,
+            output_config: { effort: COACH_AI_EFFORT },
             system: prompt.system,
             messages: [{ role: 'user', content: prompt.user }],
           },

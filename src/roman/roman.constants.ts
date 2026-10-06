@@ -123,8 +123,11 @@ export const ROMAN_CURSOR_INVALID_MESSAGE =
  */
 export const ROMAN_DAILY_COST_CAP_USD_ENV = 'ROMAN_DAILY_COST_CAP_USD';
 export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 100;
-/** claude-sonnet-4-6 list price per million tokens (input / output), USD. */
-export const ROMAN_PRICE_PER_MTOK = { input: 3, output: 15 } as const;
+/**
+ * claude-sonnet-5-5 (ROMAN_MODEL_PHASE_1) list price per million tokens
+ * (input / output), USD: docs.anthropic.com/en/docs/about-claude/models/overview.
+ */
+export const ROMAN_PRICE_PER_MTOK = { input: 2, output: 10 } as const;
 /** The content-free ledger capability for one Roman turn. */
 export const ROMAN_LEDGER_CAPABILITY = 'roman.chat';
 
