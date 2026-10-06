@@ -134,6 +134,13 @@ export class FeaturedCoachAdminController {
     return this.featured.getForOwner();
   }
 
+  /** Coach accounts the owner can feature, each with its active packages. */
+  @Roles('owner')
+  @Get('coaches')
+  async coaches() {
+    return this.featured.listCandidates();
+  }
+
   @Roles('owner')
   @Put()
   async put(@Request() req: AuthedRequest, @Body() body: FeaturedCoachConfigDto) {

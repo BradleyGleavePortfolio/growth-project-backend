@@ -28,6 +28,18 @@ export interface FeaturedPackage {
   interval_count: number;
 }
 
+/** A coach account the owner can feature, with the packages the PUT accepts. */
+export interface FeaturedCoachCandidate {
+  id: string;
+  name: string;
+  email: string;
+  business_name: string | null;
+  packages: FeaturedPackage[];
+}
+
+/** Launch-size bound for the owner's coach list. */
+export const FEATURED_CANDIDATES_LIMIT = 200;
+
 export interface RomanCaps {
   min_hours_between: number;
   max_per_week: number;
@@ -188,6 +200,55 @@ export class FeaturedCoachService {
       },
     });
     return p ?? null;
+  }
+
+  /**
+   * Owner coach list for the editor: every coach account (role coach, not
+   * deleted) with its ACTIVE packages, the same set activePackageOf accepts,
+   * so the editor never offers a choice the PUT refuses.
+   */
+  async listCandidates(): Promise<{ coaches: FeaturedCoachCandidate[] }> {
+    const users = await this.prisma.user.findMany({
+      where: { role: 'coach', deleted_at: null },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      take: FEATURED_CANDIDATES_LIMIT,
+      select: { id: true, name: true, email: true },
+    });
+    if (users.length === 0) return { coaches: [] };
+    const ids = users.map((u) => u.id);
+    const [profiles, packages] = await Promise.all([
+      this.prisma.coachProfile.findMany({
+        where: { user_id: { in: ids } },
+        select: { user_id: true, business_name: true },
+      }),
+      this.prisma.coachPackage.findMany({
+        where: { coach_id: { in: ids }, is_active: true, archived_at: null },
+        orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          coach_id: true,
+          name: true,
+          description: true,
+          amount_cents: true,
+          currency: true,
+          billing_type: true,
+          interval: true,
+          interval_count: true,
+        },
+      }),
+    ]);
+    const business = new Map(profiles.map((p) => [p.user_id, p.business_name]));
+    return {
+      coaches: users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        business_name: business.get(u.id) ?? null,
+        packages: packages
+          .filter((p) => p.coach_id === u.id)
+          .map(({ coach_id: _coach, ...p }) => p),
+      })),
+    };
   }
 
   /** Owner view: the raw row (or null) plus the resolved projection. */
