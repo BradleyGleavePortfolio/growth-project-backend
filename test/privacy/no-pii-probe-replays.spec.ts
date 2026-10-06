@@ -261,7 +261,7 @@ describe('Opus B-700-1 replay: coach brief log lines never hold the coach name',
     const ctx = makeBriefContext({
       coach_name: `Patricia ${SURNAME}`,
       coach_first_name: 'Patricia',
-      workouts_pending_approval: 1,
+      workouts_completed_today: 1,
     });
     const ai: BriefAiInput = { ctx, subject: clientDataSubject(['client-1'], 'coach') };
     return svc.callClaude(ctx, ai, coachId);
