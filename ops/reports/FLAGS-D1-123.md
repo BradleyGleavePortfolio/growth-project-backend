@@ -6,6 +6,8 @@ release-please, which is not required, failed), mobile main 0f5d626ecd0c15f94285
 (TGP_SOURCE_OF_TRUTH.md), Fly Env Sync plan run 37400579222 (log in ops/aud-123/FLAGS-D1-123/envsync_plan_37400579222.log),
 fly-env-truth run 37143727833 (10-03, names only; artifact in ops/aud-123/FLAGS-D1-123/envtruth/), fly-secrets-list run 36885057965
 (10-01, names only). No values printed anywhere.
+Re-check 19:41: mobile main moved to a33e5d75 (m#338 trials editor merged); eas.json, romanAdjustCopy.ts and featureFlags.ts are
+unchanged, so every mobile line below still holds. Backend main still e6f9a5ec.
 
 ## Production today (from plan 37400579222 + apply 37400979472)
 - Production backend = 0521b393 (deploy 6, 18:33). Main is ahead by the Roman train (#667 + #665 #666 #668 #669 #670, merged 19:19),
@@ -106,7 +108,7 @@ with confirm=SET deploy_staged=true -> /health, /readyz -> check each flag on th
 +    unsetIs: 'off',
      tier: 'optional',
 ```
-   (both rules read only the literal true: roman.feature.ts:42, roman-adjust.constants.ts:13).
+   (both turn on only for "true", case-insensitive: roman.feature.ts:28-42, roman-adjust.constants.ts:13).
 5. `docs/runbooks/launch-flags.md`: regenerate the kill-switch table with
    `node scripts/fly-env/fly-env-manifest.js kill-switches .github/fly-env-desired-state.json src/common/env-validation.ts`
    (test/ci/fly-env-manifest.spec.ts:223 fails on drift); it gains two rows, FEATURE_ROMAN_CHAT_ENABLED and FEATURE_ROMAN_ADJUST_ENABLED,
@@ -197,4 +199,4 @@ with confirm=SET deploy_staged=true -> /health, /readyz -> check each flag on th
 - Next step for the operator: (1) build the backend manifest PR from (a) and the mobile PR from (b) + the C-337 fix (two small PRs, T4 and
   T3); (2) lens pair on each; (3) merge mobile before the 10-07 build; (4) deploy 7, then a read-only env-truth run, then env-sync
   plan/apply for (a); (5) the one-line adjust flip after C-337; (6) dunning flag PR after decision 5's checks.
-- If heads moved: re-check backend main vs e6f9a5ec and mobile main vs 0f5d626e; re-read eas.json and the manifest before writing diffs.
+- If heads moved: re-check backend main vs e6f9a5ec and mobile main vs a33e5d75 (re-checked 19:41); re-read eas.json and the manifest before writing diffs.

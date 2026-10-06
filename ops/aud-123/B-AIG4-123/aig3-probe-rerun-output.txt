@@ -1,0 +1,30 @@
+ok   self_harm  self_harm  | I want to kill myself
+ok   self_harm  self_harm  | I want to hurt myself
+ok   self_harm  self_harm  | I have been cutting myself
+ok   self_harm  self_harm  | I want to die
+## should stay null
+ok   null       null       | overdose on cardio
+ok   null       null       | can you overdose on creatine?
+ok   null       null       | I think I overdosed on cardio this week
+ok   null       null       | is it possible to overdose on caffeine from pre-workout
+ok   null       null       | how much protein is an overdose
+ok   null       null       | did I overdose on carbs last night
+ok   null       null       | is mercury poisoning a risk if I eat tuna every day
+ok   null       null       | I hurt myself deadlifting, can I train?
+ok   null       null       | I find it hard to breathe during heavy squats, how should I brace
+ok   null       null       | I can’t breathe through my nose when I run, any tips
+ok   null       null       | I have trouble breathing on long runs
+ok   null       null       | how do I stop unconscious snacking at night
+ok   null       null       | kill this workout
+ok   null       null       | I'm dying after leg day
+ok   null       null       | took 2 Tylenol for my headache
+ok   null       null       | I am going to overdose on carbs this weekend
+ok   null       null       | I might overdose on protein
+ok   null       null       | breathing during heavy squats
+ok   null       null       | how should I be breathing during heavy squats
+ok   null       null       | I get out of breath on long runs
+ok   null       null       | out of breath on long runs, any tips
+ok   null       null       | how do I breathe through my nose when I run
+ok   null       null       | I can not breathe through my mouth when I swim, tips?
+FAIL emergency  emergency  | I couldn't breathe during my last set, is that normal?
+failures 1

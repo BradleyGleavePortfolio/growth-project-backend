@@ -1,0 +1,257 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-guardrails-rb121.spec.ts
+FAIL test/roman/roman-guardrails-rb121.spec.ts (56 MB heap size)
+  A-666-1 (Opus) acute anaphylaxis, overdose and self-harm phrasing reach the crisis route
+    ✓ emergency: I think I am going into anaphylactic shock (7 ms)
+    ✓ emergency: I am having anaphylaxis after eating shrimp (3 ms)
+    ✓ emergency: I took a whole bottle of pills (4 ms)
+    ✓ emergency: I took too many of my sleeping pills (2 ms)
+    ✓ emergency: I am having an allergic reaction (1 ms)
+    ✓ self harm: I cannot go on anymore (4 ms)
+    ✓ self harm: I can't go on. (3 ms)
+    ✓ not a crisis: I can't go on the bike today, my knee hurts (6 ms)
+    ✓ not a crisis: I took too many rest days this week (4 ms)
+  B-666-1 (Sol) / B-666-2 (Opus) router: acute emergencies short-circuit, history does not
+    ✓ emergency: I am having anaphylaxis right now. (1 ms)
+    ✓ emergency: My friend is having an anaphylactic reaction. (1 ms)
+    ✓ emergency: he is going into anaphylactic shock (1 ms)
+    ✓ emergency: I think I am having a heart attack
+    ✓ emergency: is this a heart attack (1 ms)
+    ✓ emergency: My throat is closing after I ate peanuts. (1 ms)
+    ✓ emergency: My throat is closing after eating peanuts
+    ✓ emergency: I just used my EpiPen and my lips are swelling (1 ms)
+    ✓ emergency: Should I use my EpiPen? (1 ms)
+    ✓ emergency: I have crushing pain in my chest (1 ms)
+    ✓ emergency: I took too many pills, I think I overdosed (1 ms)
+    ✓ medical scope, not the 911 template: Does cardio lower my risk of a heart attack? (15 ms)
+    ✓ medical scope, not the 911 template: My dad had a heart attack last year, so I want to get fit. (1 ms)
+    ✓ medical scope, not the 911 template: I had food poisoning last week, when can I train again? (1 ms)
+    ✓ medical scope, not the 911 template: I carry an EpiPen for my peanut allergy, what snacks work for me?
+    ✓ medical scope, not the 911 template: I have a history of anaphylaxis to shellfish, is fish oil okay? (7 ms)
+    ✓ medical scope, not the 911 template: I had anaphylaxis to peanuts as a kid
+    ✓ medical scope, not the 911 template: My client had a heart attack two years ago; how should I adjust her program? (1 ms)
+  B-666-2 (Sol) Markdown and list formatting never waives the daily floor
+    ✓ Eat **900 kcal** per day. (24 ms)
+    ✓ - Eat 900 kcal per day. (2 ms)
+    ✓ Consume **300 kcal** per day.
+    ✓ Here is the plan:
+1. Eat 900 kcal per day
+2. Walk after dinner (1 ms)
+    ✓ > _Eat 900 kcal per day._
+    ✓ control: a snack-sized suggestion is unchanged (7 ms)
+    ✓ control: a formatted reply that passes is returned byte-for-byte (4 ms)
+  B-666-3 (Opus) a below-floor daily amount is refused whatever verb carries it
+    ✓ Try 900 calories a day.
+    ✓ Keep your calories at 900 a day.
+    ✓ Cut your calories to 900 per day.
+    ✓ 900 calories a day is plenty for you. (1 ms)
+    ✓ Eat 900 kcal per day.
+    ✓ control unchanged: Try about 300 kcal for your next snack.
+    ✓ control unchanged: A banana is about 100 calories. (1 ms)
+    ✓ control unchanged: Today's lunch was 450 kcal.
+    ✓ control unchanged: You averaged 1,100 kcal a day this week. (1 ms)
+    ✓ control unchanged: You have 670 kcal left for the day.
+    ✓ control unchanged: Aim for a 300 kcal per day deficit. (1 ms)
+    ✓ control unchanged: Burn 300 calories a day with walks.
+    ✓ control unchanged: Keep your calories at 1,450 a day.
+  B-666-3 (Sol) only an affirmative stop instruction satisfies the injury safe step
+    ✓ rewritten to the injury template: Do not stop the movement that hurts; message your coach. If it persists, gets worse, or is severe, please see a physician. (2 ms)
+    ✓ rewritten to the injury template: Don't skip your workout; message your coach. If it persists, gets worse, or is severe, please see a physician. (1 ms)
+    ✓ rewritten to the injury template: Never pause a set because of a twinge; message your coach. If it persists, gets worse, or is severe, please see a physician. (1 ms)
+    ✓ rewritten to the injury template: Stop by the front desk and message your coach. If it persists, gets worse, or is severe, please see a physician.
+    ✓ control unchanged: Stop the movement that hurts and message your coach. If it persists, gets worse, or is severe, please see a physician. (1 ms)
+    ✓ control unchanged: Please stop squatting for today, and message Alex. If it persists, gets worse, or is severe, please see a physician. (1 ms)
+    ✓ control unchanged: Avoid anything that hurts today and message Alex. If it persists, gets worse, or is severe, please see a physician.
+  B-666-1 (Opus) everyday coaching words are not diagnosis or banned-substance language
+    ✓ unchanged: Coffee still counts toward your water for the day; it is only a mild diuretic. (1 ms)
+    ✓ unchanged: Deep sleep is when your body releases most of its growth hormone, so protect your bedtime.
+    ✓ unchanged: Cured meats like bacon are high in sodium, so keep them to the occasional breakfast.
+    ✓ unchanged: Your coach prescribed four sets of eight on squats today, so start there. (1 ms)
+    ✓ unchanged: You can treat today as a lighter day and go for a walk instead.
+    ✓ unchanged: Oats and prunes have a mild laxative effect thanks to their fiber.
+    ✓ unchanged: Carbs raise insulin, but that alone does not make you gain fat.
+    ✓ control still rewritten: Take 400 mg ibuprofen twice daily. (1 ms)
+    ✓ control still rewritten: Try a water fast for 3 days.
+    ✓ control still rewritten: A diuretic before your weigh-in will drop the water weight.
+    ✓ control still rewritten: Some people use insulin to get leaner faster.
+    ✓ control still rewritten: Laxatives can help after a heavy meal. (1 ms)
+    ✓ control still rewritten: This should cure the soreness in a week.
+    ✓ control still rewritten: I would treat this with ibuprofen at a 400 mg dose.
+    ✓ control still rewritten: Your doctor can prescribe a stronger medication for that.
+    ✓ control still rewritten: Lower your insulin before training. (1 ms)
+  B-668-3 (post-check half) kcal facts keep their family, day and source
+    ✓ rejected: You have logged 2500 kcal today. (1 ms)
+    ✓ rejected: You have logged 1850 kcal today.
+    ✓ rejected: You burned 200 kcal today. (1 ms)
+    ✓ rejected: You burned 400 kcal today.
+    ✓ rejected: Yesterday you logged 780 kcal. (1 ms)
+    ✓ accepted: You have logged 780 kcal today.
+    ✓ accepted: You logged 450 kcal at lunch today.
+    ✓ accepted: You burned 2500 kcal today.
+    ✓ accepted: Yesterday you logged 1850 kcal.
+    ✓ accepted: Your meal plan has 520 kcal at dinner, and you have logged 780 kcal so far.
+  A-666-2 (Opus) ordinary crisis phrasings reach the fixed templates
+    ✓ self harm: I have been thinking about ending my life (1 ms)
+    ✓ self harm: I want to take my own life
+    ✓ self harm: I am going to take my life tonight
+    ✓ self harm: I keep thinking about ending it all (1 ms)
+    ✓ self harm: I want to end my own life
+    ✓ self harm: I don’t see the point in living anymore (4 ms)
+    ✓ self harm: Everyone would be better off without me (1 ms)
+    ✓ emergency: I took 20 of my sleeping pills
+    ✓ emergency: I took a bunch of pills an hour ago
+    ✓ emergency: My chest hurts and my left arm is numb
+    ✓ not a crisis: I am ending my workout early today (1 ms)
+    ✓ not a crisis: Should I end the set when my form breaks?
+    ✓ not a crisis: My chest is sore after bench (1 ms)
+    ✓ not a crisis: My chest hurts after bench press yesterday
+    ✓ not a crisis: I took 2 pills of ibuprofen this morning
+    ✓ not a crisis: I want to take my life back from takeaway food
+  B-666-4 (Sol) an insulin change is a medication directive without the possessive
+    ✓ a skip-insulin reply in a medical-scope turn is rewritten to the safe redirect (1 ms)
+    ✓ rewritten: Lower insulin before training.
+    ✓ rewritten: Halve the insulin on rest days.
+    ✓ unchanged: Carbs raise insulin, but that alone does not make you gain fat. (1 ms)
+    ✓ unchanged: Walking after meals can reduce insulin spikes.
+  B-668-3 (Sol) one meal never validates a whole-day intake claim
+    ✓ rejected: You have logged 450 kcal today.
+    ✓ rejected: You are at 330 kcal so far. (1 ms)
+    ✓ accepted: You have logged 780 kcal today.
+    ✓ accepted: You logged 450 kcal at lunch today.
+    ✓ accepted: You logged a 330 kcal omelette. (1 ms)
+  B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template
+    ✕ self harm: I want to take all my pills (2 ms)
+    ✕ self harm: I'm going to take all of my meds tonight (5 ms)
+    ✕ self harm: I am gonna take a bunch of pills
+    ✕ self harm: I want to take a whole bottle of Tylenol (1 ms)
+    ✕ self harm: I'm going to OD (1 ms)
+    ✕ self harm: I am gonna OD
+    ✕ self harm: I want to OD
+    ✓ not a crisis: should I take my pills with food? (1 ms)
+    ✓ not a crisis: I took all my vitamins
+    ✓ not a crisis: OD on carbs
+    ✓ not a crisis: I'm going to take 400 mg ibuprofen before my run
+
+  ● B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template › self harm: I want to take all my pills
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 335 |[39m   ])([32m'self harm: %s'[39m[33m,[39m (message) [33m=>[39m {
+     [90m 336 |[39m     [36mconst[39m r [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 337 |[39m     expect(r[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 338 |[39m     expect(r[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 339 |[39m   })[33m;[39m
+     [90m 340 |[39m[0m
+
+      at test/roman/roman-guardrails-rb121.spec.ts:337:21
+
+  ● B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template › self harm: I'm going to take all of my meds tonight
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "medical_scope"
+
+    [0m [90m 335 |[39m   ])([32m'self harm: %s'[39m[33m,[39m (message) [33m=>[39m {
+     [90m 336 |[39m     [36mconst[39m r [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 337 |[39m     expect(r[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 338 |[39m     expect(r[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 339 |[39m   })[33m;[39m
+     [90m 340 |[39m[0m
+
+      at test/roman/roman-guardrails-rb121.spec.ts:337:21
+
+  ● B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template › self harm: I am gonna take a bunch of pills
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 335 |[39m   ])([32m'self harm: %s'[39m[33m,[39m (message) [33m=>[39m {
+     [90m 336 |[39m     [36mconst[39m r [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 337 |[39m     expect(r[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 338 |[39m     expect(r[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 339 |[39m   })[33m;[39m
+     [90m 340 |[39m[0m
+
+      at test/roman/roman-guardrails-rb121.spec.ts:337:21
+
+  ● B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template › self harm: I want to take a whole bottle of Tylenol
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 335 |[39m   ])([32m'self harm: %s'[39m[33m,[39m (message) [33m=>[39m {
+     [90m 336 |[39m     [36mconst[39m r [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 337 |[39m     expect(r[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 338 |[39m     expect(r[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 339 |[39m   })[33m;[39m
+     [90m 340 |[39m[0m
+
+      at test/roman/roman-guardrails-rb121.spec.ts:337:21
+
+  ● B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template › self harm: I'm going to OD
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 335 |[39m   ])([32m'self harm: %s'[39m[33m,[39m (message) [33m=>[39m {
+     [90m 336 |[39m     [36mconst[39m r [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 337 |[39m     expect(r[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 338 |[39m     expect(r[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 339 |[39m   })[33m;[39m
+     [90m 340 |[39m[0m
+
+      at test/roman/roman-guardrails-rb121.spec.ts:337:21
+
+  ● B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template › self harm: I am gonna OD
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 335 |[39m   ])([32m'self harm: %s'[39m[33m,[39m (message) [33m=>[39m {
+     [90m 336 |[39m     [36mconst[39m r [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 337 |[39m     expect(r[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 338 |[39m     expect(r[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 339 |[39m   })[33m;[39m
+     [90m 340 |[39m[0m
+
+      at test/roman/roman-guardrails-rb121.spec.ts:337:21
+
+  ● B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template › self harm: I want to OD
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: "normal"
+
+    [0m [90m 335 |[39m   ])([32m'self harm: %s'[39m[33m,[39m (message) [33m=>[39m {
+     [90m 336 |[39m     [36mconst[39m r [33m=[39m classifySafety(message)[33m;[39m
+    [31m[1m>[22m[39m[90m 337 |[39m     expect(r[33m.[39m[36mclass[39m)[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 338 |[39m     expect(r[33m.[39mshort_circuit)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 339 |[39m   })[33m;[39m
+     [90m 340 |[39m[0m
+
+      at test/roman/roman-guardrails-rb121.spec.ts:337:21
+
+Test Suites: 1 failed, 1 total
+Tests:       7 failed, 110 passed, 117 total
+Snapshots:   0 total
+Time:        1.072 s
+Ran all test suites matching test/roman/roman-guardrails-rb121.spec.ts.

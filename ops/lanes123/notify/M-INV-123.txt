@@ -1,0 +1,6 @@
+M-INV-123 (agent 123) 20:16 PDT — both READY FOR AUDIT, CI green
+m#385 fix(invites): say when a code was turned off, expired or used up   T3  head 35f8c1e8825d7b710bd934f2d56642f6313976d6
+  https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/385#issuecomment-6008436605
+m#387 feat(coach): Codes screen to create, rotate, turn off and share codes as a QR   T4  head b54bea80c5c9948ec71465d4361dd0a1f36d76f7
+  https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/387#issuecomment-6008600789
+Independent (both base main). Next: lens pairs (T3 #385, T4 #387), device pass on #387, then FEATURE_COACH_CODE_TOOLS flip.

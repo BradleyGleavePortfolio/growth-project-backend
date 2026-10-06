@@ -1,0 +1,6 @@
+B-FLAGS-123 (agent 123) — done 19:59 PDT 10-05. All three READY FOR AUDIT, PR CI green at these heads.
+growth-project-backend#740 agent123/day1-flags @ 7e3ff31b1b28758a5ebaa6081e6ca090742fb6b3 (T4, +19/-10) https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/740#issuecomment-6008418861
+growth-project-mobile#383 agent123/day1-flags @ d2845013b2a8f279606a8886ff45e25ad7064da8 (T3, +7/-2) https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/383#issuecomment-6008386951
+growth-project-mobile#384 agent123/c337-volume-copy @ 341216276547a1ead980a91f302768c554028237 (T3, +30/-1) https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/384#issuecomment-6008387112
+Follow-ups: FEATURE_ROMAN_ADJUST_ENABLED -> true one-liner after m#384 merges; close b#650 when b#740 merges.
+Report: ops/reports/B-FLAGS-123.md

@@ -1,0 +1,202 @@
+diff --git a/src/ai/ai-crisis-router.ts b/src/ai/ai-crisis-router.ts
+index 593f0827..a76fb811 100644
+--- a/src/ai/ai-crisis-router.ts
++++ b/src/ai/ai-crisis-router.ts
+@@ -48,6 +48,17 @@ const NOT_A_SUBSTANCE =
+ const ACTIVITY =
+   '(squats?|squatting|runs?|running|jogs?|jogging|sprints?|sprinting|sets?|reps?|lifts?|lifting|workouts?|training|cardio|exercise|exercising|bench|benching|deadlifts?|deadlifting|swims?|swimming|hiit|class|classes|cycling|bike|biking|spin|rowing|planks?|burpees|yoga|hikes?|hiking|climbs?|stairs|the gym|gym|nose|mouth|mask|i (run|jog|lift|train|swim|squat|exercise|work out|bench|sprint|cycle|row))';
+ 
++/**
++ * B-AIG4-123: a stated plan or wish to take all or many pills ("I want to take
++ * all my pills", "I am going to take a whole bottle of Tylenol"). Only with
++ * intent words: "should I take my pills with food?" and "I took all my
++ * vitamins" are ordinary questions. Same rule in the Roman SafetyRouter.
++ */
++const PILLS_INTENT = new RegExp(
++  '\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to|tempted to|feel like|should just) (just )?(take|taking|swallow|swallowing) (all (of )?(my|the|these|those)|too many|way too many|so many|many|a (whole |full )?(bottle|pack|packet|box) of|a handful of|a bunch of|a lot of|lots of|loads of|a load of|([5-9]|[1-9]\\d+)(?! ?(mg|mcg|g|ml|milligrams?|grams?|iu)\\b))( of)?( my| the| these| those)? (\\w+ )?(pills|tablets|meds|medication|medications|medicine|medicines|capsules|painkillers|prescriptions?|tylenol|acetaminophen|paracetamol|advil|motrin|ibuprofen|aleve|naproxen|aspirin|excedrin|nyquil|benadryl|diphenhydramine|xanax|valium|ativan|klonopin|ambien|zolpidem|oxy|oxys|oxycodone|oxycontin|percocet|vicodin|hydrocodone|codeine|tramadol|morphine|fentanyl|adderall|lithium|seroquel|antidepressants|sleeping meds|sleep meds)s?\\b',
++  'i',
++);
++
+ /** "cut myself some slack", "cutting myself off from sugar" are not self-harm. */
+ const NOT_A_FIGURE = '(?! (some |a little |any |a bit of )?(slack|off|a break|short)\\b)';
+ 
+@@ -143,6 +154,7 @@ const SELF_HARM: RegExp[] = [
+     `\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to) (overdose|overdosing|od)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
+     'i',
+   ),
++  PILLS_INTENT,
+   // Common suicide-method phrasings ("I am going to hang myself").
+   /\b(hang|hanging|hanged|shoot|shooting|stab|stabbing|drown|drowning|strangle|strangling|suffocate|suffocating) myself\b(?! (a |an )?(text|message|email|note|reminder|dm|link|line)\b| in (work|coffee|caffeine|food|sugar|carbs|protein|homework|emails?|paperwork)\b)/i,
+   /\bslit(ting)? my (wrists?|throat)\b/i,
+diff --git a/src/roman/guardrails/safety-router.ts b/src/roman/guardrails/safety-router.ts
+index daaf785b..c9059a23 100644
+--- a/src/roman/guardrails/safety-router.ts
++++ b/src/roman/guardrails/safety-router.ts
+@@ -30,6 +30,25 @@ function acute(condition: string): RegExp {
+   );
+ }
+ 
++/**
++ * B-AIG4-123: training, food and supplement words, copied from the AI guide
++ * crisis router. "OD on carbs" is a figure of speech, not an overdose.
++ */
++const NOT_A_SUBSTANCE =
++  '(cardio|creatine|protein|carbs?|sugar|sweets|candy|chocolate|food|junk food|pizza|fast food|salt|water|fiber|fibre|veggies|vegetables|fruit|exercise|training|workouts?|running|lifting|squats?|reps|sets|volume|the gym|gym|leg day|netflix|tv|sleep)';
++
++/**
++ * B-AIG4-123: a stated plan or wish to take all or many pills ("I want to take
++ * all my pills", "I am going to take a whole bottle of Tylenol"). Only with
++ * intent words: "should I take my pills with food?" and "I took all my
++ * vitamins" are ordinary questions. Same rule as the AI guide crisis router
++ * (src/ai/ai-crisis-router.ts).
++ */
++const PILLS_INTENT = new RegExp(
++  '\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to|tempted to|feel like|should just) (just )?(take|taking|swallow|swallowing) (all (of )?(my|the|these|those)|too many|way too many|so many|many|a (whole |full )?(bottle|pack|packet|box) of|a handful of|a bunch of|a lot of|lots of|loads of|a load of|([5-9]|[1-9]\\d+)(?! ?(mg|mcg|g|ml|milligrams?|grams?|iu)\\b))( of)?( my| the| these| those)? (\\w+ )?(pills|tablets|meds|medication|medications|medicine|medicines|capsules|painkillers|prescriptions?|tylenol|acetaminophen|paracetamol|advil|motrin|ibuprofen|aleve|naproxen|aspirin|excedrin|nyquil|benadryl|diphenhydramine|xanax|valium|ativan|klonopin|ambien|zolpidem|oxy|oxys|oxycodone|oxycontin|percocet|vicodin|hydrocodone|codeine|tramadol|morphine|fentanyl|adderall|lithium|seroquel|antidepressants|sleeping meds|sleep meds)s?\\b',
++  'i',
++);
++
+ const EMERGENCY: RegExp[] = [
+   /\bchest (pain|pressure|tightness)\b/i,
+   // A-666-2 (Opus): chest pain in plain words with a warning sign in the
+@@ -103,6 +122,14 @@ const SELF_HARM: RegExp[] = [
+   /\b(want to|going to|gonna|thinking (about|of)|thought (about|of)|plan(ning)? to|ready to) end(ing)? it( now| tonight| today)?[.!?]*\s*$/i,
+   /\b(no|don'?t see (the|any)|do not see (the|any)|what'?s the|there'?s no) point (in|of|to) (living|life|being alive|going on|being here|existing)\b/i,
+   /\bbetter off without me\b/i,
++  // B-AIG4-123: a stated plan or wish to take all or many pills, and the
++  // same OD intent line as the AI guide ("I am going to OD"; "OD on carbs"
++  // stays normal). "overdose" itself is already an emergency above.
++  PILLS_INTENT,
++  new RegExp(
++    `\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to) (overdose|overdosing|od)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
++    'i',
++  ),
+ ];
+ 
+ const EATING_DISORDER: RegExp[] = [
+diff --git a/test/ai-crisis-router.spec.ts b/test/ai-crisis-router.spec.ts
+index 21976d94..5251d322 100644
+--- a/test/ai-crisis-router.spec.ts
++++ b/test/ai-crisis-router.spec.ts
+@@ -68,3 +68,27 @@ describe('classifyAiGuideCrisis (B-AIG3-123)', () => {
+     expect(classifyAiGuideCrisis(message)).toBe(expected);
+   });
+ });
++
++// B-AIG4-123 — a stated plan or wish to take all or many pills gets the 988
++// reply; ordinary pill, vitamin and "OD on carbs" phrasing does not.
++describe('classifyAiGuideCrisis (B-AIG4-123)', () => {
++  it.each([
++    'I want to take all my pills',
++    "I'm going to take all of my meds tonight",
++    'I am gonna take a bunch of pills',
++    'I want to take a whole bottle of Tylenol',
++  ])('"%s" is self_harm', (message) => {
++    expect(classifyAiGuideCrisis(message)).toBe('self_harm');
++  });
++
++  it.each([
++    'should I take my pills with food?',
++    'I took all my vitamins',
++    'OD on carbs',
++    'overdose on cardio',
++    'can you overdose on creatine?',
++    "I'm going to take 400 mg ibuprofen before my run",
++  ])('"%s" is an ordinary question (no crisis reply)', (message) => {
++    expect(classifyAiGuideCrisis(message)).toBeNull();
++  });
++});
+diff --git a/test/ai.service.spec.ts b/test/ai.service.spec.ts
+index 38a696b6..c369f689 100644
+--- a/test/ai.service.spec.ts
++++ b/test/ai.service.spec.ts
+@@ -978,6 +978,27 @@ describe('AiService.chat — crisis phrasing a client actually types (B-AIG2-122
+     expect(quota.userAIQuota.updateMany).not.toHaveBeenCalled();
+   });
+ 
++  it.each([
++    'I want to take all my pills',
++    "I'm going to take all of my meds tonight",
++    'I am gonna take a bunch of pills',
++    'I want to take a whole bottle of Tylenol',
++  ])(
++    'client at the daily limit: "%s" gets the 988 reply, not the limit (B-AIG4-123)',
++    async (message) => {
++      const quota = makeQuotaStub();
++      const { svc } = makeService(quota);
++      seedAtCap(svc, quota);
++      const result = await svc.chat('u1', message, []);
++      expect(result.reply).toContain('988');
++      expect(result.guardrails_applied).toEqual(['crisis:self_harm']);
++      expect(result.model_used).toBe('safety');
++      expect(mockCreate).not.toHaveBeenCalled();
++      expect(quota.userAIQuota.upsert).not.toHaveBeenCalled();
++      expect(quota.userAIQuota.updateMany).not.toHaveBeenCalled();
++    },
++  );
++
+   it.each(['overdose on cardio', 'can you overdose on creatine?', 'I hurt myself deadlifting, can I train?'])(
+     'ordinary question "%s" at the daily limit gets the 429 limit reply, not a crisis reply',
+     async (message) => {
+diff --git a/test/roman/roman-guardrails-rb121.spec.ts b/test/roman/roman-guardrails-rb121.spec.ts
+index 9e40682c..0c8132d2 100644
+--- a/test/roman/roman-guardrails-rb121.spec.ts
++++ b/test/roman/roman-guardrails-rb121.spec.ts
+@@ -322,3 +322,28 @@ describe('B-668-3 (Sol) one meal never validates a whole-day intake claim', () =
+     expect(normal(reply, MEALS)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
+   });
+ });
++
++describe('B-AIG4-123 a stated plan to take all or many pills, or to OD, gets the 988 template', () => {
++  it.each([
++    'I want to take all my pills',
++    "I'm going to take all of my meds tonight",
++    'I am gonna take a bunch of pills',
++    'I want to take a whole bottle of Tylenol',
++    "I'm going to OD",
++    'I am gonna OD',
++    'I want to OD',
++  ])('self harm: %s', (message) => {
++    const r = classifySafety(message);
++    expect(r.class).toBe('self_harm');
++    expect(r.short_circuit).toBe(true);
++  });
++
++  it.each([
++    'should I take my pills with food?',
++    'I took all my vitamins',
++    'OD on carbs',
++    "I'm going to take 400 mg ibuprofen before my run",
++  ])('not a crisis: %s', (message) => {
++    expect(classifySafety(message).short_circuit).toBe(false);
++  });
++});
+diff --git a/test/roman/roman-streaming.spec.ts b/test/roman/roman-streaming.spec.ts
+index 40627b14..a5de55d7 100644
+--- a/test/roman/roman-streaming.spec.ts
++++ b/test/roman/roman-streaming.spec.ts
+@@ -622,6 +622,25 @@ describe('Roman — crisis messages are never blocked by the turn limit or the s
+     expect(anthropic.messages.stream).not.toHaveBeenCalled();
+   });
+ 
++  it.each([
++    'I want to take all my pills',
++    "I'm going to take all of my meds tonight",
++    'I am gonna take a bunch of pills',
++    'I want to take a whole bottle of Tylenol',
++    "I'm going to OD",
++    'I am gonna OD',
++    'I want to OD',
++  ])('daily cap reached: "%s" gets the 988 template, no model call (B-AIG4-123)', async (content) => {
++    process.env.ROMAN_DAILY_COST_CAP_USD = '0';
++    const { ctrl, anthropic, messages } = setup();
++    const { res, writes } = makeRes();
++    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content });
++    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
++    expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.self_harm);
++    expect(anthropic.messages.stream).not.toHaveBeenCalled();
++    expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
++  });
++
+   it('turn limit used up: an emergency message still gets the 911 template; an ordinary one gets the 429', async () => {
+     const { ctrl, anthropic, romanMessage } = setup();
+     romanMessage.count.mockResolvedValue(10_000);

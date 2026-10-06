@@ -1,0 +1,1393 @@
+diff --git a/src/api/broadcastsApi.ts b/src/api/broadcastsApi.ts
+new file mode 100644
+index 00000000..71c88c13
+--- /dev/null
++++ b/src/api/broadcastsApi.ts
+@@ -0,0 +1,207 @@
++/**
++ * broadcastsApi — coach broadcasts (backend src/broadcasts, b#726-#730).
++ *
++ *   GET  /coach/broadcasts?limit&cursor   { items: Broadcast[], next_cursor }
++ *   GET  /coach/broadcasts/segment-options { roster_size, packages, programs, tags }
++ *   POST /coach/broadcasts/preview         { recipient_count, excluded_blocked_count, roster_size }
++ *   POST /coach/broadcasts                 Broadcast (Idempotency-Key header)
++ *   POST /coach/broadcasts/:id/cancel | pause | resume
++ *
++ * Kill switch FEATURE_COACH_BROADCASTS (default off): every route answers
++ * 503 `broadcasts.disabled`; a backend without the module answers 404.
++ * `broadcastsAvailable` reports both as false so the entry stays hidden.
++ *
++ * Clients get each copy as an ordinary coach message in their own thread
++ * (`{first_name}` replaced per client), so no client-side code is needed.
++ * Responses are parsed with zod: a drifted shape throws here.
++ */
++import { z } from 'zod';
++import api from '../services/api';
++
++const StatsSchema = z.object({
++  total: z.number(),
++  delivered: z.number(),
++  pending: z.number(),
++  deferred: z.number(),
++  skipped_blocked: z.number(),
++  skipped_ineligible: z.number(),
++  failed: z.number(),
++  read: z.number(),
++});
++
++const RuleSchema = z.object({
++  field: z.string(),
++  op: z.string(),
++  values: z.array(z.union([z.string(), z.number()])).optional(),
++  value: z.number().optional(),
++});
++
++export const SegmentSchema = z.object({
++  match: z.enum(['all', 'any']),
++  rules: z.array(RuleSchema),
++  exclude_client_ids: z.array(z.string()).optional(),
++});
++
++export const RecurrenceSchema = z.object({
++  freq: z.enum(['daily', 'weekly', 'monthly']),
++  interval: z.number(),
++  local_time: z.string(),
++  by_weekday: z.array(z.number()).optional(),
++  by_month_day: z.number().optional(),
++  until: z.string().optional(),
++  count: z.number().optional(),
++  anchor_date: z.string().optional(),
++});
++
++export const BroadcastStatusSchema = z.enum([
++  'draft',
++  'scheduled',
++  'sending',
++  'sent',
++  'paused',
++  'canceled',
++  'failed',
++]);
++
++export const BroadcastSchema = z.object({
++  id: z.string(),
++  status: BroadcastStatusSchema,
++  body: z.string(),
++  segment: SegmentSchema,
++  timezone: z.string(),
++  send_at: z.string().nullable(),
++  recurrence: RecurrenceSchema.nullable(),
++  next_run_at: z.string().nullable(),
++  occurrences_sent: z.number(),
++  last_run_at: z.string().nullable(),
++  failure_code: z.string().nullable(),
++  created_at: z.string(),
++  stats: StatsSchema.optional(),
++});
++
++const ListSchema = z.object({
++  items: z.array(BroadcastSchema),
++  next_cursor: z.string().nullable(),
++});
++
++export const SegmentOptionsSchema = z.object({
++  roster_size: z.number(),
++  packages: z.array(z.object({ id: z.string(), name: z.string() })),
++  programs: z.array(z.object({ id: z.string(), name: z.string() })),
++  tags: z.array(z.object({ tag: z.string(), client_count: z.number() })),
++});
++
++const PreviewSchema = z.object({
++  recipient_count: z.number(),
++  excluded_blocked_count: z.number(),
++  roster_size: z.number(),
++});
++
++export type Broadcast = z.infer<typeof BroadcastSchema>;
++export type BroadcastStatus = z.infer<typeof BroadcastStatusSchema>;
++export type BroadcastSegment = z.infer<typeof SegmentSchema>;
++export type BroadcastRecurrence = z.infer<typeof RecurrenceSchema>;
++export type BroadcastList = z.infer<typeof ListSchema>;
++export type SegmentOptions = z.infer<typeof SegmentOptionsSchema>;
++export type BroadcastPreview = z.infer<typeof PreviewSchema>;
++
++/** Recurrence as sent on create (the server pins anchor_date itself). */
++export interface RecurrenceInput {
++  freq: 'daily' | 'weekly' | 'monthly';
++  interval: number;
++  local_time: string;
++  by_weekday?: number[];
++  by_month_day?: number;
++}
++
++export interface CreateBroadcastInput {
++  body: string;
++  segment: BroadcastSegment;
++  timezone: string;
++  /** ISO instant; null sends now (or starts the series now). */
++  send_at: string | null;
++  recurrence: RecurrenceInput | null;
++}
++
++function responseOf(err: unknown): { status?: number; code?: string; message?: string } {
++  const res = typeof err === 'object' && err !== null ? Reflect.get(err, 'response') : undefined;
++  if (typeof res !== 'object' || res === null) return {};
++  const status = Reflect.get(res, 'status');
++  const data = Reflect.get(res, 'data');
++  const code = typeof data === 'object' && data !== null ? Reflect.get(data, 'code') : undefined;
++  const message = typeof data === 'object' && data !== null ? Reflect.get(data, 'message') : undefined;
++  return {
++    status: typeof status === 'number' ? status : undefined,
++    code: typeof code === 'string' ? code : undefined,
++    message: typeof message === 'string' ? message : undefined,
++  };
++}
++
++/** True when the backend has broadcasts turned off (503) or has no module yet (404). */
++export function broadcastsOff(err: unknown): boolean {
++  const r = responseOf(err);
++  return r.status === 404 && !r.code ? true : r.status === 503 && r.code === 'broadcasts.disabled';
++}
++
++/**
++ * Plain-words copy for a failed broadcast call. Coded backend refusals carry
++ * their own sentence (src/broadcasts/broadcast-errors.ts); everything else is
++ * named by what happened. `action` is the verb phrase, e.g. "sent".
++ */
++export function broadcastErrorMessage(err: unknown, action: string): string {
++  const r = responseOf(err);
++  if (r.code && r.message && (r.code.startsWith('broadcast') || r.code.startsWith('card.'))) {
++    return r.message;
++  }
++  if (r.status === undefined) {
++    return `No connection, so nothing was ${action}. Check the connection and try again.`;
++  }
++  if (r.status === 429) return `Too many broadcasts in a minute, so this one was not ${action}. Wait a minute and try again.`;
++  if (r.status >= 500) return `The server could not take this request, so nothing was ${action}. Try again in a minute.`;
++  if (r.status === 403) return 'Only coaches can send broadcasts. Sign in with a coach account.';
++  return `This request was refused (${r.status}), so nothing was ${action}. Refresh and try again.`;
++}
++
++export const broadcastsApi = {
++  async list(cursor?: string | null): Promise<BroadcastList> {
++    const res = await api.get('/coach/broadcasts', {
++      params: { limit: 50, ...(cursor ? { cursor } : {}) },
++    });
++    return ListSchema.parse(res.data);
++  },
++
++  async segmentOptions(): Promise<SegmentOptions> {
++    const res = await api.get('/coach/broadcasts/segment-options');
++    return SegmentOptionsSchema.parse(res.data);
++  },
++
++  async preview(segment: BroadcastSegment): Promise<BroadcastPreview> {
++    const res = await api.post('/coach/broadcasts/preview', { segment });
++    return PreviewSchema.parse(res.data);
++  },
++
++  async create(input: CreateBroadcastInput, idempotencyKey: string): Promise<Broadcast> {
++    const res = await api.post(
++      '/coach/broadcasts',
++      { ...input, status: 'scheduled' },
++      { headers: { 'Idempotency-Key': idempotencyKey } },
++    );
++    return BroadcastSchema.parse(res.data);
++  },
++
++  async transition(id: string, action: 'cancel' | 'pause' | 'resume'): Promise<Broadcast> {
++    const res = await api.post(`/coach/broadcasts/${encodeURIComponent(id)}/${action}`);
++    return BroadcastSchema.parse(res.data);
++  },
++};
++
++/** Probe for the entry point: false when broadcasts are off or absent. */
++export async function broadcastsAvailable(): Promise<boolean> {
++  try {
++    await api.get('/coach/broadcasts', { params: { limit: 1 } });
++    return true;
++  } catch (err) {
++    if (broadcastsOff(err)) return false;
++    throw err;
++  }
++}
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index 601abc8e..25bd717f 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -77,6 +77,8 @@ import CoachAppointmentTypesScreen from '../screens/coach/CoachAppointmentTypesS
+ import CoachTimeOffScreen from '../screens/coach/CoachTimeOffScreen';
+ // S-AVAIL-122 — booking options (notice, window, buffers, daily maximum).
+ import CoachBookingOptionsScreen from '../screens/coach/CoachBookingOptionsScreen';
++import CoachBroadcastsScreen from '../screens/coach/broadcasts/CoachBroadcastsScreen';
++import BroadcastComposerScreen from '../screens/coach/broadcasts/BroadcastComposerScreen';
+ // Coach AI v1 — generate/edit/approve workout, meal, insight drafts per client.
+ import AIWorkoutDraftScreen from '../screens/coach/AIWorkoutDraftScreen';
+ import AIMealPlanDraftScreen from '../screens/coach/AIMealPlanDraftScreen';
+@@ -196,6 +198,9 @@ export type ClientsStackParamList = {
+   CoachTimeOff:             undefined;
+   /** S-AVAIL-122 — the coach's booking options. */
+   CoachBookingOptions:      undefined;
++  /** M-BCAST-123 — coach broadcasts list and composer (server flag FEATURE_COACH_BROADCASTS). */
++  CoachBroadcasts:          undefined;
++  CoachBroadcastComposer:   undefined;
+   /** Coach AI v1 — review/edit/approve AI-generated workout program draft. */
+   AIWorkoutDraft:  { draftId: string; clientId: string; clientName: string };
+   /** Coach AI v1 — review/edit/approve AI-generated meal plan draft. */
+@@ -421,6 +426,17 @@ function ClientsStackNavigator() {
+         name="CoachBookingOptions"
+         component={CoachBookingOptionsScreen}
+       />
++      {/* M-BCAST-123 — broadcasts; the Messages entry shows only when the server offers them. */}
++      <ClientsStack.Screen
++        name="CoachBroadcasts"
++        component={CoachBroadcastsScreen}
++        options={{ headerShown: true, title: 'Broadcasts', headerBackTitle: 'Back' }}
++      />
++      <ClientsStack.Screen
++        name="CoachBroadcastComposer"
++        component={BroadcastComposerScreen}
++        options={{ headerShown: true, title: 'New broadcast', headerBackTitle: 'Back' }}
++      />
+       {/* Coach AI v1 — companion routes for the per-client generate/edit/approve flow. */}
+       <ClientsStack.Screen
+         name="AIWorkoutDraft"
+diff --git a/src/screens/coach/CoachInboxV2.tsx b/src/screens/coach/CoachInboxV2.tsx
+index 58a9a3a4..ba47ad1a 100644
+--- a/src/screens/coach/CoachInboxV2.tsx
++++ b/src/screens/coach/CoachInboxV2.tsx
+@@ -47,6 +47,7 @@ import {
+   type InboxThread,
+   type MuteDuration,
+ } from '../../api/messagingV2Api';
++import { BroadcastsEntry } from './broadcasts/BroadcastsEntry';
+ 
+ const FALLBACK_POLL_MS = 60000;
+ const PAGE_LIMIT = 50;
+@@ -311,7 +312,10 @@ export default function CoachInboxV2({ onFeatureDisabled }: CoachInboxV2Props) {
+   return (
+     <View style={styles.container}>
+       <View style={styles.header}>
+-        <Text style={styles.title}>Messages</Text>
++        <View style={styles.headerRow}>
++          <Text style={styles.title}>Messages</Text>
++          <BroadcastsEntry />
++        </View>
+         {totalUnread > 0 ? (
+           <Text style={styles.unreadSummary}>
+             {totalUnread} unread message{totalUnread !== 1 ? 's' : ''}
+@@ -393,6 +397,7 @@ const makeStyles = (colors: ThemeColors) =>
+   StyleSheet.create({
+     container: { flex: 1, backgroundColor: colors.background },
+     header: { paddingHorizontal: 24, paddingTop: 60, marginBottom: 8 },
++    headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+     title: { fontFamily: 'CormorantGaramond_400Regular', fontSize: 32, lineHeight: 35, letterSpacing: 0.6, fontWeight: '400', color: colors.textPrimary },
+     unreadSummary: { fontSize: 13, color: colors.primary, fontWeight: '600', marginTop: 2 },
+     searchContainer: { paddingHorizontal: 24, marginBottom: 8, gap: 10 },
+diff --git a/src/screens/coach/MessagesScreen.tsx b/src/screens/coach/MessagesScreen.tsx
+index c5a8a88f..502d6b1e 100644
+--- a/src/screens/coach/MessagesScreen.tsx
++++ b/src/screens/coach/MessagesScreen.tsx
+@@ -18,6 +18,7 @@ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { EmptyStateNoClients, EmptyStateNoResults } from '../../ui/empty-states';
+ import { useFeatureFlags } from '../../hooks/useFeatureFlags';
+ import CoachInboxV2 from './CoachInboxV2';
++import { BroadcastsEntry } from './broadcasts/BroadcastsEntry';
+ 
+ // Backstop poll — Realtime broadcasts drive most refreshes now. Was 30s.
+ const FALLBACK_POLL_MS = 60000;
+@@ -123,6 +124,7 @@ function LegacyCoachMessages() {
+             </Text>
+           )}
+         </View>
++        <BroadcastsEntry />
+       </View>
+ 
+       <View style={styles.searchContainer}>
+diff --git a/src/screens/coach/__tests__/CoachInboxV2.test.tsx b/src/screens/coach/__tests__/CoachInboxV2.test.tsx
+index 110d0d01..d8b45454 100644
+--- a/src/screens/coach/__tests__/CoachInboxV2.test.tsx
++++ b/src/screens/coach/__tests__/CoachInboxV2.test.tsx
+@@ -19,6 +19,8 @@ jest.mock('../../../services/api', () => ({
+   default: { get: jest.fn(), post: jest.fn(), put: jest.fn(), patch: jest.fn(), delete: jest.fn() },
+ }));
+ jest.mock('../../../tutorial/tutorialEvents', () => ({ emitTutorialSignal: jest.fn() }));
++// The Broadcasts header entry has its own probe and tests (broadcasts.test.tsx).
++jest.mock('../broadcasts/BroadcastsEntry', () => ({ BroadcastsEntry: () => null }));
+ const mockSubscribe = jest.fn((..._args: unknown[]) => () => undefined);
+ jest.mock('../../../services/realtime', () => ({
+   subscribeToMessages: (...args: unknown[]) => mockSubscribe(...args),
+diff --git a/src/screens/coach/broadcasts/BroadcastComposerScreen.tsx b/src/screens/coach/broadcasts/BroadcastComposerScreen.tsx
+new file mode 100644
+index 00000000..56f6ffec
+--- /dev/null
++++ b/src/screens/coach/broadcasts/BroadcastComposerScreen.tsx
+@@ -0,0 +1,357 @@
++/**
++ * BroadcastComposerScreen — write one message and send it to many clients:
++ * all clients, or the clients with a tag, on a package or on a program
++ * (GET /coach/broadcasts/segment-options). Send now, schedule it, or repeat it
++ * daily / weekly / monthly at a set time. The live count comes from
++ * POST /coach/broadcasts/preview; sending is POST /coach/broadcasts with an
++ * Idempotency-Key, so a retried tap never sends twice.
++ *
++ * Each client gets the message in their own coach thread, `{first_name}`
++ * replaced with their first name.
++ */
++import React, { useEffect, useMemo, useRef, useState } from 'react';
++import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
++import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
++import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { broadcastErrorMessage, broadcastsApi, broadcastsOff, type SegmentOptions } from '../../../api/broadcastsApi';
++import { spacing, typography } from '../../../theme/tokens';
++import { useTheme } from '../../../theme/ThemeProvider';
++import {
++  BODY_MAX,
++  WEEKDAYS_SHORT,
++  audienceReady,
++  deviceTimeZone,
++  describeRepeat,
++  formatLocalTime,
++  formatWhen,
++  newIdempotencyKey,
++  recurrenceFor,
++  segmentFor,
++  toLocalTime,
++  type Audience,
++  type AudienceKind,
++  type RepeatChoice,
++  type RepeatKind,
++} from './broadcastFormat';
++import { broadcastsListKey } from './CoachBroadcastsScreen';
++
++const AUDIENCE_LABELS: Record<AudienceKind, string> = { all: 'All clients', tag: 'Tag', package: 'Package', program: 'Program' };
++const REPEAT_LABELS: Record<RepeatKind, string> = { none: 'Does not repeat', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
++const MAX_LEAD_MS = 365 * 86_400_000;
++
++function optionValues(kind: AudienceKind, o: SegmentOptions | undefined): Array<{ value: string; label: string }> {
++  if (!o) return [];
++  if (kind === 'tag') return o.tags.map((t) => ({ value: t.tag, label: `${t.tag} (${t.client_count})` }));
++  if (kind === 'package') return o.packages.map((p) => ({ value: p.id, label: p.name }));
++  if (kind === 'program') return o.programs.map((p) => ({ value: p.id, label: p.name }));
++  return [];
++}
++
++/** First problem with the form, in plain words, or null when it can be sent. */
++export function composerProblem(input: {
++  body: string;
++  audience: Audience;
++  later: boolean;
++  sendAt: Date | null;
++  repeat: RepeatChoice;
++  now: Date;
++}): string | null {
++  const text = input.body.trim();
++  if (text.length === 0) return 'Write the message first.';
++  if (text.length > BODY_MAX) return `Shorten the message to ${BODY_MAX} characters or fewer.`;
++  if (!audienceReady(input.audience)) return `Pick at least one ${input.audience.kind} for the audience.`;
++  if (input.later) {
++    if (!input.sendAt) return 'Pick a date and time to send it.';
++    if (input.sendAt.getTime() <= input.now.getTime()) return 'Pick a time later than now, or choose Send now.';
++    if (input.sendAt.getTime() > input.now.getTime() + MAX_LEAD_MS) return 'Pick a time within the next 12 months.';
++  }
++  if (input.repeat.kind === 'weekly' && input.repeat.weekdays.length === 0) return 'Pick at least one day of the week.';
++  if (input.repeat.kind === 'monthly' && !(input.repeat.monthDay >= 1 && input.repeat.monthDay <= 31)) return 'Pick a day of the month from 1 to 31.';
++  return null;
++}
++
++export default function BroadcastComposerScreen() {
++  const { colors } = useTheme();
++  const navigation = useNavigation<NavigationProp<ParamListBase>>();
++  const qc = useQueryClient();
++  const [body, setBody] = useState('');
++  const [audience, setAudience] = useState<Audience>({ kind: 'all', values: [] });
++  const [later, setLater] = useState(false);
++  const [sendAt, setSendAt] = useState<Date | null>(null);
++  const [repeat, setRepeat] = useState<RepeatChoice>({ kind: 'none', localTime: '09:00', weekdays: [new Date().getDay()], monthDay: new Date().getDate() });
++  const [picker, setPicker] = useState<'date' | 'time' | 'repeatTime' | null>(null);
++  const [formError, setFormError] = useState<string | null>(null);
++  const keyRef = useRef(newIdempotencyKey());
++
++  const options = useQuery({ queryKey: ['broadcasts', 'segment-options'], queryFn: () => broadcastsApi.segmentOptions() });
++  const segment = useMemo(() => segmentFor(audience), [audience]);
++  const ready = audienceReady(audience);
++  const preview = useQuery({
++    queryKey: ['broadcasts', 'preview', JSON.stringify(segment)],
++    queryFn: () => broadcastsApi.preview(segment),
++    enabled: ready,
++  });
++
++  const recurrence = recurrenceFor(repeat);
++  const payloadKey = JSON.stringify([body.trim(), segment, later ? sendAt?.toISOString() : null, recurrence]);
++  // A changed message is a new send; a retried identical one reuses the key.
++  useEffect(() => {
++    keyRef.current = newIdempotencyKey();
++  }, [payloadKey]);
++
++  const send = useMutation({
++    mutationFn: () =>
++      broadcastsApi.create(
++        { body: body.trim(), segment, timezone: deviceTimeZone(), send_at: later && sendAt ? sendAt.toISOString() : null, recurrence },
++        keyRef.current,
++      ),
++    onSuccess: () => {
++      void qc.invalidateQueries({ queryKey: broadcastsListKey });
++      navigation.goBack();
++    },
++    onError: (err) => setFormError(broadcastErrorMessage(err, repeat.kind === 'none' && !later ? 'sent' : 'scheduled')),
++  });
++
++  const count = preview.data?.recipient_count;
++  const who = count === undefined ? 'the selected clients' : count === 1 ? '1 client' : `${count} clients`;
++
++  const onSubmit = () => {
++    if (send.isPending) return;
++    const problem = composerProblem({ body, audience, later, sendAt, repeat, now: new Date() });
++    if (problem) {
++      setFormError(problem);
++      return;
++    }
++    if (count === 0) {
++      setFormError('No clients match this audience right now. Pick a wider audience.');
++      return;
++    }
++    setFormError(null);
++    const title = recurrence
++      ? `Repeat this for ${who}?`
++      : later && sendAt
++        ? `Schedule for ${who}?`
++        : `Send to ${who} now?`;
++    const detail = recurrence
++      ? `${describeRepeat(recurrence)}${later && sendAt ? `, starting ${formatWhen(sendAt.toISOString())}` : ''}. Each client gets it in their own thread.`
++      : later && sendAt
++        ? `It goes out ${formatWhen(sendAt.toISOString())}. Each client gets it in their own thread.`
++        : 'Each client gets it in their own thread now. Clients in their quiet hours get it when those end.';
++    Alert.alert(title, detail, [
++      { text: 'Not yet', style: 'cancel' },
++      { text: recurrence ? 'Start' : later ? 'Schedule' : 'Send', onPress: () => send.mutate() },
++    ]);
++  };
++
++  const onPick = (_e: DateTimePickerEvent, picked?: Date) => {
++    const which = picker;
++    setPicker(Platform.OS === 'ios' ? which : null);
++    if (!picked) return;
++    if (which === 'repeatTime') {
++      setRepeat((r) => ({ ...r, localTime: toLocalTime(picked) }));
++      return;
++    }
++    const next = new Date(sendAt ?? Date.now() + 3_600_000);
++    if (which === 'date') next.setFullYear(picked.getFullYear(), picked.getMonth(), picked.getDate());
++    else next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
++    setSendAt(next);
++  };
++
++  const muted = { color: colors.textMuted };
++  const chip = (selected: boolean) => [styles.chip, { borderColor: selected ? colors.textPrimary : colors.border, backgroundColor: selected ? colors.textPrimary : 'transparent' }];
++  const chipText = (selected: boolean) => [typography.bodySmall, { color: selected ? colors.background : colors.textPrimary }];
++
++  if (options.isError && broadcastsOff(options.error)) {
++    return (
++      <View style={[styles.container, { backgroundColor: colors.background, flex: 1 }]}>
++        <Text style={[typography.body, muted]} testID="composer-off">
++          Broadcasts are not available on this account yet. One-to-one messages with clients work as usual.
++        </Text>
++      </View>
++    );
++  }
++
++  const kinds: AudienceKind[] = ['all', ...(['tag', 'package', 'program'] as const).filter((k) => optionValues(k, options.data).length > 0)];
++  const values = optionValues(audience.kind, options.data);
++  const [rh, rm] = repeat.localTime.split(':').map(Number);
++  const pickerValue = picker === 'repeatTime' ? new Date(2000, 0, 1, rh, rm) : sendAt ?? new Date(Date.now() + 3_600_000);
++  // Shown under the control that opened it. Android opens a dialog; iOS shows
++  // the picker inline with a Done button.
++  const pickerFor = (which: Array<'date' | 'time' | 'repeatTime'>) =>
++    picker && which.includes(picker) ? (
++      <View>
++        <DateTimePicker
++          key={picker}
++          value={pickerValue}
++          mode={picker === 'date' ? 'date' : 'time'}
++          display={Platform.OS === 'ios' ? (picker === 'date' ? 'inline' : 'spinner') : 'default'}
++          minimumDate={picker === 'date' ? new Date() : undefined}
++          onChange={onPick}
++          testID="composer-picker"
++        />
++        {Platform.OS === 'ios' ? (
++          <Pressable onPress={() => setPicker(null)} accessibilityRole="button" accessibilityLabel="Done choosing" style={[chip(false), { alignSelf: 'flex-end' }]} testID="composer-picker-done">
++            <Text style={chipText(false)}>Done</Text>
++          </Pressable>
++        ) : null}
++      </View>
++    ) : null;
++
++  return (
++    <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" testID="broadcast-composer">
++      <Text style={[styles.label, muted]}>Message</Text>
++      <TextInput
++        value={body}
++        onChangeText={setBody}
++        multiline
++        maxLength={BODY_MAX}
++        placeholder="Gym closed Monday, do the home plan."
++        placeholderTextColor={colors.textMuted}
++        accessibilityLabel="Broadcast message"
++        style={[styles.input, styles.body, { color: colors.textPrimary, borderColor: colors.border }]}
++        testID="composer-body"
++      />
++      <Text style={[typography.bodySmall, muted]}>
++        {body.length} of {BODY_MAX}. Type {'{first_name}'} to greet each client by first name.
++      </Text>
++
++      <Text style={[styles.label, muted]}>Send to</Text>
++      <View style={styles.wrap}>
++        {kinds.map((k) => (
++          <Pressable key={k} onPress={() => setAudience({ kind: k, values: [] })} accessibilityRole="button" accessibilityState={{ selected: audience.kind === k }} accessibilityLabel={`Send to ${AUDIENCE_LABELS[k]}`} style={chip(audience.kind === k)} testID={`composer-audience-${k}`}>
++            <Text style={chipText(audience.kind === k)}>{AUDIENCE_LABELS[k]}</Text>
++          </Pressable>
++        ))}
++      </View>
++      {options.isLoading ? <ActivityIndicator style={{ marginTop: spacing.sm }} color={colors.textMuted} /> : null}
++      {options.isError ? (
++        <Text style={[typography.bodySmall, muted, { marginTop: spacing.sm }]}>
++          {`Tags, packages and programs did not load. ${broadcastErrorMessage(options.error, 'loaded')}`}
++        </Text>
++      ) : null}
++      {audience.kind !== 'all' ? (
++        <View style={styles.wrap}>
++          {values.map((v) => {
++            const on = audience.values.includes(v.value);
++            return (
++              <Pressable
++                key={v.value}
++                onPress={() => setAudience((a) => ({ ...a, values: on ? a.values.filter((x) => x !== v.value) : [...a.values, v.value] }))}
++                accessibilityRole="checkbox"
++                accessibilityState={{ checked: on }}
++                accessibilityLabel={v.label}
++                style={chip(on)}
++                testID={`composer-value-${v.value}`}
++              >
++                <Text style={chipText(on)}>{v.label}</Text>
++              </Pressable>
++            );
++          })}
++        </View>
++      ) : null}
++      <Text style={[typography.bodySmall, { color: colors.textPrimary, marginTop: spacing.sm }]} accessibilityLiveRegion="polite" testID="composer-count">
++        {!ready
++          ? 'Pick who gets it.'
++          : preview.isLoading
++            ? 'Counting clients.'
++            : preview.isError
++              ? `The client count did not load. ${broadcastErrorMessage(preview.error, 'counted')}`
++              : `Goes to ${count ?? 0} of ${preview.data?.roster_size ?? 0} ${preview.data?.roster_size === 1 ? 'client' : 'clients'}.${preview.data?.excluded_blocked_count ? ` ${preview.data.excluded_blocked_count} who blocked messages are left out.` : ''}`}
++      </Text>
++
++      <Text style={[styles.label, muted]}>When</Text>
++      <View style={styles.wrap}>
++        <Pressable onPress={() => setLater(false)} accessibilityRole="button" accessibilityState={{ selected: !later }} accessibilityLabel={repeat.kind === 'none' ? 'Send now' : 'Start now'} style={chip(!later)} testID="composer-now">
++          <Text style={chipText(!later)}>{repeat.kind === 'none' ? 'Send now' : 'Start now'}</Text>
++        </Pressable>
++        <Pressable onPress={() => { setLater(true); if (!sendAt) setSendAt(new Date(Date.now() + 3_600_000)); }} accessibilityRole="button" accessibilityState={{ selected: later }} accessibilityLabel={repeat.kind === 'none' ? 'Schedule for later' : 'Start later'} style={chip(later)} testID="composer-later">
++          <Text style={chipText(later)}>{repeat.kind === 'none' ? 'Schedule' : 'Start later'}</Text>
++        </Pressable>
++      </View>
++      {later && sendAt ? (
++        <View style={styles.wrap}>
++          <Pressable onPress={() => setPicker('date')} accessibilityRole="button" accessibilityLabel={`Date, ${formatWhen(sendAt.toISOString())}`} style={chip(false)} testID="composer-date">
++            <Text style={chipText(false)}>{sendAt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</Text>
++          </Pressable>
++          <Pressable onPress={() => setPicker('time')} accessibilityRole="button" accessibilityLabel="Time" style={chip(false)} testID="composer-time">
++            <Text style={chipText(false)}>{formatLocalTime(toLocalTime(sendAt))}</Text>
++          </Pressable>
++        </View>
++      ) : null}
++      {later ? pickerFor(['date', 'time']) : null}
++
++      <Text style={[styles.label, muted]}>Repeat</Text>
++      <View style={styles.wrap}>
++        {(Object.keys(REPEAT_LABELS) as RepeatKind[]).map((k) => (
++          <Pressable key={k} onPress={() => setRepeat((r) => ({ ...r, kind: k }))} accessibilityRole="button" accessibilityState={{ selected: repeat.kind === k }} accessibilityLabel={REPEAT_LABELS[k]} style={chip(repeat.kind === k)} testID={`composer-repeat-${k}`}>
++            <Text style={chipText(repeat.kind === k)}>{REPEAT_LABELS[k]}</Text>
++          </Pressable>
++        ))}
++      </View>
++      {repeat.kind === 'weekly' ? (
++        <View style={styles.wrap}>
++          {WEEKDAYS_SHORT.map((d, i) => {
++            const on = repeat.weekdays.includes(i);
++            return (
++              <Pressable key={d} onPress={() => setRepeat((r) => ({ ...r, weekdays: on ? r.weekdays.filter((x) => x !== i) : [...r.weekdays, i] }))} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={d} style={chip(on)} testID={`composer-weekday-${i}`}>
++                <Text style={chipText(on)}>{d}</Text>
++              </Pressable>
++            );
++          })}
++        </View>
++      ) : null}
++      {repeat.kind === 'monthly' ? (
++        <TextInput
++          value={String(repeat.monthDay || '')}
++          onChangeText={(t) => setRepeat((r) => ({ ...r, monthDay: Number(t.replace(/\D/g, '')) || 0 }))}
++          keyboardType="number-pad"
++          maxLength={2}
++          accessibilityLabel="Day of the month"
++          style={[styles.input, { color: colors.textPrimary, borderColor: colors.border }]}
++          testID="composer-month-day"
++        />
++      ) : null}
++      {repeat.kind !== 'none' ? (
++        <View>
++          <Pressable onPress={() => setPicker('repeatTime')} accessibilityRole="button" accessibilityLabel={`Time of day, ${formatLocalTime(repeat.localTime)}`} style={[chip(false), { alignSelf: 'flex-start', marginTop: spacing.sm }]} testID="composer-repeat-time">
++            <Text style={chipText(false)}>{`At ${formatLocalTime(repeat.localTime)}`}</Text>
++          </Pressable>
++          {pickerFor(['repeatTime'])}
++          <Text style={[typography.bodySmall, muted, { marginTop: spacing.xs }]}>
++            {recurrence ? `${describeRepeat(recurrence)}, this phone's time zone. Months without that day use their last day.` : null}
++          </Text>
++        </View>
++      ) : null}
++
++      {formError ? (
++        <Text style={[typography.bodySmall, { color: colors.error, marginTop: spacing.lg }]} accessibilityLiveRegion="polite" testID="composer-error">
++          {formError}
++        </Text>
++      ) : null}
++      <Pressable
++        onPress={onSubmit}
++        disabled={send.isPending}
++        accessibilityRole="button"
++        accessibilityLabel="Review and send broadcast"
++        accessibilityState={{ disabled: send.isPending, busy: send.isPending }}
++        style={[styles.primary, { backgroundColor: colors.textPrimary, opacity: send.isPending ? 0.6 : 1 }]}
++        testID="composer-send"
++      >
++        <Text style={[typography.bodyMd, { color: colors.background }]}>
++          {send.isPending ? 'Sending' : repeat.kind !== 'none' ? 'Start repeating' : later ? 'Schedule' : 'Send now'}
++        </Text>
++      </Pressable>
++    </ScrollView>
++  );
++}
++
++const styles = StyleSheet.create({
++  container: { padding: spacing.lg, paddingBottom: spacing['3xl'] },
++  label: { ...typography.caption, marginTop: spacing.xl, marginBottom: spacing.xs },
++  input: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 2, padding: spacing.md, marginTop: spacing.sm, ...typography.body },
++  body: { minHeight: 120, textAlignVertical: 'top' },
++  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
++  chip: { minHeight: 44, borderWidth: 1, borderRadius: 2, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center' },
++  primary: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg },
++});
+diff --git a/src/screens/coach/broadcasts/BroadcastsEntry.tsx b/src/screens/coach/broadcasts/BroadcastsEntry.tsx
+new file mode 100644
+index 00000000..576579f3
+--- /dev/null
++++ b/src/screens/coach/broadcasts/BroadcastsEntry.tsx
+@@ -0,0 +1,39 @@
++import React from 'react';
++import { Pressable, StyleSheet, Text } from 'react-native';
++import { Ionicons } from '@expo/vector-icons';
++import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
++import { useQuery } from '@tanstack/react-query';
++import { broadcastsAvailable } from '../../../api/broadcastsApi';
++import { spacing, typography } from '../../../theme/tokens';
++import { useTheme } from '../../../theme/ThemeProvider';
++
++/**
++ * "Broadcasts" button in the coach Messages header. Shown only when the
++ * backend answers GET /coach/broadcasts: hidden while FEATURE_COACH_BROADCASTS
++ * is off (503 broadcasts.disabled), on a backend without the module (404), and
++ * while the probe is loading or failed.
++ */
++export function BroadcastsEntry() {
++  const { colors } = useTheme();
++  const navigation = useNavigation<NavigationProp<ParamListBase>>();
++  const q = useQuery({ queryKey: ['broadcasts', 'available'], queryFn: broadcastsAvailable, staleTime: 5 * 60_000 });
++  if (q.data !== true) return null;
++  return (
++    <Pressable
++      // `initial: false` keeps the client list under Broadcasts, so a Clients
++      // stack opened here for the first time still has its root (B-332-7).
++      onPress={() => navigation.navigate('ClientsStack', { screen: 'CoachBroadcasts', initial: false })}
++      accessibilityRole="button"
++      accessibilityLabel="Open broadcasts"
++      style={[styles.button, { borderColor: colors.border }]}
++      testID="messages-broadcasts-entry"
++    >
++      <Ionicons name="megaphone-outline" size={16} color={colors.textPrimary} />
++      <Text style={[typography.bodySmall, { color: colors.textPrimary }]}>Broadcasts</Text>
++    </Pressable>
++  );
++}
++
++const styles = StyleSheet.create({
++  button: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderWidth: 1, borderRadius: 2, paddingHorizontal: spacing.md },
++});
+diff --git a/src/screens/coach/broadcasts/CoachBroadcastsScreen.tsx b/src/screens/coach/broadcasts/CoachBroadcastsScreen.tsx
+new file mode 100644
+index 00000000..660acb5b
+--- /dev/null
++++ b/src/screens/coach/broadcasts/CoachBroadcastsScreen.tsx
+@@ -0,0 +1,236 @@
++/**
++ * CoachBroadcastsScreen — the coach's broadcasts: scheduled one-offs,
++ * recurring series and sent history (GET /coach/broadcasts), with cancel,
++ * pause and resume. "New broadcast" opens the composer.
++ *
++ * Server-gated: FEATURE_COACH_BROADCASTS off answers 503 broadcasts.disabled
++ * (404 on a backend without the module); the screen then says so, and the
++ * Messages entry (BroadcastsEntry) is hidden in the first place.
++ */
++import React, { useCallback, useMemo, useState } from 'react';
++import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
++import { useFocusEffect, useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
++import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
++import {
++  broadcastErrorMessage,
++  broadcastsApi,
++  broadcastsOff,
++  type Broadcast,
++} from '../../../api/broadcastsApi';
++import { spacing, typography } from '../../../theme/tokens';
++import { useTheme } from '../../../theme/ThemeProvider';
++import {
++  STATUS_LABELS,
++  actionsFor,
++  describeAudience,
++  describeStats,
++  describeTiming,
++  sectionOf,
++  type BroadcastSection,
++} from './broadcastFormat';
++
++export const broadcastsListKey = ['broadcasts', 'list'] as const;
++
++const SECTIONS: Array<{ key: BroadcastSection; label: string; empty: string }> = [
++  { key: 'scheduled', label: 'Scheduled', empty: 'Nothing scheduled. One-time broadcasts set for later show here.' },
++  { key: 'recurring', label: 'Recurring', empty: 'No recurring broadcasts. Weekly check-ins and other repeats show here.' },
++  { key: 'sent', label: 'Sent', empty: 'Nothing sent yet. Sent and canceled broadcasts show here.' },
++];
++
++const ACTION_LABELS = { cancel: 'Cancel', pause: 'Pause', resume: 'Resume' } as const;
++
++export default function CoachBroadcastsScreen() {
++  const { colors } = useTheme();
++  const navigation = useNavigation<NavigationProp<ParamListBase>>();
++  const qc = useQueryClient();
++  const [section, setSection] = useState<BroadcastSection>('scheduled');
++  const [actionError, setActionError] = useState<string | null>(null);
++
++  const q = useInfiniteQuery({
++    queryKey: broadcastsListKey,
++    queryFn: ({ pageParam }) => broadcastsApi.list(pageParam),
++    initialPageParam: null as string | null,
++    getNextPageParam: (last) => last.next_cursor,
++  });
++
++  const { refetch } = q;
++  useFocusEffect(
++    useCallback(() => {
++      void refetch();
++    }, [refetch]),
++  );
++
++  const items = useMemo(() => (q.data?.pages ?? []).flatMap((p) => p.items), [q.data]);
++  const counts = useMemo(() => {
++    const c: Record<BroadcastSection, number> = { scheduled: 0, recurring: 0, sent: 0 };
++    for (const b of items) c[sectionOf(b)] += 1;
++    return c;
++  }, [items]);
++  const shown = items.filter((b) => sectionOf(b) === section);
++
++  const act = useMutation({
++    mutationFn: ({ id, action }: { id: string; action: 'cancel' | 'pause' | 'resume' }) => broadcastsApi.transition(id, action),
++    onSuccess: () => {
++      setActionError(null);
++      void qc.invalidateQueries({ queryKey: broadcastsListKey });
++    },
++    onError: (err, vars) => {
++      const verb = vars.action === 'cancel' ? 'canceled' : vars.action === 'pause' ? 'paused' : 'resumed';
++      setActionError(broadcastErrorMessage(err, verb));
++      void qc.invalidateQueries({ queryKey: broadcastsListKey });
++    },
++  });
++
++  const onAction = (b: Broadcast, action: 'cancel' | 'pause' | 'resume') => {
++    if (action !== 'cancel') {
++      act.mutate({ id: b.id, action });
++      return;
++    }
++    Alert.alert(
++      'Cancel this broadcast?',
++      b.recurrence
++        ? 'No more copies go out. Clients who already got it keep the message.'
++        : 'It will not be sent. Clients who already got a copy keep the message.',
++      [
++        { text: 'Keep it', style: 'cancel' },
++        { text: 'Cancel broadcast', style: 'destructive', onPress: () => act.mutate({ id: b.id, action: 'cancel' }) },
++      ],
++    );
++  };
++
++  const muted = { color: colors.textMuted };
++  const off = q.isError && broadcastsOff(q.error);
++
++  const header = (
++    <View>
++      <Text style={[typography.bodySmall, muted]}>
++        One message to many clients. Each client gets it in their own thread with you and can reply there.
++      </Text>
++      {!off ? (
++        <Pressable
++          onPress={() => navigation.navigate('CoachBroadcastComposer')}
++          accessibilityRole="button"
++          accessibilityLabel="New broadcast"
++          style={[styles.primary, { backgroundColor: colors.textPrimary }]}
++          testID="broadcasts-new"
++        >
++          <Text style={[typography.bodyMd, { color: colors.background }]}>New broadcast</Text>
++        </Pressable>
++      ) : null}
++      {!off && !q.isLoading && !q.isError ? (
++        <View style={styles.tabs} accessibilityRole="tablist">
++          {SECTIONS.map((s) => {
++            const selected = s.key === section;
++            return (
++              <Pressable
++                key={s.key}
++                onPress={() => setSection(s.key)}
++                accessibilityRole="tab"
++                accessibilityState={{ selected }}
++                accessibilityLabel={`${s.label}, ${counts[s.key]}`}
++                style={[styles.tab, { borderColor: selected ? colors.textPrimary : colors.border, backgroundColor: selected ? colors.textPrimary : 'transparent' }]}
++                testID={`broadcasts-tab-${s.key}`}
++              >
++                <Text style={[typography.bodySmall, { color: selected ? colors.background : colors.textPrimary }]}>
++                  {s.label} ({counts[s.key]})
++                </Text>
++              </Pressable>
++            );
++          })}
++        </View>
++      ) : null}
++      {actionError ? (
++        <Text style={[typography.bodySmall, { color: colors.error, marginTop: spacing.md }]} accessibilityLiveRegion="polite" testID="broadcasts-action-error">
++          {actionError}
++        </Text>
++      ) : null}
++      {q.isLoading ? <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.textMuted} /> : null}
++      {q.isError ? (
++        <View style={{ marginTop: spacing.lg }}>
++          <Text style={[typography.body, muted]} testID="broadcasts-load-error">
++            {off
++              ? 'Broadcasts are not available on this account yet. One-to-one messages with clients work as usual.'
++              : broadcastErrorMessage(q.error, 'loaded')}
++          </Text>
++          {!off ? (
++            <Pressable onPress={() => void q.refetch()} accessibilityRole="button" accessibilityLabel="Refresh broadcasts" style={[styles.secondary, { borderColor: colors.border }]}>
++              <Text style={[typography.body, { color: colors.textPrimary }]}>Refresh broadcasts</Text>
++            </Pressable>
++          ) : null}
++        </View>
++      ) : null}
++    </View>
++  );
++
++  return (
++    <FlatList
++      style={{ backgroundColor: colors.background }}
++      contentContainerStyle={styles.container}
++      data={q.isError ? [] : shown}
++      keyExtractor={(b) => b.id}
++      ListHeaderComponent={header}
++      refreshControl={<RefreshControl refreshing={q.isRefetching && !q.isFetchingNextPage} onRefresh={() => void q.refetch()} tintColor={colors.textMuted} />}
++      ListEmptyComponent={
++        q.isLoading || q.isError ? null : (
++          <Text style={[typography.bodySmall, muted, { marginTop: spacing.lg }]} testID="broadcasts-empty">
++            {SECTIONS.find((s) => s.key === section)?.empty}
++          </Text>
++        )
++      }
++      ListFooterComponent={
++        q.hasNextPage ? (
++          <Pressable onPress={() => void q.fetchNextPage()} disabled={q.isFetchingNextPage} accessibilityRole="button" accessibilityLabel="Show older broadcasts" style={[styles.secondary, { borderColor: colors.border }]}>
++            <Text style={[typography.body, { color: colors.textPrimary }]}>{q.isFetchingNextPage ? 'Loading' : 'Show older broadcasts'}</Text>
++          </Pressable>
++        ) : null
++      }
++      renderItem={({ item }) => {
++        const stats = describeStats(item);
++        const busy = act.isPending && act.variables?.id === item.id;
++        return (
++          <View style={[styles.row, { borderColor: colors.border }]} testID={`broadcast-row-${item.id}`}>
++            <View style={styles.rowTop}>
++              <Text style={[typography.caption, muted]}>{STATUS_LABELS[item.status]}</Text>
++              <Text style={[typography.caption, muted]}>{describeAudience(item.segment)}</Text>
++            </View>
++            <Text style={[typography.body, { color: colors.textPrimary, marginTop: spacing.xs }]} numberOfLines={3}>
++              {item.body}
++            </Text>
++            <Text style={[typography.bodySmall, muted, { marginTop: spacing.xs }]} testID={`broadcast-timing-${item.id}`}>
++              {describeTiming(item)}
++            </Text>
++            {stats ? <Text style={[typography.bodySmall, muted]}>{stats}</Text> : null}
++            <View style={styles.actions}>
++              {actionsFor(item).map((a) => (
++                <Pressable
++                  key={a}
++                  onPress={() => onAction(item, a)}
++                  disabled={busy}
++                  accessibilityRole="button"
++                  accessibilityLabel={`${ACTION_LABELS[a]} broadcast`}
++                  accessibilityState={{ disabled: busy, busy }}
++                  style={[styles.action, { borderColor: colors.border, opacity: busy ? 0.6 : 1 }]}
++                  testID={`broadcast-${a}-${item.id}`}
++                >
++                  <Text style={[typography.bodySmall, { color: a === 'cancel' ? colors.error : colors.textPrimary }]}>{ACTION_LABELS[a]}</Text>
++                </Pressable>
++              ))}
++            </View>
++          </View>
++        );
++      }}
++    />
++  );
++}
++
++const styles = StyleSheet.create({
++  container: { padding: spacing.lg, paddingBottom: spacing['3xl'] },
++  primary: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg },
++  secondary: { minHeight: 44, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginTop: spacing.md },
++  tabs: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, flexWrap: 'wrap' },
++  tab: { minHeight: 44, borderWidth: 1, borderRadius: 2, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center' },
++  row: { borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: spacing.md },
++  rowTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
++  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
++  action: { minHeight: 44, minWidth: 72, borderWidth: 1, borderRadius: 2, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center' },
++});
+diff --git a/src/screens/coach/broadcasts/__tests__/broadcasts.test.tsx b/src/screens/coach/broadcasts/__tests__/broadcasts.test.tsx
+new file mode 100644
+index 00000000..00981745
+--- /dev/null
++++ b/src/screens/coach/broadcasts/__tests__/broadcasts.test.tsx
+@@ -0,0 +1,245 @@
++/**
++ * M-BCAST-123 coach broadcasts: the API client (server gate, payload,
++ * Idempotency-Key), the composer story (send "Gym closed Monday" to all
++ * clients now; a weekly Sunday check-in), the list sections with cancel, and
++ * the Messages entry hidden while the server flag is off.
++ */
++import React from 'react';
++import { Alert } from 'react-native';
++import { cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++
++jest.mock('../../../../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
++}));
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++jest.mock('@react-native-community/datetimepicker', () => ({ __esModule: true, default: () => null }));
++const mockNavigate = jest.fn();
++const mockGoBack = jest.fn();
++jest.mock('@react-navigation/native', () => {
++  const actual = jest.requireActual('@react-navigation/native');
++  return {
++    ...actual,
++    useNavigation: () => ({ navigate: mockNavigate, goBack: mockGoBack }),
++    useFocusEffect: (cb: () => void | (() => void)) => {
++      const R = jest.requireActual('react');
++      R.useEffect(() => cb(), [cb]);
++    },
++  };
++});
++
++import { broadcastsAvailable, type Broadcast } from '../../../../api/broadcastsApi';
++import BroadcastComposerScreen, { composerProblem } from '../BroadcastComposerScreen';
++import CoachBroadcastsScreen from '../CoachBroadcastsScreen';
++import { BroadcastsEntry } from '../BroadcastsEntry';
++import { describeRepeat, recurrenceFor, sectionOf, segmentFor } from '../broadcastFormat';
++
++const http = { get: mockGet, post: mockPost };
++const off = { isAxiosError: true, response: { status: 503, data: { code: 'broadcasts.disabled', message: 'Broadcasts are not available on your account yet.' } } };
++
++const OPTIONS = {
++  roster_size: 3,
++  packages: [{ id: 'aaaaaaaa-1111', name: 'Monthly coaching', billing_type: 'recurring' }],
++  programs: [],
++  tags: [{ tag: 'travel', client_count: 1 }],
++  risk_buckets: ['red', 'amber', 'green', 'unknown'],
++};
++
++function bc(over: Partial<Broadcast> & { id: string }): Broadcast {
++  return {
++    status: 'scheduled',
++    body: 'Hello',
++    segment: { match: 'all', rules: [] },
++    timezone: 'America/New_York',
++    send_at: null,
++    recurrence: null,
++    next_run_at: '2026-10-11T13:00:00.000Z',
++    occurrences_sent: 0,
++    last_run_at: null,
++    failure_code: null,
++    created_at: '2026-10-05T10:00:00.000Z',
++    ...over,
++  };
++}
++
++const clients: QueryClient[] = [];
++function renderQ(node: React.ReactElement) {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } });
++  clients.push(qc);
++  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
++}
++
++/** Press the confirm button of the last Alert.alert call. */
++function confirmAlert(label: string) {
++  const calls = (Alert.alert as jest.Mock).mock.calls;
++  const call = calls[calls.length - 1];
++  const buttons = call?.[2] as Array<{ text: string; onPress?: () => void }>;
++  buttons.find((b) => b.text === label)?.onPress?.();
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  http.get.mockImplementation(async (url: string) => {
++    if (url === '/coach/broadcasts/segment-options') return { data: OPTIONS };
++    return { data: { items: [], next_cursor: null } };
++  });
++  http.post.mockImplementation(async (url: string, payload: Record<string, unknown>) => {
++    if (url === '/coach/broadcasts/preview') return { data: { recipient_count: 3, excluded_blocked_count: 0, roster_size: 3, sample: [] } };
++    return { data: { ...bc({ id: 'b-new' }), body: payload.body } };
++  });
++});
++afterEach(async () => {
++  await cleanup();
++  for (const qc of clients.splice(0)) qc.clear();
++});
++
++describe('broadcastsApi', () => {
++  it('reports broadcasts off on 503 broadcasts.disabled and on a bare 404, on otherwise', async () => {
++    http.get.mockRejectedValueOnce(off);
++    await expect(broadcastsAvailable()).resolves.toBe(false);
++    http.get.mockRejectedValueOnce({ isAxiosError: true, response: { status: 404, data: { message: 'Cannot GET /coach/broadcasts' } } });
++    await expect(broadcastsAvailable()).resolves.toBe(false);
++    await expect(broadcastsAvailable()).resolves.toBe(true);
++    http.get.mockRejectedValueOnce({ isAxiosError: true, response: { status: 500, data: {} } });
++    await expect(broadcastsAvailable()).rejects.toBeTruthy();
++  });
++});
++
++describe('broadcastFormat', () => {
++  it('builds the segment and the weekly Sunday rule the backend expects', () => {
++    expect(segmentFor({ kind: 'all', values: [] })).toEqual({ match: 'all', rules: [] });
++    expect(segmentFor({ kind: 'tag', values: ['travel'] })).toEqual({ match: 'all', rules: [{ field: 'tag', op: 'in', values: ['travel'] }] });
++    const weekly = recurrenceFor({ kind: 'weekly', localTime: '09:00', weekdays: [0], monthDay: 1 });
++    expect(weekly).toEqual({ freq: 'weekly', interval: 1, local_time: '09:00', by_weekday: [0] });
++    expect(describeRepeat({ freq: 'weekly', interval: 1, local_time: '09:00', by_weekday: [0] })).toMatch(/^Every Sunday at 9:00\sAM$/);
++    expect(recurrenceFor({ kind: 'none', localTime: '09:00', weekdays: [], monthDay: 1 })).toBeNull();
++  });
++
++  it('names the first problem with the form', () => {
++    const now = new Date('2026-10-05T12:00:00.000Z');
++    const base = { body: 'Hi', audience: { kind: 'all' as const, values: [] }, later: false, sendAt: null, repeat: { kind: 'none' as const, localTime: '09:00', weekdays: [], monthDay: 1 }, now };
++    expect(composerProblem({ ...base, body: '  ' })).toBe('Write the message first.');
++    expect(composerProblem({ ...base, audience: { kind: 'tag', values: [] } })).toBe('Pick at least one tag for the audience.');
++    expect(composerProblem({ ...base, later: true, sendAt: new Date('2026-10-05T11:00:00.000Z') })).toBe('Pick a time later than now, or choose Send now.');
++    expect(composerProblem({ ...base, repeat: { ...base.repeat, kind: 'weekly' } })).toBe('Pick at least one day of the week.');
++    expect(composerProblem(base)).toBeNull();
++  });
++});
++
++describe('BroadcastComposerScreen', () => {
++  it('sends "Gym closed Monday" to all clients now with an Idempotency-Key', async () => {
++    const r = await renderQ(<BroadcastComposerScreen />);
++    await waitFor(() => expect(r.getByTestId('composer-count').props.children).toBe('Goes to 3 of 3 clients.'));
++    await fireEvent.changeText(r.getByTestId('composer-body'), 'Gym closed Monday, do the home plan');
++    await fireEvent.press(r.getByTestId('composer-send'));
++    expect((Alert.alert as jest.Mock).mock.calls[0][0]).toBe('Send to 3 clients now?');
++    confirmAlert('Send');
++    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
++    const create = http.post.mock.calls.find((c) => c[0] === '/coach/broadcasts');
++    expect(create?.[1]).toEqual(expect.objectContaining({
++      body: 'Gym closed Monday, do the home plan',
++      segment: { match: 'all', rules: [] },
++      send_at: null,
++      recurrence: null,
++      status: 'scheduled',
++      timezone: expect.any(String),
++    }));
++    expect(create?.[2].headers['Idempotency-Key']).toMatch(/^bc-/);
++  });
++
++  it('schedules a weekly Sunday check-in for clients with a tag', async () => {
++    const r = await renderQ(<BroadcastComposerScreen />);
++    await waitFor(() => expect(r.getByTestId('composer-audience-tag')).toBeTruthy());
++    await fireEvent.changeText(r.getByTestId('composer-body'), 'Sunday check-in: how did the week go, {first_name}?');
++    await fireEvent.press(r.getByTestId('composer-audience-tag'));
++    await fireEvent.press(r.getByTestId('composer-value-travel'));
++    await fireEvent.press(r.getByTestId('composer-repeat-weekly'));
++    const today = new Date().getDay();
++    if (today !== 0) {
++      await fireEvent.press(r.getByTestId(`composer-weekday-${today}`));
++      await fireEvent.press(r.getByTestId('composer-weekday-0'));
++    }
++    await waitFor(() => expect(http.post).toHaveBeenCalledWith('/coach/broadcasts/preview', { segment: { match: 'all', rules: [{ field: 'tag', op: 'in', values: ['travel'] }] } }));
++    await fireEvent.press(r.getByTestId('composer-send'));
++    confirmAlert('Start');
++    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
++    const create = http.post.mock.calls.find((c) => c[0] === '/coach/broadcasts');
++    expect(create?.[1].recurrence).toEqual({ freq: 'weekly', interval: 1, local_time: '09:00', by_weekday: [0] });
++    expect(create?.[1].segment).toEqual({ match: 'all', rules: [{ field: 'tag', op: 'in', values: ['travel'] }] });
++  });
++
++  it('shows the server refusal sentence and stays open', async () => {
++    http.post.mockImplementation(async (url: string) => {
++      if (url === '/coach/broadcasts/preview') return { data: { recipient_count: 3, excluded_blocked_count: 0, roster_size: 3 } };
++      throw { isAxiosError: true, response: { status: 422, data: { code: 'broadcast.active_limit', message: 'You have reached 50 scheduled broadcasts. Cancel or finish one before scheduling another.' } } };
++    });
++    const r = await renderQ(<BroadcastComposerScreen />);
++    await waitFor(() => expect(r.getByTestId('composer-count').props.children).toBe('Goes to 3 of 3 clients.'));
++    await fireEvent.changeText(r.getByTestId('composer-body'), 'Hello');
++    await fireEvent.press(r.getByTestId('composer-send'));
++    confirmAlert('Send');
++    await waitFor(() => expect(r.getByTestId('composer-error').props.children).toBe('You have reached 50 scheduled broadcasts. Cancel or finish one before scheduling another.'));
++    expect(mockGoBack).not.toHaveBeenCalled();
++  });
++
++  it('says broadcasts are not available when the server flag is off', async () => {
++    http.get.mockRejectedValue(off);
++    const r = await renderQ(<BroadcastComposerScreen />);
++    await waitFor(() => expect(r.getByTestId('composer-off')).toBeTruthy());
++  });
++});
++
++describe('CoachBroadcastsScreen', () => {
++  const items = [
++    bc({ id: 'one-off', body: 'Gym closed Monday' }),
++    bc({ id: 'weekly', body: 'Sunday check-in', recurrence: { freq: 'weekly', interval: 1, local_time: '09:00', by_weekday: [0], anchor_date: '2026-10-05' } }),
++    bc({ id: 'done', status: 'sent', body: 'Welcome', last_run_at: '2026-10-01T10:00:00.000Z', stats: { total: 3, delivered: 3, pending: 0, deferred: 0, skipped_blocked: 0, skipped_ineligible: 0, failed: 0, read: 2 } }),
++  ];
++
++  it('groups scheduled, recurring and sent, and cancels a scheduled one after confirming', async () => {
++    expect(items.map(sectionOf)).toEqual(['scheduled', 'recurring', 'sent']);
++    http.get.mockResolvedValue({ data: { items, next_cursor: null } });
++    http.post.mockResolvedValue({ data: { ...items[0], status: 'canceled' } });
++    const r = await renderQ(<CoachBroadcastsScreen />);
++    await waitFor(() => expect(r.getByTestId('broadcast-row-one-off')).toBeTruthy());
++    expect(r.queryByTestId('broadcast-row-weekly')).toBeNull();
++    await fireEvent.press(r.getByTestId('broadcasts-tab-recurring'));
++    expect(r.getByTestId('broadcast-timing-weekly').props.children).toMatch(/^Every Sunday at 9:00\sAM\. Next: /);
++    await fireEvent.press(r.getByTestId('broadcasts-tab-sent'));
++    expect(r.getByText('3 delivered, 2 read')).toBeTruthy();
++    await fireEvent.press(r.getByTestId('broadcasts-tab-scheduled'));
++    await fireEvent.press(r.getByTestId('broadcast-cancel-one-off'));
++    expect(http.post).not.toHaveBeenCalled();
++    confirmAlert('Cancel broadcast');
++    await waitFor(() => expect(http.post).toHaveBeenCalledWith('/coach/broadcasts/one-off/cancel'));
++  });
++
++  it('opens the composer from New broadcast', async () => {
++    const r = await renderQ(<CoachBroadcastsScreen />);
++    await waitFor(() => expect(r.getByTestId('broadcasts-empty')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('broadcasts-new'));
++    expect(mockNavigate).toHaveBeenCalledWith('CoachBroadcastComposer');
++  });
++});
++
++describe('BroadcastsEntry', () => {
++  it('is hidden while the server flag is off', async () => {
++    http.get.mockRejectedValue(off);
++    const r = await renderQ(<BroadcastsEntry />);
++    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/coach/broadcasts', { params: { limit: 1 } }));
++    expect(r.queryByTestId('messages-broadcasts-entry')).toBeNull();
++  });
++
++  it('opens the broadcasts list when the server offers them', async () => {
++    const r = await renderQ(<BroadcastsEntry />);
++    await waitFor(() => expect(r.getByTestId('messages-broadcasts-entry')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('messages-broadcasts-entry'));
++    expect(mockNavigate).toHaveBeenCalledWith('ClientsStack', { screen: 'CoachBroadcasts', initial: false });
++  });
++});
+diff --git a/src/screens/coach/broadcasts/broadcastFormat.ts b/src/screens/coach/broadcasts/broadcastFormat.ts
+new file mode 100644
+index 00000000..1655e94f
+--- /dev/null
++++ b/src/screens/coach/broadcasts/broadcastFormat.ts
+@@ -0,0 +1,167 @@
++/**
++ * Pure helpers for the coach broadcasts screens: audience -> segment, repeat
++ * choice -> recurrence, list grouping and the plain-words lines on each row.
++ */
++import type {
++  Broadcast,
++  BroadcastRecurrence,
++  BroadcastSegment,
++  RecurrenceInput,
++} from '../../../api/broadcastsApi';
++
++export type AudienceKind = 'all' | 'tag' | 'package' | 'program';
++export interface Audience {
++  kind: AudienceKind;
++  /** Tags, package ids or program ids; ignored for 'all'. */
++  values: string[];
++}
++
++export type RepeatKind = 'none' | 'daily' | 'weekly' | 'monthly';
++export interface RepeatChoice {
++  kind: RepeatKind;
++  /** "HH:MM", 24-hour wall time on the coach's phone. */
++  localTime: string;
++  /** 0 = Sunday .. 6 = Saturday (weekly). */
++  weekdays: number[];
++  /** 1-31 (monthly); short months use their last day. */
++  monthDay: number;
++}
++
++export const BODY_MAX = 4000;
++export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
++export const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
++
++/** The audience as the backend segment ({ match, rules }); 'all' is no rules. */
++export function segmentFor(a: Audience): BroadcastSegment {
++  if (a.kind === 'all' || a.values.length === 0) return { match: 'all', rules: [] };
++  return { match: 'all', rules: [{ field: a.kind, op: 'in', values: [...a.values] }] };
++}
++
++/** A complete audience: 'all', or a filter with at least one value picked. */
++export function audienceReady(a: Audience): boolean {
++  return a.kind === 'all' || a.values.length > 0;
++}
++
++export function recurrenceFor(r: RepeatChoice): RecurrenceInput | null {
++  if (r.kind === 'none') return null;
++  const base = { freq: r.kind, interval: 1, local_time: r.localTime } as const;
++  if (r.kind === 'weekly') return { ...base, by_weekday: [...r.weekdays].sort((x, y) => x - y) };
++  if (r.kind === 'monthly') return { ...base, by_month_day: r.monthDay };
++  return { ...base };
++}
++
++/** "HH:MM" -> "9:00 AM" style, in the phone's locale. */
++export function formatLocalTime(hhmm: string): string {
++  const [h, m] = hhmm.split(':').map((x) => Number(x));
++  const d = new Date(2000, 0, 1, h, m);
++  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
++}
++
++/** A Date's wall time as "HH:MM". */
++export function toLocalTime(d: Date): string {
++  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
++}
++
++export function formatWhen(iso: string): string {
++  const d = new Date(iso);
++  const day = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
++  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
++  return `${day}, ${time}`;
++}
++
++function joinWords(words: string[]): string {
++  if (words.length <= 1) return words.join('');
++  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
++}
++
++/** "Every Sunday at 9:00 AM", "Every day at 7:00 AM", "Every month on day 1 at 9:00 AM". */
++export function describeRepeat(r: Pick<BroadcastRecurrence, 'freq' | 'interval' | 'local_time' | 'by_weekday' | 'by_month_day'>): string {
++  const at = `at ${formatLocalTime(r.local_time)}`;
++  const n = r.interval > 1 ? r.interval : null;
++  if (r.freq === 'daily') return n ? `Every ${n} days ${at}` : `Every day ${at}`;
++  if (r.freq === 'weekly') {
++    const days = (r.by_weekday ?? []).map((d) => WEEKDAYS[d]).filter(Boolean);
++    const on = days.length ? joinWords(days) : 'week';
++    return n ? `Every ${n} weeks on ${on} ${at}` : `Every ${on} ${at}`;
++  }
++  const day = r.by_month_day ? `on day ${r.by_month_day}` : 'on the same day';
++  return n ? `Every ${n} months ${day} ${at}` : `Every month ${day} ${at}`;
++}
++
++/** Who a stored broadcast goes to, in a few words. */
++export function describeAudience(s: BroadcastSegment): string {
++  if (s.rules.length === 0) return 'All clients';
++  if (s.rules.length > 1) return 'Clients matching several filters';
++  const r = s.rules[0];
++  const n = r.values?.length ?? 0;
++  if (r.field === 'tag' && r.op === 'in') return `Clients tagged ${joinWords((r.values ?? []).map(String))}`;
++  if (r.field === 'package') return n === 1 ? 'Clients on 1 package' : `Clients on ${n} packages`;
++  if (r.field === 'program') return n === 1 ? 'Clients on 1 program' : `Clients on ${n} programs`;
++  return 'Clients matching a filter';
++}
++
++export type BroadcastSection = 'scheduled' | 'recurring' | 'sent';
++const DONE = new Set(['sent', 'canceled', 'failed']);
++
++export function sectionOf(b: Broadcast): BroadcastSection {
++  if (b.recurrence && !DONE.has(b.status)) return 'recurring';
++  if (!b.recurrence && (b.status === 'scheduled' || b.status === 'paused' || b.status === 'draft')) return 'scheduled';
++  return 'sent';
++}
++
++export const STATUS_LABELS: Record<Broadcast['status'], string> = {
++  draft: 'Draft',
++  scheduled: 'Scheduled',
++  sending: 'Sending',
++  sent: 'Sent',
++  paused: 'Paused',
++  canceled: 'Canceled',
++  failed: 'Not sent',
++};
++
++/** The second line of a row: when it goes out, or what happened. */
++export function describeTiming(b: Broadcast): string {
++  if (b.status === 'canceled') return 'Canceled. Copies already delivered stay in client threads.';
++  if (b.status === 'failed') return 'Not sent. Create it again to retry.';
++  if (b.status === 'paused') return b.recurrence ? `${describeRepeat(b.recurrence)}. Paused.` : 'Paused. Resume to send it.';
++  if (b.recurrence) {
++    const next = b.next_run_at ? ` Next: ${formatWhen(b.next_run_at)}.` : '';
++    return `${describeRepeat(b.recurrence)}.${next}`;
++  }
++  if (b.status === 'scheduled' && b.next_run_at) return `Sends ${formatWhen(b.next_run_at)}`;
++  if (b.status === 'sending') return 'Sending now';
++  return b.last_run_at ? `Sent ${formatWhen(b.last_run_at)}` : 'Sent';
++}
++
++/** "12 delivered, 5 read" (and the clients who will get it later). */
++export function describeStats(b: Broadcast): string | null {
++  const s = b.stats;
++  if (!s || s.total === 0) return null;
++  const parts = [`${s.delivered} delivered`, `${s.read} read`];
++  const later = s.pending + s.deferred;
++  if (later > 0) parts.push(`${later} waiting`);
++  if (s.failed > 0) parts.push(`${s.failed} not delivered`);
++  return parts.join(', ');
++}
++
++/** Can the coach cancel / pause / resume it from the list. */
++export function actionsFor(b: Broadcast): Array<'cancel' | 'pause' | 'resume'> {
++  if (DONE.has(b.status)) return [];
++  if (b.status === 'paused') return ['resume', 'cancel'];
++  if (b.recurrence && (b.status === 'scheduled' || b.status === 'sending')) return ['pause', 'cancel'];
++  return ['cancel'];
++}
++
++/** The phone's IANA time zone; the backend schedules recurring sends in it. */
++export function deviceTimeZone(): string {
++  try {
++    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
++  } catch {
++    return 'UTC';
++  }
++}
++
++/** An Idempotency-Key for one send attempt (retries of the same tap reuse it). */
++export function newIdempotencyKey(): string {
++  return `bc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
++}

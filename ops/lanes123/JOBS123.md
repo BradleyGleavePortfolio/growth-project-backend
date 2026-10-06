@@ -171,3 +171,128 @@ Do (read-only; no pushes, no PRs, no comments):
    (b) mobile eas.json (production + clinic), keeping every flag whose feature is not fully merged OFF. Plain words. End with ## HANDOFF.
 Use bash with api_credentials=["github"]; clones at /home/user/workspace/growth-project-{backend,mobile} (git fetch only; read with git show
 origin/main:<path>; never change their checkout). gh api for GitHub reads; never `gh run view` / `gh pr checks`.
+
+# WAVE 2 (19:50) — day-1 flags + missing day-1 mobile screens. Read ops/reports/FLAGS-D1-123.md first (the matrix every job uses).
+Operator rulings for this wave (owner day-1 scope A6.1 + C1 10-01 11:32 "all of that ... live on day 1", 10-02 16:34 "Live free-form
+Roman chat in v1.0: yes", 10-05 09:57 Roman flags "flip after the stacks land and pass", 10-05 09:46 annex "ALL DAY 1 NECESSARY"): Roman
+chat ON in production AND clinic profiles; community core ON incl. the Community tab/Hall/cohorts in the production binary (voice notes,
+DM and other extras stay off); messaging v2 ON; approve-to-adjust ON only after the C-337 fix is merged; dunning v2 NOT in these PRs.
+Every PR: Conventional Commits title, tier header in the body, under 1,500 changed lines, no new `as any` / `as unknown as` / `as never`,
+no empty `.catch(() => undefined)`, plain-words copy (no "we/our/us" voice), tests that fail before the change where code changes.
+Push once per PR (fix rounds later). Post `FIX ROUND 1 (OPENING, <JOB>, agent 123) — growth-project-<repo>#<n> @ <full sha>` ending
+READY FOR AUDIT when PR CI is green. Write ops/lanes123/notify/<JOB>.txt with PR numbers + heads. Never merge, never deploy, never run
+Fly workflows. Deps: /home/user/workspace/deps/{backend,mobile} (READY) via ops/link_deps.sh; heavy work via ops/heavy.sh; CI lanes via
+ops/ci-lane/ci_lane.sh. Report ops/reports/<JOB>.md ending with ## HANDOFF.
+
+## B-FLAGS-123 (Claude Opus 5.5) — three small PRs from FLAGS-D1-123. Time box 45 minutes.
+1. Backend (T4) branch agent123/day1-flags, title "chore(flags): day-1 community core, messaging v2 and Roman chat on": exactly diff
+   (a) items 1-5 of ops/reports/FLAGS-D1-123.md (manifest flags + excluded line removed + gates text + env-validation.ts closed sets for
+   FEATURE_ROMAN_CHAT_ENABLED / FEATURE_ROMAN_ADJUST_ENABLED + regenerated docs/runbooks/launch-flags.md). FEATURE_ROMAN_ADJUST_ENABLED
+   stays "unset" here. Run test/ci/fly-env-manifest.spec.ts and the env-validation specs. Body says b#650 is superseded by it.
+2. Mobile (T3) branch agent123/day1-flags, title "chore(flags): Roman chat and community on in the store builds": eas.json production
+   adds EXPO_PUBLIC_FF_ROMAN_CHAT, EXPO_PUBLIC_FF_COMMUNITY_TAB, EXPO_PUBLIC_FF_COMMUNITY_HALL, EXPO_PUBLIC_FF_COMMUNITY_COHORTS = "true";
+   clinic adds EXPO_PUBLIC_FF_ROMAN_CHAT = "true". Run scripts/__tests__/expectedEnv.test.js and any eas.json test.
+3. Mobile (T3) branch agent123/c337-volume-copy, title "fix(roman): say more volume when an adjustment raises sets": Opus C-337 in
+   src/components/roman/adjust/romanAdjustCopy.ts changeSummary (diff in the report) + tests for a cut, a raise and no change; check
+   every other caller/string that formats volume_pct the same way.
+
+## B-AIG4-123 (Claude Opus 5.5) — C-736-8 AI guide crisis gaps (T4 safety). Time box 30 minutes.
+Story: a client types "I want to take all my pills" or "I'm going to OD" to the AI guide and must get the 988 reply (both lenses left it
+C-736-8 on b#736; with live Roman and the AI guide both on day 1 the operator promotes it). In src/ai/ai-crisis-router.ts (main e6f9a5ec)
+route intent to take all/many pills/meds, "going to OD"/"gonna OD"/"want to OD" to 988; keep controls normal ("take my pills with
+food?", "I took all my vitamins", "OD on carbs", "overdose on cardio", "can you overdose on creatine?"). Then check Roman's
+src/roman/guardrails/safety-router.ts for the same sentences: if Roman misses them, fix it in the same PR (same rule). Tests at cap
+(crisis reply, no quota/model) for each new sentence; each fails on main. One backend PR, branch agent123/crisis-pills-od, title
+"fix(ai): route stated intent to take all my pills or OD to 988".
+
+## M-INV-123 (Claude Opus 5.5) — mobile coach Codes screen on /coach/codes (T3/T4 linking). Time box 80 minutes.
+Spec: SoT entry "M-INV-120" + ops/reports/B-INV2-120.md "Mobile gaps" + B-INV4-122.md; backend contract on main (src/coach-codes or
+wherever b#658 put it; FEATURE_COACH_CODE_TOOLS gates it, 404 coach_code_tools_disabled when off -> hide the screen/row). Build: api
+client (Idempotency-Key UUID on create, reused on retry; expected_code on rotate; grace picker), Codes screen (list, create, rotate,
+revoke, share as text + QR using a library that works in Expo managed builds — prefer react-native-qrcode-svg on react-native-svg;
+justify any new dependency), today's signup count per code with unusual_today, truthful day-one pairing errors per code state
+(src/screens/day-one/api.ts + CoachPairingScreen.tsx + src/lib/inviteAttachOutcome.ts: revoked/expired/used-up get their own sentence).
+Keep the legacy InviteCodesScreen working where the server flag is off. Split into two PRs if over 1,500 lines (api + day-one errors,
+then the screen). Story: a coach whose code leaked revokes it, makes a new one, shares the QR; a client with the old code sees "This code
+was turned off by your coach" instead of "not recognized".
+
+## M-COACHLESS-123 (Claude Opus 5.5) — mobile coachless Home + featured coach + scripted Roman card (T3/T4). Time box 80 minutes.
+Spec: ops/reports/B-SPLIT-COACHLESS-121.md "Mobile" section (file paths, routes, every error code), SoT 4352-4362 (owner words for the
+banner and the Roman pitch: "Sir/Ma'am, just so your aware, TGP's top coach has available slots. Enter code GP-XXXX and join for
+$49/mo. Interested?" -> fix only the spelling "you're"; the code and price come from the server offer), backend src/coachless/* on main.
+Build: 'coachless_home' in SERVER_FEATURE_FLAG_KEYS (src/api/featureFlagsApi.ts) gating everything; client Home banner for a client with
+no coach; code sheet (POST /coachless/coach-code/check live validation, /redeem with an Idempotency-Key UUID reused on retry), welcome
+moment from the redeem response, hand-off to the existing Day 1 checkout with next.featured_package / packages_available; scripted Roman
+card on Home (POST /coachless/roman-card/seen and /not-now; shown only while the server says the featured coach accepts clients); copy for
+every refusal code. No owner admin screen. Split if over 1,500 lines. Story: a person signs up without a code, sees the banner, enters
+GP-XXXX, is attached to the coach and lands on checkout for the featured package.
+
+## M-BCAST-123 (Claude Opus 5.5) — mobile coach broadcasts composer (T3/T4 member content). Time box 80 minutes.
+Spec: ops/reports/B-SPLIT-BCAST-121.md (mobile gaps) + backend src/broadcasts/* (b#726-#730 on main; FEATURE_COACH_BROADCASTS gates,
+404 when off -> hide the entry). Build the core a coach needs on day 1: broadcasts list (sent / scheduled / recurring), composer (text,
+pick a segment: all clients / tag / package as the API offers, send now or schedule, recurring rule if the API supports it), cancel a
+scheduled one, saved replies picker if cheap. Clients receive broadcasts in their normal coach thread (check how the backend delivers;
+if it needs a client-side render for a card type, include it). Split if over 1,500 lines (api + list, then composer). Story: a coach
+sends "Gym closed Monday, do the home plan" to all clients now and schedules a weekly Sunday check-in; clients see it in their thread.
+
+## Lens pair W2A (Claude Opus 5.5 + GPT-6.1 Sol) — day-1 flags + C-337 (+ AIG4 when posted). Time box 40 minutes. (20:01)
+Background: ops/reports/FLAGS-D1-123.md (matrix + operator rulings in the "# WAVE 2" preamble above) and ops/reports/B-FLAGS-123.md.
+1. FL1 b#740 7e3ff31b1b28758a5ebaa6081e6ca090742fb6b3 (T4): manifest sets FEATURE_COMMUNITY_API/_POSTS/_MESSAGES/_PUSH/_REALTIME,
+   FEATURE_MESSAGING_CORE_V2, FEATURE_ROMAN_CHAT_ENABLED true; FEATURE_ROMAN_ADJUST_ENABLED unset; closed value sets in env-validation.ts;
+   regenerated runbook. Check: every flag set true is read by merged + deployed code (production = e6f9a5ec, deploy 7); the env-sync
+   preconditions pass (community surface flags need FEATURE_COMMUNITY_API); kill path = unset works; nothing else turned on (voice notes,
+   DM, coachless, code tools, broadcasts, dunning stay off); FEATURE_ROMAN_CHAT_ENABLED with box-2 consent enforced (FEATURE_AI_CONSENT_
+   LEDGER_ENABLED=true). Story: after env sync, a client opens Community and posts, chats with Roman (consent asked first), and messages
+   her coach in the new inbox; a coach can switch any of these off with one unset.
+2. FL2 m#383 d2845013b2a8f279606a8886ff45e25ad7064da8 (T3): eas.json production + clinic flags exactly as the preamble rules; config/
+   expected-env.json consistent; no other profile changed. Story: the 10-07 store build shows Roman chat and the Community tab.
+3. FL3 m#384 341216276547a1ead980a91f302768c554028237 (T3): C-337 "more volume" copy + tests; any other place formatting volume_pct.
+4. AIG4 (b#7xx from builder B-AIG4-123, when its FIX ROUND 1 (OPENING) comment is posted; check ops/lanes123/notify/B-AIG4-123.txt):
+   "I want to take all my pills" / "I'm going to OD" -> 988 on the AI guide and Roman; controls normal; tests fail on main.
+Required checks green at each exact head. One verdict per PR.
+
+## Lens pair W2B (Claude Opus 5.5 + GPT-6.1 Sol) — new day-1 mobile screens (T4/T3). Time box 45 minutes per PR, queue in order. (20:13)
+Each PR is server-gated (its backend flag is OFF in production and stays off until this review + an owner device pass), so the question is:
+is it correct and safe when the flag turns on, and invisible while it is off? Backend contracts are on backend main e6f9a5ec (deployed).
+1. CL1 m#386 0a1bc0bd7d18348742184a2e5dcac1a1c961748d (M-COACHLESS-123; report ops/reports/M-COACHLESS-123.md; opening comment
+   6008505792): coachless Home banner, code sheet (/coachless/coach-code/check + /redeem with Idempotency-Key), welcome, hand-off to the
+   Day 1 plan sheet, scripted Roman card (/coachless/roman-card/seen, /not-now), refusal copy, gated by server flag coachless_home.
+   Story: a person who signed up without a code sees the banner, enters GP-XXXX, joins the featured coach and picks a plan; with the
+   flag off nothing shows. Spec: the entry "M-COACHLESS-123" above + ops/reports/B-SPLIT-COACHLESS-121.md. The builder's deviation (a code
+   that already includes a plan never goes to pay) — judge it.
+2. INV1 (M-INV-123's PR(s), when ops/lanes123/notify/M-INV-123.txt exists): coach Codes screen + truthful day-one errors. Spec: entry
+   "M-INV-123" above.
+3. BC1 (M-BCAST-123's PR(s), when ops/lanes123/notify/M-BCAST-123.txt exists): broadcasts list + composer. Spec: entry "M-BCAST-123".
+Required checks green at each exact head. One verdict per PR. If a builder's PR is not posted when you reach it, wait up to 15 minutes
+polling the notify file, then finish your report and say which were not reviewed.
+
+## Lens FL4 (W2A lenses) — b#741 Roman approve-to-adjust flag on (T4). Time box 15 minutes. (20:12)
+b#741 00f9b8b693f409c73104dd17cde043db1b9781fc (operator PR): FEATURE_ROMAN_ADJUST_ENABLED "unset" -> "true" + gate text. Check: b#655
+code deployed (production e6f9a5ec), m#337 + m#384 (C-337 fix) merged on mobile main ad05c23c; closed value set from b#740 present;
+kill = unset hides the card (404); runbook table unchanged and the manifest spec passes. Required checks green at the exact head (poll up
+to 15 minutes). One verdict.
+
+## Lens pair W2C (Claude Opus 5.5 + GPT-6.1 Sol) — takes BC1 from W2B. Time box 45 minutes. (20:25)
+BC1 m#388 6ad27c87592fcfca38c7d145643c8deed1fb163f (M-BCAST-123; report ops/reports/M-BCAST-123.md; opening comment 6008675359):
+coach broadcasts list + composer behind server flag FEATURE_COACH_BROADCASTS (button hidden while off). Spec: entry "M-BCAST-123" above;
+backend src/broadcasts/* on backend main (deployed). Builder pushed twice before the opening comment (accepted: no audit had started).
+Story: a coach sends "Gym closed Monday, do the home plan" to all clients now and schedules a weekly Sunday check-in; clients see each in
+their coach thread; with the flag off nothing shows; opening Broadcasts never strands the coach without a way back to the client list.
+Required checks green at the exact head. One verdict. (W2B lenses: skip BC1.)
+
+## FIX ROUND 2 on m#386 (M-COACHLESS-123, same builder) — two Bs. Time box 30 minutes. (20:29)
+m#386 0a1bc0bd. Both lenses REQUEST CHANGES (Sol 6008549315, Opus 6008571221; reports ops/reports/AUD-SOL-W2B-123.md and AUD-OPUS-W2B-123.md):
+- Sol B-386-1: after redeeming a code that includes a free/prepaid plan, the screen shows active access but the shared entitlement gate is
+  never refreshed, so Workout stays blocked until the app is backgrounded/reopened. Fix: refresh entitlement (the same refresh the app
+  uses after checkout) on a successful redeem; integrated regression test (redeem -> Workout unlocked without a restart).
+- Opus B-386-1: on iOS "Choose a plan" opens the Stripe plan sheet, which iOS builds hide everywhere else (only the labelled
+  "1:1 coaching with <coach>" purchase screen is allowed; EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES). Fix: on iOS route to that labelled
+  screen; Android keeps the sheet. Test both platforms.
+One push. PR CI green. Comment `FIX ROUND 2 (M-COACHLESS-123, agent 123) — growth-project-mobile#386 @ <sha>` ending READY FOR AUDIT.
+Cs stay. Then notify file update.
+
+## Re-audit CL1 m#386 FIX ROUND 2 (W2B lenses). Time box 20 minutes (delta). (20:45)
+m#386 64c5bde0f20f3a39d76961e7eb9838dc515fa2d3 (was 0a1bc0bd); FIX ROUND 2 comment 6008806111. Check only the delta: B-386-SOL-1
+(successful redeem refreshes the shared entitlement gate; integrated test fails without the fix) and B-386-OPUS-1 (iOS "Choose a plan"
+-> "1:1 coaching with <coach>" screen; Android keeps the sheet; tests both). No new Bs outside the freeze. Required checks green at the
+exact head. One verdict.

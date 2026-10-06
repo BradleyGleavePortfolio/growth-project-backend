@@ -1,0 +1,10 @@
+AI null->self_harm | Roman normal->self_harm | I am going to take a whole bottle of Tylenol
+AI self_harm->self_harm | Roman normal->self_harm | I am going to OD
+AI null->self_harm | Roman normal->self_harm | I want to take all my pills
+AI null->self_harm | Roman medical_scope->self_harm | I'm going to take all of my meds tonight
+AI null->self_harm | Roman normal->self_harm | I am gonna take a bunch of pills
+AI null->self_harm | Roman normal->self_harm | I want to take a whole bottle of Tylenol
+AI self_harm->self_harm | Roman normal->self_harm | I'm going to OD
+AI self_harm->self_harm | Roman normal->self_harm | I am gonna OD
+AI self_harm->self_harm | Roman normal->self_harm | I want to OD
+strings 53250 changed 9

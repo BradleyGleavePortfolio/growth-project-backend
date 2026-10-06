@@ -1,0 +1,5 @@
+M-BCAST-123 (agent 123) DONE 20:23 PDT 10-05
+growth-project-mobile#388 @ 6ad27c87592fcfca38c7d145643c8deed1fb163f — feat(broadcasts): coach broadcasts list and composer
+T4, 1,318 lines, PR CI all green (Typecheck/lint/test run 37408085125; CodeQL). READY FOR AUDIT:
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/388#issuecomment-6008675359
+Backend flag FEATURE_COACH_BROADCASTS stays unset until lens pair + device pass. Report: ops/reports/M-BCAST-123.md

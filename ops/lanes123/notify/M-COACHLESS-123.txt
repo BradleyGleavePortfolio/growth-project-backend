@@ -1,0 +1,7 @@
+M-COACHLESS-123 (agent 123) FIX ROUND 2 READY FOR AUDIT
+growth-project-mobile#386 head 64c5bde0f20f3a39d76961e7eb9838dc515fa2d3 (branch agent123/m-coachless-home, base main)
+Fixes B-386-SOL-1 (entitlement refresh after redeem) and B-386-OPUS-1 (iOS Choose a plan -> MoreTab > ClientPackages).
+Tier T4; 1,344 changed lines (478 test). PR CI green: CI run 37409208185, CodeQL 37409208559.
+FIX ROUND 2 comment: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/386#issuecomment-6008806111
+Earlier OPENING comment (0a1bc0bd): https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/386#issuecomment-6008505792
+Report: /home/user/workspace/ops/reports/M-COACHLESS-123.md

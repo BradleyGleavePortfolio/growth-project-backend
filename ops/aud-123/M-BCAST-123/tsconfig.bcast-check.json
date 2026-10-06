@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "skipLibCheck": true },
+  "files": [
+    "src/api/broadcastsApi.ts",
+    "src/screens/coach/broadcasts/BroadcastComposerScreen.tsx",
+    "src/screens/coach/broadcasts/CoachBroadcastsScreen.tsx",
+    "src/screens/coach/broadcasts/BroadcastsEntry.tsx",
+    "src/screens/coach/broadcasts/broadcastFormat.ts",
+    "src/screens/coach/broadcasts/__tests__/broadcasts.test.tsx",
+    "src/screens/coach/__tests__/CoachInboxV2.test.tsx",
+    "src/screens/coach/MessagesScreen.tsx",
+    "src/navigation/CoachNavigator.tsx"
+  ]
+}

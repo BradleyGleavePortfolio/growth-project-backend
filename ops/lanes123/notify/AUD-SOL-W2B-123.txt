@@ -1,0 +1,12 @@
+AUD-SOL-W2B-123 (agent 123) DONE 20:23 PDT
+m#386 @ 0a1bc0bd7d18348742184a2e5dcac1a1c961748d REQUEST CHANGES A0/B1/C2
+B-386-SOL-1: active free/prepaid-code grant never refreshes shared EntitlementProvider; ordinary client sees active welcome then Workout paywall until app foreground/reopen. Fix changed grant-success path + real entitlement-gate regression.
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/386#issuecomment-6008549315
+m#385 @ 35f8c1e8825d7b710bd934f2d56642f6313976d6 APPROVE A0/B0/C0
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/385#issuecomment-6008559894
+m#387 @ b54bea80c5c9948ec71465d4361dd0a1f36d76f7 APPROVE A0/B0/C1; required checks green.
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/387#issuecomment-6008591834
+BC1 m#388 skipped per operator 20:23 PDT queue change; separate W2C lens pair owns it. No review/comment by this job.
+All three audited heads rechecked unchanged at 20:23:55 PDT; CI green at each audited head. No code edits, pushes, merges or runs.
+Recommended next: fix B-386-SOL-1 only, delta reviews; keep flags off until owner device passes. No new owner decision.
+Report ops/reports/AUD-SOL-W2B-123.md

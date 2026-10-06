@@ -1,0 +1,22 @@
+diff --git a/.github/fly-env-desired-state.json b/.github/fly-env-desired-state.json
+index 22e282c3..201da0ff 100644
+--- a/.github/fly-env-desired-state.json
++++ b/.github/fly-env-desired-state.json
+@@ -42,7 +42,7 @@
+     "FEATURE_COACH_CODE_TOOLS": "unset",
+     "FEATURE_COACH_BROADCASTS": "unset",
+     "FEATURE_ROMAN_CHAT_ENABLED": "true",
+-    "FEATURE_ROMAN_ADJUST_ENABLED": "unset"
++    "FEATURE_ROMAN_ADJUST_ENABLED": "true"
+   },
+   "secrets": {
+     "GOOGLE_CLIENT_IDS": "github-secret",
+@@ -107,7 +107,7 @@
+     "FEATURE_COACH_CODE_TOOLS": "Annex lane A2 (coach code tools): after the backend PR and the mobile Codes screen pass both audit lenses and a device pass. Roll back with 'unset'.",
+     "FEATURE_COACH_BROADCASTS": "A4 coach broadcasts, rich cards, saved replies and client tags (annex lane A4). Stays unset (off) until the backend PR and the mobile composer pass audit and a device pass; then the operator flips it to true. Unsetting it is the kill: routes answer 503 broadcasts.disabled and the dispatcher parks in-flight deliveries without re-sending delivered ones.",
+     "FEATURE_ROMAN_CHAT_ENABLED": "Day 1 (owner 10-02 16:34 and 10-05 09:57), true: Roman train #665-#670/#667 and b#736 deployed (deploy 7); mobile EXPO_PUBLIC_FF_ROMAN_CHAT on in the production and clinic profiles for the 10-07 build; ANTHROPIC_API_KEY present on Fly; box-2 consent enforced by FEATURE_AI_CONSENT_LEDGER_ENABLED. Unset = off (only 'true'); emergency kill: unset (every /roman route returns 404; saved chats are kept).",
+-    "FEATURE_ROMAN_ADJUST_ENABLED": "Day 1 (owner 10-05 09:57): b#655 deployed, m#337 merged. Flip to true only after the mobile changeSummary fix (Opus C-337: raised sets showed a negative '% less volume') is merged and in the 10-07 build. Unset = off (only 'true'); emergency kill: unset (every /coach/adjustments route returns 404 and the card hides).",
++    "FEATURE_ROMAN_ADJUST_ENABLED": "Day 1 (owner 10-05 09:57), true: b#655 deployed (deploy 6), mobile m#337 merged, and the C-337 copy fix m#384 merged (raised sets now read '% more volume'), so both ship in the 10-07 build. Unset = off (only 'true'); emergency kill: unset (every /coach/adjustments route returns 404 and the card hides).",
+     "GOOGLE_CLIENT_IDS": "Wave B: launch-required Google sign-in audiences. The GitHub secret GOOGLE_CLIENT_IDS exists; flip to github-secret to copy it to Fly. Must be a comma list of non-empty client ids.",
+     "MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "Precondition of FEATURE_MWB_AUTOSAVE_UNDO=true, github-secret in the same PR as the autosave flag. Merge only after the owner confirms the GitHub Actions secret MWB_AUTOSAVE_LOCK_TOKEN_SECRET exists on this repository (64+ hex characters, for example 'openssl rand -hex 32'); the plan fails closed while it is missing or too short.",
+     "GOOGLE_OAUTH_CLIENT_ID": "Present on Fly (set outside this manifest); asserted present, never written here.",

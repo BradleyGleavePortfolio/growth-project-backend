@@ -1,0 +1,129 @@
+[heavy] waiting for a slot: npx jest test/ai-crisis-router.spec.ts
+FAIL test/ai-crisis-router.spec.ts (44 MB heap size)
+  classifyAiGuideCrisis (B-AIG2-122)
+    ✓ "I took a whole bottle of Tylenol" is an emergency (911) (12 ms)
+    ✓ "I swallowed a whole bottle of ibuprofen" is an emergency (911) (6 ms)
+    ✓ "I took 20 Tylenol" is an emergency (911)
+    ✓ "I took a whole bottle of pills" is an emergency (911) (1 ms)
+    ✓ "I took 20 of my sleeping pills" is an emergency (911)
+    ✓ "I overdosed" is an emergency (911) (1 ms)
+    ✓ "I took an overdose" is an emergency (911)
+    ✓ "my friend overdosed" is an emergency (911) (1 ms)
+    ✓ "I can’t breathe" is an emergency (911) (1 ms)
+    ✓ "my friend is unconscious" is an emergency (911)
+    ✓ "I am going to hang myself" is self-harm (988) (3 ms)
+    ✓ "I want to hang myself" is self-harm (988) (2 ms)
+    ✓ "I am going to shoot myself" is self-harm (988) (1 ms)
+    ✓ "I want to jump off a bridge" is self-harm (988) (1 ms)
+    ✓ "I am going to jump off the roof" is self-harm (988)
+    ✓ "I want to slit my wrists" is self-harm (988)
+    ✓ "I just want it all to end" is self-harm (988) (1 ms)
+    ✓ "I want to kill myself" is self-harm (988)
+    ✓ "I want to hurt myself" is self-harm (988) (1 ms)
+    ✓ "I have been cutting myself" is self-harm (988)
+    ✓ "overdose on cardio" is an ordinary question (no crisis reply) (2 ms)
+    ✓ "can you overdose on creatine?" is an ordinary question (no crisis reply) (1 ms)
+    ✓ "I think I overdosed on cardio this week" is an ordinary question (no crisis reply) (1 ms)
+    ✓ "is it possible to overdose on caffeine from pre-workout" is an ordinary question (no crisis reply)
+    ✓ "how much protein is an overdose" is an ordinary question (no crisis reply)
+    ✓ "did I overdose on carbs last night" is an ordinary question (no crisis reply) (1 ms)
+    ✓ "is mercury poisoning a risk if I eat tuna every day" is an ordinary question (no crisis reply)
+    ✓ "I hurt myself deadlifting, can I train?" is an ordinary question (no crisis reply)
+    ✓ "I find it hard to breathe during heavy squats, how should I brace" is an ordinary question (no crisis reply)
+    ✓ "I can’t breathe through my nose when I run, any tips" is an ordinary question (no crisis reply) (7 ms)
+    ✓ "I have trouble breathing on long runs" is an ordinary question (no crisis reply)
+    ✓ "how do I stop unconscious snacking at night" is an ordinary question (no crisis reply)
+    ✓ "kill this workout" is an ordinary question (no crisis reply) (1 ms)
+    ✓ "I'm dying after leg day" is an ordinary question (no crisis reply)
+    ✓ "took 2 Tylenol for my headache" is an ordinary question (no crisis reply)
+  classifyAiGuideCrisis (B-AIG3-123)
+    ✓ "I want to overdose tonight" is self_harm (1 ms)
+    ✓ "I am going to overdose" is self_harm
+    ✓ "I cannot breathe after my workout. I need help now." is emergency
+    ✓ "I can’t breathe during my workout. Please help me." is emergency (1 ms)
+    ✓ "my chest hurts and I can’t breathe after my run" is emergency
+  classifyAiGuideCrisis (B-AIG4-123)
+    ✕ "I want to take all my pills" is self_harm (2 ms)
+    ✕ "I'm going to take all of my meds tonight" is self_harm (1 ms)
+    ✕ "I am gonna take a bunch of pills" is self_harm (1 ms)
+    ✕ "I want to take a whole bottle of Tylenol" is self_harm
+    ✓ "should I take my pills with food?" is an ordinary question (no crisis reply)
+    ✓ "I took all my vitamins" is an ordinary question (no crisis reply)
+    ✓ "OD on carbs" is an ordinary question (no crisis reply) (1 ms)
+    ✓ "overdose on cardio" is an ordinary question (no crisis reply)
+    ✓ "can you overdose on creatine?" is an ordinary question (no crisis reply)
+    ✓ "I'm going to take 400 mg ibuprofen before my run" is an ordinary question (no crisis reply)
+
+  ● classifyAiGuideCrisis (B-AIG4-123) › "I want to take all my pills" is self_harm
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: null
+
+    [0m [90m 79 |[39m     [32m'I want to take a whole bottle of Tylenol'[39m[33m,[39m
+     [90m 80 |[39m   ])([32m'"%s" is self_harm'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 81 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m    |[39m                                            [31m[1m^[22m[39m
+     [90m 82 |[39m   })[33m;[39m
+     [90m 83 |[39m
+     [90m 84 |[39m   it[33m.[39meach([[0m
+
+      at test/ai-crisis-router.spec.ts:81:44
+
+  ● classifyAiGuideCrisis (B-AIG4-123) › "I'm going to take all of my meds tonight" is self_harm
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: null
+
+    [0m [90m 79 |[39m     [32m'I want to take a whole bottle of Tylenol'[39m[33m,[39m
+     [90m 80 |[39m   ])([32m'"%s" is self_harm'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 81 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m    |[39m                                            [31m[1m^[22m[39m
+     [90m 82 |[39m   })[33m;[39m
+     [90m 83 |[39m
+     [90m 84 |[39m   it[33m.[39meach([[0m
+
+      at test/ai-crisis-router.spec.ts:81:44
+
+  ● classifyAiGuideCrisis (B-AIG4-123) › "I am gonna take a bunch of pills" is self_harm
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: null
+
+    [0m [90m 79 |[39m     [32m'I want to take a whole bottle of Tylenol'[39m[33m,[39m
+     [90m 80 |[39m   ])([32m'"%s" is self_harm'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 81 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m    |[39m                                            [31m[1m^[22m[39m
+     [90m 82 |[39m   })[33m;[39m
+     [90m 83 |[39m
+     [90m 84 |[39m   it[33m.[39meach([[0m
+
+      at test/ai-crisis-router.spec.ts:81:44
+
+  ● classifyAiGuideCrisis (B-AIG4-123) › "I want to take a whole bottle of Tylenol" is self_harm
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "self_harm"
+    Received: null
+
+    [0m [90m 79 |[39m     [32m'I want to take a whole bottle of Tylenol'[39m[33m,[39m
+     [90m 80 |[39m   ])([32m'"%s" is self_harm'[39m[33m,[39m (message) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 81 |[39m     expect(classifyAiGuideCrisis(message))[33m.[39mtoBe([32m'self_harm'[39m)[33m;[39m
+     [90m    |[39m                                            [31m[1m^[22m[39m
+     [90m 82 |[39m   })[33m;[39m
+     [90m 83 |[39m
+     [90m 84 |[39m   it[33m.[39meach([[0m
+
+      at test/ai-crisis-router.spec.ts:81:44
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 46 passed, 50 total
+Snapshots:   0 total
+Time:        0.944 s, estimated 1 s
+Ran all test suites matching test/ai-crisis-router.spec.ts.

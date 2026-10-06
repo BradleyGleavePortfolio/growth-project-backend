@@ -1,0 +1,27 @@
+diff --git a/eas.json b/eas.json
+index 0b28020e..fca1d67c 100644
+--- a/eas.json
++++ b/eas.json
+@@ -41,7 +41,11 @@
+         "EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES": "true",
+         "EXPO_PUBLIC_FF_CLIENT_CALENDAR": "true",
+         "EXPO_PUBLIC_FF_MWB_PROGRAMS": "true",
+-        "EXPO_PUBLIC_FF_MWB_AUTOSAVE": "true"
++        "EXPO_PUBLIC_FF_MWB_AUTOSAVE": "true",
++        "EXPO_PUBLIC_FF_ROMAN_CHAT": "true",
++        "EXPO_PUBLIC_FF_COMMUNITY_TAB": "true",
++        "EXPO_PUBLIC_FF_COMMUNITY_HALL": "true",
++        "EXPO_PUBLIC_FF_COMMUNITY_COHORTS": "true"
+       }
+     },
+     "clinic": {
+@@ -61,7 +65,8 @@
+         "EXPO_PUBLIC_FF_MWB_PROGRAMS": "true",
+         "EXPO_PUBLIC_FF_MWB_AUTOSAVE": "true",
+         "EXPO_PUBLIC_FF_CONSULTATION_ONBOARDING": "true",
+-        "EXPO_PUBLIC_FF_COMMUNITY_DM": "false"
++        "EXPO_PUBLIC_FF_COMMUNITY_DM": "false",
++        "EXPO_PUBLIC_FF_ROMAN_CHAT": "true"
+       }
+     }
+   }

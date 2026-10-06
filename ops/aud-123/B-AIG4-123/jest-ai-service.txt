@@ -1,0 +1,104 @@
+[heavy] waiting for a slot: npx jest test/ai.service.spec.ts
+[33m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [33m   WARN[39m [38;5;3m[AiService] [39m[33mAnthropic chat fallback failed; using deterministic: upstream 500[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: calorie-floor[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: calorie-floor,macro-correction[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: refer-to-coach[39m
+[33m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [33m   WARN[39m [38;5;3m[AiService] [39m[33mAnthropic chat fallback failed; using deterministic: upstream 500[39m
+[33m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [33m   WARN[39m [38;5;3m[AiService] [39m[33mAnthropic chat fallback failed; using deterministic: upstream 500[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: calorie-floor[39m
+[33m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [33m   WARN[39m [38;5;3m[AiService] [39m[33mAnthropic chat fallback failed; using deterministic: upstream 500[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: calorie-floor[39m
+[33m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [33m   WARN[39m [38;5;3m[AiService] [39m[33mAnthropic chat fallback failed; using deterministic: upstream 500[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: calorie-floor[39m
+[33m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [33m   WARN[39m [38;5;3m[AiService] [39m[33mAnthropic chat fallback failed; using deterministic: upstream 500[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: calorie-floor[39m
+[33m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [33m   WARN[39m [38;5;3m[AiService] [39m[33mAnthropic chat fallback failed; using deterministic: upstream 500[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: calorie-floor[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=ai.client_chat reason=no_live_grant clients=1 missing=1[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=ai.client_chat reason=no_live_grant clients=1 missing=1[39m
+[33m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [33m   WARN[39m [38;5;3m[AiEgressService] [39m[33mai_egress.consent_read_failed (treated as no grant)[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=ai.client_chat reason=no_live_grant clients=1 missing=1[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AIGuardrailsService] [39m[32mguardrails applied: calorie-floor[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+[32m[Nest] 17614  - [39m10/06/2026, 2:48:55 AM [32m    LOG[39m [38;5;3m[AiService] [39m[32mai guide: crisis reply served[39m
+PASS test/ai.service.spec.ts (79 MB heap size)
+  AiService.chat
+    ✓ uses the typed context to build the system prompt (21 ms)
+    ✓ falls back gracefully when the Coach AI engine is not ready (10 ms)
+    ✓ falls back when the provider throws (3 ms)
+    ✓ runs guardrails on the model reply and reports what was applied (2 ms)
+    ✓ prepends a coach-referral when the user asks a medical question (1 ms)
+    ✓ does not pass conversation_history beyond the last 10 turns (1 ms)
+  AiService.chat daily token quota (A1)
+    ✓ under cap: the call proceeds and the daily counter increments (1 ms)
+    ✓ at cap: rejects with 429 AI_DAILY_QUOTA_EXCEEDED and never calls the model (2 ms)
+    ✓ day rollover: a new quota_date gets a fresh budget row (2 ms)
+    ✓ concurrent same-user requests never exceed the cap (2 ms)
+    ✓ total-token accounting: charges the full provider TOTAL (input+output), not just output (1 ms)
+    ✓ total-token accounting: high-total calls are gated pre-spend by the daily cap (1 ms)
+    ✓ failed provider call refunds the full reservation (no quota leak) (1 ms)
+    ✓ repeated failed calls never erode the daily budget (2 ms)
+    ✓ midnight cross: reconciles against the reservation day, not the reconcile-time day (1 ms)
+    ✓ hard cap: a tiny call is rejected once consumed has reached the cap (1 ms)
+    ✓ hard cap: a call that would push total over cap is rejected pre-spend (1 ms)
+    ✓ reconcile never increments above the reservation (provider over-report is clamped)
+    ✓ empty-text-but-has-usage: reconciles real usage instead of full refund (1 ms)
+    ✓ empty-text-and-no-usage: fully refunds the reservation (genuinely free) (1 ms)
+    ✓ over-budget request is rejected 429 PRE-spend (provider mock not invoked) (1 ms)
+    ✓ reconcile decrements: real usage below the worst-case reservation refunds the difference
+    ✓ reconcile is authoritative: daily total equals ACTUAL usage even when the pre-estimate mis-counts (1 ms)
+  clampPromptParts (A1 input char ceiling)
+    ✓ clamps an oversized prompt so total assembled chars <= MAX_INPUT_CHARS (1 ms)
+    ✓ leaves a small prompt untouched
+  AiService.chat Anthropic output cap (A1 P3)
+    ✓ passes maxTokens: MAX_TOKENS_PER_CALL to the Anthropic adapter (1 ms)
+  AiService.chat — R2b box-2 consent
+    ✓ grant: answered by Anthropic with the caller as data subject (1 ms)
+    ✓ no grant: 403 with the client wording, before any quota is reserved; nothing sent (7 ms)
+    ✓ revoked: the next message is refused (1 ms)
+    ✓ ledger error: fails closed (1 ms)
+    ✓ engine not ready: deterministic reply, nothing leaves the server, no consent needed
+  AiService.chat — crisis reply before the daily limit (B-AIG-122)
+    ✓ client at the daily limit types a suicidal message: 988 reply, no 429, no quota, no model call (7 ms)
+    ✓ client at the daily limit reports an overdose: 911 reply, no 429
+    ✓ client without AI consent types a crisis message: 988 reply instead of the consent refusal (1 ms)
+    ✓ an ordinary training message at the limit still gets the 429 limit reply
+  AiService.chat — crisis phrasing a client actually types (B-AIG2-122)
+    ✓ client at the daily limit: "I took a whole bottle of Tylenol" gets the 911 reply, not the limit (1 ms)
+    ✓ client at the daily limit: "I am going to hang myself" gets the 988 reply, not the limit
+    ✓ ordinary training or supplement question "overdose on cardio" gets the normal answer
+    ✓ ordinary training or supplement question "can you overdose on creatine?" gets the normal answer (1 ms)
+    ✓ ordinary training or supplement question "I hurt myself deadlifting, can I train?" gets the normal answer
+    ✓ ordinary training or supplement question "kill this workout" gets the normal answer (1 ms)
+    ✓ ordinary training or supplement question "I'm dying after leg day" gets the normal answer
+    ✓ ordinary training or supplement question "took 2 Tylenol for my headache" gets the normal answer (1 ms)
+    ✓ client at the daily limit: "I want to overdose tonight" gets the crisis reply, not the limit (B-AIG3-123)
+    ✓ client at the daily limit: "I am going to overdose" gets the crisis reply, not the limit (B-AIG3-123) (1 ms)
+    ✓ client at the daily limit: "I cannot breathe after my workout. I need help now." gets the crisis reply, not the limit (B-AIG3-123) (1 ms)
+    ✓ client at the daily limit: "I can’t breathe during my workout. Please help me." gets the crisis reply, not the limit (B-AIG3-123)
+    ✓ client at the daily limit: "my chest hurts and I can’t breathe after my run" gets the crisis reply, not the limit (B-AIG3-123) (1 ms)
+    ✓ client at the daily limit: "I want to take all my pills" gets the 988 reply, not the limit (B-AIG4-123)
+    ✓ client at the daily limit: "I'm going to take all of my meds tonight" gets the 988 reply, not the limit (B-AIG4-123) (1 ms)
+    ✓ client at the daily limit: "I am gonna take a bunch of pills" gets the 988 reply, not the limit (B-AIG4-123) (1 ms)
+    ✓ client at the daily limit: "I want to take a whole bottle of Tylenol" gets the 988 reply, not the limit (B-AIG4-123)
+    ✓ ordinary question "overdose on cardio" at the daily limit gets the 429 limit reply, not a crisis reply (1 ms)
+    ✓ ordinary question "can you overdose on creatine?" at the daily limit gets the 429 limit reply, not a crisis reply
+    ✓ ordinary question "I hurt myself deadlifting, can I train?" at the daily limit gets the 429 limit reply, not a crisis reply (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       55 passed, 55 total
+Snapshots:   0 total
+Time:        1.478 s
+Ran all test suites matching test/ai.service.spec.ts.
