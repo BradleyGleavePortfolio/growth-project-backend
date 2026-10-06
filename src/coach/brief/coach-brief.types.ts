@@ -32,7 +32,7 @@ export interface BriefContext {
   checked_in_today: number;
   missed_checkin: number;
 
-  workouts_pending_approval: number;
+  workouts_completed_today: number;
   workouts_approved_today: number;
 
   paid_today_count: number;
@@ -59,7 +59,7 @@ export interface SubCoachHighlight {
 // METRICS ONLY — never client-level data. Sub-coaches handle the
 // individual client work; the head coach gets a COO view of the team.
 // We intentionally do NOT extend BriefContext because that interface
-// carries solo client-level counts (workouts_pending_approval,
+// carries solo client-level counts (workouts_completed_today,
 // unread_messages, etc.). A head coach should never see a client name
 // or client_id in their brief; that's what the sub-coach brief is for.
 export interface BriefContextHeadCoach {
@@ -86,8 +86,8 @@ export interface BriefContextHeadCoach {
   sub_coach_highlights: SubCoachHighlight[];
 }
 
+// S-BRIEF-124: no 'workout_approval' (nothing in the app approves a workout).
 export type ActionItemType =
-  | 'workout_approval'
   | 'checkin_missing'
   | 'payment_due'
   | 'weight_flag'

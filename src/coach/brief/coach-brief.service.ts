@@ -163,7 +163,7 @@ export function buildSoloCoachSystemPrompt(): string {
 
 Rules (all mandatory):
 - The first sentence is exactly "Good morning, <coach first name>." using the first name given.
-- Then the highlights, most important first: money that came in, messages waiting for a reply, check-ins, workouts waiting for approval, anything flagged. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
+- Then the highlights, most important first: money that came in, messages waiting for a reply, check-ins, workouts completed, anything flagged. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
 - If failed payments are being retried, say the retries run automatically and nothing is needed from the coach.
 - If there are action items, end with one short sentence that points to them below, matching the count given.
 - 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
@@ -279,8 +279,9 @@ function sanitizeHeadCoachCtxForPrompt(
 }
 
 function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
+  // Completed workouts are reported, never an action item (S-BRIEF-124
+  // B-398-1: nothing in the app approves a workout).
   const actionCount =
-    ctx.workouts_pending_approval +
     ctx.weight_logs_flagged +
     ctx.unread_messages +
     (ctx.missed_checkin > 0 ? 1 : 0);
@@ -301,8 +302,7 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
     `Roster size: ${ctx.roster_size} active clients`,
     `Check-ins received today: ${ctx.checked_in_today} of ${ctx.roster_size}`,
     `Missing check-ins: ${ctx.missed_checkin}`,
-    `Workouts waiting for approval: ${ctx.workouts_pending_approval}`,
-    `Workouts approved today: ${ctx.workouts_approved_today}`,
+    `Workouts completed today: ${ctx.workouts_completed_today}`,
     `Unread messages: ${ctx.unread_messages}`,
     `Weight log flags (large delta): ${ctx.weight_logs_flagged}`,
     ``,
@@ -426,14 +426,18 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
     );
   }
 
-  // Check-in snapshot.
+  // Check-in snapshot, with workouts completed today (reported, not an action).
+  const workouts =
+    ctx.workouts_completed_today > 0
+      ? `, and ${ctx.workouts_completed_today} ${plural(ctx.workouts_completed_today, 'workout was', 'workouts were')} completed`
+      : '';
   if (ctx.checked_in_today > 0) {
     sentences.push(
-      `${ctx.checked_in_today} of ${ctx.roster_size} ${plural(ctx.roster_size, 'client has', 'clients have')} checked in today.`,
+      `${ctx.checked_in_today} of ${ctx.roster_size} ${plural(ctx.roster_size, 'client has', 'clients have')} checked in today${workouts}.`,
     );
   } else {
     sentences.push(
-      `No check-ins yet today from your ${ctx.roster_size} ${plural(ctx.roster_size, 'client', 'clients')}.`,
+      `No check-ins yet today from your ${ctx.roster_size} ${plural(ctx.roster_size, 'client', 'clients')}${workouts}.`,
     );
   }
 
@@ -442,10 +446,6 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
   if (ctx.unread_messages > 0)
     fragments.push(
       `${ctx.unread_messages} ${plural(ctx.unread_messages, 'client message', 'client messages')} waiting for a reply`,
-    );
-  if (ctx.workouts_pending_approval > 0)
-    fragments.push(
-      `${ctx.workouts_pending_approval} ${plural(ctx.workouts_pending_approval, 'workout', 'workouts')} to approve`,
     );
   if (ctx.weight_logs_flagged > 0)
     fragments.push(
@@ -600,13 +600,9 @@ export function normalizeClaudeOutput(raw: string): string {
 }
 
 // Deterministic — NOT AI-generated. Sorted ascending by priority.
+// S-BRIEF-124 (B-398-1): no workout-approval item. Nothing in the app
+// approves a workout, so the brief never asks for it.
 export function buildActionItems(args: {
-  pendingWorkouts: Array<{
-    id: string;
-    client_id: string;
-    client_name: string;
-    plan_name: string;
-  }>;
   unreadThreads: Array<{
     client_id: string;
     client_name: string;
@@ -620,17 +616,6 @@ export function buildActionItems(args: {
   missingCheckinClients: Array<{ id: string; name: string }>;
 }): ActionItem[] {
   const items: ActionItem[] = [];
-
-  for (const w of args.pendingWorkouts) {
-    items.push({
-      type: 'workout_approval',
-      client_id: w.client_id,
-      client_name: w.client_name,
-      detail: `${w.plan_name} needs approval`,
-      priority: 1,
-      deep_link: `tgp://workout/approval/${w.id}`,
-    });
-  }
 
   for (const t of args.unreadThreads) {
     items.push({
@@ -831,12 +816,6 @@ export class CoachBriefService {
     briefMode: BriefMode = 'solo_coach',
   ): Promise<{
     context: BriefContext;
-    pendingWorkouts: Array<{
-      id: string;
-      client_id: string;
-      client_name: string;
-      plan_name: string;
-    }>;
     unreadThreads: Array<{
       client_id: string;
       client_name: string;
@@ -869,7 +848,7 @@ export class CoachBriefService {
           date: briefDate,
           checked_in_today: 0,
           missed_checkin: 0,
-          workouts_pending_approval: 0,
+          workouts_completed_today: 0,
           workouts_approved_today: 0,
           paid_today_count: 0,
           revenue_today_cents: 0,
@@ -881,7 +860,6 @@ export class CoachBriefService {
           coach_first_name: coachFirstName,
           roster_size: 0,
         },
-        pendingWorkouts: [],
         unreadThreads: [],
         flaggedWeightLogs: [],
         missingCheckinClients: [],
@@ -890,7 +868,7 @@ export class CoachBriefService {
 
     const [
       checkedInToday,
-      pendingWorkoutsRaw,
+      workoutsCompletedToday,
       workoutsApprovedToday,
       paidTodayAgg,
       renewalsUpcoming7d,
@@ -904,23 +882,14 @@ export class CoachBriefService {
         select: { user_id: true },
         distinct: ['user_id'],
       }),
-      this.prisma.clientWorkoutAssignment.findMany({
+      // Workouts completed today (reported only; S-BRIEF-124 B-398-1).
+      this.prisma.clientWorkoutAssignment.count({
         where: {
           client_id: { in: clientIds },
-          completed_at: { not: null },
-          approved_by_coach_at: null,
-          // In sub-coach mode, restrict action items to workouts the
-          // sub-coach actually assigned. Without this, a sub-coach could
-          // see head-coach pending approvals for their scoped clients.
+          completed_at: { gte: briefDateStart, lte: briefDateEnd },
+          // Sub-coach mode: only workouts the sub-coach assigned.
           ...(briefMode === 'sub_coach' ? { assigned_by_coach_id: coachId } : {}),
         },
-        select: {
-          id: true,
-          client_id: true,
-          client: { select: { name: true } },
-          workout_plan: { select: { name: true } },
-        },
-        take: 50,
       }),
       this.prisma.clientWorkoutAssignment.count({
         where: {
@@ -928,13 +897,14 @@ export class CoachBriefService {
           approved_by_coach_at: { gte: briefDateStart, lte: briefDateEnd },
         },
       }),
-      this.prisma.clientPurchase.aggregate({
-        _sum: { amount_cents: true },
+      // S-BRIEF-124 (B-766-2): money from the per-charge ledger, so a
+      // recurring invoice (its purchase stays 'active') counts too.
+      this.prisma.chargeSettlement.aggregate({
+        _sum: { gross_cents: true },
         _count: { _all: true },
         where: {
           coach_user_id: coachId,
-          status: 'paid',
-          updated_at: { gte: briefDateStart, lte: briefDateEnd },
+          created_at: { gte: briefDateStart, lte: briefDateEnd },
         },
       }),
       this.prisma.clientPurchase.count({
@@ -1043,13 +1013,6 @@ export class CoachBriefService {
       delta_lbs: r.delta_lbs,
     }));
 
-    const pendingWorkouts = pendingWorkoutsRaw.map((w) => ({
-      id: w.id,
-      client_id: w.client_id,
-      client_name: w.client?.name ?? 'Client',
-      plan_name: w.workout_plan?.name ?? 'Workout',
-    }));
-
     const dunningInProgress = Number(dunningInProgressRaw[0]?.count ?? 0);
 
     const context: BriefContext = {
@@ -1057,10 +1020,10 @@ export class CoachBriefService {
       date: briefDate,
       checked_in_today: checkedInCount,
       missed_checkin: Math.max(0, clientIds.length - checkedInCount),
-      workouts_pending_approval: pendingWorkoutsRaw.length,
+      workouts_completed_today: workoutsCompletedToday,
       workouts_approved_today: workoutsApprovedToday,
       paid_today_count: paidTodayAgg._count._all,
-      revenue_today_cents: paidTodayAgg._sum.amount_cents ?? 0,
+      revenue_today_cents: paidTodayAgg._sum.gross_cents ?? 0,
       renewals_upcoming_7d: renewalsUpcoming7d,
       dunning_in_progress: dunningInProgress,
       weight_logs_flagged: flaggedWeightLogs.length,
@@ -1072,7 +1035,6 @@ export class CoachBriefService {
 
     return {
       context,
-      pendingWorkouts,
       unreadThreads,
       flaggedWeightLogs,
       missingCheckinClients: missingCheckinRaw,
@@ -1270,21 +1232,21 @@ export class CoachBriefService {
     if (tenantClientIds.length > 0) {
       const [revenueTodayAgg, revenue30dAgg, mrrAgg, dunningRows] =
         await Promise.all([
-          this.prisma.clientPurchase.aggregate({
-            _sum: { amount_cents: true },
+          // S-BRIEF-124 (B-766-2): per-charge ledger (recurring invoices
+          // included), same tenant scope (the purchase's client).
+          this.prisma.chargeSettlement.aggregate({
+            _sum: { gross_cents: true },
             _count: { _all: true },
             where: {
-              client_user_id: { in: tenantClientIds },
-              status: 'paid',
-              updated_at: { gte: briefDateStart, lte: briefDateEnd },
+              purchase: { client_user_id: { in: tenantClientIds } },
+              created_at: { gte: briefDateStart, lte: briefDateEnd },
             },
           }),
-          this.prisma.clientPurchase.aggregate({
-            _sum: { amount_cents: true },
+          this.prisma.chargeSettlement.aggregate({
+            _sum: { gross_cents: true },
             where: {
-              client_user_id: { in: tenantClientIds },
-              status: 'paid',
-              updated_at: { gte: thirtyDaysAgo },
+              purchase: { client_user_id: { in: tenantClientIds } },
+              created_at: { gte: thirtyDaysAgo },
             },
           }),
           // A5-P1-5: SQL aggregate. SUM(ROUND(per-row monthly equivalent))
@@ -1325,9 +1287,9 @@ export class CoachBriefService {
             `,
           ),
         ]);
-      revenueTodayCents = revenueTodayAgg._sum.amount_cents ?? 0;
+      revenueTodayCents = revenueTodayAgg._sum.gross_cents ?? 0;
       revenueTodayCount = revenueTodayAgg._count._all ?? 0;
-      revenue30dCents = revenue30dAgg._sum.amount_cents ?? 0;
+      revenue30dCents = revenue30dAgg._sum.gross_cents ?? 0;
       mrrProjectedCents = Number(mrrAgg[0]?.mrr_cents ?? 0);
       dunningStateRaw = dunningRows;
     }
@@ -1440,8 +1402,9 @@ export class CoachBriefService {
         };
       }
     } else {
+      // Completed workouts are worth narrating, so they keep the AI brief.
       const actionCount =
-        ctx.workouts_pending_approval +
+        ctx.workouts_completed_today +
         (ctx.missed_checkin > 0 ? 1 : 0) +
         ctx.weight_logs_flagged +
         ctx.unread_messages;
@@ -1819,7 +1782,6 @@ export class CoachBriefService {
         }
         context = agg.context;
         actionItems = buildActionItems({
-          pendingWorkouts: agg.pendingWorkouts,
           unreadThreads: agg.unreadThreads,
           flaggedWeightLogs: agg.flaggedWeightLogs,
           missingCheckinClients: agg.missingCheckinClients,

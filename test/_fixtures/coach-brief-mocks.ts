@@ -80,6 +80,14 @@ export interface MockCheckInDelegate {
   findMany: jest.Mock;
 }
 
+export interface MockNotificationPreferencesDelegate {
+  findUnique: jest.Mock;
+}
+
+export interface MockChargeSettlementDelegate {
+  aggregate: jest.Mock;
+}
+
 export interface MockClientPurchaseDelegate {
   aggregate: jest.Mock;
   count: jest.Mock;
@@ -101,6 +109,8 @@ export interface MockPrisma {
   clientWorkoutAssignment: MockClientWorkoutAssignmentDelegate;
   checkIn: MockCheckInDelegate;
   clientPurchase: MockClientPurchaseDelegate;
+  chargeSettlement: MockChargeSettlementDelegate;
+  notificationPreferences: MockNotificationPreferencesDelegate;
   coachMessage: MockCoachMessageDelegate;
   $queryRaw: jest.Mock;
 }
@@ -158,6 +168,12 @@ export function makeMockPrisma(): MockPrisma {
       aggregate: jest.fn(),
       count: jest.fn(),
       findMany: jest.fn(),
+    },
+    chargeSettlement: {
+      aggregate: jest.fn(),
+    },
+    notificationPreferences: {
+      findUnique: jest.fn(),
     },
     coachMessage: {
       findMany: jest.fn(),
@@ -231,7 +247,7 @@ export function makeBriefContext(
     date: '2026-05-25',
     checked_in_today: 5,
     missed_checkin: 2,
-    workouts_pending_approval: 1,
+    workouts_completed_today: 1,
     workouts_approved_today: 0,
     paid_today_count: 0,
     revenue_today_cents: 0,
@@ -294,6 +310,10 @@ export function wireSoloDefaults(
   prisma.clientWorkoutAssignment.count.mockResolvedValue(0);
   prisma.clientPurchase.aggregate.mockResolvedValue({
     _sum: { amount_cents: null },
+    _count: { _all: 0 },
+  });
+  prisma.chargeSettlement.aggregate.mockResolvedValue({
+    _sum: { gross_cents: null },
     _count: { _all: 0 },
   });
   prisma.clientPurchase.count.mockResolvedValue(0);
