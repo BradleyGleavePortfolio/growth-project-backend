@@ -6,6 +6,7 @@
  *     If we ever switch to S3, only this binding changes.
  *   - CoachMediaService — orchestrates PDF + Mux flows behind the seam.
  *   - CoachMediaController — owner endpoints.
+ *   - ClientMediaController — buyer signed URL (grant-scoped).
  *   - CoachMediaMuxWebhookController — Mux webhook (sig + durable
  *     idempotency via MuxProcessedEvent).
  *
@@ -20,6 +21,7 @@
  */
 
 import { Global, Module } from '@nestjs/common';
+import { ClientMediaController } from './client-media.controller';
 import { CoachMediaController } from './coach-media.controller';
 import { CoachMediaMuxWebhookController } from './coach-media-mux-webhook.controller';
 import { CoachMediaService } from './coach-media.service';
@@ -29,7 +31,11 @@ import { STORAGE_PROVIDER } from './storage-provider';
 @Global()
 @Module({
   imports: [],
-  controllers: [CoachMediaController, CoachMediaMuxWebhookController],
+  controllers: [
+    CoachMediaController,
+    ClientMediaController,
+    CoachMediaMuxWebhookController,
+  ],
   providers: [
     SupabaseStorageProvider,
     {
