@@ -95,6 +95,17 @@ function isCanonicalHost(host: string): boolean {
   );
 }
 
+/** Where `GET /` on a canonical host goes: the help centre home (HUNT-09-124). */
+export const CANONICAL_ROOT_REDIRECT = '/help';
+
+/** True if the request's own Host header is a canonical first-party host. */
+function isCanonicalRequestHost(req: ExpressRequest): boolean {
+  const rawHostHeader = req.headers['host'];
+  const rawHost = Array.isArray(rawHostHeader) ? rawHostHeader[0] : rawHostHeader;
+  const host = normalizeHost(rawHost);
+  return host !== null && isCanonicalHost(host);
+}
+
 // Low-cardinality routing-decision labels for the Host dispatcher. These are
 // the ONLY values emitted to telemetry so the metric/log series stays bounded
 // (no raw, attacker-controllable Host string is ever logged at the decision
@@ -165,8 +176,10 @@ export class LandingPagePublicController {
   // These bare-path routes serve a VERIFIED custom domain's published page
   // directly at its apex (`/`, `/checkout`, `/leads`, `/view`). They are
   // gated on the Host resolving to a verified custom domain; if it does
-  // not (canonical host, unknown/unverified domain, malformed Host) they
-  // 404 with `no-store` and do NOT fall through to `/p/...`.
+  // not (unknown/unverified domain, malformed Host) they 404 with
+  // `no-store` and do NOT fall through to `/p/...`. A canonical host's
+  // `GET /` redirects to the help centre (HUNT-09-124); its other bare
+  // paths still 404.
   //
   // ROUTING: these four paths are EXCLUDED from the global `/api` prefix in
   // main.ts (setGlobalPrefix exclude list: GET '', GET 'checkout',
@@ -184,6 +197,15 @@ export class LandingPagePublicController {
     @NestRequest() req: ExpressRequest,
     @Res() res: Response,
   ) {
+    // HUNT-09-124: the canonical host has no page at "/". People type the
+    // bare domain, and Supabase sends auth-email links to its Site URL (this
+    // root) when a redirect is not allow-listed; both landed on "Page not
+    // available". Send them to the help centre home instead. Custom domains
+    // and unknown hosts are unchanged (render / no-store 404 below).
+    if (isCanonicalRequestHost(req)) {
+      res.setHeader('Cache-Control', 'no-store, max-age=0');
+      return res.redirect(HttpStatus.FOUND, CANONICAL_ROOT_REDIRECT);
+    }
     const addr = await this.resolvePageAddress(req, {});
     if (addr.source !== 'customDomain') {
       return this.send404(res);
