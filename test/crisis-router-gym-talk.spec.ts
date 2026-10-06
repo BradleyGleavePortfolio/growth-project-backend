@@ -52,6 +52,18 @@ const GYM_TALK = [
   'I want to end the set early',
   'I need to end my workout early',
   'is it ok to take my meds before a workout?',
+  // FIX ROUND 1 controls for the overdose and relapse rules below.
+  'how much caffeine is an overdose',
+  'how much protein is an overdose',
+  "I'm overdosing on cardio this month",
+  'am I overdosing on carbs',
+  'going to overdose on carbs',
+  'I cut myself shaving',
+  'I cut myself cooking',
+  'I cut myself again shaving',
+  'I hurt myself again deadlifting',
+  'I hurt myself again at the gym',
+  "that's odd",
 ];
 
 const EMERGENCY_911 = [
@@ -120,6 +132,56 @@ describe('B-ROMAN911-123 crisis phrases still route on both routers', () => {
   });
 
   it.each(SELF_HARM_988)('"%s" is 988 on both', (message) => {
+    expect(classifyAiGuideCrisis(message)).toBe('self_harm');
+    const roman = classifySafety(message);
+    expect(roman.class).toBe('self_harm');
+    expect(roman.short_circuit).toBe(true);
+  });
+});
+
+// FIX ROUND 1 (B-ROMAN911-123) on b#744: every lens phrase. Each one is
+// missed by both routers at cda23212 (Roman main sent them to 911 / 988).
+const LENS_911 = [
+  // B-744-1: an overdose with no listed person, or the noun on its own.
+  'possible overdose',
+  'possible overdose what do I do',
+  'Possible overdose, what do I do?',
+  "I think it's an overdose",
+  'is this an overdose?',
+  'overdose',
+  'help overdose',
+  'she might be overdosing',
+  'my cousin is overdosing',
+  'my uncle overdosed what do I do',
+  'my aunt just overdosed',
+  'my grandpa overdosed',
+  'my fiance overdosed',
+  'my teammate is overdosing',
+  'my teammate is overdosing, what do I do',
+  'my coworker overdosed',
+  'my neighbor is overdosing',
+  'a guy at my gym is overdosing',
+  'there is a man overdosing in the locker room',
+];
+
+const LENS_988 = [
+  // B-744-2: a self-harm relapse disclosure.
+  'I cut myself again',
+  'I hurt myself again last night',
+  'I relapsed and cut myself last night',
+  // C-744-1: "suicide run(s) through" is not a drill.
+  'thoughts of suicide run through my head',
+];
+
+describe('B-ROMAN911-123 FIX ROUND 1: lens phrases route on both routers', () => {
+  it.each(LENS_911)('"%s" is 911 on both', (message) => {
+    expect(classifyAiGuideCrisis(message)).toBe('emergency');
+    const roman = classifySafety(message);
+    expect(roman.class).toBe('emergency');
+    expect(roman.short_circuit).toBe(true);
+  });
+
+  it.each(LENS_988)('"%s" is 988 on both', (message) => {
     expect(classifyAiGuideCrisis(message)).toBe('self_harm');
     const roman = classifySafety(message);
     expect(roman.class).toBe('self_harm');
