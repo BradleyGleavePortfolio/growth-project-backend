@@ -746,7 +746,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
       return { coachId, exhausted: !pre.allowed, audience };
     } catch (error) {
       this.logger.error(
-        `ai guide: coach pool check failed: ${error instanceof Error ? error.message : String(error)}`,
+        `ai guide: coach pool check failed (err=${error instanceof Error ? error.name : 'unknown'})`,
       );
       throw new ServiceUnavailableException({
         error: 'AI_GUIDE_CREDITS_UNAVAILABLE',
@@ -789,7 +789,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
       }
     } catch (error) {
       this.logger.error(
-        `ai guide: coach pool debit failed: ${error instanceof Error ? error.message : String(error)}`,
+        `ai guide: coach pool debit failed (err=${error instanceof Error ? error.name : 'unknown'})`,
       );
     }
   }
