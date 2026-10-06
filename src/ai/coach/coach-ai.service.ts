@@ -76,9 +76,12 @@ export class CoachAIService {
       return budgetCoachId;
     }
     const dto = await this.budget.getBudgetDto(budgetCoachId);
+    // CoachAiSection shows `message` verbatim, so it is product copy here:
+    // specific, and no purchase wording (the iOS app sells no AI credits).
     throw new CoachAiBudgetExhaustedException({
       code: COACH_AI_BUDGET_EXHAUSTED_CODE,
-      message: 'AI budget exhausted — top up to continue',
+      message:
+        'AI credits for this period are used up, so nothing was generated. Credits renew at the start of the next period.',
       pack_options_cents: dto.pack_options_cents,
       custom_pack_bounds_cents: dto.custom_pack_bounds_cents,
       budget: {

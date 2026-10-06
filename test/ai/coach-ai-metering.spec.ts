@@ -116,6 +116,10 @@ describe.each(METHODS)('CoachAIService.%s — coach AI pool', (method, capabilit
       pack_options_cents: [1000, 2500, 9900],
       budget: { remaining_displayed_cents: 0 },
     });
+    // Shown verbatim by CoachAiSection: specific, no purchase wording on iOS.
+    const message = (ex.getResponse() as { message: string }).message;
+    expect(message).toMatch(/AI credits for this period are used up/);
+    expect(message).not.toMatch(/top up|buy|purchase|!/i);
     expect(completeStructured).not.toHaveBeenCalled();
     expect(prisma.aIDraft.create).not.toHaveBeenCalled();
     expect(budget.recordUsage).not.toHaveBeenCalled();
