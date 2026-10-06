@@ -230,6 +230,10 @@ describe('R11-M1 account deletion', () => {
 
 // ── Data export ──────────────────────────────────────────────────────────────
 
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 type Row = Record<string, unknown>;
 const A = 'client-a';
 const B = 'client-b';
@@ -274,7 +278,7 @@ function exportStore(tables: Record<string, Row[]>): PrismaService {
       },
     },
   );
-  return prisma as unknown as PrismaService;
+  return stub<PrismaService>(prisma);
 }
 
 async function buildArchive(tables: Record<string, Row[]>): Promise<Record<string, unknown>> {
