@@ -200,41 +200,42 @@ export class CoachService {
 
     type MaxDate = { user_id: string; _max: { date: Date | null } };
     type Counted = { user_id: string; _count: { _all: number } };
-    const [food, workouts, weights, checkIns, toReview] = await Promise.all([
+    type Grouped = [MaxDate[], MaxDate[], MaxDate[], MaxDate[], Counted[]];
+    const [food, workouts, weights, checkIns, toReview]: Grouped = await Promise.all([
       foodIds.length
-        ? (this.prisma.loggedFoodEntry.groupBy({
+        ? this.prisma.loggedFoodEntry.groupBy({
             by: ['user_id'],
             where: { user_id: { in: foodIds } },
             _max: { date: true },
-          }) as unknown as Promise<MaxDate[]>)
+          })
         : Promise.resolve<MaxDate[]>([]),
       workoutIds.length
-        ? (this.prisma.workoutSession.groupBy({
+        ? this.prisma.workoutSession.groupBy({
             by: ['user_id'],
             where: { user_id: { in: workoutIds } },
             _max: { date: true },
-          }) as unknown as Promise<MaxDate[]>)
+          })
         : Promise.resolve<MaxDate[]>([]),
       bodyIds.length
-        ? (this.prisma.weightLog.groupBy({
+        ? this.prisma.weightLog.groupBy({
             by: ['user_id'],
             where: { user_id: { in: bodyIds } },
             _max: { date: true },
-          }) as unknown as Promise<MaxDate[]>)
+          })
         : Promise.resolve<MaxDate[]>([]),
       habitIds.length
-        ? (this.prisma.checkIn.groupBy({
+        ? this.prisma.checkIn.groupBy({
             by: ['user_id'],
             where: { user_id: { in: habitIds } },
             _max: { date: true },
-          }) as unknown as Promise<MaxDate[]>)
+          })
         : Promise.resolve<MaxDate[]>([]),
       habitIds.length
-        ? (this.prisma.checkIn.groupBy({
+        ? this.prisma.checkIn.groupBy({
             by: ['user_id'],
             where: { user_id: { in: habitIds }, reviewed_by_coach: false },
             _count: { _all: true },
-          }) as unknown as Promise<Counted[]>)
+          })
         : Promise.resolve<Counted[]>([]),
     ]);
 
