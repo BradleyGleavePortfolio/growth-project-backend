@@ -392,8 +392,28 @@ export class CommunityService {
     const coachId = user?.role === 'coach' ? user.id : user?.coach_id;
     if (!coachId) return [];
 
+    // B-AUTHZ-3: a client removed (or banned) from the coach's community no
+    // longer sees teammates' rows; they keep their own (same rule as wins).
+    let viewerRemoved = false;
+    if (user?.role === 'student') {
+      const workspaceId = await winModerationWorkspaceId(this.prisma, coachId);
+      viewerRemoved =
+        workspaceId !== null &&
+        (await removedFromWorkspace(this.prisma, workspaceId, [userId])).has(userId);
+    }
+
+    // Privacy: only clients who opted in to leaderboard sharing (default off)
+    // appear, plus the caller's own row; deleted accounts never appear. Same
+    // rule as /me/leaderboard (leaderboard.service.ts).
     const students = await this.prisma.user.findMany({
-      where: { coach_id: coachId, role: 'student' },
+      where: viewerRemoved
+        ? { id: userId, coach_id: coachId, role: 'student', deleted_at: null }
+        : {
+            coach_id: coachId,
+            role: 'student',
+            deleted_at: null,
+            OR: [{ show_on_leaderboard: true }, { id: userId }],
+          },
     });
     if (students.length === 0) return [];
 
