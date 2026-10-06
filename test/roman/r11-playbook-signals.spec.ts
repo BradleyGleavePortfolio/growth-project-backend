@@ -82,7 +82,7 @@ function fakePrisma(tables: Tables) {
       return typeof args.take === 'number' ? rows.slice(0, args.take) : rows;
     }),
   });
-  const prisma: Row = {};
+  const models: Row = {};
   for (const name of [
     'teamSubCoachAssignment',
     'workoutPlanExercise',
@@ -93,9 +93,9 @@ function fakePrisma(tables: Tables) {
     'mealPlan',
     'exerciseCatalogItem',
   ]) {
-    prisma[name] = model(name);
+    models[name] = model(name);
   }
-  return { prisma: prisma as unknown as PrismaService, calls };
+  return { prisma: Object.assign(Object.create(null) as PrismaService, models), calls };
 }
 
 // ─── fixture: a head coach H with active sub-coach S, an archived sub-coach X,
@@ -270,9 +270,9 @@ function buildTables(clients: string[] = CLIENTS): Tables {
   };
 }
 
-const budget = {
+const budget = Object.assign(Object.create(null) as CoachAIBudgetService, {
   resolveHeadCoachId: jest.fn(async (id: string) => (id === S || id === X ? H : id)),
-} as unknown as CoachAIBudgetService;
+});
 
 function service(tables: Tables) {
   const { prisma, calls } = fakePrisma(tables);
@@ -280,7 +280,7 @@ function service(tables: Tables) {
 }
 
 const expectedTdee = (over: Row = {}) => {
-  const r = resolveMacroInputs(profile(over) as any, NOW);
+  const r = resolveMacroInputs(profile(over), NOW);
   if (!r.ok) throw new Error('fixture profile must resolve');
   return computeMacros(r.inputs).tdee;
 };
