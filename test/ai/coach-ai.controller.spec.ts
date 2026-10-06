@@ -7,7 +7,7 @@
 //   - approval flow materializes downstream rows for WORKOUT_PROGRAM
 //     and MEAL_PLAN, no-op for INSIGHT.
 
-import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { CoachAIService } from '../../src/ai/coach/coach-ai.service';
 import { CoachAIStateService } from '../../src/ai/coach/coach-ai-state.service';
 
@@ -21,7 +21,11 @@ function makeFixtures() {
         return null;
       }),
       findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
     },
+    // No stored time zone for client1 (approve then schedules in UTC).
+    notificationPreferences: { findUnique: jest.fn().mockResolvedValue(null) },
+    coachProfile: { findUnique: jest.fn().mockResolvedValue(null) },
     aIDraft: {
       create: jest.fn(async ({ data }: any) => {
         const row = {
@@ -39,8 +43,21 @@ function makeFixtures() {
         drafts[i] = { ...drafts[i], ...data };
         return drafts[i];
       }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        let count = 0;
+        drafts.forEach((d, i) => {
+          if (d.id !== where.id) return;
+          if (where.coachId !== undefined && d.coachId !== where.coachId) return;
+          if (where.status !== undefined && d.status !== where.status) return;
+          if (where.approvedAsId !== undefined && (d.approvedAsId ?? null) !== where.approvedAsId) return;
+          drafts[i] = { ...d, ...data };
+          count += 1;
+        });
+        return { count };
+      }),
     },
   } as any;
+  prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
 
   const stateImpl = {
     _ready: true as boolean,
@@ -129,6 +146,11 @@ function makeFixtures() {
   const workouts = {
     createPlan: jest.fn().mockResolvedValue({ id: 'wp-1' }),
     setExercises: jest.fn().mockResolvedValue([]),
+    writePlanAssignmentsInTx: jest.fn(
+      async (_tx: unknown, _coach: string, _client: string, plans: Array<{ id: string }>) =>
+        plans.map((_p, i) => ({ id: `cwa-${i + 1}` })),
+    ),
+    notifyProgramAssigned: jest.fn(),
     // MWB-1 (§7.2): CoachAIService now delegates its client gate to
     // WorkoutBuilderService.assertCanAccessClient. Mirror the old ownership
     // rule (only coach1 owns client1) so the access-control tests still
@@ -244,6 +266,111 @@ describe('CoachAIService', () => {
     expect(approved.approvedAsId).toBe('wp-1');
     expect(f.workouts.createPlan).toHaveBeenCalledTimes(1);
     expect(f.workouts.setExercises).toHaveBeenCalledTimes(1);
+  });
+
+  // B-AIASSIGN-125: "Approve & assign" must put the days on the client's calendar.
+  async function threeDayDraft(f: ReturnType<typeof makeFixtures>) {
+    const ex = [{ exercise_external_id: 'bench', name: 'Bench', order: 1, sets: 4, reps_or_duration_seconds: 8 }];
+    f.anthropic.completeStructured.mockResolvedValue({
+      data: {
+        summary: 'Strength block',
+        weeks: 2,
+        days_per_week: 2,
+        days: [
+          { week: 1, day: 1, name: 'Upper', type: 'strength', exercises: ex },
+          { week: 1, day: 3, name: 'Lower', type: 'strength', exercises: ex },
+          { week: 2, day: 1, name: 'Upper', type: 'strength', exercises: ex },
+        ],
+        coach_notes: '',
+      },
+      tokensIn: 100,
+      tokensOut: 100,
+      modelUsed: 'claude-sonnet-4-6',
+      latencyMs: 100,
+    });
+    f.workouts.createPlan
+      .mockResolvedValueOnce({ id: 'wp-1' })
+      .mockResolvedValueOnce({ id: 'wp-2' })
+      .mockResolvedValueOnce({ id: 'wp-3' });
+    const { draftId } = await f.svc.generateWorkoutProgram('coach1', {
+      clientId: 'client1',
+      weeks: 2,
+      daysPerWeek: 2,
+    });
+    return draftId;
+  }
+
+  it('approve assigns every AI day to the client, one push, and returns assigned_count', async () => {
+    const f = makeFixtures();
+    const draftId = await threeDayDraft(f);
+    const before = Date.now();
+    const approved: any = await f.svc.approveDraft('coach1', draftId);
+    expect(approved.status).toBe('APPROVED');
+    expect(approved.approvedAsId).toBe('wp-1');
+    expect(approved.assigned_count).toBe(3);
+    expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(f.workouts.writePlanAssignmentsInTx).toHaveBeenCalledTimes(1);
+    const [tx, coachId, clientId, plans, startIso] = f.workouts.writePlanAssignmentsInTx.mock.calls[0];
+    expect(tx).toBe(f.prisma);
+    expect(coachId).toBe('coach1');
+    expect(clientId).toBe('client1');
+    expect(plans).toEqual([
+      { id: 'wp-1', week_index: 0, day_index: 0 },
+      { id: 'wp-2', week_index: 0, day_index: 2 },
+      { id: 'wp-3', week_index: 1, day_index: 0 },
+    ]);
+    // No client zone known in this fixture -> next Monday 09:00 UTC.
+    const start = new Date(startIso);
+    expect(start.getUTCDay()).toBe(1);
+    expect(start.getTime()).toBeGreaterThan(before);
+    expect(start.getTime() - before).toBeLessThanOrEqual(8 * 24 * 60 * 60 * 1000);
+    expect(f.workouts.notifyProgramAssigned).toHaveBeenCalledTimes(1);
+    expect(f.workouts.notifyProgramAssigned).toHaveBeenCalledWith('client1', 'cwa-1', 'wp-1');
+  });
+
+  it('a second approve (double tap) replays the result without assigning again', async () => {
+    const f = makeFixtures();
+    const draftId = await threeDayDraft(f);
+    const first: any = await f.svc.approveDraft('coach1', draftId);
+    const second: any = await f.svc.approveDraft('coach1', draftId);
+    expect(first.assigned_count).toBe(3);
+    expect(second.assigned_count).toBe(3);
+    expect(second.approvedAsId).toBe('wp-1');
+    expect(f.workouts.createPlan).toHaveBeenCalledTimes(3);
+    expect(f.workouts.writePlanAssignmentsInTx).toHaveBeenCalledTimes(1);
+    expect(f.workouts.notifyProgramAssigned).toHaveBeenCalledTimes(1);
+  });
+
+  it('two approves at once assign the program once', async () => {
+    const f = makeFixtures();
+    const draftId = await threeDayDraft(f);
+    const results = await Promise.allSettled([
+      f.svc.approveDraft('coach1', draftId),
+      f.svc.approveDraft('coach1', draftId),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(rejected.reason).toBeInstanceOf(ConflictException);
+    expect(f.workouts.createPlan).toHaveBeenCalledTimes(3);
+    expect(f.workouts.writePlanAssignmentsInTx).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed assignment leaves the draft approvable again', async () => {
+    const f = makeFixtures();
+    const draftId = await threeDayDraft(f);
+    f.workouts.writePlanAssignmentsInTx.mockRejectedValueOnce(new Error('db down'));
+    await expect(f.svc.approveDraft('coach1', draftId)).rejects.toThrow('db down');
+    expect(f.drafts.find((d) => d.id === draftId).status).toBe('DRAFT');
+    expect(f.workouts.notifyProgramAssigned).not.toHaveBeenCalled();
+  });
+
+  it('approve refuses a client the coach can no longer reach', async () => {
+    const f = makeFixtures();
+    const draftId = await threeDayDraft(f);
+    f.workouts.assertCanAccessClient.mockRejectedValueOnce(new Error('moved'));
+    await expect(f.svc.approveDraft('coach1', draftId)).rejects.toBeInstanceOf(NotFoundException);
+    expect(f.workouts.writePlanAssignmentsInTx).not.toHaveBeenCalled();
+    expect(f.drafts.find((d) => d.id === draftId).status).toBe('DRAFT');
   });
 
   it('approve flow on a MEAL_PLAN draft materializes a MealPlan', async () => {
