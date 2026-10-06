@@ -28,9 +28,14 @@ async function serve(controller: Type<unknown>): Promise<{ app: INestApplication
   return { app, base };
 }
 
+// Visible text only: drop the one known, server-owned script block by exact
+// string (not a regex), then strip tags.
 function textOutsideTags(html: string): string {
+  const scriptBlock = `<script>\n${EMAIL_CONFIRMED_SCRIPT}\n</script>`;
+  expect(html).toContain(scriptBlock);
   return html
-    .replace(/<script>[\s\S]*?<\/script>/g, ' ')
+    .split(scriptBlock)
+    .join(' ')
     .split('<')
     .map((chunk, i) => (i === 0 ? chunk : chunk.slice(chunk.indexOf('>') + 1)))
     .join(' ');
