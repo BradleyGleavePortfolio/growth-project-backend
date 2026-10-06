@@ -6,6 +6,8 @@ export interface ReviewConfig {
   coachPassword?: string;
   clientEmail?: string;
   clientPassword?: string;
+  expectedCoachEmail?: string;
+  expectedClientEmail?: string;
 }
 export type Role = 'coach' | 'client';
 export type RequestPlan = (

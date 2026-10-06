@@ -24,6 +24,7 @@ const config: ReviewConfig = {
   baseUrl: 'http://127.0.0.1:3000/api', endDate: '2026-10-06', local: true,
   coachEmail: 'coach@example.invalid', clientEmail: 'client@example.invalid',
   coachPassword: 'inert-test-fixture', clientPassword: 'inert-test-fixture',
+  expectedCoachEmail: 'coach@example.invalid', expectedClientEmail: 'client@example.invalid',
 };
 type Row = Record<string, unknown>;
 interface Call { role: Role; method: string; path: string; body?: Row; token?: string; idem?: string }
@@ -47,7 +48,10 @@ const contracts: Array<[string, RegExp, Dto]> = [
   ['POST', /^\/scheduling\/sessions\/[^/]+\/approve$/, ApproveSessionDto],
 ];
 
-function apiDouble(options: { pendingConsent?: boolean; clientRole?: string; clientCoach?: string; badAssignment?: boolean } = {}) {
+function apiDouble(options: {
+  pendingConsent?: boolean; clientRole?: string; clientCoach?: string; badAssignment?: boolean;
+  coachSignedEmail?: string; clientSignedEmail?: string; roster?: Row[];
+} = {}) {
   const calls: Call[] = [];
   const packages: Row[] = [];
   const workouts: Row[] = [];
@@ -85,8 +89,19 @@ function apiDouble(options: { pendingConsent?: boolean; clientRole?: string; cli
       expect(token).toBeUndefined();
       return {
         access_token: `fixture-${role}-session`,
-        user: { id: role === 'coach' ? coachId : clientId, role: role === 'coach' ? 'coach' : options.clientRole || 'student', coach_id: clientCoach },
+        user: {
+          id: role === 'coach' ? coachId : clientId,
+          role: role === 'coach' ? 'coach' : options.clientRole || 'student',
+          coach_id: clientCoach,
+          email: role === 'coach' ? options.coachSignedEmail || config.coachEmail : options.clientSignedEmail || config.clientEmail,
+        },
       };
+    }
+    if (route === '/coach/clients') {
+      expect(role).toBe('coach');
+      expect(url.searchParams.get('status')).toBe('all');
+      expect(url.searchParams.get('take')).toBe('2');
+      return (options.roster || (clientCoach === coachId ? [{ id: clientId }] : [])).slice(0, 2);
     }
     if (route === '/coaches/me/invite-link') return { code: 'GP-REVIEW' };
     if (route === '/auth/attach-invite-code') {
@@ -235,6 +250,32 @@ describe('store review public-HTTP request plan', () => {
     const api = apiDouble(options);
     await expect(seed(config, api.request)).rejects.toThrow(error);
     expect(api.calls.every(call => call.path === '/auth/login')).toBe(true);
+  });
+
+  it('refuses an unrelated valid coach/client login pair before any dataset write', async () => {
+    const api = apiDouble({
+      coachSignedEmail: 'unrelated-coach@example.invalid',
+      clientSignedEmail: 'unrelated-client@example.invalid',
+    });
+    await expect(seed({
+      ...config, coachEmail: 'unrelated-coach@example.invalid', clientEmail: 'unrelated-client@example.invalid',
+    }, api.request)).rejects.toThrow('approved reviewer identity');
+    expect(api.calls.every(call => call.path === '/auth/login')).toBe(true);
+  });
+
+  it('also refuses a different signed-in client before first-open bootstrap or pairing', async () => {
+    const api = apiDouble({ clientSignedEmail: 'unrelated-client@example.invalid' });
+    await expect(seed(config, api.request)).rejects.toThrow('approved reviewer identity');
+    expect(api.calls.every(call => call.path === '/auth/login')).toBe(true);
+  });
+
+  it('refuses a coach with any other client, including archived clients, before any dataset write', async () => {
+    const api = apiDouble({
+      roster: [{ id: clientId }, { id: '33333333-3333-4333-a333-333333333333', archived_at: '2026-10-06T12:00:00.000Z' }],
+    });
+    await expect(seed(config, api.request)).rejects.toThrow('another client');
+    expect(api.calls.every(call => call.path === '/auth/login' ||
+      (call.method === 'GET' && call.path.startsWith('/coach/clients?')))).toBe(true);
   });
 
   it('does not claim completion when bulk assignment returns a per-client failure', async () => {
