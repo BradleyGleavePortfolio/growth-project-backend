@@ -10,7 +10,7 @@ import type {
 // AI-approved plans store items with time_of_day "Day N – slot" (written by
 // CoachAiService.materializeMealPlan) plus the same meals per day in `days`,
 // which the client app renders in preference to `items`.
-const DAY_SLOT = /^day\s+(\d+)\s*[–-]\s*(.*)$/i;
+const DAY_SLOT = /^day\s+(\d+)\s*[–-](.*)$/i;
 
 /**
  * Rebuild the per-day shape from edited items so a coach's edit of an
