@@ -5,7 +5,7 @@ This operator tool populates **two dedicated, already-confirmed accounts** with 
 ## Before running
 
 1. Obtain owner approval for the exact destination and the two review accounts before any remote execution. Do not use a real client's or working coach's account.
-2. Confirm one account is a coach and the other is a client (`student` in the API). The client must be unpaired or already paired with this coach. The tool refuses a different coach.
+2. Separately record the two owner-approved reviewer email identities in `REVIEW_EXPECTED_COACH_EMAIL` and `REVIEW_EXPECTED_CLIENT_EMAIL`, using the private review-access records, not the current login environment. These pins must not be changed to accommodate a working account. Confirm one account is a coach and the other is a client (`student` in the API). Before any review data or first-open bootstrap, the tool checks both login emails and signed-in emails against those pins, case-insensitively, and refuses a coach with any other client, including archived clients. The client must be unpaired or already paired with this coach.
 3. Complete the ordinary client onboarding agreement in the app. The tool does not accept legal terms or optional AI permission on anyone's behalf. If the free grant returns pending consent, complete that agreement and rerun.
 4. Confirm Programs and Community are enabled for these accounts. The tool never enables them. Food and exercise search must return existing catalog entries.
 5. Store the account credentials in the operator's private environment, not in this repository, a command argument, shell history, PR, report, screenshot, or saved plan. Never provide database, payment or service-role credentials to this tool.
@@ -15,6 +15,8 @@ Set these environment variables privately:
 | Variable | Meaning |
 | --- | --- |
 | `REVIEW_API_BASE_URL` | Approved backend origin, optionally ending in `/api`. HTTPS is required except for loopback. No query, credentials or other path. |
+| `REVIEW_EXPECTED_COACH_EMAIL` | Exact owner-approved reviewer coach identity from the private review-access records, set independently of login credentials. |
+| `REVIEW_EXPECTED_CLIENT_EMAIL` | Exact owner-approved reviewer client identity from the private review-access records, set independently of login credentials. |
 | `REVIEW_COACH_EMAIL` | Confirmed synthetic coach login email. |
 | `REVIEW_COACH_PASSWORD` | That coach account's password. |
 | `REVIEW_CLIENT_EMAIL` | Confirmed synthetic client login email. |
@@ -63,6 +65,6 @@ After a successful run, sign in to **both accounts in the submitted mobile binar
 
 ## Offline proof
 
-`test/review-accounts.spec.ts` runs the request planner against an in-memory public-API double and validates emitted writes with the controllers' actual class-validator DTOs. It covers a first pass, a second pass that skips sample writes, consent refusal, role/pairing refusal, and destination/secret-output safeguards. It never contacts a live backend.
+`test/review-accounts.spec.ts` runs the request planner against an in-memory public-API double and validates emitted writes with the controllers' actual class-validator DTOs. It covers a first pass, a second pass that skips sample writes, refusal of unrelated identities and a coach with another client before any dataset write, consent refusal, role/pairing refusal, and destination/secret-output safeguards. It never contacts a live backend.
 
 The CI lane runs only that test file. A real local backend integration was not used because ordinary password login requires confirmed authentication-provider identities and the lane has no such local accounts. No database seed or service-key workaround is part of this tool.

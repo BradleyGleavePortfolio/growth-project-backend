@@ -278,6 +278,22 @@ describe('store review public-HTTP request plan', () => {
       (call.method === 'GET' && call.path.startsWith('/coach/clients?')))).toBe(true);
   });
 
+  it('accepts only a case-insensitive exact identity match, with the review client as the only roster entry', async () => {
+    const api = apiDouble({ clientCoach: coachId, roster: [{ id: clientId }] });
+    const report = await seed({
+      ...config, expectedCoachEmail: config.expectedCoachEmail?.toUpperCase(),
+      expectedClientEmail: config.expectedClientEmail?.toUpperCase(),
+    }, api.request);
+    expect(report.activePlan).toBe(true);
+    expect(report.skipped.pairing).toBe(1);
+  });
+
+  it('requires separate approval pins before any HTTP request', async () => {
+    const api = apiDouble();
+    await expect(seed({ ...config, expectedCoachEmail: undefined }, api.request)).rejects.toThrow('approved reviewer identity');
+    expect(api.calls).toHaveLength(0);
+  });
+
   it('does not claim completion when bulk assignment returns a per-client failure', async () => {
     const api = apiDouble({ badAssignment: true });
     await expect(seed(config, api.request)).rejects.toThrow('program assignment did not succeed');
@@ -309,7 +325,7 @@ describe('operator destination and private-output gates', () => {
     const remote = { ...env, REVIEW_API_BASE_URL: 'https://review.example.invalid', REVIEW_CONFIRM_SYNTHETIC: 'yes' };
     expect(() => readConfig(remote, true)).toThrow('owner approval');
     expect(() => readConfig({ ...remote, REVIEW_OWNER_APPROVED: 'yes', REVIEW_EXPECTED_ORIGIN: 'https://other.example.invalid' }, true)).toThrow('owner approval');
-    expect(() => readConfig({ ...remote, REVIEW_OWNER_APPROVED: 'yes', REVIEW_EXPECTED_ORIGIN: 'https://review.example.invalid' }, true)).toThrow('REVIEW_COACH_EMAIL');
+    expect(() => readConfig({ ...remote, REVIEW_OWNER_APPROVED: 'yes', REVIEW_EXPECTED_ORIGIN: 'https://review.example.invalid' }, true)).toThrow('REVIEW_EXPECTED_COACH_EMAIL');
   });
   it.each(['http://review.example.invalid', 'https://review.example.invalid?token=fixture',
     'https://user:fixture@review.example.invalid', 'https://review.example.invalid/admin'])('rejects unsafe base %s', base => {

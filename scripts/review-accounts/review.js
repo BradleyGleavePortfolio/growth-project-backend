@@ -34,6 +34,8 @@ function readConfig(env, apply = false) {
   }
   const config = { baseUrl: `${url.origin}/api`, endDate, local };
   if (apply) {
+    config.expectedCoachEmail = requireValue(env, 'REVIEW_EXPECTED_COACH_EMAIL');
+    config.expectedClientEmail = requireValue(env, 'REVIEW_EXPECTED_CLIENT_EMAIL');
     config.coachEmail = requireValue(env, 'REVIEW_COACH_EMAIL');
     config.coachPassword = requireValue(env, 'REVIEW_COACH_PASSWORD');
     config.clientEmail = requireValue(env, 'REVIEW_CLIENT_EMAIL');
@@ -120,7 +122,17 @@ function array(value, field) {
   return rows;
 }
 
+function emailIdentity(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
 async function seed(config, request = httpTransport(config)) {
+  for (const role of ['coach', 'client']) {
+    const expected = emailIdentity(config[role === 'coach' ? 'expectedCoachEmail' : 'expectedClientEmail']);
+    if (!expected || emailIdentity(config[`${role}Email`]) !== expected) {
+      throw new Error(`The ${role} login must match its separately approved reviewer identity. Check the private approval pins, not a working account's credentials.`);
+    }
+  }
   const sessions = {};
   const report = { created: {}, skipped: {} };
   function count(action, step) {
@@ -148,12 +160,22 @@ async function seed(config, request = httpTransport(config)) {
         sessions[role].user.role !== (role === 'coach' ? 'coach' : 'student')) {
       throw new Error(`The ${role} login must have the ${role === 'coach' ? 'coach' : 'student'} role. No role changes are made by this tool.`);
     }
+    if (emailIdentity(sessions[role].user.email) !==
+        emailIdentity(config[role === 'coach' ? 'expectedCoachEmail' : 'expectedClientEmail'])) {
+      throw new Error(`The signed-in ${role} does not match its approved reviewer identity. No review data has been written.`);
+    }
   }
   const coachId = sessions.coach.user.id;
   const clientId = sessions.client.user.id;
   if (coachId === clientId) throw new Error('Use two separate confirmed review accounts.');
   if (sessions.client.user.coach_id && sessions.client.user.coach_id !== coachId) {
     throw new Error('This client belongs to another coach. Use a dedicated review client; no reassignment is performed.');
+  }
+  // This raw-array route includes archived clients. Two rows are sufficient:
+  // at most one can be the single approved review client.
+  const roster = array(await call('coach', 'GET', '/coach/clients?status=all&take=2'));
+  if (roster.some(row => row.id !== clientId)) {
+    throw new Error('The review coach has another client. Use a dedicated review coach with no clients except the approved review client; no review data has been written.');
   }
   const marker = `Store review ${key(`${coachId}:${clientId}`).slice(0, 8)}`;
   const programName = `${marker} training`;
