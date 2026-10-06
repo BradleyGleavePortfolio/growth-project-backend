@@ -403,8 +403,10 @@ export class StripeConnectApiService {
     return this.get(`/invoices?${q.toString()}`);
   }
 
-  // B-TR5-119 (B-673-1) — the open invoices a never-billed cancel voids first.
-  async listOpenInvoices(
+  // B-TR5-119 (B-673-1) — the open invoices a never-billed cancel voids first:
+  // one page; has_more says whether it is complete (dunning's listOpenInvoices
+  // below follows the cursor instead).
+  async listOpenInvoicePage(
     subscriptionId: string,
   ): Promise<{ data?: Array<{ id?: string }>; has_more?: boolean }> {
     const q = new URLSearchParams({ subscription: subscriptionId, status: 'open', limit: '100' });

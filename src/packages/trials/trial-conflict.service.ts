@@ -452,7 +452,7 @@ export class TrialConflictService {
     // above is void (final), never new.
     const lists = [
       () => stripe.listDraftInvoices(subId),
-      () => stripe.listOpenInvoices(subId),
+      () => stripe.listOpenInvoicePage(subId),
       () => stripe.listUncollectibleInvoices(subId),
     ];
     for (const list of lists) {
@@ -577,7 +577,7 @@ async function readPayable(
   // B-TR7-120 — drafts first: a draft finalized after this read is on the open page.
   const drafts = payableInvoiceIds([await readOrNull(stripe.listDraftInvoices(subId))]);
   if (!drafts) return null;
-  const open = await readOrNull(stripe.listOpenInvoices(subId));
+  const open = await readOrNull(stripe.listOpenInvoicePage(subId));
   if (!open) return null;
   const payable = payableInvoiceIds([
     open,
