@@ -11,7 +11,9 @@ import { readdirSync, readFileSync } from 'fs';
 import { load as parseYaml } from 'js-yaml';
 import { join } from 'path';
 
+import { DEFAULT_APPLE_SIGNIN_CLIENT_ID } from '../../src/account-deletion/apple-token-revocation.service';
 import { ENV_RULES } from '../../src/common/env-validation';
+import { IOS_BUNDLE_ID, shapeChecks } from '../../scripts/env-truth/fly-env-classifier';
 import * as fem from '../../scripts/fly-env/fly-env-manifest';
 import type { Fleet, FlyEnvManifest, MachineCheck } from '../../scripts/fly-env/fly-env-manifest';
 
@@ -950,5 +952,23 @@ describe('planChanges / verifyState matrix', () => {
       .join('\n');
     expect(text).toContain('the running machines are unproven for:');
     expect(text).not.toContain('Fly already matches the manifest');
+  });
+});
+
+describe('Sign in with Apple on production (B-APPLE-123)', () => {
+  it('declares the iOS bundle id as the Apple audience, the value the env-truth shape check and token revocation expect', () => {
+    const declared = base().flags.APPLE_AUDIENCES;
+    expect(declared).toBe('com.growthproject.app');
+    expect(declared).toBe(IOS_BUNDLE_ID);
+    expect(declared).toBe(DEFAULT_APPLE_SIGNIN_CLIENT_ID);
+    expect(
+      shapeChecks({ APPLE_AUDIENCES: declared }).find((c) => c.name === 'APPLE_AUDIENCES')?.result,
+    ).toBe('pass');
+    expect(rules.get('APPLE_AUDIENCES')?.values).toEqual(['com.growthproject.app']);
+  });
+
+  it('keeps APPLE_NONCE_REQUIRED unset: the app sends no raw_nonce, so "true" would fail every Apple sign-in', () => {
+    expect(base().flags.APPLE_NONCE_REQUIRED).toBe('unset');
+    expect(rules.get('APPLE_NONCE_REQUIRED')?.unsetIs).toBe('off');
   });
 });

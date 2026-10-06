@@ -3,8 +3,9 @@ name: Fly Apple Sign-In Secrets Set (operator)
 # Production-mutating operator workflow: pushes APPLE_SIGNIN_KEY_ID and
 # APPLE_SIGNIN_PRIVATE_KEY (the Sign in with Apple .p8 key, multi-line PEM)
 # from GitHub Actions secrets to the Fly app. With both set (plus the already
-# configured APPLE_TEAM_ID and APPLE_SIGNIN_CLIENT_ID / APPLE_AUDIENCES) the
-# account-deletion flow revokes Sign in with Apple tokens (backend #608).
+# configured APPLE_TEAM_ID, and the Apple audience allow-list that
+# .github/fly-env-desired-state.json declares) the account-deletion flow
+# revokes Sign in with Apple tokens (backend #608).
 #
 # Input handling (S2-R2-A-01): dispatch inputs are DATA, never shell source.
 # Every `inputs.*` value enters a step only through `env:` and is used as a

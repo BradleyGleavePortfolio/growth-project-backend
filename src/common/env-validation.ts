@@ -243,7 +243,9 @@ export const ENV_RULES: EnvRule[] = [
     name: 'APPLE_AUDIENCES',
     tier: 'feature',
     reason:
-      'Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple. Without it, the endpoint returns 503 and /auth/signup-policy omits "apple" from providers. Set to your iOS bundle id (e.g. com.thegrowthproject.app) before enabling Sign in with Apple in Supabase.',
+      'Comma-separated allow-list of Apple audiences (iOS bundle ids and/or Apple Services IDs) accepted by POST /auth/apple and the Apple re-auth for account deletion. Without it, the endpoint returns 503 and /auth/signup-policy omits "apple" from providers. Must be exactly the iOS bundle id com.growthproject.app (app.json ios.bundleIdentifier): the native sheet issues identity tokens with that audience, so any other value fails every Apple sign-in with 401. Not secret; declared in .github/fly-env-desired-state.json.',
+    values: ['com.growthproject.app'],
+    unsetIs: 'off',
   },
   {
     name: 'GOOGLE_CLIENT_ID',
@@ -897,7 +899,9 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → nonce check skipped (only the literal "true" enforces it)',
     reason:
-      'Sign in with Apple: require the hashed nonce claim on the identity token when exactly "true".',
+      'Sign in with Apple: require the hashed nonce claim on the identity token when exactly "true". Keep unset until the mobile app sends raw_nonce (it does not today), or every Apple sign-in fails with 401.',
+    values: ['true', 'false'],
+    unsetIs: 'off',
   },
   {
     name: 'SUPABASE_ANON_KEY',
