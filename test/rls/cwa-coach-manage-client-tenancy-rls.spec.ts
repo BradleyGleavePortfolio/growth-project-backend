@@ -27,7 +27,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 const MIGRATIONS = path.join(__dirname, '..', '..', 'prisma', 'migrations');
 const D8_DIR = path.join(MIGRATIONS, '20270319000000_cwa_coach_manage_client_tenancy');
@@ -163,7 +163,6 @@ const describeLive = URL_WITH_LIMIT ? describe : describe.skip;
 
 describeLive('D8 assignment_coach_manage client tenancy (live Postgres, PostgREST principals)', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: URL_WITH_LIMIT } } });
-  type Tx = { $executeRawUnsafe: (sql: string) => Promise<number>; $queryRawUnsafe: (sql: string) => Promise<unknown[]> };
 
   const lit = (v: string): string => `'${v.replace(/'/g, "''")}'`;
   const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -188,13 +187,13 @@ describeLive('D8 assignment_coach_manage client tenancy (live Postgres, PostgRES
   const up = async () => applyScript(fs.readFileSync(path.join(D8_DIR, 'migration.sql'), 'utf8'));
   const down = async () => applyScript(fs.readFileSync(path.join(D8_DIR, 'down.sql'), 'utf8'));
 
-  async function asUser<T>(role: 'authenticated' | 'anon', who: Who, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  async function asUser<T>(role: 'authenticated' | 'anon', who: Who, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     return prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL ROLE ${role}`);
       // '{}' (not '') when there is no identity: auth.uid() casts the claims GUC to jsonb.
       const claims = JSON.stringify(who?.sub ? { sub: who.sub, role } : { role });
       await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', ${lit(claims)}, true)`);
-      return fn(tx as unknown as Tx);
+      return fn(tx);
     });
   }
 
