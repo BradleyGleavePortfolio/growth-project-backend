@@ -17,6 +17,22 @@ type WorkoutSessionWithExercises = Prisma.WorkoutSessionGetPayload<{
 type WeightLogRow = Prisma.WeightLogGetPayload<Record<string, never>>;
 type CheckInRow = Prisma.CheckInGetPayload<Record<string, never>>;
 
+// UX-COACHLOOKUP-124: user columns the roster never sends to the coach app.
+type RosterHiddenField = 'deletion_token_hash' | 'deletion_token_expires_at' | 'expo_push_token';
+
+// UX-COACHLOOKUP-124: per-row at-a-glance block on GET /coach/clients. Days
+// are YYYY-MM-DD (the logged day). A slice the client has not shared with
+// this coach is null; `shared` is false when no fitness slice is shared.
+export interface RosterActivity {
+  shared: boolean;
+  last_active_on: string | null;
+  last_food_on: string | null;
+  last_workout_on: string | null;
+  last_weigh_in_on: string | null;
+  last_check_in_on: string | null;
+  check_ins_to_review: number | null;
+}
+
 interface AuditContext {
   ip?: string | null;
   userAgent?: string | null;
@@ -155,6 +171,155 @@ export class CoachService {
       take: take ?? 20,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
+  }
+
+  /**
+   * UX-COACHLOOKUP-124: what a coach needs at a glance on the Clients list.
+   * Adds an `activity` block to each GET /coach/clients row (latest food,
+   * workout, weigh-in and check-in day, plus check-ins waiting for review)
+   * and stops sending fields no roster reader uses (deletion token hash,
+   * push token). Every slice follows the same per-scope consent rule as the
+   * client summary and timeline (loadFitnessConsents / coachCanAccess): a
+   * scope the client has not granted is null, and the profile is sent only
+   * with body-metrics consent, exactly as getClientSummary does. Owners
+   * bypass consent. Five grouped queries per page, never one per client.
+   */
+  async withRosterActivity<T extends { id: string; profile?: unknown }>(
+    coachId: string,
+    callerRole: string | undefined,
+    rows: T[],
+  ): Promise<Array<Omit<T, RosterHiddenField> & { activity: RosterActivity }>> {
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.id);
+    const granted = await this.rosterFitnessConsents(coachId, ids, callerRole);
+    const idsWith = (scope: string) => ids.filter((id) => granted.get(id)?.has(scope));
+    const foodIds = idsWith(ConsentScope.FITNESS_FOOD_MACROS);
+    const workoutIds = idsWith(ConsentScope.FITNESS_WORKOUTS);
+    const bodyIds = idsWith(ConsentScope.FITNESS_BODY_METRICS);
+    const habitIds = idsWith(ConsentScope.FITNESS_HABITS_PROGRESS);
+
+    type MaxDate = { user_id: string; _max: { date: Date | null } };
+    type Counted = { user_id: string; _count: { _all: number } };
+    type Grouped = [MaxDate[], MaxDate[], MaxDate[], MaxDate[], Counted[]];
+    const [food, workouts, weights, checkIns, toReview]: Grouped = await Promise.all([
+      foodIds.length
+        ? this.prisma.loggedFoodEntry.groupBy({
+            by: ['user_id'],
+            where: { user_id: { in: foodIds } },
+            _max: { date: true },
+          })
+        : Promise.resolve<MaxDate[]>([]),
+      workoutIds.length
+        ? this.prisma.workoutSession.groupBy({
+            by: ['user_id'],
+            where: { user_id: { in: workoutIds } },
+            _max: { date: true },
+          })
+        : Promise.resolve<MaxDate[]>([]),
+      bodyIds.length
+        ? this.prisma.weightLog.groupBy({
+            by: ['user_id'],
+            where: { user_id: { in: bodyIds } },
+            _max: { date: true },
+          })
+        : Promise.resolve<MaxDate[]>([]),
+      habitIds.length
+        ? this.prisma.checkIn.groupBy({
+            by: ['user_id'],
+            where: { user_id: { in: habitIds } },
+            _max: { date: true },
+          })
+        : Promise.resolve<MaxDate[]>([]),
+      habitIds.length
+        ? this.prisma.checkIn.groupBy({
+            by: ['user_id'],
+            where: { user_id: { in: habitIds }, reviewed_by_coach: false },
+            _count: { _all: true },
+          })
+        : Promise.resolve<Counted[]>([]),
+    ]);
+
+    const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
+    const byUser = (groups: MaxDate[]) => new Map(groups.map((g) => [g.user_id, day(g._max.date)]));
+    const foodOn = byUser(food);
+    const workoutOn = byUser(workouts);
+    const weighInOn = byUser(weights);
+    const checkInOn = byUser(checkIns);
+    const reviewCount = new Map(toReview.map((g) => [g.user_id, g._count._all]));
+
+    return rows.map((row) => {
+      const scopes = granted.get(row.id);
+      const has = (scope: string) => scopes?.has(scope) === true;
+      // Destructured only to leave them out of the response.
+      const {
+        deletion_token_hash: _hash,
+        deletion_token_expires_at: _expires,
+        expo_push_token: _push,
+        ...rest
+      } = row as T & Partial<Record<RosterHiddenField, unknown>>;
+      const slices: Array<string | null> = [
+        foodOn.get(row.id) ?? null,
+        workoutOn.get(row.id) ?? null,
+        weighInOn.get(row.id) ?? null,
+        checkInOn.get(row.id) ?? null,
+      ];
+      const lastActive = slices.reduce<string | null>(
+        (latest, d) => (d && (!latest || d > latest) ? d : latest),
+        null,
+      );
+      const anyShared =
+        has(ConsentScope.FITNESS_FOOD_MACROS) ||
+        has(ConsentScope.FITNESS_WORKOUTS) ||
+        has(ConsentScope.FITNESS_BODY_METRICS) ||
+        has(ConsentScope.FITNESS_HABITS_PROGRESS);
+      return {
+        ...(rest as Omit<T, RosterHiddenField>),
+        profile: has(ConsentScope.FITNESS_BODY_METRICS) ? (row.profile ?? null) : null,
+        activity: {
+          shared: anyShared,
+          last_active_on: lastActive,
+          last_food_on: has(ConsentScope.FITNESS_FOOD_MACROS) ? (foodOn.get(row.id) ?? null) : null,
+          last_workout_on: has(ConsentScope.FITNESS_WORKOUTS) ? (workoutOn.get(row.id) ?? null) : null,
+          last_weigh_in_on: has(ConsentScope.FITNESS_BODY_METRICS) ? (weighInOn.get(row.id) ?? null) : null,
+          last_check_in_on: has(ConsentScope.FITNESS_HABITS_PROGRESS) ? (checkInOn.get(row.id) ?? null) : null,
+          check_ins_to_review: has(ConsentScope.FITNESS_HABITS_PROGRESS)
+            ? (reviewCount.get(row.id) ?? 0)
+            : null,
+        },
+      };
+    });
+  }
+
+  // Batch form of loadFitnessConsents for one roster page: one query, the same
+  // rule as ConsentService.coachCanAccess (owner bypass; otherwise a granted
+  // row for this coach, client and scope). No ConsentService (legacy unit
+  // tests) means every scope is granted, as in loadFitnessConsents.
+  private async rosterFitnessConsents(
+    coachId: string,
+    clientIds: string[],
+    callerRole?: string,
+  ): Promise<Map<string, Set<string>>> {
+    const fitness = [
+      ConsentScope.FITNESS_WORKOUTS,
+      ConsentScope.FITNESS_FOOD_MACROS,
+      ConsentScope.FITNESS_BODY_METRICS,
+      ConsentScope.FITNESS_HABITS_PROGRESS,
+    ] as string[];
+    if (callerRole === 'owner' || !this.consent) {
+      return new Map(clientIds.map((id) => [id, new Set(fitness)]));
+    }
+    const consentRows = await this.prisma.clientCoachConsent.findMany({
+      where: { coach_id: coachId, client_id: { in: clientIds }, scope: { in: fitness } },
+      select: { client_id: true, scope: true, granted_at: true, revoked_at: true },
+    });
+    const out = new Map<string, Set<string>>();
+    for (const r of consentRows) {
+      if (!ConsentService.rowIsGranted(r)) continue;
+      const set = out.get(r.client_id) ?? new Set<string>();
+      set.add(r.scope);
+      out.set(r.client_id, set);
+    }
+    return out;
   }
 
   async archiveClient(

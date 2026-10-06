@@ -70,7 +70,10 @@ export class CoachController {
     const normalized: 'active' | 'archived' | 'all' =
       status === 'archived' || status === 'all' ? status : 'active';
     const take = takeRaw ? Math.min(parseInt(takeRaw, 10) || 20, 50) : undefined;
-    return this.coachService.getClients(req.user.id, normalized, req.user.role, cursor, take);
+    const rows = await this.coachService.getClients(req.user.id, normalized, req.user.role, cursor, take);
+    // UX-COACHLOOKUP-124: last active day and check-ins to review per row,
+    // consent-gated like the client summary.
+    return this.coachService.withRosterActivity(req.user.id, req.user.role, rows);
   }
 
   // ------------------------------------------------------------------ //
