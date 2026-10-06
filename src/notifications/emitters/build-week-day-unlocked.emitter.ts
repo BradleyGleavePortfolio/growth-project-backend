@@ -42,13 +42,13 @@ export class BuildWeekDayUnlockedEmitter {
         channel: 'inapp',
       });
 
-      await this.notifications.createNotification({
+      // C-643-2: one inbox row (above) plus a device push with quiet
+      // lock-screen copy; no second `push` inbox row.
+      await this.notifications.sendPush({
         user_id: clientUserId,
         kind: NotificationKind.BUILD_WEEK_DAY_UNLOCKED,
         body,
-        payload: { dayNumber, dayTitle },
         deep_link: `tgp://build-week/day/${dayNumber}`,
-        channel: 'push',
       });
     } catch (err) {
       this.logger.warn(

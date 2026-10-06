@@ -280,6 +280,35 @@ export class InviteGrantService implements OnModuleInit {
   }
 
   /**
+   * Which package a code may carry (setBinding and A2 create): the code coach's own active package
+   * that needs no signed agreement (a code attach has no signing step). Returns the package id.
+   */
+  async assertBindablePackage(coachId: string, packageId: string): Promise<string> {
+    const pkg = await this.prisma.coachPackage.findUnique({
+      where: { id: packageId },
+      select: {
+        id: true,
+        coach_id: true,
+        is_active: true,
+        archived_at: true,
+        requires_contract: true,
+        contract_template_id: true,
+      },
+    });
+    if (!pkg || pkg.coach_id !== coachId || !pkg.is_active || pkg.archived_at) {
+      throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not available' });
+    }
+    if (pkg.requires_contract && pkg.contract_template_id) {
+      throw new BadRequestException({
+        error: 'PACKAGE_REQUIRES_CONTRACT',
+        message:
+          'Packages that require a signed agreement cannot be granted through an invite code',
+      });
+    }
+    return pkg.id;
+  }
+
+  /**
    * Coach/owner sets or clears the package binding on a code they own.
    * `package_id: null` or `grant_mode: 'none'` clears the binding (both are
    * stored as null/none so the row is unambiguous).
@@ -302,33 +331,7 @@ export class InviteGrantService implements OnModuleInit {
     let packageId: string | null = null;
     let mode: InviteGrantMode = 'none';
     if (!clearing) {
-      const pkg = await this.prisma.coachPackage.findUnique({
-        where: { id: input.package_id as string },
-        select: {
-          id: true,
-          coach_id: true,
-          is_active: true,
-          archived_at: true,
-          requires_contract: true,
-          contract_template_id: true,
-        },
-      });
-      if (!pkg || pkg.coach_id !== binding.coach_id || !pkg.is_active || pkg.archived_at) {
-        throw new NotFoundException({
-          error: 'PACKAGE_NOT_FOUND',
-          message: 'Package not available',
-        });
-      }
-      // A QR / code attach has no signing step. Packages that require the
-      // coach service agreement cannot be bound; the gate runs at claim time.
-      if (pkg.requires_contract && pkg.contract_template_id) {
-        throw new BadRequestException({
-          error: 'PACKAGE_REQUIRES_CONTRACT',
-          message:
-            'Packages that require a signed agreement cannot be granted through an invite code',
-        });
-      }
-      packageId = pkg.id;
+      packageId = await this.assertBindablePackage(binding.coach_id, input.package_id as string);
       mode = input.grant_mode;
     }
 

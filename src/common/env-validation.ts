@@ -1031,8 +1031,8 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'BILLING_PORTAL_URL',
     tier: 'optional',
-    default: "'https://thegrowthproject.app/billing'",
-    reason: 'Billing portal link in dunning emails.',
+    default: 'DUNNING_UPDATE_CARD_URL (the in-app card update link)',
+    reason: 'Card update link in v1 dunning emails.',
   },
   {
     name: 'IOS_BUNDLE_ID',
@@ -1929,6 +1929,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Stripe Treasury payouts flag.',
   },
   {
+    name: 'FEATURE_COACH_CODE_TOOLS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A2 coach code tools kill switch: /coach/codes list, create, rotate, revoke and daily signups (src/invite-codes/coach-code-tools.feature.ts). Only "true" enables; unset/other = 404 coach_code_tools_disabled. The signup ledger is always written.',
+  },
+  {
     name: 'FEATURE_DUNNING_V2',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -2056,6 +2065,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Community events.',
   },
   {
+    name: 'FEATURE_COACHLESS_HOME',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A1-COACHLESS kill switch for the coachless Home surfaces: GET /coachless/home, the coach-code check/redeem routes and the scripted Roman card routes (404 coachless_disabled while off), and the coachless_home key of GET /me/feature-flags. The owner-only /admin/featured-coach config is not gated so the offer can be set up before the flip.',
+  },
+  {
     name: 'FEATURE_COMMUNITY_SEARCH',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -2122,6 +2140,15 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Live Roman chat. Off in v1.0 (owner decision D1: scripted Roman only).',
+  },
+  {
+    name: 'FEATURE_MESSAGING_CORE_V2',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A3-MSG-CORE kill switch: unified inbox, edit/delete, swipe-reply, pins, mute and read-up-to on the 1:1 coach thread (CoachMessage). Off until audit and device pass.',
   },
   {
     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',

@@ -547,7 +547,7 @@ describe('CheckoutWebhookHandlerService', () => {
         data: {
           object: {
             subscription: 'sub_fail',
-            last_payment_error: { message: 'card_declined' },
+            last_payment_error: { code: 'card_declined', message: 'Synthetic decline text' },
           },
         },
       });
