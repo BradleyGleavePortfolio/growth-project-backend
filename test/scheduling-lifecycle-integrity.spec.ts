@@ -670,6 +670,43 @@ describe('ownership (T4)', () => {
     });
   });
 
+  // AUDIT-04-125: coaches have no "mark complete" step in the app, so a
+  // confirmed welcome call whose time has passed is a call the client had.
+  it('my-coaches marks the welcome call done once a confirmed call has ended', async () => {
+    const { svc, db } = harness();
+    db.addSession({
+      id: 'w-held',
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-w',
+      status: 'scheduled',
+      start_at: new Date('2026-10-02T16:00:00.000Z'),
+      end_at: new Date('2026-10-02T16:30:00.000Z'),
+    });
+    const [head] = await svc.listMyCoaches(CLIENT);
+    expect(head.welcome).toMatchObject({
+      active_session_id: null,
+      completed_at: '2026-10-02T16:30:00.000Z',
+    });
+  });
+
+  it('my-coaches keeps offering the welcome call after a cancelled, missed or unanswered one', async () => {
+    const { svc, db } = harness();
+    for (const [i, status] of ['canceled', 'no_show', 'declined', 'expired', 'requested'].entries()) {
+      db.addSession({
+        id: `w-${status}`,
+        coach_id: 'coach-1',
+        client_id: 'client-1',
+        session_type_id: 'st-w',
+        status,
+        start_at: new Date(Date.UTC(2026, 8, 20 + i, 16, 0)),
+        end_at: new Date(Date.UTC(2026, 8, 20 + i, 16, 30)),
+      });
+    }
+    const [head] = await svc.listMyCoaches(CLIENT);
+    expect(head.welcome).toMatchObject({ active_session_id: null, completed_at: null });
+  });
+
   it('session reads: own client and coach only; client never sees coach-only fields', async () => {
     const { svc, db } = harness();
     const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
