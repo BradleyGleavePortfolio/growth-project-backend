@@ -166,6 +166,16 @@ export class UpdateRoutineDto {
   @IsString()
   @MaxLength(2000)
   description?: string;
+
+  // UX-WORKOUT-124: the client routine editor sends the full exercise list.
+  // Replace-all, same bounds as CreateRoutineDto. Without this field the
+  // strict ValidationPipe rejected every routine edit with a 400.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => CreateRoutineExerciseDto)
+  exercises?: CreateRoutineExerciseDto[];
 }
 
 // Patch DTO for an already-logged WorkoutSession. Mirrors the create-side

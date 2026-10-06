@@ -28,6 +28,7 @@ import {
   ExerciseSearchResult,
 } from './exercise.entity';
 import * as crypto from 'crypto';
+import { findSeedById } from './seed-catalog';
 
 /** In-memory LRU cache entry. */
 interface CacheEntry {
@@ -165,6 +166,12 @@ export class ExerciseLibraryService implements OnModuleInit {
 
   /** Fetch a single exercise by ExerciseDB id. */
   async getExerciseById(id: string): Promise<Exercise> {
+    // UX-WORKOUT-124: `seed:` ids come from the in-process seed catalog and
+    // never exist upstream; answer them locally (was a 503 without an
+    // ExerciseDB key and a 404 with one), so the client can show the real
+    // exercise name on a coach-assigned workout.
+    const seed = findSeedById(id);
+    if (seed) return seed;
     const cacheKey = this.buildCacheKey('byId', { id });
     const cached = await this.getCache<Exercise>(cacheKey);
     if (cached) return cached;

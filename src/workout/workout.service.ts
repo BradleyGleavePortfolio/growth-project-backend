@@ -220,18 +220,50 @@ export class WorkoutService {
   async updateRoutine(userId: string, id: string, data: UpdateRoutineDto) {
     const routine = await this.prisma.workoutRoutine.findUnique({ where: { id } });
     if (!routine || routine.creator_id !== userId) throw new NotFoundException('Routine not found');
-    return this.prisma.workoutRoutine.update({
-      where: { id },
-      data: {
-        name: data.name,
-        description: data.description,
-      },
+    // UX-WORKOUT-124: `exercises` (when sent) replaces the routine's list in
+    // the same transaction as the name change, so an edit never leaves the
+    // routine half-written.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.workoutRoutine.update({
+        where: { id },
+        data: {
+          name: data.name,
+          description: data.description,
+        },
+      });
+      if (data.exercises) {
+        await tx.routineExercise.deleteMany({ where: { routine_id: id } });
+        if (data.exercises.length > 0) {
+          await tx.routineExercise.createMany({
+            data: data.exercises.map((e) => ({
+              routine_id: id,
+              exercise_name: e.exercise_name,
+              muscle_group: e.muscle_group,
+              default_sets: e.default_sets,
+              default_reps: e.default_reps,
+              default_rest_seconds: e.default_rest_seconds ?? 90,
+              video_url: e.video_url,
+              order_index: e.order_index,
+            })),
+          });
+        }
+      }
+      return tx.workoutRoutine.findUnique({
+        where: { id },
+        include: { exercises: { orderBy: { order_index: 'asc' } } },
+      });
     });
   }
 
   async deleteRoutine(userId: string, id: string) {
     const routine = await this.prisma.workoutRoutine.findUnique({ where: { id } });
     if (!routine || routine.creator_id !== userId) throw new NotFoundException('Routine not found');
-    return this.prisma.workoutRoutine.delete({ where: { id } });
+    // RoutineExercise.routine_id is ON DELETE RESTRICT, so deleting a routine
+    // that has exercises failed with a 500. Remove the children first.
+    const [, deleted] = await this.prisma.$transaction([
+      this.prisma.routineExercise.deleteMany({ where: { routine_id: id } }),
+      this.prisma.workoutRoutine.delete({ where: { id } }),
+    ]);
+    return deleted;
   }
 }
