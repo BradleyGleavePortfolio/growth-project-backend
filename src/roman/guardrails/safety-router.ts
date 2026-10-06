@@ -64,7 +64,7 @@ const MEDICAL_SCOPE: RegExp[] = [
   /\b(disorder|syndrome|disease)\b/i,
   // B-651-2: history or near-miss reports the emergency router leaves to the
   // model: the medical hint makes the reply route to the coach and physician.
-  /\b(fainted|passed out|blacked out|fainting|passing out|blacking out|faint|dizzy|dizziness|light-?headed)\b/i,
+  /\b(fainted|passed out|blacked out|fainting|passing out|blacking out|faint|pass out|black out|dizzy|dizziness|light-?headed)\b/i,
   /\b(had|have had|history of|after|since) (a |my )?stroke\b/i,
   /\ballergic reaction\b|\ballerg(y|ies|ic) to\b/i,
   // B-666-1 / B-666-2: history, risk and family mentions of the acute

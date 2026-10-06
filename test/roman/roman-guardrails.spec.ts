@@ -299,7 +299,7 @@ describe('safety copy — owner ruling 16:38 (warm, useful, safe next step, then
   });
 
   it('the contract tells Roman to be useful, not merely deflect, and is versioned v2', () => {
-    expect(PROMPT_VERSION).toBe('roman-client-v3');
+    expect(PROMPT_VERSION).toBe('roman-client-v4');
     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/do not simply deflect/);
     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/pain-free alternative or a lower-intensity version/);
     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/Warm as well as composed/);
