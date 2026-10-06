@@ -1,0 +1,25 @@
+old=null       new=self_harm   | I want to overdose
+old=null       new=self_harm   | I am going to overdose
+old=null       new=self_harm   | I'm going to overdose tonight
+old=null       new=self_harm   | I want to overdose on my pills
+old=null       new=self_harm   | I am going to overdose on my sleeping pills
+old=emergency  new=emergency   | I want to take an overdose
+old=emergency  new=emergency   | I am going to take an overdose
+old=emergency  new=emergency   | thinking about taking an overdose
+old=null       new=self_harm   | I want to overdose and die
+old=null       new=self_harm   | I want to overdose and not wake up
+old=null       new=null        | I want to take all my pills
+old=null       new=null        | I am going to take all my pills
+old=null       new=null        | I want to swallow all my pills
+old=null       new=self_harm   | I'm planning to overdose
+old=null       new=self_harm   | I am thinking of overdosing
+old=emergency  new=emergency   | my chest hurts and I can't breathe
+old=emergency  new=emergency   | I can't breathe and my chest hurts
+old=null       new=emergency   | I can't breathe after my workout and my chest hurts
+old=null       new=emergency   | my chest hurts and I can't breathe after my run
+old=emergency  new=emergency   | chest pain and I can't breathe after my workout
+old=null       new=emergency   | I can't breathe after my run
+old=null       new=emergency   | I can't breathe after the workout
+old=null       new=emergency   | I can't breathe after training
+old=null       new=null        | my chest hurts after my workout
+old=null       new=emergency   | my chest feels tight and I can't breathe after squats

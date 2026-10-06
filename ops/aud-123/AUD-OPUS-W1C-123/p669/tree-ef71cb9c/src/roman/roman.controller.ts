@@ -1,0 +1,242 @@
+/**
+ * RomanController — REST surface for the Roman chat MVP (brief §1.2).
+ *
+ * Routes (all under `/roman`, all behind JwtAuthGuard + RomanFeatureGuard):
+ *   POST   /roman/sessions                  open or resume (idempotent on day-key)
+ *   GET    /roman/sessions/:id/messages      paginated, newest first
+ *   POST   /roman/sessions/:id/messages      submit a user turn → SSE assistant stream
+ *
+ * Listing and deleting chats (GET /roman/sessions, DELETE /roman/sessions,
+ * DELETE /roman/sessions/:id) live in RomanChatsController, which is NOT
+ * behind the feature flag: a client's right to find and erase their chats
+ * must not depend on Roman chat being on (B-635-2).
+ *
+ * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
+ * signed-in users on ANY tier (free + pro) — so there is no tier gate, only the
+ * per-tier RATE limit applied in the service (brief §4). RomanFeatureGuard
+ * returns 404 on every route while the feature flag is OFF.
+ *
+ * Streaming: `POST …/messages` returns Server-Sent Events. The user turn is
+ * persisted first; the assistant turn is streamed and persisted on completion
+ * (or partial-with-interrupted on client disconnect — brief §1.3).
+ */
+
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import type { AuthedRequest } from '../auth/auth-request';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { PrismaService } from '../prisma.service';
+import { RomanFeatureGuard } from './roman-feature.guard';
+import { toRomanSseErrorFrame } from './roman-sse-error';
+import {
+  RomanCaller,
+  RomanService,
+} from './roman.service';
+import {
+  ListMessagesQueryDto,
+  OpenSessionDto,
+  SendMessageDto,
+} from './roman.dto';
+
+@Controller('roman')
+@UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
+export class RomanController {
+  constructor(
+    private readonly roman: RomanService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  // ─── POST /roman/sessions — open or resume ─────────────────────────────────
+  @Post('sessions')
+  @HttpCode(HttpStatus.OK)
+  @Roles('student', 'coach', 'owner')
+  async openSession(@Req() req: AuthedRequest, @Body() dto: OpenSessionDto) {
+    const caller = await this.callerOf(req);
+    const session = await this.roman.openOrResumeSession(caller, dto.surface);
+    return this.toSessionView(session);
+  }
+
+  // ─── GET /roman/sessions/:id/messages — paginated, newest first ────────────
+  // no-store: a transcript must never outlive its deletion in a device HTTP
+  // cache (the global interceptor would otherwise mark it private, max-age=60).
+  @Get('sessions/:id/messages')
+  @Header('Cache-Control', 'no-store')
+  @Roles('student', 'coach', 'owner')
+  async listMessages(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Query() query: ListMessagesQueryDto,
+  ) {
+    const caller = await this.callerOf(req);
+    const page = await this.roman.listMessages(caller, id, {
+      cursor: query.cursor,
+      limit: query.limit,
+    });
+    return {
+      messages: page.messages.map((m) => this.toMessageView(m)),
+      nextCursor: page.nextCursor,
+    };
+  }
+
+  // ─── POST /roman/sessions/:id/messages — submit a turn, stream the reply ───
+  @Post('sessions/:id/messages')
+  @Roles('student', 'coach', 'owner')
+  async sendMessage(
+    @Req() req: Request & AuthedRequest,
+    @Res() res: Response,
+    @Param('id') id: string,
+    @Body() dto: SendMessageDto,
+  ): Promise<void> {
+    const caller = await this.callerOf(req);
+    // An emergency / self-harm message is answered by the deterministic
+    // SafetyRouter template (911 / 988): no model call, no spend, and none of
+    // the client's data leaves the app. Neither the per-user turn limit, the
+    // daily spend cap, nor the box-2 AI gate (which governs sending data to
+    // the AI processor, CONSENT_D2_CONTRACT) may stand between the client and
+    // that answer. Every other turn keeps all three checks.
+    const crisis = this.roman.isSafetyShortCircuit(dto.content);
+
+    // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
+    // count against the cap). Throws a structured 429 Too Many Requests; we
+    // surface the retry budget as a real Retry-After header (RFC 6585 §4)
+    // before re-throwing so the NestJS filter serialises the body.
+    try {
+      if (!crisis) await this.roman.assertWithinRateLimit(caller);
+    } catch (err) {
+      const payload = (
+        err as { getResponse?: () => unknown }
+      ).getResponse?.() as { retryAfterSeconds?: number } | undefined;
+      if (typeof payload?.retryAfterSeconds === 'number') {
+        res.setHeader('Retry-After', String(payload.retryAfterSeconds));
+      }
+      throw err;
+    }
+
+    const session = await this.roman.getOwnedSession(caller, id);
+    // R2b — a client without a live box-2 grant gets a plain 403
+    // ai_consent_required (Settings > Privacy) before the turn is stored or
+    // the stream opens.
+    // A crisis turn skips it: the template involves no AI processing, and
+    // streamAssistantTurn answers it before its own egress check.
+    if (!crisis) await this.roman.assertMayUseAi(caller);
+    // OR-113-2 — daily spend cap, checked before the turn is stored (coded
+    // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
+    if (!crisis) await this.roman.assertDailyCapacity(caller);
+    // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
+    // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
+    if (!crisis) await this.roman.assertCoachPoolOpen(caller);
+    await this.roman.appendMessage(caller, session.id, {
+      role: 'user',
+      content: dto.content,
+    });
+
+    // Manual SSE: we own the response stream so we can persist the partial on
+    // client-disconnect. (NestJS @Sse maps an Observable but does not give us a
+    // clean disconnect hook for partial persistence — brief §1.3.)
+    // B-626-2 — the support reference for this stream travels in the
+    // X-Request-ID header (RequestIdMiddleware already set it; repeating it
+    // here keeps it on the SSE response whatever writeHead merges). It is
+    // never added to the strict `{ code, message }` error frame.
+    const requestId = (req as { requestId?: string }).requestId;
+    res.writeHead(HttpStatus.OK, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      ...(requestId ? { 'X-Request-ID': requestId } : {}),
+    });
+    if (typeof (res as { flushHeaders?: () => void }).flushHeaders === 'function') {
+      (res as { flushHeaders: () => void }).flushHeaders();
+    }
+
+    const abort = new AbortController();
+    const onClose = () => abort.abort();
+    req.on('close', onClose);
+
+    try {
+      for await (const chunk of this.roman.streamAssistantTurn(caller, session, {
+        signal: abort.signal,
+        userMessage: dto.content,
+      })) {
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        if (chunk.type === 'done') break;
+      }
+    } catch (err) {
+      // Surface a structured error event, never a raw stack (AGENT_RULES #9).
+      // B-626-2 — exactly `{ code, message }`: the mobile parser is strict,
+      // and the reference is already in the X-Request-ID header above.
+      res.write(`event: error\ndata: ${JSON.stringify(toRomanSseErrorFrame(err))}\n\n`);
+    } finally {
+      req.off('close', onClose);
+      res.end();
+    }
+  }
+
+  // ─── helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Build the RomanCaller from the authenticated user. Resolves the coach
+   * subscription tier (best-effort) so the service can apply the right
+   * rate-limit cap; absent a row, the caller is treated as free.
+   */
+  private async callerOf(req: AuthedRequest): Promise<RomanCaller> {
+    const user = req.user;
+    let tier: RomanCaller['tier'] = 'free';
+    try {
+      const sub = (await this.prisma.coachSubscription.findUnique({
+        where: { coach_id: user.id },
+      })) as { tier?: RomanCaller['tier'] } | null;
+      if (sub?.tier) tier = sub.tier;
+    } catch {
+      // No subscription model row / not a coach — free tier is the safe default.
+    }
+    return { id: user.id, role: user.role, tier };
+  }
+
+  private toSessionView(session: {
+    id: string;
+    surface: string;
+    message_count: number;
+    started_at: Date;
+    last_activity_at: Date;
+  }) {
+    return {
+      id: session.id,
+      surface: session.surface,
+      messageCount: session.message_count,
+      startedAt: session.started_at,
+      lastActivityAt: session.last_activity_at,
+    };
+  }
+
+  private toMessageView(m: {
+    id: string;
+    role: string;
+    content: string;
+    interrupted: boolean;
+    created_at: Date;
+  }) {
+    return {
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      interrupted: m.interrupted,
+      createdAt: m.created_at,
+    };
+  }
+}

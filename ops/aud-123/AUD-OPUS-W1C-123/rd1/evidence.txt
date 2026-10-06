@@ -1,0 +1,10 @@
+RD1 #667 af32412c evidence (Opus, agent 123)
+parents: af32412c = merge(9b525546 [landed Roman train, tree b8bfedac = audited #670 tree], 76a59216 [origin/main head 18:48])
+merge base d23fa317
+both-sides files: .env.example, .github/workflows/ci.yml, src/audit/audit.service.ts, src/checkout/dunning-v2/dunning-lockout.guard.ts, src/common/env-validation.ts
+auto merge-tree 9b525546 76a59216 -> bbd78e66 with 1 conflict (ci.yml); diff bbd78e66..af32412c = ci.yml only (3+/3-, conflict markers removed, both steps kept)
+patch-id: .env.example roman==main->merged, main==roman->merged; lockout guard same both directions
+audit.service.ts / env-validation.ts: patch-ids differ only because both sides made the same prettier reflow (audit) or context lines moved (env); manual diff: merged-vs-main == Roman hunks, merged-vs-roman == main hunks
+env rules: MB 333, roman 334 (+ROMAN_DAILY_COST_CAP_USD), main 340 (+7), merged 341, no duplicate names
+ci.yml merged-vs-main = exactly Roman's spend-admission live-spec step; live-spec steps 3/3 -> 4 (union)
+Roman side touches no prisma files; route-table spec roman entries unchanged by main; roman/context stays locked (ROMAN_LOCKED_PREFIXES checked before the roman/* allow)

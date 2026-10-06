@@ -1,0 +1,115 @@
+# TGP CI lane (operator 115). Lives ONLY on ci/** and audit/** branches; never merge it into a PR or main.
+# Runs targeted jest (+ optional tsc) as ONE job, so a failing-before proof or lens probe costs one runner for a few minutes
+# instead of the 5-job ci.yml. Specs: list jest paths/args in .ci-lane-specs (one per line) at the repo root of the branch.
+# Optional: create an empty .ci-lane-tsc file to also run `npx tsc --noEmit`.
+name: ci-lane
+on:
+  push:
+    branches: ['ci/**', 'audit/**']
+concurrency:
+  group: ci-lane-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Type-check (only when .ci-lane-tsc exists)
+        if: hashFiles('.ci-lane-tsc') != ''
+        run: npx tsc --noEmit
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - name: Targeted jest
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+        run: |
+          set -euo pipefail
+          test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+          mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+          echo "specs: ${SPECS[*]}"
+          npx jest --ci --runInBand "${SPECS[@]}"
+
+  # B-TR12-123 (agent 123): production-order migration proof. Production has main's migrations applied (newest
+  # 20270318122000_coach_booking_options); the trials train adds 20270228000000 and 20270313000000 (older names).
+  # DB "prod_order": deploy main's chain first (trials dirs held back), then deploy again with them restored.
+  # DB "fresh_order": deploy the whole chain in name order. The two schemas must be identical.
+  migration-order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: prod_order
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PROD_URL: postgresql://postgres:postgres@localhost:5432/prod_order
+      FRESH_URL: postgresql://postgres:postgres@localhost:5432/fresh_order
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: postgresql-client
+        run: |
+          if ! command -v psql >/dev/null 2>&1 || ! command -v pg_dump >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y postgresql-client
+          fi
+          psql --version; pg_dump --version
+      - name: Production order (main chain first, then the trials migrations)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRIALS="20270228000000_package_free_trials 20270313000000_package_trial_truth"
+          psql -X -v ON_ERROR_STOP=1 -q "$PROD_URL" -f prisma/migrations/_supabase_bootstrap.sql >/dev/null
+          mkdir -p /tmp/held
+          for m in $TRIALS; do mv "prisma/migrations/$m" /tmp/held/; done
+          echo "newest migration on the main chain: $(ls prisma/migrations | grep -E '^[0-9]' | sort | tail -1)"
+          DATABASE_URL="$PROD_URL?schema=public" DIRECT_URL="$PROD_URL?schema=public" npx prisma migrate deploy 2>&1 | tail -3
+          for m in $TRIALS; do mv "/tmp/held/$m" prisma/migrations/; done
+          echo "=== second deploy (trials migrations pending, older names than applied ones) ==="
+          DATABASE_URL="$PROD_URL?schema=public" DIRECT_URL="$PROD_URL?schema=public" npx prisma migrate deploy 2>&1 | tee /tmp/second.log
+          grep -q "20270228000000_package_free_trials" /tmp/second.log
+          grep -q "20270313000000_package_trial_truth" /tmp/second.log
+          DATABASE_URL="$PROD_URL?schema=public" DIRECT_URL="$PROD_URL?schema=public" npx prisma migrate status
+          psql -X -q "$PROD_URL" -c "SELECT migration_name, finished_at IS NOT NULL AS finished, rolled_back_at IS NULL AS not_rolled_back FROM _prisma_migrations WHERE migration_name >= '20270225' ORDER BY started_at"
+      - name: Name order on a fresh database
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -q "$PROD_URL" -c 'CREATE DATABASE fresh_order'
+          psql -X -v ON_ERROR_STOP=1 -q "$FRESH_URL" -f prisma/migrations/_supabase_bootstrap.sql >/dev/null
+          DATABASE_URL="$FRESH_URL?schema=public" DIRECT_URL="$FRESH_URL?schema=public" npx prisma migrate deploy 2>&1 | tail -3
+      - name: Schemas identical
+        shell: bash
+        run: |
+          set -euo pipefail
+          dump() { pg_dump --schema-only --no-owner --no-privileges "$1" | grep -Ev '^\\(restrict|unrestrict) '; }
+          dump "$PROD_URL" > /tmp/prod.sql
+          dump "$FRESH_URL" > /tmp/fresh.sql
+          wc -l /tmp/prod.sql /tmp/fresh.sql
+          if diff /tmp/prod.sql /tmp/fresh.sql > /tmp/raw.diff; then echo "RAW DUMPS IDENTICAL"; else echo "raw dumps differ (column order is expected to differ):"; head -60 /tmp/raw.diff; fi
+          norm() { sed -E 's/,$//' "$1" | LC_ALL=C sort; }
+          diff <(norm /tmp/prod.sql) <(norm /tmp/fresh.sql) && echo "SCHEMAS IDENTICAL as sets of definitions (production order == name order)"
+          DATABASE_URL="$PROD_URL?schema=public" DIRECT_URL="$PROD_URL?schema=public" npx prisma migrate diff --from-url "$PROD_URL?schema=public" --to-url "$FRESH_URL?schema=public" --exit-code && echo "prisma migrate diff: no difference"

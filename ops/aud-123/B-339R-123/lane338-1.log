@@ -1,0 +1,1025 @@
+﻿2026-10-06T01:39:57.1396719Z Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {2dd7ed1f-ea1b-4c28-b69d-e1b35da5b404}
+Azure Region: westus
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-mobile
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/8b85ecac-3437-40f5-8178-247864290e2e' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +30e87d4f9923ebd1269af1723d2d2ccaf7bd21e9:refs/remotes/origin/ci/B-339R-123-2
+From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+ * [new ref]         30e87d4f9923ebd1269af1723d2d2ccaf7bd21e9 -> origin/ci/B-339R-123-2
+[command]/usr/bin/git branch --list --remote origin/ci/B-339R-123-2
+  origin/ci/B-339R-123-2
+[command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-339R-123-2
+30e87d4f9923ebd1269af1723d2d2ccaf7bd21e9
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B ci/B-339R-123-2 refs/remotes/origin/ci/B-339R-123-2
+Switched to a new branch 'ci/B-339R-123-2'
+branch 'ci/B-339R-123-2' set up to track 'origin/ci/B-339R-123-2'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+30e87d4f9923ebd1269af1723d2d2ccaf7bd21e9
+##[group]Run actions/setup-node@v6
+with:
+  node-version: 22.13
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 22.13...
+Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/20217eca-2ec7-4473-8a7f-480649cc4dff -f /home/runner/work/_temp/b459e8fe-e0d3-4759-862f-b785917495a9
+Adding to the cache ...
+##[group]Environment details
+node: v22.13.1
+npm: 10.9.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-a813b70ee07f0fa74cd7a9e4afdce6f10007d244dd5b3a594fd99c74c659be91
+Received 0 of 242055623 (0.0%), 0.0 MBs/sec
+Received 134217728 of 242055623 (55.4%), 64.0 MBs/sec
+Received 242055623 of 242055623 (100.0%), 84.4 MBs/sec
+Cache Size: ~231 MB (242055623 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/cc874295-63e5-45ef-ac73-add9516c73d5/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-a813b70ee07f0fa74cd7a9e4afdce6f10007d244dd5b3a594fd99c74c659be91
+##[group]Run npm ci
+npm ci
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+
+added 1109 packages, and audited 1110 packages in 17s
+
+187 packages are looking for funding
+  run `npm fund` for details
+
+92 vulnerabilities (1 low, 18 moderate, 73 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+##[group]Run npx tsc --noEmit
+npx tsc --noEmit
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+##[group]Run set -euo pipefail
+set -euo pipefail
+test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+echo "specs: ${SPECS[*]}"
+npx jest --ci "${SPECS[@]}"
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+##[endgroup]
+specs: src/__tests__/CoachPackageEditScreen.trialDays.test.tsx src/utils/__tests__/packageTrial.test.ts src/api/__tests__/paymentsApi.test.ts src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx src/__tests__/CoachPackageEditScreen.idempotency.test.tsx src/__tests__/paymentsConnectPackages.test.ts src/api/__tests__/packagesBackendContract.test.ts src/components/coach/setup/__tests__/audit120HydrationConsent.test.tsx src/components/coach/setup/__tests__/coachSetup.test.tsx src/components/coach/setup/__tests__/coachSetupRound2.test.tsx src/components/coach/setup/__tests__/packageCreateDurability.test.tsx src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx src/components/coach/setup/__tests__/w2FixRound119.test.tsx src/lib/coachSetup/__tests__/w1FixRound118.test.ts src/utils/__tests__/packageSaveFailure.test.ts src/__tests__/PackageDetailSurface.preview.test.tsx src/__tests__/CoachPackageContentsScreen.test.tsx src/__tests__/copyVoice.guard.test.ts
+PASS src/__tests__/paymentsConnectPackages.test.ts
+PASS src/__tests__/CoachPackageContentsScreen.test.tsx (13.891 s)
+  ● Console
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      367 |       // NEXT push intent can proceed once this one finishes.
+      368 |       previewInFlightRef.current = false;
+    > 369 |       setAudienceCount(res.data.count);
+          |       ^
+      370 |       setBuyerNotify(true);
+      371 |       setFireAt(null);
+      372 |       setPushSubmitting(false);
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setAudienceCount (src/screens/coach/payments/CoachPackageContentsScreen.tsx:369:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      368 |       previewInFlightRef.current = false;
+      369 |       setAudienceCount(res.data.count);
+    > 370 |       setBuyerNotify(true);
+          |       ^
+      371 |       setFireAt(null);
+      372 |       setPushSubmitting(false);
+      373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setBuyerNotify (src/screens/coach/payments/CoachPackageContentsScreen.tsx:370:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      369 |       setAudienceCount(res.data.count);
+      370 |       setBuyerNotify(true);
+    > 371 |       setFireAt(null);
+          |       ^
+      372 |       setPushSubmitting(false);
+      373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+      374 |       // reuse it for the push call and any retry of this same intent. Both the
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setFireAt (src/screens/coach/payments/CoachPackageContentsScreen.tsx:371:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      370 |       setBuyerNotify(true);
+      371 |       setFireAt(null);
+    > 372 |       setPushSubmitting(false);
+          |       ^
+      373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+      374 |       // reuse it for the push call and any retry of this same intent. Both the
+      375 |       // ref (synchronous source of truth) and state (debug/inspection) carry it.
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setPushSubmitting (src/screens/coach/payments/CoachPackageContentsScreen.tsx:372:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      377 |       pushIdemKeyRef.current = intentKey;
+      378 |       submitInFlightRef.current = false;
+    > 379 |       setPreviewLoading(false);
+          |       ^
+      380 |       setConfirmVisible(true);
+      381 |     } catch (err) {
+      382 |       // Only the CURRENT intent surfaces an error / resets state. A stale
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setPreviewLoading (src/screens/coach/payments/CoachPackageContentsScreen.tsx:379:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      378 |       submitInFlightRef.current = false;
+      379 |       setPreviewLoading(false);
+    > 380 |       setConfirmVisible(true);
+          |       ^
+      381 |     } catch (err) {
+      382 |       // Only the CURRENT intent surfaces an error / resets state. A stale
+      383 |       // failed preview is ignored so it cannot disturb an in-flight push.
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setConfirmVisible (src/screens/coach/payments/CoachPackageContentsScreen.tsx:380:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      367 |       // NEXT push intent can proceed once this one finishes.
+      368 |       previewInFlightRef.current = false;
+    > 369 |       setAudienceCount(res.data.count);
+          |       ^
+      370 |       setBuyerNotify(true);
+      371 |       setFireAt(null);
+      372 |       setPushSubmitting(false);
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setAudienceCount (src/screens/coach/payments/CoachPackageContentsScreen.tsx:369:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      368 |       previewInFlightRef.current = false;
+      369 |       setAudienceCount(res.data.count);
+    > 370 |       setBuyerNotify(true);
+          |       ^
+      371 |       setFireAt(null);
+      372 |       setPushSubmitting(false);
+      373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setBuyerNotify (src/screens/coach/payments/CoachPackageContentsScreen.tsx:370:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      369 |       setAudienceCount(res.data.count);
+      370 |       setBuyerNotify(true);
+    > 371 |       setFireAt(null);
+          |       ^
+      372 |       setPushSubmitting(false);
+      373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+      374 |       // reuse it for the push call and any retry of this same intent. Both the
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setFireAt (src/screens/coach/payments/CoachPackageContentsScreen.tsx:371:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      370 |       setBuyerNotify(true);
+      371 |       setFireAt(null);
+    > 372 |       setPushSubmitting(false);
+          |       ^
+      373 |       // The push INTENT begins here: mint ONE stable idempotency key now and
+      374 |       // reuse it for the push call and any retry of this same intent. Both the
+      375 |       // ref (synchronous source of truth) and state (debug/inspection) carry it.
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setPushSubmitting (src/screens/coach/payments/CoachPackageContentsScreen.tsx:372:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      377 |       pushIdemKeyRef.current = intentKey;
+      378 |       submitInFlightRef.current = false;
+    > 379 |       setPreviewLoading(false);
+          |       ^
+      380 |       setConfirmVisible(true);
+      381 |     } catch (err) {
+      382 |       // Only the CURRENT intent surfaces an error / resets state. A stale
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setPreviewLoading (src/screens/coach/payments/CoachPackageContentsScreen.tsx:379:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageContentsScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      378 |       submitInFlightRef.current = false;
+      379 |       setPreviewLoading(false);
+    > 380 |       setConfirmVisible(true);
+          |       ^
+      381 |     } catch (err) {
+      382 |       // Only the CURRENT intent surfaces an error / resets state. A stale
+      383 |       // failed preview is ignored so it cannot disturb an in-flight push.
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at setConfirmVisible (src/screens/coach/payments/CoachPackageContentsScreen.tsx:380:7)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+PASS src/api/__tests__/paymentsApi.test.ts
+PASS src/lib/coachSetup/__tests__/w1FixRound118.test.ts
+PASS src/components/coach/setup/__tests__/coachSetup.test.tsx
+PASS src/utils/__tests__/packageSaveFailure.test.ts
+PASS src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx (16.786 s)
+  ● Console
+
+    console.error
+      An update to CoachPackageEditScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      328 |       return;
+      329 |     }
+    > 330 |     setError("");
+          |     ^
+      331 |     setSaving(true);
+      332 |     saveInFlight.current = true;
+      333 |     try {
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at Object.setError (src/screens/coach/payments/CoachPackageEditScreen.tsx:330:5)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.current (node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+      at Object.current (src/screens/coach/payments/CoachPackageEditScreen.tsx:270:52)
+      at onPress (src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx:293:7)
+      at Object.press (src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx:337:5)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageEditScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      329 |     }
+      330 |     setError("");
+    > 331 |     setSaving(true);
+          |     ^
+      332 |     saveInFlight.current = true;
+      333 |     try {
+      334 |       if (isEdit && original) {
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at Object.setSaving (src/screens/coach/payments/CoachPackageEditScreen.tsx:331:5)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.current (node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+      at Object.current (src/screens/coach/payments/CoachPackageEditScreen.tsx:270:52)
+      at onPress (src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx:293:7)
+      at Object.press (src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx:337:5)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageEditScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      328 |       return;
+      329 |     }
+    > 330 |     setError("");
+          |     ^
+      331 |     setSaving(true);
+      332 |     saveInFlight.current = true;
+      333 |     try {
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at Object.setError (src/screens/coach/payments/CoachPackageEditScreen.tsx:330:5)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.current (node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+      at Object.current (src/screens/coach/payments/CoachPackageEditScreen.tsx:270:52)
+      at onPress (src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx:293:7)
+      at Object.press (src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx:352:5)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.error
+      An update to CoachPackageEditScreen inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      329 |     }
+      330 |     setError("");
+    > 331 |     setSaving(true);
+          |     ^
+      332 |     saveInFlight.current = true;
+      333 |     try {
+      334 |       if (isEdit && original) {
+
+      at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+      at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+      at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+      at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+      at Object.setSaving (src/screens/coach/payments/CoachPackageEditScreen.tsx:331:5)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.current (node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+      at Object.current (src/screens/coach/payments/CoachPackageEditScreen.tsx:270:52)
+      at onPress (src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx:293:7)
+      at Object.press (src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx:352:5)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+PASS src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
+PASS src/components/coach/setup/__tests__/w2FixRound119.test.tsx
+PASS src/components/coach/setup/__tests__/coachSetupRound2.test.tsx (13.709 s)
+  ● Console
+
+    console.warn
+      SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+
+      175 |
+      176 |   return (
+    > 177 |     <SafeAreaView style={styles.container}>
+          |      ^
+      178 |       <ScrollView
+      179 |         contentContainerStyle={styles.inner}
+      180 |         keyboardShouldPersistTaps="handled"
+
+      at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+      at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+      at SafeAreaView (src/navigation/CoachWizardNavigator.tsx:177:6)
+      at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+      at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+      at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+      at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+      at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+      at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+      at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+      at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+      at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+
+PASS src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+  ● Console
+
+    console.warn
+      Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+      401 |         // CommonActions.reset equivalent via dispatch with a single route.
+      402 |         navigation.dispatch(
+    > 403 |           CommonActions.navigate({
+          |                         ^
+      404 |             name: "CoachPackageEdit",
+      405 |             params: { packageId: res.data.id, initialPackage: res.data },
+      406 |           }),
+
+      at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:403:25)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+PASS src/__tests__/CoachPackageEditScreen.idempotency.test.tsx
+  ● Console
+
+    console.warn
+      Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+      401 |         // CommonActions.reset equivalent via dispatch with a single route.
+      402 |         navigation.dispatch(
+    > 403 |           CommonActions.navigate({
+          |                         ^
+      404 |             name: "CoachPackageEdit",
+      405 |             params: { packageId: res.data.id, initialPackage: res.data },
+      406 |           }),
+
+      at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:403:25)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.warn
+      Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+      401 |         // CommonActions.reset equivalent via dispatch with a single route.
+      402 |         navigation.dispatch(
+    > 403 |           CommonActions.navigate({
+          |                         ^
+      404 |             name: "CoachPackageEdit",
+      405 |             params: { packageId: res.data.id, initialPackage: res.data },
+      406 |           }),
+
+      at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:403:25)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.warn
+      Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+      401 |         // CommonActions.reset equivalent via dispatch with a single route.
+      402 |         navigation.dispatch(
+    > 403 |           CommonActions.navigate({
+          |                         ^
+      404 |             name: "CoachPackageEdit",
+      405 |             params: { packageId: res.data.id, initialPackage: res.data },
+      406 |           }),
+
+      at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:403:25)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.warn
+      Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+      401 |         // CommonActions.reset equivalent via dispatch with a single route.
+      402 |         navigation.dispatch(
+    > 403 |           CommonActions.navigate({
+          |                         ^
+      404 |             name: "CoachPackageEdit",
+      405 |             params: { packageId: res.data.id, initialPackage: res.data },
+      406 |           }),
+
+      at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:403:25)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.warn
+      Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+      401 |         // CommonActions.reset equivalent via dispatch with a single route.
+      402 |         navigation.dispatch(
+    > 403 |           CommonActions.navigate({
+          |                         ^
+      404 |             name: "CoachPackageEdit",
+      405 |             params: { packageId: res.data.id, initialPackage: res.data },
+      406 |           }),
+
+      at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:403:25)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.warn
+      Passing an object as the argument to 'navigate' is deprecated. Use 'navigate(name, params, options)' instead.
+
+      401 |         // CommonActions.reset equivalent via dispatch with a single route.
+      402 |         navigation.dispatch(
+    > 403 |           CommonActions.navigate({
+          |                         ^
+      404 |             name: "CoachPackageEdit",
+      405 |             params: { packageId: res.data.id, initialPackage: res.data },
+      406 |           }),
+
+      at Object.warn [as navigate] (node_modules/@react-navigation/routers/src/CommonActions.tsx:132:13)
+      at navigate (src/screens/coach/payments/CoachPackageEditScreen.tsx:403:25)
+      at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+PASS src/__tests__/CoachPackageEditScreen.trialDays.test.tsx
+FAIL src/api/__tests__/packagesBackendContract.test.ts
+  ● create body contract (B-321-2) › monthly: name, amount_cents, currency and billing_type, nothing else the DTO rejects
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "trial_days",
+    + ]
+
+      70 |     expect(body.currency).toBe('usd');
+      71 |     expect(body.billing_type).toBe(opt === 'one_time' ? 'one_time' : 'recurring');
+    > 72 |     expect(unknownFields(body)).toEqual([]);
+         |                                 ^
+      73 |     if (opt === 'one_time') {
+      74 |       expect(body.billing_interval).toBeUndefined();
+      75 |     } else {
+
+      at toEqual (src/api/__tests__/packagesBackendContract.test.ts:72:33)
+
+  ● create body contract (B-321-2) › quarterly: name, amount_cents, currency and billing_type, nothing else the DTO rejects
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "trial_days",
+    + ]
+
+      70 |     expect(body.currency).toBe('usd');
+      71 |     expect(body.billing_type).toBe(opt === 'one_time' ? 'one_time' : 'recurring');
+    > 72 |     expect(unknownFields(body)).toEqual([]);
+         |                                 ^
+      73 |     if (opt === 'one_time') {
+      74 |       expect(body.billing_interval).toBeUndefined();
+      75 |     } else {
+
+      at toEqual (src/api/__tests__/packagesBackendContract.test.ts:72:33)
+
+  ● create body contract (B-321-2) › yearly: name, amount_cents, currency and billing_type, nothing else the DTO rejects
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "trial_days",
+    + ]
+
+      70 |     expect(body.currency).toBe('usd');
+      71 |     expect(body.billing_type).toBe(opt === 'one_time' ? 'one_time' : 'recurring');
+    > 72 |     expect(unknownFields(body)).toEqual([]);
+         |                                 ^
+      73 |     if (opt === 'one_time') {
+      74 |       expect(body.billing_interval).toBeUndefined();
+      75 |     } else {
+
+      at toEqual (src/api/__tests__/packagesBackendContract.test.ts:72:33)
+
+  ● update body contract (B-321-3) › every update field is on the DTO whitelist
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "trial_days",
+    + ]
+
+      130 |       status: 'active',
+      131 |     });
+    > 132 |     expect(unknownFields(body)).toEqual([]);
+          |                                 ^
+      133 |     expect(body.currency).toBe('usd');
+      134 |   });
+      135 | });
+
+      at Object.toEqual (src/api/__tests__/packagesBackendContract.test.ts:132:33)
+
+PASS src/__tests__/PackageDetailSurface.preview.test.tsx
+PASS src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx
+PASS src/components/coach/setup/__tests__/audit120HydrationConsent.test.tsx
+FAIL src/utils/__tests__/packageTrial.test.ts
+  ● packagesApi sends trial_days (backend #656 DTOs accept it) › update: sends trial_days only when the editor provided it; 0 clears
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 3
+
+      Object {
+    +   "billing_interval": "year",
+    +   "billing_interval_count": 1,
+    +   "billing_type": "recurring",
+        "trial_days": 14,
+      }
+
+      140 |     expect(
+      141 |       toBackendUpdate({ billingInterval: "yearly", trialDays: 14 }),
+    > 142 |     ).toEqual({ trial_days: 14 });
+          |       ^
+      143 |     expect(
+      144 |       toBackendUpdate({ billingInterval: "monthly", trialDays: 0 }),
+      145 |     ).toEqual({ trial_days: 0 });
+
+      at Object.toEqual (src/utils/__tests__/packageTrial.test.ts:142:7)
+
+PASS src/__tests__/CoachPackageEditScreen.w3FixRound5.test.tsx
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+
+Test Suites: 2 failed, 17 passed, 19 total
+Tests:       5 failed, 260 passed, 265 total
+Snapshots:   0 total
+Time:        22.117 s
+Ran all test suites matching /src\/__tests__\/CoachPackageEditScreen.trialDays.test.tsx|src\/utils\/__tests__\/packageTrial.test.ts|src\/api\/__tests__\/paymentsApi.test.ts|src\/__tests__\/CoachPackageEditScreen.lockPreview.test.tsx|src\/__tests__\/CoachPackageEditScreen.w3FixRound4.test.tsx|src\/__tests__\/CoachPackageEditScreen.w3FixRound5.test.tsx|src\/__tests__\/CoachPackageEditScreen.idempotency.test.tsx|src\/__tests__\/paymentsConnectPackages.test.ts|src\/api\/__tests__\/packagesBackendContract.test.ts|src\/components\/coach\/setup\/__tests__\/audit120HydrationConsent.test.tsx|src\/components\/coach\/setup\/__tests__\/coachSetup.test.tsx|src\/components\/coach\/setup\/__tests__\/coachSetupRound2.test.tsx|src\/components\/coach\/setup\/__tests__\/packageCreateDurability.test.tsx|src\/components\/coach\/setup\/__tests__\/packageCreateIdempotency.test.tsx|src\/components\/coach\/setup\/__tests__\/w2FixRound119.test.tsx|src\/lib\/coachSetup\/__tests__\/w1FixRound118.test.ts|src\/utils\/__tests__\/packageSaveFailure.test.ts|src\/__tests__\/PackageDetailSurface.preview.test.tsx|src\/__tests__\/CoachPackageContentsScreen.test.tsx|src\/__tests__\/copyVoice.guard.test.ts/i.
+##[error]Process completed with exit code 1.
+Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/109667cf-15bb-41fb-beb6-bc620df887d6' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+/home/runner/work/_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-7bd2b2bf-21fa-4780-86dd-db6f66a64013.config'
+Cleaning up orphan processes

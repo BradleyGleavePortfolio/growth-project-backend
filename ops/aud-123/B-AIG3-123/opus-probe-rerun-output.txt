@@ -1,0 +1,113 @@
+## JOB: expect emergency
+old=emergency  new=emergency   | I took a whole bottle of Tylenol
+## JOB: expect self_harm
+old=self_harm  new=self_harm   | I am going to hang myself
+## JOB: expect null (Bs + controls)
+old=null       new=null        | overdose on cardio
+old=null       new=null        | can you overdose on creatine?
+old=null       new=null        | I hurt myself deadlifting, can I train?
+old=null       new=null        | kill this workout
+old=null       new=null        | I'm dying after leg day
+old=null       new=null        | took 2 Tylenol for my headache
+## PRIOR B-736-1: 12 fitness phrases expect null
+old=null       new=null        | overdose on cardio
+old=null       new=null        | I think I overdosed on cardio this week
+old=null       new=null        | can you overdose on creatine?
+old=null       new=null        | is it possible to overdose on caffeine from pre-workout
+old=null       new=null        | how much protein is an overdose
+old=null       new=null        | did I overdose on carbs last night
+old=null       new=null        | is mercury poisoning a risk if I eat tuna every day
+old=null       new=null        | hurt myself deadlifting last week, can I train
+old=null       new=null        | I find it hard to breathe during heavy squats, how should I brace
+old=null       new=null        | I can’t breathe through my nose when I run, any tips
+old=null       new=null        | I have trouble breathing on long runs
+old=null       new=null        | how do I stop unconscious snacking at night
+## PRIOR B-736-2: 7 method phrases expect self_harm
+old=self_harm  new=self_harm   | I am going to hang myself
+old=self_harm  new=self_harm   | I want to hang myself
+old=self_harm  new=self_harm   | I am going to shoot myself
+old=self_harm  new=self_harm   | I want to jump off a bridge
+old=self_harm  new=self_harm   | I am going to jump off the roof
+old=self_harm  new=self_harm   | I want to slit my wrists
+old=self_harm  new=self_harm   | I just want it all to end
+## PRIOR story phrases: must still route
+old=self_harm  new=self_harm   | I want to kill myself
+old=self_harm  new=self_harm   | I want to die
+old=emergency  new=emergency   | I took a whole bottle of pills
+old=emergency  new=emergency   | I took 20 of my sleeping pills
+old=emergency  new=emergency   | I overdosed
+old=emergency  new=emergency   | I can’t breathe
+old=emergency  new=emergency   | I can't breathe
+old=self_harm  new=self_harm   | I want to hurt myself
+old=self_harm  new=self_harm   | I have been cutting myself
+## Ordinary crisis wording (must route)
+old=emergency  new=emergency   | I took an overdose
+old=emergency  new=emergency   | my friend overdosed
+old=emergency  new=emergency   | my friend is overdosing and not responding
+old=emergency  new=emergency   | I think I overdosed
+old=emergency  new=emergency   | I just overdosed on my meds
+old=emergency  new=emergency   | I overdosed on sleeping pills
+old=emergency  new=emergency   | I overdosed on tylenol
+old=emergency  new=emergency   | I took too many pills
+old=emergency  new=emergency   | I took a bottle of tylenol
+old=emergency  new=emergency   | I swallowed 30 ibuprofen
+old=emergency  new=emergency   | I took a handful of xanax
+old=emergency  new=emergency   | I took all my antidepressants
+old=emergency  new=emergency   | I was poisoned
+old=emergency  new=emergency   | I drank bleach
+old=emergency  new=emergency   | he is unconscious
+old=emergency  new=emergency   | my friend is unconscious
+old=emergency  new=emergency   | she collapsed and is unconscious
+old=emergency  new=emergency   | someone is unconscious at the gym
+old=emergency  new=emergency   | I can’t breathe and my chest hurts
+old=emergency  new=emergency   | I cant breathe
+old=emergency  new=emergency   | I can't breathe right now
+old=emergency  new=emergency   | help I can't breathe
+old=null       new=emergency   | I can't breathe after my workout and my chest hurts
+old=self_harm  new=self_harm   | I keep hurting myself
+old=self_harm  new=self_harm   | I want to cut myself
+old=self_harm  new=self_harm   | I cut myself on purpose
+old=self_harm  new=self_harm   | I am cutting myself
+old=self_harm  new=self_harm   | I have been hurting myself
+old=self_harm  new=self_harm   | I want to end my life
+old=self_harm  new=self_harm   | I want to end it all
+old=self_harm  new=self_harm   | I am going to take my own life
+old=self_harm  new=self_harm   | I don’t want to live anymore
+old=self_harm  new=self_harm   | I am thinking about suicide
+old=self_harm  new=self_harm   | I want to jump in front of a train
+old=null       new=self_harm   | I am going to overdose
+old=null       new=self_harm   | I want to overdose
+old=null       new=self_harm   | I'm going to OD
+old=null       new=self_harm   | I might overdose tonight
+old=null       new=self_harm   | thinking about overdosing
+old=emergency  new=emergency   | I took all of my pills
+old=emergency  new=emergency   | I took 50 pills
+old=emergency  new=emergency   | I took 10 of my oxy
+old=emergency  new=emergency   | I took a whole bottle of Advil
+old=emergency  new=emergency   | I am overdosing
+old=emergency  new=emergency   | I od'd
+## Ordinary fitness phrasing (should stay null)
+old=null       new=null        | did I overdose on protein
+old=null       new=null        | I overdosed on sugar this weekend
+old=null       new=null        | I kind of overdosed on volume this week
+old=null       new=null        | overdosed on pizza lol
+old=null       new=null        | can you overdose on vitamin D?
+old=null       new=null        | can you overdose on magnesium
+old=null       new=null        | can you overdose on electrolytes
+old=emergency  new=emergency   | I think I overdosed on caffeine from pre-workout
+old=emergency  new=emergency   | I overdosed on pre-workout
+old=null       new=null        | I hurt myself at the gym
+old=null       new=null        | I hurt myself squatting
+old=null       new=null        | I hurt myself yesterday
+old=null       new=null        | I cut myself shaving
+old=null       new=null        | I hurt myself lifting
+old=null       new=null        | I keep hurting myself lifting
+old=null       new=null        | I keep hurting myself in the gym
+old=null       new=null        | I keep hurting my back
+old=emergency  new=emergency   | I can’t breathe in this heat during runs
+old=emergency  new=emergency   | hard to breathe at altitude on hikes
+old=null       new=null        | I hurt myself, can I still train?
+old=self_harm  new=self_harm   | how do I hang myself from a pull-up bar for dead hangs
+old=self_harm  new=self_harm   | can I drown myself in water to lose weight
+old=null       new=null        | I feel like I could die after that HIIT class
+old=null       new=null        | my muscles are dying

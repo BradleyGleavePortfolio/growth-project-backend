@@ -1,0 +1,565 @@
+commit 2d0288ca654ae18f7a071817441b73f1ccd75270
+Merge: 48b5e6b5 7083b7a1
+Author: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date:   Tue Oct 6 01:39:36 2026 +0000
+
+    Merge remote-tracking branch 'origin/main' into b338r-123-work
+    
+    # Conflicts:
+    #       src/api/packagesApi.ts
+    #       src/screens/coach/payments/CoachPackageEditScreen.tsx
+
+diff --git a/src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx b/src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+index dc2d7b4a..577d2400 100644
+--- a/src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
++++ b/src/__tests__/CoachPackageEditScreen.lockPreview.test.tsx
+@@ -548,7 +548,7 @@ describe('CoachPackageEditScreen — round 5 (B-321-4, B-321-5, C-321-3..6)', ()
+     (Alert.alert as jest.Mock).mockClear();
+   });
+ 
+-  it('B-321-4: no trial days or features inputs; every input on the screen reaches the PATCH body', async () => {
++  it('B-321-4: no features input; every input on the screen reaches the PATCH body', async () => {
+     mockUpdate.mockResolvedValue({ data: pkg() });
+     const props = makeProps(pkg());
+     const screen = await render(
+@@ -556,17 +556,19 @@ describe('CoachPackageEditScreen — round 5 (B-321-4, B-321-5, C-321-3..6)', ()
+     );
+     expect(screen.queryByText('Trial days (optional)')).toBeNull();
+     expect(screen.queryByText('Features (one per line)')).toBeNull();
+-    // Every text input the coach can type in: name, description, price.
++    // Every text input the coach can type in: name, description, price and
++    // (m#338 B-TRIALS-2) the free trial days.
+     const countInputs = (node: unknown): number => {
+       if (!node || typeof node !== 'object') return 0;
+       if (Array.isArray(node)) return node.reduce((n: number, c) => n + countInputs(c), 0);
+       const n = node as { type?: string; children?: unknown };
+       return (n.type === 'TextInput' ? 1 : 0) + countInputs(n.children ?? null);
+     };
+-    expect(countInputs(screen.toJSON())).toBe(3);
++    expect(countInputs(screen.toJSON())).toBe(4);
+     await fireEvent.changeText(screen.getByDisplayValue('Strength Builder'), 'Strength Plus');
+     await fireEvent.changeText(screen.getByDisplayValue('Get strong.'), 'Get stronger.');
+     await fireEvent.changeText(screen.getByDisplayValue('99.00'), '120.00');
++    await fireEvent.changeText(screen.getByTestId('trial-days-input'), '7');
+     await fireEvent.press(screen.getByLabelText('Save changes'));
+     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+     const body = toBackendUpdate(mockUpdate.mock.calls[0][1]);
+@@ -574,6 +576,7 @@ describe('CoachPackageEditScreen — round 5 (B-321-4, B-321-5, C-321-3..6)', ()
+       name: 'Strength Plus',
+       description: 'Get stronger.',
+       amount_cents: 12000,
++      trial_days: 7,
+     });
+   });
+ 
+diff --git a/src/__tests__/CoachPackageEditScreen.trialDays.test.tsx b/src/__tests__/CoachPackageEditScreen.trialDays.test.tsx
+index 1ab675b0..1b3a7ae5 100644
+--- a/src/__tests__/CoachPackageEditScreen.trialDays.test.tsx
++++ b/src/__tests__/CoachPackageEditScreen.trialDays.test.tsx
+@@ -172,7 +172,9 @@ describe("CoachPackageEditScreen — free trial days (B-TRIALS-2)", () => {
+       const trial = calls.find((c) => c[0] === "Check the free trial");
+       expect(trial).toBeTruthy();
+       expect(trial[1]).toMatch(/Make this package renew/);
+-      expect(calls.find((c) => c[0] === "Could not save")).toBeUndefined();
++      expect(
++        calls.find((c) => c[0] === "Could not save the package"),
++      ).toBeUndefined();
+     });
+   });
+ 
+@@ -199,7 +201,8 @@ describe("CoachPackageEditScreen — free trial days (B-TRIALS-2)", () => {
+     await fireEvent.press(r.getByTestId("trial-preset-7"));
+     await fireEvent.press(r.getByLabelText("Save changes"));
+     expect(mockUpdate).not.toHaveBeenCalled();
+-    expect(r.getByText(/Price must be greater than zero/)).toBeTruthy();
++    // Main's price rule (S-FEE): $0 is free only on a one-time package.
++    expect(r.getAllByText(/Free packages are one-time/).length).toBeGreaterThan(0);
+   });
+ 
+   it("a one-time package shows no trial field", async () => {
+diff --git a/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx b/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+index 6d704c2f..c1e41437 100644
+--- a/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
++++ b/src/__tests__/CoachPackageEditScreen.w3FixRound4.test.tsx
+@@ -1,7 +1,7 @@
+ // FIX ROUND 4 (B-WIZ4-122): Sol's W3 full-review Bs on the package editor.
+ //   B-347-1 the free first package saves a name change at its unchanged $0.
+-//   B-347-2 no trial input while trial_days never reaches the server; the
+-//           buyer preview shows only the trial the saved package carries.
++//   B-347-2 the buyer preview shows only trial terms that reach the server
++//           (m#338 B-TRIALS-2: the trial input is back and its days are sent).
+ //   B-347-3 a draft made in the editor has a reachable "Make ... live" action
+ //           (the wizard's publish route); the server row decides the state.
+ import AsyncStorage from "@react-native-async-storage/async-storage";
+@@ -94,12 +94,15 @@ describe("B-347-1 free first package", () => {
+ });
+ 
+ describe("B-347-2 trial terms", () => {
+-  it("offers no trial input and previews only the saved trial", async () => {
++  it("previews no trial until one is set, then the trial that will be saved", async () => {
+     const s = await render(<CoachPackageEditScreen navigation={nav() as never} route={edit(row())} />);
+     expect(s.queryByText(/Trial days/i)).toBeNull();
+     expect(s.queryByPlaceholderText("0")).toBeNull();
+     await fireEvent.press(s.getByLabelText("Preview as buyer"));
+     expect(s.getByTestId("w4-preview-trial").props.children).toBe("null");
++    // m#338 (B-TRIALS-2): the trial input is back and reaches the PATCH.
++    await fireEvent.changeText(s.getByTestId("trial-days-input"), "7");
++    expect(s.getByTestId("w4-preview-trial").props.children).toBe("7");
+   });
+ });
+ 
+diff --git a/src/api/__tests__/packagesBackendContract.test.ts b/src/api/__tests__/packagesBackendContract.test.ts
+index 2b2f271f..0c3bb372 100644
+--- a/src/api/__tests__/packagesBackendContract.test.ts
++++ b/src/api/__tests__/packagesBackendContract.test.ts
+@@ -41,6 +41,9 @@ const DTO_FIELDS = new Set([
+   'recurring_amount_cents',
+   'recurring_interval',
+   'recurring_interval_count',
++  // m#338 (B-TRIALS-2): the backend trials train (b#671, split of #656) adds
++  // trial_days to both DTOs; m#338 lands after that backend is deployed.
++  'trial_days',
+   'is_active',
+ ]);
+ const BACKEND_INTERVALS = new Set(['week', 'month', 'year']);
+diff --git a/src/api/packagesApi.ts b/src/api/packagesApi.ts
+remerge CONFLICT (content): Merge conflict in src/api/packagesApi.ts
+index 9b35ce02..c606e238 100644
+--- a/src/api/packagesApi.ts
++++ b/src/api/packagesApi.ts
+@@ -9,18 +9,13 @@
+ //     currency, billing_type ('one_time'|'recurring'), billing_interval
+ //     ('week'|'month'|'year'), billing_interval_count, is_active. We map
+ //     mobile UI values ('monthly','quarterly','yearly') to backend enums.
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+-//   • Backend `UpdatePackageDto` accepts only: name, description,
+-//     amount_cents, currency, is_active. features are TODO.
++//   • Backend `UpdatePackageDto` accepts name, description, amount_cents,
++//     currency, billing_type, billing_interval, billing_interval_count (null
++//     clears the cadence) and is_active. features are TODO.
+ //   • B-TRIALS-2: both DTOs accept `trial_days` (backend #656): 0 = no trial,
+ //     1..30 on a paid plan that renews. Refusals are coded 400s
+ //     (PACKAGE_TRIAL_DAYS_OUT_OF_RANGE / _REQUIRES_RECURRING / _NOT_ON_FREE);
+ //     see src/utils/packageTrial.ts.
+-=======
+-//   • Backend `UpdatePackageDto` accepts name, description, amount_cents,
+-//     currency, billing_type, billing_interval, billing_interval_count (null
+-//     clears the cadence) and is_active. trial_days/features are TODO.
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
+ //   • Backend checkout is `POST /v1/checkout/sessions` with `{ package_id,
+ //     success_url, cancel_url }`. URLs must use growthproject://,
+ //     com.growthproject.app://, or https:// prefixes.
+@@ -362,7 +357,6 @@ interface BackendCreateBody {
+   trial_days?: number;
+ }
+ 
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+ /** Trial days for the wire: a one-time package never carries a trial. */
+ function trialDaysForBackend(
+   interval: PackageBillingInterval | undefined,
+@@ -372,8 +366,6 @@ function trialDaysForBackend(
+   return typeof days === 'number' && Number.isInteger(days) && days > 0 ? days : 0;
+ }
+ 
+-=======
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
+ export function toBackendCreate(input: PackageCreateInput): BackendCreateBody {
+   const intervalFields = toBackendIntervalFields(input.billingInterval, input.intervalCount);
+   // #321 (B-321-2): currency is always sent (lower-case ISO code). The
+@@ -409,15 +401,9 @@ interface BackendUpdateBody {
+   /** null resets the count to 1. */
+   billing_interval_count?: number | null;
+   is_active?: boolean;
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+   // B-TRIALS-2 — free trial days (0 clears the trial).
+   trial_days?: number;
+-  // TODO(backend): UpdatePackageDto does not accept billing_type,
+-  // billing_interval, billing_interval_count, or features.
+-}
+-
+-=======
+-  // TODO(backend): UpdatePackageDto does not accept trial_days or features.
++  // TODO(backend): UpdatePackageDto does not accept features.
+ }
+ 
+ /**
+@@ -427,7 +413,6 @@ interface BackendUpdateBody {
+  * is cleared (backend B-629-4), which also lets a recurring package become
+  * free in one PATCH.
+  */
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
+ export function toBackendUpdate(input: PackageUpdateInput): BackendUpdateBody {
+   const out: BackendUpdateBody = {};
+   if (input.title !== undefined) out.name = input.title;
+@@ -456,7 +441,6 @@ export function toBackendUpdate(input: PackageUpdateInput): BackendUpdateBody {
+   return out;
+ }
+ 
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+ /**
+  * B-TRIALS-3 (C-338-3) — the edit screen sends trial_days only when the trial
+  * changed, so an edit that leaves the trial alone never depends on it.
+@@ -468,7 +452,8 @@ export function trialDaysChange(
+   const before = trialDaysForBackend(original.billingInterval, original.trialDays);
+   const after = trialDaysForBackend(next.billingInterval, next.trialDays);
+   return before === after ? undefined : after;
+-=======
++}
++
+ /** The server row did not take the price or billing the app sent. */
+ export const PACKAGE_UPDATE_NOT_APPLIED = 'PACKAGE_UPDATE_NOT_APPLIED';
+ 
+@@ -518,7 +503,6 @@ export function isLivePackage(p: CoachPackage): boolean {
+   if (p.status !== 'active' || p.archivedAt) return false;
+   if (p.publishedAt === undefined) return true;
+   return typeof p.publishedAt === 'string' && p.publishedAt.length > 0;
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
+ }
+ 
+ // ─── coach API ──────────────────────────────────────────────────────────────
+diff --git a/src/screens/coach/payments/CoachPackageEditScreen.tsx b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+remerge CONFLICT (content): Merge conflict in src/screens/coach/payments/CoachPackageEditScreen.tsx
+index 69ca38f4..1fb90060 100644
+--- a/src/screens/coach/payments/CoachPackageEditScreen.tsx
++++ b/src/screens/coach/payments/CoachPackageEditScreen.tsx
+@@ -43,27 +43,9 @@ import {
+   PackageBillingInterval,
+   PackageCreateInput,
+   PackageUpdateInput,
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+   trialDaysChange,
+-} from '../../../api/packagesApi';
+-import { errorCode, errorMessage } from '../../../types/common';
+-import { mediumTap, successTap, warningTap } from '../../../utils/haptics';
+-import { track } from '../../../lib/analytics';
+-import { useTheme } from '../../../theme/ThemeProvider';
+-import type { SemanticTokens, Tokens } from '../../../theme/tokens';
+-import { parseDollarsToCents } from '../../../utils/currency';
+-import {
+-  isTrialErrorCode,
+-  parseTrialDays,
+-  TRIAL_COPY,
+-  TRIAL_DAY_PRESETS,
+-  trialErrorMessage,
+-} from '../../../utils/packageTrial';
+-import { buildPackageShareUrl } from '../../../utils/packageShare';
+-import { useCurrentUser } from '../../../hooks/useCurrentUser';
+-=======
+ } from "../../../api/packagesApi";
+-import { errorMessage } from "../../../types/common";
++import { errorCode, errorMessage } from "../../../types/common";
+ import {
+   createPackageOnce,
+   intentStorageCopy,
+@@ -86,10 +68,16 @@ import {
+   describePackageSaveFailure,
+   type PackageSaveFailure,
+ } from "../../../utils/packageSaveFailure";
++import {
++  isTrialErrorCode,
++  parseTrialDays,
++  TRIAL_COPY,
++  TRIAL_DAY_PRESETS,
++  trialErrorMessage,
++} from "../../../utils/packageTrial";
+ import { signOut } from "../../../services/authActions";
+ import { buildPackageShareUrl } from "../../../utils/packageShare";
+ import { useCurrentUser } from "../../../hooks/useCurrentUser";
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
+ import PackageDetailSurface, {
+   type PackageDetailViewModel,
+ } from "../../client/packageDetail/PackageDetailSurface";
+@@ -129,9 +117,9 @@ const INTERVAL_OPTIONS: Array<{
+ /** The backend's own message on a coded 400, never a transport string. */
+ function serverMessageOf(err: unknown): string | null {
+   const data = (err as { response?: { data?: unknown } } | null)?.response?.data;
+-  if (data && typeof data === 'object') {
++  if (data && typeof data === "object") {
+     const message = (data as { message?: unknown }).message;
+-    if (typeof message === 'string') return message;
++    if (typeof message === "string") return message;
+   }
+   return null;
+ }
+@@ -155,6 +143,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   const [priceText, setPriceText] = useState("");
+   const [billingInterval, setBillingInterval] =
+     useState<PackageBillingInterval>("monthly");
++  const [trialText, setTrialText] = useState("");
+   const [saving, setSaving] = useState(false);
+   const [archiving, setArchiving] = useState(false);
+   const [error, setError] = useState("");
+@@ -176,6 +165,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       setDescription(it.input.description ?? "");
+       setPriceText((it.input.priceCents / 100).toFixed(2));
+       setBillingInterval(it.input.billingInterval);
++      setTrialText(it.input.trialDays ? String(it.input.trialDays) : "");
+       setResumedCreate(true);
+     });
+     return () => {
+@@ -199,6 +189,9 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       setDescription(initialPackage.description ?? "");
+       setPriceText(((initialPackage.priceCents ?? 0) / 100).toFixed(2));
+       setBillingInterval(initialPackage.billingInterval);
++      setTrialText(
++        initialPackage.trialDays ? String(initialPackage.trialDays) : "",
++      );
+       setLoaded(true);
+       return;
+     }
+@@ -219,28 +212,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+       return { payload: null, message: "Please give the package a name." };
+     }
+     const cents = parseDollarsToCents(priceText);
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+-    if (cents == null) {
+-      return { payload: null, message: 'Enter a valid price.' };
+-    }
+-    if (cents === 0) {
+-      return {
+-        payload: null,
+-        message: 'Price must be greater than zero. Use a free invite code for comps.',
+-      };
+-    }
+-    const features = featuresText
+-      .split('\n')
+-      .map((f) => f.trim())
+-      .filter(Boolean);
+-    // B-TRIALS-2 — same rule as the backend (#656): 0..30 days, renewing
+-    // plans only; a one-time package always sends 0.
+-    const trial = parseTrialDays(trialText, billingInterval);
+-    if (!trial.ok) {
+-      return { payload: null, message: trial.message };
+-    }
+-    const trialDays = trial.days;
+-=======
+     // S-FEE: free (exactly $0, one-time) or $19.99 and up. B-347-1: the free
+     // first package from setup keeps saving at its unchanged $0 one-time
+     // price; a $0 recurring price is still refused.
+@@ -248,10 +219,15 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     if (cents == null || priceIssue) {
+       return { payload: null, message: priceIssue };
+     }
+-    // #321 (Opus B-321-4) + B-347-2: trial days and features are not stored
+-    // by the backend (no package column, no checkout trial), so the editor
+-    // does not offer them; every input on this screen reaches the request.
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
++    // B-TRIALS-2 — same rule as the backend (#656): 0..30 days, renewing
++    // plans only; a one-time package always sends 0. Features are still not
++    // stored by the backend (#321 B-321-4 + B-347-2), so the editor does not
++    // offer them.
++    const trial = parseTrialDays(trialText, billingInterval);
++    if (!trial.ok) {
++      return { payload: null, message: trial.message };
++    }
++    const trialDays = trial.days;
+     return {
+       payload: {
+         title: trimmedTitle,
+@@ -260,10 +236,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+         billingInterval,
+         intervalCount:
+           billingInterval === "weekly" ? original?.intervalCount ?? 1 : 1,
++        trialDays,
+       },
+       message: null,
+     };
+-  }, [title, description, priceText, billingInterval, original]);
++  }, [title, description, priceText, billingInterval, trialText, original]);
+ 
+   // #321 (Opus B-321-5) + B-347-4: the form differs from the saved row.
+   // Publishing then would put the SAVED terms on sale while the screen shows
+@@ -271,14 +248,19 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   const unsaved = useMemo(() => {
+     if (!original) return false;
+     const cents = parseDollarsToCents(priceText);
++    // B-TRIALS-2: a typed trial the server does not have yet is unsaved too.
++    const trial = parseTrialDays(trialText, billingInterval);
+     return (
+       title.trim() !== (original.title ?? "").trim() ||
+       (description.trim() || null) !==
+         ((original.description ?? "").trim() || null) ||
+       cents !== (original.priceCents ?? 0) ||
+-      billingInterval !== original.billingInterval
++      billingInterval !== original.billingInterval ||
++      !trial.ok ||
++      trialDaysChange(original, { billingInterval, trialDays: trial.days }) !==
++        undefined
+     );
+-  }, [original, title, description, priceText, billingInterval]);
++  }, [original, title, description, priceText, billingInterval, trialText]);
+ 
+   // Retry from the failure dialog runs the latest save (current form state).
+   const handleSaveRef = useRef<() => Promise<void>>(async () => undefined);
+@@ -350,14 +332,6 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+     saveInFlight.current = true;
+     try {
+       if (isEdit && original) {
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+-        // B-TRIALS-3 (C-338-3) — trial_days goes on the wire only when the
+-        // trial changed.
+-        const updated: PackageUpdateInput = {
+-          ...v.payload,
+-          trialDays: trialDaysChange(original, v.payload),
+-        };
+-=======
+         // #321 (B-321-3): billing goes to the backend only when the coach
+         // changed it, so a name or description edit never touches the price
+         // configuration (no pricing lock, no floor re-check, no cadence
+@@ -365,11 +339,13 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+         // server answers (B-345-1 / B-345-2, PACKAGE_UPDATE_NOT_APPLIED).
+         const { billingInterval: nextInterval, intervalCount, ...rest } =
+           v.payload;
++        // B-TRIALS-3 (C-338-3): trial_days goes on the wire only when the
++        // trial changed.
++        const trialDays = trialDaysChange(original, v.payload);
+         const updated: PackageUpdateInput =
+           nextInterval !== original.billingInterval
+-            ? { ...rest, billingInterval: nextInterval, intervalCount }
+-            : rest;
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
++            ? { ...rest, billingInterval: nextInterval, intervalCount, trialDays }
++            : { ...rest, trialDays };
+         const res = await coachPackagesApi.update(original.id, updated);
+         setOriginal(res.data);
+         successTap();
+@@ -432,38 +408,22 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+         return;
+       }
+     } catch (err) {
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+       const code = errorCode(err);
+-      if (code === 'PACKAGES_NOT_CONFIGURED') {
+-        Alert.alert(
+-          'Packages not enabled yet',
+-          errorMessage(
+-            err,
+-            'The packages backend module is not deployed in this environment.',
+-          ),
+-        );
++      if (err instanceof IntentStorageError) {
++        const copy = intentStorageCopy(err);
++        Alert.alert(copy.title, copy.body);
+       } else if (isTrialErrorCode(code)) {
+         // B-TRIALS-2 — coded trial refusal: say exactly what to change.
+         const message = trialErrorMessage(code, serverMessageOf(err));
+         warningTap();
+         setError(message);
+         Alert.alert(TRIAL_COPY.errorTitle, message);
+-      } else if (code === 'PACKAGE_PRICING_LOCKED') {
+-        warningTap();
+-        Alert.alert(
+-          'Pricing is locked',
+-          'Pricing is locked because this package already has active subscribers. Create a new package for new pricing; you can still edit name, description, deliverables, and availability.',
+-=======
+-      if (err instanceof IntentStorageError) {
+-        const copy = intentStorageCopy(err);
+-        Alert.alert(copy.title, copy.body);
+       } else if (isEdit) {
+         // #321 (Sol B-321-1): status + machine code decide the message and
+         // the next action; unknown failures carry a reference (request_id)
+         // and are reported to Sentry. The form keeps the coach's edits.
+         showSaveFailure(
+           describePackageSaveFailure(err, "update", billingInterval),
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
+         );
+       } else {
+         // B-329-1: a create is durable (its key and body stay on the device
+@@ -607,21 +567,11 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   // No network round-trip: everything here comes from local state + `original`.
+   const previewViewModel = useMemo<PackageDetailViewModel>(() => {
+     const cents = parseDollarsToCents(priceText) ?? original?.priceCents ?? 0;
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+-    const features = featuresText
+-      .split('\n')
+-      .map((f) => f.trim())
+-      .filter(Boolean);
++    // B-321-4 + B-347-2: the preview shows only what clients will really see:
++    // no features (they do not reach the server). B-TRIALS-2: the typed trial
++    // does reach the server, so the preview shows it.
+     const trialParse = parseTrialDays(trialText, billingInterval);
+     const trialDays = trialParse.ok && trialParse.days > 0 ? trialParse.days : null;
+-=======
+-    // B-321-4 + B-347-2: the preview shows only what clients will really see:
+-    // no typed trial or features (neither reaches the server), only a trial
+-    // the saved package carries.
+-    const savedTrial = original?.trialDays ?? null;
+-    const trialDays =
+-      billingInterval !== "one_time" && savedTrial ? savedTrial : null;
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
+     return {
+       id: original?.id ?? "preview",
+       title: title.trim() || "Untitled package",
+@@ -637,6 +587,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+   }, [
+     priceText,
+     billingInterval,
++    trialText,
+     title,
+     description,
+     original,
+@@ -796,8 +747,7 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+           </View>
+         ) : null}
+ 
+-<<<<<<< 48b5e6b5 (Merge origin/main into agent/clinic/b-trials-mobile-editor (B-TRIALS-3))
+-        {billingInterval !== 'one_time' ? (
++        {billingInterval !== "one_time" ? (
+           <>
+             <Label semanticColors={semanticColors} tokens={tokens}>{TRIAL_COPY.label}</Label>
+             <View style={styles.segment} testID="trial-presets">
+@@ -810,10 +760,10 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+                     key={days}
+                     testID={`trial-preset-${days}`}
+                     style={[styles.segmentItem, active && styles.segmentItemActive]}
+-                    onPress={() => setTrialText(days === 0 ? '' : String(days))}
++                    onPress={() => setTrialText(days === 0 ? "" : String(days))}
+                     accessibilityRole="button"
+                     accessibilityState={{ selected: active }}
+-                    accessibilityLabel={days === 0 ? 'No free trial' : `${days}-day free trial`}
++                    accessibilityLabel={days === 0 ? "No free trial" : `${days}-day free trial`}
+                   >
+                     <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                       {label}
+@@ -835,16 +785,13 @@ export default function CoachPackageEditScreen({ navigation, route }: Props) {
+             />
+             <Text style={styles.trialHelp}>{TRIAL_COPY.help}</Text>
+           </>
+-=======
+-        {/* B-347-2 + B-321-4: no trial or features input until the backend
+-            stores them (backend trials + m#338 bring trials back). */}
++        ) : null}
+ 
+         {resumedCreate ? (
+           <Text style={styles.resumedText} testID="package-edit-resumed">
+             Your package from earlier is saved here. Tap Create package to
+             finish that same package.
+           </Text>
+->>>>>>> 7083b7a1 (Merge pull request #341 from BradleyGleavePortfolio/feat/notif-zone-session-tap-quiet-hours)
+         ) : null}
+         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+ 
+diff --git a/src/utils/__tests__/packageTrial.test.ts b/src/utils/__tests__/packageTrial.test.ts
+index 8cd5b2de..c8ac4b56 100644
+--- a/src/utils/__tests__/packageTrial.test.ts
++++ b/src/utils/__tests__/packageTrial.test.ts
+@@ -137,11 +137,17 @@ describe("packagesApi sends trial_days (backend #656 DTOs accept it)", () => {
+ 
+   it("update: sends trial_days only when the editor provided it; 0 clears", () => {
+     expect(toBackendUpdate({ title: "B" })).not.toHaveProperty("trial_days");
++    // Main's #321 B-321-3: a billingInterval also sends the billing fields.
+     expect(
+       toBackendUpdate({ billingInterval: "yearly", trialDays: 14 }),
+-    ).toEqual({ trial_days: 14 });
++    ).toEqual({
++      billing_type: "recurring",
++      billing_interval: "year",
++      billing_interval_count: 1,
++      trial_days: 14,
++    });
+     expect(
+       toBackendUpdate({ billingInterval: "monthly", trialDays: 0 }),
+-    ).toEqual({ trial_days: 0 });
++    ).toMatchObject({ billing_type: "recurring", trial_days: 0 });
+   });
+ });

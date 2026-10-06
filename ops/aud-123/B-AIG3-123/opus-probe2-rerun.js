@@ -1,0 +1,8 @@
+const ts = require('/usr/local/lib/node_modules/vercel/node_modules/typescript');
+const fs = require('fs');
+function load(f){const src=fs.readFileSync(f,'utf8');const out=ts.transpileModule(src,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;const m={exports:{}};new Function('module','exports',out)(m,m.exports);return m.exports.classifyAiGuideCrisis;}
+const NEW=load('/home/user/workspace/wt/B-AIG3-123-736/src/ai/ai-crisis-router.ts');
+const OLD=load('/home/user/workspace/ops/aud-123/B-AIG3-123/router-58a31e6f.ts');
+const list=['I want to overdose','I am going to overdose','I\'m going to overdose tonight','I want to overdose on my pills','I am going to overdose on my sleeping pills','I want to take an overdose','I am going to take an overdose','thinking about taking an overdose','I want to overdose and die','I want to overdose and not wake up','I want to take all my pills','I am going to take all my pills','I want to swallow all my pills','I\'m planning to overdose','I am thinking of overdosing',
+'my chest hurts and I can\'t breathe','I can\'t breathe and my chest hurts','I can\'t breathe after my workout and my chest hurts','my chest hurts and I can\'t breathe after my run','chest pain and I can\'t breathe after my workout','I can\'t breathe after my run','I can\'t breathe after the workout','I can\'t breathe after training','my chest hurts after my workout','my chest feels tight and I can\'t breathe after squats'];
+for (const s of list) console.log(('old='+(OLD(s) ?? 'null')).padEnd(15)+('new='+(NEW(s) ?? 'null')).padEnd(15) + ' | ' + s);

@@ -1,0 +1,9 @@
+# RD1 — Sol current CI gate notice
+
+At 18:51:01 PDT, #667 `af32412c87042f77ed3b62a3dbd6e7aa4263120e` has two failed required gates: dependency audit reports unexcepted critical `proxy-addr` advisory GHSA-jqcg-44mw-7w3h; R75 reports net +2 `as unknown as` in the two Roman context specs and net +2 `as never` in the Roman controller spec. ([Dependency gate](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37400989742/job/112067889944), [R75 gate](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37400989708/job/112067889668))
+
+The scoped main-merge code review found no dropped behavior. The lockfile is byte-identical to main, and the three R75-reported specs are unchanged by the merge; these are mandatory landing gates, not new merge-conflict defects. ([Main-refresh scope](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/667#issuecomment-6007638575))
+
+At 18:55:02 PDT, all checks completed; build/test also fails only the PII-log scan's strict legacy exception-count assertion: expected `src/roman/roman.service.ts: 1`, actual absent/zero, with `found=[]`; 14,741 other tests pass. Both conflict-hunk live specs pass (Roman spend 2/2, refund reversal 4/4). ([Build/test log](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37400989648/job/112067889407), [Live-spec execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37400989648/job/112067889576))
+
+Recommended default: keep landing held, remediate the dependency gate through the owning dependency/main lane, remove the four net-added cast tokens without weakening R75, and remove the stale Roman exception-count entry without weakening the privacy scan. Sol will post APPROVE for the scoped merge review only, explicitly NOT MERGE-READY; no new normal-use A/B/C was found in the assigned merge delta, and none of these required gates is waived or relabelled as C.

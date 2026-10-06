@@ -1,0 +1,10 @@
+PR merge-ref/actual-head trees
+cdba70efcf3f8e45fe16b06839d38af714e8a719
+cdba70efcf3f8e45fe16b06839d38af714e8a719
+
+lockfile (merged head, Roman parent, main parent)
+d7f9dbb315b37c8a8f8602db153b354e91d42374
+8b278cdb577daa11fbb36f9d119ec1ba529e87f2
+d7f9dbb315b37c8a8f8602db153b354e91d42374
+
+R75-reported specs changed by main merge

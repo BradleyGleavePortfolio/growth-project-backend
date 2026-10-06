@@ -1,0 +1,132 @@
+diff --git a/.env.example b/.env.example
+index 39b90ee8..f766f1e0 100644
+--- a/.env.example
++++ b/.env.example
+@@ -917,6 +917,11 @@ HELLOSIGN_TEST_MODE=true
+ # `true` to enable in a dev sandbox or once the operator green-lights launch.
+ # Requires ANTHROPIC_API_KEY (already required elsewhere) when enabled.
+ FEATURE_ROMAN_CHAT_ENABLED=false
++# Platform-wide daily spend ceiling for all Roman turns together (UTC day,
++# USD), a runaway breaker sized to launch volume. Unset = 100. Over it Roman
++# answers 503 ROMAN_CAPACITY_REACHED; fails closed. The per-client limit is
++# the 429 ROMAN_RATE_LIMIT turn cap; each coach's monthly AI pool still applies.
++ROMAN_DAILY_COST_CAP_USD=
+ 
+ # AI processing consent ledger (R2a; box 2 of the onboarding consent screen).
+ # DEFAULT OFF everywhere. When "true", GET /api/me/ai-consent and
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 567e4767..29c70627 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -608,6 +608,16 @@ jobs:
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+ 
++      - name: Run Roman spend admission live spec (#651 B-651-5)
++        # test/roman/roman-spend-admission.live.spec.ts: on real Postgres,
++        # concurrent Roman turns are admitted against the daily cap under a
++        # per-UTC-day advisory lock, so turns that fit are never both refused
++        # and admitted reservations never sum above the cap. Same
++        # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap.
++        run: npx jest test/roman/roman-spend-admission.live.spec.ts --runInBand --testTimeout=120000
++        env:
++          NODE_OPTIONS: --max-old-space-size=4096
++
+       - name: Run refund reversal concurrency live spec (#674 B-674-1)
+         # Two refunds reversing one slice / transfer at once both count, on
+         # real Postgres behind a held row lock (same gate and bootstrap).
+diff --git a/src/audit/audit.service.ts b/src/audit/audit.service.ts
+index 343daa8a..4a84256b 100644
+--- a/src/audit/audit.service.ts
++++ b/src/audit/audit.service.ts
+@@ -152,10 +152,26 @@ export const AuditAction = {
+   // actor_user_id, actor_role, and the subject sub-coach user_id.
+   // Record is append-only; no PII in metadata.
+   TEAM_REVENUE_SHARING_UPDATED: 'team.revenue_sharing.updated',
++
++  // --- Roman safety route (#651, operator ruling OR-115-1) ---
++  // A fixed safety template answered a client's turn (no model call). The
++  // action name is deliberately neutral; the closed reason code
++  // (metadata.route_reason: 'call_911' | 'call_988') is restricted-read:
++  // list() never returns this action's metadata, and the account-deletion
++  // manifest nulls AuditLog.metadata for the actor.
++  ROMAN_SAFETY_ROUTE: 'roman.safety_route',
+ } as const;
+ 
+ export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];
+ 
++/**
++ * Actions whose metadata is restricted-read: the owner audit list returns the
++ * row (who, when, which session) but never the metadata field.
++ */
++export const RESTRICTED_METADATA_ACTIONS: ReadonlySet<string> = new Set([
++  AuditAction.ROMAN_SAFETY_ROUTE,
++]);
++
+ export interface AuditWriteInput {
+   action: AuditActionValue | string;
+   actorId?: string | null;
+@@ -253,10 +269,14 @@ export class AuditService {
+     if (params.targetUserId) where.target_user_id = params.targetUserId;
+     if (params.tenantCoachId) where.tenant_coach_id = params.tenantCoachId;
+     if (params.before) where.created_at = { lt: params.before };
+-    return this.prisma.auditLog.findMany({
++    const rows = await this.prisma.auditLog.findMany({
+       where,
+       orderBy: { created_at: 'desc' },
+       take: limit,
+     });
++    // OR-115-1: restricted-read metadata never leaves through the owner list.
++    return rows.map((row) =>
++      RESTRICTED_METADATA_ACTIONS.has(row.action) ? { ...row, metadata: null } : row,
++    );
+   }
+ }
+diff --git a/src/checkout/dunning-v2/dunning-lockout.guard.ts b/src/checkout/dunning-v2/dunning-lockout.guard.ts
+index 27bfc995..067c326d 100644
+--- a/src/checkout/dunning-v2/dunning-lockout.guard.ts
++++ b/src/checkout/dunning-v2/dunning-lockout.guard.ts
+@@ -110,6 +110,14 @@ const ALLOWED_ROUTE_PREFIXES: readonly string[] = [
+  */
+ const ROMAN_CHAT_PREFIXES: readonly string[] = ['roman'] as const;
+ 
++/**
++ * Roman routes that serve the client's coaching data, not the lockout
++ * explanation: GET /roman/context/me returns the coach's program, meal plan,
++ * guidelines and targets, so it stays locked (operator ruling 2026-10-05 13:37,
++ * Opus B-665-2).
++ */
++const ROMAN_LOCKED_PREFIXES: readonly string[] = ['roman/context'] as const;
++
+ /**
+  * Privacy operations a locked client must always reach (operator ruling on
+  * #622): reading, granting and withdrawing AI processing consent cannot depend
+@@ -249,6 +257,7 @@ export function isAllowedWhileLocked(path: string): boolean {
+     if (matchesRoutePrefix(path, prefix)) return true;
+   }
+   // Dedicated Roman chat surface (/roman/*) so Roman can explain the lockout.
++  if (ROMAN_LOCKED_PREFIXES.some((locked) => matchesRoutePrefix(path, locked))) return false;
+   for (const chat of ROMAN_CHAT_PREFIXES) {
+     if (matchesRoutePrefix(path, chat)) return true;
+   }
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index 72be7f9f..a574897f 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -2155,7 +2155,15 @@ export const ENV_RULES: EnvRule[] = [
+     name: 'FEATURE_ROMAN_CHAT_ENABLED',
+     tier: 'optional',
+     default: 'unset → off (only explicit true)',
+-    reason: 'Live Roman chat. Off in v1.0 (owner decision D1: scripted Roman only).',
++    reason:
++      'Live free-form Roman chat. ON in v1.0 (owner decision OR-113-2, 2026-10-02) once the grounding + guardrails PR is audited and deployed; box-2 AI consent is enforced on every turn by the AI egress gate.',
++  },
++  {
++    name: 'ROMAN_DAILY_COST_CAP_USD',
++    tier: 'optional',
++    default: 'unset → 100 (ROMAN_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 100, never no cap',
++    reason:
++      'Platform-wide daily spend ceiling for all Roman turns together (UTC day, US dollars), a runaway breaker sized to launch volume; the per-client limit is the 429 ROMAN_RATE_LIMIT turn cap and the per-coach bound is the monthly AI credit pool. Over the ceiling Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 100.',
+   },
+   {
+     name: 'FEATURE_MESSAGING_CORE_V2',

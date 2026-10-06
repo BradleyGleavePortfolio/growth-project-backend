@@ -1,0 +1,3 @@
+{"name":"trial None -> 7","expected":false,"actual":true,"passes":false}
+{"name":"unchanged terms","expected":true,"actual":true,"passes":true}
+{"name":"changed price control","expected":false,"actual":false,"passes":true}

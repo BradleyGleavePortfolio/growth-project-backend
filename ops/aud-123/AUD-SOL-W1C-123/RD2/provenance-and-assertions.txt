@@ -1,0 +1,18 @@
+test commit parent
+ec12f3a9f89a6677841964a38e4611e775b1ea04
+af32412c87042f77ed3b62a3dbd6e7aa4263120e
+
+merge parents and clean remerge
+c5c86cb46bfe3f6ea425e255536a9ae091686580
+ec12f3a9f89a6677841964a38e4611e775b1ea04 d5177b31fe74d40be6c38f5e715914e7fcc605ac
+
+main merge changed files
+package-lock.json
+
+main/merged lockfile blobs
+fb66881b2c4974be72591fc3d452804995b274c2
+fb66881b2c4974be72591fc3d452804995b274c2
+
+production source changes since RD1
+
+changed test assertions/declarations (should be none)

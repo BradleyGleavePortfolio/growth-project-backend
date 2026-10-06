@@ -1,0 +1,21 @@
+AI builder lane
+e736ebad51ec21bd967ca0a96a672d54f5e018aa
+58a31e6fb959947920e99abc0facc8b34cfdb4c0
+A	.ci-lane-specs
+A	.github/workflows/ci-lane.yml
+
+Roman builder lane
+2008851941f3be930b6e5f4b4212e0e6676d56f1
+30f097477f1ab7ba54dec43fe048bab57972e715
+A	.ci-lane-specs
+A	.ci-lane-tsc
+A	.github/workflows/ci-lane.yml
+
+Independent lane
+e97786c76e3d7a82890fbc0a22e0d78baad1dae5
+1ddf9d3606cecb2409e403f7e3751646393d2f65
+1ddf9d3606cecb2409e403f7e3751646393d2f65
+58a31e6fb959947920e99abc0facc8b34cfdb4c0
+A	.ci-lane-specs
+A	.github/workflows/ci-lane.yml
+A	test/audit-sol-w1c-123-crisis-delta.spec.ts

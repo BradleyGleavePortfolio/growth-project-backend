@@ -1,0 +1,437 @@
+diff --git a/.env.example b/.env.example
+index aef78afe..f766f1e0 100644
+--- a/.env.example
++++ b/.env.example
+@@ -231,13 +231,15 @@ STRIPE_CUSTOMER_PORTAL_LOGIN_URL=
+ # STRIPE_CONNECT_REFRESH_URL — where Stripe sends the coach if the
+ # onboarding link expires or they bail mid-flow. Mobile deep link in prod;
+ # any HTTPS URL acceptable in dev.
+-# Example: STRIPE_CONNECT_REFRESH_URL=growthproject://connect/onboarding/refresh
++# Example: STRIPE_CONNECT_REFRESH_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh
++# (HTTPS landing that hands the coach back to the app at tgp://connect/onboarding/refresh)
+ STRIPE_CONNECT_REFRESH_URL=
+ 
+ # STRIPE_CONNECT_RETURN_URL — where Stripe sends the coach after Express
+ # onboarding completes (regardless of pass/fail — we mirror the resulting
+ # state from the webhook, not from this return).
+-# Example: STRIPE_CONNECT_RETURN_URL=growthproject://connect/onboarding/return
++# Example: STRIPE_CONNECT_RETURN_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return
++# (HTTPS landing that hands the coach back to the app at tgp://connect/onboarding/return)
+ STRIPE_CONNECT_RETURN_URL=
+ 
+ # --- Stripe Checkout (Connect Phase 2-3) ---
+@@ -282,7 +284,7 @@ STRIPE_CHECKOUT_CANCEL_URL=
+ #       charge.refunded                    (refund -> ledger reversal)
+ #       charge.refund.updated              (partial refund state)
+ #       transfer.created                   (informational only)
+-#       transfer.reversed                  (head-coach reversal mirror)
++#       transfer.reversed                  (head-coach reversal drift check)
+ #   - Enable "Transfer/payout schedule = manual" if you want platform
+ #     to control head-coach payout cadence; default automatic is fine.
+ #   - The platform account must hold a non-zero balance in the same
+@@ -383,6 +385,9 @@ WEARABLE_PROCESSED_EVENT_RETENTION_DAYS=
+ # (PtmService.recordSignal) keeps writing rows so no data is lost while
+ # the engine is off. Defaults to true.
+ PTM_SCORING_ENABLED=true
++# SFEE_SETTLEMENT_SWEEP_ENABLED: 'false' pauses the 15-minute coach payout /
++#   settlement sweep (single runner across machines). Defaults to on.
++SFEE_SETTLEMENT_SWEEP_ENABLED=true
+ 
+ # Cron expression (UTC) for the nightly PTM recompute. Defaults to
+ # "0 4 * * *" (04:00 UTC, 1h after the GDPR scrub at 03:00 UTC) to keep
+@@ -990,3 +995,14 @@ MWB_AUTOSAVE_LOCK_TOKEN_SECRET=
+ # deterministic dev fallback is used. Set 32+ random bytes in production for a
+ # verifiable token. Generate with: openssl rand -hex 32
+ PUBLIC_LISTING_CURSOR_SECRET=
++
++# Roman approve-to-adjust kill switch. DEFAULT OFF: every /coach/adjustments
++# route returns 404. Only the exact value `true` turns it on.
++FEATURE_ROMAN_ADJUST_ENABLED=false
++
++# Smart Dunning v2 — feature flag (DEFAULT OFF everywhere). Exactly "true"
++# enables the 10-day non-payment sequence: Day 0/1/3/7 client notices (Stripe's
++# retry schedule does every charge), Day-7 coach alert, Day-10 lockout
++# (403 LOCKED_DUNNING outside billing / export / deletion / coach thread), and
++# immediate unlock on payment. Unset or any other value = v1 dunning.
++FEATURE_DUNNING_V2=false
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 99d66d86..29c70627 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -356,6 +356,17 @@ jobs:
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+ 
++      - name: Run coachless featured-coach live RLS suite (A1-COACHLESS)
++        # Applies prisma/migrations/20270301000000_coachless_featured_coach
++        # verbatim on top of the shim + RLS-01 bootstrap + hardened helpers,
++        # then proves self-only reads of CoachCodeRedemption and
++        # CoachlessPromptState (no coach/owner branch), owner-only reads of
++        # FeaturedCoachConfig, no non-service writes, anon deny, CHECK/unique/
++        # FK cascade behaviour and down/up. Refuses to skip under CI=true.
++        run: npx jest --config jest.rls.config.js test/rls/coachless-rls.spec.ts --runInBand --testTimeout=60000
++        env:
++          NODE_OPTIONS: --max-old-space-size=4096
++
+       - name: Run clinic engagement live RLS suite (#609)
+         # Proves the 20270213000000 policies on the real migration output:
+         # RLS enabled + forced, the exact policy set, who reads which rows
+@@ -454,6 +465,7 @@ jobs:
+           npx jest
+           test/community/rls/community-wins-rls.live.spec.ts
+           test/community/rls/community-message-shape.live.spec.ts
++          test/messaging/rls/coach-thread-state-rls.live.spec.ts
+           test/community/community-moderation.e2e.spec.ts
+           test/community/community-reactions.e2e.spec.ts
+           test/community/community-dms.e2e.spec.ts
+@@ -462,6 +474,8 @@ jobs:
+           test/community/community-posts.e2e.spec.ts
+           test/community/community-messages.e2e.spec.ts
+           test/community/events/community-events.e2e.spec.ts
++          test/invite-codes/coach-code-tools.live.spec.ts
++          test/broadcasts/broadcasts-dispatch.live.spec.ts
+           --runInBand --testTimeout=60000
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+@@ -546,14 +560,20 @@ jobs:
+         # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
+         # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
+         # transfer on real Postgres; same gate and bootstrap.
++        # And test/checkout-settlement.live.spec.ts (#661 C-661-12): payment
++        # settlement row versions, row locks and recovery on real Postgres.
+         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
+         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
+         # set they execute their live blocks instead of skipping. --runInBand so
+         # the per-file DROP SCHEMA public CASCADE + full-schema rebuild never race
+         # on the shared DB. NODE_OPTIONS raises the heap (same rationale as the
+         # other lanes: the default ~2GB heap OOM-aborts under --runInBand).
++        # S-SCHED-2 adds test/scheduling-booking-concurrency.live.spec.ts: the
++        # no-double-booking proof (exclusion constraint applied from its
++        # migration file + per-coach advisory lock) on the same gate/bootstrap.
+         run: |
+           npx jest \
++            test/scheduling-booking-concurrency.live.spec.ts \
+             test/mwb-3-lock-token.spec.ts \
+             test/mwb-3-autosave.controller.spec.ts \
+             test/mwb-3-autosave.service.spec.ts \
+@@ -561,6 +581,7 @@ jobs:
+             test/mwb-3-revision-prune.cron.spec.ts \
+             test/profile-put-concurrency.live.spec.ts \
+             test/onboarding-tenancy-fence.live.spec.ts \
++            test/checkout-settlement.live.spec.ts \
+             --runInBand --testTimeout=120000
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+@@ -596,3 +617,10 @@ jobs:
+         run: npx jest test/roman/roman-spend-admission.live.spec.ts --runInBand --testTimeout=120000
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
++
++      - name: Run refund reversal concurrency live spec (#674 B-674-1)
++        # Two refunds reversing one slice / transfer at once both count, on
++        # real Postgres behind a held row lock (same gate and bootstrap).
++        run: npx jest test/refund-reversal-concurrency.live.spec.ts --runInBand --testTimeout=120000
++        env:
++          NODE_OPTIONS: --max-old-space-size=4096
+diff --git a/src/audit/audit.service.ts b/src/audit/audit.service.ts
+index 209067bd..4a84256b 100644
+--- a/src/audit/audit.service.ts
++++ b/src/audit/audit.service.ts
+@@ -91,6 +91,8 @@ export const AuditAction = {
+   SESSION_CANCELED: 'session.canceled',
+   SESSION_COMPLETED: 'session.completed',
+   SESSION_NO_SHOW: 'session.no_show',
++  // S-SCHED-5: a request reached its clear time without an answer (system actor).
++  SESSION_EXPIRED: 'session.expired',
+   SESSION_VIDEO_LINK_ATTACHED: 'session.video_link_attached',
+   SESSION_PROVIDER_CALENDAR_CREATED: 'session.provider.calendar_created',
+   SESSION_PROVIDER_VIDEO_CREATED: 'session.provider.video_created',
+diff --git a/src/checkout/dunning-v2/dunning-lockout.guard.ts b/src/checkout/dunning-v2/dunning-lockout.guard.ts
+index 9ced6fbf..067c326d 100644
+--- a/src/checkout/dunning-v2/dunning-lockout.guard.ts
++++ b/src/checkout/dunning-v2/dunning-lockout.guard.ts
+@@ -10,14 +10,23 @@ import { PrismaService } from '../../prisma.service';
+ import type { AuthedRequest } from '../../auth/auth-request';
+ import { isDunningV2Enabled } from './dunning-v2.feature';
+ import { LOCKED_DUNNING_CODE } from './dunning-v2.cadence';
++import { effectiveLock } from './dunning-effective-access';
+ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+ 
+ /**
+  * B3 Smart Dunning v2 — Day-10 hard-lockout guard (spec §3 / §8.1).
+  *
+- * Backend enforcement of the hard lockout: when the signed-in client has a
+- * DunningState in lockout (`locked_out_at != null` AND `entitlement_active ===
+- * false`), every NON-allowed route returns `403 LOCKED_DUNNING`. Login then
++ * Backend enforcement of the hard lockout: when the signed-in client has an
++ * ACTIVE DunningState with `locked_out_at != null` (set only by the Day-10
++ * sweep, cleared only by payment) and no OTHER live entitlement, every
++ * NON-allowed route returns `403 LOCKED_DUNNING`.
++ *
++ * S-DUNNING: the lock no longer also requires `entitlement_active === false`.
++ * Stripe's `customer.subscription.updated` (sent for many reasons while a
++ * subscription is past_due) re-derives `entitlement_active = true` for
++ * past_due, which silently lifted the lockout. `locked_out_at` is now the sole
++ * authority. A client who also holds a separate live grant (a comp or
++ * invite-code purchase, or a coach-kept access) is not locked. Login then
+  * collapses to the payment-update screen only; community, workouts, programs,
+  * generic chat are all 403.
+  *
+@@ -30,6 +39,9 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+  *     recovery must never be locked). Note there is no mounted /auth/logout or
+  *     /auth/refresh; the mounted refresh route is /auth/extension/refresh.
+  *   - health checks (health, healthz, readyz)
++ *   - data export (/v1/me/data-export/*) and account deletion
++ *     (/me/delete-account*) — required while locked (App Store 5.1.1(v), and a
++ *     locked client must always be able to take their data and leave)
+  *   - Roman chat: /roman/* (RomanController) — the dedicated Roman assistant
+  *     surface, so Roman can explain the lockout. This is the ONLY AI-adjacent
+  *     carve-out. The entitlement-gated student AI assistant (/ai/*, AiController)
+@@ -44,6 +56,14 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
+  *     state must never block it (operator ruling on #622). Matched as exact
+  *     METHOD + PATH pairs (Sol B-622-1): no descendant path, no other method,
+  *     and the rest of /me/* stays locked.
++ *   - Contact the coach (S-DUNNING F8, B-353-10): exactly GET /messages,
++ *     POST /messages, POST /messages/read and GET /messages/unread-count
++ *     (ClientMessagingController; the thread is always with the client's
++ *     assigned coach), plus POST /messages/report (MessagesSafetyController,
++ *     safety). "Message coach" is the lockout screen's way back. Matched as
++ *     exact METHOD + PATH pairs like the AI consent operations: voice upload
++ *     (paid), coach-review, the coach-side routes and every other method or
++ *     descendant stay locked.
+  *
+  * Posture: this guard is a HARD no-op while FEATURE_DUNNING_V2 is OFF — it
+  * returns `true` immediately and reads no state, so v1 deployments are
+@@ -112,6 +132,32 @@ const PRIVACY_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]>
+   ['DELETE', 'me/ai-consent/roman'], // AiConsentController.withdraw
+ ] as const;
+ 
++/**
++ * Account-rights surfaces matched as full route prefixes: data export and
++ * account deletion stay reachable while locked (S-DUNNING F8).
++ */
++const ACCOUNT_RIGHTS_PREFIXES: readonly string[] = [
++  'me/data-export', // DataExportController — request, status, download
++  'me/delete-account', // AccountDeletionController — request, confirm, cancel, status
++] as const;
++
++/**
++ * Contact the coach (S-DUNNING F8; B-353-10, Opus L3 on mobile m#353): the
++ * locked client's thread with their own coach. ClientMessagingController
++ * resolves the thread from the client's assigned coach (no path param), so
++ * these exact METHOD + normalized PATH pairs open that one thread, plus the
++ * safety report, and nothing else: `POST messages/voice-upload` (paid),
++ * `GET messages/coach-review`, `coach/clients/:id/messages`, any future
++ * `messages/*` surface and every other method or descendant stay locked.
++ */
++const COACH_THREAD_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]> = [
++  ['GET', 'messages'], // ClientMessagingController.listThread
++  ['POST', 'messages'], // ClientMessagingController.send
++  ['POST', 'messages/read'], // ClientMessagingController.markRead
++  ['GET', 'messages/unread-count'], // ClientMessagingController.unreadCount
++  ['POST', 'messages/report'], // MessagesSafetyController — report a message
++] as const;
++
+ @Injectable()
+ export class DunningLockoutGuard implements CanActivate {
+   private readonly logger = new Logger(DunningLockoutGuard.name);
+@@ -141,6 +187,7 @@ export class DunningLockoutGuard implements CanActivate {
+     const path = normalizePath(req.path ?? req.originalUrl ?? req.url ?? '');
+     if (isAllowedWhileLocked(path)) return true;
+     if (isPrivacyOperationWhileLocked(req.method, path)) return true;
++    if (isCoachThreadOperationWhileLocked(req.method, path)) return true;
+ 
+     const userId = req.user?.id;
+     if (!userId) return true; // unauthenticated routes are handled by auth guards
+@@ -172,23 +219,16 @@ export class DunningLockoutGuard implements CanActivate {
+   }
+ 
+   /**
+-   * A client is locked out when ANY of their purchases has a DunningState with
+-   * `locked_out_at != null` and the purchase entitlement is off. We resolve via
+-   * ClientPurchase.client_user_id → DunningState.purchase_id.
++   * A client is locked out when ANY of their purchases has an ACTIVE
++   * DunningState with `locked_out_at != null`, unless the client also holds a
++   * different live entitlement (comp / invite-code grant, another paid
++   * package, or access the coach kept on). Resolved via
++   * ClientPurchase.client_user_id -> DunningState.purchase_id.
+    */
+   private async isClientLockedOut(userId: string): Promise<boolean> {
+-    const lockedRow = await this.prisma.dunningState.findFirst({
+-      where: {
+-        locked_out_at: { not: null },
+-        status: 'active',
+-        purchase: {
+-          client_user_id: userId,
+-          entitlement_active: false,
+-        },
+-      },
+-      select: { id: true },
+-    });
+-    return lockedRow != null;
++    // S-DUNNING-R3 (B-628-7): the same rule the status read model uses.
++    const lock = await effectiveLock(this.prisma, userId);
++    return lock.locked;
+   }
+ }
+ 
+@@ -221,6 +261,11 @@ export function isAllowedWhileLocked(path: string): boolean {
+   for (const chat of ROMAN_CHAT_PREFIXES) {
+     if (matchesRoutePrefix(path, chat)) return true;
+   }
++  for (const prefix of ACCOUNT_RIGHTS_PREFIXES) {
++    if (matchesRoutePrefix(path, prefix)) return true;
++  }
++  // Contact-the-coach routes are METHOD + PATH pairs, see
++  // isCoachThreadOperationWhileLocked.
+   return false;
+ }
+ 
+@@ -230,7 +275,26 @@ export function isAllowedWhileLocked(path: string): boolean {
+  * case-insensitively. A missing method never matches.
+  */
+ export function isPrivacyOperationWhileLocked(method: string | undefined, path: string): boolean {
++  return matchesOperation(PRIVACY_OPERATIONS, method, path);
++}
++
++/**
++ * True only for the exact coach-thread operations in COACH_THREAD_OPERATIONS
++ * (B-353-10), matched like the privacy operations.
++ */
++export function isCoachThreadOperationWhileLocked(
++  method: string | undefined,
++  path: string,
++): boolean {
++  return matchesOperation(COACH_THREAD_OPERATIONS, method, path);
++}
++
++function matchesOperation(
++  operations: ReadonlyArray<readonly [method: string, path: string]>,
++  method: string | undefined,
++  path: string,
++): boolean {
+   if (typeof method !== 'string' || method.length === 0) return false;
+   const m = method.toUpperCase();
+-  return PRIVACY_OPERATIONS.some(([pm, pp]) => pm === m && pp === path);
++  return operations.some(([pm, pp]) => pm === m && pp === path);
+ }
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index 9923a76d..a574897f 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -442,6 +442,12 @@ export const ENV_RULES: EnvRule[] = [
+     tier: 'optional',
+     reason: 'Feature flag — when "false", the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). Use to quickly disable the scoring engine if a heuristic regression is shipped.',
+   },
++  {
++    name: 'SFEE_SETTLEMENT_SWEEP_ENABLED',
++    tier: 'optional',
++    default: "on (unset = on; only the exact string 'false' pauses the scheduled sweep)",
++    reason: 'Kill switch — when "false", the 15-minute coach payout / settlement sweep (SettlementSweepCron) stops running on schedule; the admin run-sweeper endpoint still works by hand. Defaults to on.',
++  },
+   {
+     name: 'PTM_SCORING_CRON',
+     tier: 'optional',
+@@ -1025,8 +1031,8 @@ export const ENV_RULES: EnvRule[] = [
+   {
+     name: 'BILLING_PORTAL_URL',
+     tier: 'optional',
+-    default: "'https://thegrowthproject.app/billing'",
+-    reason: 'Billing portal link in dunning emails.',
++    default: 'DUNNING_UPDATE_CARD_URL (the in-app card update link)',
++    reason: 'Card update link in v1 dunning emails.',
+   },
+   {
+     name: 'IOS_BUNDLE_ID',
+@@ -1664,6 +1670,13 @@ export const ENV_RULES: EnvRule[] = [
+     default: 'unset → SOC2 snapshot omits app/releases',
+     reason: 'Fly app name (set by Fly at runtime) for the SOC2 evidence snapshot.',
+   },
++  {
++    name: 'FLY_MACHINE_ID',
++    tier: 'optional',
++    default: 'unset → os.hostname() (Fly sets it per machine at runtime)',
++    reason:
++      'Holder id for the S-FEE single-runner leases: the settlement sweep CronLease (SettlementSweepCron) and the per-charge money lock (ChargeLock), so each machine is told apart when it takes or fences a lease.',
++  },
+   {
+     name: 'FLY_PRIMARY_REGION',
+     tier: 'optional',
+@@ -1915,6 +1928,15 @@ export const ENV_RULES: EnvRule[] = [
+     default: 'unset → off (only "true")',
+     reason: 'Stripe Treasury payouts flag.',
+   },
++  {
++    name: 'FEATURE_COACH_CODE_TOOLS',
++    values: ['true', 'false'],
++    unsetIs: 'off',
++    tier: 'optional',
++    default: 'unset → off (only "true")',
++    reason:
++      'A2 coach code tools kill switch: /coach/codes list, create, rotate, revoke and daily signups (src/invite-codes/coach-code-tools.feature.ts). Only "true" enables; unset/other = 404 coach_code_tools_disabled. The signup ledger is always written.',
++  },
+   {
+     name: 'FEATURE_DUNNING_V2',
+     values: ['true', 'false'],
+@@ -1923,6 +1945,15 @@ export const ENV_RULES: EnvRule[] = [
+     default: 'unset → off (only "true")',
+     reason: 'Dunning v2 flag.',
+   },
++  {
++    name: 'FEATURE_COACH_BROADCASTS',
++    values: ['true', 'false'],
++    unsetIs: 'off',
++    tier: 'optional',
++    default: 'unset → off (only "true")',
++    reason:
++      'A4 coach broadcasts (segmented, scheduled, recurring), rich message cards, saved replies and client tags, plus the per-minute broadcast dispatcher. Off: every A4 route answers 503 broadcasts.disabled and the dispatcher does nothing.',
++  },
+   {
+     name: 'FEATURE_COMMUNITY_SCHEMA',
+     values: ['true', 'false'],
+@@ -2042,6 +2073,15 @@ export const ENV_RULES: EnvRule[] = [
+     default: 'unset → off (only "true")',
+     reason: 'Community events.',
+   },
++  {
++    name: 'FEATURE_COACHLESS_HOME',
++    values: ['true', 'false'],
++    unsetIs: 'off',
++    tier: 'optional',
++    default: 'unset → off (only "true")',
++    reason:
++      'A1-COACHLESS kill switch for the coachless Home surfaces: GET /coachless/home, the coach-code check/redeem routes and the scripted Roman card routes (404 coachless_disabled while off), and the coachless_home key of GET /me/feature-flags. The owner-only /admin/featured-coach config is not gated so the offer can be set up before the flip.',
++  },
+   {
+     name: 'FEATURE_COMMUNITY_SEARCH',
+     values: ['true', 'false'],
+@@ -2096,6 +2136,13 @@ export const ENV_RULES: EnvRule[] = [
+     default: 'unset → off (only explicit true)',
+     reason: 'Workout builder templates.',
+   },
++  {
++    name: 'FEATURE_ROMAN_ADJUST_ENABLED',
++    tier: 'optional',
++    default: 'unset → off (only explicit true)',
++    reason:
++      'Kill switch for Roman approve-to-adjust: deterministic recovery suggestions on the coach side (GET/POST /coach/adjustments). Off = every route 404s.',
++  },
+   {
+     name: 'FEATURE_NAMED_REGIMES',
+     values: ['true', 'false'],
+@@ -2118,6 +2165,15 @@ export const ENV_RULES: EnvRule[] = [
+     reason:
+       'Platform-wide daily spend ceiling for all Roman turns together (UTC day, US dollars), a runaway breaker sized to launch volume; the per-client limit is the 429 ROMAN_RATE_LIMIT turn cap and the per-coach bound is the monthly AI credit pool. Over the ceiling Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 100.',
+   },
++  {
++    name: 'FEATURE_MESSAGING_CORE_V2',
++    values: ['true', 'false'],
++    unsetIs: 'off',
++    tier: 'optional',
++    default: 'unset → off (only "true")',
++    reason:
++      'A3-MSG-CORE kill switch: unified inbox, edit/delete, swipe-reply, pins, mute and read-up-to on the 1:1 coach thread (CoachMessage). Off until audit and device pass.',
++  },
+   {
+     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',
+     tier: 'optional',
