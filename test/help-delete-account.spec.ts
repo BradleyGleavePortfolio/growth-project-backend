@@ -3,9 +3,9 @@
 // installing the app. These tests pin that the page is public (no login),
 // is linked from the Privacy Policy, /help and the shared footer, and states
 // only facts taken from code or the published policies:
-//  - in-app path and confirmation steps: growth-project-mobile #313
-//    (src/screens/client/SettingsScreen.tsx "Data & Privacy" > "Delete my
-//    account"; src/screens/coach/settings/DangerZone.tsx "Privacy & Data" >
+//  - current in-app path and confirmation steps:
+//    (src/screens/client/SettingsScreen.tsx "Account" > "Delete account";
+//    src/screens/coach/settings/DangerZone.tsx "Privacy & Data" >
 //    "Delete my account"; src/screens/settings/DeleteAccountScreen.tsx
 //    "Type DELETE or <email>", password / Apple / Google re-auth,
 //    "Keep my account", PERMANENTLY_DELETED, KEPT_RECORDS, BILLING_NOTE);
@@ -172,10 +172,11 @@ describe('/help/delete-account content', () => {
     expect(html).toContain('<title>Delete your TGP Fitness account — The Growth Project</title>');
   });
 
-  it('gives the exact in-app path from mobile #313 for clients and coaches', () => {
+  it('gives the current role-specific Settings section and deletion button', () => {
     expect(text).toContain(
-      'If you are a client: open the profile tab (the person icon in the bottom bar), tap Settings, then under Data & Privacy tap Delete my account.',
+      'If you are a client: open the profile tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
     );
+    expect(text).not.toContain('under Data & Privacy tap Delete my account');
     expect(text).toContain(
       'If you are a coach: open the Settings tab, then under Privacy & Data tap Delete my account.',
     );
